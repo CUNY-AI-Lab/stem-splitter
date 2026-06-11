@@ -29,7 +29,35 @@ schema.sql              D1 schema
 cors.json               R2 CORS rules for direct browser uploads
 ```
 
-## Setup
+## Deploying an existing clone (already-provisioned project)
+
+If the Cloudflare resources already exist (this repo's `wrangler.jsonc` is
+already filled in — bucket `stem-splitter-audio`, the D1 database, and the
+account are committed), **do not run the `create` commands in the Setup
+section below** — that's for standing up a brand-new copy from scratch.
+
+To deploy from a fresh clone against the existing infrastructure:
+
+```sh
+npm install
+npx wrangler login        # must have access to the account in wrangler.jsonc
+
+# Set the six secrets (values from whoever owns the deployment):
+npx wrangler secret put R2_ACCESS_KEY_ID
+npx wrangler secret put R2_SECRET_ACCESS_KEY
+npx wrangler secret put REPLICATE_API_TOKEN
+npx wrangler secret put REPLICATE_MODEL_VERSION
+npx wrangler secret put WEBHOOK_SECRET
+npx wrangler secret put CLASS_CODE
+
+npm run deploy
+```
+
+Check what's already set with `npx wrangler secret list`. The R2 bucket
+(CORS + 30-day lifecycle rule) and D1 schema are already applied on the
+account, so the bucket/D1/migration steps below should be skipped.
+
+## Setup (new project from scratch)
 
 Prereqs: Node 18+, a Cloudflare account, a [Replicate](https://replicate.com) account.
 
