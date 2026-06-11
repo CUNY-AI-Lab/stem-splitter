@@ -1,0 +1,22 @@
+{
+  "name": "stem-splitter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stem splitter for students — Cloudflare Workers + R2 + D1 + swappable GPU separation backend (Replicate/Modal)",
+  "scripts": {
+    "dev": "wrangler dev --remote",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "wrangler d1 execute stem-splitter --remote --file=schema.sql",
+    "db:migrate:local": "wrangler d1 execute stem-splitter --local --file=schema.sql"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0"
+  }
+}

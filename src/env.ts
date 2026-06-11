@@ -1,0 +1,19 @@
+export type Env = {
+  // Bindings
+  AUDIO: R2Bucket;
+  DB: D1Database;
+
+  // Vars (wrangler.jsonc)
+  R2_BUCKET_NAME: string;
+  CF_ACCOUNT_ID: string;
+  PUBLIC_BASE_URL: string;
+  SEPARATION_BACKEND?: string;
+
+  // Secrets (wrangler secret put ...)
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
+  REPLICATE_API_TOKEN: string;
+  REPLICATE_MODEL_VERSION: string;
+  WEBHOOK_SECRET: string;
+  CLASS_CODE: string;
+};

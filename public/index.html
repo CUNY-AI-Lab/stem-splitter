@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stem Splitter</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎚️</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <main>
+    <header class="masthead">
+      <p class="kicker">// four channels per song</p>
+      <h1>STEM<br /><span>SPLITTER</span></h1>
+      <p class="tagline">Pull a song apart. Hear how it&rsquo;s built.</p>
+    </header>
+
+    <section id="dropzone" class="deck" tabindex="0" role="button" aria-label="Upload a song">
+      <div class="deck-slot">
+        <span class="deck-arrow" aria-hidden="true">▼</span>
+        <p class="deck-label">INSERT TRACK</p>
+        <p class="deck-sub">drop an audio file or click to browse</p>
+      </div>
+      <p class="deck-meta">MP3 · WAV · FLAC · M4A · OGG · AIFF&ensp;/&ensp;100&nbsp;MB max</p>
+      <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
+    </section>
+
+    <div id="upload-status" class="upload-status" hidden>
+      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+      <p id="upload-message" class="mono"></p>
+    </div>
+
+    <section id="jobs" class="rack">
+      <h2 class="rack-title"><span>SESSION RACK</span></h2>
+      <p id="empty-state" class="empty mono">— no tracks loaded —</p>
+      <ul id="job-list" class="job-list"></ul>
+    </section>
+
+    <footer>
+      <p>
+        For coursework only. Uploads &amp; stems are wiped automatically after 30 days.
+        Only upload music you&rsquo;re entitled to use for class.
+      </p>
+      <p class="mono footer-sig">SEPARATION ENGINE: DEMUCS&nbsp;HTDEMUCS_FT</p>
+    </footer>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

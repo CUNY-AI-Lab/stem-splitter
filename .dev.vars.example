@@ -1,0 +1,9 @@
+# Copy to .dev.vars for local development (`npm run dev`).
+# These are the same names as the production secrets (`wrangler secret put ...`).
+
+R2_ACCESS_KEY_ID=your-r2-access-key-id
+R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
+REPLICATE_API_TOKEN=r8_your_replicate_token
+REPLICATE_MODEL_VERSION=paste-latest-version-hash-here
+WEBHOOK_SECRET=any-long-random-string
+CLASS_CODE=music101
