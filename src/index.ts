@@ -21,6 +21,14 @@ interface JobRow {
   labels: string | null;
 }
 
+interface AnnotationRow {
+  id: string;
+  job_id: string;
+  at_seconds: number;
+  text: string;
+  created_at: string;
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 // --- auth -------------------------------------------------------------
@@ -120,7 +128,11 @@ app.get('/api/jobs/:id', async (c) => {
     }
   }
 
-  return c.json(jobResponse(row));
+  const { results } = await c.env.DB
+    .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
+    .bind(id)
+    .all<AnnotationRow>();
+  return c.json(jobResponse(row, results ?? []));
 });
 
 // Shared, class-wide display labels for stem channels.
@@ -149,6 +161,33 @@ app.put('/api/jobs/:id/labels', requireClassCode, async (c) => {
     .bind(JSON.stringify(labels), id)
     .run();
   return c.json({ labels });
+});
+
+// Shared time-anchored notes, rendered as seek-bar markers.
+app.post('/api/jobs/:id/annotations', requireClassCode, async (c) => {
+  const id = c.req.param('id');
+  const job = await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?').bind(id).first();
+  if (!job) return c.json({ error: 'Job not found' }, 404);
+
+  const body = (await c.req.json().catch(() => null)) as { atSeconds?: unknown; text?: unknown } | null;
+  const atSeconds = Number(body?.atSeconds);
+  const text = String(body?.text ?? '').trim().slice(0, 200);
+  if (!Number.isFinite(atSeconds) || atSeconds < 0 || !text) {
+    return c.json({ error: 'atSeconds (>= 0) and text are required' }, 400);
+  }
+
+  const annotationId = crypto.randomUUID();
+  await c.env.DB.prepare('INSERT INTO annotations (id, job_id, at_seconds, text) VALUES (?, ?, ?, ?)')
+    .bind(annotationId, id, atSeconds, text)
+    .run();
+  return c.json({ id: annotationId, atSeconds, text });
+});
+
+app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c) => {
+  await c.env.DB.prepare('DELETE FROM annotations WHERE id = ? AND job_id = ?')
+    .bind(c.req.param('annotationId'), c.req.param('id'))
+    .run();
+  return c.json({ ok: true });
 });
 
 // --- separation webhook -----------------------------------------------
@@ -234,7 +273,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
     .run();
 }
 
-function jobResponse(row: JobRow) {
+function jobResponse(row: JobRow, annotations: AnnotationRow[] = []) {
   const stems = row.stems
     ? (JSON.parse(row.stems) as { name: string; key: string }[]).map((s) => ({
         name: s.name,
@@ -248,6 +287,7 @@ function jobResponse(row: JobRow) {
     error: row.error,
     model: row.model ?? 'htdemucs_ft',
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
+    annotations: annotations.map((a) => ({ id: a.id, atSeconds: a.at_seconds, text: a.text })),
     stems,
     createdAt: row.created_at,
   };
