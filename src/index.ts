@@ -6,6 +6,7 @@ import { getBackend, type SeparationResult } from './separation';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
+const ALLOWED_MODELS = ['htdemucs_ft', 'htdemucs_6s'];
 
 interface JobRow {
   id: string;
@@ -16,6 +17,8 @@ interface JobRow {
   stems: string | null;
   error: string | null;
   created_at: string;
+  model: string | null;
+  labels: string | null;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -51,7 +54,15 @@ app.post('/api/uploads', requireClassCode, async (c) => {
 // --- jobs -------------------------------------------------------------
 
 app.post('/api/jobs', requireClassCode, async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { key?: string; filename?: string } | null;
+  const body = (await c.req.json().catch(() => null)) as
+    | { key?: string; filename?: string; model?: string }
+    | null;
+
+  const model = body?.model ?? 'htdemucs_ft';
+  if (!ALLOWED_MODELS.includes(model)) {
+    return c.json({ error: `Unknown model. Allowed: ${ALLOWED_MODELS.join(', ')}` }, 400);
+  }
+
   const key = body?.key;
   const filename = sanitizeFilename(body?.filename ?? '');
   if (!key || !key.startsWith('uploads/') || !filename) {
@@ -66,15 +77,15 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   }
 
   const id = crypto.randomUUID();
-  await c.env.DB.prepare('INSERT INTO jobs (id, filename, source_key, status) VALUES (?, ?, ?, ?)')
-    .bind(id, filename, key, 'pending')
+  await c.env.DB.prepare('INSERT INTO jobs (id, filename, source_key, status, model) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, filename, key, 'pending', model)
     .run();
 
   const audioUrl = await presignDownload(c.env, key);
   const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
 
   try {
-    const { externalId } = await getBackend(c.env).start({ jobId: id, audioUrl, webhookUrl });
+    const { externalId } = await getBackend(c.env).start({ jobId: id, audioUrl, webhookUrl, model });
     await c.env.DB.prepare('UPDATE jobs SET external_id = ?, status = ? WHERE id = ?')
       .bind(externalId, 'processing', id)
       .run();
@@ -207,6 +218,7 @@ function jobResponse(row: JobRow) {
     filename: row.filename,
     status: row.status,
     error: row.error,
+    model: row.model ?? 'htdemucs_ft',
     stems,
     createdAt: row.created_at,
   };

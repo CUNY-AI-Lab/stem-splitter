@@ -9,6 +9,8 @@ export interface SeparationStartRequest {
   audioUrl: string;
   /** URL the backend should POST to when the job completes. */
   webhookUrl: string;
+  /** Model variant to run (e.g. Demucs "htdemucs_ft" | "htdemucs_6s"). Backends may ignore it. */
+  model?: string;
 }
 
 export interface StemRef {
