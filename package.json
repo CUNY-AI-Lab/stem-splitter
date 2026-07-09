@@ -8,7 +8,9 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "db:migrate": "wrangler d1 execute stem-splitter --remote --file=schema.sql",
-    "db:migrate:local": "wrangler d1 execute stem-splitter --local --file=schema.sql"
+    "db:migrate:local": "wrangler d1 execute stem-splitter --local --file=schema.sql",
+    "db:migrate:2": "wrangler d1 execute stem-splitter --remote --file=migrations/0002-features.sql",
+    "db:migrate:2:local": "wrangler d1 execute stem-splitter --local --file=migrations/0002-features.sql"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
