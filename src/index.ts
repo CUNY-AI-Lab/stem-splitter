@@ -123,6 +123,34 @@ app.get('/api/jobs/:id', async (c) => {
   return c.json(jobResponse(row));
 });
 
+// Shared, class-wide display labels for stem channels.
+app.put('/api/jobs/:id/labels', requireClassCode, async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
+  if (!row) return c.json({ error: 'Job not found' }, 404);
+
+  const body = (await c.req.json().catch(() => null)) as { labels?: Record<string, unknown> } | null;
+  if (!body?.labels || typeof body.labels !== 'object' || Array.isArray(body.labels)) {
+    return c.json({ error: 'labels object is required' }, 400);
+  }
+
+  // Only label stems the job actually has; trim and cap length.
+  const stemNames = new Set(
+    (row.stems ? (JSON.parse(row.stems) as { name: string }[]) : []).map((s) => s.name)
+  );
+  const labels: Record<string, string> = {};
+  for (const [name, value] of Object.entries(body.labels)) {
+    if (!stemNames.has(name)) continue;
+    const label = String(value).trim().slice(0, 40);
+    if (label) labels[name] = label;
+  }
+
+  await c.env.DB.prepare('UPDATE jobs SET labels = ? WHERE id = ?')
+    .bind(JSON.stringify(labels), id)
+    .run();
+  return c.json({ labels });
+});
+
 // --- separation webhook -----------------------------------------------
 
 app.post('/api/webhooks/separation', async (c) => {
@@ -219,6 +247,7 @@ function jobResponse(row: JobRow) {
     status: row.status,
     error: row.error,
     model: row.model ?? 'htdemucs_ft',
+    labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
     stems,
     createdAt: row.created_at,
   };
