@@ -3,6 +3,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { presignUpload, presignDownload } from './r2';
 import { getBackend, type SeparationResult } from './separation';
+import { fetchYouTubeAudio, YouTubeError } from './youtube';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -63,7 +64,7 @@ app.post('/api/uploads', requireClassCode, async (c) => {
 
 app.post('/api/jobs', requireClassCode, async (c) => {
   const body = (await c.req.json().catch(() => null)) as
-    | { key?: string; filename?: string; model?: string }
+    | { key?: string; filename?: string; youtubeUrl?: string; model?: string }
     | null;
 
   const model = body?.model ?? 'htdemucs_ft';
@@ -71,17 +72,43 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     return c.json({ error: `Unknown model. Allowed: ${ALLOWED_MODELS.join(', ')}` }, 400);
   }
 
-  const key = body?.key;
-  const filename = sanitizeFilename(body?.filename ?? '');
-  if (!key || !key.startsWith('uploads/') || !filename) {
-    return c.json({ error: 'key and filename are required' }, 400);
-  }
+  let key: string;
+  let filename: string;
 
-  const head = await c.env.AUDIO.head(key);
-  if (!head) return c.json({ error: 'Upload not found — did the file finish uploading?' }, 400);
-  if (head.size > MAX_SOURCE_BYTES) {
-    await c.env.AUDIO.delete(key);
-    return c.json({ error: 'File too large (max 100 MB)' }, 400);
+  if (body?.youtubeUrl) {
+    // In-Worker YouTube fetch: audio lands in R2 first; the job row is only
+    // created after, so a failed fetch never leaves an orphan/stuck job.
+    let audio;
+    try {
+      audio = await fetchYouTubeAudio(body.youtubeUrl);
+    } catch (err) {
+      const message =
+        err instanceof YouTubeError
+          ? err.message
+          : 'YouTube fetch failed — try again, or upload the audio file instead.';
+      console.error('youtube fetch error', err);
+      return c.json({ error: message }, 502);
+    }
+    if (audio.data.byteLength > MAX_SOURCE_BYTES) {
+      return c.json({ error: 'Audio too large (max 100 MB)' }, 400);
+    }
+    key = `uploads/${crypto.randomUUID()}/source.m4a`;
+    filename = sanitizeFilename(audio.title) || 'youtube-audio';
+    await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
+  } else {
+    const uploadKey = body?.key;
+    filename = sanitizeFilename(body?.filename ?? '');
+    if (!uploadKey || !uploadKey.startsWith('uploads/') || !filename) {
+      return c.json({ error: 'key and filename are required' }, 400);
+    }
+
+    const head = await c.env.AUDIO.head(uploadKey);
+    if (!head) return c.json({ error: 'Upload not found — did the file finish uploading?' }, 400);
+    if (head.size > MAX_SOURCE_BYTES) {
+      await c.env.AUDIO.delete(uploadKey);
+      return c.json({ error: 'File too large (max 100 MB)' }, 400);
+    }
+    key = uploadKey;
   }
 
   const id = crypto.randomUUID();
