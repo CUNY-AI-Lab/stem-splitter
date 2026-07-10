@@ -540,26 +540,43 @@ footer {
 }
 .marker:hover { background: var(--ink); }
 
-.note-tip {
-  position: absolute;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
+.notes {
+  margin-top: 0.9rem;
+  border-top: 1px dashed var(--panel-edge);
+  padding-top: 0.6rem;
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--bg-raise);
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  white-space: nowrap;
-  max-width: 60vw;
-  z-index: 5;
-  font-size: 0.75rem;
-  color: var(--ink);
+  flex-direction: column;
+  gap: 0.15rem;
 }
-.note-tip-time { color: var(--hot); font-size: 0.7rem; }
-.note-tip-text { overflow: hidden; text-overflow: ellipsis; }
+.note-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+}
+.note-row.flash { animation: note-flash 1.4s ease-out; }
+@keyframes note-flash {
+  0% { background: var(--hot-soft); }
+  100% { background: transparent; }
+}
+.note-time {
+  background: none;
+  border: none;
+  color: var(--hot);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.note-time:hover { text-decoration: underline; }
+.note-text {
+  flex: 1;
+  font-size: 0.82rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
 .note-del {
   background: none;
   border: none;
@@ -567,7 +584,10 @@ footer {
   cursor: pointer;
   font-size: 0.75rem;
   padding: 0 0.1rem;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
+.note-row:hover .note-del, .note-del:focus-visible { opacity: 1; }
 
 .note-btn {
   background: none;

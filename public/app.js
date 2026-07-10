@@ -211,6 +211,7 @@ class Mixer {
         <button class="note-btn" title="Add a note at the current time">＋&nbsp;NOTE</button>
       </div>
       <div class="channels"></div>
+      <div class="notes" hidden></div>
     `;
 
     this.playBtn = li.querySelector('.play-btn');
@@ -218,6 +219,7 @@ class Mixer {
     this.tcNow = li.querySelector('.tc-now');
     this.tcEnd = li.querySelector('.tc-end');
     this.markers = li.querySelector('.markers');
+    this.notes = li.querySelector('.notes');
     this.noteBtn = li.querySelector('.note-btn');
     this.noteBtn.addEventListener('click', () => this.addNote());
     const channels = li.querySelector('.channels');
@@ -260,12 +262,24 @@ class Mixer {
 
     this.playBtn.addEventListener('click', () => (this.playing ? this.pause() : this.play()));
 
+    // Scrub smoothly: while dragging, only preview the timecode (paint() backs
+    // off); the actual multi-stem seek happens once, on release ('change').
+    this.scrubbing = false;
+    this.seek.addEventListener('pointerdown', () => (this.scrubbing = true));
+    this.seek.addEventListener('pointercancel', () => (this.scrubbing = false));
     this.seek.addEventListener('input', () => {
+      this.scrubbing = true;
       const t = (this.seek.value / 1000) * (master.duration || 0);
-      for (const a of this.audios) a.currentTime = t;
-      this.paint();
+      this.seek.style.setProperty('--fill', `${this.seek.value / 10}%`);
+      this.tcNow.textContent = fmt(t);
+    });
+    this.seek.addEventListener('change', () => {
+      const t = (this.seek.value / 1000) * (master.duration || 0);
+      this.scrubbing = false;
+      this.seekTo(t);
     });
 
+    this.renderNotes();
     return li;
   }
 
@@ -320,6 +334,7 @@ class Mixer {
   }
 
   paint() {
+    if (this.scrubbing) return; // don't fight the user's drag
     const master = this.audios[0];
     const dur = master.duration || 0;
     const pct = dur ? (master.currentTime / dur) * 1000 : 0;
@@ -383,46 +398,56 @@ class Mixer {
       m.style.left = `${Math.min(100, (note.atSeconds / dur) * 100)}%`;
       m.setAttribute('aria-label', `Note at ${fmt(note.atSeconds)}: ${note.text}`);
       m.title = `${fmt(note.atSeconds)} — ${note.text}`;
-      m.addEventListener('click', (e) => {
-        e.stopPropagation();
+      m.addEventListener('click', () => {
         this.seekTo(note.atSeconds);
-        this.showNoteTip(note, m);
+        this.flashNote(note.id);
       });
       this.markers.appendChild(m);
     }
   }
 
-  showNoteTip(note, marker) {
-    this.hideNoteTip();
-    const tip = document.createElement('div');
-    tip.className = 'note-tip';
-    tip.innerHTML = `<span class="note-tip-time mono">${fmt(note.atSeconds)}</span><span class="note-tip-text">${esc(note.text)}</span><button class="note-del" title="Delete note">✕</button>`;
-    tip.querySelector('.note-del').addEventListener('click', async (e) => {
-      e.stopPropagation();
-      this.annotations = this.annotations.filter((n) => n.id !== note.id);
-      this.renderMarkers();
-      this.hideNoteTip();
-      try {
-        await api(`/api/jobs/${this.job.id}/annotations/${note.id}`, { method: 'DELETE' });
-      } catch (err) {
-        this.annotations.push(note);
-        this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
-        this.renderMarkers();
-        showUploadMessage(err.message, true);
-      }
-    });
-    marker.appendChild(tip);
-    this.tip = tip;
-    setTimeout(() => {
-      document.addEventListener('click', () => this.hideNoteTip(), { once: true });
-    }, 0);
+  // Always-visible list of every annotation under the channels — read them
+  // all without touching playback; the timecode is the deliberate "jump" act.
+  renderNotes() {
+    this.notes.innerHTML = '';
+    this.notes.hidden = this.annotations.length === 0;
+    for (const note of this.annotations) {
+      const row = document.createElement('div');
+      row.className = 'note-row';
+      row.dataset.id = note.id;
+      row.innerHTML = `
+        <button class="note-time mono" title="Jump to this moment">${fmt(note.atSeconds)}</button>
+        <span class="note-text">${esc(note.text)}</span>
+        <button class="note-del" aria-label="Delete note" title="Delete note">✕</button>
+      `;
+      row.querySelector('.note-time').addEventListener('click', () => this.seekTo(note.atSeconds));
+      row.querySelector('.note-del').addEventListener('click', () => this.deleteNote(note));
+      this.notes.appendChild(row);
+    }
   }
 
-  hideNoteTip() {
-    if (this.tip) {
-      this.tip.remove();
-      this.tip = null;
+  async deleteNote(note) {
+    this.annotations = this.annotations.filter((n) => n.id !== note.id);
+    this.renderMarkers();
+    this.renderNotes();
+    try {
+      await api(`/api/jobs/${this.job.id}/annotations/${note.id}`, { method: 'DELETE' });
+    } catch (err) {
+      this.annotations.push(note);
+      this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
+      this.renderMarkers();
+      this.renderNotes();
+      showUploadMessage(err.message, true);
     }
+  }
+
+  flashNote(id) {
+    const row = this.notes.querySelector(`[data-id="${id}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    row.classList.remove('flash');
+    void row.offsetWidth; // restart the animation
+    row.classList.add('flash');
   }
 
   addNote() {
@@ -455,6 +480,8 @@ class Mixer {
         this.annotations.push(note);
         this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
         this.renderMarkers();
+        this.renderNotes();
+        this.flashNote(note.id);
       } catch (err) {
         showUploadMessage(err.message, true);
       }
