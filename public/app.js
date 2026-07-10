@@ -405,6 +405,9 @@ class Mixer {
       try {
         await api(`/api/jobs/${this.job.id}/annotations/${note.id}`, { method: 'DELETE' });
       } catch (err) {
+        this.annotations.push(note);
+        this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
+        this.renderMarkers();
         showUploadMessage(err.message, true);
       }
     });
