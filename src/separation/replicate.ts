@@ -23,9 +23,20 @@ export function replicateBackend(env: Env): SeparationBackend {
     'Content-Type': 'application/json',
   };
 
+  // Low-credit accounts get "burst of 1" rate limits; a YouTube import makes
+  // two predictions back-to-back (fetch, then separate), so honor 429s.
+  const fetchRetrying429 = async (url: string, init: RequestInit): Promise<Response> => {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(url, init);
+      if (res.status !== 429 || attempt >= 3) return res;
+      const retryAfter = Number(res.headers.get('retry-after')) || 5;
+      await new Promise((r) => setTimeout(r, Math.min(retryAfter + 1, 15) * 1000));
+    }
+  };
+
   const backend: SeparationBackend = {
     async start(req: SeparationStartRequest): Promise<{ externalId: string }> {
-      const res = await fetch(`${API}/predictions`, {
+      const res = await fetchRetrying429(`${API}/predictions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({

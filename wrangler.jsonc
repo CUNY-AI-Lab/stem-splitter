@@ -33,7 +33,8 @@
     // Public URL of the deployed Worker — Replicate posts webhooks here.
     "PUBLIC_BASE_URL": "https://stem-splitter.ailab-452.workers.dev",
     // Which separation backend to use: "replicate" (implemented) or "modal" (stub).
-    "SEPARATION_BACKEND": "replicate"
+    "SEPARATION_BACKEND": "replicate",
+    "REPLICATE_YT_MODEL": "smorello87/yt-audio"
   }
 
   // Secrets (set with `wrangler secret put <NAME>`):

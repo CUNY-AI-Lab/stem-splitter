@@ -1,0 +1,10 @@
+# Tiny CPU model: fetch a YouTube video's audio track with yt-dlp.
+# Push target: r8.im/<replicate-user>/yt-audio (see README in this dir).
+build:
+  gpu: false
+  python_version: "3.11"
+  system_packages:
+    - ffmpeg
+  python_packages:
+    - yt-dlp
+predict: "predict.py:Predictor"

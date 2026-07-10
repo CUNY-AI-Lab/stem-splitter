@@ -80,7 +80,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     // created after, so a failed fetch never leaves an orphan/stuck job.
     let audio;
     try {
-      audio = await fetchYouTubeAudio(body.youtubeUrl);
+      audio = await fetchYouTubeAudio(body.youtubeUrl, c.env);
     } catch (err) {
       const message =
         err instanceof YouTubeError
