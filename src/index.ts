@@ -3,7 +3,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { presignUpload, presignDownload } from './r2';
 import { getBackend, type SeparationResult } from './separation';
-import { fetchYouTubeAudio, YouTubeError } from './youtube';
+import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -76,6 +76,13 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let filename: string;
 
   if (body?.youtubeUrl) {
+    // Caller error (unrecognizable link) is a 400; upstream failures are 502.
+    if (!parseYouTubeVideoId(body.youtubeUrl)) {
+      return c.json(
+        { error: 'Not a recognizable YouTube link (use youtube.com/watch, youtu.be, or /shorts).' },
+        400
+      );
+    }
     // In-Worker YouTube fetch: audio lands in R2 first; the job row is only
     // created after, so a failed fetch never leaves an orphan/stuck job.
     let audio;

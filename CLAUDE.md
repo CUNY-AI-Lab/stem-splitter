@@ -9,7 +9,10 @@ Stem-separation web app for music students (~20 students × 100 songs/semester).
 ## Commands
 
 ```sh
-npm run typecheck         # tsc --noEmit (no tests exist; this is the main check)
+npm run typecheck         # tsc --noEmit (no unit tests; this is the static check)
+./scripts/smoke.sh        # free API smoke checks against the deployed Worker
+./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
+./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
 npm run deploy            # wrangler deploy (account is pinned in wrangler.jsonc)
 npm run dev               # wrangler dev --remote — see "Local dev" below for why
 npm run db:migrate        # apply schema.sql to remote D1
@@ -33,7 +36,7 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 **Frontend** (`public/`, vanilla JS, no build step): the `Mixer` class in `app.js` plays all stems as parallel `HTMLAudio` elements — first stem is the master clock, others are nudged back if drift exceeds 80 ms (500 ms interval). Job list lives in localStorage; `mixers` Map preserves player state across re-renders. Visual language is a "studio console" theme (per-stem channel colors are CSS vars `--c-vocals` etc. in `styles.css`).
 
-**Shared labels & annotations:** `jobs.labels` JSON column (`PUT /api/jobs/:id/labels`, full-map replace) and an `annotations` D1 table (`POST/DELETE /api/jobs/:id/annotations[/:annotationId]`); both ride along on `GET /api/jobs/:id`, so any student viewing a job sees them. Writes require the class code; reads stay unauthenticated-but-unguessable. In the mixer: click a channel name to rename, "＋ NOTE" stamps the current time, markers on the seek bar seek/show/delete. Known UX limit: another student's edits appear only after a page reload (polling stops once a job is `done`). Migrations: `schema.sql` is the canonical fresh-install schema; additive changes live in `migrations/` (already applied: `npm run db:migrate:2`).
+**Shared labels & annotations:** `jobs.labels` JSON column (`PUT /api/jobs/:id/labels`, full-map replace) and an `annotations` D1 table (`POST/DELETE /api/jobs/:id/annotations[/:annotationId]`); both ride along on `GET /api/jobs/:id`, so any student viewing a job sees them. Writes require the class code; reads stay unauthenticated-but-unguessable. In the mixer: click a channel name to rename; "＋ NOTE" stamps the current time; all notes render in an always-visible list under the channels (timecode click = jump, ✕ on hover = delete) with matching ticks on the seek bar. Seek scrubbing previews while dragging and commits one multi-stem seek on release — don't re-introduce per-`input` seeks (they stall 6 buffers) or unconditional `paint()` slider writes (they fight the drag). Known UX limit: another student's edits appear only after a page reload (polling stops once a job is `done`). Migrations: `schema.sql` is the canonical fresh-install schema; additive changes live in `migrations/` (already applied: `npm run db:migrate:2`).
 
 ## Configuration
 
