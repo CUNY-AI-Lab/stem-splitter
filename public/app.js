@@ -61,6 +61,13 @@ const uploadStatus = document.getElementById('upload-status');
 const progressBar = document.getElementById('progress-bar');
 const uploadMessage = document.getElementById('upload-message');
 
+const ytForm = document.getElementById('yt-form');
+const ytUrlInput = document.getElementById('yt-url');
+
+function selectedModel() {
+  return document.querySelector('input[name="stem-model"]:checked')?.value || 'htdemucs_ft';
+}
+
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') fileInput.click();
@@ -83,6 +90,30 @@ fileInput.addEventListener('change', () => {
 );
 dropzone.addEventListener('drop', (e) => {
   if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+ytForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = ytUrlInput.value.trim();
+  if (!url) return;
+
+  uploadStatus.hidden = false;
+  progressBar.style.width = '0%';
+  showUploadMessage('FETCHING FROM YOUTUBE…');
+
+  try {
+    const job = await api('/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ youtubeUrl: url, model: selectedModel() }),
+    });
+    ytUrlInput.value = '';
+    addJob(job);
+    showUploadMessage('PROCESSING — stems will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    renderJobs();
+    pollSoon();
+  } catch (err) {
+    showUploadMessage(err.message, true);
+  }
 });
 
 async function handleFile(file) {
@@ -108,7 +139,7 @@ async function handleFile(file) {
     showUploadMessage('STARTING SEPARATION…');
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ key, filename: file.name }),
+      body: JSON.stringify({ key, filename: file.name, model: selectedModel() }),
     });
 
     addJob(job);
@@ -318,7 +349,11 @@ function renderJobs() {
       ${
         failed
           ? `<p class="job-error">${esc(state.error || 'Something went wrong.')}</p>`
-          : `<p class="job-note">Splitting into vocals / drums / bass / other…</p>`
+          : `<p class="job-note">Splitting into ${
+              state.model === 'htdemucs_6s'
+                ? 'vocals / drums / bass / guitar / piano / other'
+                : 'vocals / drums / bass / other'
+            }…</p>`
       }
     `;
     jobList.appendChild(li);

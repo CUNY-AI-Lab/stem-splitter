@@ -15,7 +15,7 @@
 
   <main>
     <header class="masthead">
-      <p class="kicker">// four channels per song</p>
+      <p class="kicker">// up to six channels per song</p>
       <h1>STEM<br /><span>SPLITTER</span></h1>
       <p class="tagline">Pull a song apart. Hear how it&rsquo;s built.</p>
     </header>
@@ -29,6 +29,17 @@
       <p class="deck-meta">MP3 · WAV · FLAC · M4A · OGG · AIFF&ensp;/&ensp;100&nbsp;MB max</p>
       <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
     </section>
+
+    <div class="import-row">
+      <form id="yt-form" class="yt-form">
+        <input id="yt-url" type="url" placeholder="…or paste a YouTube link" aria-label="YouTube link" />
+        <button type="submit" class="yt-go">FETCH</button>
+      </form>
+      <div class="stem-choice" role="radiogroup" aria-label="Stem count">
+        <label><input type="radio" name="stem-model" value="htdemucs_ft" checked /><span>4 STEMS · cleanest</span></label>
+        <label><input type="radio" name="stem-model" value="htdemucs_6s" /><span>6 STEMS · +guitar&nbsp;&amp;&nbsp;piano</span></label>
+      </div>
+    </div>
 
     <div id="upload-status" class="upload-status" hidden>
       <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
@@ -46,7 +57,7 @@
         For coursework only. Uploads &amp; stems are wiped automatically after 30 days.
         Only upload music you&rsquo;re entitled to use for class.
       </p>
-      <p class="mono footer-sig">SEPARATION ENGINE: DEMUCS&nbsp;HTDEMUCS_FT</p>
+      <p class="mono footer-sig">SEPARATION ENGINE: DEMUCS&nbsp;HTDEMUCS_FT&nbsp;/&nbsp;HTDEMUCS_6S</p>
     </footer>
   </main>
 
