@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import tempfile
+from urllib.parse import urlparse
 
 from cog import BaseModel, BasePredictor, Input, Path
 
@@ -27,6 +28,11 @@ class Predictor(BasePredictor):
             description="Reject videos longer than this many seconds", default=900
         ),
     ) -> Output:
+        # The URL is untrusted input; never let it be parsed as a yt-dlp flag.
+        parsed = urlparse(url)
+        if url.startswith("-") or parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("Not a valid http(s) URL.")
+
         info = self._probe(url)
 
         if info.get("is_live"):
@@ -49,6 +55,7 @@ class Predictor(BasePredictor):
                 "m4a",
                 "-o",
                 out,
+                "--",
                 url,
             ]
         )
@@ -62,7 +69,7 @@ class Predictor(BasePredictor):
         )
 
     def _probe(self, url: str) -> dict:
-        stdout = self._run(["yt-dlp", "-J", "--no-playlist", url])
+        stdout = self._run(["yt-dlp", "-J", "--no-playlist", "--", url])
         return json.loads(stdout)
 
     def _run(self, cmd: list) -> str:
