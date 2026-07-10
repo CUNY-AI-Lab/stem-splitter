@@ -223,9 +223,9 @@ class Mixer {
       row.className = 'channel';
       row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
       row.innerHTML = `
-        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name">${esc(stem.name)}</span></span>
+        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
         <span class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(stem.name)}">MUTE</button>
+        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
         <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
       `;
       row.querySelector('.mute-btn').addEventListener('click', (e) => {
@@ -233,6 +233,13 @@ class Mixer {
         e.currentTarget.setAttribute('aria-pressed', String(audio.muted));
         row.classList.toggle('muted', audio.muted);
       });
+
+      const nameEl = row.querySelector('.ch-name');
+      nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
+      nameEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.editLabel(stem.name, nameEl);
+      });
+
       channels.appendChild(row);
     }
 
@@ -310,6 +317,46 @@ class Mixer {
     this.seek.value = pct;
     this.seek.style.setProperty('--fill', `${pct / 10}%`);
     this.tcNow.textContent = fmt(master.currentTime);
+  }
+
+  label(name) {
+    return (this.job.labels && this.job.labels[name]) || name;
+  }
+
+  editLabel(stemName, nameEl) {
+    const input = document.createElement('input');
+    input.className = 'ch-name-input';
+    input.maxLength = 40;
+    input.value = this.label(stemName);
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const done = async (save) => {
+      if (finished) return;
+      finished = true;
+      const value = input.value.trim().slice(0, 40);
+      input.replaceWith(nameEl);
+      if (!save || !value || value === this.label(stemName)) return;
+
+      this.job.labels = { ...(this.job.labels || {}), [stemName]: value };
+      nameEl.textContent = value;
+      try {
+        await api(`/api/jobs/${this.job.id}/labels`, {
+          method: 'PUT',
+          body: JSON.stringify({ labels: this.job.labels }),
+        });
+      } catch (err) {
+        showUploadMessage(err.message, true);
+      }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') done(true);
+      if (e.key === 'Escape') done(false);
+    });
+    input.addEventListener('blur', () => done(true));
   }
 }
 

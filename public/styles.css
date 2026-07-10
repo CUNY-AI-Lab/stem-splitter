@@ -503,3 +503,19 @@ footer {
   .timecode { display: none; }
   .meter { max-width: 70px; }
 }
+
+.ch-name { cursor: text; }
+.ch-name:hover { color: var(--hot); }
+
+.ch-name-input {
+  background: var(--bg-raise);
+  border: 1px solid var(--hot);
+  border-radius: 4px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  width: 9rem;
+  max-width: 40vw;
+}
+.ch-name-input:focus { outline: none; }
