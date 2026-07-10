@@ -7,7 +7,20 @@ CREATE TABLE IF NOT EXISTS jobs (
   external_id TEXT,                    -- id of the job at the separation backend (e.g. Replicate prediction id)
   stems TEXT,                          -- JSON array: [{ "name": "vocals", "key": "stems/<job>/vocals.mp3" }, ...]
   error TEXT,
+  model TEXT,                          -- Demucs variant: htdemucs_ft (4 stems) | htdemucs_6s (6 stems)
+  labels TEXT,                         -- JSON map: { "<stem name>": "<display label>" }
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at);
+
+-- Shared time-anchored notes on a track, shown as seek-bar markers.
+CREATE TABLE IF NOT EXISTS annotations (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  at_seconds REAL NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_annotations_job ON annotations (job_id);

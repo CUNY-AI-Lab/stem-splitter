@@ -61,6 +61,13 @@ const uploadStatus = document.getElementById('upload-status');
 const progressBar = document.getElementById('progress-bar');
 const uploadMessage = document.getElementById('upload-message');
 
+const ytForm = document.getElementById('yt-form');
+const ytUrlInput = document.getElementById('yt-url');
+
+function selectedModel() {
+  return document.querySelector('input[name="stem-model"]:checked')?.value || 'htdemucs_ft';
+}
+
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') fileInput.click();
@@ -83,6 +90,30 @@ fileInput.addEventListener('change', () => {
 );
 dropzone.addEventListener('drop', (e) => {
   if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+ytForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = ytUrlInput.value.trim();
+  if (!url) return;
+
+  uploadStatus.hidden = false;
+  progressBar.style.width = '0%';
+  showUploadMessage('FETCHING FROM YOUTUBE…');
+
+  try {
+    const job = await api('/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ youtubeUrl: url, model: selectedModel() }),
+    });
+    ytUrlInput.value = '';
+    addJob(job);
+    showUploadMessage('PROCESSING — stems will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    renderJobs();
+    pollSoon();
+  } catch (err) {
+    showUploadMessage(err.message, true);
+  }
 });
 
 async function handleFile(file) {
@@ -108,7 +139,7 @@ async function handleFile(file) {
     showUploadMessage('STARTING SEPARATION…');
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ key, filename: file.name }),
+      body: JSON.stringify({ key, filename: file.name, model: selectedModel() }),
     });
 
     addJob(job);
@@ -153,6 +184,7 @@ class Mixer {
     this.job = job;
     this.audios = [];
     this.playing = false;
+    this.annotations = [...(job.annotations || [])];
     this.el = this.build();
   }
 
@@ -171,8 +203,12 @@ class Mixer {
       <div class="transport">
         <button class="play-btn" aria-label="Play all stems">▶</button>
         <span class="timecode tc-now">0:00</span>
-        <input class="seek" type="range" min="0" max="1000" value="0" aria-label="Seek" />
+        <div class="seek-wrap">
+          <input class="seek" type="range" min="0" max="1000" value="0" aria-label="Seek" />
+          <div class="markers" aria-hidden="false"></div>
+        </div>
         <span class="timecode tc-end">·:··</span>
+        <button class="note-btn" title="Add a note at the current time">＋&nbsp;NOTE</button>
       </div>
       <div class="channels"></div>
     `;
@@ -181,6 +217,9 @@ class Mixer {
     this.seek = li.querySelector('.seek');
     this.tcNow = li.querySelector('.tc-now');
     this.tcEnd = li.querySelector('.tc-end');
+    this.markers = li.querySelector('.markers');
+    this.noteBtn = li.querySelector('.note-btn');
+    this.noteBtn.addEventListener('click', () => this.addNote());
     const channels = li.querySelector('.channels');
 
     for (const stem of stems) {
@@ -192,9 +231,9 @@ class Mixer {
       row.className = 'channel';
       row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
       row.innerHTML = `
-        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name">${esc(stem.name)}</span></span>
+        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
         <span class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(stem.name)}">MUTE</button>
+        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
         <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
       `;
       row.querySelector('.mute-btn').addEventListener('click', (e) => {
@@ -202,12 +241,20 @@ class Mixer {
         e.currentTarget.setAttribute('aria-pressed', String(audio.muted));
         row.classList.toggle('muted', audio.muted);
       });
+
+      const nameEl = row.querySelector('.ch-name');
+      nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
+      nameEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.editLabel(stem.name, nameEl);
+      });
+
       channels.appendChild(row);
     }
 
     const master = this.audios[0];
     master.addEventListener('loadedmetadata', () => {
       this.tcEnd.textContent = fmt(master.duration);
+      this.renderMarkers();
     });
     master.addEventListener('ended', () => this.stop(true));
 
@@ -280,6 +327,139 @@ class Mixer {
     this.seek.style.setProperty('--fill', `${pct / 10}%`);
     this.tcNow.textContent = fmt(master.currentTime);
   }
+
+  label(name) {
+    return (this.job.labels && this.job.labels[name]) || name;
+  }
+
+  editLabel(stemName, nameEl) {
+    const input = document.createElement('input');
+    input.className = 'ch-name-input';
+    input.maxLength = 40;
+    input.value = this.label(stemName);
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const done = async (save) => {
+      if (finished) return;
+      finished = true;
+      const value = input.value.trim().slice(0, 40);
+      input.replaceWith(nameEl);
+      if (!save || !value || value === this.label(stemName)) return;
+
+      this.job.labels = { ...(this.job.labels || {}), [stemName]: value };
+      nameEl.textContent = value;
+      try {
+        await api(`/api/jobs/${this.job.id}/labels`, {
+          method: 'PUT',
+          body: JSON.stringify({ labels: this.job.labels }),
+        });
+      } catch (err) {
+        showUploadMessage(err.message, true);
+      }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') done(true);
+      if (e.key === 'Escape') done(false);
+    });
+    input.addEventListener('blur', () => done(true));
+  }
+
+  seekTo(t) {
+    for (const a of this.audios) a.currentTime = t;
+    this.paint();
+  }
+
+  renderMarkers() {
+    const dur = this.audios[0].duration;
+    this.markers.innerHTML = '';
+    if (!dur || !isFinite(dur)) return;
+    for (const note of this.annotations) {
+      const m = document.createElement('button');
+      m.className = 'marker';
+      m.style.left = `${Math.min(100, (note.atSeconds / dur) * 100)}%`;
+      m.setAttribute('aria-label', `Note at ${fmt(note.atSeconds)}: ${note.text}`);
+      m.title = `${fmt(note.atSeconds)} — ${note.text}`;
+      m.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.seekTo(note.atSeconds);
+        this.showNoteTip(note, m);
+      });
+      this.markers.appendChild(m);
+    }
+  }
+
+  showNoteTip(note, marker) {
+    this.hideNoteTip();
+    const tip = document.createElement('div');
+    tip.className = 'note-tip';
+    tip.innerHTML = `<span class="note-tip-time mono">${fmt(note.atSeconds)}</span><span class="note-tip-text">${esc(note.text)}</span><button class="note-del" title="Delete note">✕</button>`;
+    tip.querySelector('.note-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      this.annotations = this.annotations.filter((n) => n.id !== note.id);
+      this.renderMarkers();
+      this.hideNoteTip();
+      try {
+        await api(`/api/jobs/${this.job.id}/annotations/${note.id}`, { method: 'DELETE' });
+      } catch (err) {
+        this.annotations.push(note);
+        this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
+        this.renderMarkers();
+        showUploadMessage(err.message, true);
+      }
+    });
+    marker.appendChild(tip);
+    this.tip = tip;
+    setTimeout(() => {
+      document.addEventListener('click', () => this.hideNoteTip(), { once: true });
+    }, 0);
+  }
+
+  hideNoteTip() {
+    if (this.tip) {
+      this.tip.remove();
+      this.tip = null;
+    }
+  }
+
+  addNote() {
+    if (this.el.querySelector('.note-form')) return;
+    const t = this.audios[0].currentTime;
+    const form = document.createElement('form');
+    form.className = 'note-form';
+    form.innerHTML = `
+      <span class="mono note-form-time">${fmt(t)}</span>
+      <input maxlength="200" placeholder="e.g. chorus starts — listen to the bass" aria-label="Note text" />
+      <button type="submit">SAVE</button>
+    `;
+    this.el.querySelector('.transport').after(form);
+    const input = form.querySelector('input');
+    input.focus();
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') form.remove();
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      form.remove();
+      if (!text) return;
+      try {
+        const note = await api(`/api/jobs/${this.job.id}/annotations`, {
+          method: 'POST',
+          body: JSON.stringify({ atSeconds: t, text }),
+        });
+        this.annotations.push(note);
+        this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
+        this.renderMarkers();
+      } catch (err) {
+        showUploadMessage(err.message, true);
+      }
+    });
+  }
 }
 
 // --- job rendering & polling ----------------------------------------------
@@ -318,7 +498,11 @@ function renderJobs() {
       ${
         failed
           ? `<p class="job-error">${esc(state.error || 'Something went wrong.')}</p>`
-          : `<p class="job-note">Splitting into vocals / drums / bass / other…</p>`
+          : `<p class="job-note">Splitting into ${
+              state.model === 'htdemucs_6s'
+                ? 'vocals / drums / bass / guitar / piano / other'
+                : 'vocals / drums / bass / other'
+            }…</p>`
       }
     `;
     jobList.appendChild(li);

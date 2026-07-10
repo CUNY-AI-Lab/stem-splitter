@@ -32,7 +32,7 @@ export function replicateBackend(env: Env): SeparationBackend {
           version: env.REPLICATE_MODEL_VERSION,
           input: {
             audio: req.audioUrl,
-            model: 'htdemucs_ft',
+            model: req.model ?? 'htdemucs_ft',
             output_format: 'mp3',
             mp3_bitrate: 192,
           },
