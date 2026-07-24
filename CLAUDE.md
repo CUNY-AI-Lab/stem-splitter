@@ -10,7 +10,7 @@ Stem-separation web app for music students (~20 students × 100 songs/semester).
 
 ```sh
 npm run typecheck         # tsc --noEmit (no unit tests; this is the static check)
-./scripts/smoke.sh        # free API smoke checks against the deployed Worker
+CLASS_CODE=<code> ./scripts/smoke.sh   # free API smoke checks against the deployed Worker (code required)
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
 npm run deploy            # wrangler deploy (account is pinned in wrangler.jsonc)

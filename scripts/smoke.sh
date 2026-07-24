@@ -5,11 +5,11 @@
 #   ./scripts/smoke.sh <job-id>         # + labels/annotations round-trip on a done job
 #   ./scripts/smoke.sh --full           # + real YouTube import → 6 stems (~$0.06, ~2 min)
 #
-# Class code comes from $CLASS_CODE (default: music101).
+# Class code comes from $CLASS_CODE (required — never hardcode it here).
 
 set -u
 BASE="${BASE:-https://stem-splitter.ailab-452.workers.dev}"
-CODE="${CLASS_CODE:-music101}"
+CODE="${CLASS_CODE:?set CLASS_CODE to the current class code}"
 JOB_ID=""
 FULL=0
 [ "${1:-}" = "--full" ] && FULL=1
