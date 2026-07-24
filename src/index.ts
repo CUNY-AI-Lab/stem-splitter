@@ -1,9 +1,19 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { presignUpload, presignDownload } from './r2';
 import { getBackend, type SeparationResult } from './separation';
 import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
+import {
+  AssistantError,
+  COACH_DOWN,
+  getGuide,
+  getOrCreateGuide,
+  runChat,
+  validateTurns,
+  type GuideRecord,
+} from './assistant';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -170,7 +180,10 @@ app.get('/api/jobs/:id', async (c) => {
     .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
     .bind(id)
     .all<AnnotationRow>();
-  return c.json(jobResponse(row, results ?? []));
+  // The cached listening guide only exists for finished jobs; skip the extra
+  // SELECT on the frequent still-processing polls.
+  const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
+  return c.json(jobResponse(row, results ?? [], guide));
 });
 
 // Shared, class-wide display labels for stem channels.
@@ -226,6 +239,64 @@ app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c
     .bind(c.req.param('annotationId'), c.req.param('id'))
     .run();
   return c.json({ ok: true });
+});
+
+// --- listening guy (AI coach) -----------------------------------------
+
+// Generate (once) and return the class-shared listening guide. Generation is
+// class-code-gated because it costs money; reading the cached guide rides
+// along on the open GET /api/jobs/:id like labels and annotations.
+app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
+  if (!row) return c.json({ error: 'Job not found' }, 404);
+  if (row.status !== 'done') {
+    return c.json({ error: "Stems aren't ready yet — the coach needs the finished song." }, 409);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as { durationSec?: unknown } | null;
+  const { results } = await c.env.DB
+    .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
+    .bind(id)
+    .all<AnnotationRow>();
+
+  try {
+    const { guide, cached } = await getOrCreateGuide(c.env, row, results ?? [], parseDuration(body?.durationSec));
+    return c.json({ guide, cached });
+  } catch (err) {
+    return assistantFailure(c, err);
+  }
+});
+
+// Chat with the coach about one song. The conversation lives client-side and
+// is resent each call; replies may carry validated mixer tool calls that the
+// browser executes (solo / set_mute / seek / add_note).
+app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
+  if (!row) return c.json({ error: 'Job not found' }, 404);
+  if (row.status !== 'done') {
+    return c.json({ error: "Stems aren't ready yet — the coach needs the finished song." }, 409);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as
+    | { messages?: unknown; durationSec?: unknown }
+    | null;
+  const turns = validateTurns(body?.messages);
+  if (!turns) {
+    return c.json({ error: 'messages must be 1-12 turns (each ≤2000 chars) ending with a user message' }, 400);
+  }
+
+  const { results } = await c.env.DB
+    .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
+    .bind(id)
+    .all<AnnotationRow>();
+
+  try {
+    return c.json(await runChat(c.env, row, results ?? [], turns, parseDuration(body?.durationSec)));
+  } catch (err) {
+    return assistantFailure(c, err);
+  }
 });
 
 // --- separation webhook -----------------------------------------------
@@ -311,7 +382,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
     .run();
 }
 
-function jobResponse(row: JobRow, annotations: AnnotationRow[] = []) {
+function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null) {
   const stems = row.stems
     ? (JSON.parse(row.stems) as { name: string; key: string }[]).map((s) => ({
         name: s.name,
@@ -327,8 +398,21 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = []) {
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
     annotations: annotations.map((a) => ({ id: a.id, atSeconds: a.at_seconds, text: a.text })),
     stems,
+    guide,
     createdAt: row.created_at,
   };
+}
+
+/** Client-supplied advisory duration; the browser is the only reliable source. */
+function parseDuration(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 && n <= 7200 ? n : undefined;
+}
+
+function assistantFailure(c: Context<{ Bindings: Env }>, err: unknown) {
+  if (err instanceof AssistantError) return c.json({ error: err.studentMessage }, err.httpStatus);
+  console.error('assistant error', err);
+  return c.json({ error: COACH_DOWN }, 502);
 }
 
 function sanitizeFilename(name: string): string {
