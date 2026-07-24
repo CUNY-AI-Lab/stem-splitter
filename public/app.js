@@ -203,6 +203,9 @@ class Mixer {
     this.audios = [];
     this.playing = false;
     this.annotations = [...(job.annotations || [])];
+    this.channelsByName = new Map(); // canonical stem name -> { audio, row, muteBtn }
+    this.chatHistory = []; // per-instance; survives re-renders via the mixers Map
+    this.coachBusy = false;
     this.el = this.build();
   }
 
@@ -230,6 +233,19 @@ class Mixer {
       </div>
       <div class="channels"></div>
       <div class="notes" hidden></div>
+      <div class="coach">
+        <button class="coach-toggle" aria-expanded="false">
+          <span class="coach-led"></span>LISTENING GUY<span class="coach-caret">▾</span>
+        </button>
+        <div class="coach-body" hidden>
+          <div class="coach-guide"></div>
+          <div class="coach-log" role="log" aria-live="polite"></div>
+          <form class="coach-form">
+            <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the listening coach" />
+            <button type="submit">ASK</button>
+          </form>
+        </div>
+      </div>
     `;
 
     this.playBtn = li.querySelector('.play-btn');
@@ -240,6 +256,30 @@ class Mixer {
     this.notes = li.querySelector('.notes');
     this.noteBtn = li.querySelector('.note-btn');
     this.noteBtn.addEventListener('click', () => this.addNote());
+
+    this.coachToggle = li.querySelector('.coach-toggle');
+    this.coachLed = li.querySelector('.coach-led');
+    this.coachBody = li.querySelector('.coach-body');
+    this.coachGuide = li.querySelector('.coach-guide');
+    this.coachLog = li.querySelector('.coach-log');
+    this.coachForm = li.querySelector('.coach-form');
+    this.coachInput = this.coachForm.querySelector('input');
+    this.coachToggle.addEventListener('click', () => {
+      const open = this.coachBody.hidden;
+      this.coachBody.hidden = !open;
+      this.coachToggle.setAttribute('aria-expanded', String(open));
+    });
+    this.coachForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = this.coachInput.value.trim();
+      if (text) this.sendChat(text);
+    });
+    // One delegated handler covers timecode buttons in the guide and every chat row.
+    this.coachBody.addEventListener('click', (e) => {
+      const tc = e.target.closest('.coach-tc');
+      if (tc) this.seekTo(Number(tc.dataset.t));
+    });
+
     const channels = li.querySelector('.channels');
 
     for (const stem of stems) {
@@ -256,11 +296,9 @@ class Mixer {
         <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
         <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
       `;
-      row.querySelector('.mute-btn').addEventListener('click', (e) => {
-        audio.muted = !audio.muted;
-        e.currentTarget.setAttribute('aria-pressed', String(audio.muted));
-        row.classList.toggle('muted', audio.muted);
-      });
+      const muteBtn = row.querySelector('.mute-btn');
+      this.channelsByName.set(stem.name, { audio, row, muteBtn });
+      muteBtn.addEventListener('click', () => this.setMute(stem.name, !audio.muted));
 
       const nameEl = row.querySelector('.ch-name');
       nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
@@ -298,6 +336,7 @@ class Mixer {
     });
 
     this.renderNotes();
+    this.renderGuide();
     return li;
   }
 
@@ -491,19 +530,184 @@ class Mixer {
       form.remove();
       if (!text) return;
       try {
-        const note = await api(`/api/jobs/${this.job.id}/annotations`, {
-          method: 'POST',
-          body: JSON.stringify({ atSeconds: t, text }),
-        });
-        this.annotations.push(note);
-        this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
-        this.renderMarkers();
-        this.renderNotes();
-        this.flashNote(note.id);
+        await this.saveNote(t, text);
       } catch (err) {
         showUploadMessage(err.message, true);
       }
     });
+  }
+
+  // Shared by the ＋NOTE form and the coach's add_note tool — both hit the
+  // authenticated annotations API and render markers/notes identically.
+  async saveNote(atSeconds, text) {
+    const note = await api(`/api/jobs/${this.job.id}/annotations`, {
+      method: 'POST',
+      body: JSON.stringify({ atSeconds, text }),
+    });
+    this.annotations.push(note);
+    this.annotations.sort((a, b) => a.atSeconds - b.atSeconds);
+    this.renderMarkers();
+    this.renderNotes();
+    this.flashNote(note.id);
+    return note;
+  }
+
+  // --- listening guy panel ----------------------------------------------
+
+  duration() {
+    const d = this.audios[0].duration;
+    return isFinite(d) && d > 0 ? d : undefined;
+  }
+
+  setLed(state) {
+    this.coachLed.classList.toggle('ready', state === 'ready');
+    this.coachLed.classList.toggle('busy', state === 'busy');
+  }
+
+  renderGuide() {
+    this.coachGuide.innerHTML = '';
+    if (this.job.guide && this.job.guide.text) {
+      const div = document.createElement('div');
+      div.className = 'coach-guide-text';
+      div.innerHTML = this.linkifyTimecodes(this.job.guide.text);
+      this.coachGuide.appendChild(div);
+      this.setLed('ready');
+      return;
+    }
+    const cue = document.createElement('div');
+    cue.className = 'coach-cue';
+    cue.innerHTML = `
+      <button class="coach-cue-btn">CUE THE LISTENING GUIDE</button>
+      <p class="coach-hint">One-time setup for this song — takes ~10–20 seconds.</p>
+    `;
+    cue.querySelector('.coach-cue-btn').addEventListener('click', () => this.requestGuide());
+    this.coachGuide.appendChild(cue);
+  }
+
+  async requestGuide() {
+    const btn = this.coachGuide.querySelector('.coach-cue-btn');
+    const hint = this.coachGuide.querySelector('.coach-hint');
+    if (btn) btn.disabled = true;
+    if (hint) {
+      hint.textContent = 'READING THE CHARTS…';
+      hint.classList.remove('error');
+    }
+    this.setLed('busy');
+    try {
+      const res = await api(`/api/jobs/${this.job.id}/guide`, {
+        method: 'POST',
+        body: JSON.stringify({ durationSec: this.duration() }),
+      });
+      this.job.guide = res.guide;
+      this.renderGuide();
+    } catch (err) {
+      this.setLed('idle');
+      if (hint) {
+        hint.textContent = err.message;
+        hint.classList.add('error');
+      }
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // Escape first, then turn m:ss timecodes into seek buttons (no markdown lib).
+  linkifyTimecodes(text) {
+    return esc(text).replace(/\b(\d+):([0-5]\d)\b/g, (m, min, sec) =>
+      `<button class="coach-tc mono" data-t="${Number(min) * 60 + Number(sec)}">${m}</button>`
+    );
+  }
+
+  addChatRow(kind, html) {
+    const row = document.createElement('div');
+    row.className = `coach-row ${kind}`;
+    row.innerHTML = html;
+    this.coachLog.appendChild(row);
+    this.coachLog.scrollTop = this.coachLog.scrollHeight;
+    return row;
+  }
+
+  async sendChat(text) {
+    if (this.coachBusy) return;
+    this.coachBusy = true;
+    this.chatHistory.push({ role: 'user', content: text });
+    this.chatHistory = this.chatHistory.slice(-12);
+    this.addChatRow('you', esc(text));
+    const typing = this.addChatRow('typing', '···');
+    this.coachInput.value = '';
+    this.coachInput.disabled = true;
+    this.setLed('busy');
+    try {
+      const res = await api(`/api/jobs/${this.job.id}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ messages: this.chatHistory, durationSec: this.duration() }),
+      });
+      typing.remove();
+      if (res.reply) {
+        this.chatHistory.push({ role: 'assistant', content: res.reply });
+        this.chatHistory = this.chatHistory.slice(-12);
+        let html = this.linkifyTimecodes(res.reply);
+        if (res.finishReason === 'length') html += ' <span class="coach-trim">…(trimmed)</span>';
+        this.addChatRow('coach', html);
+      }
+      await this.executeToolCalls(res.toolCalls || []);
+    } catch (err) {
+      typing.remove();
+      this.addChatRow('error', esc(err.message));
+    }
+    this.coachBusy = false;
+    this.coachInput.disabled = false;
+    this.coachInput.focus();
+    this.setLed(this.job.guide ? 'ready' : 'idle');
+  }
+
+  // Sequential with a short stagger so students can see each console move land.
+  async executeToolCalls(calls) {
+    for (const call of calls) {
+      await new Promise((r) => setTimeout(r, 400));
+      try {
+        await this.executeCall(call);
+      } catch (err) {
+        this.addChatRow('error', esc(err.message));
+      }
+    }
+  }
+
+  async executeCall({ name, args }) {
+    if (name === 'solo') {
+      for (const stemName of this.channelsByName.keys()) this.setMute(stemName, stemName !== args.stem);
+      this.flashChannel(args.stem);
+      this.addActionChip(`SOLO · ${this.label(args.stem).toUpperCase()}`);
+    } else if (name === 'set_mute') {
+      this.setMute(args.stem, args.muted);
+      this.flashChannel(args.stem);
+      this.addActionChip(`${args.muted ? 'MUTE' : 'UNMUTE'} · ${this.label(args.stem).toUpperCase()}`);
+    } else if (name === 'seek') {
+      this.seekTo(args.seconds);
+      this.addActionChip(`SEEK · ${fmt(args.seconds)}`);
+    } else if (name === 'add_note') {
+      await this.saveNote(args.seconds, args.text);
+      this.addActionChip(`NOTE · ${fmt(args.seconds)}`);
+    }
+  }
+
+  setMute(stemName, muted) {
+    const ch = this.channelsByName.get(stemName);
+    if (!ch) return;
+    ch.audio.muted = muted;
+    ch.muteBtn.setAttribute('aria-pressed', String(muted));
+    ch.row.classList.toggle('muted', muted);
+  }
+
+  flashChannel(stemName) {
+    const ch = this.channelsByName.get(stemName);
+    if (!ch) return;
+    ch.row.classList.remove('coach-flash');
+    void ch.row.offsetWidth; // restart the animation
+    ch.row.classList.add('coach-flash');
+  }
+
+  addActionChip(labelText) {
+    this.addChatRow('action', `<span class="coach-chip mono">${esc(labelText)}</span>`);
   }
 }
 
