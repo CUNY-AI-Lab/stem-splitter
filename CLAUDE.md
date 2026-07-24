@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs (`htdemucs_ft`) splits it on a Replicate GPU → students play stems back in a synchronized in-browser mixer with per-stem mute. Live at https://stem-splitter.ailab-452.workers.dev (class code: `music101`).
+Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs (`htdemucs_ft`) splits it on a Replicate GPU → students play stems back in a synchronized in-browser mixer with per-stem mute. Live at https://stem-splitter.ailab-452.workers.dev (the class code is the `CLASS_CODE` secret — never write its value into this file or any committed file).
 
 ## Commands
 
@@ -40,7 +40,7 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 ## Configuration
 
-- `wrangler.jsonc` is the source of truth: account id (ailab — `452c33847…`, not the Veritas account), D1 id, R2 bucket, vars. `R2_BUCKET_NAME` and `CF_ACCOUNT_ID` vars must match the actual bucket/account because presigned URLs are built from them.
+- `wrangler.jsonc` is the source of truth: account id (ailab — `452c33847…`, not the Veritas account), D1 id, R2 bucket, vars. Wrangler must be logged in as `ailab@gc.cuny.edu` — a personal Cloudflare login isn't a member of the ailab account, and every write (deploy, `secret put`) fails with `Authentication error [code: 10000]`. Check with `npx wrangler whoami`; fix with `npx wrangler logout` then `login` as ailab. `R2_BUCKET_NAME` and `CF_ACCOUNT_ID` vars must match the actual bucket/account because presigned URLs are built from them.
 - Secrets (set via `wrangler secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`).
 - `REPLICATE_MODEL_VERSION` is a pinned version hash of `ryan5453/demucs`. To bump: `curl -s https://api.replicate.com/v1/models/ryan5453/demucs -H "Authorization: Bearer $TOKEN" | jq -r .latest_version.id`.
 - After changing `PUBLIC_BASE_URL` or webhook logic, redeploy — Replicate posts webhooks to the deployed URL.

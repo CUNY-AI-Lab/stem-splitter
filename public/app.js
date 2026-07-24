@@ -7,12 +7,29 @@ const STEM_ORDER = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
 // --- class code ---------------------------------------------------------
 
 function getClassCode() {
-  let code = localStorage.getItem('classCode');
-  if (!code) {
-    code = (prompt('Enter your class code:') || '').trim();
-    if (code) localStorage.setItem('classCode', code);
+  return localStorage.getItem('classCode') || '';
+}
+
+// Prompt-and-verify loop at page load: keeps asking until the server accepts
+// the code, so a typo fails here instead of on the student's first upload.
+async function ensureClassCode() {
+  let promptText = 'Enter your class code:';
+  for (;;) {
+    let code = getClassCode();
+    if (!code) {
+      code = (prompt(promptText) || '').trim();
+      if (!code) return; // cancelled — playback of shared links still works; writes will 401
+      localStorage.setItem('classCode', code);
+    }
+    try {
+      const res = await fetch('/api/auth-check', { headers: { 'x-class-code': code } });
+      if (res.status !== 401) return;
+    } catch {
+      return; // network hiccup — don't lock anyone out; the first write re-checks anyway
+    }
+    localStorage.removeItem('classCode');
+    promptText = 'Invalid class code — try again:';
   }
-  return code;
 }
 
 async function api(path, options = {}) {
@@ -26,7 +43,8 @@ async function api(path, options = {}) {
   });
   if (res.status === 401) {
     localStorage.removeItem('classCode');
-    throw new Error('Invalid class code — reload the page and try again.');
+    ensureClassCode();
+    throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
@@ -594,6 +612,6 @@ function fmt(sec) {
 
 // --- init -------------------------------------------------------------
 
-getClassCode();
+ensureClassCode();
 renderJobs();
 pollActiveJobs();

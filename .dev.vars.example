@@ -6,4 +6,4 @@ R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
 REPLICATE_API_TOKEN=r8_your_replicate_token
 REPLICATE_MODEL_VERSION=paste-latest-version-hash-here
 WEBHOOK_SECRET=any-long-random-string
-CLASS_CODE=music101
+CLASS_CODE=your-class-code

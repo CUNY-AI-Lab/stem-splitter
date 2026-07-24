@@ -27,6 +27,12 @@ echo "== free checks against $BASE =="
 check "frontend serves import UI" 1 \
   "$(curl -sS "$BASE/" | grep -q 'yt-form' && echo 1 || echo 0)"
 
+check "auth-check with class code → 200" 200 \
+  "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/auth-check" -H "x-class-code: $CODE")"
+
+check "auth-check with wrong code → 401" 401 \
+  "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/auth-check" -H 'x-class-code: definitely-wrong')"
+
 check "job create without class code → 401" 401 \
   "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/jobs" -H 'content-type: application/json' -d '{}')"
 

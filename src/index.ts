@@ -42,6 +42,10 @@ const requireClassCode = createMiddleware<{ Bindings: Env }>(async (c, next) => 
   await next();
 });
 
+// Lets the frontend validate the class code at entry instead of failing
+// on the student's first upload. Returns nothing beyond the 200/401.
+app.get('/api/auth-check', requireClassCode, (c) => c.json({ ok: true }));
+
 // --- uploads ----------------------------------------------------------
 
 // Issue a presigned PUT so the browser uploads straight to R2.
