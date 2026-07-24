@@ -1,12 +1,20 @@
 # Stem Splitter
 
-A stem-separation web app for students. Upload a song, get back isolated
-vocals / drums / bass / other as MP3s.
+A stem-separation web app for students. Upload a song — or paste a YouTube
+link — and get back isolated stems as MP3s (4-stem vocals / drums / bass /
+other, or 6-stem adding guitar + piano), played in a synchronized in-browser
+mixer with per-stem mute, shared renameable channel labels, shared timestamped
+notes, and **Listening Guy**: an AI listening coach that writes a per-song
+listening guide and answers questions in a chat that can drive the mixer
+itself (solo/mute channels, jump the playhead, pin notes for the class).
 
-**Architecture:** Browser → presigned upload to R2 → Cloudflare Worker creates
-a job (D1) → Replicate runs Demucs (`htdemucs_ft`) on a GPU → webhook marks the
-job done → student streams MP3 stems from R2 → R2 lifecycle rule deletes
-everything after 30 days.
+**Architecture:** Browser → presigned upload to R2 (or in-Worker YouTube
+fetch) → Cloudflare Worker creates a job (D1) → Replicate runs Demucs
+(`htdemucs_ft` / `htdemucs_6s`) on a GPU → webhook marks the job done →
+student streams MP3 stems from R2 → R2 lifecycle rule deletes everything after
+30 days. The coach runs on OpenRouter (`z-ai/glm-5.2` by default) behind two
+class-code-gated endpoints; guides are generated once per song and cached in
+D1, shared class-wide.
 
 - **~$0.045/song** on Replicate, scales to zero when idle (no GPU to manage).
 - The separation provider lives behind one interface
@@ -14,17 +22,29 @@ everything after 30 days.
   by implementing it and flipping `SEPARATION_BACKEND`.
 - Audio bytes never flow through the Worker on upload (presigned PUT direct to
   R2), so there are no Worker body-size issues.
+- The AI coach is provider-light too: plain `fetch` to OpenRouter, model set by
+  the `ASSISTANT_MODEL` var — swap to any cheap tool-calling model with a var
+  change and a redeploy. If the provider is down or unconfigured, students see
+  a friendly notice and the mixer keeps working.
 
 ```
 src/
-  index.ts              Worker: routes for uploads, jobs, webhook, file serving
+  index.ts              Worker: uploads, jobs, webhook, labels/annotations,
+                        listening-guy guide+chat, file serving
   env.ts                Bindings/vars/secrets types
   r2.ts                 Presigned URL helpers (aws4fetch)
+  youtube.ts            YouTube audio fetch (youtubei.js + Replicate yt-dlp fallback)
+  assistant/            Listening Guy: OpenRouter client, mixer tool schemas,
+                        system prompt (prompt.ts), guide/chat orchestrators
   separation/
     types.ts            SeparationBackend interface (the swappable seam)
     replicate.ts        Replicate-hosted Demucs implementation
     modal.ts            Stub for a self-deployed Modal backend
-public/                 Static frontend (vanilla JS)
+public/                 Static frontend (vanilla JS mixer + coach panel)
+migrations/             Additive D1 migrations (schema.sql = fresh install)
+scripts/smoke.sh        Smoke checks against the deployed Worker
+replicate-yt-audio/     Replicate-hosted yt-dlp model (YouTube fetch fallback)
+docs/superpowers/       Per-feature design specs + implementation plans
 schema.sql              D1 schema
 cors.json               R2 CORS rules for direct browser uploads
 ```
@@ -42,13 +62,14 @@ To deploy from a fresh clone against the existing infrastructure:
 npm install
 npx wrangler login        # must have access to the account in wrangler.jsonc
 
-# Set the six secrets (values from whoever owns the deployment):
+# Set the seven secrets (values from whoever owns the deployment):
 npx wrangler secret put R2_ACCESS_KEY_ID
 npx wrangler secret put R2_SECRET_ACCESS_KEY
 npx wrangler secret put REPLICATE_API_TOKEN
 npx wrangler secret put REPLICATE_MODEL_VERSION
 npx wrangler secret put WEBHOOK_SECRET
 npx wrangler secret put CLASS_CODE
+npx wrangler secret put OPENROUTER_API_KEY
 
 npm run deploy
 ```
@@ -114,6 +135,12 @@ In `wrangler.jsonc`, set:
 - `CF_ACCOUNT_ID` — dashboard sidebar
 - `PUBLIC_BASE_URL` — your Worker URL (you'll know it after the first deploy;
   deploy, then update and deploy again)
+- `ASSISTANT_MODEL` — OpenRouter slug for the Listening Guy coach (default
+  `z-ai/glm-5.2`; remove it to disable the coach entirely)
+- `REPLICATE_YT_MODEL` — owner/name of a deployed `replicate-yt-audio/` model;
+  unset it if you don't need the YouTube-fetch fallback (the free in-Worker
+  fetch is usually bot-blocked from Cloudflare egress IPs, so without this
+  YouTube import mostly won't work)
 
 ### 5. Set secrets
 
@@ -124,6 +151,7 @@ npx wrangler secret put REPLICATE_API_TOKEN
 npx wrangler secret put REPLICATE_MODEL_VERSION   # see below
 npx wrangler secret put WEBHOOK_SECRET            # any long random string, e.g. `openssl rand -hex 32`
 npx wrangler secret put CLASS_CODE                # what students type to use the app
+npx wrangler secret put OPENROUTER_API_KEY        # openrouter.ai key — powers Listening Guy
 ```
 
 Get the current Demucs model version hash:
@@ -157,12 +185,16 @@ Notes:
   reconciles by polling Replicate directly whenever a job status is fetched
   (`GET /api/jobs/:id`), so jobs still complete in local dev, just on the
   poll cadence.
+- Listening Guy returns a friendly 503 locally unless `OPENROUTER_API_KEY` is
+  in `.dev.vars`; the mixer is unaffected either way.
 
 ## Costs (rough, per class of 20 students × 100 songs)
 
 | Item | Cost |
 |---|---|
 | Replicate (Demucs, ~$0.045/song × 2,000) | ~$90/semester |
+| YouTube fetch (Replicate yt-dlp, ~1¢/import) | ~$20/semester if every song is imported |
+| Listening Guy (≈$0.005/guide, cached once; <1¢/chat exchange) | ~$1–5/semester |
 | R2 storage (MP3 stems, 30-day retention) | ~$1–2/month |
 | R2 egress | $0 (free) |
 | Workers + D1 | free tier at this volume |
@@ -181,6 +213,12 @@ likely cheaper — free monthly credits may cover a whole class):
 
 Nothing else in the app changes.
 
+## Swapping the coach model
+
+`ASSISTANT_MODEL` in `wrangler.jsonc` is an OpenRouter slug; any cheap model
+with function calling works. Change the var and `npm run deploy` — the system
+prompt and mixer tool schemas in `src/assistant/` are model-agnostic.
+
 ## Operational notes
 
 - **Cold starts:** the first separation after an idle period can take an extra
@@ -198,3 +236,10 @@ Nothing else in the app changes.
   supports signed webhooks if you want defense in depth.
 - **Stem URLs are public but unguessable** (UUID job ids) so `<audio>` tags
   work without custom headers. Acceptable for class use; revisit if needed.
+- **Keep the Replicate balance above $5** — a YouTube import creates two
+  predictions back-to-back, and low-credit accounts are burst-limited, so
+  imports slow down or fail when the balance runs low.
+- **Coach cost guardrails are structural:** guides are generated once per song
+  and cached forever; chat history is capped at 12 turns; `max_tokens` is
+  capped server-side; generation and chat require the class code, while
+  *reading* a cached guide doesn't.
