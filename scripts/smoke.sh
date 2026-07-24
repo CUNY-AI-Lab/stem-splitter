@@ -80,7 +80,7 @@ if [ "$FULL" = 1 ]; then
       sleep 15
     done
     check "youtube import completes" done "$S"
-    check "6 stems produced" 6 "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['stems']" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+    check "6 stems produced" 6 "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['stems'].__len__()")"
   fi
 fi
 
