@@ -34,7 +34,10 @@
     "PUBLIC_BASE_URL": "https://stem-splitter.ailab-452.workers.dev",
     // Which separation backend to use: "replicate" (implemented) or "modal" (stub).
     "SEPARATION_BACKEND": "replicate",
-    "REPLICATE_YT_MODEL": "smorello87/yt-audio"
+    "REPLICATE_YT_MODEL": "smorello87/yt-audio",
+    // OpenRouter model slug for the Listening Guy coach; swap to any cheap
+    // tool-calling model without code changes. Unset disables the assistant.
+    "ASSISTANT_MODEL": "z-ai/glm-5.2"
   }
 
   // Secrets (set with `wrangler secret put <NAME>`):
@@ -44,4 +47,5 @@
   //   REPLICATE_MODEL_VERSION— version hash of ryan5453/demucs (see README)
   //   WEBHOOK_SECRET         — random string; authenticates Replicate webhooks
   //   CLASS_CODE             — shared code students enter to use the app
+  //   OPENROUTER_API_KEY     — openrouter.ai key for the Listening Guy coach
 }

@@ -24,3 +24,11 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_annotations_job ON annotations (job_id);
+
+-- Cached AI listening guides (one per job, generated lazily, class-shared).
+CREATE TABLE IF NOT EXISTS guides (
+  job_id TEXT PRIMARY KEY,             -- jobs.id
+  text TEXT NOT NULL,                  -- the generated guide prose
+  model TEXT NOT NULL,                 -- ASSISTANT_MODEL slug that produced it
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

@@ -10,6 +10,8 @@ export type Env = {
   SEPARATION_BACKEND?: string;
   /** owner/name of the yt-dlp fetch model (replicate-yt-audio/); unset disables the fallback. */
   REPLICATE_YT_MODEL?: string;
+  /** OpenRouter model slug for the Listening Guy coach; unset disables the assistant. */
+  ASSISTANT_MODEL?: string;
 
   // Secrets (wrangler secret put ...)
   R2_ACCESS_KEY_ID: string;
@@ -18,4 +20,5 @@ export type Env = {
   REPLICATE_MODEL_VERSION: string;
   WEBHOOK_SECRET: string;
   CLASS_CODE: string;
+  OPENROUTER_API_KEY: string;
 };
