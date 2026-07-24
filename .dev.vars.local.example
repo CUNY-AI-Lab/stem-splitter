@@ -1,0 +1,9 @@
+# Safe localhost-only configuration. Copy this file to `.dev.vars`; none of
+# these placeholder values are production credentials.
+LOCAL_DEV=1
+PUBLIC_BASE_URL=http://127.0.0.1:8787
+SEPARATION_BACKEND=audio-separator
+AUDIO_SEPARATOR_URL=http://127.0.0.1:8765
+AUDIO_SEPARATOR_TOKEN=local-separator-token
+WEBHOOK_SECRET=local-webhook-secret
+CLASS_CODE=local-class-code

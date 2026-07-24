@@ -8,3 +8,11 @@ REPLICATE_MODEL_VERSION=paste-latest-version-hash-here
 WEBHOOK_SECRET=any-long-random-string
 CLASS_CODE=your-class-code
 OPENROUTER_API_KEY=sk-or-your-openrouter-key
+
+# Fully local Audio Separator + BS-RoFormer development (no production
+# credentials required). These values override wrangler.jsonc in local mode.
+# LOCAL_DEV=1
+# PUBLIC_BASE_URL=http://127.0.0.1:8787
+# SEPARATION_BACKEND=audio-separator
+# AUDIO_SEPARATOR_URL=http://127.0.0.1:8765
+# AUDIO_SEPARATOR_TOKEN=choose-a-local-service-token

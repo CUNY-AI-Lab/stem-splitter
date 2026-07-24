@@ -2,6 +2,12 @@ node_modules/
 .wrangler/
 .dev.vars
 dist/
+.uv-cache/
+local-separator/.venv/
+local-separator/.data/
+local-separator/.models/
+__pycache__/
+*.pyc
 .DS_Store
 .claude/settings.local.json
 V2.md

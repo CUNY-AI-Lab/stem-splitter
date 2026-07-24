@@ -2,7 +2,7 @@
 // synchronized stem mixer (all stems play together; per-stem mute).
 
 const POLL_INTERVAL_MS = 5000;
-const STEM_ORDER = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
+const STEM_ORDER = ['vocals', 'instrumental', 'drums', 'bass', 'other', 'guitar', 'piano'];
 
 // --- class code ---------------------------------------------------------
 
@@ -10,14 +10,55 @@ function getClassCode() {
   return localStorage.getItem('classCode') || '';
 }
 
-// Prompt-and-verify loop at page load: keeps asking until the server accepts
+const classCodeDialog = document.getElementById('class-code-dialog');
+const classCodeForm = document.getElementById('class-code-form');
+const classCodeInput = document.getElementById('class-code-input');
+const classCodeMessage = document.getElementById('class-code-message');
+const classCodeCancel = document.getElementById('class-code-cancel');
+let pendingClassCodeRequest = null;
+
+function requestClassCode(message) {
+  if (pendingClassCodeRequest) return pendingClassCodeRequest;
+
+  pendingClassCodeRequest = new Promise((resolve) => {
+    classCodeMessage.textContent = message;
+    classCodeInput.value = '';
+
+    const finish = (code) => {
+      classCodeForm.removeEventListener('submit', submit);
+      classCodeCancel.removeEventListener('click', cancel);
+      classCodeDialog.removeEventListener('cancel', cancel);
+      classCodeDialog.close();
+      pendingClassCodeRequest = null;
+      resolve(code);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      finish(classCodeInput.value.trim());
+    };
+    const cancel = (event) => {
+      event.preventDefault();
+      finish('');
+    };
+
+    classCodeForm.addEventListener('submit', submit);
+    classCodeCancel.addEventListener('click', cancel);
+    classCodeDialog.addEventListener('cancel', cancel);
+    classCodeDialog.showModal();
+    classCodeInput.focus();
+  });
+
+  return pendingClassCodeRequest;
+}
+
+// In-page verify loop at page load: keeps asking until the server accepts
 // the code, so a typo fails here instead of on the student's first upload.
 async function ensureClassCode() {
-  let promptText = 'Enter your class code:';
+  let message = 'Enter your class code to upload and split tracks.';
   for (;;) {
     let code = getClassCode();
     if (!code) {
-      code = (prompt(promptText) || '').trim();
+      code = await requestClassCode(message);
       if (!code) return; // cancelled — playback of shared links still works; writes will 401
       localStorage.setItem('classCode', code);
     }
@@ -28,7 +69,7 @@ async function ensureClassCode() {
       return; // network hiccup — don't lock anyone out; the first write re-checks anyway
     }
     localStorage.removeItem('classCode');
-    promptText = 'Invalid class code — try again:';
+    message = 'That class code was not accepted. Try again.';
   }
 }
 
@@ -43,7 +84,7 @@ async function api(path, options = {}) {
   });
   if (res.status === 401) {
     localStorage.removeItem('classCode');
-    ensureClassCode();
+    void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
@@ -84,6 +125,24 @@ const ytUrlInput = document.getElementById('yt-url');
 
 function selectedModel() {
   return document.querySelector('input[name="stem-model"]:checked')?.value || 'htdemucs_ft';
+}
+
+async function loadSeparationOptions() {
+  try {
+    const res = await fetch('/api/separation-options');
+    if (!res.ok) return;
+    const options = await res.json();
+    const allowed = new Set((options.models || []).map((model) => model.id));
+    for (const label of document.querySelectorAll('[data-model-option]')) {
+      label.hidden = !allowed.has(label.dataset.modelOption);
+    }
+    const preferred = document.querySelector(
+      `input[name="stem-model"][value="${CSS.escape(options.defaultModel || '')}"]`
+    );
+    if (preferred) preferred.checked = true;
+  } catch {
+    // Static defaults remain usable if capability discovery is unavailable.
+  }
 }
 
 dropzone.addEventListener('click', () => fileInput.click());
@@ -173,6 +232,9 @@ function putWithProgress(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
+    if (new URL(url, window.location.href).origin === window.location.origin) {
+      xhr.setRequestHeader('x-class-code', getClassCode());
+    }
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     });
@@ -747,15 +809,17 @@ function renderJobs() {
       ${
         failed
           ? `<p class="job-error">${esc(state.error || 'Something went wrong.')}</p>`
-          : `<p class="job-note">Splitting into ${
-              state.model === 'htdemucs_6s'
-                ? 'vocals / drums / bass / guitar / piano / other'
-                : 'vocals / drums / bass / other'
-            }…</p>`
+          : `<p class="job-note">Splitting into ${esc(stemDescription(state.model))}…</p>`
       }
     `;
     jobList.appendChild(li);
   }
+}
+
+function stemDescription(model) {
+  if (model === 'bs_roformer_vocals') return 'vocals / instrumental';
+  if (model === 'htdemucs_6s') return 'vocals / drums / bass / guitar / piano / other';
+  return 'vocals / drums / bass / other';
 }
 
 let pollTimer = null;
@@ -816,6 +880,7 @@ function fmt(sec) {
 
 // --- init -------------------------------------------------------------
 
-ensureClassCode();
+loadSeparationOptions();
+void ensureClassCode();
 renderJobs();
 pollActiveJobs();

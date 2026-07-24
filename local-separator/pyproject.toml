@@ -1,0 +1,8 @@
+[project]
+name = "stem-splitter-local-separator"
+version = "0.1.0"
+description = "Local Audio Separator service for the Stem Splitter development branch"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "audio-separator[cpu]==0.44.5",
+]

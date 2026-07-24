@@ -188,6 +188,50 @@ Notes:
 - Listening Guy returns a friendly 503 locally unless `OPENROUTER_API_KEY` is
   in `.dev.vars`; the mixer is unaffected either way.
 
+### Fully local Audio Separator + BS-RoFormer
+
+The `codex/local-bs-roformer` branch adds a localhost-only path that uses
+Audio Separator 0.44.5 and the pinned
+`model_bs_roformer_ep_317_sdr_12.9755.ckpt` checkpoint. Its new
+`bs_roformer_vocals` profile produces two synchronized tracks: `vocals` and
+`instrumental`. Production remains configured for Replicate unless
+`SEPARATION_BACKEND` is explicitly changed.
+The service verifies committed SHA-256 pins for both the checkpoint and its
+YAML configuration before deserializing the model.
+
+Prerequisites: Node 18+, `uv`, and FFmpeg. On Apple Silicon, Audio Separator
+uses PyTorch MPS where the model supports it. The first run creates an isolated
+Python 3.11/3.12 environment and the first separation downloads the pinned
+model, so both take longer than later runs.
+
+```sh
+cp .dev.vars.local.example .dev.vars
+npm run db:migrate:local
+```
+
+Then use separate terminals:
+
+```sh
+npm run separator:local
+npm run dev:local
+```
+
+Open `http://127.0.0.1:8787` and use class code `local-class-code`, or run the
+repeatable end-to-end check:
+
+```sh
+npm run smoke:local
+```
+
+The local mode sends uploads through the Worker into Miniflare's local R2
+binding; it never needs production R2 or Replicate credentials. The separator
+API binds to loopback, requires a bearer token, caches model weights under
+`local-separator/.models/`, and serializes inference to avoid accelerator
+memory contention. It keeps job state in memory and is an evaluation harness,
+not a production deployment. Audio Separator's code is MIT-licensed and asks
+integrators to credit UVR and its developers; review the checkpoint's
+provenance and permitted use separately before institutional production.
+
 ## Costs (rough, per class of 20 students × 100 songs)
 
 | Item | Cost |
@@ -204,8 +248,13 @@ Notes:
 Everything provider-specific is behind `SeparationBackend`
 (`src/separation/types.ts`): `start()`, `parseResult()`, `fetchStatus()`.
 
-To move to **Modal** (deploy your own Demucs container, scale-to-zero GPUs,
-likely cheaper — free monthly credits may cover a whole class):
+The local branch includes a complete `audio-separator` backend. It submits a
+source URL to the local service, accepts its webhook, and also polls as a
+reconciliation fallback. Set `SEPARATION_BACKEND=audio-separator`,
+`AUDIO_SEPARATOR_URL`, and the `AUDIO_SEPARATOR_TOKEN` secret to use it.
+
+To move instead to **Modal** (deploy your own container with scale-to-zero
+GPUs):
 
 1. Implement the Modal app + web endpoint (sketch in `src/separation/modal.ts`).
 2. Fill in `modalBackend()`.

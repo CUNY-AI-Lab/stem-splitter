@@ -4,6 +4,11 @@ import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { presignUpload, presignDownload } from './r2';
 import { getBackend, type SeparationResult } from './separation';
+import {
+  DEFAULT_DEMUCS_MODEL,
+  getSeparationOptions,
+  modelIsAllowed,
+} from './separation/options';
 import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
 import {
   AssistantError,
@@ -17,8 +22,6 @@ import {
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
-const ALLOWED_MODELS = ['htdemucs_ft', 'htdemucs_6s'];
-
 interface JobRow {
   id: string;
   filename: string;
@@ -56,6 +59,11 @@ const requireClassCode = createMiddleware<{ Bindings: Env }>(async (c, next) => 
 // on the student's first upload. Returns nothing beyond the 200/401.
 app.get('/api/auth-check', requireClassCode, (c) => c.json({ ok: true }));
 
+// The static frontend asks which profiles the configured backend can actually
+// run. In particular, Replicate must never advertise the local BS-RoFormer
+// profile even though the branched frontend knows how to display it.
+app.get('/api/separation-options', (c) => c.json(getSeparationOptions(c.env.SEPARATION_BACKEND)));
+
 // --- uploads ----------------------------------------------------------
 
 // Issue a presigned PUT so the browser uploads straight to R2.
@@ -70,8 +78,40 @@ app.post('/api/uploads', requireClassCode, async (c) => {
   }
 
   const key = `uploads/${crypto.randomUUID()}/${filename}`;
-  const uploadUrl = await presignUpload(c.env, key);
+  const uploadUrl =
+    c.env.LOCAL_DEV === '1'
+      ? `/api/local/uploads/${encodeURIComponent(key)}`
+      : await presignUpload(c.env, key);
   return c.json({ key, uploadUrl });
+});
+
+// Local-only R2 bridge. Production continues to use presigned direct-to-R2
+// uploads; this route exists solely so Miniflare's local R2 binding can take
+// part in an end-to-end localhost run.
+app.put('/api/local/uploads/*', requireClassCode, async (c) => {
+  if (c.env.LOCAL_DEV !== '1') return c.text('Not found', 404);
+  const key = localObjectKey(c.req.url, '/api/local/uploads/');
+  if (!key?.startsWith('uploads/') || !c.req.raw.body) return c.text('Bad upload', 400);
+  await c.env.AUDIO.put(key, c.req.raw.body, {
+    httpMetadata: { contentType: c.req.header('content-type') || 'application/octet-stream' },
+  });
+  return c.json({ ok: true });
+});
+
+// Token-protected source handoff for the local inference service. Originals
+// remain inaccessible through the public /api/files route.
+app.get('/api/local/source/*', async (c) => {
+  if (c.env.LOCAL_DEV !== '1') return c.text('Not found', 404);
+  if (!c.req.query('token') || c.req.query('token') !== c.env.WEBHOOK_SECRET) {
+    return c.text('Forbidden', 403);
+  }
+  const key = localObjectKey(c.req.url, '/api/local/source/');
+  if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
+  const obj = await c.env.AUDIO.get(key);
+  if (!obj) return c.text('Not found', 404);
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  return new Response(obj.body, { headers });
 });
 
 // --- jobs -------------------------------------------------------------
@@ -81,9 +121,10 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     | { key?: string; filename?: string; youtubeUrl?: string; model?: string }
     | null;
 
-  const model = body?.model ?? 'htdemucs_ft';
-  if (!ALLOWED_MODELS.includes(model)) {
-    return c.json({ error: `Unknown model. Allowed: ${ALLOWED_MODELS.join(', ')}` }, 400);
+  const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
+  const model = body?.model ?? options.defaultModel;
+  if (!modelIsAllowed(c.env.SEPARATION_BACKEND, model)) {
+    return c.json({ error: `Unknown model. Allowed: ${options.models.map((item) => item.id).join(', ')}` }, 400);
   }
 
   let key: string;
@@ -137,7 +178,10 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     .bind(id, filename, key, 'pending', model)
     .run();
 
-  const audioUrl = await presignDownload(c.env, key);
+  const audioUrl =
+    c.env.LOCAL_DEV === '1'
+      ? `${c.env.PUBLIC_BASE_URL.replace(/\/+$/, '')}/api/local/source/${encodeURIComponent(key)}?token=${encodeURIComponent(c.env.WEBHOOK_SECRET)}`
+      : await presignDownload(c.env, key);
   const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
 
   try {
@@ -394,7 +438,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     filename: row.filename,
     status: row.status,
     error: row.error,
-    model: row.model ?? 'htdemucs_ft',
+    model: row.model ?? DEFAULT_DEMUCS_MODEL,
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
     annotations: annotations.map((a) => ({ id: a.id, atSeconds: a.at_seconds, text: a.text })),
     stems,
@@ -418,4 +462,14 @@ function assistantFailure(c: Context<{ Bindings: Env }>, err: unknown) {
 function sanitizeFilename(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? '';
   return base.replace(/[^\w.\- ]+/g, '_').trim().slice(0, 120);
+}
+
+function localObjectKey(requestUrl: string, prefix: string): string | null {
+  const encoded = new URL(requestUrl).pathname.slice(prefix.length);
+  if (!encoded) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
 }

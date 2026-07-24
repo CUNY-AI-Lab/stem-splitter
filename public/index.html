@@ -15,7 +15,7 @@
 
   <main>
     <header class="masthead">
-      <p class="kicker">// up to six channels per song</p>
+      <p class="kicker">// two, four, or six channels per song</p>
       <h1>STEM<br /><span>SPLITTER</span></h1>
       <p class="tagline">Pull a song apart. Hear how it&rsquo;s built.</p>
     </header>
@@ -36,6 +36,7 @@
         <button type="submit" class="yt-go">FETCH</button>
       </form>
       <div class="stem-choice" role="radiogroup" aria-label="Stem count">
+        <label data-model-option="bs_roformer_vocals" hidden><input type="radio" name="stem-model" value="bs_roformer_vocals" /><span>2 STEMS · HQ vocals</span></label>
         <label><input type="radio" name="stem-model" value="htdemucs_ft" checked /><span>4 STEMS · cleanest</span></label>
         <label><input type="radio" name="stem-model" value="htdemucs_6s" /><span>6 STEMS · +guitar&nbsp;&amp;&nbsp;piano</span></label>
       </div>
@@ -57,9 +58,23 @@
         For coursework only. Uploads &amp; stems are wiped automatically after 30 days.
         Only upload music you&rsquo;re entitled to use for class.
       </p>
-      <p class="mono footer-sig">SEPARATION ENGINE: DEMUCS&nbsp;HTDEMUCS_FT&nbsp;/&nbsp;HTDEMUCS_6S</p>
+      <p class="mono footer-sig">SEPARATION ENGINES: BS-ROFORMER&nbsp;/&nbsp;DEMUCS</p>
     </footer>
   </main>
+
+  <dialog id="class-code-dialog" class="class-code-dialog" aria-labelledby="class-code-title">
+    <form id="class-code-form" class="class-code-form">
+      <p class="kicker">// course access</p>
+      <h2 id="class-code-title">ENTER CLASS CODE</h2>
+      <p id="class-code-message">Enter your class code to upload and split tracks.</p>
+      <label for="class-code-input">Class code</label>
+      <input id="class-code-input" type="password" autocomplete="current-password" required />
+      <div class="class-code-actions">
+        <button type="button" id="class-code-cancel" class="dialog-cancel">NOT NOW</button>
+        <button type="submit" class="yt-go">CONTINUE</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="/app.js"></script>
 </body>
