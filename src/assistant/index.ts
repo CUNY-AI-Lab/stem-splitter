@@ -2,7 +2,7 @@
 // mixer tool calls. Routes stay thin; everything provider-shaped lives here.
 import type { Env } from '../env';
 import { AssistantError, COACH_DOWN, openRouterChat } from './openrouter';
-import { buildGuideInstruction, buildSystemPrompt } from './prompt';
+import { buildGuideInstruction, buildSystemPrompt, fmtTime } from './prompt';
 import { buildMixerTools, sanitizeToolCalls } from './tools';
 import type { AssistantContext, AssistantToolCall, ChatTurn, WireMessage } from './types';
 
@@ -125,10 +125,38 @@ export async function runChat(
   const reply = await openRouterChat(env, {
     messages,
     tools: buildMixerTools(stemNames),
-    maxTokens: 400,
+    maxTokens: 600, // reasoning models spend part of the budget before the reply
     temperature: 0.7,
   });
   const toolCalls = sanitizeToolCalls(reply.toolCalls, stemNames, durationSec);
   if (!reply.content && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
-  return { reply: reply.content, toolCalls, finishReason: reply.finishReason };
+
+  // Tool-calling models often act without narrating, but the narration IS the
+  // coaching. One cheap tool-free follow-up turns the console moves into prose;
+  // if it fails, degrade to action-chips-only rather than failing the request.
+  let content = reply.content;
+  if (!content && toolCalls.length > 0) {
+    try {
+      const followUp = await openRouterChat(env, {
+        messages: [
+          ...messages,
+          { role: 'assistant', content: `[console] I just did this on the mixer: ${toolCalls.map(describeCall).join('; ')}.` },
+          { role: 'user', content: 'In one or two short sentences, tell me what you just did and what I should listen for.' },
+        ],
+        maxTokens: 300,
+        temperature: 0.7,
+      });
+      content = followUp.content;
+    } catch (err) {
+      console.error('narration follow-up failed', err);
+    }
+  }
+  return { reply: content, toolCalls, finishReason: reply.finishReason };
+}
+
+function describeCall({ name, args }: AssistantToolCall): string {
+  if (name === 'solo') return `soloed the "${String(args.stem)}" channel`;
+  if (name === 'set_mute') return `${args.muted ? 'muted' : 'unmuted'} the "${String(args.stem)}" channel`;
+  if (name === 'seek') return `jumped playback to ${fmtTime(Number(args.seconds))}`;
+  return `pinned a class note at ${fmtTime(Number(args.seconds))}`;
 }

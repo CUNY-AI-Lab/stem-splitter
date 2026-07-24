@@ -13,9 +13,9 @@ export function buildSystemPrompt(ctx: AssistantContext): string {
     .map((s) => (s.label === s.name ? s.name : `${s.name} → "${s.label}"`))
     .join(', ');
   const notes = ctx.annotations.length
-    ? ctx.annotations.map((a) => `- [${fmt(a.atSeconds)}] "${a.text}"`).join('\n')
+    ? ctx.annotations.map((a) => `- [${fmtTime(a.atSeconds)}] "${a.text}"`).join('\n')
     : 'none yet';
-  const duration = ctx.durationSec ? fmt(ctx.durationSec) : 'unknown';
+  const duration = ctx.durationSec ? fmtTime(ctx.durationSec) : 'unknown';
 
   const modeBlock =
     ctx.mode === 'guide'
@@ -110,7 +110,7 @@ export function buildGuideInstruction(): string {
   return 'Write the listening guide for this song now.';
 }
 
-function fmt(sec: number): string {
+export function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
