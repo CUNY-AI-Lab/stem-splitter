@@ -4,6 +4,7 @@
 #   ./scripts/smoke.sh                  # free checks only (no predictions created)
 #   ./scripts/smoke.sh <job-id>         # + labels/annotations round-trip on a done job
 #   ./scripts/smoke.sh --full           # + real YouTube import → 6 stems (~$0.06, ~2 min)
+#   SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>   # + listening-guy guide/chat checks (<1¢)
 #
 # Class code comes from $CLASS_CODE (required — never hardcode it here).
 
@@ -48,6 +49,12 @@ check "uploads/ keys never served → 404" 404 \
 check "unknown job → 404" 404 \
   "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/jobs/00000000-0000-0000-0000-000000000000")"
 
+check "guide without class code → 401" 401 \
+  "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/jobs/00000000-0000-0000-0000-000000000000/guide" -H 'content-type: application/json' -d '{}')"
+
+check "guide on unknown job → 404" 404 \
+  "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/jobs/00000000-0000-0000-0000-000000000000/guide" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{}')"
+
 if [ -n "$JOB_ID" ]; then
   echo "== round-trip checks on job $JOB_ID =="
   STATUS=$(curl -sS "$BASE/api/jobs/$JOB_ID" | json "['status']")
@@ -69,6 +76,28 @@ if [ -n "$JOB_ID" ]; then
   STEM_URL=$(curl -sS "$BASE/api/jobs/$JOB_ID" | json "['stems'][0]['url']")
   check "stem serves as audio" audio/mpeg \
     "$(curl -sS -o /dev/null -w '%{content_type}' "$BASE$STEM_URL")"
+
+  check "chat with empty messages → 400" 400 \
+    "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/jobs/$JOB_ID/chat" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{"messages":[]}')"
+fi
+
+if [ "${SMOKE_ASSISTANT:-0}" = 1 ] && [ -n "$JOB_ID" ]; then
+  echo "== listening-guy checks on job $JOB_ID (one guide + one chat, <1¢) =="
+  G=$(mktemp)
+  GCODE=$(curl -sS -o "$G" -w '%{http_code}' -m 120 -X POST "$BASE/api/jobs/$JOB_ID/guide" \
+    -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{}')
+  if [ "$GCODE" = "503" ]; then
+    echo "  skip  assistant not configured on this deployment (503)"
+  else
+    check "guide endpoint → 200" 200 "$GCODE"
+    check "guide has text" 1 "$(json "['guide']['text']" <"$G" | grep -q . && echo 1 || echo 0)"
+    check "second guide call cached" True \
+      "$(curl -sS -m 30 -X POST "$BASE/api/jobs/$JOB_ID/guide" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{}' | json "['cached']")"
+    check "chat replies" 1 \
+      "$(curl -sS -m 120 -X POST "$BASE/api/jobs/$JOB_ID/chat" -H 'content-type: application/json' -H "x-class-code: $CODE" \
+        -d '{"messages":[{"role":"user","content":"One short sentence: what should I listen for in the bass?"}]}' | json "['reply']" | grep -q . && echo 1 || echo 0)"
+  fi
+  rm -f "$G"
 fi
 
 if [ "$FULL" = 1 ]; then

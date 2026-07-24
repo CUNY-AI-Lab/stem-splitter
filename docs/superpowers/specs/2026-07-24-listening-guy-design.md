@@ -28,6 +28,9 @@ Two surfaces:
   actions with no informational return; the always-narrate prompt rule keeps
   resent history coherent.
 - Per-student identity (unchanged from v1).
+- Auto-picking 4 vs 6 stems from title/genre at submission (pre-flight
+  classification) — a clean follow-up that reuses `openRouterChat`; the radio
+  buttons would become an override rather than a requirement.
 
 ## 1. Provider: OpenRouter via plain fetch
 
