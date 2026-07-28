@@ -11,6 +11,7 @@ Stem-separation web app for music students (~20 students × 100 songs/semester).
 ```sh
 npm run typecheck         # tsc --noEmit (no unit tests; this is the static check)
 CLASS_CODE=<code> ./scripts/smoke.sh   # free API smoke checks against the deployed Worker (code required)
+npm run test:e2e          # real-WAV browser flow with local D1/R2 + mocked Replicate
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
 SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>  # + listening-guy guide/chat live checks (<1¢)
@@ -27,7 +28,7 @@ npx wrangler deploy --dry-run --outdir dist   # validate config/bundle without d
 Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R2 for audio, an external GPU provider for the actual separation.
 
 **Request flow:**
-1. Browser asks `POST /api/uploads` → Worker returns a **presigned R2 PUT URL** (`src/r2.ts`, aws4fetch). Audio bytes never pass through the Worker — this is deliberate (Worker body-size limits, bandwidth). Don't "simplify" uploads into the Worker.
+1. Browser asks `POST /api/uploads` → Worker returns a **presigned R2 PUT URL** (`src/r2.ts`, aws4fetch). In production, audio bytes never pass through the Worker — this is deliberate (Worker body-size limits, bandwidth). The explicit `LOCAL_HOSTING=true` path is the exception: it accepts same-origin, fixed-length browser uploads into simulated R2.
 2. `POST /api/jobs` → row in D1 (`schema.sql`), then `SeparationBackend.start()` with a presigned GET to the source and a webhook URL containing `?job=<id>&token=<WEBHOOK_SECRET>`. Body carries `model` (`htdemucs_ft` = 4 stems, default; `htdemucs_6s` = +guitar/piano), validated against an allowlist and threaded through `SeparationStartRequest`.
 2b. **YouTube import:** `POST /api/jobs` with `{ youtubeUrl }` instead of `{ key, filename }` fetches the audio (`src/youtube.ts`, behind the `fetchYouTubeAudio()` seam), stores it at `uploads/<uuid>/source.m4a`, then proceeds like a normal job. 15-min cap, no live streams; the job row is created only after audio lands in R2, so failed fetches never leave stuck jobs. Two fetchers behind the seam: a free in-Worker `youtubei.js` attempt (currently always bot-checked — YouTube blocks Cloudflare egress IPs), then a **Replicate-hosted yt-dlp model** (`replicate-yt-audio/`, deployed as the `REPLICATE_YT_MODEL` var, ~$0.01/fetch) which works. The Replicate backend retries 429s because a YouTube import creates two predictions back-to-back and low-credit accounts (<$5) are limited to a burst of 1 — keep the account topped up.
 3. Provider POSTs to `/api/webhooks/separation` on completion → Worker downloads stems from provider, stores as `stems/<jobId>/<name>.mp3` in R2, flips D1 row to `done`.
@@ -50,11 +51,12 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 ## Local dev
 
-`npm run dev` uses `--remote` on purpose: presigned URLs always point at the **real** R2 bucket, so the local bucket simulator would never see uploads. End-to-end behavior (incl. webhooks) is only fully testable on the deployed Worker; locally, jobs complete via the polling reconciliation path instead of webhooks. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected). Fresh-clone deploys (wrangler login, setting all seven secrets) and from-scratch provisioning are in README.md.
+`npm run dev` uses `--remote` on purpose: presigned URLs point at the **real** R2 bucket. The `LOCAL_DEV=1` Audio Separator path and Funnel-backed `LOCAL_HOSTING=true` path instead use simulated D1/R2. Both local modes stream only fixed-length uploads, HMAC-sign temporary source URLs, and perform hourly 30-day cleanup. `npm run test:e2e` covers the complete browser/upload/job/poll/stem flow with the on-disk WAV/MP3 fixtures in `tests/fixtures/audio` and a mocked Replicate boundary. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected).
 
 ## Operational invariants
 
 - The R2 bucket `stem-splitter-audio` has a **30-day auto-delete lifecycle rule** — this is the copyright/retention mitigation, not an optimization. Keep it; (re)apply with `npx wrangler r2 bucket lifecycle add stem-splitter-audio --expire-days 30`.
+- Simulated local R2 must preserve the same boundary: expired objects are rejected on read and local API traffic runs hourly cleanup, including catch-up after restart.
 - Bucket CORS (`cors.json`, note the `{"rules": [...]}` wrapper R2 requires) allows direct browser PUTs; needed for presigned uploads to work. (Re)apply with `npx wrangler r2 bucket cors set stem-splitter-audio --file cors.json`.
 - Stems are MP3 (192 kbps), not WAV — keeps storage ~10× smaller.
 - Stem URLs are unauthenticated but unguessable (UUID job ids) so `<audio>` tags work without headers. Accepted trade-off for class scale.

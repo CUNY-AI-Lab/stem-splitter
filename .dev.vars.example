@@ -16,3 +16,8 @@ OPENROUTER_API_KEY=sk-or-your-openrouter-key
 # SEPARATION_BACKEND=audio-separator
 # AUDIO_SEPARATOR_URL=http://127.0.0.1:8765
 # AUDIO_SEPARATOR_TOKEN=choose-a-local-service-token
+
+# For simulated local D1/R2 behind Tailscale Funnel, pass these as Wrangler
+# --var flags so they cannot be enabled accidentally:
+# LOCAL_HOSTING=true
+# PUBLIC_BASE_URL=https://your-funnel-host.example

@@ -20,8 +20,10 @@ D1, shared class-wide.
 - The separation provider lives behind one interface
   (`src/separation/types.ts`) — swap in Modal/RunPod/self-hosted Demucs later
   by implementing it and flipping `SEPARATION_BACKEND`.
-- Audio bytes never flow through the Worker on upload (presigned PUT direct to
-  R2), so there are no Worker body-size issues.
+- In production, audio bytes never flow through the Worker on upload
+  (presigned PUT direct to R2), so there are no Worker body-size issues. The
+  explicit local-hosting modes stream browser uploads through the local Worker
+  into simulated R2 with fixed-length enforcement.
 - The AI coach is provider-light too: plain `fetch` to OpenRouter, model set by
   the `ASSISTANT_MODEL` var — swap to any cheap tool-calling model with a var
   change and a redeploy. If the provider is down or unconfigured, students see
@@ -32,7 +34,7 @@ src/
   index.ts              Worker: uploads, jobs, webhook, labels/annotations,
                         listening-guy guide+chat, file serving
   env.ts                Bindings/vars/secrets types
-  r2.ts                 Presigned URL helpers (aws4fetch)
+  r2.ts                 Presigned URLs + local retention enforcement
   youtube.ts            YouTube audio fetch (youtubei.js + Replicate yt-dlp fallback)
   assistant/            Listening Guy: OpenRouter client, mixer tool schemas,
                         system prompt (prompt.ts), guide/chat orchestrators
@@ -172,6 +174,8 @@ once more (Replicate posts completion webhooks to this URL).
 
 ## Local development
 
+Production-backed development still uses the real R2 bucket:
+
 ```sh
 cp .dev.vars.example .dev.vars   # fill in real values
 npm run dev                      # wrangler dev --remote
@@ -231,6 +235,38 @@ memory contention. It keeps job state in memory and is an evaluation harness,
 not a production deployment. Audio Separator's code is MIT-licensed and asks
 integrators to credit UVR and its developers; review the checkpoint's
 provenance and permitted use separately before institutional production.
+
+For a Funnel-accessible Worker with simulated D1/R2, set the public URL to the
+Funnel hostname and opt into local hosting explicitly:
+
+```sh
+npx wrangler dev --local --port 8080 \
+  --var LOCAL_HOSTING:true \
+  --var PUBLIC_BASE_URL:https://your-funnel-host.example
+```
+
+Local uploads require a valid `Content-Length` and stream directly into
+Miniflare R2; normal browser file uploads provide it. Chunked uploads are
+rejected before their body is read. Because Miniflare does not inherit the
+production bucket lifecycle, the Worker deletes local uploads and stems older
+than 30 days during hourly API maintenance and rejects expired objects on
+access. If the local Worker was offline, its first API request after restart
+catches up the cleanup.
+
+## End-to-end tests
+
+```sh
+npm run test:e2e
+```
+
+The Playwright suite starts a real Wrangler test-harness Worker with isolated
+Miniflare D1/R2. Chrome selects and uploads the on-disk PCM WAV fixture in
+`tests/fixtures/audio`; the mocked provider returns four on-disk MP3 fixtures.
+The suite verifies the signed source and stored stem bytes exactly. Only the
+paid Replicate boundary is mocked, so the suite is repeatable, offline, and
+incurs no GPU cost. It also checks that chunked and oversized uploads are
+rejected before their bodies are stored, length-mismatched objects are removed,
+and both uploads and stems are deleted at the local 30-day retention boundary.
 
 ## Costs (rough, per class of 20 students × 100 songs)
 

@@ -1,0 +1,83 @@
+{
+  "caseSlug": "6-stem-cc0-piano-guitar",
+  "model": "htdemucs_6s",
+  "expectedStems": [
+    "vocals",
+    "drums",
+    "bass",
+    "guitar",
+    "piano",
+    "other"
+  ],
+  "renderedStems": [
+    "vocals",
+    "drums",
+    "bass",
+    "other",
+    "guitar",
+    "piano"
+  ],
+  "jobId": "27e5e157-06f7-466f-aa6f-44c9cef465d7",
+  "source": {
+    "filename": "jazz-piano-guitar-45s.flac",
+    "bytes": 8085030,
+    "sha256": "1e0139481b0960925a1e9e38eb11016c801bb7e1afffc81a7268e8c5e30ac1d6"
+  },
+  "elapsedSeconds": 10.704,
+  "durations": [
+    45,
+    45,
+    45,
+    45,
+    45,
+    45
+  ],
+  "downloads": [
+    {
+      "stem": "vocals",
+      "filename": "vocals.mp3",
+      "bytes": 1081513,
+      "sha256": "a0911b22092b6ab6571036370b2e2a151d7100a8d91c40921ae56fd4616c7fe4"
+    },
+    {
+      "stem": "drums",
+      "filename": "drums.mp3",
+      "bytes": 1081513,
+      "sha256": "f031528fb0c7c284687ef0c91489925525ab1073aace5c3bc657b663c46d7e59"
+    },
+    {
+      "stem": "bass",
+      "filename": "bass.mp3",
+      "bytes": 1081513,
+      "sha256": "72b373e1a53d14a4be5726768c92e85fc35019f114e377c35e9530cdfc5ca1c4"
+    },
+    {
+      "stem": "other",
+      "filename": "other.mp3",
+      "bytes": 1081513,
+      "sha256": "28d5a33e7b3704913290f3269c7ee59322b61f3ed34e3bdd345756f032b05de8"
+    },
+    {
+      "stem": "guitar",
+      "filename": "guitar.mp3",
+      "bytes": 1081513,
+      "sha256": "3177256a8291d174db7fd7368b6a9b88b465df207bdeeb0f9f44a4a7d5f22192"
+    },
+    {
+      "stem": "piano",
+      "filename": "piano.mp3",
+      "bytes": 1081513,
+      "sha256": "f89260f2d54a8e3efae486ab5789cec3ec871e494a86bd3c51f662133fb3fdf0"
+    }
+  ],
+  "browserMessages": [],
+  "screenshots": {
+    "processing": "01-processing.png",
+    "ready": "02-ready.png",
+    "playing": "03-playing.png",
+    "muted": "04-vocals-muted.png",
+    "annotated": "05-annotated-renamed.png",
+    "persisted": "06-persisted-after-reload.png"
+  },
+  "completedAt": "2026-07-28T07:44:08.717Z"
+}

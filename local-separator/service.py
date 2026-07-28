@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -273,9 +274,19 @@ def post_webhook(url: str, payload: dict[str, object]) -> None:
         with urlopen(request, timeout=15) as response:
             if response.status >= 300:
                 LOG.warning("webhook returned HTTP %s", response.status)
-    except (HTTPError, URLError):
-        # Polling is the durable fallback, so a localhost race is harmless.
-        LOG.warning("webhook delivery failed; the Worker can reconcile by polling")
+    except HTTPError as exc:
+        detail = exc.read(500).decode(errors="replace").strip()
+        suffix = f": {detail}" if detail else ""
+        LOG.warning(
+            "webhook delivery failed with HTTP %s%s; the Worker can reconcile by polling",
+            exc.code,
+            suffix,
+        )
+    except URLError as exc:
+        LOG.warning(
+            "webhook delivery failed (%s); the Worker can reconcile by polling",
+            exc.reason,
+        )
 
 
 class AppServer(ThreadingHTTPServer):
@@ -417,12 +428,17 @@ def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     app, server = build_app(args.host, args.port)
     LOG.info("Audio Separator service listening on http://%s:%s", args.host, args.port)
+
+    def stop_server(_signum: int, _frame: object) -> None:
+        # BaseServer.shutdown() must run on a different thread from
+        # serve_forever(), including when a test runner sends SIGTERM.
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGINT, stop_server)
+    signal.signal(signal.SIGTERM, stop_server)
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
-        pass
     finally:
-        server.shutdown()
         server.server_close()
         app.close()
 

@@ -2,7 +2,14 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
-import { presignUpload, presignDownload } from './r2';
+import {
+  getRetainedAudio,
+  isLocalHosting,
+  maintainLocalAudioRetention,
+  presignUpload,
+  presignDownload,
+  verifyLocalSource,
+} from './r2';
 import { getBackend, type SeparationResult } from './separation';
 import {
   DEFAULT_DEMUCS_MODEL,
@@ -22,6 +29,8 @@ import {
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
+const INGEST_LEASE_PREFIX = 'ingesting:';
+const INGEST_LEASE_MS = 5 * 60 * 1000;
 interface JobRow {
   id: string;
   filename: string;
@@ -44,6 +53,20 @@ interface AnnotationRow {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Miniflare does not inherit the production R2 bucket lifecycle. Fail closed
+// if local retention maintenance cannot run, rather than accumulating audio.
+app.use('/api/*', async (c, next) => {
+  if (isLocalHosting(c.env)) {
+    try {
+      await maintainLocalAudioRetention(c.env);
+    } catch (error) {
+      console.error('local audio retention cleanup failed', error);
+      return c.json({ error: 'Local audio storage maintenance failed' }, 503);
+    }
+  }
+  await next();
+});
 
 // --- auth -------------------------------------------------------------
 
@@ -78,39 +101,60 @@ app.post('/api/uploads', requireClassCode, async (c) => {
   }
 
   const key = `uploads/${crypto.randomUUID()}/${filename}`;
-  const uploadUrl =
-    c.env.LOCAL_DEV === '1'
-      ? `/api/local/uploads/${encodeURIComponent(key)}`
-      : await presignUpload(c.env, key);
+  const uploadUrl = await presignUpload(c.env, key);
   return c.json({ key, uploadUrl });
 });
 
-// Local-only R2 bridge. Production continues to use presigned direct-to-R2
-// uploads; this route exists solely so Miniflare's local R2 binding can take
-// part in an end-to-end localhost run.
-app.put('/api/local/uploads/*', requireClassCode, async (c) => {
-  if (c.env.LOCAL_DEV !== '1') return c.text('Not found', 404);
-  const key = localObjectKey(c.req.url, '/api/local/uploads/');
-  if (!key?.startsWith('uploads/') || !c.req.raw.body) return c.text('Bad upload', 400);
+// Local Miniflare R2 cannot issue S3 presigned URLs. When explicitly running
+// behind Tailscale Funnel, accept same-origin uploads into the simulated bucket.
+app.put('/api/local-uploads/*', requireClassCode, async (c) => {
+  if (!isLocalHosting(c.env)) return c.text('Not found', 404);
+  const key = localObjectKey(c.req.url, '/api/local-uploads/');
+  if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
+
+  const contentLength = c.req.header('content-length');
+  if (!contentLength) {
+    return c.json({ error: 'Content-Length is required for local uploads' }, 411);
+  }
+  if (!/^\d+$/.test(contentLength)) {
+    return c.json({ error: 'Invalid Content-Length' }, 400);
+  }
+  const declaredSize = Number(contentLength);
+  if (!Number.isSafeInteger(declaredSize) || declaredSize <= 0) {
+    return c.json({ error: 'Invalid Content-Length' }, 400);
+  }
+  if (declaredSize > MAX_SOURCE_BYTES) {
+    return c.json({ error: 'File too large (max 100 MB)' }, 413);
+  }
+  if (!c.req.raw.body) return c.json({ error: 'Upload body is required' }, 400);
+
   await c.env.AUDIO.put(key, c.req.raw.body, {
     httpMetadata: { contentType: c.req.header('content-type') || 'application/octet-stream' },
   });
-  return c.json({ ok: true });
+  const stored = await c.env.AUDIO.head(key);
+  if (!stored || stored.size !== declaredSize) {
+    await c.env.AUDIO.delete(key);
+    return c.json({ error: 'Upload size did not match Content-Length' }, 400);
+  }
+  return c.body(null, 204);
 });
 
-// Token-protected source handoff for the local inference service. Originals
-// remain inaccessible through the public /api/files route.
-app.get('/api/local/source/*', async (c) => {
-  if (c.env.LOCAL_DEV !== '1') return c.text('Not found', 404);
-  if (!c.req.query('token') || c.req.query('token') !== c.env.WEBHOOK_SECRET) {
+// Replicate needs a public URL for locally stored source audio. The URL is
+// short-lived and HMAC-signed so uploaded originals are not generally exposed.
+app.get('/api/local-sources/*', async (c) => {
+  if (!isLocalHosting(c.env)) return c.text('Not found', 404);
+  const key = localObjectKey(c.req.url, '/api/local-sources/');
+  if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
+  if (!(await verifyLocalSource(c.env, key, c.req.query('expires'), c.req.query('signature')))) {
     return c.text('Forbidden', 403);
   }
-  const key = localObjectKey(c.req.url, '/api/local/source/');
-  if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
-  const obj = await c.env.AUDIO.get(key);
+
+  const obj = await getRetainedAudio(c.env, key);
   if (!obj) return c.text('Not found', 404);
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
+  headers.set('Content-Length', String(obj.size));
+  headers.set('Cache-Control', 'private, no-store');
   return new Response(obj.body, { headers });
 });
 
@@ -178,10 +222,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     .bind(id, filename, key, 'pending', model)
     .run();
 
-  const audioUrl =
-    c.env.LOCAL_DEV === '1'
-      ? `${c.env.PUBLIC_BASE_URL.replace(/\/+$/, '')}/api/local/source/${encodeURIComponent(key)}?token=${encodeURIComponent(c.env.WEBHOOK_SECRET)}`
-      : await presignDownload(c.env, key);
+  const audioUrl = await presignDownload(c.env, key);
   const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
 
   try {
@@ -197,13 +238,24 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     return c.json({ error: `Failed to start separation: ${message}` }, 502);
   }
 
-  return c.json({ id, status: 'processing', filename });
+  return c.json({ id, status: 'processing', filename, model });
 });
 
 app.get('/api/jobs/:id', async (c) => {
   const id = c.req.param('id');
   let row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
+
+  // A Worker termination can strand an ingestion claim. Re-open only expired
+  // leases; active winners keep exclusive ownership.
+  if (row.status === 'ingesting' && ingestLeaseExpired(row.error)) {
+    await c.env.DB.prepare(
+      "UPDATE jobs SET status = 'processing', error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
+    )
+      .bind(id, row.error)
+      .run();
+    row = (await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>())!;
+  }
 
   // Reconciliation fallback: if we're still 'processing', poll the provider
   // directly in case the completion webhook was missed (also makes local
@@ -372,15 +424,16 @@ app.post('/api/webhooks/separation', async (c) => {
 // --- stem file serving ------------------------------------------------
 
 app.get('/api/files/*', async (c) => {
-  const key = decodeURIComponent(new URL(c.req.url).pathname.slice('/api/files/'.length));
+  const key = localObjectKey(c.req.url, '/api/files/');
   // Only serve generated stems, never uploaded originals.
-  if (!key.startsWith('stems/')) return c.text('Not found', 404);
+  if (!key?.startsWith('stems/')) return c.text('Not found', 404);
 
-  const obj = await c.env.AUDIO.get(key);
+  const obj = await getRetainedAudio(c.env, key);
   if (!obj) return c.text('Not found', 404);
 
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
+  headers.set('Content-Length', String(obj.size));
   headers.set('Cache-Control', 'private, max-age=3600');
   if (c.req.query('download') !== undefined) {
     headers.set('Content-Disposition', `attachment; filename="${key.split('/').pop()}"`);
@@ -396,34 +449,108 @@ export default app;
 
 /** Download finished stems from the provider and store them in R2. */
 async function ingestResult(env: Env, jobId: string, result: SeparationResult): Promise<void> {
-  if (result.status === 'failed') {
-    await env.DB.prepare('UPDATE jobs SET status = ?, error = ? WHERE id = ?')
-      .bind('failed', result.error ?? 'Separation failed', jobId)
-      .run();
-    return;
-  }
-  if (result.status !== 'succeeded') return;
-  if (!result.stems?.length) {
-    await env.DB.prepare('UPDATE jobs SET status = ?, error = ? WHERE id = ?')
-      .bind('failed', 'Separation succeeded but returned no stems', jobId)
-      .run();
-    return;
-  }
+  if (result.status !== 'failed' && result.status !== 'succeeded') return;
 
-  const stored: { name: string; key: string }[] = [];
-  for (const stem of result.stems) {
-    const res = await fetch(stem.url);
-    if (!res.ok) throw new Error(`Failed to download stem "${stem.name}" (${res.status})`);
-    const key = `stems/${jobId}/${stem.name}.mp3`;
-    await env.AUDIO.put(key, await res.arrayBuffer(), {
-      httpMetadata: { contentType: 'audio/mpeg' },
-    });
-    stored.push({ name: stem.name, key });
-  }
-
-  await env.DB.prepare('UPDATE jobs SET status = ?, stems = ? WHERE id = ?')
-    .bind('done', JSON.stringify(stored), jobId)
+  // A webhook and a browser poll can observe the same terminal provider state
+  // concurrently. Claim ingestion atomically so stems are downloaded exactly
+  // once and the losing path can return successfully without racing R2 writes.
+  // Store a private lease marker in the otherwise-unused active-job error field
+  // so a later poll can recover if this Worker dies before releasing the claim.
+  const lease = `${INGEST_LEASE_PREFIX}${Date.now()}:${crypto.randomUUID()}`;
+  const claim = await env.DB.prepare(
+    "UPDATE jobs SET status = 'ingesting', error = ? WHERE id = ? AND status = 'processing'"
+  )
+    .bind(lease, jobId)
     .run();
+  if (!claim.meta.changes) return;
+
+  try {
+    if (result.status === 'failed') {
+      await env.DB.prepare(
+        "UPDATE jobs SET status = ?, error = ? WHERE id = ? AND status = 'ingesting' AND error = ?"
+      )
+        .bind('failed', result.error ?? 'Separation failed', jobId, lease)
+        .run();
+      return;
+    }
+    if (!result.stems?.length) {
+      await env.DB.prepare(
+        "UPDATE jobs SET status = ?, error = ? WHERE id = ? AND status = 'ingesting' AND error = ?"
+      )
+        .bind('failed', 'Separation succeeded but returned no stems', jobId, lease)
+        .run();
+      return;
+    }
+
+    const stored: { name: string; key: string }[] = [];
+    for (const stem of result.stems) {
+      const audio = await downloadStem(stem.name, stem.url);
+      const key = `stems/${jobId}/${stem.name}.mp3`;
+      await env.AUDIO.put(key, audio, {
+        httpMetadata: { contentType: 'audio/mpeg' },
+      });
+      stored.push({ name: stem.name, key });
+    }
+
+    await env.DB.prepare(
+      "UPDATE jobs SET status = ?, stems = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
+    )
+      .bind('done', JSON.stringify(stored), jobId, lease)
+      .run();
+  } catch (error) {
+    // Let a provider retry or the next browser poll make another attempt.
+    await env.DB.prepare(
+      "UPDATE jobs SET status = 'processing', error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
+    )
+      .bind(jobId, lease)
+      .run();
+    throw error;
+  }
+}
+
+async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error(`Failed to download stem "${name}"`);
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+      }
+      continue;
+    }
+
+    if (response.ok) {
+      try {
+        return await response.arrayBuffer();
+      } catch (error) {
+        lastError =
+          error instanceof Error
+            ? error
+            : new Error(`Failed to read stem "${name}"`);
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+        }
+        continue;
+      }
+    }
+
+    lastError = new Error(`Failed to download stem "${name}" (${response.status})`);
+    await response.body?.cancel().catch(() => {});
+    if (response.status !== 429 && response.status < 500) throw lastError;
+
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+    }
+  }
+
+  throw lastError ?? new Error(`Failed to download stem "${name}"`);
 }
 
 function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null) {
@@ -437,7 +564,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     id: row.id,
     filename: row.filename,
     status: row.status,
-    error: row.error,
+    error: row.status === 'failed' ? row.error : null,
     model: row.model ?? DEFAULT_DEMUCS_MODEL,
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
     annotations: annotations.map((a) => ({ id: a.id, atSeconds: a.at_seconds, text: a.text })),
@@ -445,6 +572,12 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     guide,
     createdAt: row.created_at,
   };
+}
+
+function ingestLeaseExpired(value: string | null): boolean {
+  if (!value?.startsWith(INGEST_LEASE_PREFIX)) return false;
+  const startedAt = Number(value.slice(INGEST_LEASE_PREFIX.length).split(':', 1)[0]);
+  return Number.isFinite(startedAt) && Date.now() - startedAt >= INGEST_LEASE_MS;
 }
 
 /** Client-supplied advisory duration; the browser is the only reliable source. */

@@ -77,6 +77,17 @@ class ServiceContractTest(unittest.TestCase):
         )
         self.assertEqual(MODEL_STEMS["bs_roformer_vocals"], ("vocals", "instrumental"))
 
+    def test_all_advertised_profiles_have_exact_stem_contracts(self) -> None:
+        self.assertEqual(set(MODEL_FILES), set(MODEL_STEMS))
+        self.assertEqual(
+            MODEL_STEMS,
+            {
+                "bs_roformer_vocals": ("vocals", "instrumental"),
+                "htdemucs_ft": ("vocals", "drums", "bass", "other"),
+                "htdemucs_6s": ("vocals", "drums", "bass", "guitar", "piano", "other"),
+            },
+        )
+
     def test_checksum_verification_rejects_changed_model_bytes(self) -> None:
         path = Path(self.temp.name) / "fixture.ckpt"
         path.write_bytes(b"known model bytes")

@@ -108,7 +108,7 @@ function saveJobs(jobs) {
 
 function addJob(job) {
   const jobs = getJobs();
-  jobs.unshift({ id: job.id, filename: job.filename });
+  jobs.unshift({ id: job.id, filename: job.filename, model: job.model });
   saveJobs(jobs.slice(0, 50));
 }
 
@@ -786,7 +786,11 @@ function renderJobs() {
   jobList.innerHTML = '';
 
   for (const job of jobs) {
-    const state = jobStates.get(job.id) || { status: 'processing', stems: [] };
+    const state = jobStates.get(job.id) || {
+      status: 'processing',
+      stems: [],
+      model: job.model,
+    };
 
     if (state.status === 'done' && state.stems?.length) {
       let mixer = mixers.get(job.id);
@@ -848,6 +852,13 @@ async function pollActiveJobs() {
   }
 
   renderJobs();
+  const states = jobs.map((job) => jobStates.get(job.id));
+  if (
+    states.length > 0 &&
+    states.every((state) => state?.status === 'done')
+  ) {
+    uploadStatus.hidden = true;
+  }
   if (anyActive) pollSoon();
 }
 
