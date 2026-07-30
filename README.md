@@ -20,8 +20,10 @@ D1, shared class-wide.
 - The separation provider lives behind one interface
   (`src/separation/types.ts`) — swap in Modal/RunPod/self-hosted Demucs later
   by implementing it and flipping `SEPARATION_BACKEND`.
-- Audio bytes never flow through the Worker on upload (presigned PUT direct to
-  R2), so there are no Worker body-size issues.
+- In production, audio bytes never flow through the Worker on upload
+  (presigned PUT direct to R2), so there are no Worker body-size issues. The
+  explicit local-hosting modes stream browser uploads through the local Worker
+  into simulated R2 with fixed-length enforcement.
 - The AI coach is provider-light too: plain `fetch` to OpenRouter, model set by
   the `ASSISTANT_MODEL` var — swap to any cheap tool-calling model with a var
   change and a redeploy. If the provider is down or unconfigured, students see
@@ -32,7 +34,7 @@ src/
   index.ts              Worker: uploads, jobs, webhook, labels/annotations,
                         listening-guy guide+chat, file serving
   env.ts                Bindings/vars/secrets types
-  r2.ts                 Presigned URL helpers (aws4fetch)
+  r2.ts                 Presigned URLs + local retention enforcement
   youtube.ts            YouTube audio fetch (youtubei.js + Replicate yt-dlp fallback)
   assistant/            Listening Guy: OpenRouter client, mixer tool schemas,
                         system prompt (prompt.ts), guide/chat orchestrators
@@ -172,6 +174,8 @@ once more (Replicate posts completion webhooks to this URL).
 
 ## Local development
 
+Production-backed development still uses the real R2 bucket:
+
 ```sh
 cp .dev.vars.example .dev.vars   # fill in real values
 npm run dev                      # wrangler dev --remote
@@ -187,6 +191,84 @@ Notes:
   poll cadence.
 - Listening Guy returns a friendly 503 locally unless `OPENROUTER_API_KEY` is
   in `.dev.vars`; the mixer is unaffected either way.
+
+### Fully local Audio Separator + BS-RoFormer
+
+The `codex/local-bs-roformer` branch adds a localhost-only path that uses
+Audio Separator 0.44.5 and the pinned
+`model_bs_roformer_ep_317_sdr_12.9755.ckpt` checkpoint. Its new
+`bs_roformer_vocals` profile produces two synchronized tracks: `vocals` and
+`instrumental`. Production remains configured for Replicate unless
+`SEPARATION_BACKEND` is explicitly changed.
+The service verifies committed SHA-256 pins for both the checkpoint and its
+YAML configuration before deserializing the model.
+
+Prerequisites: Node 18+, `uv`, and FFmpeg. On Apple Silicon, Audio Separator
+uses PyTorch MPS where the model supports it. The first run creates an isolated
+Python 3.11/3.12 environment and the first separation downloads the pinned
+model, so both take longer than later runs.
+
+```sh
+cp .dev.vars.local.example .dev.vars
+npm run db:migrate:local
+```
+
+Then use separate terminals:
+
+```sh
+npm run separator:local
+npm run dev:local
+```
+
+Open `http://127.0.0.1:8787` and use class code `local-class-code`, or run the
+repeatable end-to-end check:
+
+```sh
+npm run smoke:local
+```
+
+The local mode sends uploads through the Worker into Miniflare's local R2
+binding; it never needs production R2 or Replicate credentials. The separator
+API binds to loopback, requires a bearer token, caches model weights under
+`local-separator/.models/`, and serializes inference to avoid accelerator
+memory contention. It keeps job state in memory and is an evaluation harness,
+not a production deployment. Audio Separator's code is MIT-licensed and asks
+integrators to credit UVR and its developers; review the checkpoint's
+provenance and permitted use separately before institutional production.
+
+For a Funnel-accessible Worker with simulated D1/R2, set the public URL to the
+Funnel hostname and opt into local hosting explicitly:
+
+```sh
+npx wrangler dev --local --port 8080 \
+  --var LOCAL_HOSTING:true \
+  --var PUBLIC_BASE_URL:https://your-funnel-host.example
+```
+
+Local uploads require a valid `Content-Length` and stream directly into
+Miniflare R2; normal browser file uploads provide it. Chunked uploads are
+rejected before their body is read. Because Miniflare does not inherit the
+production bucket lifecycle, the Worker deletes local uploads and stems older
+than 30 days during hourly API maintenance and rejects expired objects on
+access. If the local Worker was offline, its first API request after restart
+catches up the cleanup.
+
+## End-to-end tests
+
+```sh
+npm run test:e2e
+```
+
+The Playwright suite starts a real Wrangler test-harness Worker with isolated
+Miniflare D1/R2. Chrome selects and uploads the on-disk PCM WAV fixture in
+`tests/fixtures/audio`; the mocked provider returns four on-disk MP3 fixtures.
+The suite verifies the signed source and stored stem bytes exactly. It also
+checks the 2, 4, and 6 track contracts, incomplete output, empty MP3 responses,
+partial-file cleanup, and the browser's explicit audio-error state. Only the
+paid Replicate boundary is mocked, so the suite is repeatable, offline, and
+incurs no GPU cost. Upload coverage checks that chunked and oversized bodies are
+rejected before storage, length-mismatched objects are removed, and both uploads
+and stems are deleted at the local 30-day retention boundary.
 
 ## Costs (rough, per class of 20 students × 100 songs)
 
@@ -204,8 +286,13 @@ Notes:
 Everything provider-specific is behind `SeparationBackend`
 (`src/separation/types.ts`): `start()`, `parseResult()`, `fetchStatus()`.
 
-To move to **Modal** (deploy your own Demucs container, scale-to-zero GPUs,
-likely cheaper — free monthly credits may cover a whole class):
+The local branch includes a complete `audio-separator` backend. It submits a
+source URL to the local service, accepts its webhook, and also polls as a
+reconciliation fallback. Set `SEPARATION_BACKEND=audio-separator`,
+`AUDIO_SEPARATOR_URL`, and the `AUDIO_SEPARATOR_TOKEN` secret to use it.
+
+To move instead to **Modal** (deploy your own container with scale-to-zero
+GPUs):
 
 1. Implement the Modal app + web endpoint (sketch in `src/separation/modal.ts`).
 2. Fill in `modalBackend()`.

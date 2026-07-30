@@ -2,7 +2,7 @@
 // synchronized stem mixer (all stems play together; per-stem mute).
 
 const POLL_INTERVAL_MS = 5000;
-const STEM_ORDER = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
+const STEM_ORDER = ['vocals', 'instrumental', 'drums', 'bass', 'other', 'guitar', 'piano'];
 
 // --- class code ---------------------------------------------------------
 
@@ -10,14 +10,55 @@ function getClassCode() {
   return localStorage.getItem('classCode') || '';
 }
 
-// Prompt-and-verify loop at page load: keeps asking until the server accepts
+const classCodeDialog = document.getElementById('class-code-dialog');
+const classCodeForm = document.getElementById('class-code-form');
+const classCodeInput = document.getElementById('class-code-input');
+const classCodeMessage = document.getElementById('class-code-message');
+const classCodeCancel = document.getElementById('class-code-cancel');
+let pendingClassCodeRequest = null;
+
+function requestClassCode(message) {
+  if (pendingClassCodeRequest) return pendingClassCodeRequest;
+
+  pendingClassCodeRequest = new Promise((resolve) => {
+    classCodeMessage.textContent = message;
+    classCodeInput.value = '';
+
+    const finish = (code) => {
+      classCodeForm.removeEventListener('submit', submit);
+      classCodeCancel.removeEventListener('click', cancel);
+      classCodeDialog.removeEventListener('cancel', cancel);
+      classCodeDialog.close();
+      pendingClassCodeRequest = null;
+      resolve(code);
+    };
+    const submit = (event) => {
+      event.preventDefault();
+      finish(classCodeInput.value.trim());
+    };
+    const cancel = (event) => {
+      event.preventDefault();
+      finish('');
+    };
+
+    classCodeForm.addEventListener('submit', submit);
+    classCodeCancel.addEventListener('click', cancel);
+    classCodeDialog.addEventListener('cancel', cancel);
+    classCodeDialog.showModal();
+    classCodeInput.focus();
+  });
+
+  return pendingClassCodeRequest;
+}
+
+// In-page verify loop at page load: keeps asking until the server accepts
 // the code, so a typo fails here instead of on the student's first upload.
 async function ensureClassCode() {
-  let promptText = 'Enter your class code:';
+  let message = 'Enter your class code to upload and split tracks.';
   for (;;) {
     let code = getClassCode();
     if (!code) {
-      code = (prompt(promptText) || '').trim();
+      code = await requestClassCode(message);
       if (!code) return; // cancelled — playback of shared links still works; writes will 401
       localStorage.setItem('classCode', code);
     }
@@ -28,7 +69,7 @@ async function ensureClassCode() {
       return; // network hiccup — don't lock anyone out; the first write re-checks anyway
     }
     localStorage.removeItem('classCode');
-    promptText = 'Invalid class code — try again:';
+    message = 'That class code was not accepted. Try again.';
   }
 }
 
@@ -43,7 +84,7 @@ async function api(path, options = {}) {
   });
   if (res.status === 401) {
     localStorage.removeItem('classCode');
-    ensureClassCode();
+    void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
@@ -67,7 +108,12 @@ function saveJobs(jobs) {
 
 function addJob(job) {
   const jobs = getJobs();
-  jobs.unshift({ id: job.id, filename: job.filename });
+  jobs.unshift({
+    id: job.id,
+    filename: job.filename,
+    model: job.model,
+    expectedStems: job.expectedStems || [],
+  });
   saveJobs(jobs.slice(0, 50));
 }
 
@@ -81,9 +127,60 @@ const uploadMessage = document.getElementById('upload-message');
 
 const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
+const stemChoice = document.getElementById('stem-choice');
+let separationOptionsReady;
 
 function selectedModel() {
-  return document.querySelector('input[name="stem-model"]:checked')?.value || 'htdemucs_ft';
+  return document.querySelector('input[name="stem-model"]:checked')?.value || '';
+}
+
+async function requireSelectedModel() {
+  await separationOptionsReady;
+  const model = selectedModel();
+  if (!model) throw new Error('Split choices are unavailable. Reload the page and try again.');
+  return model;
+}
+
+async function loadSeparationOptions() {
+  try {
+    const res = await fetch('/api/separation-options');
+    if (!res.ok) throw new Error('Split choices request failed');
+    const options = await res.json();
+    if (
+      !Array.isArray(options.models) ||
+      !options.models.length ||
+      options.models.some(
+        (model) =>
+          !model ||
+          typeof model.id !== 'string' ||
+          typeof model.label !== 'string' ||
+          !Array.isArray(model.stems) ||
+          !model.stems.every((stem) => typeof stem === 'string')
+      )
+    ) {
+      throw new Error('Split choices response was invalid');
+    }
+
+    stemChoice.replaceChildren();
+    for (const model of options.models) {
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'stem-model';
+      input.value = model.id;
+      input.checked = model.id === options.defaultModel;
+      const text = document.createElement('span');
+      text.textContent = model.label;
+      label.append(input, text);
+      stemChoice.appendChild(label);
+    }
+    if (!selectedModel()) stemChoice.querySelector('input').checked = true;
+    return true;
+  } catch {
+    stemChoice.innerHTML =
+      '<span class="stem-choice-status mono">Split choices unavailable. Reload to try again.</span>';
+    return false;
+  }
 }
 
 dropzone.addEventListener('click', () => fileInput.click());
@@ -120,9 +217,10 @@ ytForm.addEventListener('submit', async (e) => {
   showUploadMessage('FETCHING FROM YOUTUBE…');
 
   try {
+    const model = await requireSelectedModel();
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ youtubeUrl: url, model: selectedModel() }),
+      body: JSON.stringify({ youtubeUrl: url, model }),
     });
     ytUrlInput.value = '';
     addJob(job);
@@ -145,6 +243,7 @@ async function handleFile(file) {
   showUploadMessage(`UPLOADING ${file.name}…`);
 
   try {
+    const model = await requireSelectedModel();
     const { key, uploadUrl } = await api('/api/uploads', {
       method: 'POST',
       body: JSON.stringify({ filename: file.name }),
@@ -157,7 +256,7 @@ async function handleFile(file) {
     showUploadMessage('STARTING SEPARATION…');
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ key, filename: file.name, model: selectedModel() }),
+      body: JSON.stringify({ key, filename: file.name, model }),
     });
 
     addJob(job);
@@ -173,6 +272,9 @@ function putWithProgress(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
+    if (new URL(url, window.location.href).origin === window.location.origin) {
+      xhr.setRequestHeader('x-class-code', getClassCode());
+    }
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     });
@@ -249,6 +351,7 @@ class Mixer {
     `;
 
     this.playBtn = li.querySelector('.play-btn');
+    this.readyBadge = li.querySelector('.badge');
     this.seek = li.querySelector('.seek');
     this.tcNow = li.querySelector('.tc-now');
     this.tcEnd = li.querySelector('.tc-end');
@@ -297,8 +400,10 @@ class Mixer {
         <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
       `;
       const muteBtn = row.querySelector('.mute-btn');
-      this.channelsByName.set(stem.name, { audio, row, muteBtn });
+      const download = row.querySelector('.dl');
+      this.channelsByName.set(stem.name, { audio, row, muteBtn, download });
       muteBtn.addEventListener('click', () => this.setMute(stem.name, !audio.muted));
+      audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
 
       const nameEl = row.querySelector('.ch-name');
       nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
@@ -338,6 +443,22 @@ class Mixer {
     this.renderNotes();
     this.renderGuide();
     return li;
+  }
+
+  markAudioUnavailable(stemName) {
+    const channel = this.channelsByName.get(stemName);
+    if (!channel || channel.row.classList.contains('unavailable')) return;
+
+    channel.audio.pause();
+    channel.row.classList.add('unavailable');
+    channel.muteBtn.disabled = true;
+    channel.muteBtn.textContent = 'NO AUDIO';
+    channel.download.removeAttribute('href');
+    channel.download.setAttribute('aria-disabled', 'true');
+    this.readyBadge.textContent = 'AUDIO ERROR';
+    this.readyBadge.classList.remove('ready');
+    this.readyBadge.classList.add('failed');
+    this.playBtn.disabled = true;
   }
 
   async play() {
@@ -724,7 +845,12 @@ function renderJobs() {
   jobList.innerHTML = '';
 
   for (const job of jobs) {
-    const state = jobStates.get(job.id) || { status: 'processing', stems: [] };
+    const state = jobStates.get(job.id) || {
+      status: 'processing',
+      stems: [],
+      model: job.model,
+      expectedStems: job.expectedStems || [],
+    };
 
     if (state.status === 'done' && state.stems?.length) {
       let mixer = mixers.get(job.id);
@@ -738,7 +864,7 @@ function renderJobs() {
 
     const li = document.createElement('li');
     li.className = 'console';
-    const failed = state.status === 'failed';
+    const failed = state.status === 'failed' || state.status === 'done';
     li.innerHTML = `
       <div class="console-head">
         <span class="console-title">${esc(job.filename)}</span>
@@ -746,16 +872,20 @@ function renderJobs() {
       </div>
       ${
         failed
-          ? `<p class="job-error">${esc(state.error || 'Something went wrong.')}</p>`
-          : `<p class="job-note">Splitting into ${
-              state.model === 'htdemucs_6s'
-                ? 'vocals / drums / bass / guitar / piano / other'
-                : 'vocals / drums / bass / other'
-            }…</p>`
+          ? `<p class="job-error">${esc(
+              state.error || 'No playable tracks were returned. Run the split again.'
+            )}</p>`
+          : `<p class="job-note">Creating ${esc(
+              stemDescription(state.expectedStems || job.expectedStems)
+            )}…</p>`
       }
     `;
     jobList.appendChild(li);
   }
+}
+
+function stemDescription(expectedStems) {
+  return expectedStems?.length ? expectedStems.join(' / ') : 'the selected tracks';
 }
 
 let pollTimer = null;
@@ -784,6 +914,13 @@ async function pollActiveJobs() {
   }
 
   renderJobs();
+  const states = jobs.map((job) => jobStates.get(job.id));
+  if (
+    states.length > 0 &&
+    states.every((state) => state?.status === 'done' || state?.status === 'failed')
+  ) {
+    uploadStatus.hidden = true;
+  }
   if (anyActive) pollSoon();
 }
 
@@ -816,6 +953,7 @@ function fmt(sec) {
 
 // --- init -------------------------------------------------------------
 
-ensureClassCode();
+separationOptionsReady = loadSeparationOptions();
+void ensureClassCode();
 renderJobs();
 pollActiveJobs();

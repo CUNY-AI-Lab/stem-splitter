@@ -1,0 +1,65 @@
+{
+  "caseSlug": "4-stem-cc0-rock",
+  "model": "htdemucs_ft",
+  "expectedStems": [
+    "vocals",
+    "drums",
+    "bass",
+    "other"
+  ],
+  "renderedStems": [
+    "vocals",
+    "drums",
+    "bass",
+    "other"
+  ],
+  "jobId": "bd067243-a2d3-4a38-9fb3-500638aca0d1",
+  "source": {
+    "filename": "knight-rock-45s.mp3",
+    "bytes": 1081561,
+    "sha256": "bf8cdfc856c994b9bdec6b27b2ce9ede5dc9ba7ae0bd411cf73c870878dd675e"
+  },
+  "elapsedSeconds": 20.756,
+  "durations": [
+    45,
+    45,
+    45,
+    45
+  ],
+  "downloads": [
+    {
+      "stem": "vocals",
+      "filename": "vocals.mp3",
+      "bytes": 1081513,
+      "sha256": "e2b94237b9269b8b2a3a7c7128b204f54a7ccfb56b99d41ac7dd7b3ef3b64d2a"
+    },
+    {
+      "stem": "drums",
+      "filename": "drums.mp3",
+      "bytes": 1081513,
+      "sha256": "e3b4402f9814608b139001cee924e0321cf17d7955cef92f639f131880257201"
+    },
+    {
+      "stem": "bass",
+      "filename": "bass.mp3",
+      "bytes": 1081513,
+      "sha256": "dcdada45d87387bbdb1b9285cf57a3a7ffbc36cd5a84dc5d4a7bac00357893ea"
+    },
+    {
+      "stem": "other",
+      "filename": "other.mp3",
+      "bytes": 1081513,
+      "sha256": "976628eeb1d980e9187b34d9af5789766e7077e2c7a83ce32d0b2b1a607f2eb4"
+    }
+  ],
+  "browserMessages": [],
+  "screenshots": {
+    "processing": "01-processing.png",
+    "ready": "02-ready.png",
+    "playing": "03-playing.png",
+    "muted": "04-vocals-muted.png",
+    "annotated": "05-annotated-renamed.png",
+    "persisted": "06-persisted-after-reload.png"
+  },
+  "completedAt": "2026-07-28T07:43:43.300Z"
+}

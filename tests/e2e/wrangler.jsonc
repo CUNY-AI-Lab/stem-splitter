@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "stem-splitter-e2e",
+  "main": "./worker.ts",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "../../public"
+  },
+  "r2_buckets": [
+    {
+      "binding": "AUDIO",
+      "bucket_name": "stem-splitter-e2e-audio"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stem-splitter-e2e",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "vars": {
+    "R2_BUCKET_NAME": "stem-splitter-e2e-audio",
+    "CF_ACCOUNT_ID": "e2e-account",
+    "PUBLIC_BASE_URL": "http://stem-splitter.test",
+    "SEPARATION_BACKEND": "replicate",
+    "LOCAL_HOSTING": "true"
+  }
+}

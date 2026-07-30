@@ -14,6 +14,7 @@
   --ok: #5ee0a0;
 
   --c-vocals: #ffb648;
+  --c-instrumental: #6aa6ff;
   --c-drums: #ff6b5e;
   --c-bass: #5ee0a0;
   --c-other: #6aa6ff;
@@ -195,7 +196,7 @@ h1 span {
 }
 .yt-go:hover { background: var(--hot); color: var(--bg); }
 
-.stem-choice { display: flex; gap: 0.4rem; }
+.stem-choice { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .stem-choice label {
   display: flex;
   align-items: center;
@@ -209,11 +210,27 @@ h1 span {
   cursor: pointer;
   user-select: none;
 }
+.stem-choice-status {
+  align-self: center;
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+}
 .stem-choice input { accent-color: var(--hot); margin: 0; }
 .stem-choice label:has(input:checked) {
   border-color: rgba(255, 182, 72, 0.5);
   color: var(--hot);
   background: var(--hot-soft);
+}
+
+.channel.unavailable {
+  opacity: 0.72;
+}
+.channel.unavailable .meter i {
+  background: var(--ink-faint);
+}
+.channel.unavailable .dl[aria-disabled="true"] {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 /* ─── upload progress ─────────────────────────────────────────────── */
@@ -492,6 +509,75 @@ footer {
   padding-top: 1.2rem;
   color: var(--ink-faint);
   font-size: 0.8rem;
+}
+
+.class-code-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 70%);
+}
+
+.class-code-dialog::backdrop {
+  background: rgb(12 12 10 / 78%);
+  backdrop-filter: blur(4px);
+}
+
+.class-code-form {
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+}
+
+.class-code-form h2,
+.class-code-form p {
+  margin: 0;
+}
+
+.class-code-form h2 {
+  font-family: var(--font-display);
+  letter-spacing: .08em;
+}
+
+.class-code-form label {
+  font: 600 .72rem var(--font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.class-code-form input {
+  width: 100%;
+  padding: 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font: 1rem var(--font-mono);
+}
+
+.class-code-form input:focus {
+  border-color: var(--hot);
+  outline: 2px solid rgb(239 169 58 / 24%);
+  outline-offset: 2px;
+}
+
+.class-code-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dialog-cancel {
+  padding: 10px 14px;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  font: 600 .72rem var(--font-mono);
+  letter-spacing: .08em;
 }
 .footer-sig { font-size: 0.62rem; letter-spacing: 0.14em; margin-top: 0.6rem; }
 

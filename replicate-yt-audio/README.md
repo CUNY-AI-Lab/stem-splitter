@@ -16,7 +16,8 @@ in-Worker `youtubei.js` attempt (which it does for all Cloudflare egress IPs).
 brew install cog          # once
 cog login                 # once, interactive — Replicate account smorello87
 cd replicate-yt-audio
-cog predict -i url='https://www.youtube.com/watch?v=jNQXAC9IVRw'   # local smoke test (needs Docker)
+SMOKE_YOUTUBE_URL='<video-url-you-are-allowed-to-test>'
+cog predict -i url="$SMOKE_YOUTUBE_URL"   # local smoke test (needs Docker)
 cog push r8.im/smorello87/yt-audio
 ```
 

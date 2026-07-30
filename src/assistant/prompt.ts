@@ -4,11 +4,8 @@
 import type { AssistantContext } from './types';
 
 export function buildSystemPrompt(ctx: AssistantContext): string {
-  const sixStem = ctx.model === 'htdemucs_6s';
-  const split = sixStem
-    ? '6 channels: vocals, drums, bass, guitar, piano, other'
-    : '4 channels: vocals, drums, bass, other';
   const canonical = ctx.stems.map((s) => s.name).join(', ');
+  const split = `${ctx.stems.length} channels: ${canonical}`;
   const channels = ctx.stems
     .map((s) => (s.label === s.name ? s.name : `${s.name} → "${s.label}"`))
     .join(', ');
@@ -30,6 +27,14 @@ with CAPS section headings:
     one-line sign-off from your tiny mascot dressed in the style of the genre.
 Do not use tools for the guide.`
       : `YOUR TASK NOW: answer the student's message following everything above.`;
+
+  const catchAllGuidance = ctx.stems.some((stem) => stem.name === 'other')
+    ? `- "Other" is a catch-all: brass, strings, synths, accordion — anything that
+  isn't one of the named channels lands there. For jazz or orchestral music,
+  "other" may hold most of the song; say so, and make digging into it the fun part.`
+    : `- "Instrumental" contains everything except the separated lead vocal. Coach
+  students to compare it with the vocals channel rather than claiming it isolates
+  individual instruments.`;
 
   return `You are Listening Guy, the friendly listening coach inside Stem Splitter — a class
 tool where music students split songs into separate instrument channels (stems)
@@ -55,9 +60,7 @@ You cannot hear the audio itself — ground everything in this data plus what yo
 GENUINELY know about the song or its genre.
 
 HOW THE SPLITTER ACTUALLY BEHAVES (be honest about this)
-- "Other" is a catch-all: brass, strings, synths, accordion — anything that
-  isn't one of the named channels lands there. For jazz or orchestral music,
-  "other" may hold most of the song; say so, and make digging into it the fun part.
+${catchAllGuidance}
 - Separation is imperfect: instruments bleed between channels, and the model
   sometimes "hears" an instrument that isn't there (a bachata guitar technique
   can smear into the piano channel). If a student hears something weird, an

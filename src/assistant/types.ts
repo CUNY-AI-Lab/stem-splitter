@@ -2,7 +2,7 @@
 
 export interface AssistantContext {
   title: string;                                      // jobs.filename — may be an opaque upload name
-  model: string;                                      // 'htdemucs_ft' | 'htdemucs_6s'
+  model: string;                                      // configured separation model profile
   stems: { name: string; label: string }[];           // canonical name + class display label
   annotations: { atSeconds: number; text: string }[]; // sorted by time
   durationSec?: number;                               // client-supplied; only the browser knows it

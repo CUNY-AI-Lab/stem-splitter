@@ -1,0 +1,47 @@
+{
+  "caseSlug": "2-stem-vocal-pop",
+  "model": "bs_roformer_vocals",
+  "expectedStems": [
+    "vocals",
+    "instrumental"
+  ],
+  "renderedStems": [
+    "vocals",
+    "instrumental"
+  ],
+  "jobId": "b6ea814d-d1c5-4c81-b438-ebcacb38e648",
+  "source": {
+    "filename": "in-dreams-vocal-pop-45s.m4a",
+    "bytes": 1099633,
+    "sha256": "2a1c07d3d0af030e33b0f56a55d312da2596b99f0a27d7ba5b14bb1a0fe82c4a"
+  },
+  "elapsedSeconds": 16.731,
+  "durations": [
+    45,
+    45
+  ],
+  "downloads": [
+    {
+      "stem": "vocals",
+      "filename": "vocals.mp3",
+      "bytes": 1081513,
+      "sha256": "33873214f6af71734cd1b63b71d4c2c026462193ed71d77cd33bd902761f56ad"
+    },
+    {
+      "stem": "instrumental",
+      "filename": "instrumental.mp3",
+      "bytes": 1081513,
+      "sha256": "0e6087172a75115f5d28746e53e933462f00dad3beb899b0fa03f86f383177fc"
+    }
+  ],
+  "browserMessages": [],
+  "screenshots": {
+    "processing": "01-processing.png",
+    "ready": "02-ready.png",
+    "playing": "03-playing.png",
+    "muted": "04-vocals-muted.png",
+    "annotated": "05-annotated-renamed.png",
+    "persisted": "06-persisted-after-reload.png"
+  },
+  "completedAt": "2026-07-28T07:43:08.714Z"
+}
