@@ -182,7 +182,11 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     // Caller error (unrecognizable link) is a 400; upstream failures are 502.
     if (!parseYouTubeVideoId(body.youtubeUrl)) {
       return c.json(
-        { error: 'Not a recognizable YouTube link (use youtube.com/watch, youtu.be, or /shorts).' },
+        {
+          error: 'Paste a full YouTube video link.',
+          code: 'invalid_youtube_url',
+          retryable: false,
+        },
         400
       );
     }
@@ -197,7 +201,15 @@ app.post('/api/jobs', requireClassCode, async (c) => {
           ? err.message
           : 'YouTube fetch failed — try again, or upload the audio file instead.';
       console.error('youtube fetch error', err);
-      return c.json({ error: message }, 502);
+      return c.json(
+        {
+          error: message,
+          ...(err instanceof YouTubeError
+            ? { code: err.code, retryable: err.retryable }
+            : {}),
+        },
+        502
+      );
     }
     if (audio.data.byteLength > MAX_SOURCE_BYTES) {
       return c.json({ error: 'Audio too large (max 100 MB)' }, 400);

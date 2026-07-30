@@ -143,6 +143,10 @@ In `wrangler.jsonc`, set:
   unset it if you don't need the YouTube-fetch fallback (the free in-Worker
   fetch is usually bot-blocked from Cloudflare egress IPs, so without this
   YouTube import mostly won't work)
+- `YOUTUBE_FETCH_ORDER` — set to `replicate-first` in production so the
+  authenticated yt-dlp service runs before the usually blocked in-Worker
+  client. If the Replicate model is not configured, the Worker still tries
+  the in-Worker client.
 
 ### 5. Set secrets
 

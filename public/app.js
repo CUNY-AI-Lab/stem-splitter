@@ -127,8 +127,10 @@ const uploadMessage = document.getElementById('upload-message');
 
 const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
+const ytFetchButton = ytForm.querySelector('button[type="submit"]');
 const stemChoice = document.getElementById('stem-choice');
 let separationOptionsReady;
+let youtubeFetchInProgress = false;
 
 function selectedModel() {
   return document.querySelector('input[name="stem-model"]:checked')?.value || '';
@@ -210,11 +212,15 @@ dropzone.addEventListener('drop', (e) => {
 ytForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = ytUrlInput.value.trim();
-  if (!url) return;
+  if (!url || youtubeFetchInProgress) return;
 
+  youtubeFetchInProgress = true;
+  ytForm.setAttribute('aria-busy', 'true');
+  ytUrlInput.disabled = true;
+  ytFetchButton.disabled = true;
   uploadStatus.hidden = false;
   progressBar.style.width = '0%';
-  showUploadMessage('FETCHING FROM YOUTUBE…');
+  showUploadMessage('IMPORTING AUDIO FROM YOUTUBE…');
 
   try {
     const model = await requireSelectedModel();
@@ -229,6 +235,11 @@ ytForm.addEventListener('submit', async (e) => {
     pollSoon();
   } catch (err) {
     showUploadMessage(err.message, true);
+  } finally {
+    youtubeFetchInProgress = false;
+    ytForm.removeAttribute('aria-busy');
+    ytUrlInput.disabled = false;
+    ytFetchButton.disabled = false;
   }
 });
 
