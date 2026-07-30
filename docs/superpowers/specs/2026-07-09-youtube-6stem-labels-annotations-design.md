@@ -46,7 +46,7 @@ Four additions to the stem-splitter app for music students:
 
 ## 2. Per-job 4/6-stem choice
 
-- Upload UI: segmented toggle — **4 stems (cleanest)** / **6 stems (+ guitar & piano)** — default 4-stem. Applies to both file and YouTube modes.
+- The upload UI uses a segmented toggle with **4 stems (vocals, drums, bass, other)** or **6 stems (vocals, drums, bass, other, guitar, piano)**. Four stems remains the default for both file and YouTube modes.
 - Job creation accepts `model`, validated against an allowlist: `htdemucs_ft` (4) | `htdemucs_6s` (6). Stored on the job row; passed through `SeparationStartRequest` so the provider seam stays generic (Replicate backend forwards it; default remains `htdemucs_ft`).
 - Frontend already orders/colors guitar and piano stems (`STEM_ORDER`, `--c-guitar`, `--c-piano`); the processing note reflects the chosen split.
 - Quality trade-off (6s guitar/piano can bleed) is stated in the toggle's hint text.

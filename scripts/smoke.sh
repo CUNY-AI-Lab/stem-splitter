@@ -3,7 +3,7 @@
 #
 #   ./scripts/smoke.sh                  # free checks only (no predictions created)
 #   ./scripts/smoke.sh <job-id>         # + labels/annotations round-trip on a done job
-#   ./scripts/smoke.sh --full           # + real YouTube import → 6 stems (~$0.06, ~2 min)
+#   SMOKE_YOUTUBE_URL=<url> ./scripts/smoke.sh --full   # + real YouTube import → 6 stems
 #   SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>   # + listening-guy guide/chat checks (<1¢)
 #
 # Class code comes from $CLASS_CODE (required — never hardcode it here).
@@ -102,20 +102,27 @@ fi
 
 if [ "$FULL" = 1 ]; then
   echo "== full pipeline (costs ~\$0.06): YouTube → 6 stems =="
-  R=$(curl -sS -m 300 -X POST "$BASE/api/jobs" -H 'content-type: application/json' -H "x-class-code: $CODE" \
-    -d '{"youtubeUrl":"https://www.youtube.com/watch?v=jNQXAC9IVRw","model":"htdemucs_6s"}')
-  NEW_JOB=$(echo "$R" | json "['id']")
-  if [ -z "$NEW_JOB" ]; then
-    FAIL=$((FAIL+1)); echo "  FAIL  youtube import: $R"
+  if [ -z "${SMOKE_YOUTUBE_URL:-}" ]; then
+    FAIL=$((FAIL+1)); echo "  FAIL  set SMOKE_YOUTUBE_URL to audio you are allowed to test"
   else
-    echo "  ...   job $NEW_JOB created, polling (up to 5 min)"
-    for i in $(seq 1 20); do
-      S=$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['status']")
-      [ "$S" = "done" ] || [ "$S" = "failed" ] && break
-      sleep 15
-    done
-    check "youtube import completes" done "$S"
-    check "6 stems produced" 6 "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['stems'].__len__()")"
+    YOUTUBE_PAYLOAD=$(python3 -c \
+      'import json,sys; print(json.dumps({"youtubeUrl":sys.argv[1],"model":"htdemucs_6s"}))' \
+      "$SMOKE_YOUTUBE_URL")
+    R=$(curl -sS -m 300 -X POST "$BASE/api/jobs" -H 'content-type: application/json' -H "x-class-code: $CODE" \
+      -d "$YOUTUBE_PAYLOAD")
+    NEW_JOB=$(echo "$R" | json "['id']")
+    if [ -z "$NEW_JOB" ]; then
+      FAIL=$((FAIL+1)); echo "  FAIL  youtube import: $R"
+    else
+      echo "  ...   job $NEW_JOB created, polling (up to 5 min)"
+      for i in $(seq 1 20); do
+        S=$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['status']")
+        [ "$S" = "done" ] || [ "$S" = "failed" ] && break
+        sleep 15
+      done
+      check "youtube import completes" done "$S"
+      check "6 stems produced" 6 "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['stems'].__len__()")"
+    fi
   fi
 fi
 

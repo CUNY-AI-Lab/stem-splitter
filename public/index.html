@@ -35,10 +35,8 @@
         <input id="yt-url" type="url" placeholder="…or paste a YouTube link" aria-label="YouTube link" />
         <button type="submit" class="yt-go">FETCH</button>
       </form>
-      <div class="stem-choice" role="radiogroup" aria-label="Stem count">
-        <label data-model-option="bs_roformer_vocals" hidden><input type="radio" name="stem-model" value="bs_roformer_vocals" /><span>2 STEMS · HQ vocals</span></label>
-        <label><input type="radio" name="stem-model" value="htdemucs_ft" checked /><span>4 STEMS · cleanest</span></label>
-        <label><input type="radio" name="stem-model" value="htdemucs_6s" /><span>6 STEMS · +guitar&nbsp;&amp;&nbsp;piano</span></label>
+      <div id="stem-choice" class="stem-choice" role="radiogroup" aria-label="Tracks produced">
+        <span class="stem-choice-status mono">Loading split choices…</span>
       </div>
     </div>
 

@@ -262,11 +262,13 @@ npm run test:e2e
 The Playwright suite starts a real Wrangler test-harness Worker with isolated
 Miniflare D1/R2. Chrome selects and uploads the on-disk PCM WAV fixture in
 `tests/fixtures/audio`; the mocked provider returns four on-disk MP3 fixtures.
-The suite verifies the signed source and stored stem bytes exactly. Only the
+The suite verifies the signed source and stored stem bytes exactly. It also
+checks the 2, 4, and 6 track contracts, incomplete output, empty MP3 responses,
+partial-file cleanup, and the browser's explicit audio-error state. Only the
 paid Replicate boundary is mocked, so the suite is repeatable, offline, and
-incurs no GPU cost. It also checks that chunked and oversized uploads are
-rejected before their bodies are stored, length-mismatched objects are removed,
-and both uploads and stems are deleted at the local 30-day retention boundary.
+incurs no GPU cost. Upload coverage checks that chunked and oversized bodies are
+rejected before storage, length-mismatched objects are removed, and both uploads
+and stems are deleted at the local 30-day retention boundary.
 
 ## Costs (rough, per class of 20 students × 100 songs)
 

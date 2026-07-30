@@ -565,8 +565,8 @@ Insert between the `#dropzone` section and `#upload-status`:
         <button type="submit" class="yt-go">FETCH</button>
       </form>
       <div class="stem-choice" role="radiogroup" aria-label="Stem count">
-        <label><input type="radio" name="stem-model" value="htdemucs_ft" checked /><span>4 STEMS · cleanest</span></label>
-        <label><input type="radio" name="stem-model" value="htdemucs_6s" /><span>6 STEMS · +guitar&nbsp;&amp;&nbsp;piano</span></label>
+        <label><input type="radio" name="stem-model" value="htdemucs_ft" checked /><span>4 STEMS · vocals + drums + bass + other</span></label>
+        <label><input type="radio" name="stem-model" value="htdemucs_6s" /><span>6 STEMS · vocals + drums + bass + other + guitar + piano</span></label>
       </div>
     </div>
 ```
@@ -1130,7 +1130,7 @@ Add to the **Request flow** section of CLAUDE.md, after item 1:
 And add to the **Architecture** section (after the Frontend paragraph):
 
 ```markdown
-**Per-job model choice:** jobs carry `model` (`htdemucs_ft` = 4 stems, default; `htdemucs_6s` = +guitar/piano), validated in the Worker, forwarded through `SeparationStartRequest`. **Shared labels/annotations:** `jobs.labels` JSON column (`PUT /api/jobs/:id/labels`) and an `annotations` table (`POST/DELETE /api/jobs/:id/annotations[/:annotationId]`); both ride along on `GET /api/jobs/:id`. Writes require the class code; reads stay unauthenticated-but-unguessable. Migrations: `schema.sql` is the canonical fresh install; additive changes live in `migrations/` (`npm run db:migrate:2`).
+**Per-job model choice** jobs carry `model` (`htdemucs_ft` = vocals, drums, bass, other; `htdemucs_6s` adds guitar and piano), validated in the Worker, forwarded through `SeparationStartRequest`. **Shared labels and annotations** use the `jobs.labels` JSON column (`PUT /api/jobs/:id/labels`) and an `annotations` table (`POST/DELETE /api/jobs/:id/annotations[/:annotationId]`); both ride along on `GET /api/jobs/:id`. Writes require the class code; reads stay unauthenticated-but-unguessable. **Migrations** keep `schema.sql` as the canonical fresh install while additive changes live in `migrations/` (`npm run db:migrate:2`).
 ```
 
 - [ ] **Step 5: Commit**

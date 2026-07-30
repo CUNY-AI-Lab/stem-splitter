@@ -150,9 +150,12 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     });
   }, CLASS_CODE);
 
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
+  await expect(
+    page.getByRole('radio', { name: '4 STEMS · vocals + drums + bass + other' })
+  ).toBeChecked();
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
 
@@ -216,6 +219,162 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(browserErrors).toEqual([]);
 
   await page.screenshot({ path: testInfo.outputPath('local-hosting-ready.png'), fullPage: false });
+
+  await page.route(`**/api/files/stems/${jobId}/vocals.mp3`, (route) =>
+    route.fulfill({ status: 404, body: 'Not found' })
+  );
+  await page.reload();
+  await expect(page.locator('.badge.failed')).toHaveText('AUDIO ERROR');
+  const unavailableChannel = page.locator('.channel.unavailable');
+  await expect(unavailableChannel).toHaveCount(1);
+  await expect(unavailableChannel.locator('.ch-name')).toHaveText('vocals');
+  await expect(unavailableChannel.locator('.mute-btn')).toHaveText('NO AUDIO');
+  await expect(page.getByRole('button', { name: 'Play all stems' })).toBeDisabled();
+});
+
+test('fails an incomplete six-track result instead of rendering blank channels', async ({
+  page,
+  network,
+  server,
+}, testInfo) => {
+  const predictionId = 'e2e-incomplete-six-track';
+  const fourTrackOutput = Object.fromEntries(
+    [...stemAudio.keys()].map((name) => [name, `https://unused-fixtures.test/${name}.mp3`])
+  );
+
+  network.use(
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const payload = await request.json();
+      expect(payload.input.model).toBe('htdemucs_6s');
+      return HttpResponse.json({ id: predictionId, status: 'starting' });
+    }),
+    http.get(`https://api.replicate.com/v1/predictions/${predictionId}`, () =>
+      HttpResponse.json({
+        id: predictionId,
+        status: 'succeeded',
+        output: fourTrackOutput,
+      })
+    )
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const sixTrackChoice = page.getByRole('radio', {
+    name: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+  });
+  await expect(sixTrackChoice).toBeVisible();
+  await sixTrackChoice.check();
+  await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
+
+  await expect(page.locator('.badge.failed')).toHaveText('FAILED');
+  await expect(page.locator('.job-error')).toContainText('6-track split was incomplete');
+  await expect(page.locator('.channel')).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath('incomplete-six-track-failed.png'),
+    fullPage: true,
+  });
+
+  const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  expect(created.model).toBe('htdemucs_6s');
+  expect(created.expectedStems).toEqual([
+    'vocals',
+    'drums',
+    'bass',
+    'other',
+    'guitar',
+    'piano',
+  ]);
+
+  const resultResponse = await server.fetch(`/api/jobs/${created.id}`);
+  expect(resultResponse.status).toBe(200);
+  const result = await resultResponse.json();
+  expect(result.status).toBe('failed');
+  expect(result.stems).toEqual([]);
+  expect(result.error).toContain('6-track split was incomplete');
+  expect(result.error).toContain('missing guitar, piano');
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  expect((await storedKeysResponse.json()).keys).toEqual([
+    expect.stringMatching(/^uploads\/[0-9a-f-]+\/source\.wav$/),
+  ]);
+  expect(browserErrors).toEqual([]);
+});
+
+test('fails an empty MP3 response and removes partial track files', async ({ network, server }) => {
+  const predictionId = 'e2e-empty-track';
+  const sourceKey = 'uploads/e2e/empty-track.wav';
+  const output = Object.fromEntries(
+    [...stemAudio.keys()].map((name) => [name, `https://empty-fixtures.test/${name}.mp3`])
+  );
+  const fixtureFetches = new Map([...stemAudio.keys()].map((name) => [name, 0]));
+
+  network.use(
+    http.post('https://api.replicate.com/v1/predictions', () =>
+      HttpResponse.json({ id: predictionId, status: 'starting' })
+    ),
+    http.get(`https://api.replicate.com/v1/predictions/${predictionId}`, () =>
+      HttpResponse.json({ id: predictionId, status: 'succeeded', output })
+    ),
+    http.get('https://empty-fixtures.test/:stem.mp3', ({ params }) => {
+      const name = String(params.stem);
+      fixtureFetches.set(name, (fixtureFetches.get(name) ?? 0) + 1);
+      if (name === 'bass') {
+        return new HttpResponse(new Uint8Array(), {
+          headers: { 'Content-Type': 'audio/mpeg' },
+        });
+      }
+      return new HttpResponse(stemAudio.get(name), {
+        headers: { 'Content-Type': 'audio/mpeg' },
+      });
+    })
+  );
+
+  expect(
+    (
+      await e2eFetch(server, `/__e2e/audio?key=${encodeURIComponent(sourceKey)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: sourceAudio,
+      })
+    ).status
+  ).toBe(204);
+
+  const createResponse = await server.fetch('/api/jobs', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-class-code': CLASS_CODE,
+    },
+    body: JSON.stringify({
+      key: sourceKey,
+      filename: 'generic-source.wav',
+      model: 'htdemucs_ft',
+    }),
+  });
+  expect(createResponse.status).toBe(200);
+  const { id: jobId } = await createResponse.json();
+
+  const resultResponse = await server.fetch(`/api/jobs/${jobId}`);
+  expect(resultResponse.status).toBe(200);
+  const result = await resultResponse.json();
+  expect(result.status).toBe('failed');
+  expect(result.stems).toEqual([]);
+  expect(result.error).toBe('The "bass" track was empty or was not a playable MP3');
+  expect(fixtureFetches.get('vocals')).toBe(1);
+  expect(fixtureFetches.get('drums')).toBe(1);
+  expect(fixtureFetches.get('bass')).toBe(3);
+  expect(fixtureFetches.get('other')).toBe(0);
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  expect((await storedKeysResponse.json()).keys).toEqual([sourceKey]);
 });
 
 test('rejects a chunked local upload before reading it', async ({ baseURL, server }) => {

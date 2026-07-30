@@ -13,8 +13,11 @@ import {
 import { getBackend, type SeparationResult } from './separation';
 import {
   DEFAULT_DEMUCS_MODEL,
+  getSeparationOption,
   getSeparationOptions,
   modelIsAllowed,
+  StemContractError,
+  validateAndOrderStems,
 } from './separation/options';
 import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
 import {
@@ -31,6 +34,7 @@ const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
+const MP3_FRAME_SCAN_BYTES = 64 * 1024;
 interface JobRow {
   id: string;
   filename: string;
@@ -238,7 +242,13 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     return c.json({ error: `Failed to start separation: ${message}` }, 502);
   }
 
-  return c.json({ id, status: 'processing', filename, model });
+  return c.json({
+    id,
+    status: 'processing',
+    filename,
+    model,
+    expectedStems: getSeparationOption(model)?.stems ?? [],
+  });
 });
 
 app.get('/api/jobs/:id', async (c) => {
@@ -451,6 +461,11 @@ export default app;
 async function ingestResult(env: Env, jobId: string, result: SeparationResult): Promise<void> {
   if (result.status !== 'failed' && result.status !== 'succeeded') return;
 
+  const job = await env.DB.prepare('SELECT model FROM jobs WHERE id = ?')
+    .bind(jobId)
+    .first<Pick<JobRow, 'model'>>();
+  if (!job) return;
+
   // A webhook and a browser poll can observe the same terminal provider state
   // concurrently. Claim ingestion atomically so stems are downloaded exactly
   // once and the losing path can return successfully without racing R2 writes.
@@ -464,6 +479,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
     .run();
   if (!claim.meta.changes) return;
 
+  const stored: { name: string; key: string }[] = [];
   try {
     if (result.status === 'failed') {
       await env.DB.prepare(
@@ -473,17 +489,23 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
         .run();
       return;
     }
-    if (!result.stems?.length) {
+    let stems;
+    try {
+      stems = validateAndOrderStems(job.model ?? DEFAULT_DEMUCS_MODEL, result.stems);
+    } catch (error) {
+      const message =
+        error instanceof StemContractError
+          ? error.message
+          : 'The separator returned an invalid set of tracks';
       await env.DB.prepare(
         "UPDATE jobs SET status = ?, error = ? WHERE id = ? AND status = 'ingesting' AND error = ?"
       )
-        .bind('failed', 'Separation succeeded but returned no stems', jobId, lease)
+        .bind('failed', message, jobId, lease)
         .run();
       return;
     }
 
-    const stored: { name: string; key: string }[] = [];
-    for (const stem of result.stems) {
+    for (const stem of stems) {
       const audio = await downloadStem(stem.name, stem.url);
       const key = `stems/${jobId}/${stem.name}.mp3`;
       await env.AUDIO.put(key, audio, {
@@ -498,6 +520,18 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
       .bind('done', JSON.stringify(stored), jobId, lease)
       .run();
   } catch (error) {
+    const cleanup = await Promise.allSettled(stored.map(({ key }) => env.AUDIO.delete(key)));
+    if (cleanup.some((result) => result.status === 'rejected')) {
+      console.error('failed to remove partial stem files', { jobId });
+    }
+    if (error instanceof InvalidStemAudioError) {
+      await env.DB.prepare(
+        "UPDATE jobs SET status = 'failed', error = ? WHERE id = ? AND status = 'ingesting' AND error = ?"
+      )
+        .bind(error.message, jobId, lease)
+        .run();
+      return;
+    }
     // Let a provider retry or the next browser poll make another attempt.
     await env.DB.prepare(
       "UPDATE jobs SET status = 'processing', error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
@@ -507,6 +541,8 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
     throw error;
   }
 }
+
+class InvalidStemAudioError extends Error {}
 
 async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
   let lastError: Error | null = null;
@@ -528,8 +564,22 @@ async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
 
     if (response.ok) {
       try {
-        return await response.arrayBuffer();
+        const audio = await response.arrayBuffer();
+        if (!looksLikeMp3(audio)) {
+          lastError = new InvalidStemAudioError(
+            `The "${name}" track was empty or was not a playable MP3`
+          );
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+          }
+          continue;
+        }
+        return audio;
       } catch (error) {
+        if (error instanceof InvalidStemAudioError) {
+          lastError = error;
+          continue;
+        }
         lastError =
           error instanceof Error
             ? error
@@ -553,6 +603,39 @@ async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
   throw lastError ?? new Error(`Failed to download stem "${name}"`);
 }
 
+function looksLikeMp3(audio: ArrayBuffer): boolean {
+  const bytes = new Uint8Array(audio);
+  if (bytes.length < 4) return false;
+
+  let scanStart = 0;
+  if (
+    bytes.length >= 10 &&
+    bytes[0] === 0x49 &&
+    bytes[1] === 0x44 &&
+    bytes[2] === 0x33
+  ) {
+    const tagSize =
+      ((bytes[6] & 0x7f) << 21) |
+      ((bytes[7] & 0x7f) << 14) |
+      ((bytes[8] & 0x7f) << 7) |
+      (bytes[9] & 0x7f);
+    scanStart = Math.min(bytes.length - 1, 10 + tagSize);
+  }
+
+  const scanEnd = Math.min(bytes.length - 1, scanStart + MP3_FRAME_SCAN_BYTES);
+  for (let index = scanStart; index < scanEnd; index += 1) {
+    if (
+      bytes[index] === 0xff &&
+      (bytes[index + 1] & 0xe0) === 0xe0 &&
+      (bytes[index + 1] & 0x18) !== 0x08 &&
+      (bytes[index + 1] & 0x06) !== 0
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null) {
   const stems = row.stems
     ? (JSON.parse(row.stems) as { name: string; key: string }[]).map((s) => ({
@@ -566,6 +649,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     status: row.status,
     error: row.status === 'failed' ? row.error : null,
     model: row.model ?? DEFAULT_DEMUCS_MODEL,
+    expectedStems: getSeparationOption(row.model ?? DEFAULT_DEMUCS_MODEL)?.stems ?? [],
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
     annotations: annotations.map((a) => ({ id: a.id, atSeconds: a.at_seconds, text: a.text })),
     stems,

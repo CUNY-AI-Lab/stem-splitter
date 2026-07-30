@@ -5,16 +5,16 @@ import { expect, test } from '@playwright/test';
 
 const CASES = {
   bs_roformer_vocals: {
-    radio: /2 STEMS · HQ vocals/i,
+    radio: /2 STEMS · vocals \+ instrumental/i,
     stems: ['vocals', 'instrumental'],
   },
   htdemucs_ft: {
-    radio: /4 STEMS · cleanest/i,
+    radio: /4 STEMS · vocals \+ drums \+ bass \+ other/i,
     stems: ['vocals', 'drums', 'bass', 'other'],
   },
   htdemucs_6s: {
-    radio: /6 STEMS · \+guitar & piano/i,
-    stems: ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'],
+    radio: /6 STEMS · vocals \+ drums \+ bass \+ other \+ guitar \+ piano/i,
+    stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
   },
 };
 
@@ -62,7 +62,7 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
     });
   }, classCode);
 
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(/Internal Server Error|Application Error/);

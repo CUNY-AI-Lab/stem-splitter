@@ -135,12 +135,49 @@ no browser warnings/errors, and a 200 completion webhook.
   part of the pushed change.
 - Clean install: `npm ci` completed and audited 104 packages.
 - Dependency audit: `npm audit --audit-level=low` found zero vulnerabilities.
-- Unit/service gate: four Worker tests and five Python service tests passed.
-- Mocked browser gate: eight tests passed; the environment-gated real-audio
+- Unit/service gate: seven Worker tests and five Python service tests passed.
+- Mocked browser gate: ten tests passed; the environment-gated real-audio
   spec was intentionally skipped in that command and run separately for all
   three cases above.
 - Worker packaging: Wrangler 4.114.0 production dry run completed successfully.
 - Artifact checksum verification and `git diff --check` both passed.
+
+## July 30 blank-track regression
+
+The model choices now state their outputs directly. The browser builds those
+choices from the Worker response, and each job carries the expected names into
+its processing state. The full-pipeline smoke command no longer contains a
+default song. Its caller must supply a YouTube URL they are allowed to test.
+
+The Worker now requires the exact output set selected for the job. Missing,
+repeated, or unexpected names fail before the mixer appears. Each download must
+also contain an MP3 frame. Empty or non-audio responses are retried three times,
+then the job fails and removes any partial files from that ingestion attempt.
+If a stored track later becomes unavailable, the mixer names it `NO AUDIO`,
+changes the job badge to `AUDIO ERROR`, and disables synchronized playback.
+
+The adversarial browser suite verified an incomplete six-track provider result
+and an empty bass response. The incomplete job showed `FAILED` with zero
+channels. The empty response failed after three checks and removed the vocals
+and drums files written earlier in the attempt.
+
+The actual separator was then rerun with the three recorded sources.
+
+| Choice | Model | Browser-to-ready | Output check |
+|---|---|---:|---|
+| 2 tracks | `bs_roformer_vocals` | 21.073 s | vocals and instrumental, distinct non-empty MP3s |
+| 4 tracks | `htdemucs_ft` | 20.673 s | vocals, drums, bass, other, distinct non-empty MP3s |
+| 6 tracks | `htdemucs_6s` | 11.045 s | vocals, drums, bass, other, guitar, piano, distinct non-empty MP3s |
+
+Every output was 45 seconds long. The expected names matched the rendered names,
+and the browser message arrays were empty. Desktop and 390-pixel mobile checks
+also showed all direct labels, a working six-track selection, and no browser
+warnings or errors.
+
+Wrangler was not authenticated for the remote Cloudflare account, so this pass
+did not inspect Agustina's production job records. The fix and regression tests
+address the concrete code paths that allowed incomplete or empty results to
+appear ready without claiming that the earlier production cases were recovered.
 
 ## Reproduction
 

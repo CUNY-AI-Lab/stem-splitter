@@ -196,7 +196,7 @@ h1 span {
 }
 .yt-go:hover { background: var(--hot); color: var(--bg); }
 
-.stem-choice { display: flex; gap: 0.4rem; }
+.stem-choice { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .stem-choice label {
   display: flex;
   align-items: center;
@@ -210,12 +210,27 @@ h1 span {
   cursor: pointer;
   user-select: none;
 }
+.stem-choice-status {
+  align-self: center;
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+}
 .stem-choice input { accent-color: var(--hot); margin: 0; }
-.stem-choice label[hidden] { display: none; }
 .stem-choice label:has(input:checked) {
   border-color: rgba(255, 182, 72, 0.5);
   color: var(--hot);
   background: var(--hot-soft);
+}
+
+.channel.unavailable {
+  opacity: 0.72;
+}
+.channel.unavailable .meter i {
+  background: var(--ink-faint);
+}
+.channel.unavailable .dl[aria-disabled="true"] {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 /* ─── upload progress ─────────────────────────────────────────────── */
