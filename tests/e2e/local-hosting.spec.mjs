@@ -155,6 +155,8 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
+  await expect(page.locator('#split-summary')).toHaveText('// produces 4 or 6 tracks per split');
+  await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
     page.getByRole('radio', { name: '4 STEMS · vocals + drums + bass + other' })
   ).toBeChecked();
