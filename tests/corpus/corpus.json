@@ -1,10 +1,21 @@
 {
   "$comment": [
     "Real-audio evaluation corpus. Each entry names a source you are allowed to",
-    "test and the adversarial expectations for it. Fill in `source` before",
-    "running: YouTube entries take a URL, file entries take a local path.",
+    "test and the adversarial expectations for it. All sources are CC-licensed",
+    "downloads from archive.org, stored locally under tests/corpus/audio/.",
     "House rule (docs/superpowers/specs/2026-07-30-reliable-model-output-design.md):",
-    "no default song ships in the repo — the caller supplies the audio.",
+    "no audio ships in the repo — the caller supplies the audio. The audio/ dir",
+    "is gitignored; the paths below are relative to the repo root.",
+    "",
+    "Licenses:",
+    "  folk-duet: CC BY 3.0 — Jesse & Hope Wilder, \"Shine\" ( HopeAndJesseSingTogether )",
+    "  orchestral: CC BY 4.0 — Mozart Symphony 41 \"Jupiter\", mvt 1 ( mozart-symphony-41 )",
+    "  shoegaze: CC BY 3.0 — The Sharticles, \"Euphoria\" ( sharticlesep )",
+    "  piano-strings: CC BY 3.0 — Finn Anderson, \"Uncharted Lands\" ( FinnAndersonMusic )",
+    "  jazz-sax: CC BY 3.0 — Jeff Solon Jazz Quartet, \"Jam 1\" ( JeffSolonJazzQuartet )",
+    "  hip-hop: CC BY 4.0 — Jac Martin, \"Drip Drop\" ( drip-drop )",
+    "  bluegrass: CC BY 4.0 — Sonny Young, \"High On a Mountain\" ( southbound_202201 )",
+    "  synthwave: CC BY 4.0 — selene XIV, \"Backed Off\" ( catboi-album )",
     "",
     "expectLoud / expectQuiet are per-model, because which tracks should carry",
     "signal depends on the instrumentation, not on the pipeline. A quiet track",
@@ -14,10 +25,10 @@
 
   "sources": [
     {
-      "slug": "dylan-baez-duet",
-      "kind": "youtube",
-      "source": "",
-      "why": "Two simultaneous lead vocalists over sparse acoustic backing. Adversarial for a model trained on a single lead vocal: the harmony line is the thing most likely to be pushed into `other` instead of `vocals`.",
+      "slug": "folk-duet",
+      "kind": "file",
+      "source": "tests/corpus/audio/folk-duet-shine.mp3",
+      "why": "Two simultaneous lead vocalists (Jesse and Hope Wilder) over sparse acoustic backing. Adversarial for a model trained on a single lead vocal: the harmony line is the thing most likely to be pushed into `other` instead of `vocals`. CC BY 3.0 (archive.org: HopeAndJesseSingTogether).",
       "models": ["vocals_instrumental", "htdemucs_ft"],
       "expect": {
         "vocals_instrumental": { "loud": ["vocals", "instrumental"], "quiet": [] },
@@ -26,14 +37,15 @@
       "manualChecks": [
         "Solo `vocals`: BOTH voices must be present. A duet reduced to one voice is the primary failure mode here and no automated measure detects it.",
         "Solo `other`: listen for a ghost of the harmony vocal. Audible vocal content in `other` means the split under-captured the duet.",
-        "If the recording has no kit or electric bass, `drums`/`bass` being quiet is correct, not a defect."
+        "If the recording has no kit or electric bass, `drums`/`bass` being quiet is correct, not a defect.",
+        "Local file, so full reconstruction is measurable: summed tracks must reproduce the mix."
       ]
     },
     {
-      "slug": "nyphil-orchestral",
-      "kind": "youtube",
-      "source": "",
-      "why": "Orchestral: no lead vocal, no drum kit, no electric bass. This is the 'quiet but valid' trap the 2026-07-30 spec calls out — several contract tracks SHOULD come back near-silent, and the pipeline must not treat that as a transport failure.",
+      "slug": "orchestral",
+      "kind": "file",
+      "source": "tests/corpus/audio/orchestral-mozart-jupiter.mp3",
+      "why": "Mozart Symphony 41 \"Jupiter\", 1st movement. Full orchestra: no lead vocal, no drum kit, no electric bass. This is the 'quiet but valid' trap the 2026-07-30 spec calls out — several contract tracks SHOULD come back near-silent, and the pipeline must not treat that as a transport failure. CC BY 4.0 (archive.org: mozart-symphony-41-in-c-k-551-jupiter).",
       "models": ["htdemucs_6s", "htdemucs_ft"],
       "expect": {
         "htdemucs_6s": {
@@ -46,14 +58,15 @@
         "The job must reach `done`, not `failed`. A near-silent guitar/piano track here is the documented correct outcome and is the live regression test for the blank-stem rejection added in da6ed33.",
         "Confirm each quiet track is quiet-but-valid, not digital silence: the eval reports `digitalSilence` per track.",
         "Timpani landing in `drums` is legitimate, not leakage.",
-        "Solo `other`: it should carry essentially the whole orchestra."
+        "Solo `other`: it should carry essentially the whole orchestra.",
+        "Local file, so full reconstruction is measurable."
       ]
     },
     {
-      "slug": "blonde-redhead",
+      "slug": "shoegaze",
       "kind": "file",
-      "source": "",
-      "why": "Dense layered guitar textures over a prominent rhythm section. Adversarial for the 6-track split specifically: the `guitar` track is the one most likely to come back near-empty while `other` silently absorbs the whole wall of guitar.",
+      "source": "tests/corpus/audio/shoegaze-euphoria.mp3",
+      "why": "Dense layered guitar textures in a lo-fi shoegaze track. Adversarial for the 6-track split specifically: the `guitar` track is the one most likely to come back near-empty while `other` silently absorbs the whole wall of guitar. CC BY 3.0 (archive.org: sharticlesep, The Sharticles, \"Euphoria\").",
       "models": ["htdemucs_6s", "vocals_instrumental"],
       "expect": {
         "htdemucs_6s": {
@@ -69,10 +82,10 @@
       ]
     },
     {
-      "slug": "arcade-fire",
+      "slug": "piano-strings",
       "kind": "file",
-      "source": "",
-      "why": "Large ensemble with real piano, strings and layered group vocals. The 6-track split's `piano` track has actual content to find here, which is the complement to the Blonde Redhead case.",
+      "source": "tests/corpus/audio/piano-uncharted-lands.mp3",
+      "why": "Singer-songwriter track with real piano, strings and layered vocals. The 6-track split's `piano` track has actual content to find here, which is the complement to the shoegaze case. CC BY 3.0 (archive.org: FinnAndersonMusic, Finn Anderson, \"Uncharted Lands\").",
       "models": ["htdemucs_6s", "vocals_instrumental"],
       "expect": {
         "htdemucs_6s": {
@@ -83,7 +96,99 @@
       },
       "manualChecks": [
         "Solo `piano`: confirm it holds piano rather than a smear of strings and organ.",
-        "Layered group vocals: `vocals` should hold the whole stack, not just the lead.",
+        "Solo `vocals`: confirm the lead vocal is cleanly separated from the instrumental backing.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "jazz-sax",
+      "kind": "file",
+      "source": "tests/corpus/audio/jazz-sax-quartet.mp3",
+      "why": "Live jazz quartet: tenor sax, harmonica, flute, guitar, bass, drums — no vocals, no piano, no electric instruments. Adversarial because horns are acoustically similar to vocals (sustained tonal content) and the model has no `sax` track to put them in. Sax and flute will land in `other` or bleed into `vocals`. CC BY 3.0 (archive.org: JeffSolonJazzQuartet, Jam 1).",
+      "models": ["htdemucs_6s", "htdemucs_ft"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["other"],
+          "quiet": ["vocals", "piano"]
+        },
+        "htdemucs_ft": {
+          "loud": ["other"],
+          "quiet": ["vocals"]
+        }
+      },
+      "manualChecks": [
+        "Solo `vocals`: must be quiet-but-valid, not carrying sax. Audible sax in `vocals` is a false positive for vocal detection.",
+        "Solo `other`: should carry sax, harmonica, and flute. If the sax is smeared across `guitar` or `bass`, the model is misclassifying sustained tonal content.",
+        "The job must reach `done`. Quiet vocals/piano here is correct, not a defect — another instance of the blank-stem regression test.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "hip-hop",
+      "kind": "file",
+      "source": "tests/corpus/audio/hiphop-drip-drop.mp3",
+      "why": "Rap vocals over a synthesized beat. Adversarial because rap is spoken-word vocals — no sustained melodic contour — which most vocal-separation models train on less heavily. The beat has no acoustic drums, no guitar, no bass guitar: synthesized kick, snare, and bass. Tests whether `vocals` captures rhythmic speech and whether `other` holds the beat without swallowing it. CC BY 4.0 (archive.org: drip-drop, Jac Martin, \"Drip Drop\").",
+      "models": ["vocals_instrumental", "htdemucs_6s"],
+      "expect": {
+        "vocals_instrumental": {
+          "loud": ["vocals", "instrumental"],
+          "quiet": []
+        },
+        "htdemucs_6s": {
+          "loud": ["vocals", "other"],
+          "quiet": ["piano", "guitar"]
+        }
+      },
+      "manualChecks": [
+        "Solo `vocals`: rap lyrics must be intelligible. A vocal track that drops words or phrases is the primary failure mode for spoken-word input.",
+        "Solo `instrumental`/`other`: the beat must be intact. A beat stripped of its low end means bass leaked into another track.",
+        "If `drums` and `bass` are quiet in the 6s split on a synthesized beat, that is correct — the model has no acoustic drum kit or electric bass to find.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "bluegrass",
+      "kind": "file",
+      "source": "tests/corpus/audio/bluegrass-high-on-mountain.mp3",
+      "why": "Bluegrass: fiddle, banjo, mandolin, acoustic guitar, upright bass, and lead vocal. Adversarial because none of these instruments map cleanly to `guitar`, `bass`, or `drums`. Banjo and mandolin are plucked strings that the model may misclassify as guitar. Fiddle is bowed — sustained tonal content that may bleed into `vocals`. CC BY 4.0 (archive.org: southbound_202201, Sonny Young, \"High On a Mountain\").",
+      "models": ["htdemucs_6s", "vocals_instrumental"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["vocals", "other"],
+          "quiet": ["piano"]
+        },
+        "vocals_instrumental": {
+          "loud": ["vocals", "instrumental"],
+          "quiet": []
+        }
+      },
+      "manualChecks": [
+        "Solo `vocals`: fiddle bleed is the primary concern. If the fiddle is audible in `vocals`, the model is confusing sustained bowing with singing.",
+        "Solo `guitar`: banjo and mandolin may land here. That is acceptable if the guitar track is labeled as stringed-instrument catch-all, but fiddle should not.",
+        "Solo `bass`: upright bass should be present. If it is near-silent and the bass is audible in `other`, the model missed the low end.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "synthwave",
+      "kind": "file",
+      "source": "tests/corpus/audio/synthwave-backed-off.mp3",
+      "why": "Digital jazz/synthwave produced entirely on a Roland MT-32: synthetic bass, synth pads, programmed drums, and vocals. Adversarial because every instrument is synthetic — the model was trained on acoustic instruments and may not recognize synth bass as `bass` or synth pads as `other`. Tests whether the model generalizes beyond its training distribution. CC BY 4.0 (archive.org: catboi-album, selene XIV, \"Backed Off\").",
+      "models": ["htdemucs_6s", "vocals_instrumental"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["vocals", "other"],
+          "quiet": ["piano", "guitar"]
+        },
+        "vocals_instrumental": {
+          "loud": ["vocals", "instrumental"],
+          "quiet": []
+        }
+      },
+      "manualChecks": [
+        "Solo `vocals`: confirm the vocal is separated from the synth pads. Synth-heavy production is where vocal separation often fails on non-acoustic input.",
+        "Solo `bass`: if the synth bass is near-silent, the model did not recognize it as bass. Check whether it landed in `other` instead.",
+        "Solo `drums`: programmed drums may or may not be recognized. If quiet, confirm they landed in `other` and were not lost entirely.",
         "Local file, so full reconstruction is measurable."
       ]
     }

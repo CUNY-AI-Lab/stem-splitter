@@ -15,5 +15,8 @@ docs/acceptance/**/*.log
 .claude/settings.local.json
 V2.md
 
+# Corpus audio (CC-licensed downloads, not shipped in repo)
+tests/corpus/audio/
+
 # Node host (Railway) local data dir
 .railway-data/

@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit",
     "check:replicate": "node --experimental-strip-types scripts/check-replicate-pin.mjs",
     "eval:stems": "node scripts/eval-stems.mjs",
+    "eval:selftest": "./scripts/selftest-eval-stems.sh",
     "test:corpus": "node scripts/run-audio-corpus.mjs",
     "probe:replicate": "node --experimental-strip-types scripts/probe-replicate-outputs.mjs",
     "test:worker": "node --experimental-strip-types --test tests/*.test.mts",

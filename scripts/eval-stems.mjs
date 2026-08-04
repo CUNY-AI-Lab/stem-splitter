@@ -80,6 +80,9 @@ async function decode(path, filters = []) {
     'ffmpeg',
     [
       '-v', 'error', '-i', path,
+      // Pin the first audio stream: corpus downloads often carry embedded cover
+      // art, and letting ffmpeg choose leaves the measurement to stream order.
+      '-map', '0:a:0',
       ...(filters.length ? ['-af', filters.join(',')] : []),
       '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 's16le', '-',
     ],
@@ -94,6 +97,9 @@ async function decode(path, filters = []) {
 async function probe(path) {
   const { stdout } = await run('ffprobe', [
     '-v', 'error',
+    // Without this, a file with cover art can report the image stream's codec
+    // as the audio format.
+    '-select_streams', 'a:0',
     '-show_entries', 'format=duration,bit_rate:stream=codec_name,sample_rate,channels',
     '-of', 'json', path,
   ]);
@@ -157,26 +163,34 @@ function bestCorrelation(a, b) {
   return best;
 }
 
-/** Residual energy of (source - Σ stems), in dB relative to the source. */
+/**
+ * Residual energy of (source - Σ stems), in dB relative to the source.
+ *
+ * Sum first, then align once. Every track in a result comes out of one decode
+ * of one recording, so they share a single delay. Aligning each track to the
+ * source independently invents relative shifts between them that no provider
+ * can produce: a bass-dominated track has a broad correlation peak whose argmax
+ * wanders by a few samples, and a 13-sample shift between two halves of an
+ * exact partition takes the residual from -72 dB to -4 dB. Summing first makes
+ * the alignment well conditioned (the sum is full-band) and keeps the tracks
+ * rigid relative to each other, which is the only physically possible case.
+ */
 function reconstructionResidualDb(source, stems) {
   const n = Math.min(source.length, ...stems.map((s) => s.samples.length));
   const sum = new Float32Array(n);
   for (const stem of stems) {
-    // Align each stem to the source before adding it in.
-    const { lag } = bestCorrelation(source, stem.samples);
-    for (let i = 0; i < n; i++) {
-      const j = i + lag;
-      if (j >= 0 && j < stem.samples.length) sum[i] += stem.samples[j];
-    }
+    for (let i = 0; i < n; i++) sum[i] += stem.samples[i];
   }
-  const residual = new Float32Array(n);
-  for (let i = 0; i < n; i++) residual[i] = source[i] - sum[i];
   const sourceRms = rms(source.subarray(0, n));
   if (!sourceRms) return { residualDb: 0, sumCorr: 0 };
-  return {
-    residualDb: dB(rms(residual) / sourceRms),
-    sumCorr: bestCorrelation(source.subarray(0, n), sum).corr,
-  };
+
+  const { lag, corr } = bestCorrelation(source.subarray(0, n), sum);
+  const residual = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = i + lag;
+    residual[i] = source[i] - (j >= 0 && j < n ? sum[j] : 0);
+  }
+  return { residualDb: dB(rms(residual) / sourceRms), sumCorr: corr };
 }
 
 // --- main ------------------------------------------------------------------

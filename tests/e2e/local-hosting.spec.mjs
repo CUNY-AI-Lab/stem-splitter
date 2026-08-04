@@ -24,6 +24,10 @@ const stemAudio = new Map(
     ])
   )
 );
+// A valid MP3 roughly 45 dB below the other fixtures: quiet, but not silence.
+const quietAudio = await readFile(
+  fileURLToPath(new URL('../fixtures/audio/quiet.mp3', import.meta.url))
+);
 
 const test = base.extend({
   network: [
@@ -506,6 +510,204 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
   if (process.env.YOUTUBE_QA_SCREENSHOT) {
     await page.screenshot({ path: process.env.YOUTUBE_QA_SCREENSHOT, fullPage: true });
   }
+});
+
+test('completes a six-track split whose guitar and piano tracks are near-silent', async ({
+  page,
+  network,
+  server,
+}, testInfo) => {
+  const predictionId = 'e2e-quiet-six-track';
+  const sixTrackNames = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
+  // Orchestral material has no guitar and no piano to find, so those tracks come
+  // back quiet but perfectly valid. The job must still finish: the gate added in
+  // da6ed33 rejects unplayable audio, not quiet audio, and conflating the two
+  // would fail every orchestral six-track split in the class.
+  const quietNames = new Set(['guitar', 'piano']);
+
+  network.use(
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const payload = await request.json();
+      expect(payload.input.model).toBe('htdemucs_6s');
+      return HttpResponse.json({ id: predictionId, status: 'starting' });
+    }),
+    http.get(`https://api.replicate.com/v1/predictions/${predictionId}`, () =>
+      HttpResponse.json({
+        id: predictionId,
+        status: 'succeeded',
+        output: Object.fromEntries(
+          sixTrackNames.map((name) => [name, `https://quiet-fixtures.test/${name}.mp3`])
+        ),
+      })
+    ),
+    http.get('https://quiet-fixtures.test/:stem.mp3', ({ params }) => {
+      const name = String(params.stem);
+      const audio = quietNames.has(name) ? quietAudio : stemAudio.get(name);
+      return new HttpResponse(audio, { headers: { 'Content-Type': 'audio/mpeg' } });
+    })
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+    window.__e2eAudioElements = [];
+    window.Audio = new Proxy(window.Audio, {
+      construct(NativeAudio, args) {
+        const audio = Reflect.construct(NativeAudio, args);
+        window.__e2eAudioElements.push(audio);
+        return audio;
+      },
+    });
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page
+    .getByRole('radio', {
+      name: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+    })
+    .check();
+  await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
+
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+  await expect(page.locator('.channel')).toHaveCount(6);
+  // Quiet is not the same as broken: no channel may render as unplayable.
+  await expect(page.locator('.channel.unavailable')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Play all stems' })).toBeEnabled();
+  await page.waitForFunction(
+    () =>
+      window.__e2eAudioElements.length === 6 &&
+      window.__e2eAudioElements.every(
+        (audio) => audio.readyState >= HTMLMediaElement.HAVE_METADATA
+      )
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('quiet-six-track-ready.png'),
+    fullPage: true,
+  });
+
+  const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  const resultResponse = await server.fetch(`/api/jobs/${created.id}`);
+  const result = await resultResponse.json();
+  expect(result.status).toBe('done');
+  expect(result.error).toBeNull();
+  expect(result.stems.map((stem) => stem.name)).toEqual(sixTrackNames);
+
+  // The quiet tracks were stored verbatim rather than dropped or substituted.
+  for (const name of quietNames) {
+    const stored = await server.fetch(`/api/files/stems/${created.id}/${name}.mp3`);
+    expect(stored.status).toBe(200);
+    expect(Buffer.from(await stored.arrayBuffer()).equals(quietAudio)).toBe(true);
+  }
+  expect(browserErrors).toEqual([]);
+});
+
+test('imports a YouTube link and renames no_vocals for the two-track split', async ({
+  page,
+  network,
+  server,
+}) => {
+  const youtubeAudio = makeM4a();
+  const youtubeVideoId = 'dQw4w9WgXcQ';
+  const separationId = 'e2e-youtube-two-track';
+
+  network.use(
+    http.get('https://api.replicate.com/v1/models/test/yt-audio', () =>
+      HttpResponse.json({ latest_version: { id: 'e2e-yt-version' } })
+    ),
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const payload = await request.json();
+      if (payload.input.url) {
+        expect(payload).toEqual({
+          version: 'e2e-yt-version',
+          input: {
+            url: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+            max_duration: 900,
+          },
+        });
+        return HttpResponse.json({
+          id: 'e2e-youtube-two-track-fetch',
+          status: 'succeeded',
+          output: {
+            audio: 'https://fixtures.replicate.delivery/two-track.m4a',
+            title: 'Fixture Duet Epsilon',
+            duration: 22,
+          },
+        });
+      }
+
+      // An imported source runs the same catalogue-driven karaoke payload as an
+      // uploaded one — the import path must not smuggle in its own model wiring.
+      expect(payload).toMatchObject({
+        version: 'e2e-model-version',
+        input: {
+          model: 'htdemucs_ft',
+          stem: 'vocals',
+          output_format: 'mp3',
+          mp3_bitrate: 192,
+        },
+      });
+      return HttpResponse.json({ id: separationId, status: 'starting' });
+    }),
+    http.get('https://fixtures.replicate.delivery/two-track.m4a', () =>
+      new HttpResponse(youtubeAudio, {
+        headers: {
+          'Content-Type': 'audio/mp4',
+          'Content-Length': String(youtubeAudio.length),
+        },
+      })
+    ),
+    http.get(`https://api.replicate.com/v1/predictions/${separationId}`, () =>
+      HttpResponse.json({
+        id: separationId,
+        status: 'succeeded',
+        output: {
+          vocals: 'https://youtube-two-track.test/vocals.mp3',
+          no_vocals: 'https://youtube-two-track.test/other.mp3',
+        },
+      })
+    ),
+    http.get('https://youtube-two-track.test/:stem.mp3', ({ params }) =>
+      new HttpResponse(stemAudio.get(String(params.stem)), {
+        headers: { 'Content-Type': 'audio/mpeg' },
+      })
+    )
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('radio', { name: '2 STEMS · vocals + instrumental' }).check();
+  await page.getByLabel('YouTube link').fill(
+    `https://www.youtube.com/watch?v=${youtubeVideoId}`
+  );
+  await page.getByRole('button', { name: 'FETCH' }).click();
+
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+  await expect(page.locator('.console-title')).toHaveText('Fixture Duet Epsilon');
+  await expect(page.locator('.channel')).toHaveCount(2);
+  await expect(page.locator('.ch-name')).toHaveText(['vocals', 'instrumental']);
+
+  const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  expect(created.model).toBe('vocals_instrumental');
+  expect(created.expectedStems).toEqual(['vocals', 'instrumental']);
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  const { keys } = await storedKeysResponse.json();
+  expect(keys).toContain(`stems/${created.id}/instrumental.mp3`);
+  expect(keys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  expect(keys.some((key) => /^uploads\/[0-9a-f-]+\/source\.m4a$/.test(key))).toBe(true);
+  expect(browserErrors).toEqual([]);
 });
 
 test('fails an empty MP3 response and removes partial track files', async ({ network, server }) => {

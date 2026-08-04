@@ -15,8 +15,12 @@ npm run check:replicate   # verify REPLICATE_MODEL_VERSION still accepts what th
 npm run probe:replicate -- <option-id> <audio-url>   # record a provider's real output names (~$0.05)
 CLASS_CODE=<code> npm run test:corpus     # real-audio eval corpus (tests/corpus/corpus.json; paid)
 npm run eval:stems -- --source mix.mp3 --stem vocals=v.mp3 --stem instrumental=i.mp3 --complementary
+npm run eval:selftest -- <audio-file>   # ground-truth self-test of the eval tool itself (free)
 CLASS_CODE=<code> ./scripts/smoke.sh   # free API smoke checks against the deployed Worker (code required)
 npm run test:e2e          # real-WAV browser flow with local D1/R2 + mocked Replicate
+SOURCE_AUDIO=song.mp3 ./scripts/run-real-audio-e2e.sh          # live browser run, free local separator
+BACKEND=replicate MODEL=vocals_instrumental SOURCE_AUDIO=song.mp3 ./scripts/run-real-audio-e2e.sh   # paid
+BACKEND=replicate MODEL=htdemucs_6s YOUTUBE_URL=<url> ./scripts/run-real-audio-e2e.sh               # paid import
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
 SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>  # + listening-guy guide/chat live checks (<1¢)
@@ -59,7 +63,9 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 ## Local dev
 
-`npm run dev` uses `--remote` on purpose: presigned URLs point at the **real** R2 bucket. The `LOCAL_DEV=1` Audio Separator path and Funnel-backed `LOCAL_HOSTING=true` path instead use simulated D1/R2. Both local modes stream only fixed-length uploads, HMAC-sign temporary source URLs, and perform hourly 30-day cleanup. `npm run test:e2e` covers the complete browser/upload/job/poll/stem flow with the on-disk WAV/MP3 fixtures in `tests/fixtures/audio` and a mocked Replicate boundary. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected).
+`npm run dev` uses `--remote` on purpose: presigned URLs point at the **real** R2 bucket. The `LOCAL_DEV=1` Audio Separator path and Funnel-backed `LOCAL_HOSTING=true` path instead use simulated D1/R2. Both local modes stream only fixed-length uploads, HMAC-sign temporary source URLs, and perform hourly 30-day cleanup. `npm run test:e2e` covers the complete browser/upload/job/poll/stem flow with the on-disk WAV/MP3 fixtures in `tests/fixtures/audio` and a mocked Replicate boundary — including both import paths (YouTube → 6 tracks, YouTube → 2 tracks with the `no_vocals` rename) and the **quiet-but-valid** case: a six-track split whose `guitar`/`piano` come back near-silent must reach `done`, because the blank-stem gate rejects unplayable audio, not quiet audio. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected).
+
+`scripts/run-real-audio-e2e.sh` is the *live* browser harness: same Playwright flow, real separation, no mocks. `BACKEND=audio-separator` (default) runs the local Python separator for free; `BACKEND=replicate` runs the paid provider and is the only way to exercise a real YouTube import in the browser. Provider webhooks cannot reach localhost, so a Replicate run there completes through the reconciliation fallback — that is the point, not a workaround. Supply exactly one of `SOURCE_AUDIO` or `YOUTUBE_URL`; no default song ships in the repo.
 
 ## Railway host (dev / prototyping)
 
@@ -72,6 +78,10 @@ Worth knowing from here: it is the only mode with a publicly reachable origin, s
 The contract gate only checks track *names*. `scripts/eval-stems.mjs` checks the *audio*: per-track level (distinguishing "quiet but valid" from blank, per the 2026-07-30 spec), pairwise correlation (catches a provider returning the same file under two names), and reconstruction of the mix from the summed tracks. Reconstruction thresholds differ by split type and this matters — a **complementary** split (the 2-track karaoke mode, where `no_vocals` is the arithmetic sum of the other sources) must reconstruct to better than −20 dB, while independently estimated 4/6-track splits get −12 dB. A single lenient threshold passes a deliberately mis-renamed 2-track split; don't merge them. The 4/6-track figure is provisional until calibrated against a real run.
 
 Known blind spot: reconstruction cannot detect two stems being **swapped** (the sum is identical either way), so a sub-200 Hz energy comparison flags a likely vocals/instrumental swap as a WARN. It is a heuristic — confirm by ear.
+
+**The eval tool has its own ground truth: `npm run eval:selftest -- <audio-file>`.** It builds exact partitions with ffmpeg, so every expected verdict is known by construction rather than by listening, and it is free. Run it after any change to `eval-stems.mjs` — two real defects were found this way, one in each direction. A single lenient threshold once *passed* a mis-renamed 2-track split at 91.6%; and aligning each track to the source independently once *failed* a split that sums exactly, because a bass-dominated track's correlation peak wanders a few samples and the relative shift destroys the sum (−72 dB → −4 dB). Tracks in one result share a single decode and therefore a single delay: **sum first, align once.** That second bug false-FAILed every correct split, 2- and 6-track alike, so a corpus run against it would have condemned a working pipeline.
+
+When building ground truth, note that cascaded ffmpeg `highpass`/`lowpass` bands do **not** partition a signal — they are IIR, so they shift phase and cross over at −3 dB, and four such bands reconstruct at only ~77%. Build partitions by successive subtraction, and leave headroom so the parts cannot clip.
 
 `tests/corpus/corpus.json` holds the evaluation corpus with per-source adversarial expectations; `scripts/run-audio-corpus.mjs` drives it through a deployment. No audio ships in the repo (house rule) — fill in `source` with material you may test. For YouTube sources the original mix is unretrievable by design (`/api/files/*` serves only `stems/`), so those are scored by **cross-model consistency** instead: two different splits of the same recording must sum to the same audio.
 
