@@ -54,11 +54,11 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 `npm run dev` uses `--remote` on purpose: presigned URLs point at the **real** R2 bucket. The `LOCAL_DEV=1` Audio Separator path and Funnel-backed `LOCAL_HOSTING=true` path instead use simulated D1/R2. Both local modes stream only fixed-length uploads, HMAC-sign temporary source URLs, and perform hourly 30-day cleanup. `npm run test:e2e` covers the complete browser/upload/job/poll/stem flow with the on-disk WAV/MP3 fixtures in `tests/fixtures/audio` and a mocked Replicate boundary. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected).
 
-## Railway host (prototyping only)
+## Railway host (dev / prototyping)
 
-`server/` runs the same Hono app as a plain Node process for prototyping and dev testing on Railway — **Cloudflare Workers stays the production target**, and nothing under `src/` knows this host exists. `server/d1.ts` and `server/r2.ts` are shims implementing only the binding surface `src/` uses (D1: `prepare/bind/first/run/all/batch` + `meta.changes`; R2: `put/get/head/delete/list` + `writeHttpMetadata`), backed by `node:sqlite` and a mounted volume at `DATA_DIR` (`/data` on Railway). `server/index.ts` applies `schema.sql` at boot (idempotent), serves `public/` the way Workers assets would, and derives `PUBLIC_BASE_URL` from `RAILWAY_PUBLIC_DOMAIN`.
+`server/` runs this same Hono app as a plain Node process — `node:sqlite` and a mounted volume standing in for the D1/R2 bindings — for prototyping and dev testing on Railway. **Cloudflare Workers stays the production target and this file stays authoritative for `src/`;** nothing under `src/` knows that host exists, and changing `src/` to accommodate Node is a bug. Its own `server/CLAUDE.md` covers the shims, the Railway setup, and the deploy/verify loop.
 
-It runs in `LOCAL_HOSTING=true`, so there is no presigning and no R2 credentials; unlike localhost dev, the public domain means Replicate can reach both the signed source URL and the webhook. `WEBHOOK_SECRET` there is deliberately **not** production's. `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, and `OPENROUTER_API_KEY` are checked lazily, not at boot — without them uploads, mixer, labels, and stem playback still work and only separation/coach calls fail, so a missing token can't crash-loop the service. Run locally with `npm start` (needs `WEBHOOK_SECRET` and `CLASS_CODE`).
+Worth knowing from here: it is the only mode with a publicly reachable origin, so it is the only way to exercise the real Replicate webhook and signed-source-URL round trip — localhost jobs only ever complete through the reconciliation fallback.
 
 ## Operational invariants
 
