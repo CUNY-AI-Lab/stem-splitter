@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs splits it into 2, 4, or 6 tracks on a Replicate GPU → students play stems back in a synchronized in-browser mixer with per-stem mute. Live at https://stem-splitter.ailab-452.workers.dev (the class code is the `CLASS_CODE` secret — never write its value into this file or any committed file).
+Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs splits it into 2, 4, or 6 tracks on a Replicate GPU → students play stems back in a synchronized in-browser mixer with per-stem mute. Live at https://stem-splitter.ailab-452.workers.dev — the Cloudflare Worker, which is the production host and the only URL students use (the class code is the `CLASS_CODE` secret — never write its value into this file or any committed file). A second Node host under `server/` runs the same app on Railway for prototyping; see "Where this runs" for which to reach for and how the two differ.
 
 ## Commands
 
@@ -24,8 +24,10 @@ BACKEND=replicate MODEL=htdemucs_6s YOUTUBE_URL=<url> ./scripts/run-real-audio-e
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
 SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>  # + listening-guy guide/chat live checks (<1¢)
-npm run deploy            # wrangler deploy (account is pinned in wrangler.jsonc)
+npm run deploy            # wrangler deploy to production (account is pinned in wrangler.jsonc)
 npm run dev               # wrangler dev --remote — see "Local dev" below for why
+npm start                 # Node host (server/) for Railway prototyping; needs WEBHOOK_SECRET + CLASS_CODE
+railway up --detach -m "<summary>"   # deploy the Node host — see server/CLAUDE.md for the verify loop
 npm run db:migrate        # apply schema.sql to remote D1 (fresh install; additive: db:migrate:2, db:migrate:3)
 npx wrangler d1 execute stem-splitter --remote --json --command "SELECT id,status FROM jobs ORDER BY created_at DESC LIMIT 5"   # ad-hoc prod queries
 npx wrangler tail         # live production logs
@@ -67,11 +69,45 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 `scripts/run-real-audio-e2e.sh` is the *live* browser harness: same Playwright flow, real separation, no mocks. `BACKEND=audio-separator` (default) runs the local Python separator for free; `BACKEND=replicate` runs the paid provider and is the only way to exercise a real YouTube import in the browser. Provider webhooks cannot reach localhost, so a Replicate run there completes through the reconciliation fallback — that is the point, not a workaround. Supply exactly one of `SOURCE_AUDIO` or `YOUTUBE_URL`; no default song ships in the repo.
 
-## Railway host (dev / prototyping)
+## Where this runs: Railway for prototyping, Cloudflare for teaching
 
-`server/` runs this same Hono app as a plain Node process — `node:sqlite` and a mounted volume standing in for the D1/R2 bindings — for prototyping and dev testing on Railway. **Cloudflare Workers stays the production target and this file stays authoritative for `src/`;** nothing under `src/` knows that host exists, and changing `src/` to accommodate Node is a bug. Its own `server/CLAUDE.md` covers the shims, the Railway setup, and the deploy/verify loop.
+Two hosts run the same Hono app, and they are not peers. **Cloudflare Workers is the production target and the only place the class ever points at.** Railway is a prototyping host: fast to redeploy, publicly reachable, and disposable.
 
-Worth knowing from here: it is the only mode with a publicly reachable origin, so it is the only way to exercise the real Replicate webhook and signed-source-URL round trip — localhost jobs only ever complete through the reconciliation fallback.
+| | **Railway** (`server/`) | **Cloudflare Workers** (`src/`) |
+|---|---|---|
+| Role | dev / rapid prototyping | production, indefinite hosting |
+| Storage | `node:sqlite` + a volume at `/data` | D1 `stem-splitter` + R2 `stem-splitter-audio` |
+| Deploy | `railway up --detach` | `npm run deploy` |
+| Retention | in-app hourly cleanup | R2 bucket lifecycle rule |
+| Audience | you | students |
+
+Pick Railway when you want a tight iteration loop or a **publicly reachable origin**. That second property is the one localhost cannot fake: under `LOCAL_HOSTING=true` the Worker hands Replicate an HMAC-signed `/api/local-sources/` URL and expects a webhook back at `/api/webhooks/separation`, and on localhost both are unreachable — those jobs only ever finish through the reconciliation fallback. Railway is therefore the only way to exercise the real webhook and signed-source round trip end to end.
+
+Pick Cloudflare for anything a student will touch. Its bindings are managed (no volume to lose), the 30-day deletion is enforced by the platform rather than by app code, and it is already provisioned on the ailab account.
+
+**The trap: nothing on Railway promotes itself.** It has its own SQLite database, its own audio volume, and its own `WEBHOOK_SECRET` and `CLASS_CODE` — deliberately different from production's. Jobs, stems, labels, notes, and guides created there **do not exist** in production, and no amount of prototyping moves code, secrets, or schema across. Validating on Railway proves the *logic*; it does not prove the deploy. It also does not exercise Workers' CPU-time and subrequest limits, which a Node process simply doesn't have.
+
+`server/CLAUDE.md` is authoritative for `server/` — the shims, the Railway project setup, and the verify loop. The rule it opens with governs both directories: **`server/` must never require a change to `src/`.** An edit under `src/` to accommodate Node is a bug, because it drifts the prototyping host and the production target apart.
+
+### Promoting to Cloudflare before teaching starts
+
+Run in order; each step gates the next.
+
+```sh
+npx wrangler whoami                            # must be ailab@gc.cuny.edu, else writes fail: Authentication error [10000]
+npm run typecheck && npm run test:worker && npm run test:e2e
+npm run check:replicate                        # pin still accepts every catalogue model id and input key
+npx wrangler deploy --dry-run --outdir dist    # config/bundle validation, no deploy
+npm run deploy
+CLASS_CODE=<code> ./scripts/smoke.sh           # against the deployed Worker
+```
+
+Then confirm the things that live outside the bundle and so survive no deploy on their own:
+
+- Any new `migrations/000N-*.sql` applied to **remote** D1 (`npm run db:migrate:N`) — Railway applies `schema.sql` on every boot and needs no migration, so a schema change can pass there and be missing in production.
+- R2 lifecycle rule and CORS still applied (see Operational invariants) — both are bucket state, not code.
+- Every secret set for the Worker: `wrangler secret put` is per-environment, and Railway variables are a separate set.
+- `PUBLIC_BASE_URL` in `wrangler.jsonc` matches the deployed URL — Replicate posts webhooks there, so a stale value strands jobs on the fallback path.
 
 ## Real-audio evaluation
 
