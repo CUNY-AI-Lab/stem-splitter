@@ -13,6 +13,8 @@ npm run typecheck         # tsc --noEmit (no unit tests; this is the static chec
 npm run test:worker       # node --test: split contract, rename, catalogue invariants, version guard
 npm run check:replicate   # verify REPLICATE_MODEL_VERSION still accepts what the catalogue sends
 npm run probe:replicate -- <option-id> <audio-url>   # record a provider's real output names (~$0.05)
+CLASS_CODE=<code> npm run test:corpus     # real-audio eval corpus (tests/corpus/corpus.json; paid)
+npm run eval:stems -- --source mix.mp3 --stem vocals=v.mp3 --stem instrumental=i.mp3 --complementary
 CLASS_CODE=<code> ./scripts/smoke.sh   # free API smoke checks against the deployed Worker (code required)
 npm run test:e2e          # real-WAV browser flow with local D1/R2 + mocked Replicate
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
@@ -64,6 +66,14 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 `server/` runs this same Hono app as a plain Node process — `node:sqlite` and a mounted volume standing in for the D1/R2 bindings — for prototyping and dev testing on Railway. **Cloudflare Workers stays the production target and this file stays authoritative for `src/`;** nothing under `src/` knows that host exists, and changing `src/` to accommodate Node is a bug. Its own `server/CLAUDE.md` covers the shims, the Railway setup, and the deploy/verify loop.
 
 Worth knowing from here: it is the only mode with a publicly reachable origin, so it is the only way to exercise the real Replicate webhook and signed-source-URL round trip — localhost jobs only ever complete through the reconciliation fallback.
+
+## Real-audio evaluation
+
+The contract gate only checks track *names*. `scripts/eval-stems.mjs` checks the *audio*: per-track level (distinguishing "quiet but valid" from blank, per the 2026-07-30 spec), pairwise correlation (catches a provider returning the same file under two names), and reconstruction of the mix from the summed tracks. Reconstruction thresholds differ by split type and this matters — a **complementary** split (the 2-track karaoke mode, where `no_vocals` is the arithmetic sum of the other sources) must reconstruct to better than −20 dB, while independently estimated 4/6-track splits get −12 dB. A single lenient threshold passes a deliberately mis-renamed 2-track split; don't merge them. The 4/6-track figure is provisional until calibrated against a real run.
+
+Known blind spot: reconstruction cannot detect two stems being **swapped** (the sum is identical either way), so a sub-200 Hz energy comparison flags a likely vocals/instrumental swap as a WARN. It is a heuristic — confirm by ear.
+
+`tests/corpus/corpus.json` holds the evaluation corpus with per-source adversarial expectations; `scripts/run-audio-corpus.mjs` drives it through a deployment. No audio ships in the repo (house rule) — fill in `source` with material you may test. For YouTube sources the original mix is unretrievable by design (`/api/files/*` serves only `stems/`), so those are scored by **cross-model consistency** instead: two different splits of the same recording must sum to the same audio.
 
 ## Operational invariants
 

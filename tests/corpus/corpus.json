@@ -1,0 +1,91 @@
+{
+  "$comment": [
+    "Real-audio evaluation corpus. Each entry names a source you are allowed to",
+    "test and the adversarial expectations for it. Fill in `source` before",
+    "running: YouTube entries take a URL, file entries take a local path.",
+    "House rule (docs/superpowers/specs/2026-07-30-reliable-model-output-design.md):",
+    "no default song ships in the repo — the caller supplies the audio.",
+    "",
+    "expectLoud / expectQuiet are per-model, because which tracks should carry",
+    "signal depends on the instrumentation, not on the pipeline. A quiet track",
+    "is a PASS with a note; a blank one is a FAIL. That distinction is the point",
+    "of the orchestral entry."
+  ],
+
+  "sources": [
+    {
+      "slug": "dylan-baez-duet",
+      "kind": "youtube",
+      "source": "",
+      "why": "Two simultaneous lead vocalists over sparse acoustic backing. Adversarial for a model trained on a single lead vocal: the harmony line is the thing most likely to be pushed into `other` instead of `vocals`.",
+      "models": ["vocals_instrumental", "htdemucs_ft"],
+      "expect": {
+        "vocals_instrumental": { "loud": ["vocals", "instrumental"], "quiet": [] },
+        "htdemucs_ft": { "loud": ["vocals", "other"], "quiet": [] }
+      },
+      "manualChecks": [
+        "Solo `vocals`: BOTH voices must be present. A duet reduced to one voice is the primary failure mode here and no automated measure detects it.",
+        "Solo `other`: listen for a ghost of the harmony vocal. Audible vocal content in `other` means the split under-captured the duet.",
+        "If the recording has no kit or electric bass, `drums`/`bass` being quiet is correct, not a defect."
+      ]
+    },
+    {
+      "slug": "nyphil-orchestral",
+      "kind": "youtube",
+      "source": "",
+      "why": "Orchestral: no lead vocal, no drum kit, no electric bass. This is the 'quiet but valid' trap the 2026-07-30 spec calls out — several contract tracks SHOULD come back near-silent, and the pipeline must not treat that as a transport failure.",
+      "models": ["htdemucs_6s", "htdemucs_ft"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["other"],
+          "quiet": ["vocals", "bass", "guitar", "piano"]
+        },
+        "htdemucs_ft": { "loud": ["other"], "quiet": ["vocals", "bass"] }
+      },
+      "manualChecks": [
+        "The job must reach `done`, not `failed`. A near-silent guitar/piano track here is the documented correct outcome and is the live regression test for the blank-stem rejection added in da6ed33.",
+        "Confirm each quiet track is quiet-but-valid, not digital silence: the eval reports `digitalSilence` per track.",
+        "Timpani landing in `drums` is legitimate, not leakage.",
+        "Solo `other`: it should carry essentially the whole orchestra."
+      ]
+    },
+    {
+      "slug": "blonde-redhead",
+      "kind": "file",
+      "source": "",
+      "why": "Dense layered guitar textures over a prominent rhythm section. Adversarial for the 6-track split specifically: the `guitar` track is the one most likely to come back near-empty while `other` silently absorbs the whole wall of guitar.",
+      "models": ["htdemucs_6s", "vocals_instrumental"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["vocals", "drums", "bass", "other", "guitar"],
+          "quiet": ["piano"]
+        },
+        "vocals_instrumental": { "loud": ["vocals", "instrumental"], "quiet": [] }
+      },
+      "manualChecks": [
+        "Compare `guitar` RMS against `other`. A guitar track more than ~20 dB below `other` on a guitar-led song means the 6-track split is not earning its extra cost.",
+        "Local file, so full reconstruction is measurable: summed tracks must reproduce the mix.",
+        "Solo `vocals`: dense reverb-heavy production is where vocal bleed into `other` is most audible."
+      ]
+    },
+    {
+      "slug": "arcade-fire",
+      "kind": "file",
+      "source": "",
+      "why": "Large ensemble with real piano, strings and layered group vocals. The 6-track split's `piano` track has actual content to find here, which is the complement to the Blonde Redhead case.",
+      "models": ["htdemucs_6s", "vocals_instrumental"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["vocals", "drums", "bass", "other", "piano"],
+          "quiet": []
+        },
+        "vocals_instrumental": { "loud": ["vocals", "instrumental"], "quiet": [] }
+      },
+      "manualChecks": [
+        "Solo `piano`: confirm it holds piano rather than a smear of strings and organ.",
+        "Layered group vocals: `vocals` should hold the whole stack, not just the lead.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    }
+  ]
+}
