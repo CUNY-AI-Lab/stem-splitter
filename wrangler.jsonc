@@ -36,6 +36,9 @@
     // "audio-separator" (self-hosted), or "modal" (stub).
     "SEPARATION_BACKEND": "replicate",
     "REPLICATE_YT_MODEL": "smorello87/yt-audio",
+    // Cloudflare egress is usually bot-blocked by YouTube. Start with the
+    // authenticated yt-dlp service, then fall back to the in-Worker client.
+    "YOUTUBE_FETCH_ORDER": "replicate-first",
     // OpenRouter model slug for the Listening Guy coach; swap to any cheap
     // tool-calling model without code changes. Unset disables the assistant.
     "ASSISTANT_MODEL": "z-ai/glm-5.2"

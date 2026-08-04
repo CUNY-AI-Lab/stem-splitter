@@ -46,6 +46,8 @@ const test = base.extend({
               LOCAL_HOSTING: 'true',
               PUBLIC_BASE_URL: TEST_PUBLIC_BASE_URL,
               SEPARATION_BACKEND: 'replicate',
+              REPLICATE_YT_MODEL: 'test/yt-audio',
+              YOUTUBE_FETCH_ORDER: 'replicate-first',
             },
             secrets: {
               R2_ACCESS_KEY_ID: 'e2e-r2-access-key',
@@ -153,6 +155,8 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
+  await expect(page.locator('#split-summary')).toHaveText('// produces 4 or 6 tracks per split');
+  await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
     page.getByRole('radio', { name: '4 STEMS · vocals + drums + bass + other' })
   ).toBeChecked();
@@ -306,6 +310,116 @@ test('fails an incomplete six-track result instead of rendering blank channels',
     expect.stringMatching(/^uploads\/[0-9a-f-]+\/source\.wav$/),
   ]);
   expect(browserErrors).toEqual([]);
+});
+
+test('imports authenticated YouTube audio and runs the selected six-track split', async ({
+  page,
+  network,
+  server,
+}) => {
+  const youtubeAudio = makeM4a();
+  const youtubeVideoId = 'jNQXAC9IVRw';
+  const separationId = 'e2e-youtube-six-track';
+  const sixTrackNames = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
+
+  network.use(
+    http.get('https://api.replicate.com/v1/models/test/yt-audio', () =>
+      HttpResponse.json({ latest_version: { id: 'e2e-yt-version' } })
+    ),
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const payload = await request.json();
+      if (payload.input.url) {
+        expect(payload).toEqual({
+          version: 'e2e-yt-version',
+          input: {
+            url: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+            max_duration: 900,
+          },
+        });
+        return HttpResponse.json({
+          id: 'e2e-youtube-fetch',
+          status: 'succeeded',
+          output: {
+            audio: 'https://fixtures.replicate.delivery/imported.m4a',
+            title: 'Fixture Track Delta',
+            duration: 19,
+          },
+        });
+      }
+
+      expect(payload.input.model).toBe('htdemucs_6s');
+      return HttpResponse.json({ id: separationId, status: 'starting' });
+    }),
+    http.get('https://fixtures.replicate.delivery/imported.m4a', () => {
+      return new HttpResponse(youtubeAudio, {
+        headers: {
+          'Content-Type': 'audio/mp4',
+          'Content-Length': String(youtubeAudio.length),
+        },
+      });
+    }),
+    http.get(`https://api.replicate.com/v1/predictions/${separationId}`, () =>
+      HttpResponse.json({
+        id: separationId,
+        status: 'succeeded',
+        output: Object.fromEntries(
+          sixTrackNames.map((name) => [name, `https://youtube-stems.test/${name}.mp3`])
+        ),
+      })
+    ),
+    http.get('https://youtube-stems.test/:stem.mp3', ({ params }) => {
+      const name = String(params.stem);
+      const audio = stemAudio.get(name) ?? stemAudio.get('other');
+      return new HttpResponse(audio, { headers: { 'Content-Type': 'audio/mpeg' } });
+    })
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page
+    .getByRole('radio', {
+      name: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+    })
+    .check();
+  await page.getByLabel('YouTube link').fill(
+    `https://www.youtube.com/watch?v=${youtubeVideoId}`
+  );
+  await page.getByRole('button', { name: 'FETCH' }).click();
+
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+  await expect(page.locator('.console-title')).toHaveText('Fixture Track Delta');
+  await expect(page.locator('.channel')).toHaveCount(6);
+  await expect(page.getByRole('button', { name: 'FETCH' })).toBeEnabled();
+
+  const [created] = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('jobs') || '[]')
+  );
+  expect(created.model).toBe('htdemucs_6s');
+  expect(created.expectedStems).toEqual(sixTrackNames);
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  const { keys } = await storedKeysResponse.json();
+  const sourceKey = keys.find((key) => /^uploads\/[0-9a-f-]+\/source\.m4a$/.test(key));
+  expect(sourceKey).toBeTruthy();
+  const storedSource = await e2eFetch(
+    server,
+    `/__e2e/audio?key=${encodeURIComponent(sourceKey)}`
+  );
+  expect(storedSource.status).toBe(200);
+  expect(storedSource.headers.get('content-length')).toBe(String(youtubeAudio.length));
+  expect(Buffer.from(await storedSource.arrayBuffer()).equals(youtubeAudio)).toBe(true);
+  expect(browserErrors).toEqual([]);
+  if (process.env.YOUTUBE_QA_SCREENSHOT) {
+    await page.screenshot({ path: process.env.YOUTUBE_QA_SCREENSHOT, fullPage: true });
+  }
 });
 
 test('fails an empty MP3 response and removes partial track files', async ({ network, server }) => {
@@ -745,4 +859,10 @@ function e2eFetch(server, path, init = {}) {
       ...(init.headers ?? {}),
     },
   });
+}
+
+function makeM4a(size = 2048) {
+  const bytes = new Uint8Array(size);
+  bytes.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+  return bytes;
 }

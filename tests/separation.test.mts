@@ -25,7 +25,16 @@ test('Replicate never advertises or accepts the local BS-RoFormer profile', () =
 });
 
 test('model choices state every track they produce', () => {
-  assert.equal(getSeparationOption('bs_roformer_vocals')?.label, '2 STEMS · vocals + instrumental');
+  assert.deepEqual(
+    {
+      label: getSeparationOption('bs_roformer_vocals')?.label,
+      engine: getSeparationOption('bs_roformer_vocals')?.engine,
+    },
+    {
+      label: '2 STEMS · vocals + instrumental',
+      engine: 'BS-ROFORMER',
+    }
+  );
   assert.equal(
     getSeparationOption('htdemucs_ft')?.label,
     '4 STEMS · vocals + drums + bass + other'
@@ -34,6 +43,8 @@ test('model choices state every track they produce', () => {
     getSeparationOption('htdemucs_6s')?.label,
     '6 STEMS · vocals + drums + bass + other + guitar + piano'
   );
+  assert.equal(getSeparationOption('htdemucs_ft')?.engine, 'DEMUCS');
+  assert.equal(getSeparationOption('htdemucs_6s')?.engine, 'DEMUCS');
 });
 
 test('two, four, and six track contracts accept any source and order only their expected outputs', () => {

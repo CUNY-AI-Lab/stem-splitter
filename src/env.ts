@@ -16,6 +16,8 @@ export type Env = {
   LOCAL_HOSTING?: string;
   /** owner/name of the yt-dlp fetch model (replicate-yt-audio/); unset disables the fallback. */
   REPLICATE_YT_MODEL?: string;
+  /** "replicate-first" in production; defaults to the free in-Worker fetch first. */
+  YOUTUBE_FETCH_ORDER?: string;
   /** OpenRouter model slug for the Listening Guy coach; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
 

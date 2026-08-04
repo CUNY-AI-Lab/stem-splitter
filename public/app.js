@@ -127,8 +127,12 @@ const uploadMessage = document.getElementById('upload-message');
 
 const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
+const ytFetchButton = ytForm.querySelector('button[type="submit"]');
 const stemChoice = document.getElementById('stem-choice');
+const splitSummary = document.getElementById('split-summary');
+const engineSummary = document.getElementById('engine-summary');
 let separationOptionsReady;
+let youtubeFetchInProgress = false;
 
 function selectedModel() {
   return document.querySelector('input[name="stem-model"]:checked')?.value || '';
@@ -154,7 +158,10 @@ async function loadSeparationOptions() {
           !model ||
           typeof model.id !== 'string' ||
           typeof model.label !== 'string' ||
+          typeof model.engine !== 'string' ||
+          !model.engine.trim() ||
           !Array.isArray(model.stems) ||
+          !model.stems.length ||
           !model.stems.every((stem) => typeof stem === 'string')
       )
     ) {
@@ -175,12 +182,32 @@ async function loadSeparationOptions() {
       stemChoice.appendChild(label);
     }
     if (!selectedModel()) stemChoice.querySelector('input').checked = true;
+    renderSeparationSummary(options.models);
     return true;
   } catch {
     stemChoice.innerHTML =
       '<span class="stem-choice-status mono">Split choices unavailable. Reload to try again.</span>';
+    splitSummary.textContent = '// split choices unavailable';
+    engineSummary.textContent = 'SEPARATION MODELS: UNAVAILABLE';
     return false;
   }
+}
+
+function renderSeparationSummary(models) {
+  const trackCounts = [...new Set(models.map((model) => model.stems.length))].sort(
+    (a, b) => a - b
+  );
+  const engines = [...new Set(models.map((model) => model.engine.trim()))];
+  splitSummary.textContent = `// produces ${formatList(trackCounts)} tracks per split`;
+  engineSummary.textContent = `SEPARATION MODEL${engines.length === 1 ? '' : 'S'}: ${engines.join(
+    ' / '
+  )}`;
+}
+
+function formatList(values) {
+  if (values.length < 2) return String(values[0] ?? '');
+  if (values.length === 2) return `${values[0]} or ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, or ${values.at(-1)}`;
 }
 
 dropzone.addEventListener('click', () => fileInput.click());
@@ -210,11 +237,15 @@ dropzone.addEventListener('drop', (e) => {
 ytForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = ytUrlInput.value.trim();
-  if (!url) return;
+  if (!url || youtubeFetchInProgress) return;
 
+  youtubeFetchInProgress = true;
+  ytForm.setAttribute('aria-busy', 'true');
+  ytUrlInput.disabled = true;
+  ytFetchButton.disabled = true;
   uploadStatus.hidden = false;
   progressBar.style.width = '0%';
-  showUploadMessage('FETCHING FROM YOUTUBE…');
+  showUploadMessage('IMPORTING AUDIO FROM YOUTUBE…');
 
   try {
     const model = await requireSelectedModel();
@@ -229,6 +260,11 @@ ytForm.addEventListener('submit', async (e) => {
     pollSoon();
   } catch (err) {
     showUploadMessage(err.message, true);
+  } finally {
+    youtubeFetchInProgress = false;
+    ytForm.removeAttribute('aria-busy');
+    ytUrlInput.disabled = false;
+    ytFetchButton.disabled = false;
   }
 });
 

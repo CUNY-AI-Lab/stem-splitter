@@ -7,6 +7,7 @@ export interface SeparationOption {
   id: string;
   stems: string[];
   label: string;
+  engine: string;
 }
 
 const DEMUCS_OPTIONS: SeparationOption[] = [
@@ -14,11 +15,13 @@ const DEMUCS_OPTIONS: SeparationOption[] = [
     id: DEFAULT_DEMUCS_MODEL,
     stems: ['vocals', 'drums', 'bass', 'other'],
     label: '4 STEMS · vocals + drums + bass + other',
+    engine: 'DEMUCS',
   },
   {
     id: 'htdemucs_6s',
     stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
     label: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+    engine: 'DEMUCS',
   },
 ];
 
@@ -26,6 +29,7 @@ const BS_ROFORMER_OPTION: SeparationOption = {
   id: BS_ROFORMER_MODEL,
   stems: ['vocals', 'instrumental'],
   label: '2 STEMS · vocals + instrumental',
+  engine: 'BS-ROFORMER',
 };
 
 const ALL_OPTIONS = [BS_ROFORMER_OPTION, ...DEMUCS_OPTIONS];

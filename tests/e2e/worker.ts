@@ -52,6 +52,17 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/__e2e/audio') {
+      const key = url.searchParams.get('key');
+      if (key) {
+        const object = await env.AUDIO.get(key);
+        if (!object) return new Response(null, { status: 404 });
+        return new Response(object.body, {
+          headers: {
+            'Content-Length': String(object.size),
+            'Content-Type': object.httpMetadata?.contentType ?? 'application/octet-stream',
+          },
+        });
+      }
       const { objects } = await env.AUDIO.list();
       return Response.json({ keys: objects.map((object) => object.key).sort() });
     }
