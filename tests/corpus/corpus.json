@@ -20,10 +20,70 @@
     "expectLoud / expectQuiet are per-model, because which tracks should carry",
     "signal depends on the instrumentation, not on the pipeline. A quiet track",
     "is a PASS with a note; a blank one is a FAIL. That distinction is the point",
-    "of the orchestral entry."
+    "of the orchestral entry.",
+    "",
+    "The two `kind: youtube` entries are the only ones that exercise the import",
+    "path (src/youtube.ts → the Replicate-hosted yt-dlp model). Their `source` is",
+    "deliberately blank: the 2026-07-30 spec requires a caller-supplied URL and",
+    "ships no default song, and unlike the archive.org files there is no license",
+    "this repo can assert over an arbitrary YouTube video. Paste a URL you may",
+    "test — under 15 minutes, not a live stream — or leave it blank and the",
+    "runner skips that entry and says so.",
+    "",
+    "YouTube entries are scored differently, and not by a weaker measure: the",
+    "Worker never serves an uploaded original back out (/api/files/* serves only",
+    "stems/), so the source mix is unretrievable and reconstruction cannot be",
+    "computed. They are scored by cross-model consistency instead — two",
+    "independent splits of the same recording must sum to the same audio — which",
+    "catches a track renamed onto the wrong audio exactly as a source comparison",
+    "would. Both entries therefore need two models; a one-model YouTube entry",
+    "measures nothing."
   ],
 
   "sources": [
+    {
+      "slug": "youtube-duet",
+      "kind": "youtube",
+      "source": "",
+      "sourceHint": "A two-voice duet with sparse acoustic backing — the Dylan/Baez profile. Under 15 minutes, not a live stream.",
+      "why": "The duet case, run through the import path instead of an upload. Two simultaneous lead vocalists is adversarial for a model trained on a single lead vocal: the harmony line is what gets pushed into `other`. Pairing it with the import also puts a real fetch, a real store to uploads/<uuid>/source.m4a, and a real separation back-to-back — which is what makes low Replicate credit bite, since two predictions in a row hit the burst limit on accounts under $5.",
+      "models": ["vocals_instrumental", "htdemucs_ft"],
+      "expect": {
+        "vocals_instrumental": { "loud": ["vocals", "instrumental"], "quiet": [] },
+        "htdemucs_ft": { "loud": ["vocals", "other"], "quiet": [] }
+      },
+      "manualChecks": [
+        "Confirm the import fetched the recording you meant: the mixer's console title is the fetched video title, not a filename.",
+        "Solo `vocals`: BOTH voices must be present. A duet reduced to one voice is the primary failure mode here and no automated measure detects it.",
+        "Solo `other`: listen for a ghost of the harmony vocal. Audible vocal content in `other` means the split under-captured the duet.",
+        "No reconstruction score for this entry by design — the original is never served back out. The cross-model line in the summary is the automated check.",
+        "If the recording has no kit or electric bass, `drums`/`bass` being quiet is correct, not a defect."
+      ]
+    },
+    {
+      "slug": "youtube-orchestral",
+      "kind": "youtube",
+      "source": "",
+      "sourceHint": "An orchestral performance — the NY Philharmonic profile. Under 15 minutes, not a live stream.",
+      "why": "The 'quiet but valid' trap run through the import path. No lead vocal, no drum kit, no electric bass, so several contract tracks SHOULD come back near-silent and the pipeline must not read that as a transport failure. Worth running as an import specifically because orchestral uploads are large: a long symphonic movement is exactly the case where a student reaches for a link instead of a file.",
+      "models": ["htdemucs_6s", "htdemucs_ft"],
+      "expect": {
+        "htdemucs_6s": {
+          "loud": ["other"],
+          "quiet": ["vocals", "bass", "guitar", "piano"]
+        },
+        "htdemucs_ft": { "loud": ["other"], "quiet": ["vocals", "bass"] }
+      },
+      "manualChecks": [
+        "Confirm the import fetched the recording you meant, via the console title.",
+        "The job must reach `done`, not `failed`. A near-silent guitar/piano track here is the documented correct outcome and is the live regression test for the blank-stem rejection added in da6ed33.",
+        "Confirm each quiet track is quiet-but-valid, not digital silence: the eval reports `digitalSilence` per track.",
+        "Timpani landing in `drums` is legitimate, not leakage.",
+        "Solo `other`: it should carry essentially the whole orchestra.",
+        "If `piano` comes back LOUD here, listen before believing it. A fabricated track — content routed into a channel for an instrument that is not in the recording — is a failure this corpus has seen in the field (a bachata split invented a piano out of guitar technique). The eval reports that as `unexpected-signal`, and it is only a WARN, because 'expected quiet' is a claim about the music and the claim can be wrong. Resolving it is a listen-test, not a measurement.",
+        "A 15-minute cap applies to imports. If the movement is longer, the fetch fails before a job row is created — which is correct behaviour, not a stuck job."
+      ]
+    },
     {
       "slug": "folk-duet",
       "kind": "file",

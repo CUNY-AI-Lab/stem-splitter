@@ -136,20 +136,38 @@ async function evalStems({ label, source, stems, expect, complementary, jsonPath
 // --- run -------------------------------------------------------------------
 
 const corpus = JSON.parse(await readFile(CORPUS, 'utf8'));
-const entries = corpus.sources.filter((e) => (only.length ? only.includes(e.slug) : true));
-const missing = entries.filter((e) => !e.source);
-if (missing.length) {
-  console.error(`✗ These corpus entries have no source yet: ${missing.map((e) => e.slug).join(', ')}`);
-  console.error(`  Fill them in at ${CORPUS} with audio you are allowed to test.`);
+const selected = corpus.sources.filter((e) => (only.length ? only.includes(e.slug) : true));
+if (!selected.length) {
+  console.error('✗ No matching corpus entries.');
   process.exit(2);
 }
+
+// Naming a slug explicitly is a request to run it, so a missing source there is
+// an error. Running the whole corpus is not: the YouTube entries ship blank on
+// purpose, and one unfilled URL must not take the ready entries down with it.
+const missing = selected.filter((e) => !e.source);
+if (missing.length && only.length) {
+  console.error(`✗ Requested but has no source: ${missing.map((e) => e.slug).join(', ')}`);
+  console.error(`  Fill it in at ${CORPUS} with audio you are allowed to test.`);
+  process.exit(2);
+}
+const entries = selected.filter((e) => e.source);
 if (!entries.length) {
-  console.error('✗ No matching corpus entries.');
+  console.error('✗ Every selected corpus entry has an empty source.');
+  console.error(`  Fill at least one in at ${CORPUS}.`);
   process.exit(2);
 }
 
 await mkdir(OUT, { recursive: true });
 const summary = [];
+
+// Say what is not being covered, up front and in the summary. A corpus run that
+// quietly skipped a third of its cases would read as "everything passed".
+for (const entry of missing) {
+  console.log(`\n══ ${entry.slug} (${entry.kind}) ══`);
+  console.log(`   SKIPPED — no source. ${entry.sourceHint ?? 'Fill in `source` to include it.'}`);
+  summary.push({ slug: entry.slug, model: entry.models.join('+'), verdict: 'SKIPPED' });
+}
 
 for (const entry of entries) {
   console.log(`\n══ ${entry.slug} (${entry.kind}) ══`);
