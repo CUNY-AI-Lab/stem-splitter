@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { DEFAULT_DEMUCS_MODEL, getReplicateRunner, replicateVersion } from './options';
 import type { SeparationBackend, SeparationResult, SeparationStartRequest } from './types';
 
 // Replicate-hosted Demucs (ryan5453/demucs), running the htdemucs_ft
@@ -36,17 +37,23 @@ export function replicateBackend(env: Env): SeparationBackend {
 
   const backend: SeparationBackend = {
     async start(req: SeparationStartRequest): Promise<{ externalId: string }> {
+      // The catalogue owns the version and the input shape; this backend only
+      // knows how to talk to Replicate. Adding a choice never edits this file.
+      const model = req.model ?? DEFAULT_DEMUCS_MODEL;
+      const runner = getReplicateRunner(model);
+      if (!runner) {
+        throw new Error(`No Replicate runner is configured for the "${model}" choice`);
+      }
+      const version = replicateVersion(env, runner);
+      if (!version) {
+        throw new Error(`${runner.versionVar} is not configured`);
+      }
       const res = await fetchRetrying429(`${API}/predictions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          version: env.REPLICATE_MODEL_VERSION,
-          input: {
-            audio: req.audioUrl,
-            model: req.model ?? 'htdemucs_ft',
-            output_format: 'mp3',
-            mp3_bitrate: 192,
-          },
+          version,
+          input: { audio: req.audioUrl, ...runner.input() },
           webhook: req.webhookUrl,
           webhook_events_filter: ['completed'],
         }),

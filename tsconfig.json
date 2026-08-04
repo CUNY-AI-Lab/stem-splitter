@@ -3,6 +3,10 @@
     "target": "es2022",
     "module": "es2022",
     "moduleResolution": "bundler",
+    // Modules that tests/*.test.mts loads through Node's type-stripping runner
+    // must import with explicit .ts specifiers; Node does not resolve
+    // extensionless ESM. Wrangler/esbuild accept both forms.
+    "allowImportingTsExtensions": true,
     "lib": ["es2022"],
     "types": ["@cloudflare/workers-types"],
     "strict": true,

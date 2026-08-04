@@ -1,16 +1,17 @@
 # Stem Splitter
 
 A stem-separation web app for students. Upload a song — or paste a YouTube
-link — and get back isolated stems as MP3s (4-stem vocals / drums / bass /
-other, or 6-stem adding guitar + piano), played in a synchronized in-browser
+link — and get back isolated stems as MP3s (2-stem vocals / instrumental,
+4-stem adding drums / bass / other, or 6-stem adding guitar + piano), played
+in a synchronized in-browser
 mixer with per-stem mute, shared renameable channel labels, shared timestamped
 notes, and **Listening Guy**: an AI listening coach that writes a per-song
 listening guide and answers questions in a chat that can drive the mixer
 itself (solo/mute channels, jump the playhead, pin notes for the class).
 
 **Architecture:** Browser → presigned upload to R2 (or in-Worker YouTube
-fetch) → Cloudflare Worker creates a job (D1) → Replicate runs Demucs
-(`htdemucs_ft` / `htdemucs_6s`) on a GPU → webhook marks the job done →
+fetch) → Cloudflare Worker creates a job (D1) → Replicate runs Demucs on a GPU
+in the mode the selected split calls for → webhook marks the job done →
 student streams MP3 stems from R2 → R2 lifecycle rule deletes everything after
 30 days. The coach runs on OpenRouter (`z-ai/glm-5.2` by default) behind two
 class-code-gated endpoints; guides are generated once per song and cached in
@@ -160,12 +161,25 @@ npx wrangler secret put CLASS_CODE                # what students type to use th
 npx wrangler secret put OPENROUTER_API_KEY        # openrouter.ai key — powers Listening Guy
 ```
 
-Get the current Demucs model version hash:
+Get a candidate Demucs model version hash:
 
 ```sh
 curl -s https://api.replicate.com/v1/models/ryan5453/demucs \
   -H "Authorization: Bearer $REPLICATE_API_TOKEN" | jq -r .latest_version.id
 ```
+
+**Vet it before you set it.** Upstream has changed shape at source — the model's
+development HEAD serves only `htdemucs` and renamed `output_format` to `format`
+— so pinning whatever `latest_version` returns can silently break the 4- and
+6-track splits:
+
+```sh
+REPLICATE_MODEL_VERSION=<candidate> npm run check:replicate
+```
+
+That checks the candidate against the split catalogue itself, so it fails with
+the exact model id or input key that went missing. Only set the secret once it
+passes.
 
 ### 6. Deploy
 

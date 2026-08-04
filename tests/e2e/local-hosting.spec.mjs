@@ -155,7 +155,9 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
-  await expect(page.locator('#split-summary')).toHaveText('// produces 4 or 6 tracks per split');
+  await expect(page.locator('#split-summary')).toHaveText(
+    '// produces 2, 4, or 6 tracks per split'
+  );
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
     page.getByRole('radio', { name: '4 STEMS · vocals + drums + bass + other' })
@@ -234,6 +236,90 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(unavailableChannel.locator('.ch-name')).toHaveText('vocals');
   await expect(unavailableChannel.locator('.mute-btn')).toHaveText('NO AUDIO');
   await expect(page.getByRole('button', { name: 'Play all stems' })).toBeDisabled();
+});
+
+test('renames Demucs no_vocals to instrumental for the two-track split', async ({
+  page,
+  network,
+  server,
+}, testInfo) => {
+  const predictionId = 'e2e-two-track';
+
+  network.use(
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const payload = await request.json();
+      // The catalogue drives the payload: karaoke mode on the same pinned version.
+      expect(payload).toMatchObject({
+        version: 'e2e-model-version',
+        input: {
+          model: 'htdemucs_ft',
+          stem: 'vocals',
+          output_format: 'mp3',
+          mp3_bitrate: 192,
+        },
+      });
+      return HttpResponse.json({ id: predictionId, status: 'starting' });
+    }),
+    http.get(`https://api.replicate.com/v1/predictions/${predictionId}`, () =>
+      HttpResponse.json({
+        id: predictionId,
+        status: 'succeeded',
+        // Demucs names the summed remainder no_vocals, not instrumental.
+        output: {
+          vocals: 'https://fixtures.test/vocals.mp3',
+          no_vocals: 'https://fixtures.test/other.mp3',
+        },
+      })
+    ),
+    http.get('https://fixtures.test/:stem.mp3', ({ params }) => {
+      const audio = stemAudio.get(String(params.stem));
+      return audio
+        ? new HttpResponse(audio, { headers: { 'Content-Type': 'audio/mpeg' } })
+        : new HttpResponse(null, { status: 404 });
+    })
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const twoTrackChoice = page.getByRole('radio', {
+    name: '2 STEMS · vocals + instrumental',
+  });
+  await expect(twoTrackChoice).toBeVisible();
+  await twoTrackChoice.check();
+  await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
+
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+  await expect(page.locator('.channel')).toHaveCount(2);
+  await expect(page.locator('.ch-name')).toHaveText(['vocals', 'instrumental']);
+  await page.screenshot({
+    path: testInfo.outputPath('two-track-ready.png'),
+    fullPage: true,
+  });
+
+  const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  expect(created.model).toBe('vocals_instrumental');
+  expect(created.expectedStems).toEqual(['vocals', 'instrumental']);
+
+  const resultResponse = await server.fetch(`/api/jobs/${created.id}`);
+  expect(resultResponse.status).toBe(200);
+  const result = await resultResponse.json();
+  expect(result.status).toBe('done');
+  expect(result.stems.map((stem) => stem.name)).toEqual(['vocals', 'instrumental']);
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  const storedKeys = (await storedKeysResponse.json()).keys;
+  // Stored under the contract name, so /api/files and the mixer agree.
+  expect(storedKeys).toContain(`stems/${created.id}/instrumental.mp3`);
+  expect(storedKeys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  expect(browserErrors).toEqual([]);
 });
 
 test('fails an incomplete six-track result instead of rendering blank channels', async ({
