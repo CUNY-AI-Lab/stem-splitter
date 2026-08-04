@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Stem splitter for students — Cloudflare Workers + R2 + D1 + swappable GPU separation backend (Replicate/Modal)",
   "scripts": {
+    "start": "tsx server/index.ts",
+    "dev:node": "tsx watch server/index.ts",
     "dev": "wrangler dev --remote",
     "dev:local": "wrangler dev --local --port 8787",
     "separator:local": "UV_CACHE_DIR=.uv-cache uv run --project local-separator python local-separator/service.py --port 8765",
@@ -24,9 +26,14 @@
     "db:migrate:3": "wrangler d1 execute stem-splitter --remote --file=migrations/0003-assistant.sql",
     "db:migrate:3:local": "wrangler d1 execute stem-splitter --local --file=migrations/0003-assistant.sql"
   },
+  "engines": {
+    "node": ">=22.5"
+  },
   "dependencies": {
+    "@hono/node-server": "^2.1.0",
     "aws4fetch": "^1.0.20",
     "hono": "^4.12.32",
+    "tsx": "^4.23.5",
     "youtubei.js": "^17.2.0"
   },
   "devDependencies": {
