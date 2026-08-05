@@ -20,6 +20,12 @@ export type Env = {
   YOUTUBE_FETCH_ORDER?: string;
   /** OpenRouter model slug for the Listening Guy coach; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
+  /**
+   * JSON array of pre-hashed teacher records seeded into the `teachers` table:
+   * [{ username, name, salt, hash, iterations }]. Produced by
+   * scripts/hash-teacher-password.mjs — never contains a plaintext password.
+   */
+  TEACHER_SEED?: string;
 
   // Secrets (wrangler secret put ...)
   R2_ACCESS_KEY_ID: string;

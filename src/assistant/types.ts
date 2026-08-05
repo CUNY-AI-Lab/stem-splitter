@@ -6,6 +6,7 @@ export interface AssistantContext {
   stems: { name: string; label: string }[];           // canonical name + class display label
   annotations: { atSeconds: number; text: string }[]; // sorted by time
   durationSec?: number;                               // client-supplied; only the browser knows it
+  amendment?: string;                                 // instructor prompt amendment (assistant_settings)
   mode: 'guide' | 'chat';
 }
 

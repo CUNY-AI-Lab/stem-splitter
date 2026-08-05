@@ -24,7 +24,9 @@
     "db:migrate:2": "wrangler d1 execute stem-splitter --remote --file=migrations/0002-features.sql",
     "db:migrate:2:local": "wrangler d1 execute stem-splitter --local --file=migrations/0002-features.sql",
     "db:migrate:3": "wrangler d1 execute stem-splitter --remote --file=migrations/0003-assistant.sql",
-    "db:migrate:3:local": "wrangler d1 execute stem-splitter --local --file=migrations/0003-assistant.sql"
+    "db:migrate:3:local": "wrangler d1 execute stem-splitter --local --file=migrations/0003-assistant.sql",
+    "db:migrate:4": "wrangler d1 execute stem-splitter --remote --file=migrations/0004-teachers.sql",
+    "db:migrate:4:local": "wrangler d1 execute stem-splitter --local --file=migrations/0004-teachers.sql"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

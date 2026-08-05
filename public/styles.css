@@ -1025,3 +1025,71 @@ footer {
   cursor: pointer;
 }
 .coach-form button:hover { background: var(--hot); color: var(--bg); }
+
+/* ─── instructor console (teacher.html) ───────────────────────────── */
+
+.teacher-main { max-width: 760px; }
+.teacher-panel { margin-top: 1.2rem; }
+
+.teacher-form { display: grid; gap: 0.8rem; }
+.teacher-field { display: grid; gap: 0.3rem; }
+.teacher-field span { color: var(--ink-faint); font-size: 0.66rem; letter-spacing: 0.08em; }
+.teacher-field input {
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  padding: 0.6rem 0.7rem;
+}
+.teacher-field input:focus, .teacher-textarea:focus { outline: none; border-color: var(--hot); }
+
+.teacher-textarea {
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0.7rem;
+  resize: vertical;
+  width: 100%;
+}
+.teacher-textarea::placeholder { color: var(--ink-faint); }
+
+.teacher-help { color: var(--ink-dim); font-size: 0.82rem; line-height: 1.6; margin: 0 0 0.8rem; }
+.teacher-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  color: var(--ink-faint);
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.6rem;
+}
+.teacher-actions { display: flex; gap: 0.6rem; align-items: center; }
+.teacher-actions .yt-go { padding: 0.5rem 1rem; }
+
+.teacher-error, .teacher-status { font-size: 0.7rem; margin: 0; color: var(--ok); }
+.teacher-error { color: var(--danger); }
+.teacher-status.error, .mono.error { color: var(--danger); }
+
+.teacher-preview { margin-top: 1.4rem; border-top: 1px solid var(--panel-edge); padding-top: 0.8rem; }
+.teacher-preview summary { color: var(--ink-dim); cursor: pointer; font-size: 0.68rem; letter-spacing: 0.06em; }
+.teacher-pre {
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ink-dim);
+  font-size: 0.68rem;
+  line-height: 1.55;
+  margin-top: 0.7rem;
+  max-height: 460px;
+  overflow: auto;
+  padding: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

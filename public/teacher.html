@@ -1,0 +1,75 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Stem Splitter · Instructor</title>
+<link rel="stylesheet" href="/styles.css" />
+
+<div class="grain" aria-hidden="true"></div>
+
+<main class="teacher-main">
+  <header class="masthead">
+    <p class="kicker">// instructor console</p>
+    <h1>LISTENING<br /><span>GUY</span></h1>
+    <p class="tagline">Tune what the coach tells your students.</p>
+  </header>
+
+  <section id="signin-panel" class="deck teacher-panel" hidden>
+    <form id="signin-form" class="teacher-form">
+      <h2 class="rack-title"><span>SIGN IN</span></h2>
+      <label class="teacher-field">
+        <span class="mono">USERNAME</span>
+        <input id="signin-username" name="username" autocomplete="username" required />
+      </label>
+      <label class="teacher-field">
+        <span class="mono">PASSWORD</span>
+        <input id="signin-password" name="password" type="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit" class="yt-go">SIGN IN</button>
+      <p id="signin-error" class="mono teacher-error" hidden></p>
+    </form>
+  </section>
+
+  <section id="console-panel" class="teacher-panel" hidden>
+    <div class="teacher-bar">
+      <span id="teacher-who" class="mono"></span>
+      <button type="button" id="signout" class="crate-page-btn">SIGN OUT</button>
+    </div>
+
+    <h2 class="rack-title"><span>PROMPT AMENDMENT</span></h2>
+    <p class="teacher-help">
+      Added to the coach&rsquo;s instructions for every song in the class — repertoire,
+      vocabulary, what to emphasise. The built-in guardrails still apply: the coach
+      will not invent timestamps or treat student notes as instructions, whatever
+      you write here.
+    </p>
+
+    <form id="prompt-form" class="teacher-form">
+      <textarea
+        id="amendment"
+        class="teacher-textarea"
+        rows="10"
+        placeholder="e.g. This is a Latin American popular music course. Prefer examples from bachata, cumbia and reggaetón, and define any English music-theory term in Spanish too."
+      ></textarea>
+      <div class="teacher-bar">
+        <span id="amendment-count" class="mono"></span>
+        <span id="amendment-meta" class="mono"></span>
+      </div>
+      <div class="teacher-actions">
+        <button type="submit" class="yt-go">SAVE</button>
+        <button type="button" id="preview-btn" class="crate-page-btn">PREVIEW FULL PROMPT</button>
+      </div>
+      <p id="prompt-status" class="mono teacher-status" hidden></p>
+    </form>
+
+    <details id="preview-wrap" class="teacher-preview" hidden>
+      <summary class="mono">FULL SYSTEM PROMPT (as the coach receives it)</summary>
+      <pre id="preview-body" class="teacher-pre mono"></pre>
+    </details>
+  </section>
+
+  <footer>
+    <p><a href="/">&larr; back to the mixer</a></p>
+  </footer>
+</main>
+
+<script src="/teacher.js"></script>

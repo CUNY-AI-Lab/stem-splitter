@@ -1,4 +1,5 @@
 import { test as base, expect } from '@playwright/test';
+import { pbkdf2Sync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,18 @@ import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
 
 const CLASS_CODE = 'e2e-class-code';
+// Fixture teacher, hashed the same way production credentials are. The
+// plaintext exists only here, in a test, for an account that only exists here.
+const TEACHER_PASSWORD = 'e2e-teacher-password';
+const TEACHER_SEED = JSON.stringify([
+  {
+    username: 'e2eteacher',
+    name: 'E2E Teacher',
+    salt: '00112233445566778899aabbccddeeff',
+    hash: pbkdf2Sync(TEACHER_PASSWORD, Buffer.from('00112233445566778899aabbccddeeff', 'hex'), 210_000, 32, 'sha256').toString('hex'),
+    iterations: 210_000,
+  },
+]);
 const E2E_SECRET = 'local-hosting-e2e-only';
 const TEST_PUBLIC_BASE_URL = 'http://stem-splitter.test';
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
@@ -56,6 +69,7 @@ const test = base.extend({
               REPLICATE_MODEL_VERSION: 'e2e-model-version',
               WEBHOOK_SECRET: 'e2e-webhook-secret',
               CLASS_CODE,
+              TEACHER_SEED,
             },
           },
         ],
@@ -1034,3 +1048,71 @@ function makeM4a(size = 2048) {
   bytes.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
   return bytes;
 }
+
+test('gates the instructor console and persists a prompt amendment', async ({ page, server }) => {
+  // This test deliberately provokes 401s, so unlike the other specs it asserts
+  // on uncaught JS exceptions rather than on console noise.
+  const browserErrors = [];
+  const failedRequests = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('response', (response) => {
+    if (response.status() >= 400) failedRequests.push(`${response.status()} ${new URL(response.url()).pathname}`);
+  });
+
+  // The class code must not open the instructor console: it is a shared secret
+  // every student holds, so it cannot gate what the coach is told to say.
+  const withClassCode = await server.fetch('http://stem-splitter.test/api/teacher/prompt', {
+    headers: { 'x-class-code': CLASS_CODE },
+  });
+  expect(withClassCode.status).toBe(401);
+
+  await page.goto('/teacher.html', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#signin-panel')).toBeVisible();
+  await expect(page.locator('#console-panel')).toBeHidden();
+
+  // Wrong password is rejected, and the message does not reveal which half failed.
+  await page.getByLabel('USERNAME').fill('e2eteacher');
+  await page.getByLabel('PASSWORD').fill('not-the-password');
+  await page.getByRole('button', { name: 'SIGN IN' }).click();
+  await expect(page.locator('#signin-error')).toHaveText('Incorrect username or password.');
+
+  const unknownUser = await server.fetch('http://stem-splitter.test/api/teacher/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'nobody', password: 'whatever' }),
+  });
+  expect(unknownUser.status).toBe(401);
+  expect((await unknownUser.json()).error).toBe('Incorrect username or password.');
+
+  await page.getByLabel('PASSWORD').fill(TEACHER_PASSWORD);
+  await page.getByRole('button', { name: 'SIGN IN' }).click();
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await expect(page.locator('#teacher-who')).toHaveText('SIGNED IN AS E2E TEACHER');
+
+  const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
+  await page.locator('#amendment').fill(amendment);
+  await page.getByRole('button', { name: 'SAVE' }).click();
+  await expect(page.locator('#prompt-status')).toContainText('SAVED');
+  await expect(page.locator('#amendment-meta')).toContainText('LAST EDITED BY E2ETEACHER');
+
+  // The amendment reaches the real system prompt, and the guardrails outrank it.
+  await page.getByRole('button', { name: 'PREVIEW FULL PROMPT' }).click();
+  await expect(page.locator('#preview-body')).toContainText(amendment);
+  await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
+
+  // Survives a reload — the session is a cookie and the text is in D1.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await expect(page.locator('#amendment')).toHaveValue(amendment);
+
+  await page.getByRole('button', { name: 'SIGN OUT' }).click();
+  await expect(page.locator('#signin-panel')).toBeVisible();
+  const afterSignOut = await page.evaluate(() =>
+    fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
+  );
+  expect(afterSignOut).toBe(401);
+
+  expect(browserErrors).toEqual([]);
+  // Every non-2xx should be one of the auth checks this test intentionally makes.
+  expect(failedRequests.filter((entry) => !entry.startsWith('401 /api/teacher/'))).toEqual([]);
+});

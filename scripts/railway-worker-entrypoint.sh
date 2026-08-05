@@ -20,6 +20,21 @@ npx wrangler d1 execute stem-splitter \
   --file schema.sql \
   --yes
 
+# Secrets go through .dev.vars rather than --var: wrangler only sees values it
+# is handed explicitly (the container env is NOT inherited by the worker), and
+# .dev.vars keeps them off the process command line where `ps` would show them.
+# Values are single-quoted, so none of them may contain a single quote.
+{
+  printf "AUDIO_SEPARATOR_TOKEN='%s'\n" "$AUDIO_SEPARATOR_TOKEN"
+  printf "WEBHOOK_SECRET='%s'\n" "$WEBHOOK_SECRET"
+  printf "CLASS_CODE='%s'\n" "$CLASS_CODE"
+  [ -n "${TEACHER_SEED:-}" ] && printf "TEACHER_SEED='%s'\n" "$TEACHER_SEED"
+  [ -n "${OPENROUTER_API_KEY:-}" ] && printf "OPENROUTER_API_KEY='%s'\n" "$OPENROUTER_API_KEY"
+  # R2 presigning is unused on the LOCAL_HOSTING path but the type demands them.
+  printf "R2_ACCESS_KEY_ID='%s'\n" "${R2_ACCESS_KEY_ID:-local}"
+  printf "R2_SECRET_ACCESS_KEY='%s'\n" "${R2_SECRET_ACCESS_KEY:-local}"
+} > .dev.vars
+
 ARGS=(
   --local
   --latest=false
@@ -31,14 +46,10 @@ ARGS=(
   --var "PUBLIC_BASE_URL:$PUBLIC_BASE_URL"
   --var "SEPARATION_BACKEND:audio-separator"
   --var "AUDIO_SEPARATOR_URL:$AUDIO_SEPARATOR_URL"
-  --var "AUDIO_SEPARATOR_TOKEN:$AUDIO_SEPARATOR_TOKEN"
-  --var "WEBHOOK_SECRET:$WEBHOOK_SECRET"
-  --var "CLASS_CODE:$CLASS_CODE"
 )
 
 # Listening Guy is optional — without a key its endpoints 503 by design.
-if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-  ARGS+=(--var "OPENROUTER_API_KEY:$OPENROUTER_API_KEY")
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   ARGS+=(--var "ASSISTANT_MODEL:${ASSISTANT_MODEL:-z-ai/glm-5.2}")
 fi
 
