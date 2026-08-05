@@ -14,3 +14,4 @@ docs/acceptance/**/*.log
 .DS_Store
 .claude/settings.local.json
 V2.md
+output/

@@ -135,3 +135,33 @@ containment, licence filtering, paging clamp, both scopes, item normalization,
 ND refusal, and a real 19 MB MP3 download verified by frame header), plus two
 Playwright e2e tests against a mocked archive.org boundary: the full
 browse → expand → split flow, and the ND refusal path.
+
+## Live evaluation (2026-08-05)
+
+`npm run test:e2e:crate:run` — five pinned open-licensed tracks through the full
+crate UI with real archive.org fetches and real local separation
+(`htdemucs_ft` via the audio-separator backend):
+
+| identifier | genre | licence | len | size | search | import | separate |
+|---|---|---|---|---|---|---|---|
+| NS050 | electronic | CC BY-NC-SA 4.0 | 4:00 | 3.9M | 0.6s | 1.5s | 70.2s |
+| MIXG032 | jazz | CC BY-NC 3.0 | 3:21 | 8.0M | 0.6s | 4.0s | 56.2s |
+| badpanda049 | psych rock | CC BY-NC-SA 3.0 | 3:57 | 9.5M | 1.7s | 3.0s | 70.2s |
+| csr008 | lo-fi rock | CC BY-NC 1.0 | 4:00 | 5.8M | 1.7s | 5.2s | 76.2s |
+| Free_20s_Jazz_Collection | 1920s jazz · 64 kbps | Creative Commons | 2:57 | 1.4M | 4.3s | 3.2s | 56.2s |
+
+18.3 min of audio, 5.9 min wall, separation 3.3× realtime (Apple-silicon MPS).
+
+Two production fixes fell out of the run:
+
+- **Retry on archive fetches.** archive.org's frontends intermittently return
+  429/5xx — observed live at roughly 1-in-5 downloads. Every archive fetch now
+  gets a bounded 3-attempt retry (1 s / 3 s backoff).
+- **Underscores in search terms.** IA identifiers routinely contain `_`; the
+  token sanitizer was stripping it, so pasting an identifier into search matched
+  nothing. `_` is now in the allowed charset.
+
+Known availability caveat: items live on specific IA datanodes, and a sick node
+500s every file on its items (observed live with `stqk011` /
+`dn710902.ca.archive.org`). The app surfaces this as the retryable "Internet
+Archive is busy" error; the student retries later or picks another item.

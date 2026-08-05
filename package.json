@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stem splitter for students — Cloudflare Workers + R2 + D1 + swappable GPU separation backend (Replicate/Modal)",
+  "description": "Stem splitter for students \u2014 Cloudflare Workers + R2 + D1 + swappable GPU separation backend (Replicate/Modal)",
   "scripts": {
     "dev": "wrangler dev --remote",
     "dev:local": "wrangler dev --local --port 8787",
@@ -14,6 +14,8 @@
     "test:e2e": "playwright test --config playwright.config.mjs",
     "test:e2e:real": "playwright test --config playwright.real-audio.config.mjs",
     "test:e2e:real:run": "./scripts/run-real-audio-e2e.sh",
+    "test:e2e:crate": "playwright test --config playwright.archive-crate.config.mjs",
+    "test:e2e:crate:run": "./scripts/run-archive-crate-e2e.sh",
     "typecheck": "tsc --noEmit",
     "test:worker": "node --experimental-strip-types --test tests/*.test.mts",
     "test": "npm run typecheck && npm run test:worker && npm run separator:test",

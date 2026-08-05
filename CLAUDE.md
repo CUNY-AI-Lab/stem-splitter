@@ -14,6 +14,7 @@ CLASS_CODE=<code> ./scripts/smoke.sh   # free API smoke checks against the deplo
 npm run test:e2e          # real-WAV browser flow with local D1/R2 + mocked Replicate
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
+npm run test:e2e:crate:run # live archive-crate eval: 5 real IA tracks → real local separation, per-phase timings (free, ~6 min)
 SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>  # + listening-guy guide/chat live checks (<1¢)
 npm run deploy            # wrangler deploy (account is pinned in wrangler.jsonc)
 npm run dev               # wrangler dev --remote — see "Local dev" below for why
