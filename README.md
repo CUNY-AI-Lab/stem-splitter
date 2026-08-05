@@ -43,6 +43,7 @@ src/
     types.ts            SeparationBackend interface (the swappable seam)
     replicate.ts        Replicate-hosted Demucs implementation
     modal.ts            Stub for a self-deployed Modal backend
+server/                 Node host for the Railway dev deployment (D1/R2 shims)
 public/                 Static frontend (vanilla JS mixer + coach panel)
 migrations/             Additive D1 migrations (schema.sql = fresh install)
 scripts/smoke.sh        Smoke checks against the deployed Worker
@@ -51,6 +52,36 @@ docs/superpowers/       Per-feature design specs + implementation plans
 schema.sql              D1 schema
 cors.json               R2 CORS rules for direct browser uploads
 ```
+
+## Where this runs: Railway is dev, Cloudflare is production
+
+Two hosts run the same Hono app, and they are not peers.
+
+| | **Railway** — dev | **Cloudflare Workers** — production |
+|---|---|---|
+| Role | prototyping, rapid iteration | the deployment students use |
+| Entry point | `server/index.ts` (Node, `tsx`) | `src/index.ts` (Worker) |
+| Storage | `node:sqlite` + a volume at `/data` | D1 `stem-splitter` + R2 `stem-splitter-audio` |
+| Deploy | `railway up --detach -m "<summary>"` | `npm run deploy` |
+| Retention | hourly cleanup in app code | R2 bucket lifecycle rule |
+| Audience | you | the class |
+
+`server/` adapts *to* `src/` through small D1 and R2 shims and never requires a
+change to it — an edit under `src/` to accommodate Node drifts the two targets
+apart. Reach for Railway when you want a tight loop or, more importantly, a
+**publicly reachable origin**: Replicate has to fetch the signed source URL and
+post a webhook back, and localhost can satisfy neither, so Railway is the only
+way to exercise that round trip end to end.
+
+**Nothing on Railway promotes itself.** It has its own SQLite database, its own
+audio volume, and its own `WEBHOOK_SECRET` and `CLASS_CODE` — deliberately not
+production's. Jobs, stems, labels, notes, and guides created there do not exist
+in production, and no amount of prototyping moves code, secrets, or schema
+across. Validating on Railway proves the logic; only `npm run deploy` plus the
+checks in `CLAUDE.md` prove the deployment.
+
+`server/CLAUDE.md` is authoritative for the dev host: the shims, the Railway
+project setup, and the post-deploy verify loop.
 
 ## Deploying an existing clone (already-provisioned project)
 
