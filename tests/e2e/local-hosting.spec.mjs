@@ -477,6 +477,7 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
       name: '6 parts: vocals, drums, bass, other, guitar, piano',
     })
     .check();
+  await page.getByText('Or paste a YouTube link').click();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );
@@ -686,6 +687,7 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByRole('radio', { name: '2 parts: vocals, instrumental' }).check();
+  await page.getByText('Or paste a YouTube link').click();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );

@@ -125,9 +125,16 @@ const uploadStatus = document.getElementById('upload-status');
 const progressBar = document.getElementById('progress-bar');
 const uploadMessage = document.getElementById('upload-message');
 
+const ytDisclosure = document.getElementById('yt-disclosure');
 const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
 const ytFetchButton = ytForm.querySelector('button[type="submit"]');
+
+// Opening the disclosure is a statement of intent — land the caret in the field
+// so the next thing you do is paste.
+ytDisclosure.addEventListener('toggle', () => {
+  if (ytDisclosure.open) ytUrlInput.focus();
+});
 const stemChoice = document.getElementById('stem-choice');
 const splitLegend = document.getElementById('split-legend');
 const splitSummary = document.getElementById('split-summary');
@@ -206,10 +213,9 @@ function buildSplitOption(model, checked) {
   const bar = document.createElement('span');
   bar.className = 'split-bar';
   bar.setAttribute('aria-hidden', 'true');
-  for (const stem of model.stems) {
+  for (let i = 0; i < model.stems.length; i += 1) {
     const segment = document.createElement('span');
     segment.className = 'split-seg';
-    segment.style.background = stemColor(stem);
     bar.appendChild(segment);
   }
 
@@ -235,21 +241,9 @@ function renderSplitLegend(models) {
   splitLegend.replaceChildren();
   for (const stem of selected?.stems || []) {
     const item = document.createElement('li');
-    const dot = document.createElement('span');
-    dot.className = 'legend-dot';
-    dot.style.background = stemColor(stem);
-    const name = document.createElement('span');
-    name.textContent = stem;
-    item.append(dot, name);
+    item.textContent = stem;
     splitLegend.appendChild(item);
   }
-}
-
-// Channel colours are CSS vars (--c-vocals …); an unknown part falls back to
-// the var default rather than shipping a second colour table in JS.
-function stemColor(stem) {
-  const token = String(stem).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  return `var(--c-${token}, var(--ink-faint))`;
 }
 
 function renderSeparationSummary(models) {

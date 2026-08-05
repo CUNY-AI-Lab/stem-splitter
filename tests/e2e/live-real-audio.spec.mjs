@@ -90,6 +90,7 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
     await page.locator('#file-input').setInputFiles(source);
     await expect(page.locator('#upload-status')).toBeVisible();
   } else {
+    await page.getByText('Or paste a YouTube link').click();
     await page.getByLabel('YouTube link').fill(youtubeUrl);
     await page.getByRole('button', { name: 'FETCH' }).click();
   }

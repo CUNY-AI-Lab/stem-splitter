@@ -159,7 +159,32 @@ h1 span {
   margin: 0.8rem 0 0;
 }
 
-.yt-form { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+.yt-disclosure { margin-top: 0.9rem; }
+/* Native <details> so the caret, keyboard toggle, and expanded state come for
+   free — an ARIA-wired button would only re-implement all three. */
+.yt-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.3rem 0;
+  list-style: none;
+  cursor: pointer;
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+}
+.yt-summary::-webkit-details-marker { display: none; }
+.yt-summary::before {
+  content: "▸";
+  color: var(--hot);
+  font-size: 0.65rem;
+  transition: transform 0.18s;
+}
+.yt-disclosure[open] .yt-summary::before { transform: rotate(90deg); }
+.yt-summary:hover { color: var(--ink); }
+.yt-summary:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; border-radius: 3px; }
+
+.yt-form { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
 
 #yt-url {
   flex: 1;
@@ -235,14 +260,16 @@ h1 span {
 }
 
 .split-bar { display: flex; gap: 2px; height: 11px; }
+/* One hue only. The 2px gaps do the counting, so the segments never need a
+   second colour to be told apart — channel colours belong to the mixer. */
 .split-seg {
   flex: 1;
   border-radius: 2px;
   background: var(--ink-faint);
-  opacity: 0.4;
-  transition: opacity 0.18s;
+  opacity: 0.5;
+  transition: opacity 0.18s, background 0.18s;
 }
-.split-option:hover .split-seg { opacity: 0.7; }
+.split-option:hover .split-seg { opacity: 0.8; }
 
 .split-line { display: flex; align-items: center; gap: 0.4rem; }
 
@@ -274,7 +301,7 @@ h1 span {
   border-color: rgba(255, 182, 72, 0.55);
   background: var(--hot-soft);
 }
-.split-option:has(input:checked) .split-seg { opacity: 1; }
+.split-option:has(input:checked) .split-seg { background: var(--hot); opacity: 1; }
 .split-option:has(input:checked) .split-mark {
   border-color: var(--hot);
   background: radial-gradient(circle, var(--hot) 45%, transparent 47%);
@@ -286,19 +313,17 @@ h1 span {
 .split-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.2rem 0.9rem;
+  gap: 0.2rem 0;
   list-style: none;
   margin: 0.6rem 0 0;
   padding: 0;
   font-size: 0.66rem;
   color: var(--ink-dim);
 }
-.split-legend li { display: flex; align-items: center; gap: 0.35rem; }
-.legend-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-faint);
+.split-legend li + li::before {
+  content: "·";
+  color: var(--ink-faint);
+  margin: 0 0.5rem;
 }
 
 .stem-choice-status {
@@ -308,7 +333,7 @@ h1 span {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .split-option, .split-seg { transition: none; }
+  .split-option, .split-seg, .yt-summary::before { transition: none; }
   .split-option:hover { transform: none; }
 }
 
