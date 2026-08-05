@@ -422,6 +422,174 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
   }
 });
 
+test('browses the Internet Archive crate and splits an open-licensed track', async ({
+  page,
+  network,
+  server,
+}) => {
+  const archiveAudio = stemAudio.get('vocals');
+  const identifier = 'e2e-open-netlabel-release';
+  const trackFile = '01-fixture-track.mp3';
+  const separationId = 'e2e-archive-separation';
+  const stemNames = ['vocals', 'drums', 'bass', 'other'];
+  let searchQuery = '';
+
+  network.use(
+    http.get('https://archive.org/advancedsearch.php', ({ request }) => {
+      searchQuery = new URL(request.url).searchParams.get('q') ?? '';
+      return HttpResponse.json({
+        response: {
+          numFound: 1,
+          docs: [
+            {
+              identifier,
+              title: 'Fixture Netlabel Release',
+              creator: 'Fixture Collective',
+              licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
+              year: '2019',
+              downloads: 4211,
+            },
+          ],
+        },
+      });
+    }),
+    http.get(`https://archive.org/metadata/${identifier}`, () =>
+      HttpResponse.json({
+        metadata: {
+          identifier,
+          title: 'Fixture Netlabel Release',
+          creator: 'Fixture Collective',
+          licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
+          year: '2019',
+        },
+        files: [
+          { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '21.5' },
+          // A derivative of the same track: the picker must collapse it away.
+          { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '21.5' },
+          // Over the 15-minute cap: offered but not importable.
+          { name: '02-long-set.mp3', format: 'VBR MP3', size: '8192', length: '3600' },
+          { name: 'cover.jpg', format: 'JPEG', size: '2048' },
+        ],
+      })
+    ),
+    http.get(`https://archive.org/download/${identifier}/${trackFile}`, () =>
+      new HttpResponse(archiveAudio, {
+        headers: {
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': String(archiveAudio.length),
+        },
+      })
+    ),
+    http.post('https://api.replicate.com/v1/predictions', () =>
+      HttpResponse.json({ id: separationId, status: 'starting' })
+    ),
+    http.get(`https://api.replicate.com/v1/predictions/${separationId}`, () =>
+      HttpResponse.json({
+        id: separationId,
+        status: 'succeeded',
+        output: Object.fromEntries(
+          stemNames.map((name) => [name, `https://archive-stems.test/${name}.mp3`])
+        ),
+      })
+    ),
+    http.get('https://archive-stems.test/:stem.mp3', ({ params }) => {
+      const audio = stemAudio.get(String(params.stem)) ?? stemAudio.get('other');
+      return new HttpResponse(audio, { headers: { 'Content-Type': 'audio/mpeg' } });
+    })
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  // Opening the crate runs the default search.
+  await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
+  await expect(page.locator('.crate-item')).toHaveCount(1);
+  await expect(page.locator('.crate-license')).toHaveText('CC BY-NC-SA 4.0');
+
+  // The licence floor and collection scope are pinned server-side.
+  expect(searchQuery).toContain('mediatype:audio');
+  expect(searchQuery).toContain('NOT licenseurl:*-nd*');
+  expect(searchQuery).toContain('collection:netlabels');
+
+  await page.locator('.crate-item-head').click();
+  await expect(page.locator('.crate-track')).toHaveCount(2); // ogg derivative collapsed away
+  await expect(page.locator('.crate-track-len').first()).toHaveText('0:21');
+  await expect(page.getByRole('button', { name: 'TOO LONG' })).toBeDisabled();
+  if (process.env.ARCHIVE_QA_SCREENSHOT) {
+    await page.screenshot({ path: process.env.ARCHIVE_QA_SCREENSHOT, fullPage: true });
+  }
+
+  await page.getByRole('button', { name: 'SPLIT' }).click();
+
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+  await expect(page.locator('.console-title')).toHaveText('Fixture Collective - fixture-track');
+  await expect(page.locator('.channel')).toHaveCount(4);
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  const { keys } = await storedKeysResponse.json();
+  const sourceKey = keys.find((key) => /^uploads\/[0-9a-f-]+\/source\.mp3$/.test(key));
+  expect(sourceKey).toBeTruthy();
+  const storedSource = await e2eFetch(
+    server,
+    `/__e2e/audio?key=${encodeURIComponent(sourceKey)}`
+  );
+  expect(storedSource.status).toBe(200);
+  expect(Buffer.from(await storedSource.arrayBuffer()).equals(archiveAudio)).toBe(true);
+  expect(browserErrors).toEqual([]);
+});
+
+test('refuses a NoDerivatives Internet Archive item', async ({ page, network }) => {
+  const identifier = 'e2e-nd-licensed-release';
+
+  network.use(
+    http.get('https://archive.org/advancedsearch.php', () =>
+      HttpResponse.json({
+        response: {
+          numFound: 1,
+          docs: [
+            {
+              identifier,
+              title: 'No Derivatives Release',
+              creator: 'Fixture Collective',
+              licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
+            },
+          ],
+        },
+      })
+    ),
+    // Stale index: the item itself carries an ND licence, so expanding it must fail closed.
+    http.get(`https://archive.org/metadata/${identifier}`, () =>
+      HttpResponse.json({
+        metadata: {
+          identifier,
+          title: 'No Derivatives Release',
+          licenseurl: 'http://creativecommons.org/licenses/by-nc-nd/4.0/',
+        },
+        files: [{ name: 'track.mp3', format: 'VBR MP3', size: '4096', length: '20' }],
+      })
+    )
+  );
+
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
+  await page.locator('.crate-item-head').click();
+
+  await expect(page.locator('.crate-loading.error')).toContainText('NoDerivatives');
+  await expect(page.locator('.crate-track')).toHaveCount(0);
+});
+
 test('fails an empty MP3 response and removes partial track files', async ({ network, server }) => {
   const predictionId = 'e2e-empty-track';
   const sourceKey = 'uploads/e2e/empty-track.wav';

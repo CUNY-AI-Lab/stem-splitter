@@ -21,6 +21,16 @@ import {
 } from './separation/options';
 import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
 import {
+  archiveContentType,
+  ArchiveError,
+  ARCHIVE_SCOPES,
+  fetchArchiveAudio,
+  fetchArchiveItem,
+  isArchiveScope,
+  parseArchiveIdentifier,
+  searchArchive,
+} from './archive';
+import {
   AssistantError,
   COACH_DOWN,
   getGuide,
@@ -162,11 +172,71 @@ app.get('/api/local-sources/*', async (c) => {
   return new Response(obj.body, { headers });
 });
 
+// --- internet archive browse ------------------------------------------
+//
+// Reads are gated the same way the assistant endpoints are: they are cheap,
+// but they are also the pathway into a paid separation, so keep them behind
+// the class code rather than leaving an open search proxy on the Worker.
+
+app.get('/api/archive/scopes', (c) =>
+  c.json({
+    scopes: Object.entries(ARCHIVE_SCOPES).map(([id, scope]) => ({ id, label: scope.label })),
+  })
+);
+
+app.get('/api/archive/search', requireClassCode, async (c) => {
+  const term = c.req.query('q') ?? '';
+  const scopeParam = c.req.query('scope') ?? 'music';
+  const scope = isArchiveScope(scopeParam) ? scopeParam : 'music';
+  const page = Number.parseInt(c.req.query('page') ?? '1', 10) || 1;
+
+  try {
+    return c.json(await searchArchive(term, scope, page));
+  } catch (err) {
+    return archiveErrorResponse(c, err, 'Internet Archive search failed.');
+  }
+});
+
+app.get('/api/archive/items/:identifier', requireClassCode, async (c) => {
+  const identifier = parseArchiveIdentifier(c.req.param('identifier'));
+  if (!identifier) {
+    return c.json({ error: 'That is not a valid Internet Archive item.' }, 400);
+  }
+
+  try {
+    return c.json(await fetchArchiveItem(identifier));
+  } catch (err) {
+    return archiveErrorResponse(c, err, 'Could not load that Internet Archive item.');
+  }
+});
+
+function archiveErrorResponse(c: Context<{ Bindings: Env }>, err: unknown, fallback: string) {
+  console.error('archive request failed', err);
+  if (err instanceof ArchiveError) {
+    // Bad identifiers and licence rejections are caller errors, not upstream faults.
+    const clientError = ['invalid_identifier', 'item_not_found', 'license_missing', 'license_no_derivatives', 'no_audio_files'].includes(
+      err.code
+    );
+    return c.json(
+      { error: err.message, code: err.code, retryable: err.retryable },
+      clientError ? 400 : 502
+    );
+  }
+  return c.json({ error: fallback }, 502);
+}
+
 // --- jobs -------------------------------------------------------------
 
 app.post('/api/jobs', requireClassCode, async (c) => {
   const body = (await c.req.json().catch(() => null)) as
-    | { key?: string; filename?: string; youtubeUrl?: string; model?: string }
+    | {
+        key?: string;
+        filename?: string;
+        youtubeUrl?: string;
+        archiveId?: string;
+        archiveFile?: string;
+        model?: string;
+      }
     | null;
 
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
@@ -217,6 +287,48 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     key = `uploads/${crypto.randomUUID()}/source.m4a`;
     filename = sanitizeFilename(audio.title) || 'youtube-audio';
     await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
+  } else if (body?.archiveId) {
+    const identifier = parseArchiveIdentifier(body.archiveId);
+    if (!identifier) {
+      return c.json(
+        {
+          error: 'That is not a valid Internet Archive item.',
+          code: 'invalid_archive_id',
+          retryable: false,
+        },
+        400
+      );
+    }
+    // Same ordering rule as the YouTube path: bytes land in R2 first, and the
+    // job row is only created after, so a failed fetch leaves no stuck job.
+    let audio;
+    try {
+      audio = await fetchArchiveAudio(identifier, body.archiveFile, c.env);
+    } catch (err) {
+      const message =
+        err instanceof ArchiveError
+          ? err.message
+          : 'Internet Archive fetch failed — try another track, or upload the audio file instead.';
+      console.error('archive fetch error', err);
+      return c.json(
+        {
+          error: message,
+          ...(err instanceof ArchiveError
+            ? { code: err.code, retryable: err.retryable }
+            : {}),
+        },
+        502
+      );
+    }
+    if (audio.data.byteLength > MAX_SOURCE_BYTES) {
+      return c.json({ error: 'Audio too large (max 100 MB)' }, 400);
+    }
+    const extension = audio.fileName.slice(audio.fileName.lastIndexOf('.')).toLowerCase();
+    key = `uploads/${crypto.randomUUID()}/source${extension}`;
+    filename = sanitizeFilename(audio.title) || 'archive-audio';
+    await c.env.AUDIO.put(key, audio.data, {
+      httpMetadata: { contentType: archiveContentType(audio.fileName) },
+    });
   } else {
     const uploadKey = body?.key;
     filename = sanitizeFilename(body?.filename ?? '');

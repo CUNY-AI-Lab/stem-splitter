@@ -268,6 +268,229 @@ ytForm.addEventListener('submit', async (e) => {
   }
 });
 
+// --- internet archive crate ----------------------------------------------
+
+const crateToggle = document.getElementById('crate-toggle');
+const crateBody = document.getElementById('crate-body');
+const crateForm = document.getElementById('crate-form');
+const crateQuery = document.getElementById('crate-query');
+const crateScope = document.getElementById('crate-scope');
+const crateStatus = document.getElementById('crate-status');
+const crateResults = document.getElementById('crate-results');
+const cratePager = document.getElementById('crate-pager');
+const cratePrev = document.getElementById('crate-prev');
+const crateNext = document.getElementById('crate-next');
+const cratePageLabel = document.getElementById('crate-page-label');
+
+const CRATE_PAGE_SIZE = 24;
+const crateState = { term: '', scope: 'music', page: 1, total: 0, busy: false };
+// Track lists are fetched once per item and reused when the row is re-opened.
+const crateItems = new Map();
+
+crateToggle.addEventListener('click', () => {
+  const open = crateBody.hidden;
+  crateBody.hidden = !open;
+  crateToggle.setAttribute('aria-expanded', String(open));
+  crateToggle.classList.toggle('open', open);
+  if (open && crateResults.childElementCount === 0) void runCrateSearch(1);
+});
+
+crateForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  void runCrateSearch(1);
+});
+
+cratePrev.addEventListener('click', () => void runCrateSearch(crateState.page - 1));
+crateNext.addEventListener('click', () => void runCrateSearch(crateState.page + 1));
+
+function showCrateStatus(message, isError = false) {
+  crateStatus.hidden = !message;
+  crateStatus.textContent = message;
+  crateStatus.classList.toggle('error', isError);
+}
+
+async function runCrateSearch(page) {
+  if (crateState.busy || page < 1) return;
+
+  crateState.busy = true;
+  crateState.term = crateQuery.value.trim();
+  crateState.scope = crateScope.value;
+  crateForm.setAttribute('aria-busy', 'true');
+  showCrateStatus('SEARCHING THE ARCHIVE…');
+
+  try {
+    const params = new URLSearchParams({
+      q: crateState.term,
+      scope: crateState.scope,
+      page: String(page),
+    });
+    const data = await api(`/api/archive/search?${params}`);
+
+    crateState.page = data.page;
+    crateState.total = data.total;
+    crateItems.clear();
+    renderCrateResults(data.results);
+
+    if (data.results.length === 0) {
+      showCrateStatus('No open-licensed audio matched that search.');
+    } else {
+      showCrateStatus(`${data.total.toLocaleString()} OPEN-LICENSED ITEMS MATCH`);
+    }
+  } catch (err) {
+    crateResults.replaceChildren();
+    cratePager.hidden = true;
+    showCrateStatus(err.message, true);
+  } finally {
+    crateState.busy = false;
+    crateForm.removeAttribute('aria-busy');
+  }
+}
+
+function renderCrateResults(results) {
+  crateResults.replaceChildren();
+
+  for (const result of results) {
+    const li = document.createElement('li');
+    li.className = 'crate-item';
+
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'crate-item-head';
+    head.setAttribute('aria-expanded', 'false');
+
+    const title = document.createElement('span');
+    title.className = 'crate-item-title';
+    title.textContent = result.title;
+
+    const meta = document.createElement('span');
+    meta.className = 'crate-item-meta mono';
+    meta.textContent = [result.creator, result.year].filter(Boolean).join(' · ');
+
+    const license = document.createElement('span');
+    license.className = 'crate-license';
+    license.textContent = result.license;
+
+    head.append(title, meta, license);
+
+    const tracks = document.createElement('div');
+    tracks.className = 'crate-tracks';
+    tracks.hidden = true;
+
+    head.addEventListener('click', () => {
+      const open = tracks.hidden;
+      tracks.hidden = !open;
+      head.setAttribute('aria-expanded', String(open));
+      head.classList.toggle('open', open);
+      if (open) void loadCrateTracks(result, tracks);
+    });
+
+    li.append(head, tracks);
+    crateResults.append(li);
+  }
+
+  const pages = Math.max(1, Math.ceil(Math.min(crateState.total, CRATE_PAGE_SIZE * 20) / CRATE_PAGE_SIZE));
+  cratePager.hidden = results.length === 0;
+  cratePageLabel.textContent = `PAGE ${crateState.page} / ${pages}`;
+  cratePrev.disabled = crateState.page <= 1;
+  crateNext.disabled = crateState.page >= pages;
+}
+
+async function loadCrateTracks(result, container) {
+  if (crateItems.has(result.identifier)) {
+    renderCrateTracks(crateItems.get(result.identifier), container);
+    return;
+  }
+
+  container.replaceChildren(Object.assign(document.createElement('p'), {
+    className: 'mono crate-loading',
+    textContent: 'LOADING TRACKS…',
+  }));
+
+  try {
+    const item = await api(`/api/archive/items/${encodeURIComponent(result.identifier)}`);
+    crateItems.set(result.identifier, item);
+    renderCrateTracks(item, container);
+  } catch (err) {
+    container.replaceChildren(Object.assign(document.createElement('p'), {
+      className: 'mono crate-loading error',
+      textContent: err.message,
+    }));
+  }
+}
+
+function renderCrateTracks(item, container) {
+  const list = document.createElement('ul');
+  list.className = 'crate-track-list';
+
+  for (const track of item.tracks) {
+    const li = document.createElement('li');
+    li.className = 'crate-track';
+
+    const name = document.createElement('span');
+    name.className = 'crate-track-name';
+    name.textContent = track.title;
+
+    const length = document.createElement('span');
+    length.className = 'mono crate-track-len';
+    length.textContent = track.durationSec ? fmt(track.durationSec) : '—';
+
+    const split = document.createElement('button');
+    split.type = 'button';
+    split.className = 'crate-split';
+    if (track.importable) {
+      split.textContent = 'SPLIT';
+      split.addEventListener('click', () => void importArchiveTrack(item, track, split));
+    } else {
+      split.textContent = 'TOO LONG';
+      split.disabled = true;
+      split.title = 'Tracks must be under 15 minutes and 100 MB.';
+    }
+
+    li.append(name, length, split);
+    list.append(li);
+  }
+
+  const credit = document.createElement('p');
+  credit.className = 'mono crate-credit';
+  const link = document.createElement('a');
+  link.href = item.detailsUrl;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = 'view on archive.org';
+  credit.append(
+    document.createTextNode(`${item.license}${item.creator ? ` · ${item.creator}` : ''} · `),
+    link
+  );
+
+  container.replaceChildren(list, credit);
+}
+
+async function importArchiveTrack(item, track, button) {
+  button.disabled = true;
+  button.textContent = 'FETCHING…';
+  uploadStatus.hidden = false;
+  progressBar.style.width = '0%';
+  showUploadMessage(`IMPORTING "${track.title}" FROM THE INTERNET ARCHIVE…`);
+
+  try {
+    const model = await requireSelectedModel();
+    const job = await api('/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ archiveId: item.identifier, archiveFile: track.name, model }),
+    });
+
+    addJob(job);
+    showUploadMessage('PROCESSING — stems will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    renderJobs();
+    pollSoon();
+    button.textContent = 'QUEUED';
+  } catch (err) {
+    showUploadMessage(err.message, true);
+    button.disabled = false;
+    button.textContent = 'SPLIT';
+  }
+}
+
 async function handleFile(file) {
   if (file.size > 100 * 1024 * 1024) {
     showUploadMessage('File too large (max 100 MB).', true);
