@@ -1,0 +1,28 @@
+# Railway container for the whole app: the Cloudflare Worker running under
+# `wrangler dev --local` (workerd via miniflare) on the LOCAL_HOSTING path —
+# simulated D1/R2 persisted on a Railway volume at /data. This is the
+# self-hosted posture; production Cloudflare deploys stay `npm run deploy`.
+FROM node:22-slim
+
+# workerd validates TLS against the system trust store (unlike node, which
+# bundles its own CAs) — without ca-certificates every outbound HTTPS fetch
+# from the Worker fails with an opaque "internal error".
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# wrangler is a devDependency, so this is a full install (no --omit=dev).
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ENV WRANGLER_SEND_METRICS=false \
+    CI=true
+
+RUN chmod +x scripts/railway-worker-entrypoint.sh
+
+EXPOSE 8080
+CMD ["./scripts/railway-worker-entrypoint.sh"]

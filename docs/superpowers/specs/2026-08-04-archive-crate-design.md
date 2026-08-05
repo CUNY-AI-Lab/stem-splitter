@@ -165,3 +165,38 @@ Known availability caveat: items live on specific IA datanodes, and a sick node
 500s every file on its items (observed live with `stqk011` /
 `dn710902.ca.archive.org`). The app surfaces this as the retryable "Internet
 Archive is busy" error; the student retries later or picks another item.
+
+## Railway self-hosted deployment (2026-08-05)
+
+Project `stem-splitter` (Inference Arcade workspace), two services:
+
+- **web** — the Worker under `wrangler dev --local` on the `LOCAL_HOSTING` path,
+  simulated D1/R2 persisted on a volume at `/data`. Built from
+  `Dockerfile.worker` via `scripts/railway-worker-entrypoint.sh`.
+- **separator** — `local-separator/` as a CPU inference service, model weights
+  cached on a volume at `/models`. Built from `local-separator/Dockerfile`.
+
+Three deployment fixes, all now committed:
+
+- **`ca-certificates` in the worker image.** workerd validates TLS against the
+  *system* trust store, unlike node which bundles its own CAs. Without the
+  package every outbound `fetch()` from the Worker failed with an opaque
+  `internal error` — archive search returned `archive_unreachable` while
+  `node -e "fetch(...)"` in the same container returned 200. Reproduced and
+  fixed locally with Docker before redeploying.
+- **CPU torch index.** The default index resolves torch to CUDA builds on
+  Linux (~2 GB of unused nvidia wheels). `[tool.uv.sources]` pins the torch
+  family to the PyTorch CPU index on Linux only, so macOS keeps MPS. Note that
+  uv sources apply only to *direct* dependencies — torch/torchvision had to be
+  promoted out of `audio-separator`'s transitive set for the pin to take.
+- **`build-essential`.** `diffq` (an audio-separator dependency) compiles a C
+  extension and needs gcc.
+
+**Performance verdict — CPU separation is not classroom-viable.** The same
+NS050 track that takes **70 s** locally on Apple-silicon MPS took **34 min 50 s**
+on Railway CPU (~30× slower; ~8.7× *slower* than realtime against 3.3× faster
+locally). The pipeline is correct end-to-end — all four stems were produced and
+ingested by the Worker — but the live eval times out, and a student would wait
+half an hour per song. Railway CPU is viable as a staging/correctness
+environment only; production separation needs a GPU (Replicate, as today) or a
+GPU-backed Railway plan.
