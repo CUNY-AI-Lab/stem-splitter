@@ -8,19 +8,19 @@ import { expect, test } from '@playwright/test';
 // one you get is decided by SEPARATION_BACKEND, not by this table.
 const CASES = {
   bs_roformer_vocals: {
-    radio: /2 STEMS · vocals \+ instrumental/i,
+    radio: /2 parts: vocals, instrumental/i,
     stems: ['vocals', 'instrumental'],
   },
   vocals_instrumental: {
-    radio: /2 STEMS · vocals \+ instrumental/i,
+    radio: /2 parts: vocals, instrumental/i,
     stems: ['vocals', 'instrumental'],
   },
   htdemucs_ft: {
-    radio: /4 STEMS · vocals \+ drums \+ bass \+ other/i,
+    radio: /4 parts: vocals, drums, bass, other/i,
     stems: ['vocals', 'drums', 'bass', 'other'],
   },
   htdemucs_6s: {
-    radio: /6 STEMS · vocals \+ drums \+ bass \+ other \+ guitar \+ piano/i,
+    radio: /6 parts: vocals, drums, bass, other, guitar, piano/i,
     stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
   },
 };

@@ -159,16 +159,7 @@ h1 span {
   margin: 0.8rem 0 0;
 }
 
-.import-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.8rem;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 0.9rem;
-}
-
-.yt-form { display: flex; gap: 0.5rem; flex: 1 1 260px; }
+.yt-form { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
 
 #yt-url {
   flex: 1;
@@ -196,30 +187,135 @@ h1 span {
 }
 .yt-go:hover { background: var(--hot); color: var(--bg); }
 
-.stem-choice { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.stem-choice label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  padding: 0.45rem 0.7rem;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
+/* ─── split picker ────────────────────────────────────────────────── */
+/* Each choice previews the console you'll get: one segment per part, in the
+   colour that part is given in the mixer. Names stay off the buttons and sit
+   in the legend for the selected choice only. */
+
+.split-picker { margin-top: 1.1rem; }
+
+/* Cased in CSS, not in the markup, so screen readers get "split into" rather
+   than an all-caps string some of them spell out. */
+.split-picker-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--ink-dim);
+  margin: 0 0 0.5rem;
+}
+
+.split-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+
+.split-option {
+  position: relative;
+  display: grid;
+  gap: 0.55rem;
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  padding: 0.65rem 0.7rem 0.6rem;
   cursor: pointer;
   user-select: none;
+  transition: border-color 0.18s, background 0.18s, transform 0.15s;
 }
+.split-option:hover { border-color: rgba(255, 182, 72, 0.35); transform: translateY(-1px); }
+
+/* The radio is transparent but full-size rather than display:none: it keeps
+   focus and arrow-key navigation, and it is the thing you actually click, so
+   the whole card is one hit target. */
+.split-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.split-bar { display: flex; gap: 2px; height: 11px; }
+.split-seg {
+  flex: 1;
+  border-radius: 2px;
+  background: var(--ink-faint);
+  opacity: 0.4;
+  transition: opacity 0.18s;
+}
+.split-option:hover .split-seg { opacity: 0.7; }
+
+.split-line { display: flex; align-items: center; gap: 0.4rem; }
+
+/* Selection is a shape change, not only a colour change. */
+.split-mark {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 50%;
+}
+
+.split-count {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--ink);
+}
+.split-word {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.split-option:has(input:checked) {
+  border-color: rgba(255, 182, 72, 0.55);
+  background: var(--hot-soft);
+}
+.split-option:has(input:checked) .split-seg { opacity: 1; }
+.split-option:has(input:checked) .split-mark {
+  border-color: var(--hot);
+  background: radial-gradient(circle, var(--hot) 45%, transparent 47%);
+}
+.split-option:has(input:checked) .split-count,
+.split-option:has(input:checked) .split-word { color: var(--hot); }
+.split-option:has(input:focus-visible) { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+.split-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  font-size: 0.66rem;
+  color: var(--ink-dim);
+}
+.split-legend li { display: flex; align-items: center; gap: 0.35rem; }
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
 .stem-choice-status {
-  align-self: center;
+  grid-column: 1 / -1;
   color: var(--ink-dim);
   font-size: 0.7rem;
 }
-.stem-choice input { accent-color: var(--hot); margin: 0; }
-.stem-choice label:has(input:checked) {
-  border-color: rgba(255, 182, 72, 0.5);
-  color: var(--hot);
-  background: var(--hot-soft);
+
+@media (prefers-reduced-motion: reduce) {
+  .split-option, .split-seg { transition: none; }
+  .split-option:hover { transform: none; }
+}
+
+/* Forced colours flatten the amber fill and the mark's gradient, so selection
+   needs a border-drawn cue there. */
+@media (forced-colors: active) {
+  .split-option:has(input:checked) { outline: 2px solid Highlight; }
 }
 
 .channel.unavailable {
@@ -584,6 +680,10 @@ footer {
 /* ─── small screens ───────────────────────────────────────────────── */
 
 @media (max-width: 540px) {
+  .split-option { padding: 0.55rem 0.5rem 0.5rem; }
+  .split-line { gap: 0.3rem; }
+  .split-count { font-size: 0.95rem; }
+  .split-word { font-size: 0.56rem; letter-spacing: 0.1em; }
   .ch-id { min-width: 5rem; }
   .ch-name { font-size: 0.64rem; }
   .timecode { display: none; }

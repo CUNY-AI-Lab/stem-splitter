@@ -159,12 +159,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
-  await expect(page.locator('#split-summary')).toHaveText(
-    '// produces 2, 4, or 6 tracks per split'
-  );
+  await expect(page.locator('#split-summary')).toHaveText('// 2, 4, or 6 parts per song');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
-    page.getByRole('radio', { name: '4 STEMS · vocals + drums + bass + other' })
+    page.getByRole('radio', { name: '4 parts: vocals, drums, bass, other' })
   ).toBeChecked();
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -294,7 +292,7 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const twoTrackChoice = page.getByRole('radio', {
-    name: '2 STEMS · vocals + instrumental',
+    name: '2 parts: vocals, instrumental',
   });
   await expect(twoTrackChoice).toBeVisible();
   await twoTrackChoice.check();
@@ -362,7 +360,7 @@ test('fails an incomplete six-track result instead of rendering blank channels',
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const sixTrackChoice = page.getByRole('radio', {
-    name: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+    name: '6 parts: vocals, drums, bass, other, guitar, piano',
   });
   await expect(sixTrackChoice).toBeVisible();
   await sixTrackChoice.check();
@@ -476,7 +474,7 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page
     .getByRole('radio', {
-      name: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+      name: '6 parts: vocals, drums, bass, other, guitar, piano',
     })
     .check();
   await page.getByLabel('YouTube link').fill(
@@ -567,7 +565,7 @@ test('completes a six-track split whose guitar and piano tracks are near-silent'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page
     .getByRole('radio', {
-      name: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+      name: '6 parts: vocals, drums, bass, other, guitar, piano',
     })
     .check();
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -687,7 +685,7 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('radio', { name: '2 STEMS · vocals + instrumental' }).check();
+  await page.getByRole('radio', { name: '2 parts: vocals, instrumental' }).check();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );

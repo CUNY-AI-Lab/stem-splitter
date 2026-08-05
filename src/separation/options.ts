@@ -32,6 +32,7 @@ export interface AudioSeparatorRunner {
 export interface SeparationOption {
   id: string;
   stems: string[];
+  /** Spoken name for the choice — the picker shows a count, this names the parts. */
   label: string;
   engine: string;
   runners: {
@@ -57,7 +58,7 @@ const ALL_OPTIONS: SeparationOption[] = [
   {
     id: BS_ROFORMER_MODEL,
     stems: ['vocals', 'instrumental'],
-    label: '2 STEMS · vocals + instrumental',
+    label: '2 parts: vocals, instrumental',
     engine: 'BS-ROFORMER',
     runners: {
       'audio-separator': { kind: 'audio-separator', profile: BS_ROFORMER_MODEL },
@@ -72,7 +73,7 @@ const ALL_OPTIONS: SeparationOption[] = [
     // the frontend, and the track-count tests all stay as they are.
     id: TWO_STEM_MODEL,
     stems: ['vocals', 'instrumental'],
-    label: '2 STEMS · vocals + instrumental',
+    label: '2 parts: vocals, instrumental',
     engine: 'DEMUCS',
     runners: {
       replicate: {
@@ -86,7 +87,7 @@ const ALL_OPTIONS: SeparationOption[] = [
   {
     id: DEFAULT_DEMUCS_MODEL,
     stems: ['vocals', 'drums', 'bass', 'other'],
-    label: '4 STEMS · vocals + drums + bass + other',
+    label: '4 parts: vocals, drums, bass, other',
     engine: 'DEMUCS',
     runners: {
       replicate: {
@@ -101,7 +102,7 @@ const ALL_OPTIONS: SeparationOption[] = [
   {
     id: 'htdemucs_6s',
     stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
-    label: '6 STEMS · vocals + drums + bass + other + guitar + piano',
+    label: '6 parts: vocals, drums, bass, other, guitar, piano',
     engine: 'DEMUCS',
     runners: {
       replicate: {

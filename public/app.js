@@ -129,6 +129,7 @@ const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
 const ytFetchButton = ytForm.querySelector('button[type="submit"]');
 const stemChoice = document.getElementById('stem-choice');
+const splitLegend = document.getElementById('split-legend');
 const splitSummary = document.getElementById('split-summary');
 const engineSummary = document.getElementById('engine-summary');
 let separationOptionsReady;
@@ -170,35 +171,91 @@ async function loadSeparationOptions() {
 
     stemChoice.replaceChildren();
     for (const model of options.models) {
-      const label = document.createElement('label');
-      const input = document.createElement('input');
-      input.type = 'radio';
-      input.name = 'stem-model';
-      input.value = model.id;
-      input.checked = model.id === options.defaultModel;
-      const text = document.createElement('span');
-      text.textContent = model.label;
-      label.append(input, text);
-      stemChoice.appendChild(label);
+      stemChoice.appendChild(buildSplitOption(model, model.id === options.defaultModel));
     }
     if (!selectedModel()) stemChoice.querySelector('input').checked = true;
+    stemChoice.addEventListener('change', () => renderSplitLegend(options.models));
+    renderSplitLegend(options.models);
     renderSeparationSummary(options.models);
     return true;
   } catch {
     stemChoice.innerHTML =
-      '<span class="stem-choice-status mono">Split choices unavailable. Reload to try again.</span>';
-    splitSummary.textContent = '// split choices unavailable';
+      '<span class="stem-choice-status mono">Split options unavailable. Reload to try again.</span>';
+    splitLegend.replaceChildren();
+    splitSummary.textContent = '// split options unavailable';
     engineSummary.textContent = 'SEPARATION MODELS: UNAVAILABLE';
     return false;
   }
 }
 
+// A choice is a strip of the song cut into its parts: one segment per part, in
+// the same colour that part gets in the mixer. The count is the only text —
+// the part names live in the legend for the selected choice, and in the radio's
+// accessible name so a screen reader still hears all of them.
+function buildSplitOption(model, checked) {
+  const option = document.createElement('label');
+  option.className = 'split-option';
+
+  const input = document.createElement('input');
+  input.type = 'radio';
+  input.name = 'stem-model';
+  input.value = model.id;
+  input.checked = checked;
+  input.setAttribute('aria-label', model.label);
+
+  const bar = document.createElement('span');
+  bar.className = 'split-bar';
+  bar.setAttribute('aria-hidden', 'true');
+  for (const stem of model.stems) {
+    const segment = document.createElement('span');
+    segment.className = 'split-seg';
+    segment.style.background = stemColor(stem);
+    bar.appendChild(segment);
+  }
+
+  const mark = document.createElement('span');
+  mark.className = 'split-mark';
+  mark.setAttribute('aria-hidden', 'true');
+  const count = document.createElement('span');
+  count.className = 'split-count';
+  count.textContent = String(model.stems.length);
+  const word = document.createElement('span');
+  word.className = 'split-word';
+  word.textContent = 'parts';
+
+  const line = document.createElement('span');
+  line.className = 'split-line';
+  line.append(mark, count, word);
+  option.append(input, bar, line);
+  return option;
+}
+
+function renderSplitLegend(models) {
+  const selected = models.find((model) => model.id === selectedModel()) || models[0];
+  splitLegend.replaceChildren();
+  for (const stem of selected?.stems || []) {
+    const item = document.createElement('li');
+    const dot = document.createElement('span');
+    dot.className = 'legend-dot';
+    dot.style.background = stemColor(stem);
+    const name = document.createElement('span');
+    name.textContent = stem;
+    item.append(dot, name);
+    splitLegend.appendChild(item);
+  }
+}
+
+// Channel colours are CSS vars (--c-vocals …); an unknown part falls back to
+// the var default rather than shipping a second colour table in JS.
+function stemColor(stem) {
+  const token = String(stem).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `var(--c-${token}, var(--ink-faint))`;
+}
+
 function renderSeparationSummary(models) {
-  const trackCounts = [...new Set(models.map((model) => model.stems.length))].sort(
-    (a, b) => a - b
-  );
+  const partCounts = [...new Set(models.map((model) => model.stems.length))].sort((a, b) => a - b);
   const engines = [...new Set(models.map((model) => model.engine.trim()))];
-  splitSummary.textContent = `// produces ${formatList(trackCounts)} tracks per split`;
+  splitSummary.textContent = `// ${formatList(partCounts)} parts per song`;
   engineSummary.textContent = `SEPARATION MODEL${engines.length === 1 ? '' : 'S'}: ${engines.join(
     ' / '
   )}`;
@@ -255,7 +312,7 @@ ytForm.addEventListener('submit', async (e) => {
     });
     ytUrlInput.value = '';
     addJob(job);
-    showUploadMessage('PROCESSING — stems will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    showUploadMessage('PROCESSING — parts will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
     renderJobs();
     pollSoon();
   } catch (err) {
@@ -296,7 +353,7 @@ async function handleFile(file) {
     });
 
     addJob(job);
-    showUploadMessage('PROCESSING — stems will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    showUploadMessage('PROCESSING — parts will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
     renderJobs();
     pollSoon();
   } catch (err) {
@@ -921,7 +978,7 @@ function renderJobs() {
 }
 
 function stemDescription(expectedStems) {
-  return expectedStems?.length ? expectedStems.join(' / ') : 'the selected tracks';
+  return expectedStems?.length ? expectedStems.join(' / ') : 'the parts you picked';
 }
 
 let pollTimer = null;
