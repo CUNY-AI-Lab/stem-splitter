@@ -1093,3 +1093,6 @@ footer {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.teacher-main footer a { color: var(--ink-dim); text-decoration-color: var(--panel-edge); }
+.teacher-main footer a:hover { color: var(--hot); }

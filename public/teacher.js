@@ -75,8 +75,10 @@ signinForm.addEventListener('submit', async (e) => {
       }),
     });
     document.getElementById('signin-password').value = '';
-    showPanel(true, teacher);
+    // Load before revealing: showing the panel first lets a fast typist start
+    // editing, and the in-flight fetch would then overwrite what they typed.
     await loadPrompt();
+    showPanel(true, teacher);
   } catch (err) {
     signinError.hidden = false;
     signinError.textContent = err.message;
@@ -130,8 +132,8 @@ previewBtn.addEventListener('click', async () => {
 (async function init() {
   try {
     const teacher = await api('/api/teacher/me');
-    showPanel(true, teacher);
     await loadPrompt();
+    showPanel(true, teacher);
   } catch {
     showPanel(false);
   }

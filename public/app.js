@@ -284,6 +284,9 @@ const cratePageLabel = document.getElementById('crate-page-label');
 
 const CRATE_PAGE_SIZE = 24;
 const crateState = { term: '', scope: 'music', page: 1, total: 0, busy: false };
+// Monotonic request id: a slower earlier search must not clobber a newer one's
+// results (which also silently collapsed any item the student had expanded).
+let crateSeq = 0;
 // Track lists are fetched once per item and reused when the row is re-opened.
 const crateItems = new Map();
 
@@ -310,7 +313,11 @@ function showCrateStatus(message, isError = false) {
 }
 
 async function runCrateSearch(page) {
-  if (crateState.busy || page < 1) return;
+  if (page < 1) return;
+  // Deliberately not guarded on `busy`: dropping the request meant a student
+  // who typed and hit SEARCH while the opening auto-search was still running
+  // silently got the default results instead of theirs.
+  const seq = ++crateSeq;
 
   crateState.busy = true;
   crateState.term = crateQuery.value.trim();
@@ -325,6 +332,7 @@ async function runCrateSearch(page) {
       page: String(page),
     });
     const data = await api(`/api/archive/search?${params}`);
+    if (seq !== crateSeq) return; // superseded — leave the newer results alone
 
     crateState.page = data.page;
     crateState.total = data.total;
@@ -337,12 +345,15 @@ async function runCrateSearch(page) {
       showCrateStatus(`${data.total.toLocaleString()} OPEN-LICENSED ITEMS MATCH`);
     }
   } catch (err) {
+    if (seq !== crateSeq) return;
     crateResults.replaceChildren();
     cratePager.hidden = true;
     showCrateStatus(err.message, true);
   } finally {
-    crateState.busy = false;
-    crateForm.removeAttribute('aria-busy');
+    if (seq === crateSeq) {
+      crateState.busy = false;
+      crateForm.removeAttribute('aria-busy');
+    }
   }
 }
 
