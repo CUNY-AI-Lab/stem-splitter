@@ -42,6 +42,7 @@ import {
 import { buildSystemPrompt } from './assistant/prompt';
 import {
   clearedSessionCookie,
+  cookiesShouldBeSecure,
   createSession,
   destroySession,
   getAmendment,
@@ -215,7 +216,7 @@ const requireTeacher = createMiddleware<{ Bindings: Env }>(async (c, next) => {
 });
 
 function isSecureRequest(c: Context<{ Bindings: Env }>): boolean {
-  return new URL(c.req.url).protocol === 'https:';
+  return cookiesShouldBeSecure(c.env.PUBLIC_BASE_URL, c.req.url);
 }
 
 app.post('/api/teacher/login', async (c) => {

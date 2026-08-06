@@ -187,6 +187,18 @@ export function readSessionCookie(cookieHeader: string | undefined): string | nu
   return null;
 }
 
+/**
+ * Whether session cookies should carry the Secure flag. The request protocol
+ * alone is wrong behind a TLS-terminating proxy (Railway): the Worker sees
+ * plain http there, but the browser-facing origin is https — so trust
+ * PUBLIC_BASE_URL first and fall back to the request only when it is unset.
+ */
+export function cookiesShouldBeSecure(publicBaseUrl: string | undefined, requestUrl: string): boolean {
+  if (publicBaseUrl?.startsWith('https:')) return true;
+  if (publicBaseUrl?.startsWith('http:')) return false;
+  return new URL(requestUrl).protocol === 'https:';
+}
+
 export function sessionCookie(token: string, secure: boolean): string {
   const attrs = [
     `${SESSION_COOKIE}=${token}`,

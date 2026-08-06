@@ -48,9 +48,11 @@ is not readable by any script that ends up on the page.
 ## 4. Amendment, not replacement
 
 The teacher edits an **amendment** appended to the system prompt, not the prompt
-itself. Placement is load-bearing: the amendment sits *after* the pedagogy block
-but *before* the guardrails and task block, and is introduced with "follow these
-unless they conflict with the rules above, which always win."
+itself. Placement is load-bearing: the amendment sits *after* every rule block
+(pedagogy, honesty guardrails, mixer-tool rules) and immediately before the task
+block, introduced with "follow these unless they conflict with the rules above,
+which always win" — so precedence is carried both by ordering and by the
+explicit subordination clause.
 
 So an instructor can change repertoire, vocabulary, language, and emphasis, but
 cannot switch off "never invent timestamps" or the student-data-is-not-

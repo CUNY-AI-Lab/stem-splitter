@@ -24,9 +24,24 @@ const DOWNLOAD_BASE = 'https://archive.org/download';
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
-/** Open-licence floor: CC or public domain, minus every NoDerivatives variant. */
+/**
+ * Open-licence floor: CC or public domain, minus every NoDerivatives variant.
+ * Two ND exclusions because CC v1.0 licences used bare "nd" / "nd-nc" path
+ * segments (licenses/nd/1.0, licenses/nd-nc/1.0) that the *-nd* infix misses —
+ * 98 such items were live in the scoped collections when this was written.
+ */
 const LICENSE_FILTER =
-  'licenseurl:(*creativecommons* OR *publicdomain*) AND NOT licenseurl:*-nd*';
+  'licenseurl:(*creativecommons* OR *publicdomain*) AND NOT licenseurl:*-nd* AND NOT licenseurl:*licenses\\/nd*';
+
+/**
+ * True when any licence module is NoDerivatives. Parses the licence code out
+ * of the URL path and checks its "-"-separated modules, so by-nc-nd, by-nd,
+ * nd-nc and bare nd all refuse regardless of ordering or licence version.
+ */
+function licenseForbidsDerivatives(url: string): boolean {
+  const match = /licen[cs]es\/([a-z-]+)(\/|$)/i.exec(url);
+  return match ? match[1].toLowerCase().split('-').includes('nd') : false;
+}
 
 /**
  * Collection scopes offered to the UI. `music` is the curated default;
@@ -332,7 +347,7 @@ export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem>
       'license_missing'
     );
   }
-  if (/-nd(\/|$)/i.test(licenseUrl)) {
+  if (licenseForbidsDerivatives(licenseUrl)) {
     throw new ArchiveError(
       'That item is NoDerivatives-licensed, which does not permit splitting it into stems.',
       'license_no_derivatives'

@@ -579,13 +579,15 @@ test('refuses a NoDerivatives Internet Archive item', async ({ page, network }) 
         },
       })
     ),
-    // Stale index: the item itself carries an ND licence, so expanding it must fail closed.
+    // Stale index: the item itself carries an ND licence, so expanding it must
+    // fail closed. Uses the CC v1.0 "nd-nc" path shape deliberately — it has no
+    // "-nd" infix, so a substring check would (and once did) let it through.
     http.get(`https://archive.org/metadata/${identifier}`, () =>
       HttpResponse.json({
         metadata: {
           identifier,
           title: 'No Derivatives Release',
-          licenseurl: 'http://creativecommons.org/licenses/by-nc-nd/4.0/',
+          licenseurl: 'http://creativecommons.org/licenses/nd-nc/1.0/',
         },
         files: [{ name: 'track.mp3', format: 'VBR MP3', size: '4096', length: '20' }],
       })
