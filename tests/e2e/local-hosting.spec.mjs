@@ -197,6 +197,33 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.getByRole('button', { name: 'Mute vocals' }).click();
   await expect(page.getByRole('button', { name: 'Mute vocals' })).toHaveAttribute('aria-pressed', 'true');
 
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('.export-btn').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('source-export.zip');
+  const zipBytes = await readFile(await download.path());
+  expect(zipBytes.subarray(0, 4).toString('latin1')).toBe('PK\x03\x04');
+  const zipText = zipBytes.toString('latin1');
+  for (const entry of [
+    'stems/vocals.mp3',
+    'stems/drums.mp3',
+    'stems/bass.mp3',
+    'stems/other.mp3',
+    'guide-chat-and-notes.md',
+  ]) {
+    expect(zipText).toContain(entry);
+  }
+  expect(zipText).toContain('# source.wav');
+  expect(zipText).toContain('listening session export');
+
+  await page.locator('.collapse-btn').click();
+  await expect(page.locator('.console')).toHaveClass(/collapsed/);
+  await expect(page.locator('.transport')).toBeHidden();
+  const [{ collapsed }] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  expect(collapsed).toBe(true);
+  await page.locator('.collapse-btn').click();
+  await expect(page.locator('.transport')).toBeVisible();
+
   expect(signedSourceUrl).toMatch(/^http:\/\/stem-splitter\.test\/api\/local-sources\//);
   const signedSourceResponse = await server.fetch(signedSourceUrl);
   expect(signedSourceResponse.status).toBe(200);
