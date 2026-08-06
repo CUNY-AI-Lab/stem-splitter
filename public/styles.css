@@ -462,7 +462,28 @@ h1 span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
+
+.head-btn {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--panel-edge);
+  background: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.head-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-dim); }
+.head-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Collapsed session: only the head row stays visible; playback is paused. */
+.console.collapsed > :not(.console-head) { display: none; }
 
 .badge {
   font-family: var(--font-mono);

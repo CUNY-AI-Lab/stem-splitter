@@ -106,15 +106,22 @@ function saveJobs(jobs) {
   localStorage.setItem('jobs', JSON.stringify(jobs));
 }
 
+// A new song takes the spotlight: previous sessions collapse (nothing is
+// deleted — one click on a console head reopens it).
 function addJob(job) {
-  const jobs = getJobs();
+  const jobs = getJobs().map((j) => ({ ...j, collapsed: true }));
   jobs.unshift({
     id: job.id,
     filename: job.filename,
     model: job.model,
     expectedStems: job.expectedStems || [],
+    collapsed: false,
   });
   saveJobs(jobs.slice(0, 50));
+}
+
+function setJobCollapsed(id, collapsed) {
+  saveJobs(getJobs().map((j) => (j.id === id ? { ...j, collapsed } : j)));
 }
 
 // --- upload flow ----------------------------------------------------------
@@ -592,6 +599,8 @@ class Mixer {
       <div class="console-head">
         <span class="console-title">${esc(this.job.filename)}</span>
         <span class="badge ready">READY</span>
+        <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
+        <button class="head-btn collapse-btn" aria-expanded="true" title="Collapse this session">▾</button>
       </div>
       <div class="transport">
         <button class="play-btn" aria-label="Play all stems">▶</button>
@@ -629,6 +638,15 @@ class Mixer {
     this.notes = li.querySelector('.notes');
     this.noteBtn = li.querySelector('.note-btn');
     this.noteBtn.addEventListener('click', () => this.addNote());
+
+    this.collapseBtn = li.querySelector('.collapse-btn');
+    this.collapseBtn.addEventListener('click', () => {
+      const collapsed = !this.el.classList.contains('collapsed');
+      this.setCollapsed(collapsed);
+      setJobCollapsed(this.job.id, collapsed);
+    });
+    this.exportBtn = li.querySelector('.export-btn');
+    this.exportBtn.addEventListener('click', () => this.exportZip());
 
     this.coachToggle = li.querySelector('.coach-toggle');
     this.coachLed = li.querySelector('.coach-led');
@@ -713,6 +731,72 @@ class Mixer {
     this.renderNotes();
     this.renderGuide();
     return li;
+  }
+
+  setCollapsed(collapsed) {
+    if (this.el.classList.contains('collapsed') === collapsed) return;
+    if (collapsed && this.playing) this.pause();
+    this.el.classList.toggle('collapsed', collapsed);
+    this.collapseBtn.textContent = collapsed ? '▸' : '▾';
+    this.collapseBtn.title = collapsed ? 'Expand this session' : 'Collapse this session';
+    this.collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  // --- session export -----------------------------------------------------
+
+  exportMarkdown() {
+    const lines = [`# ${this.job.filename} — listening session export`, ''];
+    lines.push(`- Exported: ${new Date().toISOString()}`);
+    if (this.job.model) lines.push(`- Model: ${this.job.model}`);
+    lines.push(`- Tracks: ${this.job.stems.map((s) => this.label(s.name)).join(', ')}`, '');
+
+    if (this.job.guide && this.job.guide.text) {
+      lines.push('## Listening guide', '', this.job.guide.text, '');
+    }
+    if (this.annotations.length) {
+      lines.push('## Notes', '');
+      for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text}`);
+      lines.push('');
+    }
+    if (this.chatHistory.length) {
+      lines.push('## Listening Guy chat', '');
+      for (const turn of this.chatHistory) {
+        lines.push(`**${turn.role === 'user' ? 'You' : 'Listening Guy'}:** ${turn.content}`, '');
+      }
+    }
+    return lines.join('\n');
+  }
+
+  async exportZip() {
+    if (this.exportBtn.disabled) return;
+    this.exportBtn.disabled = true;
+    this.exportBtn.textContent = 'PACKING…';
+    try {
+      const entries = [];
+      const used = new Set();
+      for (const stem of this.job.stems) {
+        const res = await fetch(stem.url);
+        if (!res.ok) throw new Error(`Could not fetch the ${this.label(stem.name)} track (${res.status}).`);
+        let base = fileSafe(this.label(stem.name)) || fileSafe(stem.name) || 'stem';
+        if (used.has(base)) base = `${base}-${used.size + 1}`;
+        used.add(base);
+        entries.push({ name: `stems/${base}.mp3`, data: new Uint8Array(await res.arrayBuffer()) });
+      }
+      entries.push({
+        name: 'guide-chat-and-notes.md',
+        data: new TextEncoder().encode(this.exportMarkdown()),
+      });
+
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(makeZip(entries));
+      a.download = `${fileSafe(this.job.filename) || 'session'}-export.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      showUploadMessage(err.message, true);
+    }
+    this.exportBtn.disabled = false;
+    this.exportBtn.textContent = 'EXPORT';
   }
 
   markAudioUnavailable(stemName) {
@@ -1128,6 +1212,7 @@ function renderJobs() {
         mixer = new Mixer({ ...state, filename: job.filename });
         mixers.set(job.id, mixer);
       }
+      mixer.setCollapsed(!!job.collapsed);
       jobList.appendChild(mixer.el);
       continue;
     }
@@ -1212,6 +1297,78 @@ function cssName(s) {
 function idx(arr, v) {
   const i = arr.indexOf(String(v).toLowerCase());
   return i === -1 ? 99 : i;
+}
+
+function fileSafe(s) {
+  return String(s)
+    .replace(/\.[a-z0-9]{2,4}$/i, '')
+    .replace(/[^\w\- ]+/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 60);
+}
+
+// Minimal ZIP writer (store method, no compression) — enough for bundling
+// already-compressed MP3s plus one markdown file, without a zip library.
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function makeZip(entries) {
+  const encoder = new TextEncoder();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+
+  for (const { name, data } of entries) {
+    const nameBytes = encoder.encode(name);
+    const crc = crc32(data);
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, 0x0800, true); // UTF-8 filenames
+    local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true);
+    local.setUint32(22, data.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    parts.push(new Uint8Array(local.buffer), nameBytes, data);
+
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true);
+    cd.setUint16(4, 20, true);
+    cd.setUint16(6, 20, true);
+    cd.setUint16(8, 0x0800, true);
+    cd.setUint32(16, crc, true);
+    cd.setUint32(20, data.length, true);
+    cd.setUint32(24, data.length, true);
+    cd.setUint16(28, nameBytes.length, true);
+    cd.setUint32(42, offset, true);
+    central.push(new Uint8Array(cd.buffer), nameBytes);
+
+    offset += 30 + nameBytes.length + data.length;
+  }
+
+  const cdSize = central.reduce((n, c) => n + c.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, entries.length, true);
+  end.setUint16(10, entries.length, true);
+  end.setUint32(12, cdSize, true);
+  end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
 }
 
 function fmt(sec) {
