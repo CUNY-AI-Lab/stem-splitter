@@ -4,6 +4,7 @@
 #   ./scripts/smoke.sh                  # free checks only (no predictions created)
 #   ./scripts/smoke.sh <job-id>         # + labels/annotations round-trip on a done job
 #   SMOKE_YOUTUBE_URL=<url> ./scripts/smoke.sh --full   # + real YouTube import → 6 stems
+#   SMOKE_MODEL=vocals_instrumental SMOKE_YOUTUBE_URL=<url> ./scripts/smoke.sh --full   # 2-stem instead
 #   SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>   # + listening-guy guide/chat checks (<1¢)
 #
 # Class code comes from $CLASS_CODE (required — never hardcode it here).
@@ -42,6 +43,21 @@ check "bad model rejected → 400" 400 \
 
 check "non-YouTube URL rejected → 400" 400 \
   "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$BASE/api/jobs" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{"youtubeUrl":"https://example.com/x","model":"htdemucs_ft"}')"
+
+check "split choices advertise 2, 4 and 6 tracks" "2 4 6" \
+  "$(curl -sS "$BASE/api/separation-options" | python3 -c "import json,sys; print(*sorted(len(m['stems']) for m in json.load(sys.stdin)['models']))")"
+
+check "split choices keep the 4-track default" htdemucs_ft \
+  "$(curl -sS "$BASE/api/separation-options" | json "['defaultModel']")"
+
+check "split choices never leak runner wiring" 1 \
+  "$(curl -sS "$BASE/api/separation-options" | python3 -c "import json,sys; print(int(all(set(m)=={'id','stems','label','engine'} for m in json.load(sys.stdin)['models'])))")"
+
+# The model allowlist (src/index.ts) runs before the URL parse, so a 400 with
+# code invalid_youtube_url proves the two-track id passed the allowlist in
+# production without creating a prediction. Costs nothing.
+check "two-track choice accepted by the allowlist" invalid_youtube_url \
+  "$(curl -sS -X POST "$BASE/api/jobs" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{"youtubeUrl":"x","model":"vocals_instrumental"}' | json "['code']")"
 
 check "uploads/ keys never served → 404" 404 \
   "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/api/files/uploads/x/source.m4a")"
@@ -105,13 +121,15 @@ if [ "${SMOKE_ASSISTANT:-0}" = 1 ] && [ -n "$JOB_ID" ]; then
 fi
 
 if [ "$FULL" = 1 ]; then
-  echo "== full pipeline (costs ~\$0.06): YouTube → 6 stems =="
+  # SMOKE_MODEL=vocals_instrumental exercises the two-track split instead.
+  SMOKE_MODEL="${SMOKE_MODEL:-htdemucs_6s}"
+  echo "== full pipeline (costs ~\$0.06): YouTube → $SMOKE_MODEL =="
   if [ -z "${SMOKE_YOUTUBE_URL:-}" ]; then
     FAIL=$((FAIL+1)); echo "  FAIL  set SMOKE_YOUTUBE_URL to audio you are allowed to test"
   else
     YOUTUBE_PAYLOAD=$(python3 -c \
-      'import json,sys; print(json.dumps({"youtubeUrl":sys.argv[1],"model":"htdemucs_6s"}))' \
-      "$SMOKE_YOUTUBE_URL")
+      'import json,sys; print(json.dumps({"youtubeUrl":sys.argv[1],"model":sys.argv[2]}))' \
+      "$SMOKE_YOUTUBE_URL" "$SMOKE_MODEL")
     R=$(curl -sS -m 300 -X POST "$BASE/api/jobs" -H 'content-type: application/json' -H "x-class-code: $CODE" \
       -d "$YOUTUBE_PAYLOAD")
     NEW_JOB=$(echo "$R" | json "['id']")
@@ -125,7 +143,12 @@ if [ "$FULL" = 1 ]; then
         sleep 15
       done
       check "youtube import completes" done "$S"
-      check "6 stems produced" 6 "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['stems'].__len__()")"
+      # Derived from the contract the Worker promised, not a hardcoded count.
+      EXPECTED=$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['expectedStems'].__len__()")
+      check "promised stems produced" "$EXPECTED" \
+        "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | json "['stems'].__len__()")"
+      check "stem names match the contract" 1 \
+        "$(curl -sS "$BASE/api/jobs/$NEW_JOB" | python3 -c "import json,sys; j=json.load(sys.stdin); print(int([s['name'] for s in j['stems']]==j['expectedStems']))")"
     fi
   fi
 fi

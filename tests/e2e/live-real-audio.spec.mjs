@@ -3,22 +3,30 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 
+// Keyed by contract id. `bs_roformer_vocals` and `vocals_instrumental` share a
+// label because each backend advertises exactly one two-track choice — which
+// one you get is decided by SEPARATION_BACKEND, not by this table.
 const CASES = {
   bs_roformer_vocals: {
-    radio: /2 STEMS · vocals \+ instrumental/i,
+    radio: /2 parts: vocals, instrumental/i,
+    stems: ['vocals', 'instrumental'],
+  },
+  vocals_instrumental: {
+    radio: /2 parts: vocals, instrumental/i,
     stems: ['vocals', 'instrumental'],
   },
   htdemucs_ft: {
-    radio: /4 STEMS · vocals \+ drums \+ bass \+ other/i,
+    radio: /4 parts: vocals, drums, bass, other/i,
     stems: ['vocals', 'drums', 'bass', 'other'],
   },
   htdemucs_6s: {
-    radio: /6 STEMS · vocals \+ drums \+ bass \+ other \+ guitar \+ piano/i,
+    radio: /6 parts: vocals, drums, bass, other, guitar, piano/i,
     stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
   },
 };
 
 const sourcePath = process.env.REAL_AUDIO_SOURCE;
+const youtubeUrl = process.env.REAL_AUDIO_YOUTUBE_URL;
 const model = process.env.REAL_AUDIO_MODEL;
 const liveCase = model ? CASES[model] : undefined;
 const classCode = process.env.REAL_AUDIO_CLASS_CODE || 'local-class-code';
@@ -28,12 +36,22 @@ const artifactDir = resolve(
 );
 const resultPath = resolve(process.env.REAL_AUDIO_RESULT_PATH || `${artifactDir}/result.json`);
 
-test.skip(!sourcePath || !liveCase, 'Set REAL_AUDIO_SOURCE and a supported REAL_AUDIO_MODEL');
+test.skip(
+  (!sourcePath && !youtubeUrl) || !liveCase,
+  'Set REAL_AUDIO_SOURCE or REAL_AUDIO_YOUTUBE_URL, plus a supported REAL_AUDIO_MODEL'
+);
+test.skip(
+  Boolean(sourcePath && youtubeUrl),
+  'Set exactly one of REAL_AUDIO_SOURCE or REAL_AUDIO_YOUTUBE_URL'
+);
 
 test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
-  const source = resolve(sourcePath);
-  const sourceBytes = await readFile(source);
-  const sourceStat = await stat(source);
+  // A YouTube import has no local source: the Worker fetches the audio itself
+  // and /api/files never serves the original back out, so there is nothing on
+  // this side to hash. The rest of the run is identical either way.
+  const source = sourcePath ? resolve(sourcePath) : null;
+  const sourceBytes = source ? await readFile(source) : null;
+  const sourceStat = source ? await stat(source) : null;
   const browserMessages = [];
   const startedAt = Date.now();
   const screenshots = {};
@@ -68,8 +86,14 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
   await expect(page.locator('body')).not.toContainText(/Internal Server Error|Application Error/);
 
   await page.getByRole('radio', { name: liveCase.radio }).check();
-  await page.locator('#file-input').setInputFiles(source);
-  await expect(page.locator('#upload-status')).toBeVisible();
+  if (source) {
+    await page.locator('#file-input').setInputFiles(source);
+    await expect(page.locator('#upload-status')).toBeVisible();
+  } else {
+    await page.getByText('Or paste a YouTube link').click();
+    await page.getByLabel('YouTube link').fill(youtubeUrl);
+    await page.getByRole('button', { name: 'FETCH' }).click();
+  }
   screenshots.processing = resolve(artifactDir, '01-processing.png');
   await page.screenshot({
     path: screenshots.processing,
@@ -81,7 +105,14 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
   await expect(page.locator('.badge.ready')).toHaveText('READY');
   const elapsedSeconds = (Date.now() - startedAt) / 1000;
   await expect(page.locator('#upload-status')).toBeHidden();
-  await expect(page.locator('.console-title')).toHaveText(basename(source));
+  // An upload is titled by its filename; an import is titled by the fetched
+  // video title, which we can only assert is present and non-empty.
+  if (source) {
+    await expect(page.locator('.console-title')).toHaveText(basename(source));
+  } else {
+    await expect(page.locator('.console-title')).not.toHaveText('');
+    await expect(page.getByRole('button', { name: 'FETCH' })).toBeEnabled();
+  }
   await expect(page.locator('.channel')).toHaveCount(liveCase.stems.length);
 
   const renderedStems = await page.locator('.ch-name').allTextContents();
@@ -215,11 +246,14 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
     expectedStems: liveCase.stems,
     renderedStems,
     jobId,
-    source: {
-      filename: basename(source),
-      bytes: sourceStat.size,
-      sha256: sha256(sourceBytes),
-    },
+    source: source
+      ? {
+          kind: 'file',
+          filename: basename(source),
+          bytes: sourceStat.size,
+          sha256: sha256(sourceBytes),
+        }
+      : { kind: 'youtube', url: youtubeUrl, title: await page.locator('.console-title').textContent() },
     elapsedSeconds,
     durations,
     downloads: downloadEvidence,

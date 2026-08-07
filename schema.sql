@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   external_id TEXT,                    -- id of the job at the separation backend (e.g. Replicate prediction id)
   stems TEXT,                          -- JSON array: [{ "name": "vocals", "key": "stems/<job>/vocals.mp3" }, ...]
   error TEXT,
-  model TEXT,                          -- Demucs variant: htdemucs_ft (4 stems) | htdemucs_6s (6 stems)
+  model TEXT,                          -- catalogue contract id (src/separation/options.ts), not a provider model name
+                                       -- current: vocals_instrumental (2) | htdemucs_ft (4) | htdemucs_6s (6) | bs_roformer_vocals (2, local)
+                                       -- NULL on pre-2026-07 rows; read as htdemucs_ft
   labels TEXT,                         -- JSON map: { "<stem name>": "<display label>" }
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -159,16 +159,32 @@ h1 span {
   margin: 0.8rem 0 0;
 }
 
-.import-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.8rem;
+.yt-disclosure { margin-top: 0.9rem; }
+/* Native <details> so the caret, keyboard toggle, and expanded state come for
+   free — an ARIA-wired button would only re-implement all three. */
+.yt-summary {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: 0.9rem;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.3rem 0;
+  list-style: none;
+  cursor: pointer;
+  color: var(--ink-dim);
+  font-size: 0.72rem;
 }
+.yt-summary::-webkit-details-marker { display: none; }
+.yt-summary::before {
+  content: "▸";
+  color: var(--hot);
+  font-size: 0.65rem;
+  transition: transform 0.18s;
+}
+.yt-disclosure[open] .yt-summary::before { transform: rotate(90deg); }
+.yt-summary:hover { color: var(--ink); }
+.yt-summary:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; border-radius: 3px; }
 
-.yt-form { display: flex; gap: 0.5rem; flex: 1 1 260px; }
+.yt-form { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
 
 #yt-url {
   flex: 1;
@@ -196,30 +212,135 @@ h1 span {
 }
 .yt-go:hover { background: var(--hot); color: var(--bg); }
 
-.stem-choice { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.stem-choice label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  border: 1px solid var(--panel-edge);
-  border-radius: 6px;
-  padding: 0.45rem 0.7rem;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
+/* ─── split picker ────────────────────────────────────────────────── */
+/* Each choice previews the console you'll get: one segment per part, in the
+   colour that part is given in the mixer. Names stay off the buttons and sit
+   in the legend for the selected choice only. */
+
+.split-picker { margin-top: 1.1rem; }
+
+/* Cased in CSS, not in the markup, so screen readers get "split into" rather
+   than an all-caps string some of them spell out. */
+.split-picker-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--ink-dim);
+  margin: 0 0 0.5rem;
+}
+
+.split-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+
+.split-option {
+  position: relative;
+  display: grid;
+  gap: 0.55rem;
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  padding: 0.65rem 0.7rem 0.6rem;
   cursor: pointer;
   user-select: none;
+  transition: border-color 0.18s, background 0.18s, transform 0.15s;
 }
+.split-option:hover { border-color: rgba(255, 182, 72, 0.35); transform: translateY(-1px); }
+
+/* The radio is transparent but full-size rather than display:none: it keeps
+   focus and arrow-key navigation, and it is the thing you actually click, so
+   the whole card is one hit target. */
+.split-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.split-bar { display: flex; gap: 2px; height: 11px; }
+/* One hue only. The 2px gaps do the counting, so the segments never need a
+   second colour to be told apart — channel colours belong to the mixer. */
+.split-seg {
+  flex: 1;
+  border-radius: 2px;
+  background: var(--ink-faint);
+  opacity: 0.5;
+  transition: opacity 0.18s, background 0.18s;
+}
+.split-option:hover .split-seg { opacity: 0.8; }
+
+.split-line { display: flex; align-items: center; gap: 0.4rem; }
+
+/* Selection is a shape change, not only a colour change. */
+.split-mark {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 50%;
+}
+
+.split-count {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--ink);
+}
+.split-word {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.split-option:has(input:checked) {
+  border-color: rgba(255, 182, 72, 0.55);
+  background: var(--hot-soft);
+}
+.split-option:has(input:checked) .split-seg { background: var(--hot); opacity: 1; }
+.split-option:has(input:checked) .split-mark {
+  border-color: var(--hot);
+  background: radial-gradient(circle, var(--hot) 45%, transparent 47%);
+}
+.split-option:has(input:checked) .split-count,
+.split-option:has(input:checked) .split-word { color: var(--hot); }
+.split-option:has(input:focus-visible) { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+.split-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0;
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  font-size: 0.66rem;
+  color: var(--ink-dim);
+}
+.split-legend li + li::before {
+  content: "·";
+  color: var(--ink-faint);
+  margin: 0 0.5rem;
+}
+
 .stem-choice-status {
-  align-self: center;
+  grid-column: 1 / -1;
   color: var(--ink-dim);
   font-size: 0.7rem;
 }
-.stem-choice input { accent-color: var(--hot); margin: 0; }
-.stem-choice label:has(input:checked) {
-  border-color: rgba(255, 182, 72, 0.5);
-  color: var(--hot);
-  background: var(--hot-soft);
+
+@media (prefers-reduced-motion: reduce) {
+  .split-option, .split-seg, .yt-summary::before { transition: none; }
+  .split-option:hover { transform: none; }
+}
+
+/* Forced colours flatten the amber fill and the mark's gradient, so selection
+   needs a border-drawn cue there. */
+@media (forced-colors: active) {
+  .split-option:has(input:checked) { outline: 2px solid Highlight; }
 }
 
 .channel.unavailable {
@@ -310,7 +431,28 @@ h1 span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
+
+.head-btn {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--panel-edge);
+  background: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.head-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-dim); }
+.head-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Collapsed session: only the head row stays visible; playback is paused. */
+.console.collapsed > :not(.console-head) { display: none; }
 
 .badge {
   font-family: var(--font-mono);
@@ -439,7 +581,8 @@ h1 span {
   text-transform: uppercase;
 }
 
-/* eq meter — 5 bars, animate only when playing & unmuted */
+/* eq meter — 5 bars. Decorative by default; .live means an analyser is driving
+   the heights and the canned loop must get out of the way. */
 .meter {
   display: flex;
   align-items: flex-end;
@@ -457,6 +600,7 @@ h1 span {
   animation-play-state: paused;
 }
 .console.playing .channel:not(.muted) .meter i { animation-play-state: running; }
+.meter.live i { animation: none; transition: height 0.06s linear; }
 .meter i:nth-child(1) { animation-delay: 0s;     animation-duration: 0.82s; }
 .meter i:nth-child(2) { animation-delay: -0.3s;  animation-duration: 1.04s; }
 .meter i:nth-child(3) { animation-delay: -0.6s;  animation-duration: 0.72s; }
@@ -584,6 +728,10 @@ footer {
 /* ─── small screens ───────────────────────────────────────────────── */
 
 @media (max-width: 540px) {
+  .split-option { padding: 0.55rem 0.5rem 0.5rem; }
+  .split-line { gap: 0.3rem; }
+  .split-count { font-size: 0.95rem; }
+  .split-word { font-size: 0.56rem; letter-spacing: 0.1em; }
   .ch-id { min-width: 5rem; }
   .ch-name { font-size: 0.64rem; }
   .timecode { display: none; }
@@ -911,3 +1059,200 @@ footer {
   cursor: pointer;
 }
 .coach-form button:hover { background: var(--hot); color: var(--bg); }
+
+/* ─── console sub-line: what made this, and how to pass it on ─────── */
+
+.console-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.3rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+.share-btn {
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  padding: 0.1rem 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.share-btn:hover { color: var(--hot); border-bottom-color: rgba(255, 182, 72, 0.5); }
+.share-btn.copied { color: var(--ok); border-bottom-color: transparent; }
+
+.share-fallback {
+  background: var(--bg);
+  border: 1px solid var(--hot);
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 0.62rem;
+  padding: 0.2rem 0.4rem;
+  width: 16rem;
+  max-width: 55vw;
+}
+.share-fallback:focus { outline: none; }
+
+/* ─── transport aux row: speed and loop ───────────────────────────── */
+
+.transport-aux {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: -0.35rem 0 0.9rem;
+  min-height: 1.5rem;
+}
+
+.aux-label {
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+}
+
+.rate { display: flex; align-items: center; gap: 0.35rem; }
+
+/* Same segmented idiom as the split picker: a row of quiet cells, one lit. */
+.rate-opt {
+  background: var(--bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 5px;
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  padding: 0.18rem 0.42rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.rate-opt:hover { color: var(--ink); border-color: var(--ink-faint); }
+.rate-opt[aria-pressed="true"] {
+  background: var(--hot-soft);
+  border-color: rgba(255, 182, 72, 0.5);
+  color: var(--hot);
+}
+
+.loop-status { display: flex; align-items: center; gap: 0.4rem; color: var(--hot); }
+.loop-range { font-size: 0.62rem; letter-spacing: 0.08em; }
+.loop-clear {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 0.68rem;
+  padding: 0 0.15rem;
+}
+.loop-clear:hover { color: var(--danger); }
+
+/* The looped span sits behind the seek bar, so the region reads as part of the
+   timeline rather than another control stacked on it. */
+.loop-region {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 14px;
+  border-radius: 3px;
+  background: rgba(255, 182, 72, 0.16);
+  border-left: 1px solid rgba(255, 182, 72, 0.55);
+  border-right: 1px solid rgba(255, 182, 72, 0.55);
+  pointer-events: none;
+}
+
+/* ─── channel verbs: solo staging ─────────────────────────────────── */
+
+.solo-btn {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: 0.42rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--panel-edge);
+  background: var(--bg);
+  color: var(--ink-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 5.1rem;
+  transition: all 0.15s;
+}
+.solo-btn:hover:not(:disabled) { border-color: var(--ink-dim); color: var(--ink); }
+.solo-btn:disabled { opacity: 0.4; cursor: default; }
+/* The lit strip borrows its own channel colour — the console already speaks in
+   per-part hues, so focus doesn't need a new one. */
+.solo-btn[aria-pressed="true"] {
+  background: var(--ch, var(--hot));
+  border-color: var(--ch, var(--hot));
+  color: var(--bg);
+  box-shadow: 0 0 14px var(--ch, var(--hot));
+}
+
+/* Behind, not gone: the ducked strips desaturate toward the panel while the
+   focused one keeps full chroma. */
+.channel.behind { opacity: 0.55; }
+.channel.behind .ch-dot { box-shadow: none; }
+.channel.focused .ch-name { color: var(--ch, var(--ink)); }
+
+.note-loop {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.note-row:hover .note-loop,
+.note-loop:focus-visible,
+.note-loop[aria-pressed="true"] { opacity: 1; }
+.note-loop:hover { color: var(--hot); }
+.note-loop[aria-pressed="true"] { color: var(--hot); }
+
+/* ─── elapsed clock on a separating card ──────────────────────────── */
+
+.elapsed {
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  margin-left: 0.15rem;
+}
+
+/* ─── keyboard ────────────────────────────────────────────────────── */
+
+.console:focus { outline: none; }
+.console:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+
+/* The legend only earns its space once the console is the keyboard target. */
+.console-keys {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  margin: 0.75rem 0 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.2s, opacity 0.2s;
+}
+.console:focus-within .console-keys { max-height: 3rem; opacity: 1; }
+
+@media (max-width: 540px) {
+  .solo-btn { min-width: 0; padding: 0.42rem 0.5rem; font-size: 0.6rem; }
+  .mute-btn { padding: 0.42rem 0.5rem; font-size: 0.6rem; }
+  .channel { gap: 0.5rem; }
+  .meter { max-width: 44px; }
+  .console-keys { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter.live i { transition: none; }
+  .console-keys { transition: none; }
+  .share-btn, .rate-opt, .solo-btn { transition: none; }
+}
