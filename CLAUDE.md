@@ -9,19 +9,19 @@ Stem-separation web app for music students (~20 students × 100 songs/semester).
 ## Commands
 
 ```sh
-npm run typecheck         # tsc --noEmit (no unit tests; this is the static check)
+bun run typecheck         # tsc --noEmit (no unit tests; this is the static check)
 CLASS_CODE=<code> ./scripts/smoke.sh   # free API smoke checks against the deployed Worker (code required)
-npm run test:e2e          # real-WAV browser flow with local D1/R2 + mocked Replicate
+bun run test:e2e          # real-WAV browser flow with local D1/R2 + mocked Replicate
 ./scripts/smoke.sh <job-id>   # + labels/annotations/stem round-trip on a done job
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
-npm run test:e2e:crate:run # live archive-crate eval: 5 real IA tracks → real local separation, per-phase timings (free, ~6 min)
+bun run test:e2e:crate:run # live archive-crate eval: 5 real IA tracks → real local separation, per-phase timings (free, ~6 min)
 SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>  # + listening-guy guide/chat live checks (<1¢)
-npm run deploy            # wrangler deploy (account is pinned in wrangler.jsonc)
-npm run dev               # wrangler dev --remote — see "Local dev" below for why
-npm run db:migrate        # apply schema.sql to remote D1 (fresh install; additive: db:migrate:2, db:migrate:3)
-npx wrangler d1 execute stem-splitter --remote --json --command "SELECT id,status FROM jobs ORDER BY created_at DESC LIMIT 5"   # ad-hoc prod queries
-npx wrangler tail         # live production logs
-npx wrangler deploy --dry-run --outdir dist   # validate config/bundle without deploying
+bun run deploy            # wrangler deploy (account is pinned in wrangler.jsonc)
+bun run dev               # wrangler dev --remote — see "Local dev" below for why
+bun run db:migrate        # apply schema.sql to remote D1 (fresh install; additive: db:migrate:2, db:migrate:3)
+bun run wrangler -- d1 execute stem-splitter --remote --json --command "SELECT id,status FROM jobs ORDER BY created_at DESC LIMIT 5"   # ad-hoc prod queries
+bun run wrangler -- tail         # live production logs
+bun run wrangler -- deploy --dry-run --outdir dist   # validate config/bundle without deploying
 ```
 
 ## Architecture
@@ -49,20 +49,20 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 ## Configuration
 
-- `wrangler.jsonc` is the source of truth: account id (ailab — `452c33847…`, not the Veritas account), D1 id, R2 bucket, vars. Wrangler must be logged in as `ailab@gc.cuny.edu` — a personal Cloudflare login isn't a member of the ailab account, and every write (deploy, `secret put`) fails with `Authentication error [code: 10000]`. Check with `npx wrangler whoami`; fix with `npx wrangler logout` then `login` as ailab. `R2_BUCKET_NAME` and `CF_ACCOUNT_ID` vars must match the actual bucket/account because presigned URLs are built from them.
-- Secrets (set via `wrangler secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`, `OPENROUTER_API_KEY`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`).
+- `wrangler.jsonc` is the source of truth: account id (ailab — `452c33847…`, not the Veritas account), D1 id, R2 bucket, vars. Wrangler must be logged in as `ailab@gc.cuny.edu` — a personal Cloudflare login isn't a member of the ailab account, and every write (deploy, `secret put`) fails with `Authentication error [code: 10000]`. Check with `bun run wrangler -- whoami`; fix with `bun run wrangler -- logout` then `login` as ailab. `R2_BUCKET_NAME` and `CF_ACCOUNT_ID` vars must match the actual bucket/account because presigned URLs are built from them.
+- Secrets (set via `bun run wrangler -- secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`, `OPENROUTER_API_KEY`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`).
 - `REPLICATE_MODEL_VERSION` is a pinned version hash of `ryan5453/demucs`. To bump: `curl -s https://api.replicate.com/v1/models/ryan5453/demucs -H "Authorization: Bearer $TOKEN" | jq -r .latest_version.id`.
 - After changing `PUBLIC_BASE_URL` or webhook logic, redeploy — Replicate posts webhooks to the deployed URL.
 
 ## Local dev
 
-`npm run dev` uses `--remote` on purpose: presigned URLs point at the **real** R2 bucket. The `LOCAL_DEV=1` Audio Separator path and Funnel-backed `LOCAL_HOSTING=true` path instead use simulated D1/R2. Both local modes stream only fixed-length uploads, HMAC-sign temporary source URLs, and perform hourly 30-day cleanup. `npm run test:e2e` covers the complete browser/upload/job/poll/stem flow with the on-disk WAV/MP3 fixtures in `tests/fixtures/audio` and a mocked Replicate boundary. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected).
+`bun run dev` uses `--remote` on purpose: presigned URLs point at the **real** R2 bucket. The `LOCAL_DEV=1` Audio Separator path and Funnel-backed `LOCAL_HOSTING=true` path instead use simulated D1/R2. Both local modes stream only fixed-length uploads, HMAC-sign temporary source URLs, and perform hourly 30-day cleanup. `bun run test:e2e` covers the complete browser/upload/job/poll/stem flow with the on-disk WAV/MP3 fixtures in `tests/fixtures/audio` and a mocked Replicate boundary. Listening Guy endpoints 503 by design without `OPENROUTER_API_KEY` in `.dev.vars` (mixer unaffected).
 
 ## Operational invariants
 
-- The R2 bucket `stem-splitter-audio` has a **30-day auto-delete lifecycle rule** — this is the copyright/retention mitigation, not an optimization. Keep it; (re)apply with `npx wrangler r2 bucket lifecycle add stem-splitter-audio --expire-days 30`.
+- The R2 bucket `stem-splitter-audio` has a **30-day auto-delete lifecycle rule** — this is the copyright/retention mitigation, not an optimization. Keep it; (re)apply with `bun run wrangler -- r2 bucket lifecycle add stem-splitter-audio --expire-days 30`.
 - Simulated local R2 must preserve the same boundary: expired objects are rejected on read and local API traffic runs hourly cleanup, including catch-up after restart.
-- Bucket CORS (`cors.json`, note the `{"rules": [...]}` wrapper R2 requires) allows direct browser PUTs; needed for presigned uploads to work. (Re)apply with `npx wrangler r2 bucket cors set stem-splitter-audio --file cors.json`.
+- Bucket CORS (`cors.json`, note the `{"rules": [...]}` wrapper R2 requires) allows direct browser PUTs; needed for presigned uploads to work. (Re)apply with `bun run wrangler -- r2 bucket cors set stem-splitter-audio --file cors.json`.
 - Stems are MP3 (192 kbps), not WAV — keeps storage ~10× smaller.
 - Stem URLs are unauthenticated but unguessable (UUID job ids) so `<audio>` tags work without headers. Accepted trade-off for class scale.
 - Cost model: ~$0.045/song on Replicate; first job after idle absorbs a 30–60 s model cold start (the UI warns about this). Listening Guy adds ≈$0.005 per guide (generated once, cached forever) and fractions of a cent per chat turn on GLM-5.2.
