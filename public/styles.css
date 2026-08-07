@@ -794,6 +794,44 @@ footer {
   padding: 0.1rem 0 0.1rem 0.75rem;
 }
 
+/* live-stream caret while the coach is still talking */
+.coach-guide-text.streaming::after,
+.coach-row.streaming::after {
+  content: '▮';
+  color: var(--hot);
+  animation: blink 1.1s ease-in-out infinite;
+}
+
+/* collapsed previous-session archive */
+.coach-archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  padding: 0.2rem 0;
+}
+.coach-archive-toggle:hover { color: var(--hot); }
+.coach-archive-toggle .coach-caret {
+  margin-left: 0;
+  transform: rotate(-90deg);
+}
+.coach-archive-toggle[aria-expanded="true"] .coach-caret { transform: rotate(0); }
+.coach-archive-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  opacity: 0.75;
+  margin-top: 0.3rem;
+}
+
 .coach-log {
   display: flex;
   flex-direction: column;

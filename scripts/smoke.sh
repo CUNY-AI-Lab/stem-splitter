@@ -83,19 +83,23 @@ fi
 
 if [ "${SMOKE_ASSISTANT:-0}" = 1 ] && [ -n "$JOB_ID" ]; then
   echo "== listening-guy checks on job $JOB_ID (one guide + one chat, <1¢) =="
+  # Both endpoints stream SSE; the last `data:` line is the done (or error) event.
+  sse_last() { grep '^data: ' | tail -1 | sed 's/^data: //'; }
   G=$(mktemp)
-  GCODE=$(curl -sS -o "$G" -w '%{http_code}' -m 120 -X POST "$BASE/api/jobs/$JOB_ID/guide" \
+  GCODE=$(curl -sS -N -o "$G" -w '%{http_code}' -m 120 -X POST "$BASE/api/jobs/$JOB_ID/guide" \
     -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{}')
+  GDONE=$(sse_last <"$G")
   if [ "$GCODE" = "503" ]; then
     echo "  skip  assistant not configured on this deployment (503)"
   else
     check "guide endpoint → 200" 200 "$GCODE"
-    check "guide has text" 1 "$(json "['guide']['text']" <"$G" | grep -q . && echo 1 || echo 0)"
+    check "guide stream ends in done" done "$(printf '%s' "$GDONE" | json "['type']")"
+    check "guide has text" 1 "$(printf '%s' "$GDONE" | json "['text']" | grep -q . && echo 1 || echo 0)"
     check "second guide call cached" True \
-      "$(curl -sS -m 30 -X POST "$BASE/api/jobs/$JOB_ID/guide" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{}' | json "['cached']")"
+      "$(curl -sS -N -m 30 -X POST "$BASE/api/jobs/$JOB_ID/guide" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{}' | sse_last | json "['cached']")"
     check "chat replies" 1 \
-      "$(curl -sS -m 120 -X POST "$BASE/api/jobs/$JOB_ID/chat" -H 'content-type: application/json' -H "x-class-code: $CODE" \
-        -d '{"messages":[{"role":"user","content":"One short sentence: what should I listen for in the bass?"}]}' | json "['reply']" | grep -q . && echo 1 || echo 0)"
+      "$(curl -sS -N -m 120 -X POST "$BASE/api/jobs/$JOB_ID/chat" -H 'content-type: application/json' -H "x-class-code: $CODE" \
+        -d '{"messages":[{"role":"user","content":"One short sentence: what should I listen for in the bass?"}]}' | sse_last | json "['text']" | grep -q . && echo 1 || echo 0)"
   fi
   rm -f "$G"
 fi

@@ -1,12 +1,14 @@
 // Listening Guy orchestrators: cached guide generation + chat with validated
-// mixer tool calls. Routes stay thin; everything provider-shaped lives here.
+// mixer tool calls, both streaming prose through an onDelta sink while the
+// caller owns the transport (SSE). Routes stay thin; everything
+// provider-shaped lives here.
 import type { Env } from '../env';
-import { AssistantError, COACH_DOWN, openRouterChat } from './openrouter';
+import { AssistantError, COACH_DOWN, COACH_UNCONFIGURED, openRouterChatStream } from './openrouter';
 import { buildGuideInstruction, buildSystemPrompt, fmtTime } from './prompt';
 import { buildMixerTools, sanitizeToolCalls } from './tools';
 import type { AssistantContext, AssistantToolCall, ChatTurn, WireMessage } from './types';
 
-export { AssistantError, COACH_DOWN };
+export { AssistantError, COACH_DOWN, COACH_UNCONFIGURED };
 
 const MAX_TURNS = 12;
 const MAX_TURN_CHARS = 2000;
@@ -59,25 +61,35 @@ export async function getGuide(env: Env, jobId: string): Promise<GuideRecord | n
   return row ? { text: row.text, model: row.model, createdAt: row.created_at } : null;
 }
 
-export async function getOrCreateGuide(
+/**
+ * Stream the guide (a short conversation opener) through `onDelta`, caching it
+ * in D1 once complete. A cached guide returns immediately without touching
+ * `onDelta` — the caller ships the full text in its final event instead.
+ */
+export async function streamGuide(
   env: Env,
   row: AssistantJob,
   annotations: AssistantAnnotation[],
-  durationSec?: number
+  durationSec: number | undefined,
+  onDelta: (text: string) => void | Promise<void>
 ): Promise<{ guide: GuideRecord; cached: boolean }> {
   const existing = await getGuide(env, row.id);
   if (existing) return { guide: existing, cached: true };
 
   const ctx = contextFromJob(row, annotations, durationSec, 'guide');
-  const reply = await openRouterChat(env, {
-    messages: [
-      { role: 'system', content: buildSystemPrompt(ctx) },
-      { role: 'user', content: buildGuideInstruction() },
-    ],
-    maxTokens: 900,
-    temperature: 0.6,
-    retry429: true,
-  });
+  const reply = await openRouterChatStream(
+    env,
+    {
+      messages: [
+        { role: 'system', content: buildSystemPrompt(ctx) },
+        { role: 'user', content: buildGuideInstruction() },
+      ],
+      maxTokens: 500, // the opener is ~110 words; the rest is reasoning headroom
+      temperature: 0.6,
+      retry429: true,
+    },
+    onDelta
+  );
   if (!reply.content) throw new AssistantError(502, COACH_DOWN); // never cache an empty guide
 
   // Two students racing converge on one canonical row (last SELECT wins for both).
@@ -112,22 +124,32 @@ export function validateTurns(value: unknown): ChatTurn[] | null {
   return turns;
 }
 
-export async function runChat(
+/**
+ * Stream a chat reply through `onDelta`; tool calls are only known once the
+ * stream ends, so the caller emits them after the prose. A tools-only reply
+ * gets its narration follow-up streamed through the same sink.
+ */
+export async function streamChat(
   env: Env,
   row: AssistantJob,
   annotations: AssistantAnnotation[],
   turns: ChatTurn[],
-  durationSec?: number
+  durationSec: number | undefined,
+  onDelta: (text: string) => void | Promise<void>
 ): Promise<ChatResult> {
   const ctx = contextFromJob(row, annotations, durationSec, 'chat');
   const stemNames = ctx.stems.map((s) => s.name);
   const messages: WireMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...turns];
-  const reply = await openRouterChat(env, {
-    messages,
-    tools: buildMixerTools(stemNames),
-    maxTokens: 600, // reasoning models spend part of the budget before the reply
-    temperature: 0.7,
-  });
+  const reply = await openRouterChatStream(
+    env,
+    {
+      messages,
+      tools: buildMixerTools(stemNames),
+      maxTokens: 600, // reasoning models spend part of the budget before the reply
+      temperature: 0.7,
+    },
+    onDelta
+  );
   const toolCalls = sanitizeToolCalls(reply.toolCalls, stemNames, durationSec);
   if (!reply.content && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
 
@@ -137,15 +159,19 @@ export async function runChat(
   let content = reply.content;
   if (!content && toolCalls.length > 0) {
     try {
-      const followUp = await openRouterChat(env, {
-        messages: [
-          ...messages,
-          { role: 'assistant', content: `[console] I just did this on the mixer: ${toolCalls.map(describeCall).join('; ')}.` },
-          { role: 'user', content: 'In one or two short sentences, tell me what you just did and what I should listen for.' },
-        ],
-        maxTokens: 300,
-        temperature: 0.7,
-      });
+      const followUp = await openRouterChatStream(
+        env,
+        {
+          messages: [
+            ...messages,
+            { role: 'assistant', content: `[console] I just did this on the mixer: ${toolCalls.map(describeCall).join('; ')}.` },
+            { role: 'user', content: 'In one or two short sentences, tell me what you just did and what I should listen for.' },
+          ],
+          maxTokens: 300,
+          temperature: 0.7,
+        },
+        onDelta
+      );
       content = followUp.content;
     } catch (err) {
       console.error('narration follow-up failed', err);

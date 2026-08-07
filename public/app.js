@@ -92,6 +92,52 @@ async function api(path, options = {}) {
   return body;
 }
 
+// POST to a coach endpoint and consume its SSE stream, calling onEvent for
+// each `data:` JSON event. Setup failures are plain JSON with a real status;
+// mid-stream failures arrive as {type:'error'} events, which throw here.
+async function streamApi(path, body, onEvent) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode() },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('classCode');
+    void ensureClassCode();
+    throw new Error('Invalid class code — enter it and retry.');
+  }
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed (${res.status})`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith('data: ')) continue;
+        let event;
+        try {
+          event = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+        if (event.type === 'error') throw new Error(event.message || 'The coach dropped out — try again.');
+        onEvent(event);
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}
+
 // --- local job list -------------------------------------------------------
 
 function getJobs() {
@@ -377,6 +423,10 @@ class Mixer {
         </button>
         <div class="coach-body" hidden>
           <div class="coach-guide"></div>
+          <div class="coach-archive" hidden>
+            <button type="button" class="coach-archive-toggle" aria-expanded="false"></button>
+            <div class="coach-archive-log" hidden></div>
+          </div>
           <div class="coach-log" role="log" aria-live="polite"></div>
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the listening coach" />
@@ -418,6 +468,16 @@ class Mixer {
       const tc = e.target.closest('.coach-tc');
       if (tc) this.seekTo(Number(tc.dataset.t));
     });
+
+    this.coachArchive = li.querySelector('.coach-archive');
+    this.archiveToggle = li.querySelector('.coach-archive-toggle');
+    this.archiveLog = li.querySelector('.coach-archive-log');
+    this.archiveToggle.addEventListener('click', () => {
+      const open = this.archiveLog.hidden;
+      this.archiveLog.hidden = !open;
+      this.archiveToggle.setAttribute('aria-expanded', String(open));
+    });
+    this.renderArchive();
 
     const channels = li.querySelector('.channels');
 
@@ -502,7 +562,10 @@ class Mixer {
     try {
       await Promise.all(this.audios.map((a) => a.play()));
     } catch {
-      return; // autoplay rejection — user can tap again
+      // Autoplay rejection or a stalled stem — park everything so we never
+      // sit half-playing behind a ▶ button; the user can tap again.
+      this.audios.forEach((a) => a.pause());
+      return;
     }
     this.playing = true;
     this.playBtn.textContent = '❚❚';
@@ -536,8 +599,14 @@ class Mixer {
   }
 
   resync() {
-    const t = this.audios[0].currentTime;
+    const master = this.audios[0];
+    if (master.seeking) return; // still landing after a jump — no reference time yet
+    const t = master.currentTime;
     for (const a of this.audios.slice(1)) {
+      // A stem that is mid-seek or has no decodable data ahead is still
+      // fetching after a jump. Re-seeking it every tick restarts that fetch,
+      // so it stays silent forever — leave it alone until it can play.
+      if (a.seeking || a.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) continue;
       if (Math.abs(a.currentTime - t) > 0.08) a.currentTime = t;
     }
   }
@@ -598,7 +667,13 @@ class Mixer {
   }
 
   seekTo(t) {
-    for (const a of this.audios) a.currentTime = t;
+    for (const a of this.audios) {
+      // Seeks can land while paused (coach tool calls do this a lot) — start
+      // buffering the target region now so play() finds data ready instead of
+      // six stems stalling at once.
+      if (a.preload !== 'auto') a.preload = 'auto';
+      a.currentTime = t;
+    }
     this.paint();
   }
 
@@ -726,7 +801,7 @@ class Mixer {
     if (this.job.guide && this.job.guide.text) {
       const div = document.createElement('div');
       div.className = 'coach-guide-text';
-      div.innerHTML = this.linkifyTimecodes(this.job.guide.text);
+      div.innerHTML = coachHtml(this.job.guide.text);
       this.coachGuide.appendChild(div);
       this.setLed('ready');
       return;
@@ -735,7 +810,7 @@ class Mixer {
     cue.className = 'coach-cue';
     cue.innerHTML = `
       <button class="coach-cue-btn">CUE THE LISTENING GUIDE</button>
-      <p class="coach-hint">One-time setup for this song — takes ~10–20 seconds.</p>
+      <p class="coach-hint">The coach opens the conversation — first words in a few seconds.</p>
     `;
     cue.querySelector('.coach-cue-btn').addEventListener('click', () => this.requestGuide());
     this.coachGuide.appendChild(cue);
@@ -750,28 +825,74 @@ class Mixer {
       hint.classList.remove('error');
     }
     this.setLed('busy');
+    // Stream: swap the cue for a live text block on the first delta, then do a
+    // final formatted render (markdown-lite + timecode buttons) on completion.
+    const live = document.createElement('div');
+    live.className = 'coach-guide-text streaming';
+    let acc = '';
     try {
-      const res = await api(`/api/jobs/${this.job.id}/guide`, {
-        method: 'POST',
-        body: JSON.stringify({ durationSec: this.duration() }),
+      await streamApi(`/api/jobs/${this.job.id}/guide`, { durationSec: this.duration() }, (ev) => {
+        if (ev.type === 'delta') {
+          if (!live.isConnected) this.coachGuide.replaceChildren(live);
+          acc += ev.text;
+          live.textContent = acc;
+        } else if (ev.type === 'done') {
+          this.job.guide = { text: ev.text || acc, model: ev.model, createdAt: ev.createdAt };
+        }
       });
-      this.job.guide = res.guide;
+      if (!this.job.guide) this.job.guide = { text: acc }; // stream ended without a done event
       this.renderGuide();
     } catch (err) {
       this.setLed('idle');
-      if (hint) {
-        hint.textContent = err.message;
-        hint.classList.add('error');
+      this.renderGuide(); // restore the cue; partial text is discarded
+      const failHint = this.coachGuide.querySelector('.coach-hint');
+      if (failHint) {
+        failHint.textContent = err.message;
+        failHint.classList.add('error');
       }
-      if (btn) btn.disabled = false;
     }
   }
 
-  // Escape first, then turn m:ss timecodes into seek buttons (no markdown lib).
-  linkifyTimecodes(text) {
-    return esc(text).replace(/\b(\d+):([0-5]\d)\b/g, (m, min, sec) =>
-      `<button class="coach-tc mono" data-t="${Number(min) * 60 + Number(sec)}">${m}</button>`
-    );
+  // --- previous-session archive (per song, localStorage) ----------------
+
+  archiveKey() {
+    return `coachChat:${this.job.id}`;
+  }
+
+  loadArchive() {
+    try {
+      const entries = JSON.parse(localStorage.getItem(this.archiveKey()) || '[]');
+      return Array.isArray(entries) ? entries : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Persist one conversation entry so the session survives a reload (it shows
+  // up collapsed under "EARLIER SESSION" next time). Display-only: the model
+  // still starts fresh each page load.
+  logChatEntry(kind, text) {
+    try {
+      localStorage.setItem(this.archiveKey(), JSON.stringify([...this.loadArchive(), { kind, text }].slice(-60)));
+    } catch {
+      // Storage full/blocked — the live conversation still works.
+    }
+  }
+
+  renderArchive() {
+    const entries = this.loadArchive();
+    if (!entries.length) return;
+    this.coachArchive.hidden = false;
+    this.archiveToggle.innerHTML = `<span class="coach-caret">▾</span>EARLIER SESSION · ${entries.length}`;
+    for (const entry of entries) {
+      const kind = entry.kind === 'you' || entry.kind === 'action' ? entry.kind : 'coach';
+      const row = document.createElement('div');
+      row.className = `coach-row ${kind}`;
+      if (kind === 'action') row.innerHTML = `<span class="coach-chip mono">${esc(String(entry.text))}</span>`;
+      else if (kind === 'you') row.textContent = String(entry.text);
+      else row.innerHTML = coachHtml(String(entry.text));
+      this.archiveLog.appendChild(row);
+    }
   }
 
   addChatRow(kind, html) {
@@ -789,26 +910,57 @@ class Mixer {
     this.chatHistory.push({ role: 'user', content: text });
     this.chatHistory = this.chatHistory.slice(-12);
     this.addChatRow('you', esc(text));
+    this.logChatEntry('you', text);
     const typing = this.addChatRow('typing', '···');
     this.coachInput.value = '';
     this.coachInput.disabled = true;
     this.setLed('busy');
+    // Stream: prose deltas render live as plain text, then the finished reply
+    // gets its formatted render; tool calls arrive after the prose and run last.
+    let row = null;
+    let acc = '';
+    let calls = [];
+    let finalText = '';
+    let finishReason = 'stop';
     try {
-      const res = await api(`/api/jobs/${this.job.id}/chat`, {
-        method: 'POST',
-        body: JSON.stringify({ messages: this.chatHistory, durationSec: this.duration() }),
-      });
+      await streamApi(
+        `/api/jobs/${this.job.id}/chat`,
+        { messages: this.chatHistory, durationSec: this.duration() },
+        (ev) => {
+          if (ev.type === 'delta') {
+            if (!row) {
+              typing.remove();
+              row = this.addChatRow('coach streaming', '');
+            }
+            acc += ev.text;
+            row.textContent = acc;
+            this.coachLog.scrollTop = this.coachLog.scrollHeight;
+          } else if (ev.type === 'tool_calls') {
+            calls = ev.calls || [];
+          } else if (ev.type === 'done') {
+            finalText = ev.text || acc;
+            finishReason = ev.finishReason || 'stop';
+          }
+        }
+      );
       typing.remove();
-      if (res.reply) {
-        this.chatHistory.push({ role: 'assistant', content: res.reply });
+      if (finalText) {
+        this.chatHistory.push({ role: 'assistant', content: finalText });
         this.chatHistory = this.chatHistory.slice(-12);
-        let html = this.linkifyTimecodes(res.reply);
-        if (res.finishReason === 'length') html += ' <span class="coach-trim">…(trimmed)</span>';
-        this.addChatRow('coach', html);
+        this.logChatEntry('coach', finalText);
+        if (!row) row = this.addChatRow('coach', '');
+        row.classList.remove('streaming');
+        let html = coachHtml(finalText);
+        if (finishReason === 'length') html += ' <span class="coach-trim">…(trimmed)</span>';
+        row.innerHTML = html;
+      } else if (row) {
+        row.remove(); // stream produced nothing durable
       }
-      await this.executeToolCalls(res.toolCalls || []);
+      await this.executeToolCalls(calls);
     } catch (err) {
       typing.remove();
+      if (row && !acc) row.remove();
+      if (row) row.classList.remove('streaming');
       this.addChatRow('error', esc(err.message));
     }
     this.coachBusy = false;
@@ -865,6 +1017,7 @@ class Mixer {
 
   addActionChip(labelText) {
     this.addChatRow('action', `<span class="coach-chip mono">${esc(labelText)}</span>`);
+    this.logChatEntry('action', labelText);
   }
 }
 
@@ -969,6 +1122,23 @@ function pollSoon() {
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Coach prose → safe HTML. The prompt bans markdown, but models still leak it;
+// escape everything first, then absorb the common bleed-through (**bold**,
+// *italic*, `code`, # headings, - bullets) and turn m:ss timecodes into seek
+// buttons. Anything fancier renders as the plain text it arrived as.
+function coachHtml(text) {
+  const plain = String(text)
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[ \t]*[-*]\s+/gm, '• ');
+  return esc(plain)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/\b(\d+):([0-5]\d)\b/g, (m, min, sec) =>
+      `<button class="coach-tc mono" data-t="${Number(min) * 60 + Number(sec)}">${m}</button>`
+    );
 }
 
 function cssName(s) {
