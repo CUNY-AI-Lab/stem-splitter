@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.14",
   "description": "Stem splitter for students \u2014 Cloudflare Workers + R2 + D1 + swappable GPU separation backend (Replicate/Modal)",
   "scripts": {
     "dev": "wrangler dev --remote",
@@ -18,7 +19,7 @@
     "test:e2e:crate:run": "./scripts/run-archive-crate-e2e.sh",
     "typecheck": "tsc --noEmit",
     "test:worker": "node --experimental-strip-types --test tests/*.test.mts",
-    "test": "npm run typecheck && npm run test:worker && npm run separator:test",
+    "test": "bun run typecheck && bun run test:worker && bun run separator:test",
     "db:migrate": "wrangler d1 execute stem-splitter --remote --file=schema.sql",
     "db:migrate:local": "wrangler d1 execute stem-splitter --local --file=schema.sql",
     "db:migrate:2": "wrangler d1 execute stem-splitter --remote --file=migrations/0002-features.sql",

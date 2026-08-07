@@ -32,7 +32,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command_name in curl npx rg uv; do
+for command_name in bun curl rg uv; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Missing required command: $command_name" >&2
     exit 1
@@ -54,7 +54,7 @@ esac
 
 mkdir -p "$ARTIFACT_DIR"
 
-npx wrangler d1 execute stem-splitter \
+bun run wrangler -- d1 execute stem-splitter \
   --local \
   --persist-to "$RUN_ROOT/state" \
   --file schema.sql \
@@ -69,7 +69,7 @@ local-separator/.venv/bin/python local-separator/service.py \
   --port "$SEPARATOR_PORT" >"$ARTIFACT_DIR/separator.log" 2>&1 &
 SEPARATOR_PID="$!"
 
-npx wrangler dev \
+bun run wrangler -- dev \
   --local \
   --latest=false \
   --show-interactive-dev-session=false \
@@ -108,7 +108,7 @@ REAL_AUDIO_CLASS_CODE="$CLASS_CODE" \
 REAL_AUDIO_BASE_URL="http://127.0.0.1:$WORKER_PORT" \
 REAL_AUDIO_ARTIFACT_DIR="$ARTIFACT_DIR" \
 REAL_AUDIO_RESULT_PATH="$RESULT_PATH" \
-npm run test:e2e:real
+bun run test:e2e:real
 
 if rg -n \
   'POST /api/webhooks/separation 5[0-9]{2}|Internal Server Error|Network connection lost' \
