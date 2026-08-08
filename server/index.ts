@@ -102,7 +102,21 @@ const host = new Hono();
 
 // Every app route lives under /api/*; everything else is a static asset.
 host.all('/api/*', (c) => app.fetch(c.req.raw, env));
-host.get('/healthz', (c) => c.json({ ok: true, base: env.PUBLIC_BASE_URL }));
+host.get('/healthz', async (c) => {
+  const settings = await db
+    .prepare('SELECT revision FROM assistant_settings WHERE id = 1')
+    .first<{ revision: number }>();
+  // Preparing this query proves the append-only table and its monotonic join
+  // column both exist, even before the first instructor revision is written.
+  await db
+    .prepare('SELECT settings_revision FROM assistant_prompt_revisions LIMIT 1')
+    .all();
+  return c.json({
+    ok: true,
+    base: env.PUBLIC_BASE_URL,
+    promptSchema: Number.isInteger(settings?.revision) ? 'ready' : 'missing',
+  });
+});
 host.use('/*', serveStatic({ root: './public' }));
 
 serve({ fetch: host.fetch, port: PORT, hostname: '0.0.0.0' }, (info) => {
