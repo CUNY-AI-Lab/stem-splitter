@@ -225,6 +225,10 @@ h1 span {
   font-size: 0.66rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 0 0 0.5rem;
+}
+
 /* ─── crate: internet archive browser ─────────────────────────────── */
 
 .crate {
