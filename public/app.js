@@ -347,9 +347,9 @@ async function runCrateSearch(page) {
     renderCrateResults(data.results);
 
     if (data.results.length === 0) {
-      showCrateStatus('No open-licensed audio matched that search.');
+      showCrateStatus('No openly licensed audio matched that search.');
     } else {
-      showCrateStatus(`${data.total.toLocaleString()} OPEN-LICENSED ITEMS MATCH`);
+      showCrateStatus(`${data.total.toLocaleString()} OPENLY LICENSED ITEMS MATCH`);
     }
   } catch (err) {
     if (seq !== crateSeq) return;
