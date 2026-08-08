@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.14",
   "description": "Stem splitter for students \u2014 Cloudflare Workers + R2 + D1 + swappable GPU separation backend (Replicate/Modal)",
   "scripts": {
+    "start": "tsx server/index.ts",
+    "dev:node": "tsx watch server/index.ts",
     "dev": "wrangler dev --remote",
     "dev:local": "wrangler dev --local --port 8787",
     "separator:local": "UV_CACHE_DIR=.uv-cache uv run --project local-separator python local-separator/service.py --port 8765",
@@ -17,8 +20,13 @@
     "test:e2e:crate": "playwright test --config playwright.archive-crate.config.mjs",
     "test:e2e:crate:run": "./scripts/run-archive-crate-e2e.sh",
     "typecheck": "tsc --noEmit",
+    "check:replicate": "node --experimental-strip-types scripts/check-replicate-pin.mjs",
+    "eval:stems": "node scripts/eval-stems.mjs",
+    "eval:selftest": "./scripts/selftest-eval-stems.sh",
+    "test:corpus": "node scripts/run-audio-corpus.mjs",
+    "probe:replicate": "node --experimental-strip-types scripts/probe-replicate-outputs.mjs",
     "test:worker": "node --experimental-strip-types --test tests/*.test.mts",
-    "test": "npm run typecheck && npm run test:worker && npm run separator:test",
+    "test": "bun run typecheck && bun run test:worker && bun run separator:test",
     "db:migrate": "wrangler d1 execute stem-splitter --remote --file=schema.sql",
     "db:migrate:local": "wrangler d1 execute stem-splitter --local --file=schema.sql",
     "db:migrate:2": "wrangler d1 execute stem-splitter --remote --file=migrations/0002-features.sql",
@@ -28,9 +36,14 @@
     "db:migrate:4": "wrangler d1 execute stem-splitter --remote --file=migrations/0004-teachers.sql",
     "db:migrate:4:local": "wrangler d1 execute stem-splitter --local --file=migrations/0004-teachers.sql"
   },
+  "engines": {
+    "node": ">=22.5"
+  },
   "dependencies": {
+    "@hono/node-server": "^2.1.0",
     "aws4fetch": "^1.0.20",
-    "hono": "^4.12.32",
+    "hono": "^4.12.34",
+    "tsx": "^4.23.5",
     "youtubei.js": "^17.2.0"
   },
   "devDependencies": {

@@ -29,7 +29,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command_name in curl npx rg uv python3; do
+for command_name in bun curl rg uv python3; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Missing required command: $command_name" >&2
     exit 1
@@ -47,7 +47,7 @@ esac
 mkdir -p "$ARTIFACT_DIR"
 rm -f "$ARTIFACT_DIR"/*.json
 
-npx wrangler d1 execute stem-splitter \
+bun run wrangler -- d1 execute stem-splitter \
   --local \
   --persist-to "$RUN_ROOT/state" \
   --file schema.sql \
@@ -62,7 +62,7 @@ local-separator/.venv/bin/python local-separator/service.py \
   --port "$SEPARATOR_PORT" >"$ARTIFACT_DIR/separator.log" 2>&1 &
 SEPARATOR_PID="$!"
 
-npx wrangler dev \
+bun run wrangler -- dev \
   --local \
   --latest=false \
   --show-interactive-dev-session=false \
@@ -98,7 +98,7 @@ ARCHIVE_EVAL_MODEL="$MODEL" \
 ARCHIVE_EVAL_CLASS_CODE="$CLASS_CODE" \
 ARCHIVE_CRATE_BASE_URL="http://127.0.0.1:$WORKER_PORT" \
 ARCHIVE_EVAL_ARTIFACT_DIR="$ARTIFACT_DIR" \
-npx playwright test --config playwright.archive-crate.config.mjs
+bun run playwright -- test --config playwright.archive-crate.config.mjs
 
 if rg -n \
   'POST /api/webhooks/separation 5[0-9]{2}|Internal Server Error|Network connection lost' \

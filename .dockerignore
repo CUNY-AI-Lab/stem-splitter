@@ -1,4 +1,4 @@
-# Keep host state out of the worker image: COPY . . runs after npm ci, and a
+# Keep host state out of the worker image: COPY . . runs after bun install, and a
 # copied-in mac node_modules would merge over the freshly installed linux one.
 node_modules
 .wrangler

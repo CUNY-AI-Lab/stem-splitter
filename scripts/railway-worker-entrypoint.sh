@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Boot the self-hosted worker on Railway: apply the D1 schema to the volume
 # (idempotent — schema.sql is all CREATE TABLE IF NOT EXISTS), then run
-# wrangler dev --local bound to the container port.
+# Wrangler under Node (`node_modules/.bin/wrangler`) bound to the container port.
 set -euo pipefail
 
 : "${PORT:=8080}"
@@ -13,8 +13,9 @@ set -euo pipefail
 
 STATE_DIR="${STATE_DIR:-/data/state}"
 mkdir -p "$STATE_DIR"
+WRANGLER="node_modules/.bin/wrangler"
 
-npx wrangler d1 execute stem-splitter \
+"$WRANGLER" d1 execute stem-splitter \
   --local \
   --persist-to "$STATE_DIR" \
   --file schema.sql \
@@ -53,4 +54,4 @@ if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   ARGS+=(--var "ASSISTANT_MODEL:${ASSISTANT_MODEL:-z-ai/glm-5.2}")
 fi
 
-exec npx wrangler dev "${ARGS[@]}"
+exec "$WRANGLER" dev "${ARGS[@]}"

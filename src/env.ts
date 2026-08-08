@@ -27,7 +27,7 @@ export type Env = {
    */
   TEACHER_SEED?: string;
 
-  // Secrets (wrangler secret put ...)
+  // Secrets (bun run wrangler -- secret put ...)
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   REPLICATE_API_TOKEN: string;

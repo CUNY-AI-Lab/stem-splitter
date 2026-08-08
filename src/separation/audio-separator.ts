@@ -1,4 +1,7 @@
 import type { Env } from '../env';
+// Explicit .ts: tests/separation.test.mts loads this module through Node's
+// type-stripping runner, which does not resolve extensionless specifiers.
+import { BS_ROFORMER_MODEL, getAudioSeparatorRunner } from './options.ts';
 import type { SeparationBackend, SeparationResult, SeparationStartRequest, StemRef } from './types';
 
 interface AudioSeparatorPayload {
@@ -69,6 +72,11 @@ export function parseAudioSeparatorResult(payload: unknown): SeparationResult {
 export function audioSeparatorBackend(env: Env): SeparationBackend {
   return {
     async start(req: SeparationStartRequest): Promise<{ externalId: string }> {
+      const model = req.model ?? BS_ROFORMER_MODEL;
+      const runner = getAudioSeparatorRunner(model);
+      if (!runner) {
+        throw new Error(`No Audio Separator profile is configured for the "${model}" choice`);
+      }
       const res = await fetch(serviceUrl(env, '/v1/jobs'), {
         method: 'POST',
         headers: serviceHeaders(env),
@@ -76,7 +84,7 @@ export function audioSeparatorBackend(env: Env): SeparationBackend {
           job_id: req.jobId,
           audio_url: req.audioUrl,
           webhook_url: req.webhookUrl,
-          model: req.model,
+          model: runner.profile,
         }),
       });
       if (!res.ok) {

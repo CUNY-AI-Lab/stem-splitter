@@ -15,9 +15,9 @@
 
   <main>
     <header class="masthead">
-      <p id="split-summary" class="kicker">// loading available split tracks</p>
+      <p id="split-summary" class="kicker">// loading split options</p>
       <h1>STEM<br /><span>SPLITTER</span></h1>
-      <p class="tagline">Pull a song apart. Hear how it&rsquo;s built.</p>
+      <p class="tagline">Pull a song into its parts. Hear how it&rsquo;s built.</p>
     </header>
 
     <section id="dropzone" class="deck" tabindex="0" role="button" aria-label="Upload a song">
@@ -30,15 +30,21 @@
       <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
     </section>
 
-    <div class="import-row">
+    <details id="yt-disclosure" class="yt-disclosure">
+      <summary class="yt-summary mono">Or paste a YouTube link</summary>
       <form id="yt-form" class="yt-form">
-        <input id="yt-url" type="url" placeholder="…or paste a YouTube link" aria-label="YouTube link" />
+        <input id="yt-url" type="url" placeholder="https://youtube.com/watch?v=…" aria-label="YouTube link" />
         <button type="submit" class="yt-go">FETCH</button>
       </form>
-      <div id="stem-choice" class="stem-choice" role="radiogroup" aria-label="Tracks produced">
-        <span class="stem-choice-status mono">Loading split choices…</span>
+    </details>
+
+    <section class="split-picker">
+      <p id="split-picker-label" class="split-picker-label mono">Split into</p>
+      <div id="stem-choice" class="split-options" role="radiogroup" aria-labelledby="split-picker-label">
+        <span class="stem-choice-status mono">Loading split options…</span>
       </div>
-    </div>
+      <ul id="split-legend" class="split-legend mono"></ul>
+    </section>
 
     <section id="crate" class="crate">
       <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">

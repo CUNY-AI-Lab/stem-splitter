@@ -33,9 +33,10 @@ import {
 import {
   AssistantError,
   COACH_DOWN,
+  COACH_UNCONFIGURED,
   getGuide,
-  getOrCreateGuide,
-  runChat,
+  streamGuide,
+  streamChat,
   validateTurns,
   type GuideRecord,
 } from './assistant';
@@ -598,10 +599,18 @@ app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c
 
 // --- listening guy (AI coach) -----------------------------------------
 
-// Generate (once) and return the class-shared listening guide. Generation is
-// class-code-gated because it costs money; reading the cached guide rides
-// along on the open GET /api/jobs/:id like labels and annotations.
+// Generate (once) and return the class-shared listening guide, streamed as
+// SSE (`data: {type: delta|done|error}` events); the done event carries the
+// full cached record. Generation is class-code-gated because it costs money;
+// reading the cached guide rides along on the open GET /api/jobs/:id like
+// labels and annotations. Validation failures stay plain JSON — streaming
+// starts only after them.
 app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
+  // Keep the documented pre-stream 503 for unconfigured deployments — once
+  // streaming starts, errors can only arrive as in-stream events.
+  if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
+    return c.json({ error: COACH_UNCONFIGURED }, 503);
+  }
   const id = c.req.param('id');
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
@@ -615,18 +624,23 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
-  try {
-    const { guide, cached } = await getOrCreateGuide(c.env, row, results ?? [], parseDuration(body?.durationSec));
-    return c.json({ guide, cached });
-  } catch (err) {
-    return assistantFailure(c, err);
-  }
+  return sseResponse(c, async (emit) => {
+    const { guide, cached } = await streamGuide(
+      c.env, row, results ?? [], parseDuration(body?.durationSec),
+      (text) => emit({ type: 'delta', text })
+    );
+    await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
+  });
 });
 
-// Chat with the coach about one song. The conversation lives client-side and
-// is resent each call; replies may carry validated mixer tool calls that the
-// browser executes (solo / set_mute / seek / add_note).
+// Chat with the coach about one song, streamed as SSE. The conversation lives
+// client-side and is resent each call; the reply prose streams as delta
+// events, then validated mixer tool calls (solo / set_mute / seek / add_note)
+// arrive in one tool_calls event for the browser to execute, then done.
 app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
+  if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
+    return c.json({ error: COACH_UNCONFIGURED }, 503);
+  }
   const id = c.req.param('id');
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
@@ -647,11 +661,14 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
-  try {
-    return c.json(await runChat(c.env, row, results ?? [], turns, parseDuration(body?.durationSec)));
-  } catch (err) {
-    return assistantFailure(c, err);
-  }
+  return sseResponse(c, async (emit) => {
+    const result = await streamChat(
+      c.env, row, results ?? [], turns, parseDuration(body?.durationSec),
+      (text) => emit({ type: 'delta', text })
+    );
+    if (result.toolCalls.length) await emit({ type: 'tool_calls', calls: result.toolCalls });
+    await emit({ type: 'done', text: result.reply, finishReason: result.finishReason });
+  });
 });
 
 // --- separation webhook -----------------------------------------------
@@ -919,10 +936,38 @@ function parseDuration(value: unknown): number | undefined {
   return Number.isFinite(n) && n > 0 && n <= 7200 ? n : undefined;
 }
 
-function assistantFailure(c: Context<{ Bindings: Env }>, err: unknown) {
-  if (err instanceof AssistantError) return c.json({ error: err.studentMessage }, err.httpStatus);
-  console.error('assistant error', err);
-  return c.json({ error: COACH_DOWN }, 502);
+// SSE transport for the assistant: the handler emits `data:` JSON events while
+// waitUntil keeps the pump alive past the returned Response. Failures inside
+// the stream become a terminal error event with a student-safe message.
+function sseResponse(
+  c: Context<{ Bindings: Env }>,
+  run: (emit: (event: Record<string, unknown>) => Promise<void>) => Promise<void>
+): Response {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const emit = (event: Record<string, unknown>) =>
+    writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  const pump = (async () => {
+    try {
+      await run(emit);
+    } catch (err) {
+      if (!(err instanceof AssistantError)) console.error('assistant error', err);
+      const message = err instanceof AssistantError ? err.studentMessage : COACH_DOWN;
+      await emit({ type: 'error', message }).catch(() => {});
+    } finally {
+      await writer.close().catch(() => {});
+    }
+  })();
+  try {
+    c.executionCtx.waitUntil(pump);
+  } catch {
+    // Node adapter (Railway staging): no ExecutionContext — the pump runs as
+    // a detached promise, which Node keeps alive on its own.
+  }
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
 }
 
 function sanitizeFilename(name: string): string {

@@ -13,5 +13,16 @@ test-results/
 docs/acceptance/**/*.log
 .DS_Store
 .claude/settings.local.json
+
+# Working notes — collaborator docs, meeting notes, drafts. Kept out of the
+# repo because they carry unpublished material and course context, not code.
 V2.md
+*.docx
+notes/
 output/
+
+# Corpus audio (CC-licensed downloads, not shipped in repo)
+tests/corpus/audio/
+
+# Node host (Railway) local data dir
+.railway-data/

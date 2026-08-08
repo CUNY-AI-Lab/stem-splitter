@@ -45,3 +45,14 @@ export interface WireCompletion {
     finish_reason?: string;
   }[];
 }
+
+/** One `data:` chunk of an OpenAI-compatible streaming completion. */
+export interface WireStreamChunk {
+  choices?: {
+    delta?: {
+      content?: string | null;
+      tool_calls?: (WireToolCall & { index?: number })[];
+    };
+    finish_reason?: string | null;
+  }[];
+}
