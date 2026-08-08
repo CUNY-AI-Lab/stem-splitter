@@ -19,6 +19,7 @@ docs/acceptance/**/*.log
 V2.md
 *.docx
 notes/
+output/
 
 # Corpus audio (CC-licensed downloads, not shipped in repo)
 tests/corpus/audio/

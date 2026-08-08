@@ -1,5 +1,5 @@
-# Copy to .dev.vars for local development (`npm run dev`).
-# These are the same names as the production secrets (`wrangler secret put ...`).
+# Copy to .dev.vars for local development (`bun run dev`).
+# These are the same names as the production secrets (`bun run wrangler -- secret put ...`).
 
 R2_ACCESS_KEY_ID=your-r2-access-key-id
 R2_SECRET_ACCESS_KEY=your-r2-secret-access-key

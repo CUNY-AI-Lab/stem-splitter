@@ -1,4 +1,5 @@
 import { test as base, expect } from '@playwright/test';
+import { pbkdf2Sync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,18 @@ import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
 
 const CLASS_CODE = 'e2e-class-code';
+// Fixture teacher, hashed the same way production credentials are. The
+// plaintext exists only here, in a test, for an account that only exists here.
+const TEACHER_PASSWORD = 'e2e-teacher-password';
+const TEACHER_SEED = JSON.stringify([
+  {
+    username: 'e2eteacher',
+    name: 'E2E Teacher',
+    salt: '00112233445566778899aabbccddeeff',
+    hash: pbkdf2Sync(TEACHER_PASSWORD, Buffer.from('00112233445566778899aabbccddeeff', 'hex'), 210_000, 32, 'sha256').toString('hex'),
+    iterations: 210_000,
+  },
+]);
 const E2E_SECRET = 'local-hosting-e2e-only';
 const TEST_PUBLIC_BASE_URL = 'http://stem-splitter.test';
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
@@ -60,6 +73,7 @@ const test = base.extend({
               REPLICATE_MODEL_VERSION: 'e2e-model-version',
               WEBHOOK_SECRET: 'e2e-webhook-secret',
               CLASS_CODE,
+              TEACHER_SEED,
             },
           },
         ],
@@ -737,6 +751,176 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
   expect(browserErrors).toEqual([]);
 });
 
+test('browses the Internet Archive crate and splits an open-licensed track', async ({
+  page,
+  network,
+  server,
+}) => {
+  const archiveAudio = stemAudio.get('vocals');
+  const identifier = 'e2e-open-netlabel-release';
+  const trackFile = '01-fixture-track.mp3';
+  const separationId = 'e2e-archive-separation';
+  const stemNames = ['vocals', 'drums', 'bass', 'other'];
+  let searchQuery = '';
+
+  network.use(
+    http.get('https://archive.org/advancedsearch.php', ({ request }) => {
+      searchQuery = new URL(request.url).searchParams.get('q') ?? '';
+      return HttpResponse.json({
+        response: {
+          numFound: 1,
+          docs: [
+            {
+              identifier,
+              title: 'Fixture Netlabel Release',
+              creator: 'Fixture Collective',
+              licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
+              year: '2019',
+              downloads: 4211,
+            },
+          ],
+        },
+      });
+    }),
+    http.get(`https://archive.org/metadata/${identifier}`, () =>
+      HttpResponse.json({
+        metadata: {
+          identifier,
+          title: 'Fixture Netlabel Release',
+          creator: 'Fixture Collective',
+          licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
+          year: '2019',
+        },
+        files: [
+          { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '21.5' },
+          // A derivative of the same track: the picker must collapse it away.
+          { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '21.5' },
+          // Over the 15-minute cap: offered but not importable.
+          { name: '02-long-set.mp3', format: 'VBR MP3', size: '8192', length: '3600' },
+          { name: 'cover.jpg', format: 'JPEG', size: '2048' },
+        ],
+      })
+    ),
+    http.get(`https://archive.org/download/${identifier}/${trackFile}`, () =>
+      new HttpResponse(archiveAudio, {
+        headers: {
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': String(archiveAudio.length),
+        },
+      })
+    ),
+    http.post('https://api.replicate.com/v1/predictions', () =>
+      HttpResponse.json({ id: separationId, status: 'starting' })
+    ),
+    http.get(`https://api.replicate.com/v1/predictions/${separationId}`, () =>
+      HttpResponse.json({
+        id: separationId,
+        status: 'succeeded',
+        output: Object.fromEntries(
+          stemNames.map((name) => [name, `https://archive-stems.test/${name}.mp3`])
+        ),
+      })
+    ),
+    http.get('https://archive-stems.test/:stem.mp3', ({ params }) => {
+      const audio = stemAudio.get(String(params.stem)) ?? stemAudio.get('other');
+      return new HttpResponse(audio, { headers: { 'Content-Type': 'audio/mpeg' } });
+    })
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  // Opening the crate runs the default search.
+  await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
+  await expect(page.locator('.crate-item')).toHaveCount(1);
+  await expect(page.locator('.crate-license')).toHaveText('CC BY-NC-SA 4.0');
+
+  // The licence floor and collection scope are pinned server-side.
+  expect(searchQuery).toContain('mediatype:audio');
+  expect(searchQuery).toContain('NOT licenseurl:*-nd*');
+  expect(searchQuery).toContain('collection:netlabels');
+
+  await page.locator('.crate-item-head').click();
+  await expect(page.locator('.crate-track')).toHaveCount(2); // ogg derivative collapsed away
+  await expect(page.locator('.crate-track-len').first()).toHaveText('0:21');
+  await expect(page.getByRole('button', { name: 'TOO LONG' })).toBeDisabled();
+  if (process.env.ARCHIVE_QA_SCREENSHOT) {
+    await page.screenshot({ path: process.env.ARCHIVE_QA_SCREENSHOT, fullPage: true });
+  }
+
+  await page.getByRole('button', { name: 'SPLIT' }).click();
+
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+  await expect(page.locator('.console-title')).toHaveText('Fixture Collective - fixture-track');
+  await expect(page.locator('.channel')).toHaveCount(4);
+
+  const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
+  const { keys } = await storedKeysResponse.json();
+  const sourceKey = keys.find((key) => /^uploads\/[0-9a-f-]+\/source\.mp3$/.test(key));
+  expect(sourceKey).toBeTruthy();
+  const storedSource = await e2eFetch(
+    server,
+    `/__e2e/audio?key=${encodeURIComponent(sourceKey)}`
+  );
+  expect(storedSource.status).toBe(200);
+  expect(Buffer.from(await storedSource.arrayBuffer()).equals(archiveAudio)).toBe(true);
+  expect(browserErrors).toEqual([]);
+});
+
+test('refuses a NoDerivatives Internet Archive item', async ({ page, network }) => {
+  const identifier = 'e2e-nd-licensed-release';
+
+  network.use(
+    http.get('https://archive.org/advancedsearch.php', () =>
+      HttpResponse.json({
+        response: {
+          numFound: 1,
+          docs: [
+            {
+              identifier,
+              title: 'No Derivatives Release',
+              creator: 'Fixture Collective',
+              licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
+            },
+          ],
+        },
+      })
+    ),
+    // Stale index: the item itself carries an ND licence, so expanding it must
+    // fail closed. Uses the CC v1.0 "nd-nc" path shape deliberately — it has no
+    // "-nd" infix, so a substring check would (and once did) let it through.
+    http.get(`https://archive.org/metadata/${identifier}`, () =>
+      HttpResponse.json({
+        metadata: {
+          identifier,
+          title: 'No Derivatives Release',
+          licenseurl: 'http://creativecommons.org/licenses/nd-nc/1.0/',
+        },
+        files: [{ name: 'track.mp3', format: 'VBR MP3', size: '4096', length: '20' }],
+      })
+    )
+  );
+
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
+  await page.locator('.crate-item-head').click();
+
+  await expect(page.locator('.crate-loading.error')).toContainText('NoDerivatives');
+  await expect(page.locator('.crate-track')).toHaveCount(0);
+});
+
 test('fails an empty MP3 response and removes partial track files', async ({ network, server }) => {
   const predictionId = 'e2e-empty-track';
   const sourceKey = 'uploads/e2e/empty-track.wav';
@@ -1181,3 +1365,71 @@ function makeM4a(size = 2048) {
   bytes.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
   return bytes;
 }
+
+test('gates the instructor console and persists a prompt amendment', async ({ page, server }) => {
+  // This test deliberately provokes 401s, so unlike the other specs it asserts
+  // on uncaught JS exceptions rather than on console noise.
+  const browserErrors = [];
+  const failedRequests = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('response', (response) => {
+    if (response.status() >= 400) failedRequests.push(`${response.status()} ${new URL(response.url()).pathname}`);
+  });
+
+  // The class code must not open the instructor console: it is a shared secret
+  // every student holds, so it cannot gate what the coach is told to say.
+  const withClassCode = await server.fetch('http://stem-splitter.test/api/teacher/prompt', {
+    headers: { 'x-class-code': CLASS_CODE },
+  });
+  expect(withClassCode.status).toBe(401);
+
+  await page.goto('/teacher.html', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#signin-panel')).toBeVisible();
+  await expect(page.locator('#console-panel')).toBeHidden();
+
+  // Wrong password is rejected, and the message does not reveal which half failed.
+  await page.getByLabel('USERNAME').fill('e2eteacher');
+  await page.getByLabel('PASSWORD').fill('not-the-password');
+  await page.getByRole('button', { name: 'SIGN IN' }).click();
+  await expect(page.locator('#signin-error')).toHaveText('Incorrect username or password.');
+
+  const unknownUser = await server.fetch('http://stem-splitter.test/api/teacher/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'nobody', password: 'whatever' }),
+  });
+  expect(unknownUser.status).toBe(401);
+  expect((await unknownUser.json()).error).toBe('Incorrect username or password.');
+
+  await page.getByLabel('PASSWORD').fill(TEACHER_PASSWORD);
+  await page.getByRole('button', { name: 'SIGN IN' }).click();
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await expect(page.locator('#teacher-who')).toHaveText('SIGNED IN AS E2E TEACHER');
+
+  const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
+  await page.locator('#amendment').fill(amendment);
+  await page.getByRole('button', { name: 'SAVE' }).click();
+  await expect(page.locator('#prompt-status')).toContainText('SAVED');
+  await expect(page.locator('#amendment-meta')).toContainText('LAST EDITED BY E2ETEACHER');
+
+  // The amendment reaches the real system prompt, and the guardrails outrank it.
+  await page.getByRole('button', { name: 'PREVIEW FULL PROMPT' }).click();
+  await expect(page.locator('#preview-body')).toContainText(amendment);
+  await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
+
+  // Survives a reload — the session is a cookie and the text is in D1.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await expect(page.locator('#amendment')).toHaveValue(amendment);
+
+  await page.getByRole('button', { name: 'SIGN OUT' }).click();
+  await expect(page.locator('#signin-panel')).toBeVisible();
+  const afterSignOut = await page.evaluate(() =>
+    fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
+  );
+  expect(afterSignOut).toBe(401);
+
+  expect(browserErrors).toEqual([]);
+  // Every non-2xx should be one of the auth checks this test intentionally makes.
+  expect(failedRequests.filter((entry) => !entry.startsWith('401 /api/teacher/'))).toEqual([]);
+});

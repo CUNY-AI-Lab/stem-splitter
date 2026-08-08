@@ -72,7 +72,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-REQUIRED_COMMANDS=(curl npx rg)
+REQUIRED_COMMANDS=(bun curl rg)
 [[ "$BACKEND" == "audio-separator" ]] && REQUIRED_COMMANDS+=(uv)
 for command_name in "${REQUIRED_COMMANDS[@]}"; do
   command -v "$command_name" >/dev/null 2>&1 || {
@@ -99,7 +99,7 @@ esac
 
 mkdir -p "$ARTIFACT_DIR"
 
-npx wrangler d1 execute stem-splitter \
+bun run wrangler -- d1 execute stem-splitter \
   --local \
   --persist-to "$RUN_ROOT/state" \
   --file schema.sql \
@@ -138,7 +138,7 @@ else
     WORKER_VARS+=(--var "YOUTUBE_FETCH_ORDER:$YOUTUBE_FETCH_ORDER")
 fi
 
-npx wrangler dev \
+bun run wrangler -- dev \
   --local \
   --latest=false \
   --show-interactive-dev-session=false \
@@ -174,7 +174,7 @@ REAL_AUDIO_CLASS_CODE="$CLASS_CODE" \
 REAL_AUDIO_BASE_URL="http://127.0.0.1:$WORKER_PORT" \
 REAL_AUDIO_ARTIFACT_DIR="$ARTIFACT_DIR" \
 REAL_AUDIO_RESULT_PATH="$RESULT_PATH" \
-npm run test:e2e:real
+bun run test:e2e:real
 
 if rg -n \
   'POST /api/webhooks/separation 5[0-9]{2}|Internal Server Error|Network connection lost' \

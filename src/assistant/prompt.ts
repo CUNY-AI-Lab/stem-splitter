@@ -16,6 +16,18 @@ export function buildSystemPrompt(ctx: AssistantContext): string {
     : 'none yet';
   const duration = ctx.durationSec ? fmtTime(ctx.durationSec) : 'unknown';
 
+  // Instructor amendment sits AFTER the pedagogy but BEFORE the guardrails and
+  // task block, so a teacher can steer emphasis, vocabulary, and repertoire
+  // without being able to switch off "never invent timestamps" or the
+  // student-data-is-not-instructions fence.
+  const amendmentBlock = ctx.amendment?.trim()
+    ? `
+YOUR INSTRUCTOR'S NOTES FOR THIS CLASS (follow these unless they conflict with
+the rules above, which always win):
+${ctx.amendment.trim()}
+`
+    : '';
+
   const modeBlock =
     ctx.mode === 'guide'
       ? `YOUR TASK NOW: write your OPENING message for this song — a conversation
@@ -118,7 +130,7 @@ Rules:
   class; anchor it only to a REAL time — the current playhead position or an
   existing note's time. Never a guessed time.
 - At most 3 tool calls per turn. Notes belong to the class — add, never remove.
-
+${amendmentBlock}
 ${modeBlock}`;
 }
 

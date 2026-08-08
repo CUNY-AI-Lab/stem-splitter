@@ -37,7 +37,8 @@ export function contextFromJob(
   row: AssistantJob,
   annotations: AssistantAnnotation[],
   durationSec: number | undefined,
-  mode: 'guide' | 'chat'
+  mode: 'guide' | 'chat',
+  amendment = ''
 ): AssistantContext {
   const labels = row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {};
   const stems = (row.stems ? (JSON.parse(row.stems) as { name: string }[]) : []).map((s) => ({
@@ -50,8 +51,27 @@ export function contextFromJob(
     stems,
     annotations: annotations.map((a) => ({ atSeconds: a.at_seconds, text: a.text })),
     durationSec,
+    amendment,
     mode,
   };
+}
+
+/**
+ * The instructor amendment lives in assistant_settings. It is read per call
+ * rather than cached in module scope so an edit takes effect on the next
+ * request instead of at the next isolate recycle. Missing table (a deployment
+ * that has not run migration 0004) degrades to no amendment.
+ */
+async function loadAmendment(env: Env): Promise<string> {
+  try {
+    const row = await env.DB.prepare(
+      'SELECT amendment FROM assistant_settings WHERE id = 1'
+    ).first<{ amendment: string }>();
+    return row?.amendment ?? '';
+  } catch (err) {
+    console.error('assistant amendment lookup failed', err);
+    return '';
+  }
 }
 
 export async function getGuide(env: Env, jobId: string): Promise<GuideRecord | null> {
@@ -76,7 +96,7 @@ export async function streamGuide(
   const existing = await getGuide(env, row.id);
   if (existing) return { guide: existing, cached: true };
 
-  const ctx = contextFromJob(row, annotations, durationSec, 'guide');
+  const ctx = contextFromJob(row, annotations, durationSec, 'guide', await loadAmendment(env));
   const reply = await openRouterChatStream(
     env,
     {
@@ -137,7 +157,7 @@ export async function streamChat(
   durationSec: number | undefined,
   onDelta: (text: string) => void | Promise<void>
 ): Promise<ChatResult> {
-  const ctx = contextFromJob(row, annotations, durationSec, 'chat');
+  const ctx = contextFromJob(row, annotations, durationSec, 'chat', await loadAmendment(env));
   const stemNames = ctx.stems.map((s) => s.name);
   const messages: WireMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...turns];
   const reply = await openRouterChatStream(

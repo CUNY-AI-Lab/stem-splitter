@@ -46,6 +46,38 @@
       <ul id="split-legend" class="split-legend mono"></ul>
     </section>
 
+    <section id="crate" class="crate">
+      <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">
+        <span class="crate-toggle-caret" aria-hidden="true">▶</span>
+        <span>BROWSE THE CRATE</span>
+        <span class="crate-toggle-sub mono">open-licensed music from the Internet Archive</span>
+      </button>
+
+      <div id="crate-body" class="crate-body" hidden>
+        <form id="crate-form" class="crate-form">
+          <input
+            id="crate-query"
+            type="search"
+            placeholder="search artist, album, or genre"
+            aria-label="Search the Internet Archive"
+          />
+          <select id="crate-scope" aria-label="Collection scope">
+            <option value="music">Music</option>
+            <option value="all">All open audio</option>
+          </select>
+          <button type="submit" class="yt-go">SEARCH</button>
+        </form>
+
+        <p id="crate-status" class="mono crate-status" hidden></p>
+        <ul id="crate-results" class="crate-results"></ul>
+        <div id="crate-pager" class="crate-pager" hidden>
+          <button type="button" id="crate-prev" class="crate-page-btn">◀ PREV</button>
+          <span id="crate-page-label" class="mono"></span>
+          <button type="button" id="crate-next" class="crate-page-btn">NEXT ▶</button>
+        </div>
+      </div>
+    </section>
+
     <div id="upload-status" class="upload-status" hidden>
       <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
       <p id="upload-message" class="mono"></p>

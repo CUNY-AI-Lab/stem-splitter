@@ -5,4 +5,20 @@ description = "Local Audio Separator service for the Stem Splitter development b
 requires-python = ">=3.11,<3.13"
 dependencies = [
   "audio-separator[cpu]==0.44.5",
+  # Direct deps only so [tool.uv.sources] can steer them (sources do not
+  # apply to transitive dependencies); versions come from audio-separator.
+  "torch",
+  "torchvision",
 ]
+
+# On Linux (the Railway container) the default index resolves torch to CUDA
+# builds — ~2 GB of nvidia wheels that CPU inference never uses. Pin the torch
+# family to the CPU index there; macOS keeps the default wheels (MPS).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

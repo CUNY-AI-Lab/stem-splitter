@@ -21,6 +21,16 @@ import {
 } from './separation/options';
 import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
 import {
+  archiveContentType,
+  ArchiveError,
+  ARCHIVE_SCOPES,
+  fetchArchiveAudio,
+  fetchArchiveItem,
+  isArchiveScope,
+  parseArchiveIdentifier,
+  searchArchive,
+} from './archive';
+import {
   AssistantError,
   COACH_DOWN,
   COACH_UNCONFIGURED,
@@ -30,6 +40,22 @@ import {
   validateTurns,
   type GuideRecord,
 } from './assistant';
+import { buildSystemPrompt } from './assistant/prompt';
+import {
+  clearedSessionCookie,
+  cookiesShouldBeSecure,
+  createSession,
+  destroySession,
+  getAmendment,
+  MAX_AMENDMENT_CHARS,
+  normalizeAmendment,
+  readSessionCookie,
+  resolveSession,
+  sessionCookie,
+  setAmendment,
+  syncTeachersFromSeed,
+  verifyLogin,
+} from './teacher/auth';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -163,11 +189,180 @@ app.get('/api/local-sources/*', async (c) => {
   return new Response(obj.body, { headers });
 });
 
+// --- teacher backend ---------------------------------------------------
+//
+// Separate from the class code: the class code is a shared secret every
+// student holds, so it cannot gate anything that edits what the coach says.
+
+/** Seeding runs at most once per isolate; the seed itself is idempotent. */
+let teacherSeedPromise: Promise<void> | null = null;
+function ensureTeachersSeeded(c: Context<{ Bindings: Env }>): Promise<void> {
+  teacherSeedPromise ??= syncTeachersFromSeed(c.env).catch((err) => {
+    console.error('teacher seed failed', err);
+    teacherSeedPromise = null; // let the next request retry
+  });
+  return teacherSeedPromise;
+}
+
+async function currentTeacher(c: Context<{ Bindings: Env }>) {
+  await ensureTeachersSeeded(c);
+  return resolveSession(c.env, readSessionCookie(c.req.header('Cookie')));
+}
+
+const requireTeacher = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+  const teacher = await currentTeacher(c);
+  if (!teacher) return c.json({ error: 'Sign in to continue.' }, 401);
+  c.set('teacher' as never, teacher as never);
+  await next();
+});
+
+function isSecureRequest(c: Context<{ Bindings: Env }>): boolean {
+  return cookiesShouldBeSecure(c.env.PUBLIC_BASE_URL, c.req.url);
+}
+
+app.post('/api/teacher/login', async (c) => {
+  await ensureTeachersSeeded(c);
+  const body = (await c.req.json().catch(() => null)) as
+    | { username?: string; password?: string }
+    | null;
+
+  if (typeof body?.username !== 'string' || typeof body?.password !== 'string') {
+    return c.json({ error: 'Username and password are required.' }, 400);
+  }
+
+  const teacher = await verifyLogin(c.env, body.username, body.password);
+  // One message for both unknown-user and wrong-password: no account enumeration.
+  if (!teacher) return c.json({ error: 'Incorrect username or password.' }, 401);
+
+  const token = await createSession(c.env, teacher.username);
+  c.header('Set-Cookie', sessionCookie(token, isSecureRequest(c)));
+  return c.json({ username: teacher.username, displayName: teacher.displayName });
+});
+
+app.post('/api/teacher/logout', async (c) => {
+  await destroySession(c.env, readSessionCookie(c.req.header('Cookie')));
+  c.header('Set-Cookie', clearedSessionCookie(isSecureRequest(c)));
+  return c.json({ ok: true });
+});
+
+app.get('/api/teacher/me', async (c) => {
+  const teacher = await currentTeacher(c);
+  if (!teacher) return c.json({ error: 'Not signed in.' }, 401);
+  return c.json({ username: teacher.username, displayName: teacher.displayName });
+});
+
+app.get('/api/teacher/prompt', requireTeacher, async (c) => {
+  const record = await getAmendment(c.env);
+  return c.json({ ...record, maxChars: MAX_AMENDMENT_CHARS });
+});
+
+app.put('/api/teacher/prompt', requireTeacher, async (c) => {
+  const teacher = (await currentTeacher(c))!;
+  const body = (await c.req.json().catch(() => null)) as { amendment?: unknown } | null;
+
+  const amendment = normalizeAmendment(body?.amendment);
+  if (amendment === null) {
+    return c.json({ error: `Amendment must be text under ${MAX_AMENDMENT_CHARS} characters.` }, 400);
+  }
+
+  const record = await setAmendment(c.env, amendment, teacher.username);
+
+  // Guides are cached per job and were written under the previous prompt, so a
+  // stale cache would silently outlive the edit. Clear it; guides regenerate
+  // lazily (~$0.005 each) the next time a student opens one.
+  const cleared = await c.env.DB.prepare('DELETE FROM guides').run();
+  return c.json({
+    ...record,
+    maxChars: MAX_AMENDMENT_CHARS,
+    guidesCleared: cleared.meta?.changes ?? 0,
+  });
+});
+
+/** Preview the exact system prompt the coach will receive. */
+app.get('/api/teacher/prompt/preview', requireTeacher, async (c) => {
+  const { amendment } = await getAmendment(c.env);
+  const model = getSeparationOption(DEFAULT_DEMUCS_MODEL);
+  return c.json({
+    prompt: buildSystemPrompt({
+      title: 'Example Track.mp3',
+      model: DEFAULT_DEMUCS_MODEL,
+      stems: (model?.stems ?? ['vocals', 'drums', 'bass', 'other']).map((name) => ({
+        name,
+        label: name,
+      })),
+      annotations: [],
+      durationSec: 210,
+      amendment,
+      mode: 'guide',
+    }),
+  });
+});
+
+// --- internet archive browse ------------------------------------------
+//
+// Reads are gated the same way the assistant endpoints are: they are cheap,
+// but they are also the pathway into a paid separation, so keep them behind
+// the class code rather than leaving an open search proxy on the Worker.
+
+app.get('/api/archive/scopes', (c) =>
+  c.json({
+    scopes: Object.entries(ARCHIVE_SCOPES).map(([id, scope]) => ({ id, label: scope.label })),
+  })
+);
+
+app.get('/api/archive/search', requireClassCode, async (c) => {
+  const term = c.req.query('q') ?? '';
+  const scopeParam = c.req.query('scope') ?? 'music';
+  const scope = isArchiveScope(scopeParam) ? scopeParam : 'music';
+  const page = Number.parseInt(c.req.query('page') ?? '1', 10) || 1;
+
+  try {
+    return c.json(await searchArchive(term, scope, page));
+  } catch (err) {
+    return archiveErrorResponse(c, err, 'Internet Archive search failed.');
+  }
+});
+
+app.get('/api/archive/items/:identifier', requireClassCode, async (c) => {
+  const identifier = parseArchiveIdentifier(c.req.param('identifier'));
+  if (!identifier) {
+    return c.json({ error: 'That is not a valid Internet Archive item.' }, 400);
+  }
+
+  try {
+    return c.json(await fetchArchiveItem(identifier));
+  } catch (err) {
+    return archiveErrorResponse(c, err, 'Could not load that Internet Archive item.');
+  }
+});
+
+function archiveErrorResponse(c: Context<{ Bindings: Env }>, err: unknown, fallback: string) {
+  console.error('archive request failed', err);
+  if (err instanceof ArchiveError) {
+    // Bad identifiers and licence rejections are caller errors, not upstream faults.
+    const clientError = ['invalid_identifier', 'item_not_found', 'license_missing', 'license_no_derivatives', 'no_audio_files'].includes(
+      err.code
+    );
+    return c.json(
+      { error: err.message, code: err.code, retryable: err.retryable },
+      clientError ? 400 : 502
+    );
+  }
+  return c.json({ error: fallback }, 502);
+}
+
 // --- jobs -------------------------------------------------------------
 
 app.post('/api/jobs', requireClassCode, async (c) => {
   const body = (await c.req.json().catch(() => null)) as
-    | { key?: string; filename?: string; youtubeUrl?: string; model?: string }
+    | {
+        key?: string;
+        filename?: string;
+        youtubeUrl?: string;
+        archiveId?: string;
+        archiveFile?: string;
+        model?: string;
+      }
     | null;
 
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
@@ -218,6 +413,48 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     key = `uploads/${crypto.randomUUID()}/source.m4a`;
     filename = sanitizeFilename(audio.title) || 'youtube-audio';
     await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
+  } else if (body?.archiveId) {
+    const identifier = parseArchiveIdentifier(body.archiveId);
+    if (!identifier) {
+      return c.json(
+        {
+          error: 'That is not a valid Internet Archive item.',
+          code: 'invalid_archive_id',
+          retryable: false,
+        },
+        400
+      );
+    }
+    // Same ordering rule as the YouTube path: bytes land in R2 first, and the
+    // job row is only created after, so a failed fetch leaves no stuck job.
+    let audio;
+    try {
+      audio = await fetchArchiveAudio(identifier, body.archiveFile, c.env);
+    } catch (err) {
+      const message =
+        err instanceof ArchiveError
+          ? err.message
+          : 'Internet Archive fetch failed — try another track, or upload the audio file instead.';
+      console.error('archive fetch error', err);
+      return c.json(
+        {
+          error: message,
+          ...(err instanceof ArchiveError
+            ? { code: err.code, retryable: err.retryable }
+            : {}),
+        },
+        502
+      );
+    }
+    if (audio.data.byteLength > MAX_SOURCE_BYTES) {
+      return c.json({ error: 'Audio too large (max 100 MB)' }, 400);
+    }
+    const extension = audio.fileName.slice(audio.fileName.lastIndexOf('.')).toLowerCase();
+    key = `uploads/${crypto.randomUUID()}/source${extension}`;
+    filename = sanitizeFilename(audio.title) || 'archive-audio';
+    await c.env.AUDIO.put(key, audio.data, {
+      httpMetadata: { contentType: archiveContentType(audio.fileName) },
+    });
   } else {
     const uploadKey = body?.key;
     filename = sanitizeFilename(body?.filename ?? '');

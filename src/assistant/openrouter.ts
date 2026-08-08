@@ -1,6 +1,6 @@
 // Plain-fetch OpenRouter client (OpenAI-compatible chat completions).
 // No SDK on purpose: one endpoint, one auth header, and every provider
-// failure maps to a student-safe message; detail goes to `wrangler tail`.
+// failure maps to a student-safe message; detail goes to `bun run wrangler -- tail`.
 import type { Env } from '../env';
 import type { WireCompletion, WireMessage, WireStreamChunk, WireTool, WireToolCall } from './types';
 
