@@ -294,7 +294,9 @@ h1 span {
 .crate-status { color: var(--ink-faint); font-size: 0.68rem; letter-spacing: 0.06em; margin: 0 0 0.6rem; }
 .crate-status.error { color: var(--danger); }
 
-.crate-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+/* minmax(0, 1fr): an implicit `auto` track sizes to the row's max-content, and
+   nowrap titles would blow the rows out past the panel edge (badges clipped). */
+.crate-results { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
 
 .crate-item { border: 1px solid var(--panel-edge); border-radius: 6px; background: var(--bg-raise); }
 
@@ -349,7 +351,7 @@ h1 span {
 .crate-loading { color: var(--ink-faint); font-size: 0.68rem; margin: 0.3rem 0; }
 .crate-loading.error { color: var(--danger); }
 
-.crate-track-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.crate-track-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
 .crate-track { display: flex; align-items: center; gap: 0.7rem; padding: 0.25rem 0; }
 .crate-track-name {
   flex: 1;
