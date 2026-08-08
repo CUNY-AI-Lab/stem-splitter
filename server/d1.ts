@@ -83,4 +83,20 @@ export class SqliteD1 {
   applySchema(sql: string): void {
     this.db.exec(sql);
   }
+
+  /**
+   * Evolve tables on persistent Railway volumes. CREATE TABLE IF NOT EXISTS
+   * cannot add columns to a table created by an older release, so additive
+   * Node-host changes live here and must remain safe on every boot.
+   */
+  applyNodeMigrations(): void {
+    const settingsColumns = this.db
+      .prepare("PRAGMA table_info('assistant_settings')")
+      .all() as Array<{ name: string }>;
+    if (!settingsColumns.some((column) => column.name === 'revision')) {
+      this.db.exec(
+        'ALTER TABLE assistant_settings ADD COLUMN revision INTEGER NOT NULL DEFAULT 0'
+      );
+    }
+  }
 }

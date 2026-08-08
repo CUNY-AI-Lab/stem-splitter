@@ -1,7 +1,7 @@
-// Node host for the Worker's Hono app, used to run stem-splitter on Railway for
-// prototyping and dev testing. Cloudflare Workers remains the production target:
-// this file supplies Node-backed stand-ins for the DB/AUDIO bindings and serves
-// public/ the way Workers assets would, without touching anything under src/.
+// Node host for the shared Hono app. Railway is the active integration and
+// release target until the finished product migrates to Cloudflare Workers.
+// This file supplies Node-backed DB/AUDIO bindings and serves public/ without
+// changing the shared application under src/.
 //
 // It runs in LOCAL_HOSTING mode, so uploads stream through /api/local-uploads/
 // and sources are exposed via short-lived HMAC-signed /api/local-sources/ URLs —
@@ -63,6 +63,7 @@ mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new SqliteD1(join(DATA_DIR, 'stem-splitter.sqlite'));
 db.applySchema(readFileSync(join(repoRoot, 'schema.sql'), 'utf8'));
+db.applyNodeMigrations();
 
 const audio = new FsR2Bucket(join(DATA_DIR, 'audio'));
 

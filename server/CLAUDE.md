@@ -62,7 +62,12 @@ Setting a variable redeploys, so batch changes when you can, and always re-verif
 
 Objects are stored flat: `encodeURIComponent(key)` as the filename under `blobs/`, with a sidecar JSON in `meta/` carrying `size`/`uploaded`/`contentType`. Blob and meta are each written to a temp file and renamed, so a crash can't leave a meta entry pointing at a half-written blob. `uploaded` lives in that sidecar rather than on the filesystem because the 30-day retention logic in `src/r2.ts` reads `object.uploaded`, and mtime would be wrong after any copy or restore.
 
-`schema.sql` is applied on every boot. It is idempotent (`CREATE TABLE IF NOT EXISTS`) and canonical — it already contains everything the numbered migrations add, so the `migrations/` files are irrelevant here. They exist for the production D1 instance, which was created before those columns.
+`schema.sql` is applied on every boot and is canonical for fresh databases.
+`CREATE TABLE IF NOT EXISTS` cannot add a column to a table already stored on
+the persistent Railway volume, so `SqliteD1.applyNodeMigrations()` immediately
+follows it with idempotent additive upgrades. Every new persistent-column
+change needs both the canonical schema and a Node migration regression test.
+Numbered `migrations/` remain deferred Cloudflare D1 migration inputs.
 
 ## Fail-fast vs. fail-lazy
 
