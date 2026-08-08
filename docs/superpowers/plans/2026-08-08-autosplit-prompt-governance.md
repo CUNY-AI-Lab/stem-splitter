@@ -19,10 +19,14 @@
 - [x] Make teacher-seed reconciliation authoritative, atomic, and session-safe.
 - [x] Document secure Cloudflare, Railway, and local teacher provisioning plus
   the fixed-prompt changelog workflow.
-- [ ] Pass typecheck, unit tests, complete browser E2E, Node-host boot, and
+- [x] Pass typecheck, unit tests, complete browser E2E, Node-host boot, and
   desktop/mobile rendered-browser acceptance.
-- [ ] Deploy the Node host to the canonical Railway service and prove the live
-  journey there, including persistent prompt history after restart.
+- [x] Deploy the Node host to the canonical Railway service and prove live
+  health, schema readiness, static assets, auth boundaries, and the free smoke
+  suite.
+- [ ] With a real teacher credential, save one live revision, restart Railway,
+  and confirm that revision survives. Never retrieve or expose the credential
+  merely to automate this acceptance check.
 - [ ] After the user declares the full product finished, migrate to Cloudflare
   Workers, apply migrations 4/5, provision Worker secrets, and prove that
   separate production journey. Do not take this step early.
