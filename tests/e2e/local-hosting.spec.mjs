@@ -795,7 +795,7 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
           { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '21.5' },
           // A derivative of the same track: the picker must collapse it away.
           { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '21.5' },
-          // Over the 15-minute cap: offered but not importable.
+          // Over the 5-minute cap: excluded from the picker entirely.
           { name: '02-long-set.mp3', format: 'VBR MP3', size: '8192', length: '3600' },
           { name: 'cover.jpg', format: 'JPEG', size: '2048' },
         ],
@@ -849,9 +849,10 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
   expect(searchQuery).toContain('collection:netlabels');
 
   await page.locator('.crate-item-head').click();
-  await expect(page.locator('.crate-track')).toHaveCount(2); // ogg derivative collapsed away
+  // One row: the ogg derivative collapses away and the hour-long set is hidden.
+  await expect(page.locator('.crate-track')).toHaveCount(1);
   await expect(page.locator('.crate-track-len').first()).toHaveText('0:21');
-  await expect(page.getByRole('button', { name: 'TOO LONG' })).toBeDisabled();
+  await expect(page.locator('.crate-credit')).toContainText('1 track over 5:00 not shown');
   if (process.env.ARCHIVE_QA_SCREENSHOT) {
     await page.screenshot({ path: process.env.ARCHIVE_QA_SCREENSHOT, fullPage: true });
   }

@@ -11,7 +11,11 @@
 //     stems produces a derivative work.
 import type { Env } from './env';
 
-const MAX_DURATION_SECONDS = 15 * 60; // matches the YouTube import cap
+// Crate-specific cap, tighter than the 15-minute YouTube/upload limit: the
+// browse list only offers songs, and nothing over 5 minutes is shown or
+// importable through it. Enforced here (not just in the UI) so a crafted API
+// call cannot import past it.
+const MAX_DURATION_SECONDS = 5 * 60;
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const MIN_AUDIO_BYTES = 1024;
 const SEARCH_ROWS = 24;
@@ -417,12 +421,12 @@ export async function fetchArchiveAudio(
     throw new ArchiveError(
       fileName
         ? 'That track is not part of this Internet Archive item.'
-        : 'No track on this item is short enough to split (15 minute limit).',
+        : 'No track on this item is short enough to split (5 minute limit).',
       'track_not_found'
     );
   }
   if (track.durationSec > MAX_DURATION_SECONDS) {
-    throw new ArchiveError('That track is longer than 15 minutes.', 'track_too_long');
+    throw new ArchiveError('That track is longer than 5 minutes.', 'track_too_long');
   }
   if (track.bytes > MAX_AUDIO_BYTES) {
     throw new ArchiveError('That track is larger than 100 MB.', 'track_too_large');

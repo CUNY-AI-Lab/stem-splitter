@@ -595,10 +595,23 @@ async function loadCrateTracks(result, container) {
 }
 
 function renderCrateTracks(item, container) {
+  // Songs only: anything over the 5-minute cap (or 100 MB) is left out of the
+  // list entirely rather than shown greyed — the server refuses them anyway.
+  const splittable = item.tracks.filter((track) => track.importable);
+  const hiddenCount = item.tracks.length - splittable.length;
+
+  if (splittable.length === 0) {
+    container.replaceChildren(Object.assign(document.createElement('p'), {
+      className: 'mono crate-loading',
+      textContent: 'No tracks under 5 minutes on this item.',
+    }));
+    return;
+  }
+
   const list = document.createElement('ul');
   list.className = 'crate-track-list';
 
-  for (const track of item.tracks) {
+  for (const track of splittable) {
     const li = document.createElement('li');
     li.className = 'crate-track';
 
@@ -613,14 +626,8 @@ function renderCrateTracks(item, container) {
     const split = document.createElement('button');
     split.type = 'button';
     split.className = 'crate-split';
-    if (track.importable) {
-      split.textContent = 'SPLIT';
-      split.addEventListener('click', () => void importArchiveTrack(item, track, split));
-    } else {
-      split.textContent = 'TOO LONG';
-      split.disabled = true;
-      split.title = 'Tracks must be under 15 minutes and 100 MB.';
-    }
+    split.textContent = 'SPLIT';
+    split.addEventListener('click', () => void importArchiveTrack(item, track, split));
 
     li.append(name, length, split);
     list.append(li);
@@ -633,9 +640,11 @@ function renderCrateTracks(item, container) {
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   link.textContent = 'view on archive.org';
+  const hiddenNote = hiddenCount ? ` · ${hiddenCount} track${hiddenCount === 1 ? '' : 's'} over 5:00 not shown` : '';
   credit.append(
     document.createTextNode(`${item.license}${item.creator ? ` · ${item.creator}` : ''} · `),
-    link
+    link,
+    document.createTextNode(hiddenNote)
   );
 
   container.replaceChildren(list, credit);

@@ -314,12 +314,24 @@ h1 span {
 .crate-item-head.open { border-bottom: 1px solid var(--panel-edge); }
 .crate-item-title {
   flex: 1 1 auto;
+  min-width: 0; /* let the ellipsis engage instead of forcing the row wider */
   font-size: 0.85rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.crate-item-meta { color: var(--ink-dim); font-size: 0.68rem; flex: 0 1 auto; }
+/* Truncate rather than wrap: a long creator name must never push the licence
+   badge past the panel edge or grow the row to two lines. */
+.crate-item-meta {
+  color: var(--ink-dim);
+  font-size: 0.68rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .crate-license {
   flex: 0 0 auto;
