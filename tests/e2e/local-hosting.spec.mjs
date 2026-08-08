@@ -1464,7 +1464,13 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
   expect(withClassCode.status).toBe(401);
 
-  await page.goto('/teacher.html', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#class-code-dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'NOT NOW' }).click();
+  const instructorLink = page.getByRole('link', { name: 'INSTRUCTOR' });
+  await expect(instructorLink).toBeVisible();
+  await instructorLink.click();
+  await expect(page).toHaveURL(/\/teacher(?:\.html)?$/);
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
 

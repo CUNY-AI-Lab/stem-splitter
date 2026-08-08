@@ -905,6 +905,21 @@ footer {
   letter-spacing: .08em;
 }
 .footer-sig { font-size: 0.62rem; letter-spacing: 0.14em; margin-top: 0.6rem; }
+.footer-teacher-link {
+  display: inline-block;
+  margin-top: 0.7rem;
+  color: var(--ink-faint);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-decoration-color: var(--panel-edge);
+  text-underline-offset: 0.2em;
+}
+.footer-teacher-link:hover { color: var(--ink-dim); }
+.footer-teacher-link:focus-visible {
+  color: var(--hot);
+  outline: 2px solid var(--hot);
+  outline-offset: 4px;
+}
 
 /* ─── small screens ───────────────────────────────────────────────── */
 
