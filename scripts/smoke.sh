@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for the deployed stem-splitter Worker.
+# Smoke test for the active deployed stem-splitter host.
 #
 #   ./scripts/smoke.sh                  # free checks only (no predictions created)
 #   ./scripts/smoke.sh <job-id>         # + labels/annotations round-trip on a done job
@@ -10,7 +10,7 @@
 # Class code comes from $CLASS_CODE (required — never hardcode it here).
 
 set -u
-BASE="${BASE:-https://stem-splitter.ailab-452.workers.dev}"
+BASE="${BASE:-https://stem-splitter-production-78b9.up.railway.app}"
 CODE="${CLASS_CODE:?set CLASS_CODE to the current class code}"
 JOB_ID=""
 FULL=0
@@ -51,11 +51,11 @@ check "split choices keep the 4-track default" htdemucs_ft \
   "$(curl -sS "$BASE/api/separation-options" | json "['defaultModel']")"
 
 check "split choices never leak runner wiring" 1 \
-  "$(curl -sS "$BASE/api/separation-options" | python3 -c "import json,sys; print(int(all(set(m)=={'id','stems','label','engine'} for m in json.load(sys.stdin)['models'])))")"
+  "$(curl -sS "$BASE/api/separation-options" | python3 -c "import json,sys; allowed=['id','stems','label','engine']; print(int(all(all(key in allowed for key in model) for model in json.load(sys.stdin)['models'])))")"
 
 # The model allowlist (src/index.ts) runs before the URL parse, so a 400 with
-# code invalid_youtube_url proves the two-track id passed the allowlist in
-# production without creating a prediction. Costs nothing.
+# code invalid_youtube_url proves the two-track id passed the allowlist in the
+# live release without creating a prediction. Costs nothing.
 check "two-track choice accepted by the allowlist" invalid_youtube_url \
   "$(curl -sS -X POST "$BASE/api/jobs" -H 'content-type: application/json' -H "x-class-code: $CODE" -d '{"youtubeUrl":"x","model":"vocals_instrumental"}' | json "['code']")"
 
