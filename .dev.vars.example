@@ -9,6 +9,10 @@ WEBHOOK_SECRET=any-long-random-string
 CLASS_CODE=your-class-code
 OPENROUTER_API_KEY=sk-or-your-openrouter-key
 
+# Optional instructor console provisioning. Generate only hashed records using
+# docs/teacher-provisioning.md; never put a real seed in this example file.
+# TEACHER_SEED=[{"username":"instructor","name":"Course Instructor","salt":"...","hash":"...","iterations":210000}]
+
 # Fully local Audio Separator + BS-RoFormer development (no production
 # credentials required). These values override wrangler.jsonc in local mode.
 # LOCAL_DEV=1

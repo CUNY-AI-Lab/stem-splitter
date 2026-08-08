@@ -176,7 +176,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.locator('#split-summary')).toHaveText('// 2, 4, or 6 parts per song');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
-    page.getByRole('radio', { name: '4 parts: vocals, drums, bass, other' })
+    page.getByRole('radio', { name: '4 parts: voice, percussion, low end, the rest' })
   ).toBeChecked();
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -333,7 +333,7 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const twoTrackChoice = page.getByRole('radio', {
-    name: '2 parts: vocals, instrumental',
+    name: '2 parts: voice, everything else',
   });
   await expect(twoTrackChoice).toBeVisible();
   await twoTrackChoice.check();
@@ -362,6 +362,76 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
   // Stored under the contract name, so /api/files and the mixer agree.
   expect(storedKeys).toContain(`stems/${created.id}/instrumental.mp3`);
   expect(storedKeys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  expect(browserErrors).toEqual([]);
+});
+
+// Classifier accuracy lives in tests/autosplit.test.mts. This covers the
+// browser wiring, worker boundary, and the invariant that the paid API never
+// receives the UI-only model id "auto".
+test('AUTO listens to a local upload and resolves to a real split', async ({ page, network }) => {
+  const predictionId = 'e2e-auto';
+  let requestedInput = null;
+
+  const outputFor = (input) => {
+    if (input.stem === 'vocals') {
+      return {
+        vocals: 'https://auto-fixtures.test/vocals.mp3',
+        no_vocals: 'https://auto-fixtures.test/other.mp3',
+      };
+    }
+    const names = input.model === 'htdemucs_6s'
+      ? ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano']
+      : ['vocals', 'drums', 'bass', 'other'];
+    return Object.fromEntries(
+      names.map((name) => [name, `https://auto-fixtures.test/${name}.mp3`])
+    );
+  };
+
+  network.use(
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      requestedInput = (await request.json()).input;
+      return HttpResponse.json({ id: predictionId, status: 'starting' });
+    }),
+    http.get(`https://api.replicate.com/v1/predictions/${predictionId}`, () =>
+      HttpResponse.json({
+        id: predictionId,
+        status: 'succeeded',
+        output: outputFor(requestedInput),
+      })
+    ),
+    http.get('https://auto-fixtures.test/:stem.mp3', ({ params }) => {
+      const audio = stemAudio.get(String(params.stem)) ?? stemAudio.get('other');
+      return new HttpResponse(audio, { headers: { 'Content-Type': 'audio/mpeg' } });
+    })
+  );
+
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  await page.addInitScript((classCode) => {
+    localStorage.setItem('classCode', classCode);
+  }, CLASS_CODE);
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const auto = page.getByRole('radio', {
+    name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
+  });
+  await expect(auto).toBeVisible();
+  await auto.check();
+  await expect(page.locator('#split-legend')).toHaveText(
+    'listens to local audio, then picks 2, 4, or 6 parts'
+  );
+
+  await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
+  await expect(page.locator('.badge.ready')).toHaveText('READY');
+
+  const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  expect(created.model).not.toBe('auto');
+  expect(['vocals_instrumental', 'htdemucs_ft', 'htdemucs_6s']).toContain(created.model);
+  await expect(page.locator('.channel')).toHaveCount(created.expectedStems.length);
+  expect(requestedInput).toBeTruthy();
   expect(browserErrors).toEqual([]);
 });
 
@@ -401,7 +471,7 @@ test('fails an incomplete six-track result instead of rendering blank channels',
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const sixTrackChoice = page.getByRole('radio', {
-    name: '6 parts: vocals, drums, bass, other, guitar, piano',
+    name: '6 parts: adds plucked strings and keys',
   });
   await expect(sixTrackChoice).toBeVisible();
   await sixTrackChoice.check();
@@ -515,7 +585,7 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page
     .getByRole('radio', {
-      name: '6 parts: vocals, drums, bass, other, guitar, piano',
+      name: '6 parts: adds plucked strings and keys',
     })
     .check();
   await page.getByText('Or paste a YouTube link').click();
@@ -607,7 +677,7 @@ test('completes a six-track split whose guitar and piano tracks are near-silent'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page
     .getByRole('radio', {
-      name: '6 parts: vocals, drums, bass, other, guitar, piano',
+      name: '6 parts: adds plucked strings and keys',
     })
     .check();
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -727,7 +797,7 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('radio', { name: '2 parts: vocals, instrumental' }).check();
+  await page.getByRole('radio', { name: '2 parts: voice, everything else' }).check();
   await page.getByText('Or paste a YouTube link').click();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
@@ -838,6 +908,13 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
 
+  // Archive audio is not present in the browser before the import request.
+  // AUTO must state that limitation and resolve to the catalogue default,
+  // never send the UI-only id to the Worker.
+  await page.getByRole('radio', {
+    name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
+  }).check();
+
   // Opening the crate runs the default search.
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await expect(page.locator('.crate-item')).toHaveCount(1);
@@ -862,6 +939,9 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
   await expect(page.locator('.badge.ready')).toHaveText('READY');
   await expect(page.locator('.console-title')).toHaveText('Fixture Collective - fixture-track');
   await expect(page.locator('.channel')).toHaveCount(4);
+
+  const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
+  expect(created.model).toBe('htdemucs_ft');
 
   const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
   const { keys } = await storedKeysResponse.json();
@@ -1407,21 +1487,73 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toHaveText('SIGNED IN AS E2E TEACHER');
 
+  // The code-owned prompt is visible and formatted, but never an editable
+  // control. It opens at the end and the upward caret jumps to the top.
+  await expect(page.locator('#fixed-prompt-body')).toContainText('ACTING ON THE MIXER');
+  await expect(page.locator('#fixed-prompt-body h4')).toContainText([
+    "WHO YOU'RE TALKING TO",
+    'HOW YOU TALK (every message, both modes)',
+  ]);
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-08.1');
+  expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
+  await page.getByRole('button', { name: 'SEE THE TOP OF THE FIXED PROMPT' }).click();
+  await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('button', { name: 'RETURN TO THE END OF THE FIXED PROMPT' })).toBeVisible();
+
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
-  await page.getByRole('button', { name: 'SAVE' }).click();
-  await expect(page.locator('#prompt-status')).toContainText('SAVED');
+  await page.getByRole('button', { name: 'SAVE NEW REVISION' }).click();
+  await expect(page.locator('#prompt-status')).toContainText('ADD A CHANGELOG NOTE');
+
+  const changeNote = 'Add bilingual vocabulary guidance for the survey course';
+  await page.locator('#change-note').fill(changeNote);
+  await page.getByRole('button', { name: 'SAVE NEW REVISION' }).click();
+  await expect(page.locator('#prompt-status')).toContainText('REVISION 1 SAVED');
   await expect(page.locator('#amendment-meta')).toContainText('LAST EDITED BY E2ETEACHER');
+  await expect(page.locator('.teacher-history-item')).toHaveCount(1);
+  await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
+  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-08.1');
+
+  const trace = await page.evaluate(() =>
+    fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((response) => response.json())
+  );
+  expect(trace.basePromptHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(trace.effectivePromptHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(trace.history[0]).toMatchObject({
+    settingsRevision: 1,
+    amendment,
+    changeNote,
+    basePromptVersion: '2026-08-08.1',
+    updatedBy: 'e2eteacher',
+  });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'PREVIEW FULL PROMPT' }).click();
+  await page.getByRole('button', { name: 'PREVIEW EFFECTIVE PROMPT' }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
+
+  // Optimistic concurrency stops a stale console from overwriting a newer edit.
+  const staleSave = await page.evaluate((nextAmendment) =>
+    fetch('/api/teacher/prompt', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amendment: nextAmendment,
+        changeNote: 'stale edit',
+        expectedRevision: 0,
+      }),
+    }).then(async (response) => ({ status: response.status, body: await response.json() })),
+    `${amendment} stale`
+  );
+  expect(staleSave.status).toBe(409);
+  expect(staleSave.body.error).toContain('changed after you opened it');
 
   // Survives a reload — the session is a cookie and the text is in D1.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#amendment')).toHaveValue(amendment);
+  await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
 
   await page.getByRole('button', { name: 'SIGN OUT' }).click();
   await expect(page.locator('#signin-panel')).toBeVisible();
@@ -1432,5 +1564,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
 
   expect(browserErrors).toEqual([]);
   // Every non-2xx should be one of the auth checks this test intentionally makes.
-  expect(failedRequests.filter((entry) => !entry.startsWith('401 /api/teacher/'))).toEqual([]);
+  expect(
+    failedRequests.filter(
+      (entry) =>
+        !entry.startsWith('401 /api/teacher/') &&
+        !entry.startsWith('409 /api/teacher/prompt')
+    )
+  ).toEqual([]);
 });

@@ -11,6 +11,8 @@ const KEY_BITS = 256;
 const SESSION_TTL_DAYS = 30;
 const SESSION_COOKIE = 'teacher_session';
 const MAX_AMENDMENT_CHARS = 2000;
+const MAX_CHANGE_NOTE_CHARS = 240;
+const PROMPT_HISTORY_LIMIT = 40;
 
 export interface TeacherRecord {
   username: string;
@@ -32,6 +34,14 @@ interface SeedEntry {
   salt?: unknown;
   hash?: unknown;
   iterations?: unknown;
+}
+
+interface NormalizedSeedEntry {
+  username: string;
+  displayName: string;
+  salt: string;
+  hash: string;
+  iterations: number;
 }
 
 function toHex(buffer: ArrayBuffer): string {
@@ -95,7 +105,13 @@ export async function syncTeachersFromSeed(env: Env): Promise<void> {
     return;
   }
 
+  const normalized: NormalizedSeedEntry[] = [];
+  const usernames = new Set<string>();
   for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      console.error('TEACHER_SEED entries must be JSON objects — no accounts changed');
+      return;
+    }
     const { username, name, salt, hash, iterations } = entry;
     if (
       typeof username !== 'string' ||
@@ -103,12 +119,53 @@ export async function syncTeachersFromSeed(env: Env): Promise<void> {
       typeof hash !== 'string' ||
       !username ||
       !salt ||
-      !hash
+      !hash ||
+      !/^[a-z0-9._-]{1,64}$/i.test(username.trim()) ||
+      !/^[a-f0-9]{32}$/i.test(salt) ||
+      !/^[a-f0-9]{64}$/i.test(hash) ||
+      (iterations !== undefined &&
+        (typeof iterations !== 'number' ||
+          !Number.isInteger(iterations) ||
+          iterations < PBKDF2_ITERATIONS ||
+          iterations > 10_000_000)) ||
+      (typeof name === 'string' && name.trim().length > 120)
     ) {
-      console.error('TEACHER_SEED entry is missing username/salt/hash — skipped');
-      continue;
+      console.error('TEACHER_SEED entry has invalid credential fields — no accounts changed');
+      return;
     }
-    await env.DB.prepare(
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername || usernames.has(normalizedUsername)) {
+      console.error('TEACHER_SEED usernames must be non-empty and unique — no accounts changed');
+      return;
+    }
+    usernames.add(normalizedUsername);
+    normalized.push({
+      username: normalizedUsername,
+      displayName: typeof name === 'string' && name.trim() ? name.trim() : username,
+      salt: salt.toLowerCase(),
+      hash: hash.toLowerCase(),
+      iterations: typeof iterations === 'number' ? iterations : PBKDF2_ITERATIONS,
+    });
+  }
+
+  const statements = normalized.flatMap((entry) => [
+    // A password rotation revokes existing sessions for that teacher, while an
+    // unchanged seed leaves active sessions alone across isolate starts.
+    env.DB.prepare(
+      `DELETE FROM teacher_sessions
+       WHERE username = ?
+         AND EXISTS (
+           SELECT 1 FROM teachers
+           WHERE username = ? AND (password_hash <> ? OR salt <> ? OR iterations <> ?)
+         )`
+    ).bind(
+      entry.username,
+      entry.username,
+      entry.hash,
+      entry.salt,
+      entry.iterations
+    ),
+    env.DB.prepare(
       `INSERT INTO teachers (username, display_name, salt, password_hash, iterations)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(username) DO UPDATE SET
@@ -116,16 +173,34 @@ export async function syncTeachersFromSeed(env: Env): Promise<void> {
          salt = excluded.salt,
          password_hash = excluded.password_hash,
          iterations = excluded.iterations`
-    )
-      .bind(
-        username.toLowerCase(),
-        typeof name === 'string' && name ? name : username,
-        salt,
-        hash,
-        typeof iterations === 'number' ? iterations : PBKDF2_ITERATIONS
-      )
-      .run();
+    ).bind(
+      entry.username,
+      entry.displayName,
+      entry.salt,
+      entry.hash,
+      entry.iterations
+    ),
+  ]);
+
+  if (normalized.length) {
+    const placeholders = normalized.map(() => '?').join(', ');
+    const keep = normalized.map((entry) => entry.username);
+    statements.push(
+      env.DB.prepare(
+        `DELETE FROM teacher_sessions WHERE username NOT IN (${placeholders})`
+      ).bind(...keep),
+      env.DB.prepare(`DELETE FROM teachers WHERE username NOT IN (${placeholders})`).bind(...keep)
+    );
+  } else {
+    // An explicit [] is the intentional "deprovision everyone" value. An
+    // absent secret still returns above and leaves the database untouched.
+    statements.push(
+      env.DB.prepare('DELETE FROM teacher_sessions'),
+      env.DB.prepare('DELETE FROM teachers')
+    );
   }
+
+  await env.DB.batch(statements);
 }
 
 /** Returns the teacher on success, null on any failure (never says which). */
@@ -223,35 +298,148 @@ export interface AmendmentRecord {
   amendment: string;
   updatedBy: string | null;
   updatedAt: string | null;
+  revision: number;
+}
+
+export interface PromptRevision {
+  id: number;
+  settingsRevision: number;
+  amendment: string;
+  changeNote: string;
+  basePromptVersion: string;
+  basePromptHash: string;
+  effectivePromptHash: string;
+  updatedBy: string;
+  createdAt: string;
 }
 
 export async function getAmendment(env: Env): Promise<AmendmentRecord> {
   const row = await env.DB.prepare(
-    'SELECT amendment, updated_by, updated_at FROM assistant_settings WHERE id = 1'
-  ).first<{ amendment: string; updated_by: string | null; updated_at: string | null }>();
+    'SELECT amendment, updated_by, updated_at, revision FROM assistant_settings WHERE id = 1'
+  ).first<{
+    amendment: string;
+    updated_by: string | null;
+    updated_at: string | null;
+    revision: number;
+  }>();
   return {
     amendment: row?.amendment ?? '',
     updatedBy: row?.updated_by ?? null,
     updatedAt: row?.updated_at ?? null,
+    revision: row?.revision ?? 0,
   };
 }
 
 export async function setAmendment(
   env: Env,
   amendment: string,
-  username: string
-): Promise<AmendmentRecord> {
-  await env.DB.prepare(
-    `INSERT INTO assistant_settings (id, amendment, updated_by, updated_at)
-     VALUES (1, ?, ?, datetime('now'))
-     ON CONFLICT(id) DO UPDATE SET
-       amendment = excluded.amendment,
-       updated_by = excluded.updated_by,
-       updated_at = excluded.updated_at`
+  username: string,
+  expectedRevision: number,
+  trace: {
+    changeNote: string;
+    basePromptVersion: string;
+    basePromptHash: string;
+    effectivePromptHash: string;
+  }
+): Promise<{
+  record: AmendmentRecord;
+  changed: boolean;
+  conflict: boolean;
+  revision: PromptRevision | null;
+}> {
+  const current = await getAmendment(env);
+  if (current.amendment === amendment) {
+    return { record: current, changed: false, conflict: false, revision: null };
+  }
+
+  const nextRevision = expectedRevision + 1;
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE assistant_settings
+       SET amendment = ?, updated_by = ?, updated_at = datetime('now'), revision = revision + 1
+       WHERE id = 1 AND revision = ? AND amendment <> ?`
+    ).bind(amendment, username, expectedRevision, amendment),
+    env.DB.prepare(
+      `INSERT INTO assistant_prompt_revisions
+         (settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
+          effective_prompt_hash, updated_by)
+       SELECT ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM assistant_settings
+         WHERE id = 1 AND revision = ? AND amendment = ? AND updated_by = ?
+       )
+       ON CONFLICT(settings_revision) DO NOTHING`
+    ).bind(
+      nextRevision,
+      amendment,
+      trace.changeNote,
+      trace.basePromptVersion,
+      trace.basePromptHash,
+      trace.effectivePromptHash,
+      username,
+      nextRevision,
+      amendment,
+      username
+    ),
+  ]);
+
+  if ((results[0]?.meta?.changes ?? 0) === 0) {
+    return {
+      record: await getAmendment(env),
+      changed: false,
+      conflict: true,
+      revision: null,
+    };
+  }
+
+  return {
+    record: await getAmendment(env),
+    changed: true,
+    conflict: false,
+    revision: (await getPromptHistory(env, 1))[0] ?? null,
+  };
+}
+
+export async function getPromptHistory(
+  env: Env,
+  limit = PROMPT_HISTORY_LIMIT
+): Promise<PromptRevision[]> {
+  const safeLimit = Math.max(1, Math.min(PROMPT_HISTORY_LIMIT, Math.floor(limit)));
+  const result = await env.DB.prepare(
+    `SELECT id, settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
+            effective_prompt_hash, updated_by, created_at
+     FROM assistant_prompt_revisions
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
   )
-    .bind(amendment, username)
-    .run();
-  return getAmendment(env);
+    .bind(safeLimit)
+    .all<{
+      id: number;
+      settings_revision: number;
+      amendment: string;
+      change_note: string;
+      base_prompt_version: string;
+      base_prompt_hash: string;
+      effective_prompt_hash: string;
+      updated_by: string;
+      created_at: string;
+    }>();
+
+  return (result.results ?? []).map((row) => ({
+    id: row.id,
+    settingsRevision: row.settings_revision,
+    amendment: row.amendment,
+    changeNote: row.change_note,
+    basePromptVersion: row.base_prompt_version,
+    basePromptHash: row.base_prompt_hash,
+    effectivePromptHash: row.effective_prompt_hash,
+    updatedBy: row.updated_by,
+    createdAt: row.created_at,
+  }));
+}
+
+export function hashPrompt(value: string): Promise<string> {
+  return sha256Hex(value);
 }
 
 /** null when the text is unusable; callers turn that into a 400. */
@@ -261,4 +449,11 @@ export function normalizeAmendment(value: unknown): string | null {
   return trimmed.length > MAX_AMENDMENT_CHARS ? null : trimmed;
 }
 
-export { MAX_AMENDMENT_CHARS };
+export function normalizeChangeNote(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_CHANGE_NOTE_CHARS) return null;
+  return trimmed;
+}
+
+export { MAX_AMENDMENT_CHARS, MAX_CHANGE_NOTE_CHARS, PROMPT_HISTORY_LIMIT };

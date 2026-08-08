@@ -58,7 +58,7 @@ const ALL_OPTIONS: SeparationOption[] = [
   {
     id: BS_ROFORMER_MODEL,
     stems: ['vocals', 'instrumental'],
-    label: '2 parts: vocals, instrumental',
+    label: '2 parts: voice, everything else',
     engine: 'BS-ROFORMER',
     runners: {
       'audio-separator': { kind: 'audio-separator', profile: BS_ROFORMER_MODEL },
@@ -73,7 +73,7 @@ const ALL_OPTIONS: SeparationOption[] = [
     // the frontend, and the track-count tests all stay as they are.
     id: TWO_STEM_MODEL,
     stems: ['vocals', 'instrumental'],
-    label: '2 parts: vocals, instrumental',
+    label: '2 parts: voice, everything else',
     engine: 'DEMUCS',
     runners: {
       replicate: {
@@ -87,7 +87,7 @@ const ALL_OPTIONS: SeparationOption[] = [
   {
     id: DEFAULT_DEMUCS_MODEL,
     stems: ['vocals', 'drums', 'bass', 'other'],
-    label: '4 parts: vocals, drums, bass, other',
+    label: '4 parts: voice, percussion, low end, the rest',
     engine: 'DEMUCS',
     runners: {
       replicate: {
@@ -102,7 +102,9 @@ const ALL_OPTIONS: SeparationOption[] = [
   {
     id: 'htdemucs_6s',
     stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
-    label: '6 parts: vocals, drums, bass, other, guitar, piano',
+    // These are guitar-/piano-trained nets, but they may catch neighboring
+    // timbres such as oud, kora, mbira, celesta, or santur imperfectly.
+    label: '6 parts: adds plucked strings and keys',
     engine: 'DEMUCS',
     runners: {
       replicate: {

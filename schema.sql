@@ -64,7 +64,26 @@ CREATE TABLE IF NOT EXISTS assistant_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   amendment TEXT NOT NULL DEFAULT '',
   updated_by TEXT,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  revision INTEGER NOT NULL DEFAULT 0
 );
 
 INSERT INTO assistant_settings (id, amendment) VALUES (1, '') ON CONFLICT(id) DO NOTHING;
+
+-- Append-only prompt amendment history. The base prompt is versioned in
+-- src/assistant/prompt.ts; every revision stores that version and fingerprint
+-- so runtime changes can be matched to the code/changelog that governed them.
+CREATE TABLE IF NOT EXISTS assistant_prompt_revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  settings_revision INTEGER NOT NULL UNIQUE,
+  amendment TEXT NOT NULL,
+  change_note TEXT NOT NULL,
+  base_prompt_version TEXT NOT NULL,
+  base_prompt_hash TEXT NOT NULL,
+  effective_prompt_hash TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_revisions_created
+  ON assistant_prompt_revisions (created_at DESC, id DESC);

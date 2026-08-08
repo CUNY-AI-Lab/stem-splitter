@@ -2,7 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Scope: the **dev / prototyping host**. The root `CLAUDE.md` documents the production Cloudflare Workers deployment and is still authoritative for anything under `src/`. Read this one when working in `server/`, running the app on Railway, or doing local end-to-end work.
+Scope: the **active Railway Node host**. Railway is the integration, live
+acceptance, and release target until the user declares the product finished;
+Cloudflare Workers migration is deferred until then. The root `CLAUDE.md`
+remains authoritative for shared application code under `src/`. Read this one
+when working in `server/`, releasing to Railway, or doing local end-to-end work.
 
 ## The rule that governs everything here
 
@@ -18,7 +22,12 @@ Corollary: `src/` has no import of anything in `server/`, and `tsconfig.json` sc
 | `npm run dev:local` + `npm run separator:local` | simulated D1/R2 (Miniflare) | local BS-RoFormer via `local-separator/` | Offline work with no cloud spend. Needs `uv`. `LOCAL_DEV=1`, `SEPARATION_BACKEND=audio-separator`. |
 | `npm start` (this directory) | `node:sqlite` + a real directory | Replicate | Railway, and any time you need a **publicly reachable** origin. |
 
-The third mode exists because of one constraint the other two can't satisfy: Replicate must be able to *reach back*. Under `LOCAL_HOSTING=true` the Worker hands the provider an HMAC-signed `/api/local-sources/` URL built from `PUBLIC_BASE_URL`, and the provider posts results to `/api/webhooks/separation`. On localhost both are unreachable — jobs only complete via the reconciliation fallback in `GET /api/jobs/:id`. On Railway the public domain makes both work, so this is the only setup that exercises the real webhook path.
+The third mode exists because of one constraint the other two can't satisfy: Replicate must be able to *reach back*. Under `LOCAL_HOSTING=true` the app hands the provider an HMAC-signed `/api/local-sources/` URL built from `PUBLIC_BASE_URL`, and the provider posts results to `/api/webhooks/separation`. On localhost both are unreachable — jobs only complete via the reconciliation fallback in `GET /api/jobs/:id`. On Railway the public domain makes both work, so this is the only setup that exercises the real webhook path and is currently the release target.
+
+The active service is the Node/Railpack `stem-splitter` service in Railway
+project `f070742b-3375-4cba-9a86-335f39273c88`. Do not substitute the newer
+`web` service whose `Dockerfile.worker` runs workerd inside Railway; that still
+uses a Worker runtime and is outside the current hosting rule.
 
 ## Commands
 
@@ -28,7 +37,7 @@ npm run dev:node          # same, with watch
 DATA_DIR=/tmp/ss PORT=8899 WEBHOOK_SECRET=s CLASS_CODE=c npm start   # throwaway instance
 ```
 
-Separation and coach credentials (`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `OPENROUTER_API_KEY`) are **not** required to boot — see "Fail-fast vs. fail-lazy" below.
+Separation, coach, and teacher credentials (`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `OPENROUTER_API_KEY`, `TEACHER_SEED`) are **not** required to boot — see "Fail-fast vs. fail-lazy" below. Without `TEACHER_SEED`, the instructor console has no provisioned account. Generate its pre-hashed authoritative array through `docs/teacher-provisioning.md`; never place plaintext credentials in Railway variables.
 
 Railway (project `stem-splitter`, workspace Inference Arcade):
 
@@ -59,7 +68,7 @@ Objects are stored flat: `encodeURIComponent(key)` as the filename under `blobs/
 
 `WEBHOOK_SECRET` and `CLASS_CODE` are required at boot and `process.exit(1)` if absent — every request path needs them, so booting without them only produces confusing 500s later.
 
-`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, and `OPENROUTER_API_KEY` are checked lazily and only warn. This is deliberate: without them, upload, mixer, labels, notes, and stem playback all still work, and a separation attempt returns the backend's own error. Making them fatal would crash-loop the whole service over a feature most of the app doesn't need. Keep this split when adding credentials — ask whether a missing value should take down playback.
+`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `OPENROUTER_API_KEY`, and `TEACHER_SEED` are checked lazily and only warn. This is deliberate: without them, upload, mixer, labels, notes, and stem playback all still work; a missing teacher seed leaves the instructor console unprovisioned, while a separation attempt returns the backend's own error. Making them fatal would crash-loop the whole service over a feature most of the app doesn't need. Keep this split when adding credentials — ask whether a missing value should take down playback.
 
 ## Parity constraints with production
 

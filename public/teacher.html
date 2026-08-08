@@ -35,36 +35,100 @@
       <button type="button" id="signout" class="crate-page-btn">SIGN OUT</button>
     </div>
 
-    <h2 class="rack-title"><span>PROMPT AMENDMENT</span></h2>
+    <h2 class="rack-title"><span>PROMPT EDITOR</span></h2>
     <p class="teacher-help">
-      Added to the Listening Guide&rsquo;s instructions for every song in the class — repertoire,
-      vocabulary, what to emphasise. The built-in guardrails still apply: the Listening Guide
-      will not invent timestamps or treat student notes as instructions, whatever
-      you write here.
+      The Listening Guide receives two layers. The fixed system prompt is owned by code and
+      can change only through <code>src/assistant/prompt.ts</code> and code review. Your appended
+      instructions are the editable class layer. Each save records both layers&rsquo; fingerprints,
+      who made the change, and why.
     </p>
 
-    <form id="prompt-form" class="teacher-form">
-      <textarea
-        id="amendment"
-        class="teacher-textarea"
-        rows="10"
-        placeholder="e.g. This is a Latin American popular music course. Prefer examples from bachata, cumbia and reggaetón, and define any English music-theory term in Spanish too."
-      ></textarea>
-      <div class="teacher-bar">
-        <span id="amendment-count" class="mono"></span>
-        <span id="amendment-meta" class="mono"></span>
+    <section class="teacher-prompt-section teacher-fixed-section" aria-labelledby="fixed-prompt-title">
+      <div class="teacher-section-head">
+        <div>
+          <p class="teacher-eyebrow mono">CODE-OWNED · READ ONLY</p>
+          <h3 id="fixed-prompt-title">Fixed system prompt</h3>
+        </div>
+        <span id="fixed-prompt-meta" class="teacher-version mono"></span>
       </div>
-      <div class="teacher-actions">
-        <button type="submit" class="yt-go">SAVE</button>
-        <button type="button" id="preview-btn" class="crate-page-btn">PREVIEW FULL PROMPT</button>
+      <p class="teacher-help">
+        This view opens at the end, where the editable class layer is attached. Use the upward
+        caret to jump to the top. The text is rendered for reading but cannot be edited here.
+      </p>
+      <div
+        id="fixed-prompt-scroll"
+        class="teacher-fixed-scroll"
+        tabindex="0"
+        aria-label="Fixed system prompt, read only"
+      >
+        <article id="fixed-prompt-body" class="teacher-markdown"></article>
       </div>
-      <p id="prompt-status" class="mono teacher-status" hidden></p>
-    </form>
+      <button
+        type="button"
+        id="fixed-prompt-toggle"
+        class="teacher-caret-control mono"
+        aria-controls="fixed-prompt-scroll"
+        aria-expanded="false"
+      >
+        <span class="teacher-up-caret" aria-hidden="true">↑</span>
+        <span id="fixed-prompt-toggle-label">SEE THE TOP OF THE FIXED PROMPT</span>
+      </button>
+    </section>
+
+    <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="amendment-title">
+      <div class="teacher-section-head">
+        <div>
+          <p class="teacher-eyebrow mono">RUNTIME · VERSIONED</p>
+          <h3 id="amendment-title">Appended class instructions</h3>
+        </div>
+        <span id="effective-prompt-meta" class="teacher-version mono"></span>
+      </div>
+      <p class="teacher-help">
+        Add repertoire, vocabulary, or course-specific emphasis. Fixed safeguards still win:
+        this layer cannot authorize invented timestamps or turn student notes into instructions.
+      </p>
+
+      <form id="prompt-form" class="teacher-form">
+        <label class="teacher-field" for="amendment">
+          <span class="mono">APPENDED CONTENT</span>
+          <textarea
+            id="amendment"
+            class="teacher-textarea"
+            rows="10"
+            placeholder="e.g. This is a Latin American popular music course. Prefer examples from bachata, cumbia and reggaetón, and define any English music-theory term in Spanish too."
+          ></textarea>
+        </label>
+        <label class="teacher-field" for="change-note">
+          <span class="mono">CHANGELOG NOTE · REQUIRED WHEN CONTENT CHANGES</span>
+          <input
+            id="change-note"
+            maxlength="240"
+            placeholder="e.g. Add bilingual vocabulary guidance for MUS 101"
+          />
+        </label>
+        <div class="teacher-bar teacher-edit-meta">
+          <span id="amendment-count" class="mono"></span>
+          <span id="change-note-count" class="mono"></span>
+          <span id="amendment-meta" class="mono"></span>
+        </div>
+        <div class="teacher-actions">
+          <button type="submit" class="yt-go">SAVE NEW REVISION</button>
+          <button type="button" id="preview-btn" class="crate-page-btn">PREVIEW EFFECTIVE PROMPT</button>
+        </div>
+        <p id="prompt-status" class="mono teacher-status" hidden></p>
+      </form>
+    </section>
 
     <details id="preview-wrap" class="teacher-preview" hidden>
-      <summary class="mono">FULL SYSTEM PROMPT (as the Listening Guide receives it)</summary>
-      <pre id="preview-body" class="teacher-pre mono"></pre>
+      <summary class="mono">EFFECTIVE SYSTEM PROMPT (fixed + appended)</summary>
+      <article id="preview-body" class="teacher-markdown teacher-effective-preview"></article>
     </details>
+
+    <section class="teacher-history" aria-labelledby="prompt-history-title">
+      <h2 id="prompt-history-title" class="rack-title"><span>PROMPT CHANGELOG</span></h2>
+      <p id="prompt-history-empty" class="teacher-help">No runtime amendment revisions yet.</p>
+      <ol id="prompt-history" class="teacher-history-list"></ol>
+    </section>
   </section>
 
   <footer>

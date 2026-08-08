@@ -43,17 +43,17 @@ test('model choices state every track they produce', () => {
       engine: getSeparationOption('bs_roformer_vocals')?.engine,
     },
     {
-      label: '2 parts: vocals, instrumental',
+      label: '2 parts: voice, everything else',
       engine: 'BS-ROFORMER',
     }
   );
   assert.equal(
     getSeparationOption('htdemucs_ft')?.label,
-    '4 parts: vocals, drums, bass, other'
+    '4 parts: voice, percussion, low end, the rest'
   );
   assert.equal(
     getSeparationOption('htdemucs_6s')?.label,
-    '6 parts: vocals, drums, bass, other, guitar, piano'
+    '6 parts: adds plucked strings and keys'
   );
   assert.equal(getSeparationOption('htdemucs_ft')?.engine, 'DEMUCS');
   assert.equal(getSeparationOption('htdemucs_6s')?.engine, 'DEMUCS');
@@ -95,7 +95,7 @@ test('Replicate advertises a two-track choice without claiming the RoFormer engi
   );
   const twoTrack = getSeparationOption(TWO_STEM_MODEL)!;
   assert.deepEqual(twoTrack.stems, ['vocals', 'instrumental']);
-  assert.equal(twoTrack.label, '2 parts: vocals, instrumental');
+  assert.equal(twoTrack.label, '2 parts: voice, everything else');
   // It runs Demucs in karaoke mode, so it must not advertise BS-RoFormer.
   assert.equal(twoTrack.engine, 'DEMUCS');
   assert.equal(modelIsAllowed('replicate', TWO_STEM_MODEL), true);

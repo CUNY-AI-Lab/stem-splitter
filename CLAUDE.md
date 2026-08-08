@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs splits it into 2, 4, or 6 tracks on a Replicate GPU → students play stems back in a synchronized in-browser mixer with per-stem mute. Live at https://stem-splitter.ailab-452.workers.dev — the Cloudflare Worker, which is the production host and the only URL students use (the class code is the `CLASS_CODE` secret — never write its value into this file or any committed file). A second Node host under `server/` runs the same app on Railway for prototyping; see "Where this runs" for which to reach for and how the two differ.
+Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs splits it into 2, 4, or 6 tracks → students play stems back in a synchronized in-browser mixer with per-stem mute. **Current release rule:** use the Node host under `server/` on Railway for integration, live acceptance, and releases until the user declares the product finished. Cloudflare Workers is the deferred finished-product migration target; do not deploy unfinished work there. The old Worker URL may remain reachable but is not proof of current delivery. The class code is the `CLASS_CODE` secret — never write its value into this file or any committed file.
 
 ## Commands
 
@@ -25,11 +25,11 @@ BACKEND=replicate MODEL=htdemucs_6s YOUTUBE_URL=<url> ./scripts/run-real-audio-e
 ./scripts/smoke.sh --full # + real YouTube import → 6 stems (~$0.06, ~2 min)
 bun run test:e2e:crate:run # live archive-crate eval: 5 real IA tracks → real local separation, per-phase timings (free, ~6 min)
 SMOKE_ASSISTANT=1 ./scripts/smoke.sh <job-id>  # + listening-guy guide/chat live checks (<1¢)
-bun run deploy            # wrangler deploy to production (account is pinned in wrangler.jsonc)
+bun run deploy            # DEFERRED until the user declares the product finished
 bun run dev               # wrangler dev --remote — see "Local dev" below for why
 bun run start                 # Node host (server/) for Railway prototyping; needs WEBHOOK_SECRET + CLASS_CODE
 railway up --detach -m "<summary>"   # deploy the Node host — see server/CLAUDE.md for the verify loop
-bun run db:migrate        # apply schema.sql to remote D1 (fresh install; additive: db:migrate:2, db:migrate:3)
+bun run db:migrate        # apply schema.sql to remote D1 (fresh install; additive: db:migrate:2 through db:migrate:5)
 bun run wrangler -- d1 execute stem-splitter --remote --json --command "SELECT id,status FROM jobs ORDER BY created_at DESC LIMIT 5"   # ad-hoc prod queries
 bun run wrangler -- tail         # live production logs
 bun run wrangler -- deploy --dry-run --outdir dist   # validate config/bundle without deploying
@@ -56,14 +56,14 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 **Frontend** (`public/`, vanilla JS, no build step): the `Mixer` class in `app.js` plays all stems as parallel `HTMLAudio` elements — first stem is the master clock, others are nudged back if drift exceeds 80 ms (500 ms interval). Job list lives in localStorage; `mixers` Map preserves player state across re-renders. Visual language is a "studio console" theme (per-stem channel colors are CSS vars `--c-vocals` etc. in `styles.css`).
 
-**Instructor console (`/teacher.html`):** teacher accounts + an editable Listening Guy prompt amendment (`src/teacher/auth.ts`, spec: `docs/superpowers/specs/2026-08-05-teacher-console-design.md`). Deliberately **not** gated by the class code — that's a shared secret every student holds, so it can't gate what the Listening Guide says class-wide; there's an e2e test asserting the class code gets 401 here. Passwords are PBKDF2-HMAC-SHA256 (210k iterations, per-user salt) and **never appear in the repo, the DB, or a log**: `scripts/hash-teacher-password.mjs` reads the password from stdin and emits a hashed record for the `TEACHER_SEED` secret, which the Worker upserts on boot. Rotating a password = regenerate + update the secret + redeploy; a wiped D1 or lost Railway volume re-provisions the same accounts. Sessions are opaque tokens in HttpOnly cookies, stored only as SHA-256. The teacher edits an **amendment appended to** the prompt, never the prompt itself — it lands after every guardrail block, introduced as subordinate ("the rules above always win"), so no instructor can accidentally disable "never invent timestamps" or the student-data-is-not-instructions fence. Saving clears the `guides` cache (cached guides predate the edit). Migration: `db:migrate:4`.
+**Instructor console (`/teacher.html`):** teacher accounts + governed Listening Guide prompt amendments (`src/teacher/auth.ts`; provisioning runbook: `docs/teacher-provisioning.md`). Deliberately **not** gated by the class code — every student holds that shared secret, so it cannot guard class-wide prompt controls; an e2e test asserts that the class code gets 401 here. Passwords are PBKDF2-HMAC-SHA256 (210k iterations, per-user salt) and never appear in the repo, D1, arguments, or logs: `scripts/hash-teacher-password.mjs` reads stdin and emits a hashed `TEACHER_SEED` record. A valid seed is authoritative: listed accounts are upserted, omitted accounts are removed, password changes revoke that account's sessions, `[]` deprovisions all, and malformed seeds make no changes. The console shows the code-owned prompt read-only, initially at its tail; an upward caret expands/jumps to the top. Only the dedicated appended-instructions section is editable. Every changed save requires a changelog note and atomically adds an `assistant_prompt_revisions` row with teacher, timestamp, `SYSTEM_PROMPT_VERSION`, base fingerprint, and effective fingerprint; optimistic concurrency prevents stale overwrites. Fixed-prompt changes must pass backward through source review by editing `src/assistant/prompt.ts`, incrementing the version, and updating `docs/prompt-changelog.md`. Changed saves clear the `guides` cache; no-op saves do neither. Migrations: `db:migrate:4`, then `db:migrate:5`.
 
-**Shared labels & annotations:** `jobs.labels` JSON column (`PUT /api/jobs/:id/labels`, full-map replace) and an `annotations` D1 table (`POST/DELETE /api/jobs/:id/annotations[/:annotationId]`); both ride along on `GET /api/jobs/:id`, so any student viewing a job sees them. Writes require the class code; reads stay unauthenticated-but-unguessable. In the mixer: click a channel name to rename; "＋ NOTE" stamps the current time; all notes render in an always-visible list under the channels (timecode click = jump, ✕ on hover = delete) with matching ticks on the seek bar. Seek scrubbing previews while dragging and commits one multi-stem seek on release — don't re-introduce per-`input` seeks (they stall 6 buffers) or unconditional `paint()` slider writes (they fight the drag). Known UX limit: another student's edits appear only after a page reload (polling stops once a job is `done`). Migrations: `schema.sql` is the canonical fresh-install schema; additive changes ship as `migrations/000N-*.sql` with a matching `db:migrate:N[:local]` script pair **and** the same change appended to `schema.sql` (already applied: `:2` labels/annotations, `:3` guides). Feature work ships with a spec+plan docs pair under `docs/superpowers/` — mirror the 2026-07-09 / 2026-07-24 pairs.
+**Shared labels & annotations:** `jobs.labels` JSON column (`PUT /api/jobs/:id/labels`, full-map replace) and an `annotations` D1 table (`POST/DELETE /api/jobs/:id/annotations[/:annotationId]`); both ride along on `GET /api/jobs/:id`, so any student viewing a job sees them. Writes require the class code; reads stay unauthenticated-but-unguessable. In the mixer: click a channel name to rename; "＋ NOTE" stamps the current time; all notes render in an always-visible list under the channels (timecode click = jump, ✕ on hover = delete) with matching ticks on the seek bar. Seek scrubbing previews while dragging and commits one multi-stem seek on release — don't re-introduce per-`input` seeks (they stall 6 buffers) or unconditional `paint()` slider writes (they fight the drag). Known UX limit: another student's edits appear only after a page reload (polling stops once a job is `done`). Migrations: `schema.sql` is the canonical fresh-install schema; additive changes ship as `migrations/000N-*.sql` with a matching `db:migrate:N[:local]` script pair **and** the same change appended to `schema.sql` (already applied: `:2` labels/annotations, `:3` guides, `:4` teacher auth/settings, `:5` prompt history). Feature work ships with a spec+plan docs pair under `docs/superpowers/` — mirror the 2026-07-09 / 2026-07-24 pairs.
 
 ## Configuration
 
 - `wrangler.jsonc` is the source of truth: account id (ailab — `452c33847…`, not the Veritas account), D1 id, R2 bucket, vars. Wrangler must be logged in as `ailab@gc.cuny.edu` — a personal Cloudflare login isn't a member of the ailab account, and every write (deploy, `secret put`) fails with `Authentication error [code: 10000]`. Check with `bun run wrangler -- whoami`; fix with `bun run wrangler -- logout` then `login` as ailab. `R2_BUCKET_NAME` and `CF_ACCOUNT_ID` vars must match the actual bucket/account because presigned URLs are built from them.
-- Secrets (set via `wrangler secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`, `OPENROUTER_API_KEY`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`).
+- Secrets (set via `wrangler secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`, `OPENROUTER_API_KEY`, `TEACHER_SEED`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`); generate and rotate the teacher seed only through `docs/teacher-provisioning.md`.
 - `REPLICATE_MODEL_VERSION` is a pinned version hash of `ryan5453/demucs`. **Never bump it blind to `latest_version`.** Upstream (`Ryan5453/demucs-next`) has already changed shape at source: its HEAD serves only `htdemucs` (no `htdemucs_ft`, no `htdemucs_6s`) and renamed `output_format` → `format`. That build is not published yet, so the current pin is fine — but the moment it is, a blind bump silently breaks the 4- **and** 6-track splits. To bump: get the candidate hash (`curl -s https://api.replicate.com/v1/models/ryan5453/demucs -H "Authorization: Bearer $TOKEN" | jq -r .latest_version.id`), then **vet it before deploying** with `REPLICATE_MODEL_VERSION=<candidate> bun run check:replicate`, which verifies the candidate still accepts every model id and input key the catalogue sends. Only then `wrangler secret put` and deploy.
 - After changing `PUBLIC_BASE_URL` or webhook logic, redeploy — Replicate posts webhooks to the deployed URL.
 
@@ -73,35 +73,56 @@ Single Cloudflare Worker (Hono, TypeScript) + static assets, D1 for job state, R
 
 `scripts/run-real-audio-e2e.sh` is the *live* browser harness: same Playwright flow, real separation, no mocks. `BACKEND=audio-separator` (default) runs the local Python separator for free; `BACKEND=replicate` runs the paid provider and is the only way to exercise a real YouTube import in the browser. Provider webhooks cannot reach localhost, so a Replicate run there completes through the reconciliation fallback — that is the point, not a workaround. Supply exactly one of `SOURCE_AUDIO` or `YOUTUBE_URL`; no default song ships in the repo.
 
-## Where this runs: Railway for prototyping, Cloudflare for teaching
+## Where this runs now: Railway until the product is finished
 
-Two hosts run the same Hono app, and they are not peers. **Cloudflare Workers is the production target and the only place the class ever points at.** Railway is a prototyping host: fast to redeploy, publicly reachable, and disposable.
+Two hosts can run the same Hono app, but they are not currently peers.
+**Railway's Node host is the active integration, acceptance, and release
+target.** Cloudflare Workers is the deferred finished-product migration; do not
+deploy unfinished work there.
 
 | | **Railway** (`server/`) | **Cloudflare Workers** (`src/`) |
 |---|---|---|
-| Role | dev / rapid prototyping | production, indefinite hosting |
+| Role | active integration and releases | deferred finished-product target |
 | Storage | `node:sqlite` + a volume at `/data` | D1 `stem-splitter` + R2 `stem-splitter-audio` |
 | Deploy | `railway up --detach` | `bun run deploy` |
 | Retention | in-app hourly cleanup | R2 bucket lifecycle rule |
-| Audience | you | students |
+| Audience | current testers and instructors | future class release |
 
-Pick Railway when you want a tight iteration loop or a **publicly reachable origin**. That second property is the one localhost cannot fake: under `LOCAL_HOSTING=true` the Worker hands Replicate an HMAC-signed `/api/local-sources/` URL and expects a webhook back at `/api/webhooks/separation`, and on localhost both are unreachable — those jobs only ever finish through the reconciliation fallback. Railway is therefore the only way to exercise the real webhook and signed-source round trip end to end.
+Use Railway now. Beyond its tight iteration loop, it provides the **publicly
+reachable origin** localhost cannot fake: under `LOCAL_HOSTING=true` the app
+hands Replicate an HMAC-signed `/api/local-sources/` URL and expects a webhook
+back at `/api/webhooks/separation`. On localhost both are unreachable, so jobs
+finish only through reconciliation. Railway exercises the real webhook and
+signed-source round trip end to end.
 
-Pick Cloudflare for anything a student will touch. Its bindings are managed (no volume to lose), the 30-day deletion is enforced by the platform rather than by app code, and it is already provisioned on the ailab account.
+Migrate to Cloudflare only after the user declares the complete product
+finished. Its managed bindings and platform lifecycle policy remain the final
+hosting goal, not the current release path.
 
-**The trap: nothing on Railway promotes itself.** It has its own SQLite database, its own audio volume, and its own `WEBHOOK_SECRET` and `CLASS_CODE` — deliberately different from production's. Jobs, stems, labels, notes, and guides created there **do not exist** in production, and no amount of prototyping moves code, secrets, or schema across. Validating on Railway proves the *logic*; it does not prove the deploy. It also does not exercise Workers' CPU-time and subrequest limits, which a Node process simply doesn't have.
+**The trap: nothing on Railway promotes itself.** It has its own SQLite
+database, audio volume, and secrets. Jobs, stems, labels, notes, prompt history,
+and guides created there will not exist in Cloudflare after migration unless a
+separate data plan handles them. Railway validation proves the current release;
+it does not prove the later Worker migration or its CPU/subrequest limits.
 
-`server/CLAUDE.md` is authoritative for `server/` — the shims, the Railway project setup, and the verify loop. The rule it opens with governs both directories: **`server/` must never require a change to `src/`.** An edit under `src/` to accommodate Node is a bug, because it drifts the prototyping host and the production target apart.
+`server/CLAUDE.md` is authoritative for the active host — the shims, canonical
+Railway service, and verify loop. Its core rule still governs both directories:
+`server/` adapts to `src/`; shared application behavior remains in `src/` so the
+later migration does not fork the product.
 
-### Promoting to Cloudflare before teaching starts
+### Deferred finished-product migration to Cloudflare
 
-Run in order; each step gates the next.
+Do not run this sequence while Railway is the active target. Once the user
+declares the product finished and authorizes migration, run in order; each step
+gates the next.
 
 ```sh
 bun run wrangler -- whoami                            # must be ailab@gc.cuny.edu, else writes fail: Authentication error [10000]
 bun run typecheck && bun run test:worker && bun run test:e2e
 bun run check:replicate                        # pin still accepts every catalogue model id and input key
 bun run wrangler -- deploy --dry-run --outdir dist    # config/bundle validation, no deploy
+bun run db:migrate:4                          # existing D1 only; idempotent
+bun run db:migrate:5                          # prompt history must exist before new code runs
 bun run deploy
 CLASS_CODE=<code> ./scripts/smoke.sh           # against the deployed Worker
 ```

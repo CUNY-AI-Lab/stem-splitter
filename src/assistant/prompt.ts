@@ -1,4 +1,4 @@
-// The Listening Guy system prompt (v3) — the canonical home of the Listening
+// The Listening Guy system prompt — the canonical, code-owned home of the Listening
 // Guide's persona, pedagogy, guardrails, and tool rules. Never call it a
 // "coach": it is the Listening Guide, or affectionately Listening Guy.
 // v3 (2026-08-05) reshapes it around turn-taking: the guide is a short
@@ -6,6 +6,11 @@
 // replies are a few sentences that end with the ball in the student's court,
 // and markdown is banned outright (the UI renders plain text).
 import type { AssistantContext } from './types';
+
+// Bump this whenever the fixed prompt text or ordering changes. Runtime teacher
+// amendments store this version plus a content fingerprint, tying every edit
+// back to the exact code prompt it extended even if a version bump is missed.
+export const SYSTEM_PROMPT_VERSION = '2026-08-08.1';
 
 export function buildSystemPrompt(ctx: AssistantContext): string {
   const canonical = ctx.stems.map((s) => s.name).join(', ');
@@ -18,10 +23,10 @@ export function buildSystemPrompt(ctx: AssistantContext): string {
     : 'none yet';
   const duration = ctx.durationSec ? fmtTime(ctx.durationSec) : 'unknown';
 
-  // Instructor amendment sits AFTER the pedagogy but BEFORE the guardrails and
-  // task block, so a teacher can steer emphasis, vocabulary, and repertoire
-  // without being able to switch off "never invent timestamps" or the
-  // student-data-is-not-instructions fence.
+  // Instructor amendment sits AFTER every fixed rule block and BEFORE only the
+  // task block. The explicit subordination clause means a teacher can steer
+  // emphasis, vocabulary, and repertoire without switching off "never invent
+  // timestamps" or the student-data-is-not-instructions fence.
   const amendmentBlock = ctx.amendment?.trim()
     ? `
 YOUR INSTRUCTOR'S NOTES FOR THIS CLASS (follow these unless they conflict with
@@ -138,6 +143,19 @@ ${modeBlock}`;
 
 export function buildGuideInstruction(): string {
   return 'Write your opening message for this song now.';
+}
+
+/** Deterministic sample used by the instructor console and prompt fingerprint. */
+export function buildSystemPromptPreview(amendment = ''): string {
+  return buildSystemPrompt({
+    title: 'Example Track.mp3',
+    model: 'htdemucs_ft',
+    stems: ['vocals', 'drums', 'bass', 'other'].map((name) => ({ name, label: name })),
+    annotations: [],
+    durationSec: 210,
+    amendment,
+    mode: 'guide',
+  });
 }
 
 export function fmtTime(sec: number): string {

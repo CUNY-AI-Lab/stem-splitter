@@ -53,18 +53,20 @@ schema.sql              D1 schema
 cors.json               R2 CORS rules for direct browser uploads
 ```
 
-## Where this runs: Railway is dev, Cloudflare is production
+## Where this runs now: Railway until the product is finished
 
-Two hosts run the same Hono app, and they are not peers.
+The active integration and release target is the Railway Node host. A later,
+explicit completion milestone will migrate the finished product to Cloudflare
+Workers; do not deploy unfinished work there.
 
-| | **Railway** — dev | **Cloudflare Workers** — production |
+| | **Railway** — active now | **Cloudflare Workers** — deferred migration |
 |---|---|---|
-| Role | prototyping, rapid iteration | the deployment students use |
+| Role | integration, live acceptance, current releases | finished-product target only |
 | Entry point | `server/index.ts` (Node, `tsx`) | `src/index.ts` (Worker) |
 | Storage | `node:sqlite` + a volume at `/data` | D1 `stem-splitter` + R2 `stem-splitter-audio` |
 | Deploy | `railway up --detach -m "<summary>"` | `npm run deploy` |
 | Retention | hourly cleanup in app code | R2 bucket lifecycle rule |
-| Audience | you | the class |
+| Audience | current testers and instructors | future class release |
 
 `server/` adapts *to* `src/` through small D1 and R2 shims and never requires a
 change to it — an edit under `src/` to accommodate Node drifts the two targets
@@ -73,17 +75,21 @@ apart. Reach for Railway when you want a tight loop or, more importantly, a
 post a webhook back, and localhost can satisfy neither, so Railway is the only
 way to exercise that round trip end to end.
 
-**Nothing on Railway promotes itself.** It has its own SQLite database, its own
-audio volume, and its own `WEBHOOK_SECRET` and `CLASS_CODE` — deliberately not
-production's. Jobs, stems, labels, notes, and guides created there do not exist
-in production, and no amount of prototyping moves code, secrets, or schema
-across. Validating on Railway proves the logic; only `npm run deploy` plus the
-checks in `CLAUDE.md` prove the deployment.
+**Nothing on Railway promotes itself to Cloudflare.** It has its own SQLite
+database, audio volume, and secrets. Jobs, stems, labels, notes, prompt history,
+and guides created there will not cross the later platform migration
+automatically. Until the user declares the product finished, Railway is the
+only live release gate and Cloudflare deploy commands are deferred.
 
 `server/CLAUDE.md` is authoritative for the dev host: the shims, the Railway
 project setup, and the post-deploy verify loop.
 
-## Deploying an existing clone (already-provisioned project)
+## Deferred Cloudflare migration (finished product only)
+
+The following setup material is retained for the eventual migration. Do not
+run it while Railway remains the active target.
+
+### Deploying an existing clone (already-provisioned project)
 
 If the Cloudflare resources already exist (this repo's `wrangler.jsonc` is
 already filled in — bucket `stem-splitter-audio`, the D1 database, and the
@@ -96,7 +102,7 @@ To deploy from a fresh clone against the existing infrastructure:
 bun install
 bun run wrangler -- login        # must have access to the account in wrangler.jsonc
 
-# Set the seven secrets (values from whoever owns the deployment):
+# Set the eight secrets (values from whoever owns the deployment):
 bun run wrangler -- secret put R2_ACCESS_KEY_ID
 bun run wrangler -- secret put R2_SECRET_ACCESS_KEY
 bun run wrangler -- secret put REPLICATE_API_TOKEN
@@ -104,15 +110,19 @@ bun run wrangler -- secret put REPLICATE_MODEL_VERSION
 bun run wrangler -- secret put WEBHOOK_SECRET
 bun run wrangler -- secret put CLASS_CODE
 bun run wrangler -- secret put OPENROUTER_API_KEY
+bun run wrangler -- secret put TEACHER_SEED
 
+bun run db:migrate:4
+bun run db:migrate:5
 bun run deploy
 ```
 
 Check what's already set with `bun run wrangler -- secret list`. The R2 bucket
 (CORS + 30-day lifecycle rule) and D1 schema are already applied on the
-account, so the bucket/D1/migration steps below should be skipped.
+account. Skip resource creation, but still apply any numbered migrations that
+have not yet reached remote D1 before deploying code that depends on them.
 
-## Setup (new project from scratch)
+## Deferred Cloudflare setup (new project from scratch)
 
 Prereqs: Bun 1.3.14, Node 22.23.1, a Cloudflare account, and a
 [Replicate](https://replicate.com) account.
@@ -191,7 +201,14 @@ bun run wrangler -- secret put REPLICATE_MODEL_VERSION   # see below
 bun run wrangler -- secret put WEBHOOK_SECRET            # any long random string, e.g. `openssl rand -hex 32`
 bun run wrangler -- secret put CLASS_CODE                # what students type to use the app
 bun run wrangler -- secret put OPENROUTER_API_KEY        # openrouter.ai key — powers Listening Guy
+bun run wrangler -- secret put TEACHER_SEED              # pre-hashed teacher records; see docs/teacher-provisioning.md
 ```
+
+Teacher credentials, authoritative seed reconciliation, and prompt revision
+governance are documented in
+[Teacher provisioning and prompt governance](docs/teacher-provisioning.md).
+Fixed prompt changes are recorded in
+[the Listening Guide prompt changelog](docs/prompt-changelog.md).
 
 Get a candidate Demucs model version hash:
 

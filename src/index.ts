@@ -40,15 +40,22 @@ import {
   validateTurns,
   type GuideRecord,
 } from './assistant';
-import { buildSystemPrompt } from './assistant/prompt';
+import {
+  buildSystemPromptPreview,
+  SYSTEM_PROMPT_VERSION,
+} from './assistant/prompt';
 import {
   clearedSessionCookie,
   cookiesShouldBeSecure,
   createSession,
   destroySession,
   getAmendment,
+  getPromptHistory,
+  hashPrompt,
   MAX_AMENDMENT_CHARS,
+  MAX_CHANGE_NOTE_CHARS,
   normalizeAmendment,
+  normalizeChangeNote,
   readSessionCookie,
   resolveSession,
   sessionCookie,
@@ -253,49 +260,105 @@ app.get('/api/teacher/me', async (c) => {
 
 app.get('/api/teacher/prompt', requireTeacher, async (c) => {
   const record = await getAmendment(c.env);
-  return c.json({ ...record, maxChars: MAX_AMENDMENT_CHARS });
+  const basePrompt = buildSystemPromptPreview();
+  const effectivePrompt = buildSystemPromptPreview(record.amendment);
+  const [basePromptHash, effectivePromptHash, history] = await Promise.all([
+    hashPrompt(basePrompt),
+    hashPrompt(effectivePrompt),
+    getPromptHistory(c.env),
+  ]);
+  return c.json({
+    ...record,
+    maxChars: MAX_AMENDMENT_CHARS,
+    maxChangeNoteChars: MAX_CHANGE_NOTE_CHARS,
+    basePrompt,
+    basePromptVersion: SYSTEM_PROMPT_VERSION,
+    basePromptHash,
+    effectivePromptHash,
+    history,
+  });
 });
 
 app.put('/api/teacher/prompt', requireTeacher, async (c) => {
   const teacher = (await currentTeacher(c))!;
-  const body = (await c.req.json().catch(() => null)) as { amendment?: unknown } | null;
+  const body = (await c.req.json().catch(() => null)) as
+    | { amendment?: unknown; changeNote?: unknown; expectedRevision?: unknown }
+    | null;
 
   const amendment = normalizeAmendment(body?.amendment);
   if (amendment === null) {
     return c.json({ error: `Amendment must be text under ${MAX_AMENDMENT_CHARS} characters.` }, 400);
   }
 
-  const record = await setAmendment(c.env, amendment, teacher.username);
+  const current = await getAmendment(c.env);
+  if (typeof body?.expectedRevision !== 'number' || !Number.isInteger(body.expectedRevision)) {
+    return c.json({ error: 'The prompt revision is required before saving.' }, 400);
+  }
+  if (body.expectedRevision !== current.revision) {
+    return c.json(
+      { error: 'This prompt changed after you opened it. Reload before saving your edit.' },
+      409
+    );
+  }
+
+  const changed = amendment !== current.amendment;
+  const changeNote = changed ? normalizeChangeNote(body?.changeNote) : '';
+  if (changed && changeNote === null) {
+    return c.json(
+      { error: `Describe this change in 1-${MAX_CHANGE_NOTE_CHARS} characters.` },
+      400
+    );
+  }
+
+  const basePrompt = buildSystemPromptPreview();
+  const effectivePrompt = buildSystemPromptPreview(amendment);
+  const [basePromptHash, effectivePromptHash] = await Promise.all([
+    hashPrompt(basePrompt),
+    hashPrompt(effectivePrompt),
+  ]);
+
+  const result = await setAmendment(
+    c.env,
+    amendment,
+    teacher.username,
+    body.expectedRevision,
+    {
+      changeNote: changeNote ?? '',
+      basePromptVersion: SYSTEM_PROMPT_VERSION,
+      basePromptHash,
+      effectivePromptHash,
+    }
+  );
+  if (result.conflict) {
+    return c.json(
+      { error: 'This prompt changed after you opened it. Reload before saving your edit.' },
+      409
+    );
+  }
 
   // Guides are cached per job and were written under the previous prompt, so a
   // stale cache would silently outlive the edit. Clear it; guides regenerate
   // lazily (~$0.005 each) the next time a student opens one.
-  const cleared = await c.env.DB.prepare('DELETE FROM guides').run();
+  const cleared = result.changed
+    ? await c.env.DB.prepare('DELETE FROM guides').run()
+    : null;
   return c.json({
-    ...record,
+    ...result.record,
+    changed: result.changed,
+    revision: result.revision,
     maxChars: MAX_AMENDMENT_CHARS,
-    guidesCleared: cleared.meta?.changes ?? 0,
+    maxChangeNoteChars: MAX_CHANGE_NOTE_CHARS,
+    basePromptVersion: SYSTEM_PROMPT_VERSION,
+    basePromptHash,
+    effectivePromptHash,
+    guidesCleared: cleared?.meta?.changes ?? 0,
   });
 });
 
 /** Preview the exact system prompt the Listening Guide will receive. */
 app.get('/api/teacher/prompt/preview', requireTeacher, async (c) => {
   const { amendment } = await getAmendment(c.env);
-  const model = getSeparationOption(DEFAULT_DEMUCS_MODEL);
-  return c.json({
-    prompt: buildSystemPrompt({
-      title: 'Example Track.mp3',
-      model: DEFAULT_DEMUCS_MODEL,
-      stems: (model?.stems ?? ['vocals', 'drums', 'bass', 'other']).map((name) => ({
-        name,
-        label: name,
-      })),
-      annotations: [],
-      durationSec: 210,
-      amendment,
-      mode: 'guide',
-    }),
-  });
+  return c.json({ prompt: buildSystemPromptPreview(amendment) });
 });
 
 // --- internet archive browse ------------------------------------------

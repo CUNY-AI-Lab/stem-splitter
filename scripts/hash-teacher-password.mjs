@@ -3,7 +3,10 @@
 // disk. The password is read from stdin (not argv, so it stays out of the
 // shell history and the process table).
 //
-//   printf 'the-password' | node scripts/hash-teacher-password.mjs acheca "Agustina Checa"
+//   read -s -p 'Teacher password: ' STEM_SPLITTER_TEACHER_PASSWORD; echo
+//   printf '%s' "$STEM_SPLITTER_TEACHER_PASSWORD" | \
+//     node scripts/hash-teacher-password.mjs acheca "Agustina Checa"
+//   unset STEM_SPLITTER_TEACHER_PASSWORD
 //
 // Collect the printed JSON objects into an array and set it as the
 // TEACHER_SEED secret. The app upserts these rows on boot, so rotating a

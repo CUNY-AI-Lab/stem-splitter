@@ -251,6 +251,9 @@ const splitSummary = document.getElementById('split-summary');
 const engineSummary = document.getElementById('engine-summary');
 let separationOptionsReady;
 let youtubeFetchInProgress = false;
+const AUTO_MODEL = 'auto';
+let catalogueModels = [];
+let catalogueDefaultModel = '';
 
 function selectedModel() {
   return document.querySelector('input[name="stem-model"]:checked')?.value || '';
@@ -261,6 +264,86 @@ async function requireSelectedModel() {
   const model = selectedModel();
   if (!model) throw new Error('Split choices are unavailable. Reload the page and try again.');
   return model;
+}
+
+function fallbackModel() {
+  return (
+    catalogueModels.find((model) => model.id === catalogueDefaultModel) ||
+    catalogueModels.find((model) => model.stems.length === 4) ||
+    catalogueModels[0]
+  );
+}
+
+function classifyAudio(samples, sampleRate) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('/autosplit-worker.js');
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error('Audio analysis timed out'));
+    }, 20_000);
+
+    worker.addEventListener('message', (event) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      if (event.data?.ok) resolve(event.data);
+      else reject(new Error(event.data?.error || 'Audio analysis failed'));
+    }, { once: true });
+    worker.addEventListener('error', () => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error('Audio analysis worker failed'));
+    }, { once: true });
+    worker.postMessage({ samples: samples.buffer, sampleRate }, [samples.buffer]);
+  });
+}
+
+/**
+ * Resolve AUTO before creating a paid separation. Local files are decoded and
+ * classified in a worker. Remote imports cannot be heard by the browser before
+ * job creation, so they use the advertised catalogue default and say so.
+ */
+async function resolveModel(chosen, file, sourceLabel = 'this source') {
+  if (chosen !== AUTO_MODEL) return { model: chosen, note: '' };
+
+  const fallback = fallbackModel();
+  const fallbackId = fallback?.id || '';
+  const fallbackParts = fallback?.stems.length || 4;
+  if (!file) {
+    return {
+      model: fallbackId,
+      note: `AUTO cannot listen to ${sourceLabel} before import — using the ${fallbackParts}-part default.`,
+    };
+  }
+
+  const AudioContextType = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextType || !globalThis.AutoSplit || !window.Worker) {
+    return {
+      model: fallbackId,
+      note: `AUTO is unavailable in this browser — using the ${fallbackParts}-part default.`,
+    };
+  }
+
+  let context;
+  try {
+    showUploadMessage('AUTO IS LISTENING BEFORE THE UPLOAD…');
+    context = new AudioContextType();
+    const buffer = await context.decodeAudioData(await file.arrayBuffer());
+    const samples = AutoSplit.downmix(buffer);
+    const { verdict } = await classifyAudio(samples, buffer.sampleRate);
+    const model = AutoSplit.pickModel(verdict.choice, catalogueModels) || fallbackId;
+    const parts = catalogueModels.find((candidate) => candidate.id === model)?.stems.length;
+    return {
+      model,
+      note: `AUTO CHOSE ${parts || fallbackParts} PARTS — ${verdict.reason.toUpperCase()}.`,
+    };
+  } catch {
+    return {
+      model: fallbackId,
+      note: `AUTO could not read this file — using the ${fallbackParts}-part default.`,
+    };
+  } finally {
+    if (context) void context.close().catch(() => {});
+  }
 }
 
 async function loadSeparationOptions() {
@@ -286,7 +369,10 @@ async function loadSeparationOptions() {
       throw new Error('Split choices response was invalid');
     }
 
+    catalogueModels = options.models;
+    catalogueDefaultModel = options.defaultModel;
     stemChoice.replaceChildren();
+    stemChoice.appendChild(buildAutoOption());
     for (const model of options.models) {
       splitMeta.set(model.id, model);
       stemChoice.appendChild(buildSplitOption(model, model.id === options.defaultModel));
@@ -350,9 +436,51 @@ function buildSplitOption(model, checked) {
   return option;
 }
 
+function buildAutoOption() {
+  const option = document.createElement('label');
+  option.className = 'split-option split-option-auto';
+
+  const input = document.createElement('input');
+  input.type = 'radio';
+  input.name = 'stem-model';
+  input.value = AUTO_MODEL;
+  input.setAttribute('aria-label', 'Auto: listen to a local file and choose 2, 4, or 6 parts');
+
+  const bar = document.createElement('span');
+  bar.className = 'split-bar';
+  bar.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 4; i += 1) {
+    const segment = document.createElement('span');
+    segment.className = 'split-seg';
+    bar.appendChild(segment);
+  }
+
+  const mark = document.createElement('span');
+  mark.className = 'split-mark';
+  mark.setAttribute('aria-hidden', 'true');
+  const count = document.createElement('span');
+  count.className = 'split-count';
+  count.textContent = '?';
+  const word = document.createElement('span');
+  word.className = 'split-word';
+  word.textContent = 'auto';
+
+  const line = document.createElement('span');
+  line.className = 'split-line';
+  line.append(mark, count, word);
+  option.append(input, bar, line);
+  return option;
+}
+
 function renderSplitLegend(models) {
-  const selected = models.find((model) => model.id === selectedModel()) || models[0];
   splitLegend.replaceChildren();
+  if (selectedModel() === AUTO_MODEL) {
+    const item = document.createElement('li');
+    item.textContent = 'listens to local audio, then picks 2, 4, or 6 parts';
+    splitLegend.appendChild(item);
+    return;
+  }
+  const selected = models.find((model) => model.id === selectedModel()) || models[0];
   for (const stem of selected?.stems || []) {
     const item = document.createElement('li');
     item.textContent = stem;
@@ -413,7 +541,9 @@ ytForm.addEventListener('submit', async (e) => {
   showUploadMessage('IMPORTING AUDIO FROM YOUTUBE…');
 
   try {
-    const model = await requireSelectedModel();
+    const chosen = await requireSelectedModel();
+    const { model, note } = await resolveModel(chosen, null, 'YouTube audio');
+    if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({ youtubeUrl: url, model }),
@@ -658,7 +788,9 @@ async function importArchiveTrack(item, track, button) {
   showUploadMessage(`IMPORTING "${track.title}" FROM THE INTERNET ARCHIVE…`);
 
   try {
-    const model = await requireSelectedModel();
+    const chosen = await requireSelectedModel();
+    const { model, note } = await resolveModel(chosen, null, 'Internet Archive audio');
+    if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({ archiveId: item.identifier, archiveFile: track.name, model }),
@@ -687,7 +819,9 @@ async function handleFile(file) {
   showUploadMessage(`UPLOADING ${file.name}…`);
 
   try {
-    const model = await requireSelectedModel();
+    const chosen = await requireSelectedModel();
+    const { model, note } = await resolveModel(chosen, file);
+    if (note) showUploadMessage(note);
     const { key, uploadUrl } = await api('/api/uploads', {
       method: 'POST',
       body: JSON.stringify({ filename: file.name }),
