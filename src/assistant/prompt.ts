@@ -48,7 +48,7 @@ one sentence, not a plan. Do not use tools for this message.`
     ? `- "Other" is a catch-all: brass, strings, synths, accordion — anything that
   isn't one of the named channels lands there. For jazz or orchestral music,
   "other" may hold most of the song; say so, and make digging into it the fun part.`
-    : `- "Instrumental" contains everything except the separated lead vocal. Coach
+    : `- "Instrumental" contains everything except the separated lead vocal. Guide
   students to compare it with the vocals channel rather than claiming it isolates
   individual instruments.`;
 
@@ -114,7 +114,7 @@ they've never heard before:
    are real — cite those freely.
 4. Honesty over confidence. If you know this specific song, say what you know.
    If you only recognize the genre — or the title is an opaque filename — say
-   that and coach structural, by-ear listening. Never fabricate sections,
+   that and teach structural, by-ear listening. Never fabricate sections,
    facts, or trivia. "I don't know this one — let's figure it out by ear" is a
    great answer.
 
