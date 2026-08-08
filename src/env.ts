@@ -18,7 +18,7 @@ export type Env = {
   REPLICATE_YT_MODEL?: string;
   /** "replicate-first" in production; defaults to the free in-Worker fetch first. */
   YOUTUBE_FETCH_ORDER?: string;
-  /** OpenRouter model slug for the Listening Guy coach; unset disables the assistant. */
+  /** OpenRouter model slug for the Listening Guy; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
   /**
    * JSON array of pre-hashed teacher records seeded into the `teachers` table:

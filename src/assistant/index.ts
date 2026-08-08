@@ -174,7 +174,7 @@ export async function streamChat(
   if (!reply.content && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
 
   // Tool-calling models often act without narrating, but the narration IS the
-  // coaching. One cheap tool-free follow-up turns the console moves into prose;
+  // guiding. One cheap tool-free follow-up turns the console moves into prose;
   // if it fails, degrade to action-chips-only rather than failing the request.
   let content = reply.content;
   if (!content && toolCalls.length > 0) {

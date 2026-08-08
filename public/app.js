@@ -138,7 +138,7 @@ async function api(path, options = {}) {
   return body;
 }
 
-// POST to a coach endpoint and consume its SSE stream, calling onEvent for
+// POST to a Listening Guide endpoint and consume its SSE stream, calling onEvent for
 // each `data:` JSON event. Setup failures are plain JSON with a real status;
 // mid-stream failures arrive as {type:'error'} events, which throw here.
 async function streamApi(path, body, onEvent) {
@@ -175,7 +175,7 @@ async function streamApi(path, body, onEvent) {
         } catch {
           continue;
         }
-        if (event.type === 'error') throw new Error(event.message || 'The coach dropped out — try again.');
+        if (event.type === 'error') throw new Error(event.message || 'The Listening Guide dropped out — try again.');
         onEvent(event);
       }
     }
@@ -817,7 +817,7 @@ class Mixer {
           </div>
           <div class="coach-log" role="log" aria-live="polite"></div>
           <form class="coach-form">
-            <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the listening coach" />
+            <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
             <button type="submit">ASK</button>
           </form>
         </div>
@@ -1345,7 +1345,7 @@ class Mixer {
 
   seekTo(t) {
     for (const a of this.audios) {
-      // Seeks can land while paused (coach tool calls do this a lot) — start
+      // Seeks can land while paused (Listening Guide tool calls do this a lot) — start
       // buffering the target region now so play() finds data ready instead of
       // six stems stalling at once.
       if (a.preload !== 'auto') a.preload = 'auto';
@@ -1521,7 +1521,7 @@ class Mixer {
     });
   }
 
-  // Shared by the ＋NOTE form and the coach's add_note tool — both hit the
+  // Shared by the ＋NOTE form and the Listening Guide's add_note tool — both hit the
   // authenticated annotations API and render markers/notes identically.
   async saveNote(atSeconds, text) {
     const note = await api(`/api/jobs/${this.job.id}/annotations`, {
@@ -1774,7 +1774,7 @@ class Mixer {
 
   async executeCall({ name, args }) {
     if (name === 'solo') {
-      // The tool's contract is "every other channel is muted", so the coach
+      // The tool's contract is "every other channel is muted", so the Guide
       // gets the second stage directly — its own words have to stay true.
       if (!this.channelsByName.has(args.stem)) return;
       this.soloState = { stem: args.stem, stage: 'only' };

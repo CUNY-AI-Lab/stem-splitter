@@ -5,7 +5,7 @@ link — and get back isolated stems as MP3s (2-stem vocals / instrumental,
 4-stem adding drums / bass / other, or 6-stem adding guitar + piano), played
 in a synchronized in-browser
 mixer with per-stem mute, shared renameable channel labels, shared timestamped
-notes, and **Listening Guy**: an AI listening coach that writes a per-song
+notes, and **Listening Guy**: the Listening Guide, an AI listening companion that writes a per-song
 listening guide and answers questions in a chat that can drive the mixer
 itself (solo/mute channels, jump the playhead, pin notes for the class).
 
@@ -13,7 +13,7 @@ itself (solo/mute channels, jump the playhead, pin notes for the class).
 fetch) → Cloudflare Worker creates a job (D1) → Replicate runs Demucs on a GPU
 in the mode the selected split calls for → webhook marks the job done →
 student streams MP3 stems from R2 → R2 lifecycle rule deletes everything after
-30 days. The coach runs on OpenRouter (`z-ai/glm-5.2` by default) behind two
+30 days. The Listening Guide runs on OpenRouter (`z-ai/glm-5.2` by default) behind two
 class-code-gated endpoints; guides are generated once per song and cached in
 D1, shared class-wide.
 
@@ -25,7 +25,7 @@ D1, shared class-wide.
   (presigned PUT direct to R2), so there are no Worker body-size issues. The
   explicit local-hosting modes stream browser uploads through the local Worker
   into simulated R2 with fixed-length enforcement.
-- The AI coach is provider-light too: plain `fetch` to OpenRouter, model set by
+- The Listening Guide is provider-light too: plain `fetch` to OpenRouter, model set by
   the `ASSISTANT_MODEL` var — swap to any cheap tool-calling model with a var
   change and a redeploy. If the provider is down or unconfigured, students see
   a friendly notice and the mixer keeps working.
@@ -44,7 +44,7 @@ src/
     replicate.ts        Replicate-hosted Demucs implementation
     modal.ts            Stub for a self-deployed Modal backend
 server/                 Node host for the Railway dev deployment (D1/R2 shims)
-public/                 Static frontend (vanilla JS mixer + coach panel)
+public/                 Static frontend (vanilla JS mixer + Listening Guide panel)
 migrations/             Additive D1 migrations (schema.sql = fresh install)
 scripts/smoke.sh        Smoke checks against the deployed Worker
 replicate-yt-audio/     Replicate-hosted yt-dlp model (YouTube fetch fallback)
@@ -170,8 +170,8 @@ In `wrangler.jsonc`, set:
 - `CF_ACCOUNT_ID` — dashboard sidebar
 - `PUBLIC_BASE_URL` — your Worker URL (you'll know it after the first deploy;
   deploy, then update and deploy again)
-- `ASSISTANT_MODEL` — OpenRouter slug for the Listening Guy coach (default
-  `z-ai/glm-5.2`; remove it to disable the coach entirely)
+- `ASSISTANT_MODEL` — OpenRouter slug for the Listening Guy (default
+  `z-ai/glm-5.2`; remove it to disable the Listening Guide entirely)
 - `REPLICATE_YT_MODEL` — owner/name of a deployed `replicate-yt-audio/` model;
   unset it if you don't need the YouTube-fetch fallback (the free in-Worker
   fetch is usually bot-blocked from Cloudflare egress IPs, so without this
@@ -350,7 +350,7 @@ GPUs):
 
 Nothing else in the app changes.
 
-## Swapping the coach model
+## Swapping the Listening Guide model
 
 `ASSISTANT_MODEL` in `wrangler.jsonc` is an OpenRouter slug; any cheap model
 with function calling works. Change the var and `bun run deploy` — the system

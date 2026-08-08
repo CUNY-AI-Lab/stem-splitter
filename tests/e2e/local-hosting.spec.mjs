@@ -1378,7 +1378,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
 
   // The class code must not open the instructor console: it is a shared secret
-  // every student holds, so it cannot gate what the coach is told to say.
+  // every student holds, so it cannot gate what the Listening Guide is told to say.
   const withClassCode = await server.fetch('http://stem-splitter.test/api/teacher/prompt', {
     headers: { 'x-class-code': CLASS_CODE },
   });

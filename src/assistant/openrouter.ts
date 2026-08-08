@@ -8,8 +8,8 @@ const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const TIMEOUT_MS = 60_000;
 
 export const COACH_DOWN =
-  'The listening coach is unavailable right now — the mixer still works. Try again later.';
-export const COACH_UNCONFIGURED = "The listening coach isn't set up yet — tell your instructor.";
+  'The Listening Guide is unavailable right now — the mixer still works. Try again later.';
+export const COACH_UNCONFIGURED = "The Listening Guide isn't set up yet — tell your instructor.";
 
 /** Errors whose studentMessage is safe to show verbatim (cf. YouTubeError). */
 export class AssistantError extends Error {
@@ -136,13 +136,13 @@ async function openRouterFetch(env: Env, params: OpenRouterParams, stream: boole
   if (!res.ok) {
     console.error('openrouter error', res.status, await res.text().catch(() => ''));
     if (res.status === 401 || res.status === 403) {
-      throw new AssistantError(502, "The listening coach can't sign in — tell your instructor.");
+      throw new AssistantError(502, "The Listening Guide can't sign in — tell your instructor.");
     }
     if (res.status === 402) {
-      throw new AssistantError(502, 'The listening coach is out of credits — tell your instructor.');
+      throw new AssistantError(502, 'The Listening Guide is out of credits — tell your instructor.');
     }
     if (res.status === 429) {
-      throw new AssistantError(503, 'The coach is swamped — try again in a few seconds.');
+      throw new AssistantError(503, 'The Listening Guide is swamped — try again in a few seconds.');
     }
     throw new AssistantError(502, COACH_DOWN);
   }

@@ -1122,7 +1122,7 @@ footer {
   padding: 0.1rem 0 0.1rem 0.75rem;
 }
 
-/* live-stream caret while the coach is still talking */
+/* live-stream caret while the Listening Guide is still talking */
 .coach-guide-text.streaming::after,
 .coach-row.streaming::after {
   content: '▮';
@@ -1208,7 +1208,7 @@ footer {
 .coach-tc:hover { text-decoration: underline; }
 .coach-trim { color: var(--ink-faint); font-size: 0.72rem; }
 
-/* channel strip glow when the coach touches it — uses the strip's own color */
+/* channel strip glow when the Listening Guide touches it — uses the strip's own color */
 @keyframes coach-flash {
   0% { box-shadow: inset 0 0 0 1px var(--ch), 0 0 18px var(--ch); }
   100% { box-shadow: none; }

@@ -1,6 +1,8 @@
-// The Listening Guy system prompt (v3) — the canonical home of the coach's
-// persona, pedagogy, guardrails, and tool rules. v3 (2026-08-05) reshapes the
-// coach around turn-taking: the guide is a short conversation opener, chat
+// The Listening Guy system prompt (v3) — the canonical home of the Listening
+// Guide's persona, pedagogy, guardrails, and tool rules. Never call it a
+// "coach": it is the Listening Guide, or affectionately Listening Guy.
+// v3 (2026-08-05) reshapes it around turn-taking: the guide is a short
+// conversation opener, chat
 // replies are a few sentences that end with the ball in the student's court,
 // and markdown is banned outright (the UI renders plain text).
 import type { AssistantContext } from './types';
@@ -50,7 +52,7 @@ one sentence, not a plan. Do not use tools for this message.`
   students to compare it with the vocals channel rather than claiming it isolates
   individual instruments.`;
 
-  return `You are Listening Guy, the friendly listening coach inside Stem Splitter — a class
+  return `You are Listening Guy, the friendly Listening Guide inside Stem Splitter — a class
 tool where music students split songs into separate instrument channels (stems)
 and explore them in a mixer with per-channel mute, a seek bar, shared channel
 labels, and shared timestamped notes.

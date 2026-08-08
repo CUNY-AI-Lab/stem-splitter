@@ -192,7 +192,7 @@ app.get('/api/local-sources/*', async (c) => {
 // --- teacher backend ---------------------------------------------------
 //
 // Separate from the class code: the class code is a shared secret every
-// student holds, so it cannot gate anything that edits what the coach says.
+// student holds, so it cannot gate anything that edits what the Listening Guide says.
 
 /** Seeding runs at most once per isolate; the seed itself is idempotent. */
 let teacherSeedPromise: Promise<void> | null = null;
@@ -278,7 +278,7 @@ app.put('/api/teacher/prompt', requireTeacher, async (c) => {
   });
 });
 
-/** Preview the exact system prompt the coach will receive. */
+/** Preview the exact system prompt the Listening Guide will receive. */
 app.get('/api/teacher/prompt/preview', requireTeacher, async (c) => {
   const { amendment } = await getAmendment(c.env);
   const model = getSeparationOption(DEFAULT_DEMUCS_MODEL);
@@ -597,7 +597,7 @@ app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c
   return c.json({ ok: true });
 });
 
-// --- listening guy (AI coach) -----------------------------------------
+// --- listening guy (the Listening Guide) -----------------------------------------
 
 // Generate (once) and return the class-shared listening guide, streamed as
 // SSE (`data: {type: delta|done|error}` events); the done event carries the
@@ -615,7 +615,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
   if (row.status !== 'done') {
-    return c.json({ error: "Stems aren't ready yet — the coach needs the finished song." }, 409);
+    return c.json({ error: "Stems aren't ready yet — the Listening Guide needs the finished song." }, 409);
   }
 
   const body = (await c.req.json().catch(() => null)) as { durationSec?: unknown } | null;
@@ -633,7 +633,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   });
 });
 
-// Chat with the coach about one song, streamed as SSE. The conversation lives
+// Chat with the Listening Guide about one song, streamed as SSE. The conversation lives
 // client-side and is resent each call; the reply prose streams as delta
 // events, then validated mixer tool calls (solo / set_mute / seek / add_note)
 // arrive in one tool_calls event for the browser to execute, then done.
@@ -645,7 +645,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
   if (row.status !== 'done') {
-    return c.json({ error: "Stems aren't ready yet — the coach needs the finished song." }, 409);
+    return c.json({ error: "Stems aren't ready yet — the Listening Guide needs the finished song." }, 409);
   }
 
   const body = (await c.req.json().catch(() => null)) as

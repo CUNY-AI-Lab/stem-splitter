@@ -39,7 +39,7 @@
     // Cloudflare egress is usually bot-blocked by YouTube. Start with the
     // authenticated yt-dlp service, then fall back to the in-Worker client.
     "YOUTUBE_FETCH_ORDER": "replicate-first",
-    // OpenRouter model slug for the Listening Guy coach; swap to any cheap
+    // OpenRouter model slug for the Listening Guy; swap to any cheap
     // tool-calling model without code changes. Unset disables the assistant.
     "ASSISTANT_MODEL": "z-ai/glm-5.2"
   }
@@ -52,5 +52,5 @@
   //   AUDIO_SEPARATOR_TOKEN  — bearer token for the self-hosted separator API
   //   WEBHOOK_SECRET         — random string; authenticates Replicate webhooks
   //   CLASS_CODE             — shared code students enter to use the app
-  //   OPENROUTER_API_KEY     — openrouter.ai key for the Listening Guy coach
+  //   OPENROUTER_API_KEY     — openrouter.ai key for the Listening Guy
 }
