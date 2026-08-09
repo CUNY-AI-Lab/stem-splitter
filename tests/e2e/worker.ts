@@ -20,6 +20,30 @@ export default {
       return Response.json({ ok: true });
     }
 
+    if (request.method === 'POST' && url.pathname === '/__e2e/job-analysis') {
+      const body = (await request.json()) as { id?: unknown; analysis?: unknown };
+      if (typeof body.id !== 'string' || !body.id || !body.analysis) {
+        return new Response(null, { status: 400 });
+      }
+      await env.DB.prepare(
+        `INSERT INTO jobs
+          (id, filename, source_key, status, model, routing_request, source_type, analysis)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(
+          body.id,
+          'discovery-e2e.wav',
+          'uploads/e2e/discovery.wav',
+          'done',
+          'htdemucs_6s',
+          'auto',
+          'upload',
+          JSON.stringify(body.analysis)
+        )
+        .run();
+      return Response.json({ ok: true });
+    }
+
     if (request.method === 'POST' && url.pathname === '/__e2e/local-upload') {
       const key = url.searchParams.get('key');
       const declaredLength = url.searchParams.get('declaredLength');

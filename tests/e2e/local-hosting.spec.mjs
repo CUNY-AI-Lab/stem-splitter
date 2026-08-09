@@ -1492,12 +1492,77 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     if (response.status() >= 400) failedRequests.push(`${response.status()} ${new URL(response.url()).pathname}`);
   });
 
+  const analysisJobId = 'teacher-discovery-analysis-e2e';
+  const privateAutoRouting = {
+    schemaVersion: '1',
+    routingRequest: 'auto',
+    sourceType: 'upload',
+    mode: 'authoritative',
+    applied: true,
+    fallbackModel: 'htdemucs_ft',
+    resolvedCoreModel: 'htdemucs_6s',
+    analysis: {
+      schemaVersion: '1',
+      roleClassifier: { version: 'autosplit-role-v3' },
+      vocabularyClassifier: {
+        version: 'laion-larger-clap-music-pairwise-presence-v1@a0b4534a14f58e20944452dff00a22a06ce629d1',
+        weightsSha256: '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1',
+        vocabularyVersion: 'classroom-instruments-v1',
+        vocabularySha256: '72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140',
+      },
+      instrumentDiscovery: {
+        status: 'complete',
+        code: null,
+        totalMs: 120,
+        windowsAnalyzed: 3,
+      },
+      decision: {
+        choice: 'six',
+        resolvedCoreModel: 'htdemucs_6s',
+        confidence: null,
+        features: null,
+        reason: 'reviewed core route',
+      },
+      detectedInstruments: [
+        {
+          id: 'saxophone',
+          label: 'Saxophone',
+          confidence: 0.82,
+          state: 'possible',
+          windowSupport: 2,
+          windowsAnalyzed: 3,
+        },
+      ],
+      timing: { totalMs: 200, analyzedSeconds: 45 },
+      degraded: { active: false, code: null },
+    },
+    comparison: 'unavailable',
+  };
+  const seededAnalysis = await e2eFetch(server, '/__e2e/job-analysis', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: analysisJobId, analysis: privateAutoRouting }),
+  });
+  expect(seededAnalysis.status).toBe(200);
+
+  const studentReadback = await server.fetch(`http://stem-splitter.test/api/jobs/${analysisJobId}`);
+  expect(studentReadback.status).toBe(200);
+  const studentJob = await studentReadback.json();
+  expect(studentJob.autoRouting.resolvedCoreModel).toBe('htdemucs_6s');
+  expect(studentJob.autoRouting.analysis.detectedInstruments).toEqual([]);
+  expect(studentJob.autoRouting.analysis.vocabularyClassifier).toBeUndefined();
+
   // The class code must not open the instructor console: it is a shared secret
   // every student holds, so it cannot gate what the Listening Guide is told to say.
   const withClassCode = await server.fetch('http://stem-splitter.test/api/teacher/prompt', {
     headers: { 'x-class-code': CLASS_CODE },
   });
   expect(withClassCode.status).toBe(401);
+  const analysisWithClassCode = await server.fetch(
+    `http://stem-splitter.test/api/teacher/jobs/${analysisJobId}/analysis`,
+    { headers: { 'x-class-code': CLASS_CODE } }
+  );
+  expect(analysisWithClassCode.status).toBe(401);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#class-code-dialog')).toBeVisible();
@@ -1527,6 +1592,20 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toHaveText('SIGNED IN AS E2E TEACHER');
+
+  const teacherAnalysis = await page.evaluate((jobId) =>
+    fetch(`/api/teacher/jobs/${jobId}/analysis`, { credentials: 'same-origin' }).then(
+      async (response) => ({
+        status: response.status,
+        cacheControl: response.headers.get('cache-control'),
+        body: await response.json(),
+      })
+    ),
+    analysisJobId
+  );
+  expect(teacherAnalysis.status).toBe(200);
+  expect(teacherAnalysis.cacheControl).toBe('no-store');
+  expect(teacherAnalysis.body.autoRouting).toEqual(privateAutoRouting);
 
   // The code-owned prompt is visible and formatted, but never an editable
   // control. It opens at the end and the upward caret jumps to the top.
@@ -1602,6 +1681,13 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
   );
   expect(afterSignOut).toBe(401);
+  const analysisAfterSignOut = await page.evaluate((jobId) =>
+    fetch(`/api/teacher/jobs/${jobId}/analysis`, { credentials: 'same-origin' }).then(
+      (response) => response.status
+    ),
+    analysisJobId
+  );
+  expect(analysisAfterSignOut).toBe(401);
 
   expect(browserErrors).toEqual([]);
   // Every non-2xx should be one of the auth checks this test intentionally makes.

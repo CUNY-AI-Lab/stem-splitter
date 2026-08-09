@@ -1,0 +1,6 @@
+**
+!instrument-discovery/
+!instrument-discovery/*.py
+!instrument-discovery/pyproject.toml
+!instrument-discovery/uv.lock
+!instrument-discovery/vocabulary.json

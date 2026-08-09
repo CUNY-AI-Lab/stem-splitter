@@ -38,12 +38,16 @@ export function youtubeImportStatus(env: RuntimeConfig): OptionalServiceConfigur
 }
 
 export function audioAnalysisStatus(env: RuntimeConfig): OptionalServiceConfigurationStatus {
-  const url = env.AUDIO_ANALYSIS_URL?.trim() ?? '';
-  const token = env.AUDIO_ANALYSIS_TOKEN?.trim() ?? '';
+  const url = env.AUDIO_ANALYSIS_URL ?? '';
+  const token = env.AUDIO_ANALYSIS_TOKEN ?? '';
   const count = [url, token].filter(Boolean).length;
   if (count === 0) return 'unconfigured';
   if (count < 2) return 'incomplete';
-  if (token.length < 32 || /[\u0000-\u001f\u007f]/.test(token)) return 'invalid';
+  if (
+    token.length < 32 ||
+    token !== token.trim() ||
+    /\s|[\u0000-\u001f\u007f]/.test(token)
+  ) return 'invalid';
   try {
     audioAnalysisEndpoint(url);
     return 'configured';

@@ -11,8 +11,9 @@ Do not provision the service until all of these are true:
 
 - the branch is committed and its source, analysis-service, flags-off, and
   authoritative-mock suites pass;
-- the current digest-pinned image builds on amd64 and reports FFmpeg `8.0.3`
-  plus `autosplit-role-v3` from `/readyz`;
+- the current digest-pinned image builds on a native amd64 CI runner, passes its
+  runtime decoder allowlist, and reports FFmpeg `8.0.3` plus
+  `autosplit-role-v3` from `/readyz`;
 - a rollback baseline has recorded one authorized four-track job, output
   hashes, latency, and exact Replicate versions;
 - the canonical app service has an exact `REPLICATE_YT_MODEL_VERSION` staged
@@ -55,6 +56,16 @@ environment as `stem-splitter`.
 Railway private networking is automatic within one project/environment, uses
 the service's `*.railway.internal` name, and does not require a public domain.
 
+Phase 2 adds a second private service named `instrument-discovery`, but only
+after Phase 1 shadow acceptance. Build it from the repository root with
+`build.dockerfilePath=instrument-discovery/Dockerfile`. Give it no domain and
+no volume; the exact model snapshot is baked into the image and runtime hub
+access is disabled. Start with one replica, one-request concurrency, 2 vCPU,
+and 4 GiB RAM. Those are conservative test caps, not accepted sizing. The
+776 MB weight file, loaded model, resampling workspace, cold start, and peak
+RSS must be measured before any flag changes. Use `/readyz` as its deployment
+healthcheck so a missing hash-pinned model cannot be promoted.
+
 ## Variables
 
 Create one long random token of at least 32 non-control characters as a sealed
@@ -71,11 +82,29 @@ committed file or print it during verification.
 | `AUDIO_ANALYSIS_MAX_CONCURRENCY` | `1` |
 | `AUDIO_ANALYSIS_MAX_SOURCE_BYTES` | `104857600` |
 | `AUDIO_ANALYSIS_MAX_SOURCE_SECONDS` | `900` |
-| `AUDIO_ANALYSIS_FETCH_TIMEOUT_MS` | `10000` |
-| `AUDIO_ANALYSIS_DECODER_TIMEOUT_MS` | `10000` |
+| `AUDIO_ANALYSIS_FETCH_TIMEOUT_MS` | `10000` in Phase 1; change to `5000` before Phase 2 shadow |
+| `AUDIO_ANALYSIS_DECODER_TIMEOUT_MS` | `10000` in Phase 1; change to `8000` before Phase 2 shadow |
+| `INSTRUMENT_DISCOVERY_URL` | leave absent in Phase 1; later `http://${{instrument-discovery.RAILWAY_PRIVATE_DOMAIN}}:${{instrument-discovery.PORT}}` |
+| `INSTRUMENT_DISCOVERY_TOKEN` | leave absent in Phase 1; later a distinct sealed shared-variable reference |
+| `INSTRUMENT_DISCOVERY_TIMEOUT_MS` | `12000` when the Phase 2 service is staged |
 
 The image already pins `AUDIO_ANALYSIS_EXPECTED_FFMPEG_VERSION=8.0.3`. Do not
 override it in Railway.
+
+### Phase 2 `instrument-discovery` service (do not stage during Phase 1)
+
+| Variable | Initial value/posture |
+|---|---|
+| `PORT` | `8080` |
+| `INSTRUMENT_DISCOVERY_TOKEN` | distinct sealed shared-variable reference shared only with `audio-analysis` |
+| `INSTRUMENT_DISCOVERY_MAX_CONCURRENCY` | `1` |
+| `INSTRUMENT_DISCOVERY_TORCH_THREADS` | `1` |
+
+Do not override the baked model or vocabulary paths. The image pins Python,
+uv, every Python package, the Hugging Face revision, model-weight SHA-256,
+prompt/scoring policy, and vocabulary content SHA-256. It downloads the model
+only while building and forces Hugging Face and Transformers offline at
+runtime.
 
 ### `stem-splitter` app service
 
@@ -83,7 +112,7 @@ override it in Railway.
 |---|---|
 | `AUDIO_ANALYSIS_URL` | `http://${{audio-analysis.RAILWAY_PRIVATE_DOMAIN}}:${{audio-analysis.PORT}}` |
 | `AUDIO_ANALYSIS_TOKEN` | the same sealed shared-variable reference |
-| `AUDIO_ANALYSIS_TIMEOUT_MS` | `25000` |
+| `AUDIO_ANALYSIS_TIMEOUT_MS` | `25000` in Phase 1; change to `30000` before Phase 2 shadow |
 | `SERVER_AUTO_ENABLED` | `false` |
 | `SERVER_AUTO_MODE` | `off` |
 | `INSTRUMENT_DISCOVERY_ENABLED` | `false` |
@@ -134,6 +163,19 @@ argument; use a sealed shared variable and stdin.
    raw feature diagnostics local and do not store source URLs or signatures.
 8. Restart both Railway services and repeat readiness plus one shadow job.
 
+For the later Phase 2 gate, deploy `instrument-discovery` before adding its
+three analyzer variables and keep `INSTRUMENT_DISCOVERY_ENABLED=false` on the
+app throughout. Before any teacher-shadow request, change the analyzer fetch
+and decoder timeouts to 5,000 and 8,000 ms and the app timeout to 30,000 ms.
+Together with the 12,000 ms discovery timeout, the analyzer's bounded phases
+total 25,000 ms, leaving the outer request time to return a discovery-only
+failure without discarding the core result. Require `/readyz` to report the
+exact classifier, weight, vocabulary version, and vocabulary hash; require
+unauthenticated and contract-mismatched PCM requests to fail. Then exercise
+one-, two-, and three-window
+authorized fixtures, a transient-only instrument, timeout, OOM/resource caps,
+restart, and analyzer fallback before a teacher-shadow proposal is reviewed.
+
 ## Rollback
 
 The immediate rollback is `SERVER_AUTO_ENABLED=false` on the app, followed by
@@ -141,6 +183,11 @@ verified app readback. This returns all production routing to the frozen
 explicit/browser behavior without a schema rollback or analysis-service
 deletion. Preserve the analyzer deployment and logs for diagnosis unless the
 user separately approves removal.
+
+Discovery has its own earlier kill switch: keep or restore
+`INSTRUMENT_DISCOVERY_ENABLED=false`. That stops all discovery requests without
+changing server Auto, the analyzer, stored core decisions, or 2/4/6 jobs. Do
+not combine that rollback with a role-classifier or separator release.
 
 Authoritative mode is not part of initial provisioning. It requires the pinned
 image, private-service resource tests, real-audio listening, restart,

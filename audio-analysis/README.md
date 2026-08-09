@@ -11,7 +11,8 @@ false until the deterministic parity manifest and live Railway shadow gate pass.
 
 ## Required configuration
 
-- `AUDIO_ANALYSIS_TOKEN`: private bearer token, at least 32 characters.
+- `AUDIO_ANALYSIS_TOKEN`: private bearer token, at least 32 non-whitespace
+  characters.
 - `AUDIO_ANALYSIS_SOURCE_ORIGINS`: comma-separated exact HTTPS origins the
   analyzer may fetch, normally only the active `stem-splitter` Railway origin.
 
@@ -19,10 +20,31 @@ Optional bounded settings are `AUDIO_ANALYSIS_MAX_CONCURRENCY` (1–4, default
 1), `AUDIO_ANALYSIS_MAX_SOURCE_BYTES` (maximum 100 MiB),
 `AUDIO_ANALYSIS_MAX_SOURCE_SECONDS` (maximum 900),
 `AUDIO_ANALYSIS_FETCH_TIMEOUT_MS`, and `AUDIO_ANALYSIS_DECODER_TIMEOUT_MS`.
-The two phase timeouts may total at most 28 seconds; keep the app's
-`AUDIO_ANALYSIS_TIMEOUT_MS` above their expected total (plus network overhead)
+Without discovery, the two core phase timeouts may total at most 28 seconds.
+Once discovery is configured, all three timeouts together must remain at or
+below 28 seconds; an over-budget discovery configuration stays fail-lazy and
+is reported as invalid without taking down core analysis. Keep the app's
+`AUDIO_ANALYSIS_TIMEOUT_MS` above that total plus network/classifier overhead,
 without exceeding the app's 30-second cap.
 `AUDIO_ANALYSIS_ALLOW_HTTP=true` exists only for isolated local tests.
+
+Instrument discovery is an optional second private-service hop. It stays
+fail-lazy even when partly or incorrectly configured:
+
+- `INSTRUMENT_DISCOVERY_URL`: loopback or the root origin of a
+  `*.railway.internal` service only;
+- `INSTRUMENT_DISCOVERY_TOKEN`: a separate bearer token of at least 32 safe
+  characters;
+- `INSTRUMENT_DISCOVERY_TIMEOUT_MS`: 1,000–20,000 ms, default 12,000.
+
+The recommended Phase 2 budget is 5,000 ms fetch + 8,000 ms decode + 12,000 ms
+discovery, with the app's outer timeout set to 30,000 ms. That leaves discovery
+time to fail on its own boundary and return the already-computed core decision.
+
+The analyzer sends only its bounded 22,050 Hz mono f32le windows—not the
+source URL, filename, class code, job id, or storage credential. Discovery is
+called only when the app's separately compiled false-default flag requests it.
+Its success or failure cannot change the role classifier's core decision.
 
 `GET /healthz` proves the process is alive. `GET /readyz` returns 200 only when
 configuration, the exact FFmpeg/ffprobe pin, and the role classifier are usable.
@@ -34,6 +56,7 @@ the source URL, token, audio, or raw PCM.
 ```sh
 npm run typecheck:analysis
 npm run test:analysis-service
+npm run test:instrument-discovery
 npm run eval:auto
 npm run eval:auto:browser
 ```

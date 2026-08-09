@@ -4,10 +4,11 @@ import { httpAudioAnalysisProvider } from './http.ts';
 
 export * from './types.ts';
 export { resolveAutoRouting } from './routing.ts';
+export { redactInstrumentDiscovery } from './redaction.ts';
 
 export function configuredAudioAnalysisProvider(env: Env) {
-  const url = env.AUDIO_ANALYSIS_URL?.trim();
-  const token = env.AUDIO_ANALYSIS_TOKEN?.trim();
+  const url = env.AUDIO_ANALYSIS_URL;
+  const token = env.AUDIO_ANALYSIS_TOKEN;
   if (!url || !token) return null;
   try {
     return httpAudioAnalysisProvider(url, token);

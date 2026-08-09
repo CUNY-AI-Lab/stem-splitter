@@ -58,11 +58,17 @@ RUN curl --fail --location --proto '=https' --tlsv1.2 \
   && /opt/ffmpeg/bin/ffmpeg -version | head -1 | grep -F "ffmpeg version ${FFMPEG_VERSION}" \
   && /opt/ffmpeg/bin/ffprobe -version | head -1 | grep -F "ffprobe version ${FFMPEG_VERSION}"
 
-FROM oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97086da773f821d7d0477435ea04 AS dependencies
+FROM oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97086da773f821d7d0477435ea04 AS application-build
 
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
+COPY audio-analysis/app.ts audio-analysis/classifier.ts audio-analysis/config.ts ./audio-analysis/
+COPY audio-analysis/decoder.ts audio-analysis/discovery.ts audio-analysis/process.ts audio-analysis/request.ts ./audio-analysis/
+COPY audio-analysis/server.ts audio-analysis/source.ts ./audio-analysis/
+COPY public/autosplit.js ./public/autosplit.js
+COPY src/analysis/types.ts ./src/analysis/types.ts
+RUN bun build audio-analysis/server.ts --target=node --format=esm --outfile=dist/server.mjs
 
 FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
 
@@ -71,14 +77,9 @@ LABEL org.opencontainers.image.title="STEM Splitter audio analysis" \
       org.opencontainers.image.source="https://github.com/CUNY-AI-Lab/stem-splitter"
 
 WORKDIR /app
-COPY --from=ffmpeg-build /opt/ffmpeg /opt/ffmpeg
-COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node package.json ./
-COPY --chown=node:node audio-analysis/app.ts audio-analysis/classifier.ts audio-analysis/config.ts ./audio-analysis/
-COPY --chown=node:node audio-analysis/decoder.ts audio-analysis/process.ts audio-analysis/request.ts ./audio-analysis/
-COPY --chown=node:node audio-analysis/server.ts audio-analysis/source.ts ./audio-analysis/
-COPY --chown=node:node public/autosplit.js ./public/autosplit.js
-COPY --chown=node:node src/analysis/types.ts ./src/analysis/types.ts
+COPY --from=ffmpeg-build /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffmpeg
+COPY --from=ffmpeg-build /opt/ffmpeg/bin/ffprobe /opt/ffmpeg/bin/ffprobe
+COPY --from=application-build --chown=node:node /app/dist/server.mjs ./dist/server.mjs
 
 ENV NODE_ENV=production \
     PATH="/opt/ffmpeg/bin:${PATH}" \
@@ -90,4 +91,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-CMD ["node", "--max-old-space-size=256", "--import", "tsx", "audio-analysis/server.ts"]
+CMD ["node", "--max-old-space-size=256", "dist/server.mjs"]

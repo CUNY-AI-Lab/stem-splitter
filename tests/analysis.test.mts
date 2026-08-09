@@ -3,12 +3,18 @@ import test from 'node:test';
 import {
   degradedAnalysis,
   parseAudioAnalysisResult,
+  parseAutoRoutingDecision,
   parseBrowserAutoSummary,
 } from '../src/analysis/contract.ts';
 import { resolveAutoRouting } from '../src/analysis/routing.ts';
 import { httpAudioAnalysisProvider } from '../src/analysis/http.ts';
 import { configuredAudioAnalysisProvider } from '../src/analysis/index.ts';
+import { redactInstrumentDiscovery } from '../src/analysis/redaction.ts';
 import {
+  PINNED_INSTRUMENT_CLASSIFIER_VERSION,
+  PINNED_INSTRUMENT_MODEL_SHA256,
+  PINNED_INSTRUMENT_VOCABULARY_SHA256,
+  PINNED_INSTRUMENT_VOCABULARY_VERSION,
   PINNED_ROLE_CLASSIFIER_VERSION,
   type AudioAnalysisProvider,
 } from '../src/analysis/types.ts';
@@ -22,7 +28,18 @@ function validAnalysis(model = 'htdemucs_6s') {
   return {
     schemaVersion: '1',
     roleClassifier: { version: PINNED_ROLE_CLASSIFIER_VERSION },
-    vocabularyClassifier: { version: 'clap-music-2026-08', vocabularyVersion: 'classroom-v1' },
+    vocabularyClassifier: {
+      version: PINNED_INSTRUMENT_CLASSIFIER_VERSION,
+      weightsSha256: PINNED_INSTRUMENT_MODEL_SHA256,
+      vocabularyVersion: PINNED_INSTRUMENT_VOCABULARY_VERSION,
+      vocabularySha256: PINNED_INSTRUMENT_VOCABULARY_SHA256,
+    },
+    instrumentDiscovery: {
+      status: 'complete',
+      code: null,
+      totalMs: 40,
+      windowsAnalyzed: 3,
+    },
     decision: {
       choice: model === 'htdemucs_6s' ? 'six' : 'four',
       resolvedCoreModel: model,
@@ -36,7 +53,16 @@ function validAnalysis(model = 'htdemucs_6s') {
       },
       reason: 'plucked or hammered pitched layers — 6 parts can pull them out',
     },
-    detectedInstruments: [{ id: 'saxophone', label: 'Saxophone', confidence: 0.82 }],
+    detectedInstruments: [
+      {
+        id: 'saxophone',
+        label: 'Saxophone',
+        confidence: 0.82,
+        state: 'possible',
+        windowSupport: 2,
+        windowsAnalyzed: 3,
+      },
+    ],
     timing: { totalMs: 84, analyzedSeconds: 45 },
     degraded: { active: false, code: null },
   };
@@ -47,7 +73,14 @@ test('analysis v1 accepts pinned, versioned metadata without routing a detection
   assert.equal(result.decision.resolvedCoreModel, 'htdemucs_6s');
   assert.equal(result.decision.confidence, null, 'v1 may say confidence is not calibrated');
   assert.deepEqual(result.detectedInstruments, [
-    { id: 'saxophone', label: 'Saxophone', confidence: 0.82 },
+    {
+      id: 'saxophone',
+      label: 'Saxophone',
+      confidence: 0.82,
+      state: 'possible',
+      windowSupport: 2,
+      windowsAnalyzed: 3,
+    },
   ]);
   assert.equal(allowed.has(result.detectedInstruments[0].id), false, 'a label is not a core model');
 });
@@ -58,7 +91,7 @@ test('disabled discovery strips classifier labels and vocabulary metadata', () =
   assert.equal(result.vocabularyClassifier, undefined);
 });
 
-test('analysis v1 rejects schema drift, floating pins, unsupported models, and duplicate labels', () => {
+test('analysis v1 rejects core schema drift, floating pins, and unsupported models', () => {
   assert.throws(
     () =>
       parseAudioAnalysisResult(
@@ -101,22 +134,6 @@ test('analysis v1 rejects schema drift, floating pins, unsupported models, and d
         true
       ),
     /decision/
-  );
-  assert.throws(
-    () =>
-      parseAudioAnalysisResult(
-        {
-          ...validAnalysis(),
-          detectedInstruments: [
-            { id: 'saxophone', label: 'Saxophone', confidence: 0.8 },
-            { id: 'saxophone', label: 'Sax', confidence: 0.7 },
-          ],
-        },
-        models,
-        'htdemucs_ft',
-        true
-      ),
-    /duplicated/
   );
 });
 
@@ -190,12 +207,36 @@ test('analysis v1 rejects contradictions between choice, model contract, and fal
   );
 });
 
-test('analysis v1 rejects unversioned detections and work beyond the bounded window', () => {
+test('analysis v1 quarantines invalid discovery without rejecting the core decision', () => {
   const { vocabularyClassifier: _removed, ...unversioned } = validAnalysis();
-  assert.throws(
-    () => parseAudioAnalysisResult(unversioned, models, 'htdemucs_ft', true),
-    /pinned vocabulary classifier/
+  const unversionedResult = parseAudioAnalysisResult(unversioned, models, 'htdemucs_ft', true);
+  assert.equal(unversionedResult.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.deepEqual(unversionedResult.detectedInstruments, []);
+  assert.deepEqual(unversionedResult.instrumentDiscovery, {
+    status: 'unavailable',
+    code: 'discovery_contract_invalid',
+    totalMs: 0,
+    windowsAnalyzed: 0,
+  });
+
+  const duplicateResult = parseAudioAnalysisResult(
+    {
+      ...validAnalysis(),
+      detectedInstruments: [
+        ...validAnalysis().detectedInstruments,
+        { ...validAnalysis().detectedInstruments[0], label: 'Sax' },
+      ],
+    },
+    models,
+    'htdemucs_ft',
+    true
   );
+  assert.equal(duplicateResult.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(duplicateResult.instrumentDiscovery?.code, 'discovery_contract_invalid');
+  assert.deepEqual(duplicateResult.detectedInstruments, []);
+});
+
+test('analysis v1 still rejects core work beyond the bounded audio window', () => {
   assert.throws(
     () =>
       parseAudioAnalysisResult(
@@ -206,6 +247,37 @@ test('analysis v1 rejects unversioned detections and work beyond the bounded win
       ),
     /timing/
   );
+});
+
+test('an explicit discovery outage preserves the core decision and its own failure trace', () => {
+  const {
+    vocabularyClassifier: _removedVocabulary,
+    instrumentDiscovery: _removedTrace,
+    ...base
+  } = validAnalysis();
+  const result = parseAudioAnalysisResult(
+    {
+      ...base,
+      instrumentDiscovery: {
+        status: 'unavailable',
+        code: 'discovery_timeout',
+        totalMs: 30_000,
+        windowsAnalyzed: 0,
+      },
+      detectedInstruments: [],
+    },
+    models,
+    'htdemucs_ft',
+    true
+  );
+  assert.equal(result.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.deepEqual(result.instrumentDiscovery, {
+    status: 'unavailable',
+    code: 'discovery_timeout',
+    totalMs: 30_000,
+    windowsAnalyzed: 0,
+  });
+  assert.deepEqual(result.detectedInstruments, []);
 });
 
 test('browser Auto summaries are bounded and must resolve to a concrete contract', () => {
@@ -300,6 +372,99 @@ test('authoritative Auto applies a valid core recommendation', async () => {
   assert.equal(route.applied, true);
   assert.equal(route.sourceType, 'youtube');
   assert.equal(route.analysis.detectedInstruments[0].id, 'saxophone');
+});
+
+test('persisted Auto routing is normalized before teacher or student readback', async () => {
+  const route = await resolveAutoRouting({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'archive',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider(validAnalysis('htdemucs_6s')),
+    timeoutMs: 15_000,
+    instrumentDiscovery: true,
+  });
+  assert.deepEqual(parseAutoRoutingDecision(JSON.parse(JSON.stringify(route)), models), route);
+
+  assert.throws(
+    () => parseAutoRoutingDecision({ ...route, unexpected: 'stored drift' }, models),
+    /stored Auto routing decision/
+  );
+  assert.throws(
+    () => parseAutoRoutingDecision({ ...route, applied: false }, models),
+    /authoritative routing/
+  );
+  assert.throws(
+    () => parseAutoRoutingDecision({ ...route, resolvedCoreModel: 'auto' }, models),
+    /routing model/
+  );
+});
+
+test('persisted malformed discovery is quarantined without losing its valid core route', async () => {
+  const route = await resolveAutoRouting({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'youtube',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider(validAnalysis('htdemucs_6s')),
+    timeoutMs: 15_000,
+    instrumentDiscovery: true,
+  });
+  const parsed = parseAutoRoutingDecision(
+    {
+      ...route,
+      analysis: { ...route.analysis, instrumentDiscovery: { status: 'complete' } },
+    },
+    models
+  );
+  assert.equal(parsed.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(parsed.applied, true);
+  assert.equal(parsed.analysis.instrumentDiscovery?.code, 'discovery_contract_invalid');
+  assert.deepEqual(parsed.analysis.detectedInstruments, []);
+});
+
+test('malformed advisory discovery cannot change an authoritative core recommendation', async () => {
+  const route = await resolveAutoRouting({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'youtube',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider({ ...validAnalysis(), instrumentDiscovery: { status: 'complete' } }),
+    timeoutMs: 15_000,
+    instrumentDiscovery: true,
+  });
+  assert.equal(route.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(route.applied, true);
+  assert.equal(route.analysis.degraded.active, false);
+  assert.equal(route.analysis.instrumentDiscovery?.code, 'discovery_contract_invalid');
+  assert.deepEqual(route.analysis.detectedInstruments, []);
+});
+
+test('student redaction is non-mutating and removes discovery labels and private pins', async () => {
+  const route = await resolveAutoRouting({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'upload',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider(validAnalysis('htdemucs_6s')),
+    timeoutMs: 15_000,
+    instrumentDiscovery: true,
+  });
+  const studentRoute = redactInstrumentDiscovery(route);
+  assert.equal(studentRoute.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(studentRoute.analysis.vocabularyClassifier, undefined);
+  assert.deepEqual(studentRoute.analysis.detectedInstruments, []);
+  assert.equal(studentRoute.analysis.instrumentDiscovery?.status, 'complete');
+  assert.equal(route.analysis.detectedInstruments[0].id, 'saxophone');
+  assert.equal(route.analysis.vocabularyClassifier?.weightsSha256, PINNED_INSTRUMENT_MODEL_SHA256);
 });
 
 test('missing, failed, malformed, and service-degraded analysis all preserve the four-track fallback', async () => {
@@ -502,4 +667,17 @@ test('invalid analysis service configuration fails closed instead of throwing du
     } as never),
     null
   );
+  for (const [url, token] of [
+    [' https://analysis.test', TEST_ANALYSIS_TOKEN],
+    ['https://analysis.test ', TEST_ANALYSIS_TOKEN],
+    ['https://analysis.test', `${TEST_ANALYSIS_TOKEN.slice(0, 16)} ${TEST_ANALYSIS_TOKEN.slice(16)}`],
+  ]) {
+    assert.equal(
+      configuredAudioAnalysisProvider({
+        AUDIO_ANALYSIS_URL: url,
+        AUDIO_ANALYSIS_TOKEN: token,
+      } as never),
+      null
+    );
+  }
 });

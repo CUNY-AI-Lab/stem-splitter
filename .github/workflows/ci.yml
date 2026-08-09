@@ -38,6 +38,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Install Python dependencies
         run: uv sync --project local-separator --locked
+      - name: Verify instrument-discovery dependency lock
+        run: uv lock --check --project instrument-discovery
       - name: Install Chrome for Playwright
         run: bun run playwright -- install --with-deps chrome
       - name: Run unit and Python tests
@@ -62,6 +64,72 @@ jobs:
           persist-credentials: false
       - name: Build current audio-analysis source
         run: docker build --file audio-analysis/Dockerfile --tag stem-splitter-audio-analysis:ci .
+      - name: Verify runtime identity, surface, and size
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=stem-splitter-audio-analysis:ci
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = 'node'
+          test "$(docker image inspect --format '{{json .Config.Cmd}}' "$image")" = '["node","--max-old-space-size=256","dist/server.mjs"]'
+
+          image_size="$(docker image inspect --format '{{.Size}}' "$image")"
+          if (( image_size > 251658240 )); then
+            printf 'audio-analysis image exceeds the 240 MiB gate: %s bytes\n' "$image_size" >&2
+            exit 1
+          fi
+
+          docker run --rm "$image" node -e '
+            const { readdirSync } = require("node:fs");
+            if (process.getuid() === 0) throw new Error("runtime is root");
+            const app = readdirSync("/app", { recursive: true }).sort();
+            const expected = ["dist", "dist/server.mjs"];
+            if (JSON.stringify(app) !== JSON.stringify(expected)) {
+              throw new Error(`unexpected /app runtime surface: ${JSON.stringify(app)}`);
+            }
+          '
+      - name: Verify the runtime decoder allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=stem-splitter-audio-analysis:ci
+          protocols="$(docker run --rm "$image" ffmpeg -hide_banner -protocols 2>&1)"
+          enabled_protocols="$(
+            printf '%s\n' "$protocols" |
+              awk '/^  [[:alnum:]_]+$/ { print $1 }' |
+              sort -u |
+              paste -sd' ' -
+          )"
+          test "$enabled_protocols" = 'file pipe'
+
+          demuxers="$(docker run --rm "$image" ffmpeg -hide_banner -demuxers 2>&1)"
+          enabled_demuxers="$(
+            printf '%s\n' "$demuxers" |
+              awk '$1 == "D" { print $2 }' |
+              sort |
+              paste -sd' ' -
+          )"
+          test "$enabled_demuxers" = 'aiff flac mov,mp4,m4a,3gp,3g2,mj2 mp3 ogg wav'
+
+          decoders="$(docker run --rm "$image" ffmpeg -hide_banner -decoders 2>&1)"
+          if printf '%s\n' "$decoders" | awk '
+            $1 == "------" { components = 1; next }
+            components && $1 ~ /^[VS]/ { forbidden = 1 }
+            END { exit forbidden ? 0 : 1 }
+          '; then
+            printf '%s\n' 'unexpected video or subtitle decoder in audio-analysis image' >&2
+            exit 1
+          fi
+
+          decoded_bytes="$(
+            docker run --rm \
+              --volume "$PWD/tests/fixtures/audio/source.wav:/tmp/source.wav:ro" \
+              "$image" \
+              ffmpeg -v error -nostdin -i /tmp/source.wav -t 1 \
+                -map 0:a:0 -vn -ac 1 -ar 22050 -acodec pcm_f32le -f f32le pipe:1 |
+              wc -c |
+              tr -d '[:space:]'
+          )"
+          test "$decoded_bytes" = '88200'
       - name: Verify readiness pins and authentication boundary
         shell: bash
         run: |

@@ -40,6 +40,17 @@ seconds across beginning/middle/end windows.
 
 Summary: 8 preferred, 3 accepted alternatives, 0 rejected.
 
+## Pinned-image reproduction
+
+The minimized role-v3 container was built locally for `linux/amd64` and run
+under emulation with the deployment pin, FFmpeg 8.0.3. It repeated the exact
+table above: 8 preferred, 3 accepted alternatives, and 0 rejected. Runtime
+inspection found only the six advertised demuxer families, audio decoders, and
+file/pipe protocols. The bundled service also decoded WAV, MP3, FLAC, AAC-M4A,
+ALAC-M4A, Vorbis-OGG, Opus-OGG, and AIFF through its authenticated HTTP path.
+This closes the local pinned-decoder compatibility question; it does not
+substitute for a native CI build, Railway resource testing, or listening.
+
 ## Real-browser comparison
 
 The same eleven files were decoded through Headless Chrome 151.0.7922.76's Web Audio
@@ -66,9 +77,9 @@ the original MP3s independently.
 
 ## Gates still open
 
-- The target service image pins FFmpeg 8.0.3, not the local 8.1.2 used here.
-  The current v3 source must build and repeat the corpus inside that image and
-  on Railway's amd64 architecture.
+- The local `linux/amd64` image passed under emulation, but the exact build and
+  runtime checks must still pass on a native GitHub runner and Railway with
+  measured CPU, memory, child-process, concurrency, timeout, and disk behavior.
 - The 1.0/s threshold has a narrow observed margin: synthwave was 0.958/s and
   electronic-stiff-hand was 0.935/s. The pinned decoder and another browser or
   platform could still expose a boundary crossing.
@@ -80,8 +91,8 @@ the original MP3s independently.
   whether four tracks preserve programmed rhythm/synth bass and whether six
   incorrectly promotes generic synth content into guitar or piano.
 - Server authority, paid separation, and live rollout remain off until the
-  pinned-image, listening, Railway shadow, outage, timeout, and rollback gates
-  in `TODO.md` pass.
+  native-image, listening, Railway shadow, outage, timeout, resource, and
+  rollback gates in `TODO.md` pass.
 - Browser resampling and classification are bounded in a worker, authoritative
   mode performs no Web Audio decode, and advisory mode has duration/byte caps.
   Those proxies still cannot exactly constrain exotic high-rate or

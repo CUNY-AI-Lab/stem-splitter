@@ -5,6 +5,56 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-discovery-v1 — contract/client candidate, rollout off — 2026-08-09
+
+- Scope: advisory detection metadata only. No separator model, stem label,
+  2/4/6 contract, or role-classifier threshold changed.
+- Candidate classifier: `laion/larger_clap_music` revision
+  `a0b4534a14f58e20944452dff00a22a06ce629d1`; weight SHA-256
+  `5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1`.
+- Scoring policy: `pairwise-presence-v1` is included in the app classifier id;
+  the positive/negative prompt policy and synonym aggregation cannot change
+  under the same claimed classifier version. Its outputs remain uncalibrated
+  candidate signals.
+- Candidate vocabulary: `classroom-instruments-v1`, 51 labels in 10 families;
+  content SHA-256
+  `72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140`.
+- Boundary: the analyzer may send at most three bounded 15-second 22,050 Hz
+  mono f32le windows only to loopback or Railway private networking. It sends
+  no source URL, storage credential, filename, class code, job id, or volume.
+  Shared service tokens reject padding, control characters, and interior
+  whitespace at every hop instead of silently normalizing configuration.
+- Runtime candidate: a separate standard-library HTTP service now validates
+  authenticated f32le bodies and exact cross-service pins, resamples to the
+  checkpoint's 48 kHz input, scores each window independently, and aggregates
+  only supported mean scores. Its digest-pinned, non-root image recipe freezes
+  a 29-package Python lock, downloads the exact model revision during build,
+  verifies the 776 MB weight hash, and forces runtime hub access offline.
+- Failure behavior: missing configuration, timeout, outage, malformed metadata,
+  or pin drift produces a discovery-only unavailable trace. Tests prove those
+  cases do not change a valid core Auto decision or its degraded state.
+- Visibility: full candidate metadata is persisted privately; student job
+  responses remove detections and classifier/vocabulary pins. An
+  application-level E2E proves the teacher analysis route rejects the class
+  code and signed-out sessions while returning full metadata to a signed-in
+  fixture teacher.
+- Evidence: 80 worker tests and 21 analyzer tests pass locally, including
+  vocabulary integrity, content pins, private-origin/redirect controls,
+  bounded window transport, parent abort, malformed responses, and non-mutating
+  core routing.
+- Locally tested: 18 discovery-service contract tests cover authentication,
+  readiness failure, pin drift, duplicate HTTP framing, rejected expectation
+  handshakes, bounded pre-auth connections, slow-header timeout, pre-body
+  capacity reservation, bounded PCM, non-finite samples, abstention, two-window
+  support, uncertainty, and pairwise prompt scoring without loading PyTorch or
+  model weights. The 29-package lock resolves and explicitly pins the direct
+  Hugging Face build dependency.
+- Not yet proven: a complete CLAP image build, real-model inference,
+  offline-start readback, calibration, authorized truth labels, metrics, a
+  dedicated discovery-review UI, listening review, resource/cost measurement,
+  native image CI, or any Railway service.
+- Rollout: off. No Railway variable, service, or deployment change.
+
 ## autosplit-role-v3 — candidate, rollout off — 2026-08-09
 
 - Base: `autosplit-role-v2`; no separator model, stem contract, or provider pin
@@ -35,17 +85,19 @@ promotion on their own.
 - Decoder build policy: FFmpeg explicitly disables unused codec and format
   component families, then enables only the required audio
   demuxers/decoders/parsers, `aresample`, f32le output, and local file/pipe
-  protocols; network support remains disabled. The exact allowlist configures,
-  compiles, and decodes the real WAV fixture against official FFmpeg 8.0.3
-  source on arm64.
+  protocols; network support remains disabled. The final runtime ships only a
+  Bun-bundled application artifact plus `ffmpeg` and `ffprobe`, not development
+  files or the root project's unused dependency tree.
+- Pinned image result: a local emulated `linux/amd64` build on FFmpeg 8.0.3
+  passed readiness/auth, the runtime allowlist, eight audio format/codec
+  variants, and the full corpus at 8 preferred, 3 accepted alternatives, and 0
+  rejected.
 - Evidence: `docs/evaluation/autosplit-role-v3-candidate.md`.
 - Known risks: the observed synth boundary is narrow, only one corpus source
-  selects six, manual stem listening is incomplete, and neither the pinned
-  FFmpeg 8.0.3 image nor Railway/amd64 has run this version.
-- Image status: the only successful local image smoke used role v1. The v3
-  FFmpeg source build now succeeds with the minimized allowlist, but the current
-  image must still build and pass readiness, auth, corpus, and resource-limit
-  gates before shadow rollout.
+  selects six, manual stem listening is incomplete, and native CI/Railway
+  resource behavior has not run this version.
+- Image status: local emulated amd64 gates pass. Native CI, Railway sizing,
+  concurrency, timeout, listening, and rollback gates remain before shadow.
 - Rollout: off. No Railway variable, service, or deployment change.
 
 ## autosplit-role-v2 — superseded local candidate, rollout off — 2026-08-09

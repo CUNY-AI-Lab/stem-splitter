@@ -15,16 +15,22 @@ import {
   audioAnalysisTimeoutMs,
   AUTO_ROUTING_REQUEST,
   configuredAudioAnalysisProvider,
+  redactInstrumentDiscovery,
   resolveAutoRouting,
   serverAutoCapability,
   type AudioSourceType,
   type AutoRoutingDecisionV1,
 } from './analysis';
-import { parseBrowserAutoSummary, AudioAnalysisContractError } from './analysis/contract';
+import {
+  parseAutoRoutingDecision,
+  parseBrowserAutoSummary,
+  AudioAnalysisContractError,
+} from './analysis/contract';
 import { processingFeatureFlags } from './features';
 import { getBackend, type SeparationResult } from './separation';
 import {
   DEFAULT_DEMUCS_MODEL,
+  allSeparationOptions,
   getSeparationOption,
   getSeparationOptions,
   modelIsAllowed,
@@ -81,6 +87,10 @@ const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
 const MP3_FRAME_SCAN_BYTES = 64 * 1024;
+const STORED_CORE_MODELS = allSeparationOptions().map(({ id, stems }) => ({
+  id,
+  stems: [...stems],
+}));
 interface JobRow {
   id: string;
   filename: string;
@@ -651,7 +661,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       ? {
           routingRequest: AUTO_ROUTING_REQUEST,
           sourceType,
-          autoRouting,
+          autoRouting: redactInstrumentDiscovery(autoRouting),
         }
       : {}),
   });
@@ -696,6 +706,26 @@ app.get('/api/jobs/:id', async (c) => {
   // SELECT on the frequent still-processing polls.
   const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
   return c.json(jobResponse(row, results ?? [], guide));
+});
+
+app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const row = await c.env.DB
+    .prepare('SELECT id, routing_request, analysis FROM jobs WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<Pick<JobRow, 'id' | 'routing_request' | 'analysis'>>();
+  if (!row) return c.json({ error: 'Job not found' }, 404);
+  if (row.routing_request !== AUTO_ROUTING_REQUEST || !row.analysis) {
+    return c.json({ error: 'This job has no Auto analysis.' }, 404);
+  }
+  try {
+    return c.json({
+      jobId: row.id,
+      autoRouting: parseAutoRoutingDecision(JSON.parse(row.analysis), STORED_CORE_MODELS),
+    });
+  } catch {
+    return c.json({ error: 'Stored analysis is unavailable.' }, 500);
+  }
 });
 
 // Shared, class-wide display labels for stem channels.
@@ -1068,7 +1098,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
   let autoRouting: AutoRoutingDecisionV1 | undefined;
   if (row.analysis) {
     try {
-      autoRouting = JSON.parse(row.analysis) as AutoRoutingDecisionV1;
+      autoRouting = parseAutoRoutingDecision(JSON.parse(row.analysis), STORED_CORE_MODELS);
     } catch {
       // Corrupt optional metadata must not hide an otherwise playable core split.
     }
@@ -1089,7 +1119,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
       ? {
           routingRequest: AUTO_ROUTING_REQUEST,
           sourceType: row.source_type,
-          autoRouting,
+          autoRouting: redactInstrumentDiscovery(autoRouting),
         }
       : {}),
   };

@@ -10,19 +10,29 @@
 
 **Current posture:** Phase 0 contracts, fixed corpus metadata, deterministic
 browser/server PCM parity, the flag-gated Phase 1B application path, and the
-Phase 1A service code are implemented locally. A digest-pinned role-v1 image
-built and passed local health/readiness/auth smoke, but the classifier has since
-advanced to role-v3, so the current image gate is open again. The minimized
-role-v3 FFmpeg 8.0.3 allowlist now configures, compiles, and decodes the real WAV
-fixture from official source on the local arm64 host; this is source-build
-evidence, not a current container or amd64 result. Server Auto remains off live
-and no additional Railway service has been provisioned. Local FFmpeg and
-real-Chrome evaluation agree on all eleven authorized v3 routing choices
-(8 preferred, 3 accepted alternatives), but pinned-image calibration, manual
-stem listening, and live Railway acceptance remain gates before authority. See
-the
+Phase 1A service code are implemented locally. The minimized, digest-pinned
+role-v3 image now builds as `linux/amd64` under local emulation and passes its
+runtime allowlist, non-root, health, readiness, authentication, eight-format
+decode, and eleven-source corpus gates on FFmpeg 8.0.3. The final image contains
+one bundled application artifact plus `ffmpeg` and `ffprobe`, rather than the
+root project's unused runtime dependencies. Server Auto remains off live and no
+additional Railway service has been provisioned. Local FFmpeg, real Chrome, and
+the pinned image agree on all eleven authorized v3 routing choices (8 preferred,
+3 accepted alternatives). Native CI, manual stem listening, resource-limit
+testing, and live Railway acceptance remain gates before authority. See the
 [adversarial hardening audit](docs/audits/2026-08-09-audio-pipeline-phase0.md)
 and [model-processing changelog](docs/model-processing-changelog.md).
+
+Phase 2 now has a local, flag-off contract seam: a content-hashed 51-label
+teacher-reviewable vocabulary, exact CLAP checkpoint/weight pins, a bounded
+private PCM client, fail-lazy discovery traces, student-response redaction, and
+a teacher-authenticated analysis read route. A separate Python service,
+deterministic aggregation policy, and digest-pinned image recipe are implemented
+locally and pass 18 contract/fake-backend tests. The model image has not been
+built, actual CLAP inference and offline startup have not run, no ML service has
+been provisioned, and no detection has been calibrated or promoted. See the
+[discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
+and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
 
 This roadmap extends AutoSplit beyond assumptions inherited from a traditional
 rock-band mix. The goal is to recognize and optionally isolate instruments such
@@ -75,7 +85,7 @@ because its model or service is available.
 |---|---|---|---|
 | 0 | Existing `stem-splitter` app | Already active on Railway; preserve it | Yes, but only through reviewed app releases |
 | 1 | Versioned audio-analysis API | New private Railway CPU service | No; shadow/advisory first |
-| 2 | Instrument classifier | Add to the analysis service after parity | No; detection metadata only at first |
+| 2 | Instrument classifier | New private Railway ML service, reachable only by the analyzer after parity | No; detection metadata only at first |
 | 3 | AudioSep query separator | New pinned Replicate integration | No; explicit optional isolation only |
 | 4 | SAM-Audio comparison | Evaluation-only pinned Replicate integration | No until selected through review |
 | 5 | Banquet/Query-Bandit | Future private Cog or GPU service | No until a separate multi-stem design is accepted |
@@ -155,14 +165,16 @@ deployment or enablement.
   checksum-pinned FFmpeg 8.0.3, the frozen dependency lock, and a pinned
   classifier version. Log versions and timings, never source URLs, class codes,
   raw features, audio, or credentials.
-- [ ] Build the current role-v3 image and run its `/healthz`, `/readyz`, auth,
-  and eleven-source corpus checks on pinned FFmpeg 8.0.3. The earlier role-v1
-  arm64 image passed smoke, but it is now stale; Docker Desktop's metadata-store
-  I/O failure blocked the current rebuild. A later bounded retry found the
-  Docker daemon unavailable even though Desktop processes were present; do not
-  reset or prune user-owned Docker data implicitly. The minimized decoder
-  allowlist has separately passed FFmpeg 8.0.3 configure, compile, and real WAV
-  decode on the arm64 host. Reproduce the actual image on CI/amd64.
+- [x] Build the current role-v3 image as `linux/amd64` and run its non-root,
+  runtime allowlist, `/healthz`, `/readyz`, authentication, eight advertised
+  audio-format, and eleven-source corpus checks on pinned FFmpeg 8.0.3. The
+  local emulated run produced 8 preferred choices, 3 accepted alternatives,
+  and 0 rejected choices.
+- [ ] Reproduce the image on a native amd64 GitHub runner and Railway. Keep the
+  CI runtime audit that permits only the six advertised demuxers, audio
+  decoders, and file/pipe protocols; then exercise Railway CPU, memory, child
+  process, concurrency, timeout, and ephemeral-disk limits. Local emulation is
+  not production resource evidence.
 - [x] Keep credentials fail-lazy in the app: if analysis is unavailable, upload,
   playback, annotations, and explicit 2/4/6 splitting must still work.
 
@@ -183,10 +195,10 @@ deployment or enablement.
   and cap streamed JSON responses at 64 KiB.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.
-  Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome
-  agrees with local FFmpeg on all 11 choices. Keep this gate open until the
-  pinned image repeats the result and the manual stem listening checks pass;
-  decision agreement alone does not establish musical usefulness.
+  Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome,
+  local FFmpeg, and the pinned FFmpeg 8.0.3 image agree on all 11 choices. Keep
+  this gate open until native CI/Railway and the manual stem listening checks
+  pass; decision agreement alone does not establish musical usefulness.
 - [ ] Make the server decision authoritative for all source types only after the
   parity gate passes. Keep the old catalogue default as an explicit fallback,
   never an implicit claim that remote audio was analyzed.
@@ -200,19 +212,33 @@ job.
 
 ## Phase 2 — broaden instrument discovery without routing separation
 
-- [ ] Add a versioned, teacher-reviewable instrument vocabulary covering at
+- [x] Add a versioned, teacher-reviewable instrument vocabulary covering at
   least strings, violin, viola, cello, double bass, brass, trumpet, trombone,
   horn, saxophone, clarinet, flute, oboe, organ, electric piano, synthesizer,
   pad, accordion, harmonica, harp, percussion, and selected traditional
-  instruments represented in the evaluation corpus.
-- [ ] Spike LAION CLAP inside the analysis service as the first flexible
-  zero-shot classifier. Pin the music checkpoint and record its provenance and
-  checksum; do not pull a floating checkpoint during container boot.
+  instruments represented in the evaluation corpus. The uncalibrated
+  `classroom-instruments-v1` candidate has 51 unique labels in 10 families and
+  is locked to a content hash by a schema/integrity test.
+- [x] Freeze a separate discovery wire contract and analyzer client with exact
+  schema, classifier revision, weight hash, vocabulary version/content hash,
+  PCM rate/window, response-size, timeout, private-origin, and redirect pins.
+  Discovery failure or drift gets its own trace and cannot change a validated
+  core Auto decision; student responses strip labels and private pins.
+- [ ] Spike LAION CLAP inside a separate private `instrument-discovery` service
+  as the first flexible zero-shot classifier. Load the exact music checkpoint
+  during image build, verify its checksum, and prove offline startup; do not
+  pull a floating checkpoint during container boot. The bounded service,
+  offline-only image recipe, dependency lock, exact download revision, and
+  weight verifier now exist locally; the large image build and real-model
+  offline-start proof remain open.
 - [ ] Compare Essentia/MTG-Jamendo on the same manifest only after documenting
   whether its noncommercial model license fits the intended classroom and
   institutional use.
-- [ ] Score multiple windows independently, then aggregate. A single transient
-  sound must not become a track-level detection.
+- [x] Score multiple windows independently, then aggregate. On multi-window
+  material, a sound confined to one window cannot become a track-level
+  detection under the tested minimum-support rule; the documented one-window
+  source exception still requires calibration. Fixed-corpus calibration
+  against real CLAP output remains open.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label.
 - [ ] Keep detection advisory: display “possible instruments” and confidence

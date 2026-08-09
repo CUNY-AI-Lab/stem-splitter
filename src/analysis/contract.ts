@@ -1,12 +1,22 @@
 import {
   AUDIO_ANALYSIS_SCHEMA_VERSION,
+  AUTO_ROUTING_REQUEST,
+  AUTO_ROUTING_SCHEMA_VERSION,
+  MAX_DISCOVERY_WINDOWS,
   MAX_ANALYSIS_SECONDS,
+  PINNED_INSTRUMENT_CLASSIFIER_VERSION,
+  PINNED_INSTRUMENT_MODEL_SHA256,
+  PINNED_INSTRUMENT_VOCABULARY_SHA256,
+  PINNED_INSTRUMENT_VOCABULARY_VERSION,
   PINNED_ROLE_CLASSIFIER_VERSION,
   type AnalysisDegradedCode,
   type AudioAnalysisResultV1,
+  type AudioSourceType,
+  type AutoRoutingDecisionV1,
   type BrowserAutoSummaryV1,
   type CoreModelContract,
   type CoreSplitChoice,
+  type InstrumentDiscoveryCode,
   type InstrumentDetectionV1,
   type RoleFeaturesV1,
 } from './types.ts';
@@ -54,11 +64,15 @@ function parseFeatures(value: unknown): RoleFeaturesV1 | null {
   };
 }
 
-function parseDetections(value: unknown): InstrumentDetectionV1[] {
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => key in value);
+}
+
+function parseDetections(value: unknown, windowsAnalyzed: number): InstrumentDetectionV1[] {
   if (!Array.isArray(value)) {
     throw new AudioAnalysisContractError('detected instruments are invalid');
   }
-  if (value.length > 64) {
+  if (value.length > 12) {
     throw new AudioAnalysisContractError('too many instrument detections');
   }
   const seen = new Set<string>();
@@ -67,6 +81,14 @@ function parseDetections(value: unknown): InstrumentDetectionV1[] {
     const label = isRecord(item) && typeof item.label === 'string' ? item.label : '';
     if (
       !isRecord(item) ||
+      !exactKeys(item, [
+        'id',
+        'label',
+        'confidence',
+        'state',
+        'windowSupport',
+        'windowsAnalyzed',
+      ]) ||
       !/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(id) ||
       id.length > 64 ||
       !label.trim() ||
@@ -74,7 +96,13 @@ function parseDetections(value: unknown): InstrumentDetectionV1[] {
       label.length > 120 ||
       /[\u0000-\u001f\u007f]/.test(label) ||
       !confidence(item.confidence) ||
-      item.confidence === null
+      item.confidence === null ||
+      (item.state !== 'possible' && item.state !== 'uncertain') ||
+      !Number.isSafeInteger(item.windowSupport) ||
+      (item.windowSupport as number) < 1 ||
+      !Number.isSafeInteger(item.windowsAnalyzed) ||
+      item.windowsAnalyzed !== windowsAnalyzed ||
+      (item.windowSupport as number) > windowsAnalyzed
     ) {
       throw new AudioAnalysisContractError('an instrument detection is invalid');
     }
@@ -82,19 +110,15 @@ function parseDetections(value: unknown): InstrumentDetectionV1[] {
       throw new AudioAnalysisContractError(`instrument detection ${id} is duplicated`);
     }
     seen.add(id);
-    return { id, label, confidence: item.confidence };
+    return {
+      id,
+      label,
+      confidence: item.confidence,
+      state: item.state,
+      windowSupport: item.windowSupport as number,
+      windowsAnalyzed: item.windowsAnalyzed as number,
+    };
   });
-}
-
-function pinnedVersion(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    Boolean(value.trim()) &&
-    value === value.trim() &&
-    value.length <= 200 &&
-    !/[\u0000-\u001f\u007f]/.test(value) &&
-    value.toLowerCase() !== 'latest'
-  );
 }
 
 function boundedReason(value: unknown): value is string {
@@ -117,6 +141,12 @@ const DEGRADED_CODES = new Set<AnalysisDegradedCode>([
   'analysis_contract_invalid',
   'analysis_model_unsupported',
   'audio_unsupported',
+]);
+const DISCOVERY_CODES = new Set<InstrumentDiscoveryCode>([
+  'discovery_unconfigured',
+  'discovery_timeout',
+  'discovery_unavailable',
+  'discovery_contract_invalid',
 ]);
 
 /** Validate the service boundary before any recommendation may route a paid job. */
@@ -190,26 +220,88 @@ export function parseAudioAnalysisResult(
   }
 
   let vocabularyClassifier: AudioAnalysisResultV1['vocabularyClassifier'];
-  if (includeInstrumentDiscovery && value.vocabularyClassifier !== undefined) {
-    const vocabulary = value.vocabularyClassifier;
-    if (
-      !isRecord(vocabulary) ||
-      !pinnedVersion(vocabulary.version) ||
-      !pinnedVersion(vocabulary.vocabularyVersion)
-    ) {
-      throw new AudioAnalysisContractError('vocabulary classifier version is invalid');
-    }
-    vocabularyClassifier = {
-      version: vocabulary.version,
-      vocabularyVersion: vocabulary.vocabularyVersion,
-    };
-  }
+  let instrumentDiscovery: AudioAnalysisResultV1['instrumentDiscovery'];
+  let detectedInstruments: InstrumentDetectionV1[] = [];
+  if (includeInstrumentDiscovery) {
+    try {
+      const discovery = value.instrumentDiscovery;
+      if (
+        !isRecord(discovery) ||
+        !exactKeys(discovery, ['status', 'code', 'totalMs', 'windowsAnalyzed']) ||
+        (discovery.status !== 'complete' && discovery.status !== 'unavailable') ||
+        !finiteBetween(discovery.totalMs, 0, 30_000) ||
+        !Number.isSafeInteger(discovery.windowsAnalyzed) ||
+        (discovery.windowsAnalyzed as number) < 0 ||
+        (discovery.windowsAnalyzed as number) > MAX_DISCOVERY_WINDOWS ||
+        !(
+          discovery.code === null ||
+          (typeof discovery.code === 'string' &&
+            DISCOVERY_CODES.has(discovery.code as InstrumentDiscoveryCode))
+        ) ||
+        (discovery.status === 'complete' &&
+          (discovery.code !== null || (discovery.windowsAnalyzed as number) < 1)) ||
+        (discovery.status === 'unavailable' && discovery.code === null)
+      ) {
+        throw new AudioAnalysisContractError('instrument discovery state is invalid');
+      }
 
-  const detectedInstruments = includeInstrumentDiscovery
-    ? parseDetections(value.detectedInstruments)
-    : [];
-  if (detectedInstruments.length && !vocabularyClassifier) {
-    throw new AudioAnalysisContractError('instrument detections have no pinned vocabulary classifier');
+      const vocabulary = value.vocabularyClassifier;
+      if (discovery.status === 'complete') {
+        if (
+          !isRecord(vocabulary) ||
+          !exactKeys(vocabulary, [
+            'version',
+            'weightsSha256',
+            'vocabularyVersion',
+            'vocabularySha256',
+          ]) ||
+          vocabulary.version !== PINNED_INSTRUMENT_CLASSIFIER_VERSION ||
+          vocabulary.weightsSha256 !== PINNED_INSTRUMENT_MODEL_SHA256 ||
+          vocabulary.vocabularyVersion !== PINNED_INSTRUMENT_VOCABULARY_VERSION ||
+          vocabulary.vocabularySha256 !== PINNED_INSTRUMENT_VOCABULARY_SHA256
+        ) {
+          throw new AudioAnalysisContractError(
+            'vocabulary classifier version does not match the app pin'
+          );
+        }
+        vocabularyClassifier = {
+          version: PINNED_INSTRUMENT_CLASSIFIER_VERSION,
+          weightsSha256: PINNED_INSTRUMENT_MODEL_SHA256,
+          vocabularyVersion: PINNED_INSTRUMENT_VOCABULARY_VERSION,
+          vocabularySha256: PINNED_INSTRUMENT_VOCABULARY_SHA256,
+        };
+        detectedInstruments = parseDetections(
+          value.detectedInstruments,
+          discovery.windowsAnalyzed as number
+        );
+      } else {
+        if (vocabulary !== undefined) {
+          throw new AudioAnalysisContractError('unavailable discovery has vocabulary metadata');
+        }
+        detectedInstruments = parseDetections(value.detectedInstruments, 0);
+        if (detectedInstruments.length) {
+          throw new AudioAnalysisContractError('unavailable discovery has instrument detections');
+        }
+      }
+      instrumentDiscovery = {
+        status: discovery.status,
+        code: discovery.code as InstrumentDiscoveryCode | null,
+        totalMs: discovery.totalMs as number,
+        windowsAnalyzed: discovery.windowsAnalyzed as number,
+      };
+    } catch (error) {
+      if (!(error instanceof AudioAnalysisContractError)) {
+        throw error;
+      }
+      vocabularyClassifier = undefined;
+      detectedInstruments = [];
+      instrumentDiscovery = {
+        status: 'unavailable',
+        code: 'discovery_contract_invalid',
+        totalMs: 0,
+        windowsAnalyzed: 0,
+      };
+    }
   }
 
   return {
@@ -218,6 +310,7 @@ export function parseAudioAnalysisResult(
       version: role.version as typeof PINNED_ROLE_CLASSIFIER_VERSION | 'not-run',
     },
     ...(vocabularyClassifier ? { vocabularyClassifier } : {}),
+    ...(instrumentDiscovery ? { instrumentDiscovery } : {}),
     decision: {
       choice: decision.choice as CoreSplitChoice | 'fallback',
       resolvedCoreModel: decision.resolvedCoreModel,
@@ -263,6 +356,99 @@ export function parseBrowserAutoSummary(
     choice: value.choice as CoreSplitChoice,
     resolvedCoreModel: value.resolvedCoreModel,
     reason: value.reason,
+  };
+}
+
+/** Normalize persisted routing metadata before it reaches either response surface. */
+export function parseAutoRoutingDecision(
+  value: unknown,
+  coreModels: readonly CoreModelContract[]
+): AutoRoutingDecisionV1 {
+  if (!isRecord(value)) {
+    throw new AudioAnalysisContractError('stored Auto routing decision is invalid');
+  }
+  const requiredKeys = [
+    'schemaVersion',
+    'routingRequest',
+    'sourceType',
+    'mode',
+    'applied',
+    'fallbackModel',
+    'resolvedCoreModel',
+    'analysis',
+    'comparison',
+  ];
+  const allowedKeys = new Set([...requiredKeys, 'browserAnalysis']);
+  if (
+    requiredKeys.some((key) => !(key in value)) ||
+    Object.keys(value).some((key) => !allowedKeys.has(key)) ||
+    value.schemaVersion !== AUTO_ROUTING_SCHEMA_VERSION ||
+    value.routingRequest !== AUTO_ROUTING_REQUEST ||
+    (value.sourceType !== 'upload' &&
+      value.sourceType !== 'youtube' &&
+      value.sourceType !== 'archive') ||
+    (value.mode !== 'shadow' && value.mode !== 'authoritative') ||
+    typeof value.applied !== 'boolean' ||
+    typeof value.fallbackModel !== 'string' ||
+    typeof value.resolvedCoreModel !== 'string' ||
+    (value.comparison !== 'agree' &&
+      value.comparison !== 'disagree' &&
+      value.comparison !== 'unavailable')
+  ) {
+    throw new AudioAnalysisContractError('stored Auto routing decision is invalid');
+  }
+  const modelsById = new Map(coreModels.map((model) => [model.id, model]));
+  if (!modelsById.has(value.fallbackModel) || !modelsById.has(value.resolvedCoreModel)) {
+    throw new AudioAnalysisContractError('stored Auto routing model is invalid');
+  }
+  const discoveryWasRequested =
+    isRecord(value.analysis) &&
+    ('instrumentDiscovery' in value.analysis ||
+      'vocabularyClassifier' in value.analysis ||
+      (Array.isArray(value.analysis.detectedInstruments) &&
+        value.analysis.detectedInstruments.length > 0));
+  const analysis = parseAudioAnalysisResult(
+    value.analysis,
+    coreModels,
+    value.fallbackModel,
+    discoveryWasRequested
+  );
+  const browserAnalysis = parseBrowserAutoSummary(value.browserAnalysis, coreModels);
+  const expectedComparison =
+    browserAnalysis && !analysis.degraded.active
+      ? browserAnalysis.resolvedCoreModel === analysis.decision.resolvedCoreModel
+        ? 'agree'
+        : 'disagree'
+      : 'unavailable';
+  if (value.comparison !== expectedComparison) {
+    throw new AudioAnalysisContractError('stored Auto routing comparison is inconsistent');
+  }
+  if (value.mode === 'shadow') {
+    if (value.applied) {
+      throw new AudioAnalysisContractError('stored shadow routing cannot be applied');
+    }
+  } else {
+    const expectedModel = analysis.degraded.active
+      ? value.fallbackModel
+      : analysis.decision.resolvedCoreModel;
+    if (
+      value.applied !== !analysis.degraded.active ||
+      value.resolvedCoreModel !== expectedModel
+    ) {
+      throw new AudioAnalysisContractError('stored authoritative routing is inconsistent');
+    }
+  }
+  return {
+    schemaVersion: AUTO_ROUTING_SCHEMA_VERSION,
+    routingRequest: AUTO_ROUTING_REQUEST,
+    sourceType: value.sourceType as AudioSourceType,
+    mode: value.mode,
+    applied: value.applied,
+    fallbackModel: value.fallbackModel,
+    resolvedCoreModel: value.resolvedCoreModel,
+    analysis,
+    ...(browserAnalysis ? { browserAnalysis } : {}),
+    comparison: value.comparison,
   };
 }
 

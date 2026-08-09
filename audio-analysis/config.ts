@@ -1,5 +1,7 @@
+import { INSTRUMENT_DISCOVERY_SAMPLE_RATE } from '../src/analysis/types.ts';
+
 export const PINNED_FFMPEG_VERSION = '8.0.3';
-export const ANALYSIS_SAMPLE_RATE = 22_050;
+export const ANALYSIS_SAMPLE_RATE = INSTRUMENT_DISCOVERY_SAMPLE_RATE;
 export const MAX_REQUEST_PHASE_TIMEOUT_MS = 28_000;
 
 const MIB = 1024 * 1024;
@@ -14,6 +16,12 @@ export interface AudioAnalysisServiceConfig {
   decoderTimeoutMs: number;
   maxConcurrency: number;
   expectedFfmpegVersion: string;
+  instrumentDiscovery: {
+    baseUrl: string;
+    token: string;
+    timeoutMs: number;
+  } | null;
+  instrumentDiscoveryState: 'unconfigured' | 'incomplete' | 'invalid' | 'configured';
   port: number;
   errors: readonly string[];
 }
@@ -62,12 +70,38 @@ function parseOrigins(raw: string | undefined, allowHttp: boolean, errors: strin
   return origins;
 }
 
+function discoveryOriginAllowed(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    const hostname = url.hostname.toLowerCase();
+    const loopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
+    const railwayPrivate = hostname.endsWith('.railway.internal');
+    return Boolean(
+      (loopback || railwayPrivate) &&
+        (url.protocol === 'https:' || url.protocol === 'http:') &&
+        !url.username &&
+        !url.password &&
+        (url.pathname === '' || url.pathname === '/') &&
+        !url.search &&
+        !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function audioAnalysisConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): AudioAnalysisServiceConfig {
   const errors: string[] = [];
-  const token = env.AUDIO_ANALYSIS_TOKEN?.trim() ?? '';
-  if (token.length < 32) errors.push('AUDIO_ANALYSIS_TOKEN must contain at least 32 characters');
+  const token = env.AUDIO_ANALYSIS_TOKEN ?? '';
+  if (
+    token.length < 32 ||
+    token !== token.trim() ||
+    /\s|[\u0000-\u001f\u007f]/.test(token)
+  ) {
+    errors.push('AUDIO_ANALYSIS_TOKEN must contain at least 32 non-whitespace characters');
+  }
 
   const allowHttpSources = env.AUDIO_ANALYSIS_ALLOW_HTTP === 'true';
   const expectedFfmpegVersion =
@@ -96,6 +130,55 @@ export function audioAnalysisConfigFromEnv(
     errors.push(
       'AUDIO_ANALYSIS_FETCH_TIMEOUT_MS plus AUDIO_ANALYSIS_DECODER_TIMEOUT_MS exceeds the request budget'
     );
+  }
+
+  const rawDiscoveryUrl = env.INSTRUMENT_DISCOVERY_URL ?? '';
+  const discoveryUrl = rawDiscoveryUrl.trim();
+  const discoveryToken = env.INSTRUMENT_DISCOVERY_TOKEN ?? '';
+  const discoveryErrors: string[] = [];
+  const discoveryTimeoutMs = boundedInteger(
+    env,
+    'INSTRUMENT_DISCOVERY_TIMEOUT_MS',
+    12_000,
+    1_000,
+    20_000,
+    discoveryErrors
+  );
+  if (
+    sourceFetchTimeoutMs + decoderTimeoutMs + discoveryTimeoutMs >
+    MAX_REQUEST_PHASE_TIMEOUT_MS
+  ) {
+    discoveryErrors.push(
+      'source fetch, decoder, and instrument discovery timeouts exceed the request budget'
+    );
+  }
+  let instrumentDiscoveryState: AudioAnalysisServiceConfig['instrumentDiscoveryState'];
+  let instrumentDiscovery: AudioAnalysisServiceConfig['instrumentDiscovery'] = null;
+  if (!discoveryUrl && !discoveryToken) {
+    instrumentDiscoveryState = 'unconfigured';
+  } else if (!discoveryUrl || !discoveryToken) {
+    instrumentDiscoveryState = 'incomplete';
+  } else {
+    try {
+      if (
+        !discoveryOriginAllowed(discoveryUrl) ||
+        rawDiscoveryUrl !== discoveryUrl ||
+        discoveryToken.length < 32 ||
+        discoveryToken !== discoveryToken.trim() ||
+        /\s|[\u0000-\u001f\u007f]/.test(discoveryToken) ||
+        discoveryErrors.length
+      ) {
+        throw new Error('invalid discovery configuration');
+      }
+      instrumentDiscovery = {
+        baseUrl: discoveryUrl,
+        token: discoveryToken,
+        timeoutMs: discoveryTimeoutMs,
+      };
+      instrumentDiscoveryState = 'configured';
+    } catch {
+      instrumentDiscoveryState = 'invalid';
+    }
   }
 
   return {
@@ -133,6 +216,8 @@ export function audioAnalysisConfigFromEnv(
       errors
     ),
     expectedFfmpegVersion,
+    instrumentDiscovery,
+    instrumentDiscoveryState,
     port: boundedInteger(env, 'PORT', 8080, 1, 65_535, errors),
     errors,
   };

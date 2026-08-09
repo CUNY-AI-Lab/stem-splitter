@@ -94,6 +94,20 @@ test('optional runtime services distinguish absent, incomplete, invalid, and con
     }),
     'invalid'
   );
+  for (const [url, token] of [
+    [' https://analysis.test', ANALYSIS_TOKEN],
+    ['https://analysis.test ', ANALYSIS_TOKEN],
+    ['https://analysis.test', `${ANALYSIS_TOKEN.slice(0, 16)} ${ANALYSIS_TOKEN.slice(16)}`],
+  ]) {
+    assert.equal(
+      audioAnalysisStatus({
+        ...disabled,
+        AUDIO_ANALYSIS_URL: url,
+        AUDIO_ANALYSIS_TOKEN: token,
+      }),
+      'invalid'
+    );
+  }
 });
 
 test('authoritative Auto cannot look ready when its analyzer is absent', () => {

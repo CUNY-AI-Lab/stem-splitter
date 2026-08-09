@@ -23,7 +23,9 @@ OPENROUTER_API_KEY=sk-or-your-openrouter-key
 # SERVER_AUTO_MODE=shadow
 # AUDIO_ANALYSIS_URL=http://audio-analysis.railway.internal:8080
 # AUDIO_ANALYSIS_TOKEN=choose-at-least-32-private-characters
-# AUDIO_ANALYSIS_TIMEOUT_MS=15000
+# AUDIO_ANALYSIS_TIMEOUT_MS=25000
+# Before Phase 2 shadow, use 30000 and keep analyzer fetch + decode + discovery
+# timeouts at or below 28000 in total.
 # INSTRUMENT_DISCOVERY_ENABLED=true
 # QUERY_ISOLATION_ENABLED=true
 

@@ -20,6 +20,8 @@ export interface DecodedAnalysisAudio {
   sampleRate: typeof ANALYSIS_SAMPLE_RATE;
   sourceDurationSeconds: number;
   analyzedSeconds: number;
+  /** Original decode-window boundaries within `samples`, before discovery subdivision. */
+  readonly windowSampleCounts: readonly number[];
 }
 
 function versionFromOutput(binary: string, output: Buffer): string {
@@ -177,6 +179,7 @@ export async function decodeAnalysisWindows(
       sampleRate: ANALYSIS_SAMPLE_RATE,
       sourceDurationSeconds,
       analyzedSeconds: samples.length / ANALYSIS_SAMPLE_RATE,
+      windowSampleCounts: decoded.map((segment) => segment.length),
     };
   } catch (error) {
     if (error instanceof DecoderError) throw error;

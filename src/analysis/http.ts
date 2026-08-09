@@ -4,7 +4,10 @@ import { AudioAnalysisContractError } from './contract.ts';
 const MAX_ANALYSIS_RESPONSE_BYTES = 64 * 1024;
 
 export function audioAnalysisEndpoint(baseUrl: string): string {
-  const configured = new URL(baseUrl.trim());
+  if (baseUrl !== baseUrl.trim()) {
+    throw new AudioAnalysisContractError('audio analysis URL is not an approved service origin');
+  }
+  const configured = new URL(baseUrl);
   const hostname = configured.hostname.toLowerCase();
   const loopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
   const railwayPrivate = hostname.endsWith('.railway.internal');
@@ -58,7 +61,7 @@ export function httpAudioAnalysisProvider(baseUrl: string, token: string): Audio
   if (
     token.length < 32 ||
     token !== token.trim() ||
-    /[\u0000-\u001f\u007f]/.test(token)
+    /\s|[\u0000-\u001f\u007f]/.test(token)
   ) {
     throw new AudioAnalysisContractError('audio analysis token is invalid');
   }

@@ -1,6 +1,14 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import type { AudioAnalysisRequestV1 } from '../src/analysis/types.ts';
+import {
+  PINNED_INSTRUMENT_CLASSIFIER_VERSION,
+  PINNED_INSTRUMENT_MODEL_SHA256,
+  PINNED_INSTRUMENT_VOCABULARY_SHA256,
+  PINNED_INSTRUMENT_VOCABULARY_VERSION,
+  type AudioAnalysisRequestV1,
+  type AudioAnalysisResultV1,
+  type InstrumentDiscoveryResultV1,
+} from '../src/analysis/types.ts';
 import type { AudioAnalysisServiceConfig } from './config.ts';
 import { analyzePcm, roleClassifierVersion } from './classifier.ts';
 import {
@@ -10,6 +18,10 @@ import {
   type DecodedAnalysisAudio,
   type DecoderReadiness,
 } from './decoder.ts';
+import {
+  httpInstrumentDiscoveryProvider,
+  InstrumentDiscoveryError,
+} from './discovery.ts';
 import { AnalysisRequestError, parseAnalysisRequest, readBoundedJson } from './request.ts';
 import { fetchSourceToTemp, SourcePolicyError, type TemporarySource } from './source.ts';
 
@@ -39,6 +51,10 @@ export interface AudioAnalysisDependencies {
     request: AudioAnalysisRequestV1;
     totalMs: number;
   }): ReturnType<typeof analyzePcm>;
+  discover?(
+    decoded: DecodedAnalysisAudio,
+    signal?: AbortSignal
+  ): Promise<InstrumentDiscoveryResultV1>;
   classifierVersion(): string;
   now(): number;
   logger: SafeLogger;
@@ -73,7 +89,20 @@ export function createAudioAnalysisService(
   config: AudioAnalysisServiceConfig,
   overrides: Partial<AudioAnalysisDependencies> = {}
 ) {
-  const dependencies = { ...defaultDependencies, ...overrides };
+  let instrumentDiscoveryState = config.instrumentDiscoveryState;
+  let configuredDiscovery: ReturnType<typeof httpInstrumentDiscoveryProvider> | null = null;
+  if (config.instrumentDiscovery) {
+    try {
+      configuredDiscovery = httpInstrumentDiscoveryProvider(config.instrumentDiscovery);
+    } catch {
+      instrumentDiscoveryState = 'invalid';
+    }
+  }
+  const dependencies: AudioAnalysisDependencies = {
+    ...defaultDependencies,
+    ...(configuredDiscovery ? { discover: configuredDiscovery.discover } : {}),
+    ...overrides,
+  };
   const app = new Hono();
   let active = 0;
   let readiness: {
@@ -121,6 +150,7 @@ export function createAudioAnalysisService(
           ? {
               ffmpegVersion: readiness.decoder.ffmpegVersion,
               classifierVersion: readiness.classifierVersion,
+              instrumentDiscovery: instrumentDiscoveryState,
             }
           : {}),
         ...(!readiness.ready && readiness.reason ? { reason: readiness.reason } : {}),
@@ -154,9 +184,64 @@ export function createAudioAnalysisService(
         maxSourceDurationSeconds: config.maxSourceDurationSeconds,
         signal: c.req.raw.signal,
       });
-      const totalMs = Math.max(0, dependencies.now() - startedAt);
-      if (totalMs > 60_000) throw new DecoderError('analysis_time_limit_exceeded');
-      const result = dependencies.classify({ decoded, request, totalMs });
+      const preClassificationMs = Math.max(0, dependencies.now() - startedAt);
+      if (preClassificationMs > 60_000) throw new DecoderError('analysis_time_limit_exceeded');
+      let result: AudioAnalysisResultV1 = dependencies.classify({
+        decoded,
+        request,
+        totalMs: preClassificationMs,
+      });
+      if (request.instrumentDiscovery) {
+        const discoveryStartedAt = dependencies.now();
+        if (!dependencies.discover) {
+          result = {
+            ...result,
+            instrumentDiscovery: {
+              status: 'unavailable',
+              code: 'discovery_unconfigured',
+              totalMs: 0,
+              windowsAnalyzed: 0,
+            },
+          };
+        } else {
+          try {
+            const discovery = await dependencies.discover(decoded, c.req.raw.signal);
+            result = {
+              ...result,
+              vocabularyClassifier: {
+                version: PINNED_INSTRUMENT_CLASSIFIER_VERSION,
+                weightsSha256: PINNED_INSTRUMENT_MODEL_SHA256,
+                vocabularyVersion: PINNED_INSTRUMENT_VOCABULARY_VERSION,
+                vocabularySha256: PINNED_INSTRUMENT_VOCABULARY_SHA256,
+              },
+              instrumentDiscovery: {
+                status: 'complete',
+                code: null,
+                totalMs: discovery.timingMs,
+                windowsAnalyzed: discovery.windowsAnalyzed,
+              },
+              detectedInstruments: discovery.detections,
+            };
+          } catch (error) {
+            result = {
+              ...result,
+              instrumentDiscovery: {
+                status: 'unavailable',
+                code:
+                  error instanceof InstrumentDiscoveryError
+                    ? error.code
+                    : 'discovery_unavailable',
+                totalMs: Math.max(0, dependencies.now() - discoveryStartedAt),
+                windowsAnalyzed: 0,
+              },
+              detectedInstruments: [],
+            };
+          }
+        }
+      }
+      const finalTotalMs = Math.max(0, dependencies.now() - startedAt);
+      if (finalTotalMs > 60_000) throw new DecoderError('analysis_time_limit_exceeded');
+      result = { ...result, timing: { ...result.timing, totalMs: finalTotalMs } };
       dependencies.logger.info('analysis_complete', {
         requestId,
         schemaVersion: result.schemaVersion,
@@ -164,9 +249,17 @@ export function createAudioAnalysisService(
         ffmpegVersion: readiness.decoder!.ffmpegVersion,
         sourceType: request.sourceType,
         analyzedSeconds: Number(decoded.analyzedSeconds.toFixed(3)),
-        totalMs,
+        totalMs: result.timing.totalMs,
         resolvedCoreModel: result.decision.resolvedCoreModel,
         degraded: result.degraded.active,
+        discoveryStatus: result.instrumentDiscovery?.status ?? 'not_requested',
+        discoveryCount: result.detectedInstruments.length,
+        ...(result.vocabularyClassifier
+          ? {
+              discoveryClassifierVersion: result.vocabularyClassifier.version,
+              discoveryVocabularyVersion: result.vocabularyClassifier.vocabularyVersion,
+            }
+          : {}),
       });
       c.header('Cache-Control', 'no-store');
       return c.json(result);
