@@ -8,9 +8,10 @@ not authorize a release.
 
 - Canonical checkout: `/Users/milwright/Projects/dev/stem-splitter`.
 - Branch: `codex/v3.2-audio-pipeline`.
-- Current committed base: `9c3120c` (`feat: link footer to instructor console`).
-- The audio-pipeline implementation is a large unstaged/uncommitted worktree;
-  no commit, push, or pull request contains it yet.
+- Implementation base: `9c3120c` (`feat: link footer to instructor console`).
+- The reviewed local audio-pipeline implementation is preserved in commit
+  `db99864` (`feat: prepare v3.2 audio routing pipeline`). It has not been
+  pushed and no pull request contains it.
 - GitHub has no open pull request for this branch. PRs 1–5 are merged historical
   work and must not be cited as delivery of this implementation.
 - Canonical Railway scope is project
@@ -102,7 +103,7 @@ Railway/amd64 gates remain. The exact trace is in
 Read-only Railway inspection found the canonical deployment healthy at the
 pre-pipeline commit: `/healthz` returned `ok: true` and `promptSchema: ready`,
 and the live separation catalogue remained the frozen 2/4/6 baseline. That is
-baseline evidence only; it does not prove any uncommitted work.
+baseline evidence only; it does not prove the local v3.2 commit.
 
 The canonical service has `REPLICATE_YT_MODEL` but not
 `REPLICATE_YT_MODEL_VERSION`. Deploying the current branch before staging the
@@ -117,7 +118,8 @@ automate this check.
 
 ## Mandatory next order
 
-1. Preserve this dirty worktree and review the full diff before any commit.
+1. Preserve the reviewed local commit; do not push or open a pull request until
+   the current-image gate and final release scope are reviewed.
 2. Build the current role-v3 image, rerun the eleven-source corpus on pinned
    FFmpeg 8.0.3, and reproduce readiness/auth on CI/amd64. Investigate Docker
    Desktop's metadata-store errors separately without deleting local images or
