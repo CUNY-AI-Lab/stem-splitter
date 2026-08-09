@@ -6,6 +6,7 @@ import type { Env } from './env';
 // flowing through the Worker.
 
 const SOURCE_URL_TTL_SECONDS = 6 * 60 * 60;
+const ANALYSIS_URL_TTL_SECONDS = 10 * 60;
 const LOCAL_AUDIO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCAL_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -178,4 +179,16 @@ export async function presignDownload(env: Env, key: string): Promise<string> {
     return url.toString();
   }
   return presign(env, 'GET', key, SOURCE_URL_TTL_SECONDS);
+}
+
+/** Short-lived GET for the private analyzer; separate from the separator URL. */
+export async function presignAnalysisDownload(env: Env, key: string): Promise<string> {
+  if (isLocalHosting(env)) {
+    const expiresAt = Math.floor(Date.now() / 1000) + ANALYSIS_URL_TTL_SECONDS;
+    const url = localObjectUrl(env, '/api/local-sources/', key);
+    url.searchParams.set('expires', String(expiresAt));
+    url.searchParams.set('signature', await signLocalSource(env, key, expiresAt));
+    return url.toString();
+  }
+  return presign(env, 'GET', key, ANALYSIS_URL_TTL_SECONDS);
 }

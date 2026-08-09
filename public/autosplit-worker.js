@@ -4,8 +4,16 @@ importScripts('/autosplit.js');
 
 self.addEventListener('message', (event) => {
   try {
-    const samples = new Float32Array(event.data.samples);
-    const features = self.AutoSplit.extractFeatures(samples, event.data.sampleRate);
+    const decoded = new Float32Array(event.data.samples);
+    const samples = self.AutoSplit.resample(
+      decoded,
+      event.data.sampleRate,
+      self.AutoSplit.ANALYSIS_SAMPLE_RATE
+    );
+    const features = self.AutoSplit.extractFeatures(
+      samples,
+      self.AutoSplit.ANALYSIS_SAMPLE_RATE
+    );
     const verdict = self.AutoSplit.chooseSplit(features);
     self.postMessage({ ok: true, features, verdict });
   } catch (error) {

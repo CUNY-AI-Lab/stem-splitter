@@ -2,8 +2,8 @@
 // as a plain Node process (Railway). Implements only the surface src/ uses:
 // prepare().bind().first()/run()/all(), batch(), and meta.changes.
 //
-// This is a prototyping host. Cloudflare D1 stays the production store — nothing
-// under src/ knows this file exists.
+// Railway is the active host until the finished product migrates to Cloudflare;
+// nothing under src/ knows this adapter exists.
 
 import { DatabaseSync } from 'node:sqlite';
 
@@ -93,10 +93,21 @@ export class SqliteD1 {
     const settingsColumns = this.db
       .prepare("PRAGMA table_info('assistant_settings')")
       .all() as Array<{ name: string }>;
-    if (!settingsColumns.some((column) => column.name === 'revision')) {
+    if (settingsColumns.length && !settingsColumns.some((column) => column.name === 'revision')) {
       this.db.exec(
         'ALTER TABLE assistant_settings ADD COLUMN revision INTEGER NOT NULL DEFAULT 0'
       );
+    }
+
+    const jobColumns = this.db
+      .prepare("PRAGMA table_info('jobs')")
+      .all() as Array<{ name: string }>;
+    if (jobColumns.length) {
+      for (const column of ['routing_request', 'source_type', 'analysis']) {
+        if (!jobColumns.some((candidate) => candidate.name === column)) {
+          this.db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
+        }
+      }
     }
   }
 }

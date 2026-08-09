@@ -4,8 +4,8 @@
 // R2Object fields those call sites touch (size, uploaded, httpMetadata,
 // writeHttpMetadata, body).
 //
-// This is a prototyping host. Cloudflare R2 stays the production store — nothing
-// under src/ knows this file exists.
+// Railway is the active host until the finished product migrates to Cloudflare;
+// nothing under src/ knows this adapter exists.
 
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';

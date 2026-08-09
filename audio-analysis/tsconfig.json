@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"],
+    "allowJs": true,
+    "checkJs": false,
+    "isolatedModules": true
+  },
+  "include": ["./**/*.ts", "../public/autosplit.js", "../src/analysis/types.ts"]
+}

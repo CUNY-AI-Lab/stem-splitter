@@ -5,7 +5,7 @@ import type { SeparationBackend, SeparationResult, SeparationStartRequest } from
 // Replicate-hosted Demucs (ryan5453/demucs), running the htdemucs_ft
 // fine-tuned model with MP3 output. ~$0.04–0.05/song on A40.
 //
-// REPLICATE_MODEL_VERSION must be set to the model's latest version hash:
+// REPLICATE_MODEL_VERSION must be set to an exact, reviewed version hash:
 //   curl -s https://api.replicate.com/v1/models/ryan5453/demucs \
 //     -H "Authorization: Bearer $REPLICATE_API_TOKEN" | jq -r .latest_version.id
 

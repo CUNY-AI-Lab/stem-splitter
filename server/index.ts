@@ -17,6 +17,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import app from '../src/index';
 import type { Env } from '../src/env';
+import { runtimeConfigurationSummary, runtimeConfigurationWarnings } from './config';
 import { SqliteD1 } from './d1';
 import { FsR2Bucket } from './r2';
 
@@ -78,6 +79,7 @@ const env = {
 
   SEPARATION_BACKEND: process.env.SEPARATION_BACKEND ?? 'replicate',
   REPLICATE_YT_MODEL: process.env.REPLICATE_YT_MODEL,
+  REPLICATE_YT_MODEL_VERSION: process.env.REPLICATE_YT_MODEL_VERSION,
   YOUTUBE_FETCH_ORDER: process.env.YOUTUBE_FETCH_ORDER ?? 'replicate-first',
   ASSISTANT_MODEL: process.env.ASSISTANT_MODEL,
   // Absent means no instructor accounts, which is a valid configuration: the
@@ -85,6 +87,13 @@ const env = {
   TEACHER_SEED: process.env.TEACHER_SEED,
   AUDIO_SEPARATOR_URL: process.env.AUDIO_SEPARATOR_URL,
   AUDIO_SEPARATOR_TOKEN: process.env.AUDIO_SEPARATOR_TOKEN,
+  SERVER_AUTO_ENABLED: process.env.SERVER_AUTO_ENABLED,
+  SERVER_AUTO_MODE: process.env.SERVER_AUTO_MODE,
+  INSTRUMENT_DISCOVERY_ENABLED: process.env.INSTRUMENT_DISCOVERY_ENABLED,
+  QUERY_ISOLATION_ENABLED: process.env.QUERY_ISOLATION_ENABLED,
+  AUDIO_ANALYSIS_URL: process.env.AUDIO_ANALYSIS_URL,
+  AUDIO_ANALYSIS_TOKEN: process.env.AUDIO_ANALYSIS_TOKEN,
+  AUDIO_ANALYSIS_TIMEOUT_MS: process.env.AUDIO_ANALYSIS_TIMEOUT_MS,
 
   // Unused under LOCAL_HOSTING, but the Env type requires them.
   R2_ACCESS_KEY_ID: '',
@@ -97,6 +106,10 @@ const env = {
   REPLICATE_MODEL_VERSION: optionalEnv('REPLICATE_MODEL_VERSION'),
   OPENROUTER_API_KEY: optionalEnv('OPENROUTER_API_KEY'),
 } as unknown as Env;
+
+for (const warning of runtimeConfigurationWarnings(env)) {
+  console.warn(`[startup] ${warning}`);
+}
 
 const host = new Hono();
 
@@ -115,6 +128,7 @@ host.get('/healthz', async (c) => {
     ok: true,
     base: env.PUBLIC_BASE_URL,
     promptSchema: Number.isInteger(settings?.revision) ? 'ready' : 'missing',
+    configuration: runtimeConfigurationSummary(env),
   });
 });
 host.use('/*', serveStatic({ root: './public' }));

@@ -64,6 +64,7 @@ const test = base.extend({
               PUBLIC_BASE_URL: TEST_PUBLIC_BASE_URL,
               SEPARATION_BACKEND: 'replicate',
               REPLICATE_YT_MODEL: 'test/yt-audio',
+              REPLICATE_YT_MODEL_VERSION: 'e2e-yt-version',
               YOUTUBE_FETCH_ORDER: 'replicate-first',
             },
             secrets: {
@@ -281,6 +282,45 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.getByRole('button', { name: 'Play all stems' })).toBeDisabled();
 });
 
+test('flags off preserve the catalogue shape and reject auto as a server model', async ({ server }) => {
+  const optionsResponse = await server.fetch('/api/separation-options');
+  expect(optionsResponse.status).toBe(200);
+  expect(await optionsResponse.json()).toEqual({
+    backend: 'replicate',
+    defaultModel: 'htdemucs_ft',
+    models: [
+      {
+        id: 'vocals_instrumental',
+        stems: ['vocals', 'instrumental'],
+        label: '2 parts: voice, everything else',
+        engine: 'DEMUCS',
+      },
+      {
+        id: 'htdemucs_ft',
+        stems: ['vocals', 'drums', 'bass', 'other'],
+        label: '4 parts: voice, percussion, low end, the rest',
+        engine: 'DEMUCS',
+      },
+      {
+        id: 'htdemucs_6s',
+        stems: ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'],
+        label: '6 parts: adds plucked strings and keys',
+        engine: 'DEMUCS',
+      },
+    ],
+  });
+
+  const autoResponse = await server.fetch('/api/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-class-code': CLASS_CODE },
+    body: JSON.stringify({ model: 'auto', key: 'uploads/not-used/source.wav', filename: 'source.wav' }),
+  });
+  expect(autoResponse.status).toBe(400);
+  expect(await autoResponse.json()).toEqual({
+    error: 'Unknown model. Allowed: vocals_instrumental, htdemucs_ft, htdemucs_6s',
+  });
+});
+
 test('renames Demucs no_vocals to instrumental for the two-track split', async ({
   page,
   network,
@@ -428,8 +468,9 @@ test('AUTO listens to a local upload and resolves to a real split', async ({ pag
   await expect(page.locator('.badge.ready')).toHaveText('READY');
 
   const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
-  expect(created.model).not.toBe('auto');
-  expect(['vocals_instrumental', 'htdemucs_ft', 'htdemucs_6s']).toContain(created.model);
+  // The fixture is sustained and routes to two tracks. A metadata/decode
+  // failure would silently use the four-track catalogue default instead.
+  expect(created.model).toBe('vocals_instrumental');
   await expect(page.locator('.channel')).toHaveCount(created.expectedStems.length);
   expect(requestedInput).toBeTruthy();
   expect(browserErrors).toEqual([]);
@@ -522,9 +563,6 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
   const sixTrackNames = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
 
   network.use(
-    http.get('https://api.replicate.com/v1/models/test/yt-audio', () =>
-      HttpResponse.json({ latest_version: { id: 'e2e-yt-version' } })
-    ),
     http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
       const payload = await request.json();
       if (payload.input.url) {
@@ -725,9 +763,6 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
   const separationId = 'e2e-youtube-two-track';
 
   network.use(
-    http.get('https://api.replicate.com/v1/models/test/yt-audio', () =>
-      HttpResponse.json({ latest_version: { id: 'e2e-yt-version' } })
-    ),
     http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
       const payload = await request.json();
       if (payload.input.url) {

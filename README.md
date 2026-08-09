@@ -9,22 +9,22 @@ notes, and **Listening Guy**: the Listening Guide, an AI listening companion tha
 listening guide and answers questions in a chat that can drive the mixer
 itself (solo/mute channels, jump the playhead, pin notes for the class).
 
-**Architecture:** Browser → presigned upload to R2 (or in-Worker YouTube
-fetch) → Cloudflare Worker creates a job (D1) → Replicate runs Demucs on a GPU
-in the mode the selected split calls for → webhook marks the job done →
-student streams MP3 stems from R2 → R2 lifecycle rule deletes everything after
-30 days. The Listening Guide runs on OpenRouter (`z-ai/glm-5.2` by default) behind two
-class-code-gated endpoints; guides are generated once per song and cached in
-D1, shared class-wide.
+**Current architecture:** Browser → Railway Node host → persistent upload
+volume and SQLite job state → Replicate runs the pinned Demucs version on a GPU
+→ webhook/polling marks the job done → the student streams synchronized MP3
+parts → the Node host enforces 30-day retention. The Listening Guide runs on
+OpenRouter (`z-ai/glm-5.2` by default) behind class-code-gated endpoints;
+guides are generated once per song and cached class-wide. The retained
+Cloudflare D1/R2/Worker implementation is the deferred migration target, not
+the active release path.
 
 - **~$0.045/song** on Replicate, scales to zero when idle (no GPU to manage).
 - The separation provider lives behind one interface
   (`src/separation/types.ts`) — swap in Modal/RunPod/self-hosted Demucs later
   by implementing it and flipping `SEPARATION_BACKEND`.
-- In production, audio bytes never flow through the Worker on upload
-  (presigned PUT direct to R2), so there are no Worker body-size issues. The
-  explicit local-hosting modes stream browser uploads through the local Worker
-  into simulated R2 with fixed-length enforcement.
+- On the active Railway host, fixed-length uploads stream into the mounted
+  volume through the shared app. The deferred Worker adapter instead uses a
+  presigned PUT direct to R2 so audio bytes do not cross the Worker.
 - The Listening Guide is provider-light too: plain `fetch` to OpenRouter, model set by
   the `ASSISTANT_MODEL` var — swap to any cheap tool-calling model with a var
   change and a redeploy. If the provider is down or unconfigured, students see
@@ -32,7 +32,7 @@ D1, shared class-wide.
 
 ```
 src/
-  index.ts              Worker: uploads, jobs, webhook, labels/annotations,
+  index.ts              Shared Hono app: uploads, jobs, webhook, labels/annotations,
                         listening-guy guide+chat, file serving
   env.ts                Bindings/vars/secrets types
   r2.ts                 Presigned URLs + local retention enforcement
@@ -43,13 +43,14 @@ src/
     types.ts            SeparationBackend interface (the swappable seam)
     replicate.ts        Replicate-hosted Demucs implementation
     modal.ts            Stub for a self-deployed Modal backend
-server/                 Node host for the Railway dev deployment (D1/R2 shims)
+server/                 Active Railway Node host (SQLite/filesystem binding shims)
+audio-analysis/         Private bounded Railway Auto analyzer (separate image)
 public/                 Static frontend (vanilla JS mixer + Listening Guide panel)
-migrations/             Additive D1 migrations (schema.sql = fresh install)
-scripts/smoke.sh        Smoke checks against the deployed Worker
+migrations/             Additive deferred-D1 migrations (schema.sql = fresh install)
+scripts/smoke.sh        Smoke checks against an explicitly selected deployment
 replicate-yt-audio/     Replicate-hosted yt-dlp model (YouTube fetch fallback)
 docs/superpowers/       Per-feature design specs + implementation plans
-schema.sql              D1 schema
+schema.sql              Shared fresh-install relational schema
 cors.json               R2 CORS rules for direct browser uploads
 ```
 
@@ -68,6 +69,13 @@ Workers; do not deploy unfinished work there.
 | Retention | hourly cleanup in app code | R2 bucket lifecycle rule |
 | Audience | current testers and instructors | future class release |
 
+The canonical Railway target is service
+`f53a2915-087c-493a-a345-7a1fa73e6588`, production environment
+`b3381640-1e2f-4765-8e15-15baec599ec2`, project
+`f070742b-3375-4cba-9a86-335f39273c88`. Two Railway projects share the
+`stem-splitter` name, so verify these IDs and use the explicit-ID commands in
+`server/CLAUDE.md` before any write or deployment.
+
 `server/` adapts *to* `src/` through small D1 and R2 shims and never requires a
 change to it — an edit under `src/` to accommodate Node drifts the two targets
 apart. Reach for Railway when you want a tight loop or, more importantly, a
@@ -83,6 +91,10 @@ only live release gate and Cloudflare deploy commands are deferred.
 
 `server/CLAUDE.md` is authoritative for the dev host: the shims, the Railway
 project setup, and the post-deploy verify loop.
+
+The separate private Auto analyzer has its own no-public-domain provisioning,
+shadow rollout, and rollback runbook in
+[Railway audio-analysis provisioning](docs/railway-audio-analysis-provisioning.md).
 
 ## Deferred Cloudflare migration (finished product only)
 
@@ -114,6 +126,7 @@ bun run wrangler -- secret put TEACHER_SEED
 
 bun run db:migrate:4
 bun run db:migrate:5
+bun run db:migrate:6
 bun run deploy
 ```
 
@@ -186,6 +199,9 @@ In `wrangler.jsonc`, set:
   unset it if you don't need the YouTube-fetch fallback (the free in-Worker
   fetch is usually bot-blocked from Cloudflare egress IPs, so without this
   YouTube import mostly won't work)
+- `REPLICATE_YT_MODEL_VERSION` — exact deployed version id for that fetch model.
+  Update it only after a canary; `latest` is rejected so a model push cannot
+  silently change the import path.
 - `YOUTUBE_FETCH_ORDER` — set to `replicate-first` in production so the
   authenticated yt-dlp service runs before the usually blocked in-Worker
   client. If the Replicate model is not configured, the Worker still tries
@@ -324,6 +340,9 @@ catches up the cleanup.
 
 ```sh
 bun run test:e2e
+bun run typecheck:analysis
+bun run test:analysis-service
+bun run test:e2e:auto
 ```
 
 The Playwright suite starts a real Wrangler test-harness Worker with isolated
@@ -337,6 +356,13 @@ incurs no GPU cost. Upload coverage checks that chunked and oversized bodies are
 rejected before storage, length-mismatched objects are removed, and both uploads
 and stems are deleted at the local 30-day retention boundary.
 
+The analysis-service suite additionally runs a real FFmpeg decode and proves
+authentication, scoped source URLs, byte/duration/time/concurrency limits,
+ephemeral cleanup, separate health/readiness, and exact deterministic
+browser/server classifier parity. Server Auto remains disabled unless its
+master flag and rollout mode are explicitly set; analyzer failure preserves the
+four-track fallback.
+
 ## Costs (rough, per class of 20 students × 100 songs)
 
 | Item | Cost |
@@ -344,9 +370,11 @@ and stems are deleted at the local 30-day retention boundary.
 | Replicate (Demucs, ~$0.045/song × 2,000) | ~$90/semester |
 | YouTube fetch (Replicate yt-dlp, ~1¢/import) | ~$20/semester if every song is imported |
 | Listening Guy (≈$0.005/guide, cached once; <1¢/chat exchange) | ~$1–5/semester |
-| R2 storage (MP3 stems, 30-day retention) | ~$1–2/month |
-| R2 egress | $0 (free) |
-| Workers + D1 | free tier at this volume |
+| Railway app service + persistent volume | usage-based; verify the active project dashboard and cap before release |
+| Railway audio-analysis CPU service | not provisioned or measured yet; shadow rollout requires an explicit cap |
+| Deferred R2 storage (MP3 stems, 30-day retention) | historical estimate ~$1–2/month after migration |
+| Deferred R2 egress | $0 under the current R2 policy |
+| Deferred Workers + D1 | expected within the free tier at this volume; recheck at migration time |
 
 ## Swapping the separation backend
 

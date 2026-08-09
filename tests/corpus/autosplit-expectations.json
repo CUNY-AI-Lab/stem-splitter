@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "1",
+  "classifierVersion": "autosplit-role-v3",
+  "analysisSampleRate": 22050,
+  "sources": [
+    {
+      "slug": "folk-duet",
+      "preferredChoice": "six",
+      "acceptedChoices": ["two", "six"],
+      "rejectedChoices": ["four"],
+      "rationale": "Six may earn a guitar-trained channel for the attacked acoustic accompaniment; two is the conservative vocals/accompaniment alternative, while four adds rhythm-section channels this sparse duet does not support."
+    },
+    {
+      "slug": "orchestral",
+      "preferredChoice": "two",
+      "acceptedChoices": ["two"],
+      "rejectedChoices": ["four", "six"],
+      "rationale": "Predominantly sustained orchestral material has no lead voice, kit, electric bass, guitar, or piano utility; two is the least misleading available contract and the long-tail instruments remain in accompaniment."
+    },
+    {
+      "slug": "shoegaze",
+      "preferredChoice": "six",
+      "acceptedChoices": ["four", "six"],
+      "rejectedChoices": ["two"],
+      "rationale": "Dense guitar, bass, drums, and vocals require at least the rhythm-section split; six is useful only when pitched attacks are supported."
+    },
+    {
+      "slug": "piano-strings",
+      "preferredChoice": "six",
+      "acceptedChoices": ["four", "six"],
+      "rejectedChoices": ["two"],
+      "rationale": "Real piano and a rhythm section make two tracks too coarse; four or six may be defensible after listening review."
+    },
+    {
+      "slug": "jazz-sax",
+      "preferredChoice": "four",
+      "acceptedChoices": ["four", "six"],
+      "rejectedChoices": ["two"],
+      "rationale": "The audible bass and drums require a rhythm-section split even though sustained reeds can resemble voice-like material."
+    },
+    {
+      "slug": "hip-hop",
+      "preferredChoice": "four",
+      "acceptedChoices": ["two", "four"],
+      "rejectedChoices": ["six"],
+      "rationale": "Four may expose rap, programmed percussion, and synth bass; two remains an honest vocals/instrumental fallback, while six must not claim guitar/piano utility merely because a synthesized attack is pitched."
+    },
+    {
+      "slug": "bluegrass",
+      "preferredChoice": "six",
+      "acceptedChoices": ["four", "six"],
+      "rejectedChoices": ["two"],
+      "rationale": "Upright bass and several attacked string instruments justify four or six without pretending their labels are Demucs stem names."
+    },
+    {
+      "slug": "synthwave",
+      "preferredChoice": "four",
+      "acceptedChoices": ["two", "four"],
+      "rejectedChoices": ["six"],
+      "rationale": "Four may preserve programmed drums and synth bass; two is an honest vocals/instrumental fallback, while six must not turn synthesizer attacks into an unsupported promise of useful guitar or piano channels."
+    },
+    {
+      "slug": "electronic-stiff-hand",
+      "preferredChoice": "four",
+      "acceptedChoices": ["two", "four"],
+      "rejectedChoices": ["six"],
+      "rationale": "This second all-MT-32 arrangement must not convert harmonic synthesizer attacks into a claim that guitar- or piano-trained channels will be useful."
+    },
+    {
+      "slug": "electronic-back-counting",
+      "preferredChoice": "four",
+      "acceptedChoices": ["two", "four"],
+      "rejectedChoices": ["six"],
+      "rationale": "Programmed rhythm and synth bass can justify four, while two remains conservative; six is rejected because the arrangement provides no verified guitar or piano evidence."
+    },
+    {
+      "slug": "electronic-house",
+      "preferredChoice": "four",
+      "acceptedChoices": ["two", "four"],
+      "rejectedChoices": ["six"],
+      "rationale": "The independent house/electro control should retain rhythm-section utility without treating generic synthesized pitches as evidence for guitar and piano output."
+    }
+  ]
+}

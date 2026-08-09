@@ -2,13 +2,18 @@
 # copied-in mac node_modules would merge over the freshly installed linux one.
 node_modules
 .wrangler
-.dev.vars
+.dev.vars*
+audio-analysis/.env*
 .uv-cache
 output
+dist
 test-results
+tests/corpus/audio
 local-separator/.venv
 local-separator/.data
 local-separator/.models
 docs/acceptance
 .git
 .claude
+.hermes
+*.docx

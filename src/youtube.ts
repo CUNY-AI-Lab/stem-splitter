@@ -75,7 +75,9 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
   }
 
   const replicateConfigured = Boolean(
-    env.REPLICATE_YT_MODEL?.trim() && env.REPLICATE_API_TOKEN?.trim()
+    env.REPLICATE_YT_MODEL?.trim() &&
+      env.REPLICATE_YT_MODEL_VERSION?.trim() &&
+      env.REPLICATE_API_TOKEN?.trim()
   );
   const replicateFirst = env.YOUTUBE_FETCH_ORDER === 'replicate-first' && replicateConfigured;
   const providers: Array<'innertube' | 'replicate'> = replicateFirst
@@ -180,8 +182,9 @@ interface YtPrediction {
 
 export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeAudio> {
   const modelName = env.REPLICATE_YT_MODEL?.trim() ?? '';
+  const modelVersion = env.REPLICATE_YT_MODEL_VERSION?.trim() ?? '';
   const apiToken = env.REPLICATE_API_TOKEN?.trim() ?? '';
-  if (!MODEL_NAME_PATTERN.test(modelName) || !apiToken) {
+  if (!MODEL_NAME_PATTERN.test(modelName) || !modelVersion || modelVersion.toLowerCase() === 'latest' || !apiToken) {
     throw new YouTubeError(
       'YouTube import is unavailable right now. Upload the audio file instead.',
       'youtube_fetch_unavailable'
@@ -193,25 +196,11 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
     'Content-Type': 'application/json',
   };
 
-  // Resolve the latest version explicitly — the model-scoped predictions
-  // endpoint 404s for this private model, so pin the version per request.
-  const modelRes = await fetch(`${REPLICATE_API}/models/${modelName}`, { headers });
-  if (!modelRes.ok) {
-    throw replicateResponseError(modelRes, 'model lookup');
-  }
-  const model = (await modelRes.json()) as { latest_version?: { id: string } };
-  if (!model.latest_version?.id) {
-    throw new YouTubeError(
-      'YouTube import is unavailable right now. Upload the audio file instead.',
-      'youtube_fetch_unavailable'
-    );
-  }
-
   const res = await fetch(`${REPLICATE_API}/predictions`, {
     method: 'POST',
     headers: { ...headers, Prefer: 'wait=60', 'Cancel-After': '4m' },
     body: JSON.stringify({
-      version: model.latest_version.id,
+      version: modelVersion,
       input: { url, max_duration: MAX_DURATION_SECONDS },
     }),
   });

@@ -11,6 +11,7 @@ const TEST_TOKEN = 'test-replicate-token';
 const TEST_ENV = {
   REPLICATE_API_TOKEN: TEST_TOKEN,
   REPLICATE_YT_MODEL: 'test/yt-audio',
+  REPLICATE_YT_MODEL_VERSION: 'yt-version-pinned',
 };
 
 test('YouTube URL parsing accepts video routes and rejects malformed IDs', () => {
@@ -35,12 +36,10 @@ test('Replicate fallback authenticates the output download and validates M4A byt
     const headers = new Headers(init?.headers);
     requests.push({ url, headers });
 
-    if (url.endsWith('/models/test/yt-audio')) {
-      return Response.json({ latest_version: { id: 'yt-version' } });
-    }
     if (url.endsWith('/predictions')) {
       assert.equal(headers.get('prefer'), 'wait=60');
       assert.equal(headers.get('cancel-after'), '4m');
+      assert.equal(JSON.parse(String(init?.body)).version, 'yt-version-pinned');
       return Response.json({
         id: 'yt-prediction',
         status: 'succeeded',
@@ -71,7 +70,7 @@ test('Replicate fallback authenticates the output download and validates M4A byt
     assert.equal(result.title, 'Test track');
     assert.equal(result.durationSec, 19);
     assert.deepEqual(new Uint8Array(result.data), audio);
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -82,9 +81,6 @@ test('Replicate fallback rejects a successful prediction that returns HTML', asy
 
   globalThis.fetch = async (input) => {
     const url = String(input);
-    if (url.endsWith('/models/test/yt-audio')) {
-      return Response.json({ latest_version: { id: 'yt-version' } });
-    }
     if (url.endsWith('/predictions')) {
       return Response.json({
         id: 'yt-prediction',
@@ -132,6 +128,29 @@ test('Replicate rate limits become a retryable student-facing error', async () =
         error.code === 'youtube_fetch_busy' &&
         error.retryable
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate YouTube fetch refuses an unpinned model without making a provider request', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    throw new Error('must not fetch');
+  };
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate('https://www.youtube.com/watch?v=jNQXAC9IVRw', {
+          REPLICATE_API_TOKEN: TEST_TOKEN,
+          REPLICATE_YT_MODEL: 'test/yt-audio',
+        } as never),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+    assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

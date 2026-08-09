@@ -24,10 +24,13 @@ Corollary: `src/` has no import of anything in `server/`, and `tsconfig.json` sc
 
 The third mode exists because of one constraint the other two can't satisfy: Replicate must be able to *reach back*. Under `LOCAL_HOSTING=true` the app hands the provider an HMAC-signed `/api/local-sources/` URL built from `PUBLIC_BASE_URL`, and the provider posts results to `/api/webhooks/separation`. On localhost both are unreachable — jobs only complete via the reconciliation fallback in `GET /api/jobs/:id`. On Railway the public domain makes both work, so this is the only setup that exercises the real webhook path and is currently the release target.
 
-The active service is the Node/Railpack `stem-splitter` service in Railway
-project `f070742b-3375-4cba-9a86-335f39273c88`. Do not substitute the newer
-`web` service whose `Dockerfile.worker` runs workerd inside Railway; that still
-uses a Worker runtime and is outside the current hosting rule.
+The active service is the Node/Railpack `stem-splitter` service
+`f53a2915-087c-493a-a345-7a1fa73e6588`, in production environment
+`b3381640-1e2f-4765-8e15-15baec599ec2` of Railway project
+`f070742b-3375-4cba-9a86-335f39273c88`. Do not substitute the same-named legacy
+project or its newer `web` service whose `Dockerfile.worker` runs workerd inside
+Railway; that still uses a Worker runtime and is outside the current hosting
+rule. A local Railway link is not authority: inspect its IDs before every write.
 
 ## Commands
 
@@ -37,19 +40,31 @@ npm run dev:node          # same, with watch
 DATA_DIR=/tmp/ss PORT=8899 WEBHOOK_SECRET=s CLASS_CODE=c npm start   # throwaway instance
 ```
 
-Separation, coach, and teacher credentials (`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `OPENROUTER_API_KEY`, `TEACHER_SEED`) are **not** required to boot — see "Fail-fast vs. fail-lazy" below. Without `TEACHER_SEED`, the instructor console has no provisioned account. Generate its pre-hashed authoritative array through `docs/teacher-provisioning.md`; never place plaintext credentials in Railway variables.
+Separation, YouTube import, analysis, coach, and teacher credentials
+(`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`,
+`REPLICATE_YT_MODEL` + `REPLICATE_YT_MODEL_VERSION`,
+`AUDIO_ANALYSIS_URL` + `AUDIO_ANALYSIS_TOKEN`, `OPENROUTER_API_KEY`, and
+`TEACHER_SEED`) are **not** required to boot—see "Fail-fast vs. fail-lazy"
+below. Without `TEACHER_SEED`, the instructor console has no provisioned
+account. Generate its pre-hashed authoritative array through
+`docs/teacher-provisioning.md`; never place plaintext credentials in Railway
+variables.
 
-Railway (project `stem-splitter`, workspace Inference Arcade):
+Railway (canonical IDs are intentionally explicit because two projects share
+the `stem-splitter` name):
 
 ```sh
-railway link --project stem-splitter --service stem-splitter --environment production
-railway up --detach -m "<summary>"
-railway deployment list --json   # poll until status is SUCCESS — `up` returning only means the build started
-railway logs --build --lines 100
-railway variable set "NAME=value" --service stem-splitter   # any set triggers a redeploy
+railway status --json             # inspect IDs; never infer authority from the name
+railway link --project f070742b-3375-4cba-9a86-335f39273c88 --environment b3381640-1e2f-4765-8e15-15baec599ec2 --service f53a2915-087c-493a-a345-7a1fa73e6588
+railway up --detach --project f070742b-3375-4cba-9a86-335f39273c88 --environment b3381640-1e2f-4765-8e15-15baec599ec2 --service f53a2915-087c-493a-a345-7a1fa73e6588 -m "<summary>"
+railway deployment list --json --project f070742b-3375-4cba-9a86-335f39273c88 --environment b3381640-1e2f-4765-8e15-15baec599ec2 --service f53a2915-087c-493a-a345-7a1fa73e6588
+railway logs --build --lines 100 --project f070742b-3375-4cba-9a86-335f39273c88 --environment b3381640-1e2f-4765-8e15-15baec599ec2 --service f53a2915-087c-493a-a345-7a1fa73e6588
 ```
 
-Setting a variable redeploys, so batch changes when you can, and always re-verify the live URL afterward rather than assuming the old container's behavior carried over.
+Setting a variable redeploys unless `--skip-deploys` is used. Stage coordinated
+release variables with `--skip-deploys`, then deploy the reviewed commit once;
+always re-verify the live URL afterward. Never print `railway variable --json`
+or `--kv` output because both include raw secret values.
 
 ## Architecture
 
@@ -73,7 +88,16 @@ Numbered `migrations/` remain deferred Cloudflare D1 migration inputs.
 
 `WEBHOOK_SECRET` and `CLASS_CODE` are required at boot and `process.exit(1)` if absent — every request path needs them, so booting without them only produces confusing 500s later.
 
-`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `OPENROUTER_API_KEY`, and `TEACHER_SEED` are checked lazily and only warn. This is deliberate: without them, upload, mixer, labels, notes, and stem playback all still work; a missing teacher seed leaves the instructor console unprovisioned, while a separation attempt returns the backend's own error. Making them fatal would crash-loop the whole service over a feature most of the app doesn't need. Keep this split when adding credentials — ask whether a missing value should take down playback.
+`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, the YouTube model/version
+pair, the analysis URL/token pair, `OPENROUTER_API_KEY`, and `TEACHER_SEED` are
+checked lazily. This is deliberate: without them, upload, mixer, labels, notes,
+and stem playback all still work. `/healthz.configuration` reports only
+value-free `configured`/`unconfigured`/`incomplete`/`invalid` states and rollout
+flag states; these report configuration, not a network probe. Startup logs warn
+without printing values. A missing analyzer makes Auto
+record and use the explicit four-track fallback. Making these variables fatal
+would crash-loop the whole service over optional features. Keep this split when
+adding credentials—ask whether a missing value should take down playback.
 
 ## Parity constraints with production
 
@@ -86,7 +110,11 @@ These are properties of the app, not of the host, so the shims must not quietly 
 
 ## Railway specifics
 
-Service `stem-splitter` in project `stem-splitter`, environment `production`, with a volume mounted at `/data` and `DATA_DIR=/data`. The volume is load-bearing: without it every deploy resets the database and all audio. Confirm persistence after infrastructure changes by re-POSTing a key uploaded before a restart — `400 Upload not found` means the volume isn't holding.
+The canonical service IDs are listed above. It has a volume mounted at `/data`
+and `DATA_DIR=/data`. The volume is load-bearing: without it every deploy resets
+the database and all audio. Confirm persistence after infrastructure changes by
+re-POSTing a key uploaded before a restart—`400 Upload not found` means the
+volume is not holding.
 
 `PUBLIC_BASE_URL` is derived from `RAILWAY_PUBLIC_DOMAIN` when unset, so the domain must exist before the container starts for webhooks to resolve. Builder is Railpack; `engines.node >= 22.5` matters because `node:sqlite` is what the D1 shim is built on.
 
@@ -94,7 +122,7 @@ Service `stem-splitter` in project `stem-splitter`, environment `production`, wi
 
 Reaching `SUCCESS` says the container started, not that the app works. The checks worth running against the live URL, in order of what they actually prove:
 
-1. `GET /healthz` — echoes the resolved `PUBLIC_BASE_URL`; wrong value here means webhooks will fail later.
+1. `GET /healthz` — echoes the resolved `PUBLIC_BASE_URL` and value-free optional-service configuration state. This is not a network readiness probe: verify the analyzer's own `/readyz` separately. Wrong base means webhooks will fail; `incomplete` or `invalid` means the related optional path must not be enabled.
 2. `POST /api/uploads` then `PUT` the returned `uploadUrl` — note the field is `uploadUrl`, not `url`.
 3. `POST /api/jobs` — a 200 proves the provider accepted the signed source URL, which is the part localhost cannot test.
 4. Poll `GET /api/jobs/:id` to `done`, then fetch each stem and check the leading bytes are an MP3 sync word (`fffb`) or `ID3`. Hash them: equal sizes are normal for short fixtures, identical *hashes* would mean the same file was stored under several names.
@@ -103,4 +131,8 @@ Reaching `SUCCESS` says the container started, not that the app works. The check
 
 ## Tests
 
-`npm run test:e2e` runs against Miniflare, not this host — it validates `src/`, so it is necessary but not sufficient for a change here. There is no automated coverage of `server/` itself; the shims are verified by running the real flow against a deployment.
+`npm run test:e2e` and `npm run test:e2e:auto` run against Miniflare, not this
+host, so they are necessary but not sufficient for a change here.
+`npm run test:server` covers additive SQLite migration and value-free runtime
+configuration reporting. The public signed-source and webhook round trip still
+requires a real Railway flow.

@@ -5,6 +5,10 @@ R2_ACCESS_KEY_ID=your-r2-access-key-id
 R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
 REPLICATE_API_TOKEN=r8_your_replicate_token
 REPLICATE_MODEL_VERSION=paste-latest-version-hash-here
+# Both YouTube fallback fields are required together. Pin an exact deployed
+# version; the literal value "latest" is rejected.
+# REPLICATE_YT_MODEL=owner/model-name
+# REPLICATE_YT_MODEL_VERSION=paste-exact-version-id-here
 WEBHOOK_SECRET=any-long-random-string
 CLASS_CODE=your-class-code
 OPENROUTER_API_KEY=sk-or-your-openrouter-key
@@ -12,6 +16,16 @@ OPENROUTER_API_KEY=sk-or-your-openrouter-key
 # Optional instructor console provisioning. Generate only hashed records using
 # docs/teacher-provisioning.md; never put a real seed in this example file.
 # TEACHER_SEED=[{"username":"instructor","name":"Course Instructor","salt":"...","hash":"...","iterations":210000}]
+
+# Server Auto is fail-lazy and off by default. Enable shadow before
+# authoritative mode, and configure the private analysis endpoint as a pair.
+# SERVER_AUTO_ENABLED=true
+# SERVER_AUTO_MODE=shadow
+# AUDIO_ANALYSIS_URL=http://audio-analysis.railway.internal:8080
+# AUDIO_ANALYSIS_TOKEN=choose-at-least-32-private-characters
+# AUDIO_ANALYSIS_TIMEOUT_MS=15000
+# INSTRUMENT_DISCOVERY_ENABLED=true
+# QUERY_ISOLATION_ENABLED=true
 
 # Fully local Audio Separator + BS-RoFormer development (no production
 # credentials required). These values override wrangler.jsonc in local mode.

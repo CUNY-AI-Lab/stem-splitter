@@ -20,14 +20,26 @@ const AutoSplit = (globalThis as Record<string, any>).AutoSplit as {
     numberOfChannels: number;
     getChannelData(channel: number): Float32Array;
   }): Float32Array;
+  resample(samples: Float32Array, fromRate: number, toRate?: number): Float32Array;
   TWO: string;
   FOUR: string;
   SIX: string;
   MAX_ANALYSIS_SECONDS: number;
+  ANALYSIS_SAMPLE_RATE: number;
+  MAX_BROWSER_DECODE_BYTES: number;
+  MAX_BROWSER_DECODE_SECONDS: number;
+  browserDecodeAllowed(byteLength: number, durationSeconds: number): boolean;
 };
 
 const SR = 22050;
 const SECONDS = 12;
+let randomState = 0x5eed1234;
+function random(): number {
+  randomState ^= randomState << 13;
+  randomState ^= randomState >>> 17;
+  randomState ^= randomState << 5;
+  return (randomState >>> 0) / 0x1_0000_0000;
+}
 
 // --- composition helpers ----------------------------------------------------
 
@@ -64,7 +76,7 @@ function membrane(baseFreq: number, seconds = 0.35): Float32Array {
     const t = i / SR;
     const f = baseFreq * (1 + 0.8 * Math.exp(-t * 30));
     const body = Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 9);
-    const snap = (Math.random() * 2 - 1) * Math.exp(-t * 60) * 0.7;
+    const snap = (random() * 2 - 1) * Math.exp(-t * 60) * 0.7;
     out[i] = (body + snap) * 0.8;
   }
   return out;
@@ -76,7 +88,7 @@ function shaker(seconds = 0.09): Float32Array {
   let hp = 0;
   for (let i = 0; i < out.length; i++) {
     const t = i / SR;
-    const n = Math.random() * 2 - 1;
+    const n = random() * 2 - 1;
     hp = 0.6 * hp + n - (i ? out[i - 1] : 0) * 0; // crude brightening
     out[i] = (n - hp * 0.3) * Math.exp(-t * 45) * 0.5;
   }
@@ -88,7 +100,7 @@ function pluck(freq: number, seconds = 1.4): Float32Array {
   const out = new Float32Array(Math.floor(seconds * SR));
   const period = Math.max(2, Math.round(SR / freq));
   const buf = new Float32Array(period);
-  for (let i = 0; i < period; i++) buf[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < period; i++) buf[i] = random() * 2 - 1;
   for (let i = 0; i < out.length; i++) {
     const j = i % period;
     const next = buf[(j + 1) % period];
@@ -195,6 +207,41 @@ test('a moving low line can justify 4 parts without bright percussion', () => {
   assert.match(verdict.reason, /low-end/);
 });
 
+test('diffuse live rhythm cues keep sustained reeds out of the two-part route', () => {
+  const verdict = AutoSplit.chooseSplit({
+    onsetsPerSecond: 0.3,
+    pitchedAttacksPerSecond: 0.05,
+    sustainedLow: 0.15,
+    percussiveHigh: 0.18,
+    silent: false,
+  });
+  assert.equal(verdict.choice, AutoSplit.FOUR);
+  assert.match(verdict.reason, /percussive and low-end/);
+});
+
+test('generic electronic pitched attacks do not promise guitar and piano channels', () => {
+  const verdict = AutoSplit.chooseSplit({
+    onsetsPerSecond: 3.61,
+    pitchedAttacksPerSecond: 0.96,
+    sustainedLow: 0.27,
+    percussiveHigh: 0.16,
+    silent: false,
+  });
+  assert.equal(verdict.choice, AutoSplit.FOUR);
+  assert.match(verdict.reason, /percussive and low-end/);
+});
+
+test('high-rate pitched attacks still earn the six-track contract', () => {
+  const verdict = AutoSplit.chooseSplit({
+    onsetsPerSecond: 2.9,
+    pitchedAttacksPerSecond: 1.49,
+    sustainedLow: 0.5,
+    percussiveHigh: 0.03,
+    silent: false,
+  });
+  assert.equal(verdict.choice, AutoSplit.SIX);
+});
+
 test('plucked-lute ensemble with percussion chooses 6 parts', () => {
   const track = silence();
   const scale = [220, 247, 262, 294, 330, 349, 392];
@@ -256,7 +303,7 @@ function reed(freq: number, seconds: number): Float32Array {
     let s = 0;
     for (let h = 1; h <= 9; h += 2) s += Math.sin(2 * Math.PI * freq * h * t) / h;
     const env = Math.min(1, t / 0.2) * Math.min(1, (seconds - t) / 0.2);
-    out[i] = (s + (Math.random() * 2 - 1) * 0.06) * env * 0.22;
+    out[i] = (s + (random() * 2 - 1) * 0.06) * env * 0.22;
   }
   return out;
 }
@@ -280,7 +327,7 @@ function speech(seconds: number): Float32Array {
     phase += (2 * Math.PI * f0) / SR;
     let s = 0;
     for (let h = 1; h <= 12; h++) s += Math.sin(phase * h) / h;
-    const consonant = pos > 0.55 && pos < 0.68 ? (Math.random() * 2 - 1) * 0.5 : 0;
+    const consonant = pos > 0.55 && pos < 0.68 ? (random() * 2 - 1) * 0.5 : 0;
     out[i] = (s * env * 0.22 + consonant * 0.3) * 0.9;
   }
   return out;
@@ -357,4 +404,71 @@ test('downmix samples the beginning, middle, and end within its analysis budget'
   assert.equal(samples[1499], 1500);
   assert.equal(samples[1500], 3751);
   assert.equal(samples[3000], 7501);
+});
+
+test('downmix analyzes a source shorter than the budget in full', () => {
+  const sampleRate = 100;
+  const length = 30 * sampleRate;
+  const channel = Float32Array.from({ length }, (_, index) => index);
+
+  const samples = AutoSplit.downmix({
+    sampleRate,
+    length,
+    numberOfChannels: 1,
+    getChannelData: () => channel,
+  });
+
+  assert.equal(samples.length, length);
+  assert.equal(samples[0], 0);
+  assert.equal(samples[length - 1], length - 1);
+});
+
+test('browser analysis resamples to the fixed server parity rate', () => {
+  const source = Float32Array.from([0, 1, 0, -1]);
+  const samples = AutoSplit.resample(source, 4, 8);
+  assert.equal(AutoSplit.ANALYSIS_SAMPLE_RATE, 22_050);
+  assert.equal(samples.length, 8);
+  assert.deepEqual(Array.from(samples.slice(0, 5)), [0, 0.5, 1, 0.5, 0]);
+});
+
+test('browser downsampling rejects frequencies above the analysis Nyquist limit', () => {
+  const sourceRate = 48_000;
+  const seconds = 0.25;
+  const tone = (frequency: number) =>
+    Float32Array.from(
+      { length: sourceRate * seconds },
+      (_, index) => Math.sin((2 * Math.PI * frequency * index) / sourceRate)
+    );
+  const rms = (samples: Float32Array) =>
+    Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+
+  const inBand = AutoSplit.resample(tone(1_000), sourceRate);
+  const aboveNyquist = AutoSplit.resample(tone(15_000), sourceRate);
+  assert.ok(rms(inBand) > 0.65, 'an audible in-band tone should survive');
+  assert.ok(rms(aboveNyquist) < 0.02, 'out-of-band energy must not alias into classifier bands');
+});
+
+test('browser decode policy caps advisory source proxies before classification', () => {
+  assert.equal(
+    AutoSplit.browserDecodeAllowed(
+      AutoSplit.MAX_BROWSER_DECODE_BYTES,
+      AutoSplit.MAX_BROWSER_DECODE_SECONDS
+    ),
+    true
+  );
+  assert.equal(
+    AutoSplit.browserDecodeAllowed(
+      AutoSplit.MAX_BROWSER_DECODE_BYTES + 1,
+      AutoSplit.MAX_BROWSER_DECODE_SECONDS
+    ),
+    false
+  );
+  assert.equal(
+    AutoSplit.browserDecodeAllowed(
+      AutoSplit.MAX_BROWSER_DECODE_BYTES,
+      AutoSplit.MAX_BROWSER_DECODE_SECONDS + 0.001
+    ),
+    false
+  );
+  assert.equal(AutoSplit.browserDecodeAllowed(1, Number.NaN), false);
 });

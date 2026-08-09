@@ -6,10 +6,22 @@ import {
   getRetainedAudio,
   isLocalHosting,
   maintainLocalAudioRetention,
+  presignAnalysisDownload,
   presignUpload,
   presignDownload,
   verifyLocalSource,
 } from './r2';
+import {
+  audioAnalysisTimeoutMs,
+  AUTO_ROUTING_REQUEST,
+  configuredAudioAnalysisProvider,
+  resolveAutoRouting,
+  serverAutoCapability,
+  type AudioSourceType,
+  type AutoRoutingDecisionV1,
+} from './analysis';
+import { parseBrowserAutoSummary, AudioAnalysisContractError } from './analysis/contract';
+import { processingFeatureFlags } from './features';
 import { getBackend, type SeparationResult } from './separation';
 import {
   DEFAULT_DEMUCS_MODEL,
@@ -79,6 +91,9 @@ interface JobRow {
   error: string | null;
   created_at: string;
   model: string | null;
+  routing_request: string | null;
+  source_type: string | null;
+  analysis: string | null;
   labels: string | null;
 }
 
@@ -123,7 +138,12 @@ app.get('/api/auth-check', requireClassCode, (c) => c.json({ ok: true }));
 // The static frontend asks which profiles the configured backend can actually
 // run. In particular, Replicate must never advertise the local BS-RoFormer
 // profile even though the branched frontend knows how to display it.
-app.get('/api/separation-options', (c) => c.json(getSeparationOptions(c.env.SEPARATION_BACKEND)));
+app.get('/api/separation-options', (c) => {
+  const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
+  const auto = serverAutoCapability(c.env);
+  // Flags off must keep the pre-change response shape byte-for-byte compatible.
+  return auto ? c.json({ ...options, routing: { auto: auto.mode } }) : c.json(options);
+});
 
 // --- uploads ----------------------------------------------------------
 
@@ -425,19 +445,45 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         archiveId?: string;
         archiveFile?: string;
         model?: string;
+        routingRequest?: string;
+        browserAnalysis?: unknown;
       }
     | null;
 
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
-  const model = body?.model ?? options.defaultModel;
-  if (!modelIsAllowed(c.env.SEPARATION_BACKEND, model)) {
+  const submittedModel = body?.model ?? options.defaultModel;
+  const autoCapability = serverAutoCapability(c.env);
+  const autoRequested = Boolean(
+    autoCapability &&
+      (submittedModel === AUTO_ROUTING_REQUEST || body?.routingRequest === AUTO_ROUTING_REQUEST)
+  );
+  const authoritativeRequest =
+    submittedModel === AUTO_ROUTING_REQUEST && autoCapability?.mode === 'authoritative';
+  if (!authoritativeRequest && !modelIsAllowed(c.env.SEPARATION_BACKEND, submittedModel)) {
     return c.json({ error: `Unknown model. Allowed: ${options.models.map((item) => item.id).join(', ')}` }, 400);
+  }
+  const currentModel = authoritativeRequest ? options.defaultModel : submittedModel;
+  let browserAnalysis;
+  if (autoRequested) {
+    try {
+      browserAnalysis = parseBrowserAutoSummary(
+        body?.browserAnalysis,
+        options.models
+      );
+    } catch (error) {
+      if (error instanceof AudioAnalysisContractError) {
+        return c.json({ error: error.message }, 400);
+      }
+      throw error;
+    }
   }
 
   let key: string;
   let filename: string;
+  let sourceType: AudioSourceType;
 
   if (body?.youtubeUrl) {
+    sourceType = 'youtube';
     // Caller error (unrecognizable link) is a 400; upstream failures are 502.
     if (!parseYouTubeVideoId(body.youtubeUrl)) {
       return c.json(
@@ -477,6 +523,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     filename = sanitizeFilename(audio.title) || 'youtube-audio';
     await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
   } else if (body?.archiveId) {
+    sourceType = 'archive';
     const identifier = parseArchiveIdentifier(body.archiveId);
     if (!identifier) {
       return c.json(
@@ -519,6 +566,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       httpMetadata: { contentType: archiveContentType(audio.fileName) },
     });
   } else {
+    sourceType = 'upload';
     const uploadKey = body?.key;
     filename = sanitizeFilename(body?.filename ?? '');
     if (!uploadKey || !uploadKey.startsWith('uploads/') || !filename) {
@@ -534,12 +582,50 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     key = uploadKey;
   }
 
-  const id = crypto.randomUUID();
-  await c.env.DB.prepare('INSERT INTO jobs (id, filename, source_key, status, model) VALUES (?, ?, ?, ?, ?)')
-    .bind(id, filename, key, 'pending', model)
-    .run();
-
   const audioUrl = await presignDownload(c.env, key);
+  let model = currentModel;
+  let autoRouting: AutoRoutingDecisionV1 | undefined;
+  if (autoRequested && autoCapability) {
+    const analysisUrl = await presignAnalysisDownload(c.env, key);
+    const flags = processingFeatureFlags(c.env);
+    autoRouting = await resolveAutoRouting({
+      sourceUrl: analysisUrl,
+      sourceType,
+      mode: autoCapability.mode,
+      currentModel,
+      fallbackModel: options.defaultModel,
+      coreModels: options.models,
+      ...(browserAnalysis ? { browserAnalysis } : {}),
+      provider: configuredAudioAnalysisProvider(c.env),
+      timeoutMs: audioAnalysisTimeoutMs(c.env),
+      instrumentDiscovery: flags.instrumentDiscovery,
+    });
+    model = autoRouting.resolvedCoreModel;
+  }
+
+  const id = crypto.randomUUID();
+  if (autoRouting) {
+    await c.env.DB.prepare(
+      'INSERT INTO jobs (id, filename, source_key, status, model, routing_request, source_type, analysis) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+      .bind(
+        id,
+        filename,
+        key,
+        'pending',
+        model,
+        AUTO_ROUTING_REQUEST,
+        sourceType,
+        JSON.stringify(autoRouting)
+      )
+      .run();
+  } else {
+    // Keep the kill-switch path compatible with the pre-routing schema/query.
+    await c.env.DB.prepare('INSERT INTO jobs (id, filename, source_key, status, model) VALUES (?, ?, ?, ?, ?)')
+      .bind(id, filename, key, 'pending', model)
+      .run();
+  }
+
   const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
 
   try {
@@ -561,6 +647,13 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     filename,
     model,
     expectedStems: getSeparationOption(model)?.stems ?? [],
+    ...(autoRouting
+      ? {
+          routingRequest: AUTO_ROUTING_REQUEST,
+          sourceType,
+          autoRouting,
+        }
+      : {}),
   });
 });
 
@@ -972,6 +1065,14 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
         url: `/api/files/${s.key}`,
       }))
     : [];
+  let autoRouting: AutoRoutingDecisionV1 | undefined;
+  if (row.analysis) {
+    try {
+      autoRouting = JSON.parse(row.analysis) as AutoRoutingDecisionV1;
+    } catch {
+      // Corrupt optional metadata must not hide an otherwise playable core split.
+    }
+  }
   return {
     id: row.id,
     filename: row.filename,
@@ -984,6 +1085,13 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     stems,
     guide,
     createdAt: row.created_at,
+    ...(row.routing_request === AUTO_ROUTING_REQUEST && autoRouting
+      ? {
+          routingRequest: AUTO_ROUTING_REQUEST,
+          sourceType: row.source_type,
+          autoRouting,
+        }
+      : {}),
   };
 }
 

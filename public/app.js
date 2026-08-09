@@ -207,6 +207,7 @@ function addJob(job) {
     filename: job.filename,
     model: job.model,
     expectedStems: job.expectedStems || [],
+    ...(job.autoRouting ? { autoRouting: job.autoRouting } : {}),
     // POST /api/jobs doesn't carry a timestamp; this stands in until the first
     // poll returns the server's own createdAt.
     startedAt: Date.now(),
@@ -252,8 +253,11 @@ const engineSummary = document.getElementById('engine-summary');
 let separationOptionsReady;
 let youtubeFetchInProgress = false;
 const AUTO_MODEL = 'auto';
+const BROWSER_AUDIO_DECODE_TIMEOUT_MS = 20_000;
+const BROWSER_AUDIO_METADATA_TIMEOUT_MS = 5_000;
 let catalogueModels = [];
 let catalogueDefaultModel = '';
+let serverAutoMode = 'off';
 
 function selectedModel() {
   return document.querySelector('input[name="stem-model"]:checked')?.value || '';
@@ -297,10 +301,64 @@ function classifyAudio(samples, sampleRate) {
   });
 }
 
+function decodeAudioFile(context, file) {
+  let timeout;
+  const work = file.arrayBuffer().then((bytes) => context.decodeAudioData(bytes));
+  const deadline = new Promise((_, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error('Audio decoding timed out')),
+      BROWSER_AUDIO_DECODE_TIMEOUT_MS
+    );
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timeout));
+}
+
+function readAudioDuration(file) {
+  return new Promise((resolve, reject) => {
+    if (!globalThis.URL?.createObjectURL) {
+      reject(new Error('Audio metadata is unavailable'));
+      return;
+    }
+    const audio = document.createElement('audio');
+    const objectUrl = URL.createObjectURL(file);
+    let timeout;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      audio.removeEventListener('loadedmetadata', loaded);
+      audio.removeEventListener('error', failed);
+      audio.removeAttribute('src');
+      audio.load();
+      URL.revokeObjectURL(objectUrl);
+    };
+    const finish = (callback, value) => {
+      cleanup();
+      callback(value);
+    };
+    const loaded = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        finish(resolve, audio.duration);
+      } else {
+        finish(reject, new Error('Audio duration is invalid'));
+      }
+    };
+    const failed = () => finish(reject, new Error('Audio metadata could not be read'));
+    timeout = setTimeout(
+      () => finish(reject, new Error('Audio metadata timed out')),
+      BROWSER_AUDIO_METADATA_TIMEOUT_MS
+    );
+    audio.addEventListener('loadedmetadata', loaded, { once: true });
+    audio.addEventListener('error', failed, { once: true });
+    audio.preload = 'metadata';
+    audio.src = objectUrl;
+    audio.load();
+  });
+}
+
 /**
- * Resolve AUTO before creating a paid separation. Local files are decoded and
- * classified in a worker. Remote imports cannot be heard by the browser before
- * job creation, so they use the advertised catalogue default and say so.
+ * Resolve AUTO according to the advertised rollout mode. With the kill switch
+ * off this is the original browser behavior. Shadow mode reports the browser or
+ * default choice while asking the server to compare. Authoritative mode keeps
+ * `auto` as a routing request until the stored source has been analyzed.
  */
 async function resolveModel(chosen, file, sourceLabel = 'this source') {
   if (chosen !== AUTO_MODEL) return { model: chosen, note: '' };
@@ -309,37 +367,103 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
   const fallbackId = fallback?.id || '';
   const fallbackParts = fallback?.stems.length || 4;
   if (!file) {
+    if (serverAutoMode === 'authoritative') {
+      return {
+        model: AUTO_MODEL,
+        routingRequest: AUTO_MODEL,
+        note: `AUTO will listen to ${sourceLabel} after it is imported.`,
+      };
+    }
     return {
       model: fallbackId,
-      note: `AUTO cannot listen to ${sourceLabel} before import — using the ${fallbackParts}-part default.`,
+      ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
+      note:
+        serverAutoMode === 'shadow'
+          ? `AUTO is checking ${sourceLabel} in shadow mode — this split keeps the ${fallbackParts}-part default.`
+          : `AUTO cannot listen to ${sourceLabel} before import — using the ${fallbackParts}-part default.`,
+    };
+  }
+
+  // In authoritative mode the stored source is the source of truth. Avoid a
+  // redundant full-file Web Audio allocation merely to produce an advisory
+  // browser answer that the server must verify anyway.
+  if (serverAutoMode === 'authoritative') {
+    return {
+      model: AUTO_MODEL,
+      routingRequest: AUTO_MODEL,
+      note: `AUTO will listen to ${sourceLabel} on the server after upload.`,
     };
   }
 
   const AudioContextType = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextType || !globalThis.AutoSplit || !window.Worker) {
     return {
-      model: fallbackId,
-      note: `AUTO is unavailable in this browser — using the ${fallbackParts}-part default.`,
+      model: serverAutoMode === 'authoritative' ? AUTO_MODEL : fallbackId,
+      ...(serverAutoMode === 'off' ? {} : { routingRequest: AUTO_MODEL }),
+      note:
+        serverAutoMode === 'authoritative'
+          ? 'AUTO will listen on the server after upload.'
+          : `AUTO is unavailable in this browser — using the ${fallbackParts}-part default.`,
     };
   }
 
   let context;
   try {
     showUploadMessage('AUTO IS LISTENING BEFORE THE UPLOAD…');
+    if (file.size > AutoSplit.MAX_BROWSER_DECODE_BYTES) {
+      return {
+        model: fallbackId,
+        ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
+        note:
+          serverAutoMode === 'shadow'
+            ? `AUTO will check ${sourceLabel} on the server in shadow mode — browser analysis was skipped to protect memory, so this split keeps the ${fallbackParts}-part default.`
+            : `AUTO skipped browser analysis for this long or large file to protect memory — using the ${fallbackParts}-part default.`,
+      };
+    }
+    const duration = await readAudioDuration(file);
+    if (!AutoSplit.browserDecodeAllowed(file.size, duration)) {
+      return {
+        model: fallbackId,
+        ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
+        note:
+          serverAutoMode === 'shadow'
+            ? `AUTO will check ${sourceLabel} on the server in shadow mode — browser analysis was skipped to protect memory, so this split keeps the ${fallbackParts}-part default.`
+            : `AUTO skipped browser analysis for this long or large file to protect memory — using the ${fallbackParts}-part default.`,
+      };
+    }
     context = new AudioContextType();
-    const buffer = await context.decodeAudioData(await file.arrayBuffer());
+    const buffer = await decodeAudioFile(context, file);
+    // Downmixing is a bounded linear pass. Keep the more expensive anti-alias
+    // resampling and feature extraction together in the worker so long tracks
+    // cannot monopolize the UI thread on lower-powered classroom devices.
     const samples = AutoSplit.downmix(buffer);
     const { verdict } = await classifyAudio(samples, buffer.sampleRate);
     const model = AutoSplit.pickModel(verdict.choice, catalogueModels) || fallbackId;
     const parts = catalogueModels.find((candidate) => candidate.id === model)?.stems.length;
+    const browserAnalysis = {
+      classifierVersion: AutoSplit.ROLE_CLASSIFIER_VERSION,
+      choice: verdict.choice,
+      resolvedCoreModel: model,
+      reason: verdict.reason,
+    };
     return {
-      model,
-      note: `AUTO CHOSE ${parts || fallbackParts} PARTS — ${verdict.reason.toUpperCase()}.`,
+      model: serverAutoMode === 'authoritative' ? AUTO_MODEL : model,
+      ...(serverAutoMode === 'off'
+        ? {}
+        : { routingRequest: AUTO_MODEL, browserAnalysis }),
+      note:
+        serverAutoMode === 'authoritative'
+          ? `AUTO heard a likely ${parts || fallbackParts}-part split in the browser and will verify it after upload.`
+          : `AUTO CHOSE ${parts || fallbackParts} PARTS — ${verdict.reason.toUpperCase()}.`,
     };
   } catch {
     return {
-      model: fallbackId,
-      note: `AUTO could not read this file — using the ${fallbackParts}-part default.`,
+      model: serverAutoMode === 'authoritative' ? AUTO_MODEL : fallbackId,
+      ...(serverAutoMode === 'off' ? {} : { routingRequest: AUTO_MODEL }),
+      note:
+        serverAutoMode === 'authoritative'
+          ? 'AUTO will listen on the server after upload.'
+          : `AUTO could not read this file — using the ${fallbackParts}-part default.`,
     };
   } finally {
     if (context) void context.close().catch(() => {});
@@ -371,6 +495,9 @@ async function loadSeparationOptions() {
 
     catalogueModels = options.models;
     catalogueDefaultModel = options.defaultModel;
+    serverAutoMode = ['shadow', 'authoritative'].includes(options.routing?.auto)
+      ? options.routing.auto
+      : 'off';
     stemChoice.replaceChildren();
     stemChoice.appendChild(buildAutoOption());
     for (const model of options.models) {
@@ -444,7 +571,12 @@ function buildAutoOption() {
   input.type = 'radio';
   input.name = 'stem-model';
   input.value = AUTO_MODEL;
-  input.setAttribute('aria-label', 'Auto: listen to a local file and choose 2, 4, or 6 parts');
+  input.setAttribute(
+    'aria-label',
+    serverAutoMode === 'authoritative'
+      ? 'Auto: listen after import and choose 2, 4, or 6 parts'
+      : 'Auto: listen to a local file and choose 2, 4, or 6 parts'
+  );
 
   const bar = document.createElement('span');
   bar.className = 'split-bar';
@@ -476,7 +608,10 @@ function renderSplitLegend(models) {
   splitLegend.replaceChildren();
   if (selectedModel() === AUTO_MODEL) {
     const item = document.createElement('li');
-    item.textContent = 'listens to local audio, then picks 2, 4, or 6 parts';
+    item.textContent =
+      serverAutoMode === 'authoritative'
+        ? 'listens after import, then picks 2, 4, or 6 parts'
+        : 'listens to local audio, then picks 2, 4, or 6 parts';
     splitLegend.appendChild(item);
     return;
   }
@@ -542,15 +677,21 @@ ytForm.addEventListener('submit', async (e) => {
 
   try {
     const chosen = await requireSelectedModel();
-    const { model, note } = await resolveModel(chosen, null, 'YouTube audio');
+    const resolved = await resolveModel(chosen, null, 'YouTube audio');
+    const { model, note } = resolved;
     if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ youtubeUrl: url, model }),
+      body: JSON.stringify({
+        youtubeUrl: url,
+        model,
+        ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
+        ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
+      }),
     });
     ytUrlInput.value = '';
     addJob(job);
-    showUploadMessage('PROCESSING — parts will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    showUploadMessage(processingMessage(job));
     renderJobs();
     pollSoon();
   } catch (err) {
@@ -789,15 +930,22 @@ async function importArchiveTrack(item, track, button) {
 
   try {
     const chosen = await requireSelectedModel();
-    const { model, note } = await resolveModel(chosen, null, 'Internet Archive audio');
+    const resolved = await resolveModel(chosen, null, 'Internet Archive audio');
+    const { model, note } = resolved;
     if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ archiveId: item.identifier, archiveFile: track.name, model }),
+      body: JSON.stringify({
+        archiveId: item.identifier,
+        archiveFile: track.name,
+        model,
+        ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
+        ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
+      }),
     });
 
     addJob(job);
-    showUploadMessage('PROCESSING — stems will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    showUploadMessage(processingMessage(job, 'stems'));
     renderJobs();
     pollSoon();
     button.textContent = 'QUEUED';
@@ -820,7 +968,8 @@ async function handleFile(file) {
 
   try {
     const chosen = await requireSelectedModel();
-    const { model, note } = await resolveModel(chosen, file);
+    const resolved = await resolveModel(chosen, file);
+    const { model, note } = resolved;
     if (note) showUploadMessage(note);
     const { key, uploadUrl } = await api('/api/uploads', {
       method: 'POST',
@@ -834,11 +983,17 @@ async function handleFile(file) {
     showUploadMessage('STARTING SEPARATION…');
     const job = await api('/api/jobs', {
       method: 'POST',
-      body: JSON.stringify({ key, filename: file.name, model }),
+      body: JSON.stringify({
+        key,
+        filename: file.name,
+        model,
+        ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
+        ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
+      }),
     });
 
     addJob(job);
-    showUploadMessage('PROCESSING — parts will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.');
+    showUploadMessage(processingMessage(job));
     renderJobs();
     pollSoon();
   } catch (err) {
@@ -869,6 +1024,19 @@ function showUploadMessage(message, isError = false) {
   uploadStatus.hidden = false;
   uploadMessage.textContent = message;
   uploadMessage.classList.toggle('error', isError);
+}
+
+function processingMessage(job, noun = 'parts') {
+  const route = job.autoRouting;
+  let prefix = 'PROCESSING';
+  const reason = route?.analysis?.decision?.reason;
+  if (route?.mode === 'authoritative' && reason) {
+    const count = job.expectedStems?.length || 4;
+    prefix = route.analysis?.degraded?.active
+      ? `AUTO USED THE ${count}-PART DEFAULT — ${reason.toUpperCase()}`
+      : `AUTO CHOSE ${count} PARTS — ${reason.toUpperCase()}`;
+  }
+  return `${prefix} — ${noun} will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.`;
 }
 
 // --- synchronized stem mixer ------------------------------------------------
@@ -2013,6 +2181,7 @@ function renderJobs() {
       stems: [],
       model: job.model,
       expectedStems: job.expectedStems || [],
+      autoRouting: job.autoRouting,
     };
 
     if (state.status === 'done' && state.stems?.length) {
@@ -2050,13 +2219,19 @@ function renderJobs() {
             )}</p>`
           : `<p class="job-note">Creating ${esc(
               stemDescription(state.expectedStems || job.expectedStems)
-            )}…</p>`
+            )}…${autoRoutingNote(state.autoRouting || job.autoRouting)}</p>`
       }
     `;
     jobList.appendChild(li);
   }
 
   runElapsedClock();
+}
+
+function autoRoutingNote(route) {
+  if (route?.mode !== 'authoritative') return '';
+  const reason = route.analysis?.decision?.reason;
+  return reason ? ` <span class="mono">AUTO: ${esc(reason)}</span>` : '';
 }
 
 // One clock for every separating card, started only while there is one to tick.
@@ -2108,6 +2283,7 @@ async function adoptSharedJob() {
         filename: state.filename,
         model: state.model,
         expectedStems: state.expectedStems || [],
+        autoRouting: state.autoRouting,
       });
       renderJobs();
       if (state.status !== 'done' && state.status !== 'failed') pollSoon();

@@ -21,10 +21,11 @@ cog predict -i url="$SMOKE_YOUTUBE_URL"   # local smoke test (needs Docker)
 cog push r8.im/smorello87/yt-audio
 ```
 
-The Worker resolves the model's **latest version** at request time
-(`GET /v1/models/smorello87/yt-audio`), so a push takes effect immediately —
-no version hash to pin. The model name comes from the `REPLICATE_YT_MODEL`
-var in `wrangler.jsonc`; unset it to disable the fallback.
+After a push, retrieve the new version id, run the authorized import canary, and
+then update `REPLICATE_YT_MODEL_VERSION` on Railway. A push does not take effect
+automatically. The app sends that exact version to Replicate and rejects the
+floating value `latest`. `REPLICATE_YT_MODEL` still records the owner/name; unset
+either variable to disable the fallback without making app startup fail.
 
 If YouTube starts bot-checking Replicate's IPs too, the next escape hatch is
 passing a logged-in session cookie to yt-dlp (`--cookies`); use a throwaway

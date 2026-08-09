@@ -21,6 +21,16 @@
   // the file once, then transfers at most this many seconds to a Web Worker.
   const MAX_ANALYSIS_SECONDS = 45;
   const ANALYSIS_SEGMENTS = 3;
+  // Both browser and Railway analyzer normalize to one rate before applying
+  // the role thresholds. This avoids hardware AudioContext rates becoming an
+  // untracked classifier-version change.
+  const ANALYSIS_SAMPLE_RATE = 22050;
+  const ROLE_CLASSIFIER_VERSION = 'autosplit-role-v3';
+  // Web Audio materializes the complete decoded source before downmixing its
+  // three analysis windows. Cap duration and compressed bytes as conservative
+  // memory proxies; authoritative Auto analyzes the stored source on Railway.
+  const MAX_BROWSER_DECODE_BYTES = 24 * 1024 * 1024;
+  const MAX_BROWSER_DECODE_SECONDS = 5 * 60;
 
   // --- tiny DSP ------------------------------------------------------------
 
@@ -227,7 +237,20 @@
     // percussion. Requiring some attacks keeps a bowed/drone low register from
     // being mistaken for a rhythm section merely because it is low-pitched.
     const hasMovingLowEnd = sustainedLow > 0.08 && onsetsPerSecond > 0.45;
-    const hasPitchedAttacks = pitchedAttacksPerSecond > 0.8;
+    // Dense live ensembles can smear individual transient peaks even when a
+    // rhythm section is plainly present. Require all three independent cues
+    // before relaxing the onset threshold; this catches bass+drums beneath
+    // sustained reeds without turning low orchestral sustain into a drum kit.
+    const hasDiffuseRhythmSection =
+      onsetsPerSecond > 0.25 && sustainedLow > 0.12 && percussiveHigh > 0.12;
+    // Six-track output makes the stronger, label-specific promise that the
+    // provider's guitar and piano channels are likely to be useful. Generic
+    // synthesizer attacks are pitched too, so use a high-evidence threshold
+    // rather than treating any modest harmonic pulse rate as guitar/keys.
+    // v3 raises the conservative boundary after two CC electronic mixes from
+    // one album independently landed at 0.94–0.96/s, while the acoustic folk
+    // positive remained at 1.49/s. The fixed manifest keeps both sides pinned.
+    const hasPitchedAttacks = pitchedAttacksPerSecond > 1.0;
 
     if (hasPitchedAttacks) {
       return {
@@ -235,7 +258,7 @@
         reason: 'plucked or hammered pitched layers — 6 parts can pull them out',
       };
     }
-    if (!hasPercussion && !hasMovingLowEnd) {
+    if (!hasPercussion && !hasMovingLowEnd && !hasDiffuseRhythmSection) {
       return {
         choice: TWO,
         reason: 'mostly voice-like or sustained material — 2 parts keeps it clean',
@@ -243,9 +266,9 @@
     }
     return {
       choice: FOUR,
-        reason: hasPercussion
-          ? 'percussion and low end present — 4 parts fits'
-          : 'a moving low-end layer is present — 4 parts can pull it out',
+      reason: hasPercussion || hasDiffuseRhythmSection
+        ? 'percussive and low-end layers are present — 4 parts fits'
+        : 'a moving low-end layer is present — 4 parts can pull it out',
     };
   }
 
@@ -265,7 +288,12 @@
   function downmix(audioBuffer) {
     const sampleRate = audioBuffer.sampleRate;
     const maxFrames = Math.min(audioBuffer.length, MAX_ANALYSIS_SECONDS * sampleRate);
-    const segmentFrames = Math.max(1, Math.floor(maxFrames / ANALYSIS_SEGMENTS));
+    // Short sources are analyzed in full, matching the server decoder. Only
+    // sources over the 45-second budget are divided into three windows.
+    const segmentFrames =
+      audioBuffer.length <= maxFrames
+        ? maxFrames
+        : Math.max(1, Math.floor(maxFrames / ANALYSIS_SEGMENTS));
     const availableStart = Math.max(0, audioBuffer.length - segmentFrames);
     const starts = audioBuffer.length <= maxFrames
       ? [0]
@@ -286,14 +314,76 @@
     return offset === out.length ? out : out.slice(0, offset);
   }
 
+  function resample(samples, fromRate, toRate = ANALYSIS_SAMPLE_RATE) {
+    if (fromRate === toRate) return samples;
+    if (!(fromRate > 0) || !(toRate > 0) || !samples.length) return new Float32Array();
+    const length = Math.max(1, Math.round((samples.length * toRate) / fromRate));
+    const out = new Float32Array(length);
+    const scale = fromRate / toRate;
+
+    // Upsampling cannot alias new high-frequency content, so inexpensive
+    // interpolation is sufficient. Downsampling needs an explicit low-pass:
+    // linear interpolation alone folds energy above the new Nyquist frequency
+    // into the very bands AutoSplit uses as evidence for percussion and pitch.
+    if (toRate >= fromRate) {
+      for (let i = 0; i < length; i++) {
+        const position = Math.min(samples.length - 1, i * scale);
+        const left = Math.floor(position);
+        const right = Math.min(samples.length - 1, left + 1);
+        const fraction = position - left;
+        out[i] = samples[left] * (1 - fraction) + samples[right] * fraction;
+      }
+      return out;
+    }
+
+    const sinc = (value) =>
+      Math.abs(value) < 1e-12 ? 1 : Math.sin(Math.PI * value) / (Math.PI * value);
+    const cutoff = (toRate / fromRate) * 0.94;
+    const radius = 24;
+    for (let i = 0; i < length; i++) {
+      const position = i * scale;
+      const center = Math.floor(position);
+      let weighted = 0;
+      let weightSum = 0;
+      for (let source = center - radius + 1; source <= center + radius; source++) {
+        if (source < 0 || source >= samples.length) continue;
+        const distance = position - source;
+        if (Math.abs(distance) > radius) continue;
+        const window = 0.5 + 0.5 * Math.cos((Math.PI * distance) / radius);
+        const weight = cutoff * sinc(cutoff * distance) * window;
+        weighted += samples[source] * weight;
+        weightSum += weight;
+      }
+      out[i] = weightSum ? weighted / weightSum : 0;
+    }
+    return out;
+  }
+
+  function browserDecodeAllowed(byteLength, durationSeconds) {
+    return (
+      Number.isSafeInteger(byteLength) &&
+      byteLength >= 0 &&
+      byteLength <= MAX_BROWSER_DECODE_BYTES &&
+      Number.isFinite(durationSeconds) &&
+      durationSeconds > 0 &&
+      durationSeconds <= MAX_BROWSER_DECODE_SECONDS
+    );
+  }
+
   root.AutoSplit = {
     extractFeatures,
     chooseSplit,
     pickModel,
     downmix,
+    resample,
     TWO,
     FOUR,
     SIX,
+    ROLE_CLASSIFIER_VERSION,
+    ANALYSIS_SAMPLE_RATE,
+    MAX_BROWSER_DECODE_BYTES,
+    MAX_BROWSER_DECODE_SECONDS,
+    browserDecodeAllowed,
     MAX_ANALYSIS_SECONDS,
   };
 })(globalThis);

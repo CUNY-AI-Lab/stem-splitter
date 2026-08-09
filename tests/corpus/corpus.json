@@ -9,13 +9,16 @@
     "",
     "Licenses:",
     "  folk-duet: CC BY 3.0 — Jesse & Hope Wilder, \"Shine\" ( HopeAndJesseSingTogether )",
-    "  orchestral: CC BY 4.0 — Mozart Symphony 41 \"Jupiter\", mvt 1 ( mozart-symphony-41 )",
+    "  orchestral: CC BY 4.0 — Mozart Symphony 41 \"Jupiter\", mvt 1 ( mozart-symphony-41-in-c-k-551-jupiter )",
     "  shoegaze: CC BY 3.0 — The Sharticles, \"Euphoria\" ( sharticlesep )",
     "  piano-strings: CC BY 3.0 — Finn Anderson, \"Uncharted Lands\" ( FinnAndersonMusic )",
-    "  jazz-sax: CC BY 3.0 — Jeff Solon Jazz Quartet, \"Jam 1\" ( JeffSolonJazzQuartet )",
+    "  jazz-sax: CC BY 3.0 — Jeff Solon Jazz Quartet live set, s1t02 ( JeffSolonJazzQuartet07-30-2010PrideOfTheWestSilvertonCo )",
     "  hip-hop: CC BY 4.0 — Jac Martin, \"Drip Drop\" ( drip-drop )",
     "  bluegrass: CC BY 4.0 — Sonny Young, \"High On a Mountain\" ( southbound_202201 )",
     "  synthwave: CC BY 4.0 — selene XIV, \"Backed Off\" ( catboi-album )",
+    "  electronic-stiff-hand: CC BY 4.0 — selene XIV, \"Stiff Hand\" ( catboi-album )",
+    "  electronic-back-counting: CC BY 4.0 — selene XIV, \"Back Counting\" ( catboi-album )",
+    "  electronic-house: CC0 1.0 — Clockin' Cats, \"Das Dope (Ding Dong)\" ( clockin-cats-das-dope-ding-dong )",
     "",
     "expectLoud / expectQuiet are per-model, because which tracks should carry",
     "signal depends on the instrumentation, not on the pipeline. A quiet track",
@@ -88,6 +91,14 @@
       "slug": "folk-duet",
       "kind": "file",
       "source": "tests/corpus/audio/folk-duet-shine.mp3",
+      "coverage": ["folk", "sparse-acoustic", "multi-vocal"],
+      "expectedInstruments": ["lead-vocals", "harmony-vocals", "acoustic-guitar"],
+      "provenance": {
+        "archiveIdentifier": "HopeAndJesseSingTogether",
+        "license": "CC BY 3.0 US",
+        "licenseUrl": "http://creativecommons.org/licenses/by/3.0/us/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Two simultaneous lead vocalists (Jesse and Hope Wilder) over sparse acoustic backing. Adversarial for a model trained on a single lead vocal: the harmony line is the thing most likely to be pushed into `other` instead of `vocals`. CC BY 3.0 (archive.org: HopeAndJesseSingTogether).",
       "models": ["vocals_instrumental", "htdemucs_ft"],
       "expect": {
@@ -105,6 +116,14 @@
       "slug": "orchestral",
       "kind": "file",
       "source": "tests/corpus/audio/orchestral-mozart-jupiter.mp3",
+      "coverage": ["orchestral", "bowed-strings", "brass", "woodwinds"],
+      "expectedInstruments": ["bowed-strings", "flute", "oboe", "bassoon", "horn", "trumpet", "timpani"],
+      "provenance": {
+        "archiveIdentifier": "mozart-symphony-41-in-c-k-551-jupiter",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Mozart Symphony 41 \"Jupiter\", 1st movement. Full orchestra: no lead vocal, no drum kit, no electric bass. This is the 'quiet but valid' trap the 2026-07-30 spec calls out — several contract tracks SHOULD come back near-silent, and the pipeline must not treat that as a transport failure. CC BY 4.0 (archive.org: mozart-symphony-41-in-c-k-551-jupiter).",
       "models": ["htdemucs_6s", "htdemucs_ft"],
       "expect": {
@@ -126,6 +145,14 @@
       "slug": "shoegaze",
       "kind": "file",
       "source": "tests/corpus/audio/shoegaze-euphoria.mp3",
+      "coverage": ["rock", "electric-guitar", "dense-mix"],
+      "expectedInstruments": ["vocals", "electric-guitar", "bass-guitar", "drum-kit"],
+      "provenance": {
+        "archiveIdentifier": "sharticlesep",
+        "license": "CC BY 3.0",
+        "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Dense layered guitar textures in a lo-fi shoegaze track. Adversarial for the 6-track split specifically: the `guitar` track is the one most likely to come back near-empty while `other` silently absorbs the whole wall of guitar. CC BY 3.0 (archive.org: sharticlesep, The Sharticles, \"Euphoria\").",
       "models": ["htdemucs_6s", "vocals_instrumental"],
       "expect": {
@@ -145,6 +172,14 @@
       "slug": "piano-strings",
       "kind": "file",
       "source": "tests/corpus/audio/piano-uncharted-lands.mp3",
+      "coverage": ["singer-songwriter", "piano", "bowed-strings"],
+      "expectedInstruments": ["vocals", "piano", "bowed-strings", "bass", "drum-kit"],
+      "provenance": {
+        "archiveIdentifier": "FinnAndersonMusic",
+        "license": "CC BY 3.0",
+        "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Singer-songwriter track with real piano, strings and layered vocals. The 6-track split's `piano` track has actual content to find here, which is the complement to the shoegaze case. CC BY 3.0 (archive.org: FinnAndersonMusic, Finn Anderson, \"Uncharted Lands\").",
       "models": ["htdemucs_6s", "vocals_instrumental"],
       "expect": {
@@ -164,7 +199,16 @@
       "slug": "jazz-sax",
       "kind": "file",
       "source": "tests/corpus/audio/jazz-sax-quartet.mp3",
-      "why": "Live jazz quartet: tenor sax, harmonica, flute, guitar, bass, drums — no vocals, no piano, no electric instruments. Adversarial because horns are acoustically similar to vocals (sustained tonal content) and the model has no `sax` track to put them in. Sax and flute will land in `other` or bleed into `vocals`. CC BY 3.0 (archive.org: JeffSolonJazzQuartet, Jam 1).",
+      "coverage": ["jazz", "reeds", "woodwinds", "harmonica"],
+      "expectedInstruments": ["tenor-saxophone", "harmonica", "flute", "guitar", "bass", "drum-kit"],
+      "provenance": {
+        "archiveIdentifier": "JeffSolonJazzQuartet07-30-2010PrideOfTheWestSilvertonCo",
+        "archiveFile": "jsjq2010-07-30s1t02.mp3",
+        "license": "CC BY 3.0",
+        "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+        "verifiedAt": "2026-08-09"
+      },
+      "why": "Live jazz quartet: tenor sax, harmonica, flute, guitar, bass, drums — no vocals, no piano, no electric instruments. Adversarial because horns are acoustically similar to vocals (sustained tonal content) and the model has no `sax` track to put them in. Sax and flute will land in `other` or bleed into `vocals`. CC BY 3.0 (archive.org: JeffSolonJazzQuartet07-30-2010PrideOfTheWestSilvertonCo, jsjq2010-07-30s1t02.mp3).",
       "models": ["htdemucs_6s", "htdemucs_ft"],
       "expect": {
         "htdemucs_6s": {
@@ -187,6 +231,14 @@
       "slug": "hip-hop",
       "kind": "file",
       "source": "tests/corpus/audio/hiphop-drip-drop.mp3",
+      "coverage": ["hip-hop", "spoken-vocal", "electronic-percussion", "synth-bass"],
+      "expectedInstruments": ["rap-vocals", "synth-bass", "electronic-percussion"],
+      "provenance": {
+        "archiveIdentifier": "drip-drop",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Rap vocals over a synthesized beat. Adversarial because rap is spoken-word vocals — no sustained melodic contour — which most vocal-separation models train on less heavily. The beat has no acoustic drums, no guitar, no bass guitar: synthesized kick, snare, and bass. Tests whether `vocals` captures rhythmic speech and whether `other` holds the beat without swallowing it. CC BY 4.0 (archive.org: drip-drop, Jac Martin, \"Drip Drop\").",
       "models": ["vocals_instrumental", "htdemucs_6s"],
       "expect": {
@@ -210,6 +262,14 @@
       "slug": "bluegrass",
       "kind": "file",
       "source": "tests/corpus/audio/bluegrass-high-on-mountain.mp3",
+      "coverage": ["folk-traditional", "banjo", "mandolin", "fiddle", "upright-bass"],
+      "expectedInstruments": ["vocals", "fiddle", "banjo", "mandolin", "acoustic-guitar", "upright-bass"],
+      "provenance": {
+        "archiveIdentifier": "southbound_202201",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Bluegrass: fiddle, banjo, mandolin, acoustic guitar, upright bass, and lead vocal. Adversarial because none of these instruments map cleanly to `guitar`, `bass`, or `drums`. Banjo and mandolin are plucked strings that the model may misclassify as guitar. Fiddle is bowed — sustained tonal content that may bleed into `vocals`. CC BY 4.0 (archive.org: southbound_202201, Sonny Young, \"High On a Mountain\").",
       "models": ["htdemucs_6s", "vocals_instrumental"],
       "expect": {
@@ -233,6 +293,16 @@
       "slug": "synthwave",
       "kind": "file",
       "source": "tests/corpus/audio/synthwave-backed-off.mp3",
+      "coverage": ["electronic", "synthesizer", "programmed-drums"],
+      "expectedInstruments": ["vocals", "synthesizer", "synth-bass", "programmed-drums"],
+      "provenance": {
+        "archiveIdentifier": "catboi-album",
+        "archiveFile": "catboi-album1.mp3",
+        "sha1": "e40a9a47715df9a858295296b473b98134927684",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "verifiedAt": "2026-08-09"
+      },
       "why": "Digital jazz/synthwave produced entirely on a Roland MT-32: synthetic bass, synth pads, programmed drums, and vocals. Adversarial because every instrument is synthetic — the model was trained on acoustic instruments and may not recognize synth bass as `bass` or synth pads as `other`. Tests whether the model generalizes beyond its training distribution. CC BY 4.0 (archive.org: catboi-album, selene XIV, \"Backed Off\").",
       "models": ["htdemucs_6s", "vocals_instrumental"],
       "expect": {
@@ -249,6 +319,101 @@
         "Solo `vocals`: confirm the vocal is separated from the synth pads. Synth-heavy production is where vocal separation often fails on non-acoustic input.",
         "Solo `bass`: if the synth bass is near-silent, the model did not recognize it as bass. Check whether it landed in `other` instead.",
         "Solo `drums`: programmed drums may or may not be recognized. If quiet, confirm they landed in `other` and were not lost entirely.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "electronic-stiff-hand",
+      "kind": "file",
+      "source": "tests/corpus/audio/electronic-stiff-hand.mp3",
+      "coverage": ["electronic", "digital-jazz", "synthesizer", "programmed-drums"],
+      "expectedInstruments": ["synthesizer", "synth-bass", "programmed-drums"],
+      "provenance": {
+        "archiveIdentifier": "catboi-album",
+        "archiveFile": "catboi-album2.mp3",
+        "sha1": "48f351a799155e15906694fc063dd43f6a5bc85c",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "verifiedAt": "2026-08-09"
+      },
+      "why": "A second Roland MT-32 digital-jazz track from the same CC BY album provides a different arrangement and attack pattern. It is a negative control for six-track routing: frequent harmonic synth attacks are not evidence that the guitar- and piano-trained outputs will be useful.",
+      "models": ["htdemucs_ft", "htdemucs_6s"],
+      "expect": {
+        "htdemucs_ft": {
+          "loud": ["other"],
+          "quiet": []
+        },
+        "htdemucs_6s": {
+          "loud": ["other"],
+          "quiet": ["guitar", "piano"]
+        }
+      },
+      "manualChecks": [
+        "Confirm the four-track split keeps the synthetic arrangement intact across drums, bass, and `other` even when exact acoustic labels do not fit.",
+        "In the six-track diagnostic split, `guitar` and `piano` should not become the dominant home for generic MT-32 attacks.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "electronic-back-counting",
+      "kind": "file",
+      "source": "tests/corpus/audio/electronic-back-counting.mp3",
+      "coverage": ["electronic", "digital-jazz", "synthesizer", "programmed-drums"],
+      "expectedInstruments": ["synthesizer", "synth-bass", "programmed-drums"],
+      "provenance": {
+        "archiveIdentifier": "catboi-album",
+        "archiveFile": "catboi-album3.mp3",
+        "sha1": "cb50750aad311990db9a42a1fa76359285c7fbe8",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "verifiedAt": "2026-08-09"
+      },
+      "why": "A third MT-32 arrangement checks that the electronic safeguard does not depend on one tempo or one song. Four tracks is preferred because programmed rhythm and synth bass can be useful, but synthetic pitch alone must not promise guitar or piano isolation.",
+      "models": ["htdemucs_ft", "htdemucs_6s"],
+      "expect": {
+        "htdemucs_ft": {
+          "loud": ["other"],
+          "quiet": []
+        },
+        "htdemucs_6s": {
+          "loud": ["other"],
+          "quiet": ["guitar", "piano"]
+        }
+      },
+      "manualChecks": [
+        "Confirm programmed rhythm and synth bass remain audible in the four-track result even if they collect in `other`.",
+        "Treat substantial generic synth content in `guitar` or `piano` as label leakage, not proof that six tracks was the right automatic route.",
+        "Local file, so full reconstruction is measurable."
+      ]
+    },
+    {
+      "slug": "electronic-house",
+      "kind": "file",
+      "source": "tests/corpus/audio/electronic-das-dope.mp3",
+      "coverage": ["electronic", "house", "synthesizer", "programmed-drums"],
+      "expectedInstruments": ["synthesizer", "synth-bass", "programmed-drums"],
+      "provenance": {
+        "archiveIdentifier": "clockin-cats-das-dope-ding-dong",
+        "sha1": "1b88a2f615742dd06ca36a4220e21c782727c948",
+        "license": "CC0 1.0",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "verifiedAt": "2026-08-09"
+      },
+      "why": "An independently authored CC0 house/electro recording prevents the electronic gate from collapsing into an album-specific rule. Programmed drums and synth bass support four tracks, while the absence of guaranteed guitar or piano makes six a misleading automatic promise.",
+      "models": ["htdemucs_ft", "htdemucs_6s"],
+      "expect": {
+        "htdemucs_ft": {
+          "loud": ["drums", "other"],
+          "quiet": []
+        },
+        "htdemucs_6s": {
+          "loud": ["drums", "other"],
+          "quiet": ["guitar", "piano"]
+        }
+      },
+      "manualChecks": [
+        "Confirm the programmed beat remains coherent when `drums` and `other` are recombined.",
+        "The four-track route is useful even if synth bass leaks between `bass` and `other`; six must not be selected solely because synth attacks are harmonic.",
         "Local file, so full reconstruction is measurable."
       ]
     }

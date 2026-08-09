@@ -59,6 +59,27 @@ test('model choices state every track they produce', () => {
   assert.equal(getSeparationOption('htdemucs_6s')?.engine, 'DEMUCS');
 });
 
+test('core stem names are frozen literal contracts and auto is never a separator model', () => {
+  assert.deepEqual(getSeparationOption('vocals_instrumental')?.stems, ['vocals', 'instrumental']);
+  assert.deepEqual(getSeparationOption('htdemucs_ft')?.stems, [
+    'vocals',
+    'drums',
+    'bass',
+    'other',
+  ]);
+  assert.deepEqual(getSeparationOption('htdemucs_6s')?.stems, [
+    'vocals',
+    'drums',
+    'bass',
+    'other',
+    'guitar',
+    'piano',
+  ]);
+  assert.equal(getSeparationOption('auto'), undefined);
+  assert.equal(modelIsAllowed('replicate', 'auto'), false);
+  assert.equal(getReplicateRunner('auto'), undefined);
+});
+
 test('two, four, and six track contracts accept any source and order only their expected outputs', () => {
   for (const model of CONTRACT_MODELS) {
     const expected = getSeparationOption(model)!.stems;

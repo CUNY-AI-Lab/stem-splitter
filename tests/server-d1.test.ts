@@ -35,3 +35,51 @@ test('Railway boot adds prompt revisions to an existing settings table', async (
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('Railway boot adds Auto routing metadata without changing legacy job models', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-routing-'));
+  try {
+    const db = new SqliteD1(join(directory, 'legacy.sqlite'));
+    db.applySchema(`
+      CREATE TABLE jobs (
+        id TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        external_id TEXT,
+        stems TEXT,
+        error TEXT,
+        model TEXT,
+        labels TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO jobs (id, filename, source_key, model)
+      VALUES ('legacy-job', 'song.wav', 'uploads/legacy/song.wav', 'htdemucs_ft');
+    `);
+
+    db.applyNodeMigrations();
+    db.applyNodeMigrations();
+
+    const columns = await db.prepare("PRAGMA table_info('jobs')").all<{ name: string }>();
+    for (const name of ['routing_request', 'source_type', 'analysis']) {
+      assert.equal(columns.results.filter((column) => column.name === name).length, 1, name);
+    }
+    const row = await db
+      .prepare('SELECT model, routing_request, source_type, analysis FROM jobs WHERE id = ?')
+      .bind('legacy-job')
+      .first<{
+        model: string;
+        routing_request: string | null;
+        source_type: string | null;
+        analysis: string | null;
+      }>();
+    assert.deepEqual({ ...row }, {
+      model: 'htdemucs_ft',
+      routing_request: null,
+      source_type: null,
+      analysis: null,
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

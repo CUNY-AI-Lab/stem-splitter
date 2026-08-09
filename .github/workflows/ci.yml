@@ -42,7 +42,52 @@ jobs:
         run: bun run playwright -- install --with-deps chrome
       - name: Run unit and Python tests
         run: bun run test
+      - name: Run audio-analysis contract and parity tests
+        run: bun run typecheck:analysis && bun run test:analysis-service
       - name: Run local browser E2E tests
         run: bun run test:e2e
+      - name: Run server-authoritative Auto E2E tests
+        run: bun run test:e2e:auto
       - name: Validate Wrangler bundle (no deployment)
         run: bun run wrangler -- deploy --dry-run --outdir "$RUNNER_TEMP/stem-splitter-wrangler-dry-run"
+
+  analysis-image:
+    name: Pinned analysis image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Build current audio-analysis source
+        run: docker build --file audio-analysis/Dockerfile --tag stem-splitter-audio-analysis:ci .
+      - name: Verify readiness pins and authentication boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          container=stem-splitter-audio-analysis-ci
+          cleanup() { docker rm --force "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run --detach --name "$container" \
+            --publish 127.0.0.1:18080:8080 \
+            --env AUDIO_ANALYSIS_TOKEN=ci-only-analysis-token-0000000000000000 \
+            --env AUDIO_ANALYSIS_SOURCE_ORIGINS=https://stem-splitter.invalid \
+            stem-splitter-audio-analysis:ci
+
+          ready_file="$RUNNER_TEMP/audio-analysis-ready.json"
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/readyz >"$ready_file"; then
+              break
+            fi
+            if ! docker inspect --format '{{.State.Running}}' "$container" | grep --quiet true; then
+              docker logs "$container"
+              exit 1
+            fi
+            sleep 2
+          done
+          jq --exit-status \
+            '.ready == true and .ffmpegVersion == "8.0.3" and .classifierVersion == "autosplit-role-v3"' \
+            "$ready_file"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --request POST http://127.0.0.1:18080/v1/analyze)" = 401

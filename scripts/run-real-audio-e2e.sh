@@ -8,8 +8,8 @@
 #
 # BACKEND=audio-separator (default) runs the local Python separator and costs
 # nothing. BACKEND=replicate runs the real paid provider and needs
-# REPLICATE_API_TOKEN and REPLICATE_MODEL_VERSION (plus REPLICATE_YT_MODEL for
-# an import). Provider webhooks cannot reach localhost, so a Replicate run
+# REPLICATE_API_TOKEN and REPLICATE_MODEL_VERSION (plus REPLICATE_YT_MODEL and
+# its pinned REPLICATE_YT_MODEL_VERSION for an import). Provider webhooks cannot reach localhost, so a Replicate run
 # completes through the reconciliation fallback in GET /api/jobs/:id — which is
 # itself worth exercising.
 #
@@ -39,6 +39,7 @@ if [[ "$BACKEND" == "replicate" ]]; then
   : "${REPLICATE_MODEL_VERSION:?BACKEND=replicate needs REPLICATE_MODEL_VERSION}"
   if [[ -n "$YOUTUBE_URL" ]]; then
     : "${REPLICATE_YT_MODEL:?A YouTube import needs REPLICATE_YT_MODEL}"
+    : "${REPLICATE_YT_MODEL_VERSION:?A YouTube import needs REPLICATE_YT_MODEL_VERSION}"
   fi
 fi
 
@@ -134,6 +135,8 @@ else
   )
   [[ -n "${REPLICATE_YT_MODEL:-}" ]] &&
     WORKER_VARS+=(--var "REPLICATE_YT_MODEL:$REPLICATE_YT_MODEL")
+  [[ -n "${REPLICATE_YT_MODEL_VERSION:-}" ]] &&
+    WORKER_VARS+=(--var "REPLICATE_YT_MODEL_VERSION:$REPLICATE_YT_MODEL_VERSION")
   [[ -n "${YOUTUBE_FETCH_ORDER:-}" ]] &&
     WORKER_VARS+=(--var "YOUTUBE_FETCH_ORDER:$YOUTUBE_FETCH_ORDER")
 fi

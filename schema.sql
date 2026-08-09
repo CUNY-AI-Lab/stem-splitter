@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   model TEXT,                          -- catalogue contract id (src/separation/options.ts), not a provider model name
                                        -- current: vocals_instrumental (2) | htdemucs_ft (4) | htdemucs_6s (6) | bs_roformer_vocals (2, local)
                                        -- NULL on pre-2026-07 rows; read as htdemucs_ft
+  routing_request TEXT,                -- NULL for legacy/explicit jobs; "auto" when server analysis was requested
+  source_type TEXT,                    -- upload | youtube | archive for analyzed jobs
+  analysis TEXT,                       -- versioned AutoRoutingDecision JSON; never source audio/URL/credentials
   labels TEXT,                         -- JSON map: { "<stem name>": "<display label>" }
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
