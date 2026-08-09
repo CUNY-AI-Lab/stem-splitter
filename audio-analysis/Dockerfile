@@ -24,12 +24,33 @@ RUN curl --fail --location --proto '=https' --tlsv1.2 \
   && ./configure \
       --prefix=/opt/ffmpeg \
       --disable-autodetect \
+      --disable-avdevice \
+      --disable-bsfs \
       --disable-debug \
+      --disable-decoders \
+      --disable-demuxers \
       --disable-doc \
+      --disable-encoders \
+      --disable-filters \
       --disable-ffplay \
+      --disable-hwaccels \
+      --disable-iconv \
+      --disable-indevs \
+      --disable-muxers \
       --disable-network \
+      --disable-outdevs \
+      --disable-parsers \
+      --disable-protocols \
       --disable-shared \
+      --disable-swscale \
       --disable-x86asm \
+      --enable-decoder=aac,adpcm_ima_wav,adpcm_ms,alac,flac,mp3,mp3float,opus,vorbis,pcm_alaw,pcm_f32be,pcm_f32le,pcm_f64be,pcm_f64le,pcm_mulaw,pcm_s8,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u8,pcm_u16be,pcm_u16le,pcm_u24be,pcm_u24le,pcm_u32be,pcm_u32le \
+      --enable-demuxer=aiff,flac,mov,mp3,ogg,wav \
+      --enable-encoder=pcm_f32le \
+      --enable-filter=aresample \
+      --enable-muxer=pcm_f32le \
+      --enable-parser=aac,flac,mpegaudio,opus,vorbis \
+      --enable-protocol=file,pipe \
       --enable-small \
       --enable-static \
   && make -j"${MAKE_JOBS}" \

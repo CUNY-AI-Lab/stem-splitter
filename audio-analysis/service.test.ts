@@ -327,6 +327,28 @@ test('container and build context freeze the runtime without shipping local audi
     /ARG FFMPEG_SHA256=6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818/
   );
   assert.doesNotMatch(dockerfile, /(?:^|[:=])latest(?:\s|$)/im);
+  for (const component of [
+    'bsfs',
+    'decoders',
+    'demuxers',
+    'encoders',
+    'filters',
+    'hwaccels',
+    'indevs',
+    'muxers',
+    'outdevs',
+    'parsers',
+    'protocols',
+  ]) {
+    assert.match(dockerfile, new RegExp(`--disable-${component}`));
+  }
+  assert.match(dockerfile, /--disable-network/);
+  assert.match(dockerfile, /--enable-protocol=file,pipe/);
+  assert.match(dockerfile, /--enable-demuxer=aiff,flac,mov,mp3,ogg,wav/);
+  assert.match(dockerfile, /--enable-decoder=[^\n]*aac[^\n]*alac[^\n]*flac[^\n]*opus[^\n]*vorbis/);
+  assert.match(dockerfile, /--enable-encoder=pcm_f32le/);
+  assert.match(dockerfile, /--enable-muxer=pcm_f32le/);
+  assert.match(dockerfile, /--enable-filter=aresample/);
   assert.match(dockerfile, /USER node/);
   assert.match(dockerfile, /HEALTHCHECK[^]*\/readyz/);
   assert.match(dockerignore, /^\.dev\.vars\*$/m);

@@ -32,13 +32,20 @@ promotion on their own.
   Railway HTTP origins only, validates a minimum-length bearer token, rejects
   URL credentials/path/query/fragment, uses Workerd-compatible manual redirect
   handling without following any 3xx, and caps streamed JSON at 64 KiB.
+- Decoder build policy: FFmpeg explicitly disables unused codec and format
+  component families, then enables only the required audio
+  demuxers/decoders/parsers, `aresample`, f32le output, and local file/pipe
+  protocols; network support remains disabled. The exact allowlist configures,
+  compiles, and decodes the real WAV fixture against official FFmpeg 8.0.3
+  source on arm64.
 - Evidence: `docs/evaluation/autosplit-role-v3-candidate.md`.
 - Known risks: the observed synth boundary is narrow, only one corpus source
   selects six, manual stem listening is incomplete, and neither the pinned
   FFmpeg 8.0.3 image nor Railway/amd64 has run this version.
-- Image status: the only successful local image smoke used role v1. The current
-  v3 image must build and pass readiness, auth, corpus, and resource-limit gates
-  before shadow rollout.
+- Image status: the only successful local image smoke used role v1. The v3
+  FFmpeg source build now succeeds with the minimized allowlist, but the current
+  image must still build and pass readiness, auth, corpus, and resource-limit
+  gates before shadow rollout.
 - Rollout: off. No Railway variable, service, or deployment change.
 
 ## autosplit-role-v2 — superseded local candidate, rollout off — 2026-08-09

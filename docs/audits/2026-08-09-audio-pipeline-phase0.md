@@ -40,8 +40,8 @@ not authorize a release.
 | Phase 1A decoder | Output-side seeking could decode from the start to reach later windows, consuming the timeout on long inputs. | FFmpeg uses bounded input-side accurate seeks for beginning, middle, and end; probe/decode share one phase deadline and stdout caps. | Real local fixture test passes. |
 | Phase 1A readiness | A classifier startup exception rejected the readiness promise and turned `/readyz` into a 500; liveness called the classifier too. | `/healthz` is process-only. Decoder and classifier failures settle to explicit 503 readiness reasons, and analysis stays unavailable. | Local service tests pass. |
 | Phase 1A privacy/versioning | Success logs omitted pins and included exact source byte count/duration. | Logs contain schema, classifier and FFmpeg versions plus bounded timing and decision metadata, but no URL, signature, token, raw features, source byte count, or source duration. | Local service tests inspect records. |
-| Build/release | The analysis README named a Dockerfile that did not exist; Docker contexts included ignored classroom corpus audio and could include `.dev.vars` variants. | Non-root multi-stage image definition pins base digests and signature-verified FFmpeg checksum. `.dockerignore` excludes `.dev.vars*`, local corpus audio, caches, and private working documents. | Role-v1 arm64 built and passed smoke, but role-v3 now makes that image stale; current-image and CI/amd64 gates remain. |
-| CI | The authoritative Auto E2E, analysis service, and current pinned image were absent from the GitHub workflow. | CI now runs analysis typecheck/tests, the three-source authoritative Auto suite, and a separate amd64 Docker build that requires FFmpeg 8.0.3, role v3 readiness, and a 401 auth boundary. | Workflow changed locally; not committed or run on GitHub. The gitignored real corpus still requires a separate mounted/live run. |
+| Build/release | The analysis README named a Dockerfile that did not exist; Docker contexts included ignored classroom corpus audio and could include `.dev.vars` variants; a broad FFmpeg build retained unnecessary codecs and formats. | Non-root multi-stage image definition pins base digests and signature-verified FFmpeg checksum. FFmpeg explicitly disables unused component families and enables only the required demuxers, decoders, parsers, resampler, f32le encoder/muxer, and local file/pipe protocols. `.dockerignore` excludes `.dev.vars*`, local corpus audio, caches, and private working documents. | The exact FFmpeg 8.0.3 allowlist configures, compiles, and decodes a real WAV from source on arm64. Role-v1 container smoke is stale; current role-v3 container and CI/amd64 gates remain. |
+| CI | The authoritative Auto E2E, analysis service, and current pinned image were absent from the GitHub workflow. | CI now runs analysis typecheck/tests, the three-source authoritative Auto suite, and a separate amd64 Docker build that requires FFmpeg 8.0.3, role v3 readiness, and a 401 auth boundary. | Workflow is committed locally but has not been pushed or run on GitHub. The gitignored real corpus still requires a separate mounted/live run. |
 | Railway configuration | Two projects share the same name, the live canonical service lacks the newly required YouTube fetcher version variable, and variable edits redeploy by default. | Release docs use explicit IDs; the analyzer runbook uses typed Dockerfile configuration, staged service config, and `--skip-deploys` variable batching; `/healthz` reports value-free configuration state without pretending it probed the analyzer. | Read-only audit complete; coordinated variable staging and release remain. |
 
 ## Local validation evidence
@@ -84,6 +84,14 @@ Desktop backend processes were present. No reset, cache prune, image deletion,
 or data-store mutation was attempted; this remains an environment gate, not a
 successful v3 build.
 
+To narrow that gate, the role-v3 Dockerfile now builds FFmpeg with an explicit
+least-functionality allowlist and no network support. Its exact configure line
+was run against the checksum-pinned official FFmpeg 8.0.3 source on the local
+arm64 host; configure and `make -j2` succeeded, both programs reported 8.0.3,
+and the resulting binary decoded `tests/fixtures/audio/source.wav` to 176,400
+bytes of f32le PCM. This proves the allowlist is internally sufficient. It does
+not prove the multi-stage Docker build, runtime image, or amd64 behavior.
+
 The strict real-corpus evaluation used local FFmpeg 8.1.2. Role v1 produced 3
 preferred, 3 accepted-alternative, and 2 rejected decisions (jazz-sax to two;
 synthwave to six). Role v2 fixed jazz without moving orchestral, producing 4
@@ -120,10 +128,10 @@ automate this check.
 
 1. Preserve the reviewed local commit; do not push or open a pull request until
    the current-image gate and final release scope are reviewed.
-2. Build the current role-v3 image, rerun the eleven-source corpus on pinned
-   FFmpeg 8.0.3, and reproduce readiness/auth on CI/amd64. Investigate Docker
-   Desktop's metadata-store errors separately without deleting local images or
-   caches implicitly.
+2. Build the current role-v3 image using the source-validated FFmpeg allowlist,
+   rerun the eleven-source corpus on pinned FFmpeg 8.0.3, and reproduce
+   readiness/auth on CI/amd64. Investigate Docker Desktop's metadata-store
+   errors separately without deleting local images or caches implicitly.
 3. Capture the rollback baseline with one authorized real-audio four-track job,
    provider pin, hashes, and latency.
 4. Stage the exact YouTube fetcher version against the canonical service as one

@@ -12,12 +12,15 @@
 browser/server PCM parity, the flag-gated Phase 1B application path, and the
 Phase 1A service code are implemented locally. A digest-pinned role-v1 image
 built and passed local health/readiness/auth smoke, but the classifier has since
-advanced to role-v3, so the current image gate is open again. Server Auto
-remains off live and no additional Railway service has been provisioned. Local
-FFmpeg and real-Chrome evaluation agree on all eleven authorized v3 routing
-choices (8 preferred, 3 accepted alternatives), but pinned-image calibration,
-manual stem listening, and live Railway acceptance remain gates before
-authority. See the
+advanced to role-v3, so the current image gate is open again. The minimized
+role-v3 FFmpeg 8.0.3 allowlist now configures, compiles, and decodes the real WAV
+fixture from official source on the local arm64 host; this is source-build
+evidence, not a current container or amd64 result. Server Auto remains off live
+and no additional Railway service has been provisioned. Local FFmpeg and
+real-Chrome evaluation agree on all eleven authorized v3 routing choices
+(8 preferred, 3 accepted alternatives), but pinned-image calibration, manual
+stem listening, and live Railway acceptance remain gates before authority. See
+the
 [adversarial hardening audit](docs/audits/2026-08-09-audio-pipeline-phase0.md)
 and [model-processing changelog](docs/model-processing-changelog.md).
 
@@ -157,7 +160,9 @@ deployment or enablement.
   arm64 image passed smoke, but it is now stale; Docker Desktop's metadata-store
   I/O failure blocked the current rebuild. A later bounded retry found the
   Docker daemon unavailable even though Desktop processes were present; do not
-  reset or prune user-owned Docker data implicitly. Reproduce on CI/amd64.
+  reset or prune user-owned Docker data implicitly. The minimized decoder
+  allowlist has separately passed FFmpeg 8.0.3 configure, compile, and real WAV
+  decode on the arm64 host. Reproduce the actual image on CI/amd64.
 - [x] Keep credentials fail-lazy in the app: if analysis is unavailable, upload,
   playback, annotations, and explicit 2/4/6 splitting must still work.
 
