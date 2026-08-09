@@ -22,7 +22,7 @@ from array import array
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Mapping, Protocol, Sequence
+from typing import Callable, Mapping, Protocol, Sequence
 from urllib.parse import urlsplit
 
 from clap_backend import ClapBackend
@@ -65,6 +65,7 @@ class ServiceConfig:
     port: int
     max_concurrency: int
     torch_threads: int
+    inference_timeout_seconds: int
 
 
 def _bounded_integer(
@@ -110,6 +111,13 @@ def config_from_env(env: Mapping[str, str] = os.environ) -> ServiceConfig:
             env, "INSTRUMENT_DISCOVERY_MAX_CONCURRENCY", 1, 1, 2
         ),
         torch_threads=_bounded_integer(env, "INSTRUMENT_DISCOVERY_TORCH_THREADS", 1, 1, 4),
+        inference_timeout_seconds=_bounded_integer(
+            env,
+            "INSTRUMENT_DISCOVERY_INFERENCE_TIMEOUT_SECONDS",
+            30,
+            10,
+            300,
+        ),
     )
 
 
@@ -153,8 +161,12 @@ class DiscoveryApp:
         vocabulary: Vocabulary,
         backend: DiscoveryBackend,
         max_concurrency: int = 1,
+        inference_timeout_seconds: float = 30,
+        fatal_exit: Callable[[int], object] = os._exit,
         warm_async: bool = True,
     ) -> None:
+        if inference_timeout_seconds <= 0 or inference_timeout_seconds > 300:
+            raise DiscoveryContractError("inference timeout is invalid")
         self.token = token
         self.vocabulary = vocabulary
         self.backend = backend
@@ -163,6 +175,11 @@ class DiscoveryApp:
         self._ready = threading.Event()
         self._warm_finished = threading.Event()
         self._warm_failed = False
+        self._inference_timeout_seconds = inference_timeout_seconds
+        self._fatal_exit = fatal_exit
+        self._inference_state_lock = threading.Lock()
+        self._active_inferences: set[object] = set()
+        self._wedged = False
         if warm_async:
             threading.Thread(
                 target=self._warm,
@@ -189,11 +206,46 @@ class DiscoveryApp:
 
     @property
     def ready(self) -> bool:
-        return self._ready.is_set()
+        return self._ready.is_set() and not self._wedged
 
     @property
     def warm_failed(self) -> bool:
         return self._warm_failed
+
+    @property
+    def wedged(self) -> bool:
+        return self._wedged
+
+    def _inference_timed_out(self, generation: object) -> None:
+        with self._inference_state_lock:
+            if generation not in self._active_inferences or self._wedged:
+                return
+            self._wedged = True
+            self._ready.clear()
+        LOG.error("discovery_fatal reason=inference_timeout")
+        self._fatal_exit(70)
+
+    def _arm_inference_watchdog(self) -> tuple[object, threading.Timer]:
+        generation = object()
+        with self._inference_state_lock:
+            if self._wedged:
+                raise RuntimeError("classifier is unavailable")
+            self._active_inferences.add(generation)
+        watchdog = threading.Timer(
+            self._inference_timeout_seconds,
+            self._inference_timed_out,
+            args=(generation,),
+        )
+        watchdog.daemon = True
+        watchdog.start()
+        return generation, watchdog
+
+    def _disarm_inference_watchdog(
+        self, generation: object, watchdog: threading.Timer
+    ) -> None:
+        with self._inference_state_lock:
+            self._active_inferences.discard(generation)
+        watchdog.cancel()
 
     def authorized(self, authorization: str | None) -> bool:
         return isinstance(authorization, str) and secrets.compare_digest(
@@ -214,7 +266,11 @@ class DiscoveryApp:
         started = time.monotonic()
         try:
             windows = decode_pcm_windows(payload, counts)
-            scores = self.backend.score(windows, INPUT_SAMPLE_RATE)
+            generation, watchdog = self._arm_inference_watchdog()
+            try:
+                scores = self.backend.score(windows, INPUT_SAMPLE_RATE)
+            finally:
+                self._disarm_inference_watchdog(generation, watchdog)
             detections = aggregate_window_scores(self.vocabulary, scores)
             timing_ms = max(0, round((time.monotonic() - started) * 1000))
             if timing_ms > 30_000:
@@ -349,7 +405,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                     503,
                     {
                         "ready": False,
-                        "reason": "classifier" if self.server.app.warm_failed else "warming",
+                        "reason": (
+                            "inference_timeout"
+                            if self.server.app.wedged
+                            else "classifier" if self.server.app.warm_failed else "warming"
+                        ),
                     },
                 )
             return
@@ -460,6 +520,7 @@ def create_app(config: ServiceConfig) -> DiscoveryApp:
         vocabulary=vocabulary,
         backend=backend,
         max_concurrency=config.max_concurrency,
+        inference_timeout_seconds=config.inference_timeout_seconds,
     )
 
 

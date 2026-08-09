@@ -24,12 +24,13 @@ testing, and live Railway acceptance remain gates before authority. See the
 and [model-processing changelog](docs/model-processing-changelog.md).
 
 Phase 2 now has a local, flag-off contract seam: a content-hashed 51-label
-teacher-reviewable vocabulary, exact CLAP checkpoint/weight pins, a bounded
+teacher-reviewable vocabulary, exact CLAP checkpoint/artifact pins, a bounded
 private PCM client, fail-lazy discovery traces, student-response redaction, and
 a teacher-authenticated analysis read route. A separate Python service,
-deterministic aggregation policy, and digest-pinned image recipe are implemented
-locally and pass 18 contract/fake-backend tests. The model image has not been
-built, actual CLAP inference and offline startup have not run, no ML service has
+deterministic aggregation policy, process-fatal inference watchdog, and
+digest-pinned image recipe are implemented locally and pass 22
+contract/fake-backend/process tests. The model image has not been built, actual
+CLAP inference and offline startup have not run, no ML service has
 been provisioned, and no detection has been calibrated or promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
@@ -229,8 +230,15 @@ job.
   during image build, verify its checksum, and prove offline startup; do not
   pull a floating checkpoint during container boot. The bounded service,
   offline-only image recipe, dependency lock, exact download revision, and
-  weight verifier now exist locally; the large image build and real-model
-  offline-start proof remain open.
+  eight-artifact content verifier now exist locally; the large image build and
+  real-model offline-start proof remain open.
+- [x] Add a process-fatal watchdog so a timed-out synchronous inference clears
+  readiness and exits instead of monopolizing capacity indefinitely. Regression
+  tests cover the permitted two-request race and prove the real fatal callback
+  terminates a child process with exit code 70; they do not load PyTorch.
+- [ ] Prove the discovery container restarts cleanly after the watchdog kills a
+  deliberately stuck real PyTorch inference. This requires the built model
+  image plus Railway restart/readiness evidence before shadow traffic.
 - [ ] Compare Essentia/MTG-Jamendo on the same manifest only after documenting
   whether its noncommercial model license fits the intended classroom and
   institutional use.

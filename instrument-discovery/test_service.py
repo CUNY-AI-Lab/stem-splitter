@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import socket
+import subprocess
+import sys
 import threading
 import time
 import unittest
@@ -41,6 +44,36 @@ class FakeBackend:
         if self.window_scores is not None:
             return self.window_scores
         return [{instrument_id: 0.0 for instrument_id in VOCABULARY.ids} for _ in windows]
+
+
+class BlockingBackend(FakeBackend):
+    def __init__(self):
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def score(self, windows, sample_rate):
+        self.entered.set()
+        self.release.wait(timeout=2)
+        return super().score(windows, sample_rate)
+
+
+class FirstCallBlockingBackend(FakeBackend):
+    def __init__(self):
+        super().__init__()
+        self._calls_lock = threading.Lock()
+        self._call_count = 0
+        self.first_entered = threading.Event()
+        self.release_first = threading.Event()
+
+    def score(self, windows, sample_rate):
+        with self._calls_lock:
+            self._call_count += 1
+            call_number = self._call_count
+        if call_number == 1:
+            self.first_entered.set()
+            self.release_first.wait(timeout=2)
+        return super().score(windows, sample_rate)
 
 
 class ServiceHarness:
@@ -176,6 +209,7 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(config.port, 9090)
         self.assertEqual(config.max_concurrency, 1)
         self.assertEqual(config.torch_threads, 2)
+        self.assertEqual(config.inference_timeout_seconds, 30)
 
     def test_liveness_and_readiness_expose_only_pins(self) -> None:
         with self.harness.get("/healthz") as response:
@@ -378,6 +412,114 @@ class ConnectionBoundaryTest(unittest.TestCase):
         finally:
             slow_connection.close()
             harness.close()
+
+
+class InferenceWatchdogTest(unittest.TestCase):
+    def test_stuck_inference_drops_readiness_and_requests_process_exit(self) -> None:
+        backend = BlockingBackend()
+        exit_codes: list[int] = []
+        exit_requested = threading.Event()
+
+        def fatal_exit(code: int) -> None:
+            exit_codes.append(code)
+            exit_requested.set()
+
+        app = DiscoveryApp(
+            token=TOKEN,
+            vocabulary=VOCABULARY,
+            backend=backend,
+            inference_timeout_seconds=0.05,
+            fatal_exit=fatal_exit,
+            warm_async=False,
+        )
+        app.warm_now()
+        payload = array("f", [0.0]).tobytes()
+        failure: list[BaseException] = []
+
+        def classify() -> None:
+            try:
+                app.classify(payload, (1,))
+            except BaseException as error:
+                failure.append(error)
+
+        worker = threading.Thread(target=classify, daemon=True)
+        with self.assertLogs("instrument-discovery", level="ERROR") as captured:
+            worker.start()
+            self.assertTrue(backend.entered.wait(timeout=1))
+            self.assertTrue(exit_requested.wait(timeout=1))
+        self.assertEqual(exit_codes, [70])
+        self.assertTrue(app.wedged)
+        self.assertFalse(app.ready)
+        self.assertTrue(captured.output[0].endswith("discovery_fatal reason=inference_timeout"))
+
+        backend.release.set()
+        worker.join(timeout=1)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(failure, [])
+
+    def test_fast_second_inference_cannot_disarm_stuck_first_inference(self) -> None:
+        backend = FirstCallBlockingBackend()
+        exit_codes: list[int] = []
+        exit_requested = threading.Event()
+
+        def fatal_exit(code: int) -> None:
+            exit_codes.append(code)
+            exit_requested.set()
+
+        app = DiscoveryApp(
+            token=TOKEN,
+            vocabulary=VOCABULARY,
+            backend=backend,
+            max_concurrency=2,
+            inference_timeout_seconds=0.1,
+            fatal_exit=fatal_exit,
+            warm_async=False,
+        )
+        app.warm_now()
+        payload = array("f", [0.0]).tobytes()
+        first = threading.Thread(target=app.classify, args=(payload, (1,)), daemon=True)
+        first.start()
+        self.assertTrue(backend.first_entered.wait(timeout=1))
+
+        second_result = app.classify(payload, (1,))
+        self.assertEqual(second_result["windowsAnalyzed"], 1)
+        with self.assertLogs("instrument-discovery", level="ERROR"):
+            self.assertTrue(exit_requested.wait(timeout=1))
+        self.assertEqual(exit_codes, [70])
+        self.assertFalse(app.ready)
+
+        backend.release_first.set()
+        first.join(timeout=1)
+        self.assertFalse(first.is_alive())
+
+    def test_real_fatal_exit_terminates_child_process(self) -> None:
+        script = """
+from array import array
+from service import DiscoveryApp
+from test_service import BlockingBackend, TOKEN, VOCABULARY
+
+backend = BlockingBackend()
+app = DiscoveryApp(
+    token=TOKEN,
+    vocabulary=VOCABULARY,
+    backend=backend,
+    inference_timeout_seconds=0.05,
+    warm_async=False,
+)
+app.warm_now()
+app.classify(array("f", [0.0]).tobytes(), (1,))
+raise SystemExit(99)
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).parent,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 70, result.stderr)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,9 @@ promotion on their own.
   checkpoint's 48 kHz input, scores each window independently, and aggregates
   only supported mean scores. Its digest-pinned, non-root image recipe freezes
   a 29-package Python lock, downloads the exact model revision during build,
-  verifies the 776 MB weight hash, and forces runtime hub access offline.
+  verifies the content hash of all eight model/processor artifacts, forces
+  runtime hub access offline, disables remote code, and explicitly loads the
+  pinned pickle checkpoint in weights-only mode.
 - Failure behavior: missing configuration, timeout, outage, malformed metadata,
   or pin drift produces a discovery-only unavailable trace. Tests prove those
   cases do not change a valid core Auto decision or its degraded state.
@@ -42,16 +44,19 @@ promotion on their own.
   vocabulary integrity, content pins, private-origin/redirect controls,
   bounded window transport, parent abort, malformed responses, and non-mutating
   core routing.
-- Locally tested: 18 discovery-service contract tests cover authentication,
+- Locally tested: 22 discovery-service contract/process tests cover authentication,
   readiness failure, pin drift, duplicate HTTP framing, rejected expectation
   handshakes, bounded pre-auth connections, slow-header timeout, pre-body
   capacity reservation, bounded PCM, non-finite samples, abstention, two-window
-  support, uncertainty, and pairwise prompt scoring without loading PyTorch or
-  model weights. The 29-package lock resolves and explicitly pins the direct
-  Hugging Face build dependency.
+  support, uncertainty, pairwise prompt scoring, independent concurrent
+  watchdog generations, and a real child-process exit with code 70 without
+  loading PyTorch or model weights. The 29-package lock resolves and explicitly
+  pins the direct Hugging Face build dependency.
 - Not yet proven: a complete CLAP image build, real-model inference,
-  offline-start readback, calibration, authorized truth labels, metrics, a
-  dedicated discovery-review UI, listening review, resource/cost measurement,
+  offline-start readback, container/Railway restart and readiness recovery after
+  a real PyTorch inference outlives its client timeout, calibration, authorized
+  truth labels, metrics, a dedicated discovery-review UI, listening review,
+  resource/cost measurement,
   native image CI, or any Railway service.
 - Rollout: off. No Railway variable, service, or deployment change.
 

@@ -71,7 +71,12 @@ class ContractTest(unittest.TestCase):
         self.assertIn("HF_HUB_OFFLINE=1", dockerfile)
         self.assertIn("TRANSFORMERS_OFFLINE=1", dockerfile)
         self.assertIn("USER 65532:65532", dockerfile)
+        self.assertIn("INSTRUMENT_DISCOVERY_INFERENCE_TIMEOUT_SECONDS=30", dockerfile)
         self.assertNotIn(":latest", dockerfile)
+        backend = (ROOT / "instrument-discovery/clap_backend.py").read_text("utf-8")
+        self.assertIn("weights_only=True", backend)
+        self.assertGreaterEqual(backend.count("trust_remote_code=False"), 2)
+        self.assertGreaterEqual(backend.count("local_files_only=True"), 2)
         self.assertEqual(
             dockerignore.strip().splitlines(),
             [

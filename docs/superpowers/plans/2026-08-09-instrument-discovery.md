@@ -19,9 +19,11 @@
   review and calibration remain promotion gates.
 - [x] Accept only authenticated, bounded f32le PCM with explicit sample/window
   headers; reject URLs, redirects, multipart input, and excess bytes.
-- [ ] Load the exact CLAP revision and verified weight during image build; run
-  offline and non-root. The image and offline-only code are implemented; the
-  large build and real-model startup proof remain open.
+- [ ] Load the exact CLAP revision and verify all eight model/processor artifacts
+  during image build and startup; run offline and non-root. Pickled weights are
+  loaded with explicit `weights_only=True` and remote code disabled. The image
+  and offline-only code are implemented; the large build and real-model startup
+  proof remain open.
 - [x] Score windows independently and aggregate with family thresholds,
   support, uncertainty, and output caps.
 - [x] Keep health process-only and readiness model/vocabulary-specific.
@@ -44,6 +46,9 @@
 - [x] Add deterministic aggregation, malformed-contract, duplicate-header,
   rejected `Expect: 100-continue`, non-finite-PCM, bounded connection/body
   capacity, slow-header timeout, and model-warmup failure tests.
+- [x] Add an independently tracked, process-fatal watchdog for every permitted
+  concurrent inference. Prove a fast second call cannot disarm a stuck first
+  call and prove the production fatal path exits a child process with code 70.
 - [ ] Extend the authorized corpus with reviewed instrument truth and explicit
   unknowns; do not manufacture negatives from missing annotations.
 - [ ] Run CLAP on the fixed corpus and record per-label/per-genre metrics,
@@ -51,6 +56,9 @@
 - [ ] Implement Essentia ONNX as an offline-only comparison after written
   licence review; use the identical windows and manifest.
 - [ ] Build and smoke the current image on amd64.
+- [ ] Exercise a deliberately stuck real-model inference in the built container
+  and prove the Railway restart path recovers capacity and readiness after the
+  analyzer abandons its timed-out request.
 - [ ] Provision a private Railway service with no domain or volume, explicit
   resource limits, and all application flags false.
 - [ ] Promote `off -> teacher shadow` only after the audit and rollback plan are

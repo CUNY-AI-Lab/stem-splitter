@@ -99,6 +99,11 @@ override it in Railway.
 | `INSTRUMENT_DISCOVERY_TOKEN` | distinct sealed shared-variable reference shared only with `audio-analysis` |
 | `INSTRUMENT_DISCOVERY_MAX_CONCURRENCY` | `1` |
 | `INSTRUMENT_DISCOVERY_TORCH_THREADS` | `1` |
+| `INSTRUMENT_DISCOVERY_INFERENCE_TIMEOUT_SECONDS` | `30` |
+
+Configure this service's restart policy as `ON_FAILURE` with a nonzero retry
+limit and record the accepted limit. The inference watchdog deliberately exits
+nonzero, so a `NEVER` policy would turn a bounded model failure into an outage.
 
 Do not override the baked model or vocabulary paths. The image pins Python,
 uv, every Python package, the Hugging Face revision, model-weight SHA-256,
@@ -172,9 +177,11 @@ total 25,000 ms, leaving the outer request time to return a discovery-only
 failure without discarding the core result. Require `/readyz` to report the
 exact classifier, weight, vocabulary version, and vocabulary hash; require
 unauthenticated and contract-mismatched PCM requests to fail. Then exercise
-one-, two-, and three-window
-authorized fixtures, a transient-only instrument, timeout, OOM/resource caps,
-restart, and analyzer fallback before a teacher-shadow proposal is reviewed.
+one-, two-, and three-window authorized fixtures, a transient-only instrument,
+timeout, OOM/resource caps, restart, and analyzer fallback. Deliberately block
+one inference and prove exit code 70 causes Railway to restart the service,
+readiness stays unavailable during warmup, and the next authorized request
+succeeds before a teacher-shadow proposal is reviewed.
 
 ## Rollback
 

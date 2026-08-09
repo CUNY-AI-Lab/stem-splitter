@@ -111,6 +111,13 @@ whole-window view plus three mel crops; `pairwise-presence-v1` fixes the crop
 seed by window index. Any resampler, crop, prompt, synonym, or pairwise-logit
 change requires a new classifier id and a new evaluation entry.
 
+The image pins the SHA-256 of all eight checkpoint, configuration, processor,
+and tokenizer artifacts, not only the weight file, and verifies the same
+manifest again before readiness. The only available weight is a pinned PyTorch
+pickle checkpoint; loading is therefore explicit weights-only with remote code
+disabled. A future safetensors conversion must receive its own content pin and
+image evidence.
+
 The response contains no raw embedding, prompt vector, full score table, or
 audio. Each retained item includes only its vocabulary id, label, bounded
 confidence, state, supporting-window count, and total analyzed windows.
@@ -123,6 +130,13 @@ rejects public origins, URL credentials, paths, queries, fragments, malformed
 tokens, redirects, oversized responses, already-aborted requests, and any
 response whose schema or content pins drift. These failures are discovery-only:
 they cannot replace an already validated two-, four-, or six-track decision.
+
+An analyzer timeout cannot cancel synchronous PyTorch already running in the
+model process. Each permitted inference therefore has an independent 30-second
+fatal watchdog. Expiry clears readiness and exits with code 70 so the runtime
+can replace the wedged process. Fake-backend race tests and a real subprocess
+prove those local mechanics; container and Railway restart/readiness recovery
+remain promotion evidence.
 
 ## Visibility and governance
 
@@ -145,4 +159,6 @@ The discovery flag stays false until all of the following are recorded:
 6. manual teacher review of vocabulary and false positives;
 7. legal status for the selected checkpoint;
 8. proof that discovery success, failure, and version drift never change the
-   concrete core split sent to the separator.
+   concrete core split sent to the separator;
+9. proof that a stuck inference makes readiness fail and is recovered by a
+   bounded process-level watchdog/restart path.

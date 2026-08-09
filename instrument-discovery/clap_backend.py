@@ -137,8 +137,14 @@ class ClapBackend:
             self.model_dir,
             local_files_only=True,
             use_safetensors=False,
+            weights_only=True,
+            trust_remote_code=False,
         )
-        processor = ClapProcessor.from_pretrained(self.model_dir, local_files_only=True)
+        processor = ClapProcessor.from_pretrained(
+            self.model_dir,
+            local_files_only=True,
+            trust_remote_code=False,
+        )
         model.eval()
         prompts, instrument_pairs = build_prompt_pairs(self.vocabulary)
         text_inputs = processor(text=list(prompts), padding=True, return_tensors="pt")
