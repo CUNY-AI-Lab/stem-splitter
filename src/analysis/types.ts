@@ -6,7 +6,7 @@ export const AUTO_ROUTING_REQUEST = 'auto' as const;
 export const PINNED_ROLE_CLASSIFIER_VERSION = 'autosplit-role-v3' as const;
 export const INSTRUMENT_DISCOVERY_SCHEMA_VERSION = '1' as const;
 export const PINNED_INSTRUMENT_CLASSIFIER_VERSION =
-  'laion-larger-clap-music-pairwise-presence-v1@a0b4534a14f58e20944452dff00a22a06ce629d1' as const;
+  'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1' as const;
 export const PINNED_INSTRUMENT_MODEL_SHA256 =
   '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1' as const;
 export const PINNED_INSTRUMENT_VOCABULARY_VERSION = 'classroom-instruments-v1' as const;

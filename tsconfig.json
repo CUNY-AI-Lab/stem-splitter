@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
     "target": "es2022",
-    "module": "es2022",
+    "module": "esnext",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     // Modules that tests/*.test.mts loads through Node's type-stripping runner
     // must import with explicit .ts specifiers; Node does not resolve
     // extensionless ESM. Wrangler/esbuild accept both forms.

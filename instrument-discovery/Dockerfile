@@ -16,8 +16,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_LINK_MODE=copy
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY instrument-discovery/constants.py instrument-discovery/contract.py ./
-COPY instrument-discovery/clap_backend.py instrument-discovery/download_model.py ./
+COPY instrument-discovery/constants.py instrument-discovery/download_model.py ./
 RUN /opt/venv/bin/python download_model.py /models/larger_clap_music \
   && find /models/larger_clap_music -type d -name .cache -prune -exec rm -r {} +
 

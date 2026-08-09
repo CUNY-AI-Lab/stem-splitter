@@ -28,10 +28,13 @@ teacher-reviewable vocabulary, exact CLAP checkpoint/artifact pins, a bounded
 private PCM client, fail-lazy discovery traces, student-response redaction, and
 a teacher-authenticated analysis read route. A separate Python service,
 deterministic aggregation policy, process-fatal inference watchdog, and
-digest-pinned image recipe are implemented locally and pass 22
-contract/fake-backend/process tests. The model image has not been built, actual
-CLAP inference and offline startup have not run, no ML service has
-been provisioned, and no detection has been calibrated or promoted. See the
+digest-pinned image recipe are implemented locally and pass 24
+contract/fake-backend/process tests. A matching native arm64 image has started
+with networking disabled and a read-only root filesystem and completed real
+CLAP inference on a synthetic control; the `linux/amd64` target image also
+builds and matches the current source hashes. Native amd64 startup/inference,
+Railway sizing, real-corpus calibration, and service provisioning remain open,
+and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
 
@@ -67,8 +70,17 @@ because its model or service is available.
 - [ ] Complete the remaining live teacher-console acceptance check from
   `docs/superpowers/plans/2026-08-08-autosplit-prompt-governance.md`: save one
   revision with an authorized real teacher account, restart Railway, and prove
-  that the revision persists. Never retrieve or expose the credential to
-  automate this check.
+  that the revision persists. An isolated Node/SQLite save-login-restart-login
+  readback now passes locally at revision 1; it does not substitute for the
+  real Railway/volume check. Never retrieve or expose the credential to
+  automate that live check.
+- [x] Bound teacher login/prompt JSON by bytes and read time, equalize
+  unknown-account PBKDF2 work,
+  cap concurrent password checks, throttle failure bursts on the current
+  single-replica Railway process, and make teacher responses `no-store`.
+- [ ] Add a distributed teacher-login edge limit before increasing Railway
+  replicas or performing the deferred Cloudflare migration; the process-local
+  throttle intentionally does not claim cross-replica protection.
 - [ ] Capture a new baseline before pipeline work: commit SHA, full test result,
   live `/healthz`, one authorized real-audio 4-track job, output hashes, latency,
   and provider/model version. This is the rollback comparison point.
@@ -225,13 +237,25 @@ job.
   PCM rate/window, response-size, timeout, private-origin, and redirect pins.
   Discovery failure or drift gets its own trace and cannot change a validated
   core Auto decision; student responses strip labels and private pins.
-- [ ] Spike LAION CLAP inside a separate private `instrument-discovery` service
+- [x] Spike LAION CLAP inside a separate `instrument-discovery` image
   as the first flexible zero-shot classifier. Load the exact music checkpoint
   during image build, verify its checksum, and prove offline startup; do not
-  pull a floating checkpoint during container boot. The bounded service,
-  offline-only image recipe, dependency lock, exact download revision, and
-  eight-artifact content verifier now exist locally; the large image build and
-  real-model offline-start proof remain open.
+  pull a floating checkpoint during container boot. The current native arm64
+  image passed a network-disabled, read-only, non-root smoke with exact
+  readiness pins and real inference; a three-second synthetic control completed
+  in 258–394 ms, while post-warm container-memory observations ranged roughly
+  405–745 MiB across repeated local runs.
+  This is implementation evidence, not musical calibration or Railway sizing.
+- [ ] Start and infer with the current `linux/amd64` image on a native amd64
+  runner and Railway. The 2.11 GB target image builds locally and its runtime
+  source hashes match the working tree, but local emulation crossed the image's
+  health window during vocabulary embedding and is not production timing
+  evidence.
+- [ ] Decide whether to convert the pinned PyTorch pickle to safetensors before
+  teacher shadow. If converted, verify every tensor name, shape, dtype, and
+  value against the pinned source; assign a new artifact hash and classifier
+  id; and rerun the full corpus. Never replace the current weight artifact
+  under its existing provenance record.
 - [x] Add a process-fatal watchdog so a timed-out synchronous inference clears
   readiness and exits instead of monopolizing capacity indefinitely. Regression
   tests cover the permitted two-request race and prove the real fatal callback
@@ -249,6 +273,16 @@ job.
   against real CLAP output remains open.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label.
+- [ ] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine
+  labels currently take the maximum of two prompt aliases while twenty-two use
+  one, and CLAP-style text encoders may not treat “without” as reliable
+  negation. Compare matched prompt counts and control/negation formulations on
+  positive and hard-negative audio; any change requires a new classifier id.
+- [ ] Review the vocabulary ontology and teacher display policy for overlapping
+  parent/child results (`brass` plus `trumpet`, `strings` plus `violin`, or
+  `percussion` plus `drum-kit`) and for production/timbre labels such as
+  `sampler` and `pad`. Do not double-count or present them as equivalent kinds
+  of evidence.
 - [ ] Keep detection advisory: display “possible instruments” and confidence
   only to authorized testers. Do not change the Demucs model because a
   long-tail instrument was detected.

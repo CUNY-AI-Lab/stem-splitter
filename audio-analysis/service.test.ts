@@ -346,7 +346,7 @@ test('advisory discovery success and failure cannot change the core Auto decisio
   assert.equal(completeResult.detectedInstruments[0].id, 'saxophone');
   assert.match(
     JSON.stringify(discoveryLogs),
-    /laion-larger-clap-music-pairwise-presence-v1@a0b4534a14f58e20944452dff00a22a06ce629d1/
+    /laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1/
   );
   assert.match(JSON.stringify(discoveryLogs), /classroom-instruments-v1/);
 
@@ -510,6 +510,7 @@ test('container and build context freeze the runtime without shipping local audi
   assert.match(dockerfile, /FROM node:22\.23\.1-bookworm-slim@sha256:[a-f0-9]{64}/);
   assert.match(dockerfile, /FROM oven\/bun:1\.3\.14-slim@sha256:[a-f0-9]{64}/);
   assert.match(dockerfile, /ARG FFMPEG_VERSION=8\.0\.3/);
+  assert.match(dockerfile, /ARG MAKE_JOBS=1/);
   assert.match(
     dockerfile,
     /ARG FFMPEG_SHA256=6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818/

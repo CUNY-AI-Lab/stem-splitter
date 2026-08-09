@@ -17,16 +17,24 @@
 - [x] Keep appended class instructions in a distinct editor with required
   notes, optimistic concurrency, append-only D1 history, and cache invalidation.
 - [x] Make teacher-seed reconciliation authoritative, atomic, and session-safe.
+- [x] Bound teacher JSON bodies by bytes and read time, equalize known/unknown
+  password work, cap concurrent PBKDF2 checks, add a bounded single-process
+  failure throttle, and mark every teacher API response `no-store`.
 - [x] Document secure Cloudflare, Railway, and local teacher provisioning plus
   the fixed-prompt changelog workflow.
 - [x] Pass typecheck, unit tests, complete browser E2E, Node-host boot, and
   desktop/mobile rendered-browser acceptance.
+- [x] Save an amendment through an isolated Node/SQLite host, stop and restart
+  that host against the same data directory, sign in again, and read back the
+  same revision/history with `Cache-Control: no-store`.
 - [x] Deploy the Node host to the canonical Railway service and prove live
   health, schema readiness, static assets, auth boundaries, and the free smoke
   suite.
 - [ ] With a real teacher credential, save one live revision, restart Railway,
   and confirm that revision survives. Never retrieve or expose the credential
   merely to automate this acceptance check.
+- [ ] Before adding Railway replicas or migrating to Cloudflare, replace the
+  process-local login throttle with a tested distributed edge limit.
 - [ ] After the user declares the full product finished, migrate to Cloudflare
   Workers, apply migrations 4/5, provision Worker secrets, and prove that
   separate production journey. Do not take this step early.

@@ -1505,7 +1505,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
       schemaVersion: '1',
       roleClassifier: { version: 'autosplit-role-v3' },
       vocabularyClassifier: {
-        version: 'laion-larger-clap-music-pairwise-presence-v1@a0b4534a14f58e20944452dff00a22a06ce629d1',
+        version: 'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1',
         weightsSha256: '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1',
         vocabularyVersion: 'classroom-instruments-v1',
         vocabularySha256: '72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140',
@@ -1558,11 +1558,20 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     headers: { 'x-class-code': CLASS_CODE },
   });
   expect(withClassCode.status).toBe(401);
+  expect(withClassCode.headers.get('cache-control')).toBe('no-store');
   const analysisWithClassCode = await server.fetch(
     `http://stem-splitter.test/api/teacher/jobs/${analysisJobId}/analysis`,
     { headers: { 'x-class-code': CLASS_CODE } }
   );
   expect(analysisWithClassCode.status).toBe(401);
+
+  const oversizedLogin = await server.fetch('http://stem-splitter.test/api/teacher/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'nobody', password: 'x'.repeat(9000) }),
+  });
+  expect(oversizedLogin.status).toBe(413);
+  expect(oversizedLogin.headers.get('cache-control')).toBe('no-store');
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#class-code-dialog')).toBeVisible();
@@ -1586,6 +1595,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     body: JSON.stringify({ username: 'nobody', password: 'whatever' }),
   });
   expect(unknownUser.status).toBe(401);
+  expect(unknownUser.headers.get('cache-control')).toBe('no-store');
   expect((await unknownUser.json()).error).toBe('Incorrect username or password.');
 
   await page.getByLabel('PASSWORD').fill(TEACHER_PASSWORD);
@@ -1634,9 +1644,14 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
   await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-08.1');
 
-  const trace = await page.evaluate(() =>
-    fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((response) => response.json())
+  const promptReadback = await page.evaluate(() =>
+    fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
+      cacheControl: response.headers.get('cache-control'),
+      body: await response.json(),
+    }))
   );
+  expect(promptReadback.cacheControl).toBe('no-store');
+  const trace = promptReadback.body;
   expect(trace.basePromptHash).toMatch(/^[a-f0-9]{64}$/);
   expect(trace.effectivePromptHash).toMatch(/^[a-f0-9]{64}$/);
   expect(trace.history[0]).toMatchObject({

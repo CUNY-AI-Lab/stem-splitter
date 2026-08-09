@@ -8,6 +8,7 @@ import {
   PINNED_INSTRUMENT_VOCABULARY_SHA256,
   PINNED_INSTRUMENT_VOCABULARY_VERSION,
 } from '../src/analysis/types.ts';
+import { PINNED_INSTRUMENT_LABELS } from '../src/analysis/instrument-vocabulary.ts';
 
 const vocabularyBytes = readFileSync('instrument-discovery/vocabulary.json');
 const vocabulary = JSON.parse(vocabularyBytes.toString('utf8'));
@@ -60,6 +61,13 @@ test('instrument vocabulary content is pinned, reviewable, and internally consis
     assert.equal(new Set(instrument.confusableWith).size, instrument.confusableWith.length);
     assert.equal(instrument.confusableWith.includes(instrument.id), false);
   }
+  assert.deepEqual(
+    [...PINNED_INSTRUMENT_LABELS],
+    vocabulary.instruments.map((instrument: { id: string; label: string }) => [
+      instrument.id,
+      instrument.label,
+    ])
+  );
   for (const instrument of vocabulary.instruments) {
     for (const related of instrument.confusableWith) {
       assert.equal(ids.has(related), true, `${instrument.id} references unknown ${related}`);

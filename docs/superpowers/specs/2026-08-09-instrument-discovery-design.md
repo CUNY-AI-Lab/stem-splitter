@@ -42,7 +42,7 @@ music-specialized CLAP model:
 - `pytorch_model.bin` SHA-256:
   `5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1`;
 - app classifier id:
-  `laion-larger-clap-music-pairwise-presence-v1@a0b4534a14f58e20944452dff00a22a06ce629d1`;
+  `laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1`;
 - vocabulary: `classroom-instruments-v1`;
 - vocabulary SHA-256:
   `72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140`.
@@ -57,7 +57,7 @@ the converted checkpoint Apache-2.0. The training corpus includes linked audio
 with copyright restrictions, so model-card licensing does not remove the need
 for institutional review before a student rollout.
 
-`pairwise-presence-v1` is part of the classifier id because it converts each
+`pairwise-presence-rand-trunc-v1` is part of the classifier id because it converts each
 reviewed term's positive/negative CLAP logit pair into an independent score and
 then takes the maximum over that instrument's terms. A prompt-template,
 synonym-aggregation, softmax-policy, or model-revision change requires a new
@@ -105,11 +105,14 @@ window cannot hide two absent ones. A one-window source needs one supported
 window. Results are sorted deterministically and capped at twelve.
 
 The discovery service resamples the analyzer's fixed 22,050 Hz role PCM to the
-checkpoint's 48,000 Hz input with a pinned polyphase implementation. For clips
-longer than CLAP's ten-second feature window, the fused checkpoint retains its
-whole-window view plus three mel crops; `pairwise-presence-v1` fixes the crop
-seed by window index. Any resampler, crop, prompt, synonym, or pairwise-logit
-change requires a new classifier id and a new evaluation entry.
+checkpoint's 48,000 Hz input with a pinned polyphase implementation. This exact
+checkpoint is non-fusion and its pinned processor uses one ten-second
+`rand_trunc` mel crop. `pairwise-presence-rand-trunc-v1` fixes that crop's seed
+by window index for analyzer windows longer than ten seconds. The service
+refuses readiness if the model unexpectedly enables fusion or the processor's
+crop mode, sample rate, or crop length drifts. Any resampler, crop, prompt,
+synonym, or pairwise-logit change requires a new classifier id and a new
+evaluation entry.
 
 The image pins the SHA-256 of all eight checkpoint, configuration, processor,
 and tokenizer artifacts, not only the weight file, and verifies the same

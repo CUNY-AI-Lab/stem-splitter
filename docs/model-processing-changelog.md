@@ -12,10 +12,16 @@ promotion on their own.
 - Candidate classifier: `laion/larger_clap_music` revision
   `a0b4534a14f58e20944452dff00a22a06ce629d1`; weight SHA-256
   `5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1`.
-- Scoring policy: `pairwise-presence-v1` is included in the app classifier id;
-  the positive/negative prompt policy and synonym aggregation cannot change
-  under the same claimed classifier version. Its outputs remain uncalibrated
-  candidate signals.
+- Scoring policy: `pairwise-presence-rand-trunc-v1` is included in the app
+  classifier id; the positive/negative prompt policy, synonym aggregation, and
+  deterministic non-fusion ten-second crop cannot change under the same claimed
+  classifier version. Its outputs remain uncalibrated candidate signals.
+- Real-model correction: the first image request exposed that this checkpoint
+  has fusion disabled; sending the earlier four-mel fusion input failed with a
+  channel-shape error despite successful warmup. The candidate id was advanced
+  before deployment, inference now uses the pinned processor's `rand_trunc`
+  path, and readiness refuses fusion, sample-rate, crop-mode, or crop-length
+  drift.
 - Candidate vocabulary: `classroom-instruments-v1`, 51 labels in 10 families;
   content SHA-256
   `72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140`.
@@ -40,23 +46,32 @@ promotion on their own.
   application-level E2E proves the teacher analysis route rejects the class
   code and signed-out sessions while returning full metadata to a signed-in
   fixture teacher.
-- Evidence: 80 worker tests and 21 analyzer tests pass locally, including
+- Evidence: 82 worker tests and 21 analyzer tests pass locally, including
   vocabulary integrity, content pins, private-origin/redirect controls,
   bounded window transport, parent abort, malformed responses, and non-mutating
   core routing.
-- Locally tested: 22 discovery-service contract/process tests cover authentication,
+- Locally tested: 24 discovery-service contract/process tests cover authentication,
   readiness failure, pin drift, duplicate HTTP framing, rejected expectation
   handshakes, bounded pre-auth connections, slow-header timeout, pre-body
   capacity reservation, bounded PCM, non-finite samples, abstention, two-window
   support, uncertainty, pairwise prompt scoring, independent concurrent
   watchdog generations, and a real child-process exit with code 70 without
   loading PyTorch or model weights. The 29-package lock resolves and explicitly
-  pins the direct Hugging Face build dependency.
-- Not yet proven: a complete CLAP image build, real-model inference,
-  offline-start readback, container/Railway restart and readiness recovery after
-  a real PyTorch inference outlives its client timeout, calibration, authorized
-  truth labels, metrics, a dedicated discovery-review UI, listening review,
-  resource/cost measurement,
+  pins the direct Hugging Face build dependency. Model startup additionally
+  rejects any directory entry beyond the eight content-pinned artifacts and
+  the exact provenance manifest, including symlinks.
+- Real-model local smoke: a matching arm64 image ran as uid/gid `65532:65532`
+  with networking disabled, a read-only root filesystem, a bounded tmpfs, two
+  CPUs, 4 GB RAM, and 128 PIDs. It returned the exact readiness pins and scored
+  a three-second synthetic control in 258–394 ms; post-warm container-memory
+  observations ranged roughly 405–745 MiB across repeated runs. The same
+  current source builds as a 2.11 GB `linux/amd64` image, but
+  emulated vocabulary warmup crossed its configured health window; that is a
+  deployment risk signal, not native performance evidence.
+- Not yet proven: native amd64 startup/inference, container/Railway restart and
+  readiness recovery after a real PyTorch inference outlives its client
+  timeout, calibration, authorized truth labels, metrics, a dedicated
+  discovery-review UI, listening review, production resource/cost measurement,
   native image CI, or any Railway service.
 - Rollout: off. No Railway variable, service, or deployment change.
 

@@ -234,6 +234,20 @@ test('analysis v1 quarantines invalid discovery without rejecting the core decis
   assert.equal(duplicateResult.decision.resolvedCoreModel, 'htdemucs_6s');
   assert.equal(duplicateResult.instrumentDiscovery?.code, 'discovery_contract_invalid');
   assert.deepEqual(duplicateResult.detectedInstruments, []);
+
+  for (const detection of [
+    { ...validAnalysis().detectedInstruments[0], id: 'kazoo', label: 'Kazoo' },
+    { ...validAnalysis().detectedInstruments[0], label: 'Trumpet' },
+  ]) {
+    const driftedResult = parseAudioAnalysisResult(
+      { ...validAnalysis(), detectedInstruments: [detection] },
+      models,
+      'htdemucs_ft',
+      true
+    );
+    assert.equal(driftedResult.instrumentDiscovery?.code, 'discovery_contract_invalid');
+    assert.deepEqual(driftedResult.detectedInstruments, []);
+  }
 });
 
 test('analysis v1 still rejects core work beyond the bounded audio window', () => {

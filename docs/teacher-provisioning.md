@@ -133,6 +133,22 @@ A valid `TEACHER_SEED` array is authoritative:
 After changing the seed, redeploy or restart the host so a fresh isolate
 reconciles it.
 
+## Login boundary
+
+Teacher login and prompt-save requests accept only byte- and time-bounded,
+uncompressed JSON. A body that does not finish within five seconds is cancelled.
+Usernames and password inputs are length-limited before password work begins,
+at most two PBKDF2 checks may run concurrently, and an unknown username still
+performs the same PBKDF2 class of work as a known account. The current
+single-replica Railway host also applies a bounded process-local failure window:
+five failures block that normalized username for two minutes. Successful login
+clears the window, and every teacher API response is `Cache-Control: no-store`.
+
+The process-local throttle resets on restart and is not globally shared across
+replicas. Before increasing the Railway replica count or performing the deferred
+Cloudflare migration, add and test a distributed edge rate limit without
+logging usernames, passwords, verifier material, or session cookies.
+
 ## Verify provisioning
 
 1. Open `/teacher.html`; the class code must not grant access.
@@ -146,6 +162,10 @@ reconciles it.
    amendment plus revision history still persist. A successful save before the
    restart is not sufficient acceptance.
 8. Sign out and confirm `GET /api/teacher/prompt` returns 401.
+9. Confirm teacher API responses use `Cache-Control: no-store`, an oversized
+   login body returns 413, a stalled body returns 408, and a bounded
+   failed-login burst returns 429 with `Retry-After` without revealing whether
+   the username exists.
 
 ## Prompt editing and version control
 

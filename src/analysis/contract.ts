@@ -20,6 +20,7 @@ import {
   type InstrumentDetectionV1,
   type RoleFeaturesV1,
 } from './types.ts';
+import { PINNED_INSTRUMENT_LABELS } from './instrument-vocabulary.ts';
 
 export class AudioAnalysisContractError extends Error {}
 
@@ -95,6 +96,7 @@ function parseDetections(value: unknown, windowsAnalyzed: number): InstrumentDet
       label !== label.trim() ||
       label.length > 120 ||
       /[\u0000-\u001f\u007f]/.test(label) ||
+      PINNED_INSTRUMENT_LABELS.get(id) !== label ||
       !confidence(item.confidence) ||
       item.confidence === null ||
       (item.state !== 'possible' && item.state !== 'uncertain') ||

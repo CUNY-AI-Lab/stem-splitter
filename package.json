@@ -16,6 +16,7 @@
     "typecheck:analysis": "tsc -p audio-analysis/tsconfig.json --noEmit",
     "test:analysis-service": "node --import tsx --test audio-analysis/*.test.ts tests/autosplit-parity.test.mts",
     "test:instrument-discovery": "python3 -m unittest discover -s instrument-discovery -p 'test_*.py'",
+    "smoke:instrument-discovery:image": "./scripts/smoke-instrument-discovery-image.sh",
     "smoke:local": "./scripts/smoke-local-bs.sh",
     "deploy": "wrangler deploy",
     "test:e2e": "playwright test --config playwright.config.mjs",

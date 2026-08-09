@@ -13,6 +13,94 @@ const SESSION_COOKIE = 'teacher_session';
 const MAX_AMENDMENT_CHARS = 2000;
 const MAX_CHANGE_NOTE_CHARS = 240;
 const PROMPT_HISTORY_LIMIT = 40;
+const UNKNOWN_ACCOUNT_SALT = '9f89c84a559f573636a47ff8abed1e4f';
+
+interface LoginFailureState {
+  failures: number;
+  windowStartedAt: number;
+  blockedUntil: number;
+  lastSeenAt: number;
+}
+
+export interface TeacherLoginThrottleOptions {
+  maximumFailures?: number;
+  windowMs?: number;
+  blockMs?: number;
+  maximumEntries?: number;
+}
+
+/**
+ * Bounded process-level login throttle for the current single-replica Railway
+ * host. It is defense in depth, not a substitute for distributed edge limits
+ * before a multi-replica or Cloudflare rollout.
+ */
+export class TeacherLoginThrottle {
+  private readonly states = new Map<string, LoginFailureState>();
+  private readonly maximumFailures: number;
+  private readonly windowMs: number;
+  private readonly blockMs: number;
+  private readonly maximumEntries: number;
+
+  constructor(options: TeacherLoginThrottleOptions = {}) {
+    this.maximumFailures = options.maximumFailures ?? 5;
+    this.windowMs = options.windowMs ?? 10 * 60_000;
+    this.blockMs = options.blockMs ?? 2 * 60_000;
+    this.maximumEntries = options.maximumEntries ?? 1024;
+  }
+
+  private key(username: string): string {
+    return username.trim().toLowerCase().slice(0, 64) || '<invalid>';
+  }
+
+  private pruneFor(newKey: string): void {
+    if (this.states.has(newKey) || this.states.size < this.maximumEntries) return;
+    let oldestKey: string | undefined;
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const [key, state] of this.states) {
+      if (state.lastSeenAt < oldest) {
+        oldest = state.lastSeenAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey !== undefined) this.states.delete(oldestKey);
+  }
+
+  check(username: string, now = Date.now()): { allowed: boolean; retryAfterSeconds: number } {
+    const key = this.key(username);
+    const state = this.states.get(key);
+    if (!state) return { allowed: true, retryAfterSeconds: 0 };
+    state.lastSeenAt = now;
+    if (state.blockedUntil > now) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((state.blockedUntil - now) / 1000)),
+      };
+    }
+    if (state.blockedUntil > 0) {
+      this.states.delete(key);
+      return { allowed: true, retryAfterSeconds: 0 };
+    }
+    if (now - state.windowStartedAt >= this.windowMs) this.states.delete(key);
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  recordFailure(username: string, now = Date.now()): void {
+    const key = this.key(username);
+    this.pruneFor(key);
+    let state = this.states.get(key);
+    if (!state || now - state.windowStartedAt >= this.windowMs) {
+      state = { failures: 0, windowStartedAt: now, blockedUntil: 0, lastSeenAt: now };
+    }
+    state.failures += 1;
+    state.lastSeenAt = now;
+    if (state.failures >= this.maximumFailures) state.blockedUntil = now + this.blockMs;
+    this.states.set(key, state);
+  }
+
+  recordSuccess(username: string): void {
+    this.states.delete(this.key(username));
+  }
+}
 
 export interface TeacherRecord {
   username: string;
@@ -212,10 +300,14 @@ export async function verifyLogin(
   const row = await env.DB.prepare('SELECT * FROM teachers WHERE username = ?')
     .bind(username.trim().toLowerCase())
     .first<TeacherRow>();
-  if (!row) return null;
-
-  const candidate = await derivePasswordHash(password, row.salt, row.iterations);
-  if (!timingSafeEqual(candidate, row.password_hash)) return null;
+  // Unknown usernames still perform the same PBKDF2 class of work. The route
+  // bounds password length and concurrent checks before reaching this call.
+  const candidate = await derivePasswordHash(
+    password,
+    row?.salt ?? UNKNOWN_ACCOUNT_SALT,
+    row?.iterations ?? PBKDF2_ITERATIONS
+  );
+  if (!row || !timingSafeEqual(candidate, row.password_hash)) return null;
   return { username: row.username, displayName: row.display_name };
 }
 

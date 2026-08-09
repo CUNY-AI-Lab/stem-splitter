@@ -79,8 +79,10 @@ import {
   sessionCookie,
   setAmendment,
   syncTeachersFromSeed,
+  TeacherLoginThrottle,
   verifyLogin,
 } from './teacher/auth';
+import { readBoundedTeacherJson, TeacherRequestError } from './teacher/request';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -233,6 +235,9 @@ app.get('/api/local-sources/*', async (c) => {
 
 /** Seeding runs at most once per isolate; the seed itself is idempotent. */
 let teacherSeedPromise: Promise<void> | null = null;
+const teacherLoginThrottle = new TeacherLoginThrottle();
+let activeTeacherPasswordChecks = 0;
+const MAX_TEACHER_PASSWORD_CHECKS = 2;
 function ensureTeachersSeeded(c: Context<{ Bindings: Env }>): Promise<void> {
   teacherSeedPromise ??= syncTeachersFromSeed(c.env).catch((err) => {
     console.error('teacher seed failed', err);
@@ -247,6 +252,7 @@ async function currentTeacher(c: Context<{ Bindings: Env }>) {
 }
 
 const requireTeacher = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+  c.header('Cache-Control', 'no-store');
   const teacher = await currentTeacher(c);
   if (!teacher) return c.json({ error: 'Sign in to continue.' }, 401);
   c.set('teacher' as never, teacher as never);
@@ -258,18 +264,54 @@ function isSecureRequest(c: Context<{ Bindings: Env }>): boolean {
 }
 
 app.post('/api/teacher/login', async (c) => {
+  c.header('Cache-Control', 'no-store');
   await ensureTeachersSeeded(c);
-  const body = (await c.req.json().catch(() => null)) as
-    | { username?: string; password?: string }
-    | null;
-
-  if (typeof body?.username !== 'string' || typeof body?.password !== 'string') {
-    return c.json({ error: 'Username and password are required.' }, 400);
+  let body: { username?: unknown; password?: unknown } | null;
+  try {
+    const parsed = await readBoundedTeacherJson(c.req.raw);
+    body = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as { username?: unknown; password?: unknown })
+      : null;
+  } catch (error) {
+    if (error instanceof TeacherRequestError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    throw error;
   }
 
-  const teacher = await verifyLogin(c.env, body.username, body.password);
+  if (
+    typeof body?.username !== 'string' ||
+    typeof body?.password !== 'string' ||
+    !/^[a-z0-9._-]{1,64}$/i.test(body.username.trim()) ||
+    body.password.length < 1 ||
+    body.password.length > 512
+  ) {
+    return c.json({ error: 'Incorrect username or password.' }, 401);
+  }
+
+  const throttle = teacherLoginThrottle.check(body.username);
+  if (!throttle.allowed) {
+    c.header('Retry-After', String(throttle.retryAfterSeconds));
+    return c.json({ error: 'Too many sign-in attempts. Try again later.' }, 429);
+  }
+  if (activeTeacherPasswordChecks >= MAX_TEACHER_PASSWORD_CHECKS) {
+    c.header('Retry-After', '1');
+    return c.json({ error: 'Sign-in is busy. Try again.' }, 429);
+  }
+
+  activeTeacherPasswordChecks += 1;
+  let teacher;
+  try {
+    teacher = await verifyLogin(c.env, body.username, body.password);
+  } finally {
+    activeTeacherPasswordChecks -= 1;
+  }
   // One message for both unknown-user and wrong-password: no account enumeration.
-  if (!teacher) return c.json({ error: 'Incorrect username or password.' }, 401);
+  if (!teacher) {
+    teacherLoginThrottle.recordFailure(body.username);
+    return c.json({ error: 'Incorrect username or password.' }, 401);
+  }
+  teacherLoginThrottle.recordSuccess(body.username);
 
   const token = await createSession(c.env, teacher.username);
   c.header('Set-Cookie', sessionCookie(token, isSecureRequest(c)));
@@ -277,12 +319,14 @@ app.post('/api/teacher/login', async (c) => {
 });
 
 app.post('/api/teacher/logout', async (c) => {
+  c.header('Cache-Control', 'no-store');
   await destroySession(c.env, readSessionCookie(c.req.header('Cookie')));
   c.header('Set-Cookie', clearedSessionCookie(isSecureRequest(c)));
   return c.json({ ok: true });
 });
 
 app.get('/api/teacher/me', async (c) => {
+  c.header('Cache-Control', 'no-store');
   const teacher = await currentTeacher(c);
   if (!teacher) return c.json({ error: 'Not signed in.' }, 401);
   return c.json({ username: teacher.username, displayName: teacher.displayName });
@@ -311,9 +355,18 @@ app.get('/api/teacher/prompt', requireTeacher, async (c) => {
 
 app.put('/api/teacher/prompt', requireTeacher, async (c) => {
   const teacher = (await currentTeacher(c))!;
-  const body = (await c.req.json().catch(() => null)) as
-    | { amendment?: unknown; changeNote?: unknown; expectedRevision?: unknown }
-    | null;
+  let body: { amendment?: unknown; changeNote?: unknown; expectedRevision?: unknown } | null;
+  try {
+    const parsed = await readBoundedTeacherJson(c.req.raw, 16 * 1024);
+    body = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as { amendment?: unknown; changeNote?: unknown; expectedRevision?: unknown })
+      : null;
+  } catch (error) {
+    if (error instanceof TeacherRequestError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    throw error;
+  }
 
   const amendment = normalizeAmendment(body?.amendment);
   if (amendment === null) {

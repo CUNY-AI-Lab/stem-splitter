@@ -11,6 +11,7 @@ import {
   type InstrumentDiscoveryCode,
   type InstrumentDiscoveryResultV1,
 } from '../src/analysis/types.ts';
+import { PINNED_INSTRUMENT_LABELS } from '../src/analysis/instrument-vocabulary.ts';
 import type { DecodedAnalysisAudio } from './decoder.ts';
 
 const MAX_DISCOVERY_RESPONSE_BYTES = 64 * 1024;
@@ -59,6 +60,7 @@ function parseDetection(value: unknown, windowsAnalyzed: number): InstrumentDete
     value.label !== value.label.trim() ||
     value.label.length > 120 ||
     /[\u0000-\u001f\u007f]/.test(value.label) ||
+    PINNED_INSTRUMENT_LABELS.get(value.id) !== value.label ||
     !boundedNumber(value.confidence, 0, 1) ||
     (value.state !== 'possible' && value.state !== 'uncertain') ||
     !Number.isSafeInteger(value.windowSupport) ||

@@ -9,7 +9,10 @@ FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5
 
 ARG FFMPEG_VERSION=8.0.3
 ARG FFMPEG_SHA256=6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818
-ARG MAKE_JOBS=2
+# A parallel amd64 build produced inconsistent libc feature detection under
+# QEMU. Keep the reproducible default serial; native builders may override only
+# after their own image gate proves the result.
+ARG MAKE_JOBS=1
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends build-essential ca-certificates curl xz-utils \
@@ -67,7 +70,8 @@ COPY audio-analysis/app.ts audio-analysis/classifier.ts audio-analysis/config.ts
 COPY audio-analysis/decoder.ts audio-analysis/discovery.ts audio-analysis/process.ts audio-analysis/request.ts ./audio-analysis/
 COPY audio-analysis/server.ts audio-analysis/source.ts ./audio-analysis/
 COPY public/autosplit.js ./public/autosplit.js
-COPY src/analysis/types.ts ./src/analysis/types.ts
+COPY src/analysis/types.ts src/analysis/instrument-vocabulary.ts ./src/analysis/
+COPY instrument-discovery/vocabulary.json ./instrument-discovery/vocabulary.json
 RUN bun build audio-analysis/server.ts --target=node --format=esm --outfile=dist/server.mjs
 
 FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3

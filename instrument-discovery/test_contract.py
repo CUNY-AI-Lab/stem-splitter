@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 import math
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from clap_backend import build_prompt_pairs, pairwise_presence_scores
+from clap_backend import (
+    build_prompt_pairs,
+    pairwise_presence_scores,
+    validate_audio_preprocessing,
+    verify_model_directory,
+)
 from constants import (
+    CLAP_MAX_INPUT_SECONDS,
+    CLAP_SAMPLE_RATE,
+    CLAP_TRUNCATION_MODE,
     CLASSIFIER_VERSION,
     MODEL_ARTIFACT_SHA256,
+    MODEL_PROVENANCE_FILE,
     MODEL_REVISION,
     MODEL_WEIGHTS_SHA256,
     VOCABULARY_SHA256,
@@ -57,6 +68,22 @@ class ContractTest(unittest.TestCase):
                 for _filename, digest in MODEL_ARTIFACT_SHA256)
         )
         self.assertEqual(dict(MODEL_ARTIFACT_SHA256)["pytorch_model.bin"], MODEL_WEIGHTS_SHA256)
+
+    def test_model_directory_rejects_any_unpinned_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unexpected-model-code.py").write_text("raise SystemExit\n", "utf-8")
+            with self.assertRaisesRegex(DiscoveryContractError, "surface"):
+                verify_model_directory(root)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for filename, _digest in MODEL_ARTIFACT_SHA256:
+                (root / filename).touch()
+            (root / MODEL_PROVENANCE_FILE).touch()
+            (root / "config.json").unlink()
+            (root / "config.json").symlink_to("merges.txt")
+            with self.assertRaisesRegex(DiscoveryContractError, "surface"):
+                verify_model_directory(root)
 
     def test_container_recipe_is_pinned_offline_non_root_and_lock_frozen(self) -> None:
         dockerfile = (ROOT / "instrument-discovery/Dockerfile").read_text("utf-8")
@@ -173,6 +200,33 @@ class ContractTest(unittest.TestCase):
         logits[0] = math.inf
         with self.assertRaisesRegex(DiscoveryContractError, "non-finite"):
             pairwise_presence_scores(logits, indexes)
+
+    def test_checkpoint_preprocessing_requires_non_fusion_rand_trunc(self) -> None:
+        model = SimpleNamespace(
+            config=SimpleNamespace(audio_config=SimpleNamespace(enable_fusion=False))
+        )
+        extractor = SimpleNamespace(
+            truncation=CLAP_TRUNCATION_MODE,
+            sampling_rate=CLAP_SAMPLE_RATE,
+            nb_max_samples=CLAP_SAMPLE_RATE * CLAP_MAX_INPUT_SECONDS,
+        )
+        self.assertEqual(validate_audio_preprocessing(model, extractor), "rand_trunc")
+
+        for field, value in (
+            ("truncation", "fusion"),
+            ("sampling_rate", 44_100),
+            ("nb_max_samples", CLAP_SAMPLE_RATE * 15),
+        ):
+            invalid = SimpleNamespace(**extractor.__dict__)
+            setattr(invalid, field, value)
+            with self.assertRaisesRegex(DiscoveryContractError, "does not match"):
+                validate_audio_preprocessing(model, invalid)
+
+        fused = SimpleNamespace(
+            config=SimpleNamespace(audio_config=SimpleNamespace(enable_fusion=True))
+        )
+        with self.assertRaisesRegex(DiscoveryContractError, "fusion mode"):
+            validate_audio_preprocessing(fused, extractor)
 
 
 if __name__ == "__main__":

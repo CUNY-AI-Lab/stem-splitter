@@ -19,11 +19,11 @@
   review and calibration remain promotion gates.
 - [x] Accept only authenticated, bounded f32le PCM with explicit sample/window
   headers; reject URLs, redirects, multipart input, and excess bytes.
-- [ ] Load the exact CLAP revision and verify all eight model/processor artifacts
+- [x] Load the exact CLAP revision and verify all eight model/processor artifacts
   during image build and startup; run offline and non-root. Pickled weights are
-  loaded with explicit `weights_only=True` and remote code disabled. The image
-  and offline-only code are implemented; the large build and real-model startup
-  proof remain open.
+  loaded with explicit `weights_only=True` and remote code disabled. A matching
+  native arm64 image passed the network-disabled, read-only smoke and real-model
+  control inference. Native amd64 and Railway remain separate gates below.
 - [x] Score windows independently and aggregate with family thresholds,
   support, uncertainty, and output caps.
 - [x] Keep health process-only and readiness model/vocabulary-specific.
@@ -53,9 +53,18 @@
   unknowns; do not manufacture negatives from missing annotations.
 - [ ] Run CLAP on the fixed corpus and record per-label/per-genre metrics,
   confusion pairs, abstention, latency, and memory.
+- [ ] Compare one- versus two-alias labels and negative-prompt controls so the
+  max-over-synonyms policy cannot silently reward labels with more prompts.
+- [ ] Decide how parent categories, child instruments, and non-instrument
+  production/timbre labels are reviewed and displayed without double-counting.
 - [ ] Implement Essentia ONNX as an offline-only comparison after written
   licence review; use the identical windows and manifest.
-- [ ] Build and smoke the current image on amd64.
+- [ ] Smoke the current image on native amd64. The 2.11 GB `linux/amd64` target
+  builds locally and matches the current source hashes, but emulated startup
+  crossed the image health window and cannot close this gate.
+- [ ] Either retain the content-pinned weights-only pickle with an accepted
+  risk record or produce a tensor-equivalent safetensors artifact under a new
+  hash and classifier id; rerun every model and corpus gate after conversion.
 - [ ] Exercise a deliberately stuck real-model inference in the built container
   and prove the Railway restart path recovers capacity and readiness after the
   analyzer abandons its timed-out request.

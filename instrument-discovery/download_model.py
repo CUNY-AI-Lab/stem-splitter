@@ -11,12 +11,11 @@ from pathlib import Path
 
 from constants import (
     MODEL_ARTIFACT_SHA256,
+    MODEL_PROVENANCE_FILE,
     MODEL_REPOSITORY,
     MODEL_REVISION,
     MODEL_WEIGHTS_SHA256,
 )
-from clap_backend import MODEL_PROVENANCE_FILE
-
 MODEL_FILES = tuple(filename for filename, _digest in MODEL_ARTIFACT_SHA256)
 
 

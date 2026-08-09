@@ -83,7 +83,10 @@ video/audio filter compilation and crashed under emulation; that failure
 exposed the overbroad build surface rather than becoming an accepted flake.
 
 The corrected image compiles the checksum-pinned official FFmpeg 8.0.3 source
-with explicit component-family disables and a narrow audio allowlist. Runtime
+with a reproducible single-job default, explicit component-family disables,
+and a narrow audio allowlist. A clean two-job QEMU rebuild produced inconsistent
+libc `hypot` feature detection, while the serial build is repeatable; native
+builders may override parallelism only after their own image gate passes. Runtime
 inspection found only AIFF, FLAC, MOV/M4A, MP3, OGG, and WAV demuxers; only
 audio decoders; and only file/pipe protocols. The non-root image reported
 FFmpeg 8.0.3 and role v3 readiness, rejected missing and incorrect bearer

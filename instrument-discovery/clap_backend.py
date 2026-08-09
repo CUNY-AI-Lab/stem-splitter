@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Sequence
 
 from constants import (
+    CLAP_MAX_INPUT_SECONDS,
     CLAP_SAMPLE_RATE,
+    CLAP_TRUNCATION_MODE,
     MODEL_ARTIFACT_SHA256,
+    MODEL_PROVENANCE_FILE,
     MODEL_REVISION,
     MODEL_WEIGHTS_SHA256,
     NEGATIVE_PROMPT_TEMPLATE,
@@ -21,7 +26,7 @@ from constants import (
 )
 from contract import DiscoveryContractError, Vocabulary
 
-MODEL_PROVENANCE_FILE = "stem-splitter-model.json"
+LOG = logging.getLogger("instrument-discovery")
 
 
 def build_prompt_pairs(vocabulary: Vocabulary) -> tuple[tuple[str, ...], tuple[tuple[int, ...], ...]]:
@@ -71,7 +76,38 @@ def pairwise_presence_scores(
     return scores
 
 
+def validate_audio_preprocessing(model: object, feature_extractor: object) -> str:
+    """Freeze the checkpoint-compatible crop path before advertising readiness."""
+
+    model_config = getattr(model, "config", None)
+    audio_config = getattr(model_config, "audio_config", None)
+    if getattr(audio_config, "enable_fusion", None) is not False:
+        raise DiscoveryContractError("CLAP fusion mode does not match the service pin")
+    if getattr(feature_extractor, "truncation", None) != CLAP_TRUNCATION_MODE:
+        raise DiscoveryContractError("CLAP truncation mode does not match the service pin")
+    if getattr(feature_extractor, "sampling_rate", None) != CLAP_SAMPLE_RATE:
+        raise DiscoveryContractError("CLAP sample rate does not match the service pin")
+    if getattr(feature_extractor, "nb_max_samples", None) != (
+        CLAP_SAMPLE_RATE * CLAP_MAX_INPUT_SECONDS
+    ):
+        raise DiscoveryContractError("CLAP crop length does not match the service pin")
+    return CLAP_TRUNCATION_MODE
+
+
 def verify_model_directory(model_dir: Path) -> None:
+    expected_entries = {
+        MODEL_PROVENANCE_FILE,
+        *(filename for filename, _digest in MODEL_ARTIFACT_SHA256),
+    }
+    try:
+        entries = tuple(model_dir.iterdir())
+    except OSError as error:
+        raise DiscoveryContractError("CLAP model directory is unavailable") from error
+    if (
+        {entry.name for entry in entries} != expected_entries
+        or any(entry.is_symlink() or not entry.is_file() for entry in entries)
+    ):
+        raise DiscoveryContractError("CLAP model directory surface does not match the pin")
     try:
         provenance = json.loads((model_dir / MODEL_PROVENANCE_FILE).read_text("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -112,6 +148,7 @@ class ClapBackend:
         self._lock = threading.Lock()
         self._model = None
         self._feature_extractor = None
+        self._truncation_mode = None
         self._text_features = None
         self._instrument_pairs: tuple[tuple[int, ...], ...] = ()
         self._numpy = None
@@ -119,11 +156,14 @@ class ClapBackend:
         self._torch = None
 
     def warm(self) -> None:
+        started = time.monotonic()
+        LOG.info("discovery_warm phase=verify_model")
         verify_model_directory(self.model_dir)
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
+        LOG.info("discovery_warm phase=import_runtime")
         # Heavy dependencies are intentionally imported only in the model
         # service. Contract tests and the warmed app never install them.
         import numpy as np
@@ -133,6 +173,7 @@ class ClapBackend:
 
         torch.set_num_threads(self.torch_threads)
         torch.manual_seed(0)
+        LOG.info("discovery_warm phase=load_checkpoint")
         model = ClapModel.from_pretrained(
             self.model_dir,
             local_files_only=True,
@@ -145,25 +186,30 @@ class ClapBackend:
             local_files_only=True,
             trust_remote_code=False,
         )
+        truncation_mode = validate_audio_preprocessing(model, processor.feature_extractor)
         model.eval()
         prompts, instrument_pairs = build_prompt_pairs(self.vocabulary)
         text_inputs = processor(text=list(prompts), padding=True, return_tensors="pt")
+        LOG.info("discovery_warm phase=embed_vocabulary prompts=%d", len(prompts))
         with torch.inference_mode():
             text_features = model.get_text_features(**text_inputs)
             text_features = torch.nn.functional.normalize(text_features, dim=-1)
 
         self._model = model
         self._feature_extractor = processor.feature_extractor
+        self._truncation_mode = truncation_mode
         self._text_features = text_features
         self._instrument_pairs = instrument_pairs
         self._numpy = np
         self._resample_poly = resample_poly
         self._torch = torch
+        LOG.info("discovery_warm_complete total_ms=%d", round((time.monotonic() - started) * 1000))
 
     def score(self, windows: Sequence[Sequence[float]], sample_rate: int) -> list[dict[str, float]]:
         if (
             self._model is None
             or self._feature_extractor is None
+            or self._truncation_mode is None
             or self._text_features is None
             or self._numpy is None
             or self._resample_poly is None
@@ -183,18 +229,17 @@ class ClapBackend:
                     np.float32, copy=False
                 )
 
-                # The pinned fused checkpoint uses random mel crops for clips
-                # over ten seconds. A fixed per-window seed keeps the three
-                # crop locations reproducible while retaining its whole-clip
-                # downsampled view. Concurrency is one and this lock contains
-                # the temporary global NumPy state.
+                # This non-fusion checkpoint accepts one ten-second mel crop.
+                # A fixed per-window seed makes rand_trunc deterministic for
+                # longer analyzer windows. Concurrency is one and this lock
+                # contains the temporary global NumPy state.
                 random_state = np.random.get_state()
                 np.random.seed(10_000 + window_index)
                 try:
                     audio_inputs = self._feature_extractor(
                         [resampled],
                         sampling_rate=CLAP_SAMPLE_RATE,
-                        truncation="fusion",
+                        truncation=self._truncation_mode,
                         padding="repeatpad",
                         return_tensors="pt",
                     )

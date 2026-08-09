@@ -73,6 +73,14 @@ test('discovery response parser requires every classifier and vocabulary content
       ...wire(),
       detections: [{ ...wire().detections[0], windowSupport: 2 }],
     },
+    {
+      ...wire(),
+      detections: [{ ...wire().detections[0], id: 'kazoo', label: 'Kazoo' }],
+    },
+    {
+      ...wire(),
+      detections: [{ ...wire().detections[0], label: 'Trumpet' }],
+    },
   ]) {
     assert.throws(() => parseInstrumentDiscoveryResult(candidate, 1), contractInvalid);
   }
