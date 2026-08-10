@@ -80,10 +80,14 @@ snapshot URL; this guard does not authorize execution. A local atomic budget
 ledger now requires an exact course, semester, and maximum provider-start count
 for every future teacher-beta claim. Those values remain deliberately absent;
 the hosted checkpoint provenance, budget approval/live acceptance, and quality
-gate remain open. SAM-Audio remains an evaluation-only community deployment
-subject to institutional license and checkpoint review. Banquet, if later
-justified, becomes its own scale-to-zero GPU service and never runs inside
-either warmed Railway CPU service.
+gate remain open. A second dormant seam now serializes terminal observers,
+downloads only bounded validated Replicate-delivery WAV bytes, stores immutable
+30-day output identity outside core stems, and atomically completes or rolls
+back the isolation. Neither seam is imported by an app execution route, and no
+live output-retention or rollback canary has run. SAM-Audio remains an
+evaluation-only community deployment subject to institutional license and
+checkpoint review. Banquet, if later justified, becomes its own scale-to-zero
+GPU service and never runs inside either warmed Railway CPU service.
 
 ## Variables
 
@@ -292,8 +296,8 @@ than silently increase the allowance. Verify concurrent claims across two
 teachers never exceed the ceiling, failed attempts and retries remain charged,
 ordinary job deletion does not refund spend, and a new semester starts with a
 separate zero-usage scope. Do not add that release until checkpoint provenance,
-provider output hydration/retention, the fixed quality/cost evaluation, and the
-provider-start/webhook path all pass review.
+the fixed quality/cost evaluation, the provider-start/webhook path, and live
+output-retention/rollback acceptance all pass review.
 
 For the later Phase 2 gate, deploy `instrument-discovery` before adding its
 three analyzer variables and keep `INSTRUMENT_DISCOVERY_ENABLED=false` on the

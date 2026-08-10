@@ -160,6 +160,7 @@ Reaching `SUCCESS` says the container started, not that the app works. The check
 `npm run test:e2e`, `npm run test:e2e:auto`, and
 `npm run test:e2e:isolation-shadow` run against Miniflare, not this host, so
 they are necessary but not sufficient for a change here.
-`npm run test:server` covers additive SQLite migration and value-free runtime
-configuration reporting. The public signed-source and webhook round trip still
-requires a real Railway flow.
+`npm run test:server` covers additive SQLite migration, value-free runtime
+configuration reporting, and dormant query-isolation output lease, rollback,
+cleanup, and core-stem isolation. The public signed-source and webhook round
+trip still requires a real Railway flow.

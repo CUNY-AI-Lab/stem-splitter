@@ -290,6 +290,24 @@ printed, zero mutations, and zero provider calls. The local provisioning action
 gate remains blocked on exactly `manual-listening-missing` and
 `native-amd64-image-missing`.
 
+Exact query-isolation output commit `885f4ab` closes the dormant terminal-
+ingestion seam without making AudioSep executable. Exact provider identity now
+guards a three-attempt, five-minute ingestion lease; one observer hydrates the
+result while webhook/poll overlap, stale leases, and terminal replay remain
+bounded. The downloader accepts only strict Replicate delivery HTTPS, follows
+no redirect, shares one 60-second deadline across retries and body reads, caps
+the result at 100 MiB, verifies a complete PCM/float RIFF/WAVE container, and
+stores only app-owned `isolations/<id>/target.wav` bytes. Immutable metadata
+binds SHA-256, byte count, media type, and the 30-day retention deadline;
+metadata insertion, resource completion, and lease deletion commit atomically.
+Transient failures release the lease without spending another provider start;
+malformed output, exhausted ingestion, and provider failure remain isolated
+from the completed core stems. Exact Bun 1.3.14 passes all four typechecks,
+235 worker, 24 analyzer, 42 Railway host/config/migration/terminal, 5 separator,
+30 discovery, and 9 YAMNet tests plus 19/6/1 browser journeys. The code is not
+imported by an app route. No prediction, Railway variable or service, live
+migration application, deployment, push, or pull request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -301,8 +319,8 @@ provider claim transition. No Replicate prediction path, Railway variable
 change, or deployment was added. The course-semester reservation mechanism is
 implemented locally, but its canonical scope/ceiling and live teacher-beta
 acceptance are intentionally unset. AudioSep checkpoint provenance,
-quality/cost evaluation, output hydration/retention, and live rollback evidence
-remain open.
+provider orchestration, quality/cost evaluation, native and listening evidence,
+live object-retention readback, and rollback acceptance remain open.
 The local CI workflow now invokes the isolation-shadow browser journey as an
 explicit source gate at commit `e67dd3b`; because the branch remains absent from
 GitHub, no native run has yet proved that committed workflow step.
@@ -1085,7 +1103,7 @@ license status. Overall accuracy alone is insufficient.
   retention expiry, deletion, signed-URL expiry, same-digest retry, and narrowly
   scoped cleanup. This closes the source-byte barrier only; it does not enable
   a provider route, approve the unverified checkpoint, or close semester-budget
-  and output-retention gates.
+  and live output-retention gates.
 - [ ] Before enabling provider execution, benchmark and cap snapshot preparation
   against the canonical Railway service's actual memory, CPU, and disk limits.
   The reader now fails closed at the stored size, 100 MB global ceiling, and
@@ -1094,6 +1112,25 @@ license status. Overall accuracy alone is insufficient.
   before the eventual Cloudflare migration if that full-source allocation does
   not fit its then-current runtime budget; do not let this dormant seam become a
   hidden Railway-only assumption.
+- [x] Hydrate terminal query-isolation output into an app-owned, independently
+  retained artifact before any teacher-beta route exists. Commit `885f4ab`
+  adds strict Replicate-delivery URL handling, one shared 60-second/three-
+  attempt download boundary, a 100 MiB ceiling, complete PCM/float RIFF/WAVE
+  validation, SHA-256 identity, deterministic target/residual namespaces, and
+  immutable 30-day metadata. A five-minute external-id-bound lease serializes
+  webhook and poll observers; expired leases can be reclaimed at most three
+  times. Output metadata insertion, isolation completion, and lease deletion
+  share one transaction, while database failure removes the new object and
+  releases the lease. Terminal replay retries narrow source-snapshot cleanup;
+  malformed output fails locally; transient output failure does not reserve a
+  second provider start; core 2/4/6 stems remain unchanged. Fresh schema,
+  Railway boot migration, and numbered migration `0016` carry identical SQL.
+  The literal complete Phase 0 gate passes at the exact commit with 235 worker,
+  24 analyzer, 42 Railway host/config/migration/terminal, 5 separator, 30
+  discovery, 9 YAMNet, and 19/6/1 browser tests. This remains dormant:
+  `src/index.ts` imports no terminal-ingestion module, no provider-start or
+  webhook route exists, and no live migration or object-retention readback has
+  occurred.
 - [x] Re-run the frozen combined Phase 0 gate against one stable executable
   manifest after the prompt-policy/cache, prompt-history trigger, pre-spend
   snapshot, and server-import identity changes. One green run is rejected as
@@ -1174,9 +1211,11 @@ license status. Overall accuracy alone is insufficient.
   YAMNet, 19 flags-off browser, 4 authoritative-Auto browser, and 1
   isolation-shadow E2E test. No remote branch, PR, migration, Railway variable,
   service, or deployment contains that commit.
-- [ ] Define cross-job output reuse only after output hydration, retention, and
-  deletion semantics can prove that a cached artifact is still authorized and
-  available. Matching source hashes alone do not authorize reuse.
+- [ ] Define cross-job output reuse only after the new hydration identity has
+  live retention/deletion evidence and can prove that a cached artifact is
+  still authorized and available. Matching source hashes alone do not
+  authorize reuse, and an immutable metadata row does not prove its 30-day
+  object is still present.
 - [ ] Enforce per-track concurrency, semester budget, timeout, retry, and
   maximum-isolation limits before enabling the paid endpoint. The dormant
   resource now atomically enforces one processing request, two attempts,
@@ -1188,7 +1227,11 @@ license status. Overall accuracy alone is insufficient.
   every retry, reject concurrent overspend, and freeze the policy once spend
   begins. This combined item remains open because the canonical course,
   semester, and ceiling are not configured or accepted on Railway and no paid
-  endpoint exists to exercise the complete provider lifecycle.
+  endpoint exists to exercise the complete provider lifecycle. Commit
+  `885f4ab` separately serializes terminal output observers, caps ingestion at
+  three attempts, protects active ingestion from generic timeout/failure races,
+  and releases transient failures without another budget reservation; those
+  local controls still lack live provider and rollback acceptance.
 - [ ] Label outputs “optional instrument isolations,” with model/version and
   limitations available in the UI. The teacher-only API summary now supplies
   that label, exact identity, and limitations without storage keys; no UI is

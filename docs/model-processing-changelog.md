@@ -5,6 +5,49 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## query-isolation-output-v1 — bounded terminal hydration — 2026-08-10
+
+- Scope: exact executable commit
+  `885f4abb7b939f7cb029be03df53d64bf774af77` adds dormant provider-output
+  hydration, lease serialization, immutable output identity, and numbered
+  migration `0016`. It does not add an app route, import the AudioSep provider
+  or terminal composer into `src/index.ts`, change a feature flag, start a
+  prediction, alter core stems, or expose an output in the UI.
+- Transport and media boundary: output must be HTTPS on Replicate's delivery
+  origin with no userinfo, fragment, nondefault port, or redirect. One shared
+  60-second deadline permits at most three attempts and 100 MiB. Content length
+  and streamed bytes are independently bounded; accepted bytes must form one
+  complete PCM/float RIFF/WAVE container with consistent format, block alignment,
+  byte rate, and nonempty audio data. Provider details and output URLs are not
+  persisted or returned.
+- Concurrency and failure isolation: a five-minute lease binds the exact
+  isolation and provider prediction, serializes webhook/poll observers, and is
+  reclaimable at most three times. Metadata insertion, resource completion,
+  and lease deletion form one database transaction. Transient network,
+  storage, or database failure releases the lease without a second provider-
+  start reservation; malformed output and exhausted ingestion fail only the
+  optional isolation. Terminal replay retries source-snapshot cleanup, and an
+  active ingestion lease blocks generic timeout/failure races.
+- Persistence and retention: app-owned target/residual keys live outside
+  `jobs.stems`. Immutable metadata binds storage key, SHA-256, byte count,
+  `audio/wav`, canonical creation time, and a 30-day deadline. Fresh schema,
+  Railway boot schema, and migration `0016` carry identical table/index/trigger
+  SQL; migration tests prove idempotence, immutability, and cascading cleanup.
+- Evidence and rollout: exact Bun 1.3.14 passes all four TypeScript checks; 235
+  worker, 24 analyzer, 42 Railway host/config/migration/terminal, 5 separator,
+  30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto,
+  and 1 isolation-shadow browser journey. Rollout remains off. A value-free,
+  read-only Railway check found only the canonical `stem-splitter` service and
+  its unchanged `SUCCESS` deployment `7f4bc330…` from 2026-08-08; no analyzer
+  service exists, and the live separation-options response retains the old
+  2/4/6 shape without Auto routing. No Railway mutation, provider call,
+  deployment, push, or pull request occurred.
+- Remaining: hosted checkpoint/license provenance, native-amd64 and named
+  listening evidence, source-preparation resource sizing, exact live course/
+  semester/budget acceptance, provider-start/webhook composition, common
+  quality/cost evaluation, UI labels, live retention, canary, and rollback
+  evidence still block teacher beta.
+
 ## query-isolation-budget-v1 — atomic course-semester spend ceiling — 2026-08-10
 
 - Scope: exact implementation commit

@@ -12,7 +12,7 @@ construct the provider adapter, or reach Replicate.
 
 | Candidate | Verified capability and provenance | Current disposition |
 |---|---|---|
-| AudioSep | The official Audio-AGI repository describes 32 kHz, natural-language target separation and its source repository carries an MIT license. The reviewed repository head was `944583f18b84589dc965de3ad77525c945334252`. Replicate exposes community model `cjwbw/audiosep`, not an Audio-AGI-operated model, with immutable version `f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8`; its contract is `audio_file` plus `text` to one URI. Replicate attributes that build to fork commit `e3bd8d4631206a1c1870ece762a8fa21da8794f7`, but that tree contains no Cog wrapper, predictor, or checkpoint. The wrapper first appears later at `5fa5394910971d256beb8875f29e6f3aabcf1a8d` and references untracked `checkpoint/audiosep_base_4M_steps.ckpt`, whose bytes are absent from Git. A separate mirror labels a checkpoint Apache-2.0, but cannot bind those bytes to the hosted image. | Contract-only dormant adapter. The persistent resource, teacher readback, immutable source guard, and atomic course-semester budget ledger are implemented without a provider-start path. Hosted checkpoint provenance, live budget configuration/acceptance, provider orchestration, and quality gates still block execution. |
+| AudioSep | The official Audio-AGI repository describes 32 kHz, natural-language target separation and its source repository carries an MIT license. The reviewed repository head was `944583f18b84589dc965de3ad77525c945334252`. Replicate exposes community model `cjwbw/audiosep`, not an Audio-AGI-operated model, with immutable version `f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8`; its contract is `audio_file` plus `text` to one URI. Replicate attributes that build to fork commit `e3bd8d4631206a1c1870ece762a8fa21da8794f7`, but that tree contains no Cog wrapper, predictor, or checkpoint. The wrapper first appears later at `5fa5394910971d256beb8875f29e6f3aabcf1a8d` and references untracked `checkpoint/audiosep_base_4M_steps.ckpt`, whose bytes are absent from Git. A separate mirror labels a checkpoint Apache-2.0, but cannot bind those bytes to the hosted image. | Contract-only dormant adapter. The persistent resource, teacher readback, immutable source guard, atomic course-semester budget ledger, and bounded output-hydration transaction are implemented without a provider-start path. Hosted checkpoint provenance, live budget/retention acceptance, provider orchestration, and quality gates still block execution. |
 | SAM-Audio | Meta's official repository at reviewed head `bb4c6999d2677c7402360e426afc01ddfad6dce0` supports text, visual, and span prompts and produces target plus residual. Checkpoints require approved Hugging Face access. Code and weights use the custom SAM License dated 2025-11-19 rather than a standard permissive license. The Replicate option found (`geopti/sam-audio-large`) is community-hosted. | Evaluation-only research. Do not add an app adapter, credential, or student choice before institutional license/checkpoint and hosting review. |
 | Banquet / Query-Bandit | The reviewed repository head was `79ed5bb75e5c3a40cd319d9d990cee913fc65c26`. Its code is MIT licensed and the README reports beyond-four-stem separation, including reeds and organs, but the documented bring-your-own-query path takes query audio rather than the normalized text target used by AudioSep/SAM-Audio. | Phase 5 only. It needs a different query/provenance design and a coherent multi-stem decision before any private GPU packaging. |
 
@@ -57,6 +57,21 @@ silently restore spend. Shadow rows cannot enter it. This is a local
 authorization mechanism, not proof of an accepted course budget: all three
 variables remain unset and no teacher-beta execution route exists.
 
+Exact commit `885f4ab` adds the separate terminal-output boundary while keeping
+it unimported by app routes. An external-id-bound five-minute lease serializes
+terminal observers and allows at most three ingestion acquisitions. Replicate
+delivery downloads reject redirects, userinfo, fragments, nondefault ports,
+foreign hosts, unsupported media types, malformed/truncated WAV containers,
+body stalls, and declared or streamed overflow. One 60-second deadline covers
+at most three attempts and 100 MiB. Successful PCM/float RIFF/WAVE bytes are
+stored only under the owning isolation, with SHA-256, byte count, media type,
+canonical timestamps, and a 30-day retention deadline in an immutable output
+row. Metadata insertion, isolation completion, and lease deletion commit in one
+batch; a database-finalization failure rolls back metadata, removes the new
+object, and releases the lease. Terminal replay retries narrow source-snapshot
+cleanup. Transient ingestion does not reserve a second provider start, and no
+path writes these outputs into `jobs.stems`.
+
 The private analyzer now exposes an authenticated `/v1/fingerprint` contract
 that streams the exact stored source through the same origin, redirect, byte,
 timeout, concurrency, and temporary-file controls as analysis. It returns a
@@ -74,18 +89,20 @@ comparison also governs idempotent reads of preexisting rows, which recheck the
 stored cache material and provider fields instead of trusting a cache-key string
 alone. The first-hash compare-and-set binds the completed status, source key,
 and source type that were fingerprinted, rather than updating a merely matching
-job id. This still does not prove future provider bytes: immediately before any
-paid start, the app must re-fingerprint the signed object and reject replacement, expiry,
-or deletion rather than trusting an earlier cache identity.
+job id. A separate dormant pre-spend guard now re-reads and re-fingerprints the
+stored object, rejects replacement, expiry, deletion, or metadata/body drift,
+copies the exact verified bytes to an app-owned immutable snapshot, and mints a
+fresh 15-minute provider URL whose path binds the isolation id and digest.
 
-The provider-start adapter itself remains unimported by `src/index.ts`. No
-provider-start, webhook, or output-download route exists, and shadow rows are
-excluded from the claim transition, so a flipped flag still cannot spend
-money. Before any route may construct the adapter, the next executable phase
-must resolve the checkpoint provenance blocker, select and approve the exact
-course/semester/ceiling, test signed-source lifetime and output
-hydration/retention, and pass the fixed evaluation manifest. That later route
-must use the existing atomic claim rather than inventing a second spend path.
+The provider-start adapter and terminal-ingestion composer remain unimported by
+`src/index.ts`. No provider-start, webhook, or output-download route exists,
+and shadow rows are excluded from the claim transition, so a flipped flag still
+cannot spend money. Before any route may construct the adapter, the next
+executable phase must resolve the checkpoint provenance blocker, select and
+approve the exact course/semester/ceiling, pass the fixed quality/cost manifest,
+and define live Railway canary, retention, and rollback acceptance. That later
+route must use the existing atomic claim, immutable source snapshot, and
+terminal-ingestion lease rather than inventing a second spend path.
 
 ## Primary sources
 
