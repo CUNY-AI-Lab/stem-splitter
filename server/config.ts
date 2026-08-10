@@ -32,9 +32,15 @@ export function youtubeImportStatus(env: RuntimeConfig): OptionalServiceConfigur
   const count = [model, version, token].filter(Boolean).length;
   if (count === 0) return 'unconfigured';
   if (count < 3) return 'incomplete';
-  if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(model)) return 'invalid';
+  if (model.length > 200 || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(model)) {
+    return 'invalid';
+  }
   if (!/^[0-9a-f]{64}$/.test(version)) return 'invalid';
-  if (!/^[^\s\u0000-\u001f\u007f]+$/.test(token)) return 'invalid';
+  if (
+    token.length < 20 ||
+    token.length > 512 ||
+    !/^[^\s\u0000-\u001f\u007f]+$/.test(token)
+  ) return 'invalid';
   return 'configured';
 }
 

@@ -71,7 +71,7 @@ const test = base.extend({
             secrets: {
               R2_ACCESS_KEY_ID: 'e2e-r2-access-key',
               R2_SECRET_ACCESS_KEY: 'e2e-r2-secret-key',
-              REPLICATE_API_TOKEN: 'e2e-replicate-token',
+              REPLICATE_API_TOKEN: 'e2e-replicate-token-1',
               REPLICATE_MODEL_VERSION: 'e2e-model-version',
               WEBHOOK_SECRET: 'e2e-webhook-secret',
               CLASS_CODE,

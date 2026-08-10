@@ -45,7 +45,7 @@ const test = base.extend({
             secrets: {
               R2_ACCESS_KEY_ID: 'e2e-r2-access-key',
               R2_SECRET_ACCESS_KEY: 'e2e-r2-secret-key',
-              REPLICATE_API_TOKEN: 'e2e-replicate-token',
+              REPLICATE_API_TOKEN: 'e2e-replicate-token-1',
               REPLICATE_MODEL_VERSION: 'e2e-model-version',
               WEBHOOK_SECRET: 'e2e-webhook-secret',
               CLASS_CODE,
@@ -334,6 +334,22 @@ test('analyzer outage degrades every source to the frozen default without losing
   expect(explicit.status).toBe(200);
   expect((await explicit.json()).model).toBe('vocals_instrumental');
   expect(state.analysisCalls).toHaveLength(analysisCount);
+});
+
+test('job ingestion rejects oversized JSON before fetching or storing a source', async ({
+  server,
+}) => {
+  const response = await server.fetch('/api/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-class-code': CLASS_CODE },
+    body: JSON.stringify({
+      youtubeUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+      model: 'auto',
+      padding: 'x'.repeat(33 * 1024),
+    }),
+  });
+  expect(response.status).toBe(413);
+  expect(await response.json()).toEqual({ error: 'Request body is too large.' });
 });
 
 function e2eFetch(server, path, init = {}) {

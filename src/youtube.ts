@@ -4,6 +4,7 @@
 // model as the production primary and youtubei.js as the free fallback.
 import { Innertube, type Types } from 'youtubei.js/cf-worker';
 import type { Env } from './env';
+import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
 
 const MAX_DURATION_SECONDS = 15 * 60; // cost/scope guard for class use
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
@@ -20,6 +21,18 @@ const CLIENTS: Types.InnerTubeClient[] = ['IOS', 'ANDROID', 'TV', 'TV_EMBEDDED',
 const REPLICATE_API = 'https://api.replicate.com/v1';
 const REPLICATE_POLL_MS = 2000;
 const REPLICATE_MAX_WAIT_MS = 4 * 60 * 1000; // covers cold boot + download
+const REPLICATE_START_TIMEOUT_MS = 75 * 1000;
+const REPLICATE_POLL_TIMEOUT_MS = 15 * 1000;
+const AUDIO_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+const MAX_PREDICTION_BYTES = 64 * 1024;
+const PREDICTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+const PREDICTION_STATUSES = new Set([
+  'starting',
+  'processing',
+  'succeeded',
+  'failed',
+  'canceled',
+]);
 
 /** Errors safe to show to students verbatim. */
 export class YouTubeError extends Error {
@@ -45,8 +58,11 @@ function replicateConfiguration(env: Env) {
   const modelVersion = env.REPLICATE_YT_MODEL_VERSION ?? '';
   const apiToken = env.REPLICATE_API_TOKEN ?? '';
   if (
+    modelName.length > 200 ||
     !MODEL_NAME_PATTERN.test(modelName) ||
     !MODEL_VERSION_PATTERN.test(modelVersion) ||
+    apiToken.length < 20 ||
+    apiToken.length > 512 ||
     !SAFE_TOKEN_PATTERN.test(apiToken)
   ) {
     return null;
@@ -55,13 +71,19 @@ function replicateConfiguration(env: Env) {
 }
 
 export function parseYouTubeVideoId(url: string): string | null {
+  if (url.length > 2048) return null;
   let u: URL;
   try {
     u = new URL(url.trim());
   } catch {
     return null;
   }
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  if (
+    (u.protocol !== 'https:' && u.protocol !== 'http:') ||
+    u.username ||
+    u.password ||
+    u.port
+  ) return null;
 
   const host = u.hostname.toLowerCase().replace(/^(www|m)\./, '');
   let videoId: string | null = null;
@@ -110,7 +132,10 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
         throw err;
       }
       failures.push({ provider, error: err });
-      console.error(`youtube ${provider} fetch failed`, err);
+      console.error(`youtube ${provider} fetch failed`, {
+        name: err instanceof Error ? err.name : 'unknown',
+        ...(err instanceof YouTubeError ? { code: err.code } : {}),
+      });
     }
   }
 
@@ -168,7 +193,15 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
     } catch {
       continue; // no matching format via this client — try the next one
     }
-    const data = await new Response(stream).arrayBuffer();
+    const data = await readBoundedResponse(new Response(stream), {
+      maximumBytes: MAX_AUDIO_BYTES,
+      timeoutMs: AUDIO_DOWNLOAD_TIMEOUT_MS,
+      errors: {
+        tooLarge: audioTooLarge,
+        timedOut: providerUnavailable,
+        unreadable: invalidAudioResponse,
+      },
+    });
     return validateFetchedAudio({
       data,
       title: basic.title ?? 'youtube-audio',
@@ -189,7 +222,100 @@ interface YtPrediction {
   id: string;
   status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
   output?: { audio: string; title: string; duration: number };
-  error?: unknown;
+  error?: string;
+}
+
+async function replicateFetch(
+  url: string | URL,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  try {
+    return await fetch(url, {
+      ...init,
+      // Keep the bearer token on the exact provider origin selected here. A
+      // redirect is an error; callers never reissue it with credentials.
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    throw providerUnavailable();
+  }
+}
+
+async function readPrediction(
+  response: Response,
+  expectedId?: string
+): Promise<YtPrediction> {
+  if (responseMediaType(response) !== 'application/json') {
+    await response.body?.cancel().catch(() => undefined);
+    throw providerUnavailable();
+  }
+  const bytes = await readBoundedResponse(response, {
+    maximumBytes: MAX_PREDICTION_BYTES,
+    timeoutMs: REPLICATE_POLL_TIMEOUT_MS,
+    errors: {
+      tooLarge: providerUnavailable,
+      timedOut: providerUnavailable,
+      unreadable: providerUnavailable,
+    },
+  });
+
+  let value: unknown;
+  try {
+    value = JSON.parse(
+      new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)
+    );
+  } catch {
+    throw providerUnavailable();
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw providerUnavailable();
+  }
+
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.id !== 'string' ||
+    !PREDICTION_ID_PATTERN.test(candidate.id) ||
+    (expectedId !== undefined && candidate.id !== expectedId) ||
+    typeof candidate.status !== 'string' ||
+    !PREDICTION_STATUSES.has(candidate.status)
+  ) {
+    throw providerUnavailable();
+  }
+
+  let output: YtPrediction['output'];
+  if (candidate.output !== undefined && candidate.output !== null) {
+    if (
+      typeof candidate.output !== 'object' ||
+      Array.isArray(candidate.output)
+    ) {
+      throw providerUnavailable();
+    }
+    const rawOutput = candidate.output as Record<string, unknown>;
+    if (
+      typeof rawOutput.audio !== 'string' ||
+      rawOutput.audio.length < 1 ||
+      typeof rawOutput.title !== 'string' ||
+      typeof rawOutput.duration !== 'number' ||
+      !Number.isFinite(rawOutput.duration)
+    ) {
+      throw providerUnavailable();
+    }
+    output = {
+      audio: rawOutput.audio,
+      title: rawOutput.title,
+      duration: rawOutput.duration,
+    };
+  }
+  if (candidate.status === 'succeeded' && !output) throw providerUnavailable();
+
+  return {
+    id: candidate.id,
+    status: candidate.status as YtPrediction['status'],
+    output,
+    error: typeof candidate.error === 'string' ? candidate.error.slice(0, 300) : undefined,
+  };
 }
 
 export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeAudio> {
@@ -201,24 +327,29 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
     );
   }
   const { modelVersion, apiToken } = configuration;
+  const videoId = parseYouTubeVideoId(url);
+  if (!videoId) {
+    throw new YouTubeError('Paste a full YouTube video link.', 'invalid_youtube_url');
+  }
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
   const headers = {
     Authorization: `Bearer ${apiToken}`,
     'Content-Type': 'application/json',
   };
 
-  const res = await fetch(`${REPLICATE_API}/predictions`, {
+  const res = await replicateFetch(`${REPLICATE_API}/predictions`, {
     method: 'POST',
     headers: { ...headers, Prefer: 'wait=60', 'Cancel-After': '4m' },
     body: JSON.stringify({
       version: modelVersion,
-      input: { url, max_duration: MAX_DURATION_SECONDS },
+      input: { url: canonicalUrl, max_duration: MAX_DURATION_SECONDS },
     }),
-  });
+  }, REPLICATE_START_TIMEOUT_MS);
   if (!res.ok) {
-    throw replicateResponseError(res, 'prediction start');
+    throw await replicateResponseError(res, 'prediction start');
   }
-  let prediction = (await res.json()) as YtPrediction;
+  let prediction = await readPrediction(res);
 
   const deadline = Date.now() + REPLICATE_MAX_WAIT_MS;
   while (prediction.status === 'starting' || prediction.status === 'processing') {
@@ -226,14 +357,22 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
       throw new YouTubeError('YouTube fetch timed out — try again in a minute.');
     }
     await new Promise((r) => setTimeout(r, REPLICATE_POLL_MS));
-    const poll = await fetch(`${REPLICATE_API}/predictions/${prediction.id}`, { headers });
-    if (!poll.ok) throw replicateResponseError(poll, 'prediction poll');
-    prediction = (await poll.json()) as YtPrediction;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new YouTubeError('YouTube fetch timed out — try again in a minute.');
+    }
+    const poll = await replicateFetch(
+      `${REPLICATE_API}/predictions/${encodeURIComponent(prediction.id)}`,
+      { headers },
+      Math.min(REPLICATE_POLL_TIMEOUT_MS, remainingMs)
+    );
+    if (!poll.ok) throw await replicateResponseError(poll, 'prediction poll');
+    prediction = await readPrediction(poll, prediction.id);
   }
 
   if (prediction.status !== 'succeeded' || !prediction.output?.audio) {
     // predict.py raises ValueError with student-readable messages.
-    const raw = prediction.error ? String(prediction.error) : '';
+    const raw = prediction.error ?? '';
     throw normalizePredictionError(raw);
   }
 
@@ -257,13 +396,20 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
 async function downloadPredictionFile(audio: string, apiToken: string): Promise<ArrayBuffer> {
   if (audio.startsWith('data:')) {
     const comma = audio.indexOf(',');
-    const metadata = audio.slice(5, comma).toLowerCase();
-    if (comma < 0 || !metadata.includes(';base64')) {
+    const metadata = comma >= 0 ? audio.slice(5, comma).toLowerCase() : '';
+    if (
+      comma < 0 ||
+      !metadata.startsWith('audio/') ||
+      !metadata.endsWith(';base64')
+    ) {
       throw invalidAudioResponse();
     }
     const b64 = audio.slice(comma + 1);
     if (b64.length > Math.ceil((MAX_AUDIO_BYTES * 4) / 3) + 4) {
-      throw new YouTubeError('Audio too large (max 100 MB).', 'audio_too_large');
+      throw audioTooLarge();
+    }
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length % 4 !== 0) {
+      throw invalidAudioResponse();
     }
     let bin: string;
     try {
@@ -271,6 +417,7 @@ async function downloadPredictionFile(audio: string, apiToken: string): Promise<
     } catch {
       throw invalidAudioResponse();
     }
+    if (bin.length > MAX_AUDIO_BYTES) throw audioTooLarge();
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes.buffer;
@@ -284,38 +431,43 @@ async function downloadPredictionFile(audio: string, apiToken: string): Promise<
   }
   if (
     outputUrl.protocol !== 'https:' ||
+    outputUrl.username ||
+    outputUrl.password ||
+    outputUrl.port ||
+    outputUrl.hash ||
     (outputUrl.hostname !== 'replicate.delivery' &&
       !outputUrl.hostname.endsWith('.replicate.delivery'))
   ) {
     throw invalidAudioResponse();
   }
 
-  const res = await fetch(outputUrl, {
-    headers: { Authorization: `Bearer ${apiToken}` },
-  });
-  if (!res.ok) throw replicateResponseError(res, 'audio download');
+  const res = await replicateFetch(
+    outputUrl,
+    { headers: { Authorization: `Bearer ${apiToken}` } },
+    AUDIO_DOWNLOAD_TIMEOUT_MS
+  );
+  if (!res.ok) throw await replicateResponseError(res, 'audio download');
 
-  const contentType = (res.headers.get('content-type') || '').toLowerCase();
-  if (
-    contentType.startsWith('text/') ||
-    contentType.includes('json') ||
-    contentType.includes('html')
-  ) {
+  const contentType = responseMediaType(res);
+  if (!contentType.startsWith('audio/') && contentType !== 'application/octet-stream') {
+    await res.body?.cancel().catch(() => undefined);
     throw invalidAudioResponse();
   }
-  const contentLength = Number(res.headers.get('content-length') || 0);
-  if (Number.isFinite(contentLength) && contentLength > MAX_AUDIO_BYTES) {
-    throw new YouTubeError('Audio too large (max 100 MB).', 'audio_too_large');
-  }
-  return res.arrayBuffer();
+  return readBoundedResponse(res, {
+    maximumBytes: MAX_AUDIO_BYTES,
+    timeoutMs: AUDIO_DOWNLOAD_TIMEOUT_MS,
+    errors: {
+      tooLarge: audioTooLarge,
+      timedOut: providerUnavailable,
+      unreadable: invalidAudioResponse,
+    },
+  });
 }
 
 function validateFetchedAudio(audio: YouTubeAudio): YouTubeAudio {
   const { data } = audio;
   if (data.byteLength < MIN_AUDIO_BYTES) throw invalidAudioResponse();
-  if (data.byteLength > MAX_AUDIO_BYTES) {
-    throw new YouTubeError('Audio too large (max 100 MB).', 'audio_too_large');
-  }
+  if (data.byteLength > MAX_AUDIO_BYTES) throw audioTooLarge();
 
   const bytes = new Uint8Array(data, 0, Math.min(data.byteLength, 12));
   const isIsoBaseMedia =
@@ -331,12 +483,18 @@ function validateFetchedAudio(audio: YouTubeAudio): YouTubeAudio {
 
   return {
     data,
-    title: audio.title.trim().slice(0, 200) || 'youtube-audio',
+    title:
+      audio.title.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200) ||
+      'youtube-audio',
     durationSec,
   };
 }
 
-function replicateResponseError(response: Response, operation: string): YouTubeError {
+async function replicateResponseError(
+  response: Response,
+  operation: string
+): Promise<YouTubeError> {
+  await response.body?.cancel().catch(() => undefined);
   if (response.status === 429) {
     return new YouTubeError(
       'YouTube import is busy. Wait a minute and try again.',
@@ -350,6 +508,18 @@ function replicateResponseError(response: Response, operation: string): YouTubeE
     'youtube_fetch_unavailable',
     response.status >= 500
   );
+}
+
+function providerUnavailable(): YouTubeError {
+  return new YouTubeError(
+    'YouTube import is unavailable right now. Upload the audio file instead.',
+    'youtube_fetch_unavailable',
+    true
+  );
+}
+
+function audioTooLarge(): YouTubeError {
+  return new YouTubeError('Audio too large (max 100 MB).', 'audio_too_large');
 }
 
 function normalizePredictionError(raw: string): YouTubeError {

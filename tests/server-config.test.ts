@@ -16,6 +16,7 @@ const disabled = {
   QUERY_ISOLATION_ENABLED: undefined,
 };
 const ANALYSIS_TOKEN = 'analysis-test-token-000000000000000';
+const YOUTUBE_TOKEN = 'youtube-test-token-000000000';
 
 test('optional runtime services distinguish absent, incomplete, invalid, and configured state', () => {
   assert.equal(youtubeImportStatus(disabled), 'unconfigured');
@@ -26,7 +27,7 @@ test('optional runtime services distinguish absent, incomplete, invalid, and con
   assert.equal(
     youtubeImportStatus({
       ...disabled,
-      REPLICATE_API_TOKEN: 'token',
+      REPLICATE_API_TOKEN: YOUTUBE_TOKEN,
       REPLICATE_YT_MODEL: 'owner/model',
       REPLICATE_YT_MODEL_VERSION: 'latest',
     }),
@@ -35,17 +36,26 @@ test('optional runtime services distinguish absent, incomplete, invalid, and con
   assert.equal(
     youtubeImportStatus({
       ...disabled,
-      REPLICATE_API_TOKEN: 'token',
+      REPLICATE_API_TOKEN: YOUTUBE_TOKEN,
       REPLICATE_YT_MODEL: 'owner/model',
       REPLICATE_YT_MODEL_VERSION: 'a'.repeat(64),
     }),
     'configured'
   );
+  assert.equal(
+    youtubeImportStatus({
+      ...disabled,
+      REPLICATE_API_TOKEN: 'token',
+      REPLICATE_YT_MODEL: 'owner/model',
+      REPLICATE_YT_MODEL_VERSION: 'a'.repeat(64),
+    }),
+    'invalid'
+  );
   for (const version of ['pinned-version-id', `${'a'.repeat(64)} `]) {
     assert.equal(
       youtubeImportStatus({
         ...disabled,
-        REPLICATE_API_TOKEN: 'token',
+        REPLICATE_API_TOKEN: YOUTUBE_TOKEN,
         REPLICATE_YT_MODEL: 'owner/model',
         REPLICATE_YT_MODEL_VERSION: version,
       }),

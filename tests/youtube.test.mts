@@ -24,6 +24,7 @@ test('YouTube URL parsing accepts video routes and rejects malformed IDs', () =>
   assert.equal(parseYouTubeVideoId(`https://youtube.com/live/${videoId}`), videoId);
   assert.equal(parseYouTubeVideoId('https://youtube.com/watch?v=too-short'), null);
   assert.equal(parseYouTubeVideoId(`https://youtube.com.evil/watch?v=${videoId}`), null);
+  assert.equal(parseYouTubeVideoId(`https://user:password@youtube.com/watch?v=${videoId}`), null);
   assert.equal(parseYouTubeVideoId(`javascript:alert('${videoId}')`), null);
 });
 
@@ -36,11 +37,15 @@ test('Replicate fallback authenticates the output download and validates M4A byt
     const url = String(input);
     const headers = new Headers(init?.headers);
     requests.push({ url, headers });
+    assert.equal(init?.redirect, 'manual');
+    assert.ok(init?.signal instanceof AbortSignal);
 
     if (url.endsWith('/predictions')) {
       assert.equal(headers.get('prefer'), 'wait=60');
       assert.equal(headers.get('cancel-after'), '4m');
-      assert.equal(JSON.parse(String(init?.body)).version, TEST_VERSION);
+      const payload = JSON.parse(String(init?.body));
+      assert.equal(payload.version, TEST_VERSION);
+      assert.equal(payload.input.url, 'https://www.youtube.com/watch?v=jNQXAC9IVRw');
       return Response.json({
         id: 'yt-prediction',
         status: 'succeeded',
@@ -128,6 +133,123 @@ test('Replicate rate limits become a retryable student-facing error', async () =
         error instanceof YouTubeError &&
         error.code === 'youtube_fetch_busy' &&
         error.retryable
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate fallback refuses redirects without forwarding its bearer token', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(null, {
+      status: 302,
+      headers: { Location: 'https://example.com/steal-token' },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate fallback rejects an oversized prediction response before parsing it', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response('{}', {
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': String(64 * 1024 + 1),
+      },
+    });
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate fallback rejects malformed prediction identity', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      id: '../another-endpoint',
+      status: 'succeeded',
+      output: {
+        audio: 'https://audio.replicate.delivery/fetched.m4a',
+        title: 'Track',
+        duration: 19,
+      },
+    });
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate fallback rejects an oversized declared audio body before buffering', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/predictions')) {
+      return Response.json({
+        id: 'yt-prediction',
+        status: 'succeeded',
+        output: {
+          audio: 'https://audio.replicate.delivery/fetched.m4a',
+          title: 'Track',
+          duration: 19,
+        },
+      });
+    }
+    return new Response(null, {
+      headers: {
+        'Content-Type': 'audio/mp4',
+        'Content-Length': String(100 * 1024 * 1024 + 1),
+      },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'audio_too_large'
     );
   } finally {
     globalThis.fetch = originalFetch;

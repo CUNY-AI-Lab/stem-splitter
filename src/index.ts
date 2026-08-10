@@ -83,9 +83,13 @@ import {
   verifyLogin,
 } from './teacher/auth';
 import { readBoundedTeacherJson, TeacherRequestError } from './teacher/request';
+import { JsonRequestError, readBoundedJsonRequest } from './http/bounded-request.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_SMALL_JSON_BYTES = 4 * 1024;
+const MAX_JOB_JSON_BYTES = 32 * 1024;
+const MAX_WEBHOOK_JSON_BYTES = 64 * 1024;
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
 const MP3_FRAME_SCAN_BYTES = 64 * 1024;
@@ -118,6 +122,24 @@ interface AnnotationRow {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+type BoundedJsonResult =
+  | { value: unknown; response?: never }
+  | { value?: never; response: Response };
+
+async function boundedJson(
+  c: Context<{ Bindings: Env }>,
+  maximumBytes: number
+): Promise<BoundedJsonResult> {
+  try {
+    return { value: await readBoundedJsonRequest(c.req.raw, maximumBytes) };
+  } catch (error) {
+    if (error instanceof JsonRequestError) {
+      return { response: c.json({ error: error.message }, error.status) };
+    }
+    throw error;
+  }
+}
 
 // Miniflare does not inherit the production R2 bucket lifecycle. Fail closed
 // if local retention maintenance cannot run, rather than accumulating audio.
@@ -161,7 +183,9 @@ app.get('/api/separation-options', (c) => {
 
 // Issue a presigned PUT so the browser uploads straight to R2.
 app.post('/api/uploads', requireClassCode, async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { filename?: string } | null;
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as { filename?: string } | null;
   const filename = sanitizeFilename(body?.filename ?? '');
   if (!filename) return c.json({ error: 'filename is required' }, 400);
 
@@ -500,7 +524,9 @@ function archiveErrorResponse(c: Context<{ Bindings: Env }>, err: unknown, fallb
 // --- jobs -------------------------------------------------------------
 
 app.post('/api/jobs', requireClassCode, async (c) => {
-  const body = (await c.req.json().catch(() => null)) as
+  const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as
     | {
         key?: string;
         filename?: string;
@@ -787,7 +813,9 @@ app.put('/api/jobs/:id/labels', requireClassCode, async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
 
-  const body = (await c.req.json().catch(() => null)) as { labels?: Record<string, unknown> } | null;
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as { labels?: Record<string, unknown> } | null;
   if (!body?.labels || typeof body.labels !== 'object' || Array.isArray(body.labels)) {
     return c.json({ error: 'labels object is required' }, 400);
   }
@@ -815,7 +843,9 @@ app.post('/api/jobs/:id/annotations', requireClassCode, async (c) => {
   const job = await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?').bind(id).first();
   if (!job) return c.json({ error: 'Job not found' }, 404);
 
-  const body = (await c.req.json().catch(() => null)) as { atSeconds?: unknown; text?: unknown } | null;
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as { atSeconds?: unknown; text?: unknown } | null;
   const atSeconds = Number(body?.atSeconds);
   const text = String(body?.text ?? '').trim().slice(0, 200);
   if (!Number.isFinite(atSeconds) || atSeconds < 0 || !text) {
@@ -857,7 +887,9 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     return c.json({ error: "Stems aren't ready yet — the Listening Guide needs the finished song." }, 409);
   }
 
-  const body = (await c.req.json().catch(() => null)) as { durationSec?: unknown } | null;
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as { durationSec?: unknown } | null;
   const { results } = await c.env.DB
     .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
     .bind(id)
@@ -887,7 +919,9 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     return c.json({ error: "Stems aren't ready yet — the Listening Guide needs the finished song." }, 409);
   }
 
-  const body = (await c.req.json().catch(() => null)) as
+  const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as
     | { messages?: unknown; durationSec?: unknown }
     | null;
   const turns = validateTurns(body?.messages);
@@ -922,7 +956,9 @@ app.post('/api/webhooks/separation', async (c) => {
   if (!row) return c.text('Unknown job', 404);
   if (row.status === 'done' || row.status === 'failed') return c.json({ ok: true }); // already ingested
 
-  const payload = await c.req.json().catch(() => null);
+  const parsed = await boundedJson(c, MAX_WEBHOOK_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const payload = parsed.value;
   if (!payload) return c.text('Bad payload', 400);
 
   const result = getBackend(c.env).parseResult(payload);
