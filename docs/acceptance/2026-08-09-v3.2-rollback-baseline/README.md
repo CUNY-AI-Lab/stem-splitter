@@ -63,6 +63,10 @@ metadata before uploading and refuses to overwrite an existing evidence file.
 
 Automated hash/frame checks do not replace listening. Manual comparison of
 the four tracks remains part of the release acceptance before authority changes.
+Use `bun run export:audio-listening` to re-read this existing job into a private,
+gitignored bundle; it creates no job and makes no provider call. The attributable
+review process and canonical evidence boundary are documented in
+`../2026-08-10-v3.2-manual-listening/README.md`.
 
 ## Promotion binding
 

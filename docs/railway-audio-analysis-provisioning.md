@@ -16,6 +16,8 @@ Do not provision the service until all of these are true:
   `autosplit-role-v4` and `analysis-source-scope-v2` from `/readyz`;
 - a rollback baseline has recorded one authorized four-track job, output
   hashes, latency, and exact Replicate versions;
+- a named teacher or domain reviewer has listened to the complete authorized
+  source and every exact frozen stem and the strict canonical review validates;
 - the canonical app service has an exact `REPLICATE_YT_MODEL_VERSION` staged
   as part of the same coordinated release input;
 - `SERVER_AUTO_ENABLED`, `INSTRUMENT_DISCOVERY_ENABLED`, and
@@ -162,6 +164,35 @@ with three retries. Railway resource overrides use the separate
 committing the staged change, then deploy the analyzer first with app Auto still
 off. Never pass a secret value as a command-line argument; use a sealed shared
 variable and stdin.
+
+## Pre-provision evidence handoff
+
+Prepare the human review without creating another separation or provider call:
+
+```sh
+bun run export:audio-listening -- \
+  --output output/v3.2-railway-baseline-listening
+```
+
+The exporter requires the hydrated authorized source, re-reads the existing
+frozen Railway job, and rejects catalogue, job, URL, MIME, frame, byte-count,
+order, or SHA-256 drift. The original, four stems, guide, and pending review
+stay private, gitignored, and mode `0600`. Follow
+`docs/acceptance/2026-08-10-v3.2-manual-listening/README.md`; a named teacher or
+domain reviewer must listen to every file in full. Validate the completed
+private draft with:
+
+```sh
+bun run check:audio-listening -- \
+  --review output/v3.2-railway-baseline-listening/review.json
+```
+
+The native image condition is independent. The GitHub `analysis-image` job
+must pass on an actual Linux x86_64 runner for the exact source commit and
+produce the commit-named `audio-analysis-native-amd64-<commit>` artifact. Follow
+`docs/acceptance/2026-08-10-v3.2-native-amd64-image/README.md`; only the strict
+JSON evidence belongs in Git. An arm64 or locally emulated build does not
+satisfy this condition.
 
 Run the value-free executable gate against the explicit canonical IDs before
 provisioning:

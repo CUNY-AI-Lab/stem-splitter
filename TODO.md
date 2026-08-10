@@ -145,6 +145,28 @@ shadow gate has five blockers after carrying forward the automated baseline.
 All processing flags remain off, and no service, variable, provider call,
 deployment, remote branch, or pull request changed.
 
+Exact acceptance-evidence commit `1aa63d9` closes the two implementation seams
+behind the remaining pre-provision blockers without claiming either blocker is
+satisfied. A read-only exporter now requires and verifies the hydrated
+authorized source, re-reads
+the existing frozen Railway job, verifies the live catalogue, job, ordered MP3
+bytes, sizes, SHA-256 values, MPEG frames, and same-origin URL boundary, and
+writes a private mode-`0600` listening bundle under `output/`. Its strict
+review schema requires a named teacher or domain reviewer, a post-baseline UTC
+timestamp, every whole-source/stem/usability check, exact frozen stem identity,
+and a fixed attestation before the canonical `review.json` can validate. The
+native-amd64 CI job now proves a Linux x86_64 runner and Docker host, builds and
+smokes the exact `linux/amd64` image, binds every Docker input and smoke source
+by SHA-256, and uploads a commit-named evidence artifact with a digest-pinned
+official action. A clean exact-commit Phase 0 run passes 207 worker, 24
+analyzer, 28 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, and
+19/6/1 browser tests; `actionlint`, the audio-pipeline typecheck, and diff
+checks also pass. The private listening bundle matches the frozen source and
+all four stems with zero jobs or provider calls created. Human acceptance and
+a native GitHub run remain absent, so both manifest booleans stay false and the
+pre-mutation action gate still fails on exactly those two conditions. No push,
+pull request, Railway mutation, provider call, or deployment occurred.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -520,6 +542,12 @@ deployment or enablement.
   decoders, and file/pipe protocols; then exercise Railway CPU, memory, child
   process, concurrency, timeout, and ephemeral-disk limits. Local emulation is
   not production resource evidence.
+- [x] Bind native-amd64 acceptance to an immutable CI artifact rather than a
+  manifest checkbox. The `analysis-image` job now checks out the exact PR head
+  or push SHA on an x86_64 Linux host, verifies the Docker host, builds and
+  smokes `linux/amd64`, captures image/pin/smoke/source evidence, and uploads a
+  commit-named 30-day artifact. The canonical evidence path remains absent
+  until that job actually passes.
 - [x] Keep credentials fail-lazy in the app: if analysis is unavailable, upload,
   playback, annotations, and explicit 2/4/6 splitting must still work.
 
@@ -603,6 +631,16 @@ deployment or enablement.
   this gate open until the v4 image, native CI/Railway, and manual stem
   listening checks pass; decision agreement alone does not establish musical
   usefulness.
+- [x] Export a private listening bundle from the existing frozen Railway job
+  without creating a job or making a provider call. The exporter verifies the
+  authorized source and all ordered stem bytes before writing the original,
+  four MP3 stems, pending review, and guide under the gitignored `output/`
+  directory.
+- [ ] Obtain an attributable full-source and full-stem acceptance from a
+  teacher or domain reviewer. Validate it against
+  `docs/acceptance/2026-08-10-v3.2-manual-listening/review.json`; do not commit
+  licensed audio or set `manualListening: true` before the strict review loader
+  passes.
 - [ ] Make the server decision authoritative for all source types only after the
   parity gate passes. Keep the old catalogue default as an explicit fallback,
   never an implicit claim that remote audio was analyzed.

@@ -5,6 +5,50 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## audio-pipeline-acceptance-evidence-v1 — human and native gates — 2026-08-10
+
+- Miss: the promotion manifest correctly blocked provisioning on human
+  listening and native-amd64 image evidence, but no executable boundary tied a
+  listening decision to the exact frozen Railway bytes or a native image claim
+  to an exact GitHub run and every image input. Either condition could otherwise
+  collapse into a hand-edited boolean.
+- Contract: exact implementation commit
+  `1aa63d9c3e7bedfe90fe4df10c778137d040f14d` adds separate strict schemas and
+  canonical paths for listening and native-image evidence. The promotion
+  loader must successfully load the corresponding artifact before either
+  manifest condition may be true; missing, partial, extra, stale, reordered, or
+  drifted evidence fails closed.
+- Listening boundary: a read-only exporter requires and verifies the hydrated
+  authorized source and re-reads the already-completed canonical Railway job.
+  It verifies the live catalogue and job, guarded same-origin/no-redirect
+  downloads, ordered MP3 frame validity, sizes and SHA-256 values before
+  writing a private,
+  gitignored mode-`0600` bundle. Acceptance requires a named teacher or domain
+  reviewer, full source and stem listening, every usability check, exact stem
+  identity, a post-baseline UTC timestamp, and the fixed attestation. The
+  exporter reports zero jobs created and zero provider calls.
+- Native boundary: the path-scoped CI job now checks out the exact PR head or
+  push SHA, proves a Linux x86_64 runner and Docker host, builds and smokes
+  `linux/amd64`, captures the non-root command, size, runtime/classifier/source
+  pins and smoke claims, hashes every Docker/smoke/workflow input, and uploads a
+  commit-named artifact through the digest-pinned official upload action. The
+  capture refuses a dirty checkout and the canonical loader rehashes the
+  current repository inputs.
+- Evidence: `actionlint` v1.7.12, `git diff --check`, the audio-pipeline
+  TypeScript check, and the full repository test command pass. A clean exact
+  `1aa63d9` Phase 0 run under Bun 1.3.14 passes 207 worker, 24 analyzer, 28
+  Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet tests, plus
+  19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+  The private bundle independently matched the frozen source and all four stem
+  hashes without creating a job or calling a provider.
+- Current result: `manualListening` and `nativeAmd64Image` remain false. The
+  pre-provision gate still fails on exactly `manual-listening-missing` and
+  `native-amd64-image-missing`; all processing flags remain off.
+- Remaining: obtain attributable listening acceptance and a successful native
+  GitHub artifact, then add each canonical JSON record through review before
+  provisioning. No push, pull request, Railway mutation, provider call, or
+  deployment occurred.
+
 ## railway-rollback-baseline-v1 — immutable promotion binding — 2026-08-10
 
 - Miss: the schema-v2 manifest treated the Railway baseline as absent even
