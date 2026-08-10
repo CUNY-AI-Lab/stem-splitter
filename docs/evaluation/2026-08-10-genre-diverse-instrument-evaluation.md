@@ -65,7 +65,7 @@ still requires normal human approval before it becomes canonical evidence.
 
 ## Candidate boundary
 
-A candidate-observation artifact must cover the same 19 sources in the same
+A v2 candidate-observation artifact must cover the same 19 sources in the same
 order and pin:
 
 - classifier version;
@@ -74,11 +74,22 @@ order and pin:
 - preprocessing version; and
 - threshold-policy version.
 
-Each detection is `possible` or `uncertain`. A degraded source must report no
-detections; the evaluator records every label decision for that source as a
-service failure rather than silently converting the outage into an abstention
-or absence claim. Floating labels, duplicate detections, confidence outside
-`0..1`, a changed source hash, or any reordered source fails validation.
+Each source must declare exactly one outcome and a compatible bounded reason:
+
+- `classified` with `threshold-policy-applied`: detections may be `possible` or
+  label-level `uncertain`; every omitted label is a definite negative decision;
+- `abstained` with `no-label-cleared-threshold` or
+  `insufficient-confidence-margin`: no detections are allowed; or
+- `degraded` with `service-timeout`, `service-unavailable`, `invalid-response`,
+  or `unsupported-source`: no detections are allowed.
+
+This distinction is mandatory. An empty classified result says that the pinned
+threshold policy classified every vocabulary label as absent. An empty
+abstained result makes no such claim, and a degraded result records service
+reliability rather than classifier error. The validator rejects the ambiguous
+v1 schema. Floating labels, duplicate detections, incompatible outcome/reason
+pairs, confidence outside `0..1`, a changed source hash, or any reordered source
+also fails validation.
 
 Evaluate only after both an approved public review and a pin-complete candidate
 artifact exist:
@@ -94,9 +105,12 @@ plan and its blockers without inventing results.
 
 ## Metric semantics
 
-The report calculates true/false positives and negatives, precision, recall,
-candidate abstention, and service-failure rates in basis points. It reports
-them separately by:
+The v2 report calculates true/false positives and negatives, precision, recall,
+selective coverage, candidate abstention, and service-failure rates in basis
+points. Precision and recall use only definite classified decisions. A
+source-level abstention or label-level uncertainty contributes to abstention;
+degraded inference contributes to service failure; neither is converted into a
+false negative or true negative. It reports these measures separately by:
 
 - ontology kind;
 - real-mix genre, using specific-instrument/voice labels only;
@@ -131,6 +145,13 @@ The exact commit passes the complete Bun 1.3.14 Phase 0 command: 220 worker, 24
 analyzer, 31 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet
 tests, plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
 journey. This verifies the evidence machinery, not musical accuracy.
+
+Commit `558708fdb3962326306da40cdb76389e4598730a` corrects the
+pre-artifact ambiguity by advancing the evaluation plan, candidate observations,
+and metrics to v2. The exact commit passes the same full gate with 221 worker
+tests; its 11 focused evaluation/review tests prove that classified-negative,
+model abstention, label uncertainty, and service degradation remain disjoint.
+No accepted review or candidate artifact was invalidated because none exists.
 
 A value-free read-only check of the canonical Railway project/environment/app
 service also passes the pre-provision topology contract with `audio-analysis`

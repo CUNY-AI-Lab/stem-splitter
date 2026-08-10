@@ -5,6 +5,33 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-evaluation-v2 — selective outcome semantics — 2026-08-10
+
+- Miss: candidate v1 represented sources only as `complete` or `degraded`.
+  Therefore an empty complete response silently meant all 51 labels were absent,
+  even when the model had abstained, while a degraded request also accumulated
+  false negatives and true negatives. Both paths corrupted musical metrics.
+- Contract: exact implementation commit
+  `558708fdb3962326306da40cdb76389e4598730a` advances the evaluation plan,
+  candidate observations, and metrics to v2 before any candidate/review artifact
+  exists. Every source now declares `classified`, `abstained`, or `degraded`
+  with a compatible fixed reason family. Abstained and degraded sources cannot
+  report detections; the ambiguous v1 candidate schema fails closed.
+- Metrics: precision and recall include only definite classified decisions.
+  The report adds selective coverage and separately counts label uncertainty,
+  source abstention, and service failures by kind, genre, family, instrument,
+  and corpus kind. An empty classified result remains an explicit negative
+  decision; an empty abstention and an outage never become absence claims.
+- Evidence: the exact commit passes four TypeScript checks; 221 worker, 24
+  analyzer, 31 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet
+  tests; plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
+  journey under Bun 1.3.14. The 11 focused evaluation/review tests cover v1
+  rejection, source/order/pin drift, outcome/reason mismatch, detections after
+  abstention/failure, conditional confusion metrics, and separate rates.
+- Rollout: off. No review, candidate, quality floor, classifier selection,
+  threshold, service, route, flag, Railway mutation, provider call, push, pull
+  request, or deployment changed.
+
 ## instrument-evaluation-v1 — genre-diverse evidence gate — 2026-08-10
 
 - Scope: exact implementation commit

@@ -226,6 +226,19 @@ blocked only by manual listening and native-amd64 role-v4 image evidence.
 See the
 [genre-diverse evaluation contract](docs/evaluation/2026-08-10-genre-diverse-instrument-evaluation.md).
 
+Exact evaluation-semantics commit `558708f` advances that plan and its candidate
+and metric schemas to v2 before any review or candidate artifact exists. Each
+source must now distinguish a definite classification from model abstention and
+service degradation, using an outcome-compatible reason code. Empty classified
+results remain explicit negative decisions; empty abstained results do not
+become false negatives or true negatives; degraded inference contributes only
+to the service-failure rate. Precision/recall therefore cover definite
+classified decisions, while selective coverage, abstention, and service failure
+stay separately visible. The exact commit passes the complete Bun 1.3.14 Phase
+0 gate: 221 worker, 24 analyzer, 31 Railway host/migration, 5 separator, 30
+discovery, 9 YAMNet, and 19/6/1 browser tests. This changes no processing flag,
+route, stem contract, service, or live environment.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -882,7 +895,10 @@ job.
   rejected CLAP JSON and existing YAMNet v1 JSON remain historical evidence;
   this hardening applies to the required clean YAMNet/replacement reruns.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
-  every track into the nearest available label.
+  every track into the nearest available label. The v2 candidate contract now
+  distinguishes classified, abstained, and degraded source outcomes and reports
+  selective coverage separately, but no threshold or allowed abstention ceiling
+  has been selected.
 - [x] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine
   labels currently take the maximum of two prompt aliases while twenty-two use
   one, and CLAP-style text encoders may not treat “without” as reliable
@@ -1133,11 +1149,12 @@ canary. Student access remains off.
   manifests and SHA-256 identities, requires seven real-mix genres, all 10
   vocabulary families, and all three ontology kinds, and keeps real-mix versus
   isolated-control reporting separate. The validator refuses source, ontology,
-  policy, vocabulary, and ordering drift; the evaluator exposes uncertainty,
-  false alerts, degraded sources, and coverage gaps and forbids promotion from
-  an overlapping all-label aggregate. This establishes the evidence shape but
-  does not supply human ground truth, candidate scores, Slakh/MedleyDB data, a
-  quality floor, or a promotion decision.
+  policy, vocabulary, and ordering drift; the v2 evaluator exposes selective
+  coverage, model abstention, false alerts, degraded sources, and coverage gaps
+  without turning an outage into classifier error. It forbids promotion from an
+  overlapping all-label aggregate. This establishes the evidence shape but does
+  not supply human ground truth, candidate scores, Slakh/MedleyDB data, a quality
+  floor, or a promotion decision.
 - [ ] Establish an evaluation loop using authorized classroom tracks plus
   instrument-rich subsets of Slakh2100 and MedleyDB. Keep synthetic and real
   results separate in reports. The current 11-real/8-isolated contract is the
