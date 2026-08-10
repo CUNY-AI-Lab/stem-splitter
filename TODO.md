@@ -325,6 +325,27 @@ config/migration/terminal, 5 separator, 30 discovery, and 9 YAMNet tests; plus
 All processing flags remain off; no service, Railway mutation, provider call,
 deployment, push, or pull request changed.
 
+Exact NSynth-control commit `56b3c38` adds a second, separately partitioned
+Phase 2 control tranche without changing the existing 19-source evaluation
+plan. A strict manifest pins Magenta's CC BY 4.0 NSynth test archive at
+349,501,546 bytes and SHA-256
+`0f9ba5d62beba9ec4612f918d19f5e87a681822f1c566124f05fe8b27a51934c`,
+plus the exact `examples.json` bytes and all 10 selected WAVs. The selections
+cover each family actually present in the test split—bass, brass, flute,
+guitar, keyboard, mallet, organ, reed, string, and vocal—with four acoustic,
+three electronic, and three synthetic sources. `synth_lead` is explicitly
+absent from that split. The streaming hydrator refuses redirects and object-pin
+drift, validates the complete 4,099-member gzip/tar surface, captures only the
+metadata and selected WAVs, rejects unsafe paths and symlinked output, writes
+owner-only files, and supports offline readback. These are dataset family/source
+controls only: they create no exact-instrument positive, negative, threshold,
+candidate, or promotion claim. The exact Bun 1.3.14 Phase 0 gate passes all four
+typechecks; 250 worker, 24 analyzer, 42 Railway host/config/migration/terminal,
+5 separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+authoritative-Auto, and 1 isolation-shadow browser journey. All processing
+flags remain off; no evaluation-plan version, service, Railway mutation,
+provider call, deployment, push, or pull request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -914,16 +935,21 @@ job.
   oboe-to-trumpet/brass and horn-to-trombone confusions, fifteen ontology gaps,
   missing free-reed controls, failed confusion directions, and absent native
   runner result still block classifier selection and threshold calibration.
-- [ ] Add a second rights-reviewed control tranche only after the listening
-  protocol is fixed. [NSynth](https://magenta.tensorflow.org/datasets/nsynth)
-  is CC BY 4.0 and offers 305,979 four-second
-  monophonic notes across 1,006 sampled instruments, but its eleven labels are
-  broad families rather than reliable exact instrument identities. Use it for
-  acoustic/electronic/synthetic and family-level diversity, keep it separate
-  from performed-track results, and find separately licensed exact positives
-  for free reeds, solo strings, pitched percussion, and traditional
-  instruments. Never convert a filename or family label into exact ground
-  truth.
+- [x] Add a second rights-reviewed control tranche after fixing the listening
+  protocol. [NSynth](https://magenta.tensorflow.org/datasets/nsynth) is CC BY
+  4.0 and offers 305,979 four-second monophonic notes across 1,006 sampled
+  instruments. The pinned test-archive tranche selects one example from each of
+  the 10 families actually present there and balances four acoustic, three
+  electronic, and three synthetic sources. A strict streaming hydrator binds
+  the archive, metadata, and WAV hashes and keeps the audio gitignored. Its
+  labels remain broad dataset family/source evidence—not exact instrument
+  identities, vocabulary positives, candidate negatives, or promotion inputs.
+  The tranche therefore remains separate from the current 19-source performed-
+  track evaluation until a teacher completes the 51-label listening protocol
+  and a new evaluation-plan version integrates the reviewed evidence.
+- [ ] Find separately licensed exact positives for free reeds, solo strings,
+  pitched percussion, and traditional instruments. Do not convert an NSynth
+  filename, family label, or source label into exact ground truth.
 - [ ] Choose exactly one replacement discovery classifier after the CLAP,
   YAMNet, and any license-cleared Essentia evidence is comparable. Give every
   prompt policy, checkpoint, label map, or preprocessing change a new

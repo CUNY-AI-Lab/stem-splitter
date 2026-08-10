@@ -74,6 +74,19 @@
   CC BY 4.0 wind controls; the results remain candidate evidence until a teacher
   listens to every positive and alert. Missing free-reed, string, pitched-
   percussion and traditional-instrument controls still block selection.
+- [x] Stage a second, separately partitioned NSynth family/source control
+  tranche. The strict manifest binds the official CC BY 4.0 test archive,
+  `examples.json`, and 10 selected WAVs by exact immutable identity; the
+  streaming hydrator refuses redirects, path/archive drift, symlinks,
+  overwrite, malformed metadata/WAVs, and non-owner output. The balanced
+  acoustic/electronic/synthetic selection covers every family present in the
+  test split but makes no exact-instrument, vocabulary-positive, negative,
+  threshold, or promotion claim.
+- [ ] Complete exhaustive 51-label teacher listening for all 10 NSynth controls
+  and integrate only the accepted family/source evidence under a new
+  evaluation-plan version. Keep it separate from performed controls, and add
+  separately licensed exact positives for free reeds, solo strings, pitched
+  percussion, and traditional instruments.
 - [x] Add a YAMNet-specific bridge from paired fresh native corpus/control
   reports into the classifier-neutral v3 candidate envelope. The two-step
   no-overwrite capture revalidates image, platform, model, mapping, vocabulary,

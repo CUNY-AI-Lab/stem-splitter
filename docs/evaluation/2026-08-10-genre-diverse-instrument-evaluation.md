@@ -27,6 +27,46 @@ The current plan contains no synthetic partition. Slakh2100 and MedleyDB remain
 future, separately rights-reviewed additions. When they are added, their
 results must remain separate from real recordings and isolated controls.
 
+## Staged NSynth family controls
+
+`tests/corpus/nsynth-family-control-manifest.json` stages a second control
+tranche without changing the frozen 19-source plan. The official
+[NSynth dataset](https://magenta.tensorflow.org/datasets/nsynth) is CC BY 4.0;
+the manifest binds its test archive to one exact Google Cloud object, byte
+count, storage generation, ETag, modification time, SHA-256, complete tar
+surface, and `examples.json` hash. It then pins one four-second, mono, 16 kHz
+PCM WAV from each family actually present in that split:
+
+- bass, brass, flute, guitar, keyboard, mallet, organ, reed, string, and vocal;
+- four acoustic, three electronic, and three synthetic sources; and
+- no `synth_lead`, because the test archive contains no member in that family.
+
+Hydrate the exact archive without committing its audio:
+
+```bash
+bun run hydrate:nsynth-controls
+bun run hydrate:nsynth-controls --verify-only
+```
+
+For an already downloaded exact archive, use `--archive /absolute/path` once;
+`--archive` and `--verify-only` are mutually exclusive. The downloader refuses
+redirects, encoded responses, header or object-identity drift, excess bytes,
+and hash drift. Its bounded streaming gzip/ustar reader accepts only the pinned
+directory, metadata, and WAV surface, captures only the 10 selected WAVs plus
+`examples.json`, validates each selected metadata record and RIFF contract, and
+writes no-overwrite mode-`0600` files under the gitignored
+`tests/corpus/audio/nsynth-family-controls-v1/` directory.
+
+This tranche deliberately asserts dataset-authored family and source labels
+only. It does not infer an exact sampled instrument from `instrument_str`, map
+a family to a classroom-vocabulary positive, treat omitted labels as negatives,
+join the mixed/performed control partition, or count toward promotion. Before
+integration, an authorized teacher must listen to every clip and classify all
+51 vocabulary labels using the same exhaustive protocol. That accepted review
+must create a new evaluation-plan version that preserves an isolated
+family/source partition. Separately licensed exact positives remain necessary
+for free reeds, solo strings, pitched percussion, and traditional instruments.
+
 ## Human-review boundary
 
 Prepare an owner-only worksheet under the gitignored `output/` directory:

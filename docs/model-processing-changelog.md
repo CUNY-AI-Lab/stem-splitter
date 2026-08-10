@@ -5,6 +5,43 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## nsynth-family-controls-v1 — family/source control tranche — 2026-08-10
+
+- Scope: exact implementation commit
+  `56b3c38a8640be3639f58265126f58748fab9e80` adds a staged NSynth
+  test-split manifest, bounded hydrator, and regression suite. It does not
+  change the current 19-source evaluation-plan version, select a classifier,
+  define a threshold, alter Auto or the 2/4/6 contracts, provision a service,
+  change a flag, request an isolation, or call a provider.
+- Rights and identity: the official CC BY 4.0 dataset page, canonical Google
+  Cloud object, 349,501,546-byte archive, storage generation, ETag, last-
+  modified time, SHA-256, 4,099-member tar surface, `examples.json`, and 10 WAV
+  files are exact pins. The selected controls cover every family actually
+  present in the test split, with four acoustic, three electronic, and three
+  synthetic sources; `synth_lead` remains an explicit unavailable family.
+- Claim boundary: the manifest records dataset family/source truth only. It
+  forbids exact-instrument assertions, classroom-vocabulary positives,
+  candidate negatives, mixed-track use, and promotion before teacher review
+  and explicit plan integration. `instrument_str` remains provenance metadata,
+  not an exact identity claim.
+- Hydration boundary: one HTTPS object is fetched with manual redirects,
+  immutable response headers, byte count, timeout, and SHA-256 enforced. The
+  gzip/ustar parser bounds decoded bytes, validates checksum, paths, member
+  types/counts/sizes/padding, captures only selected members, and checks the
+  exact metadata and RIFF/WAVE contracts. Owner-only no-overwrite output,
+  symlink refusal, local-archive verification, offline readback, and cleanup of
+  private temporary/partial files are regression tested.
+- Evidence and rollout: the real pinned archive hydrated all 10 controls and
+  passed offline readback. Exact Bun 1.3.14 passes four TypeScript checks; 250
+  worker, 24 analyzer, 42 Railway host/config/migration/terminal, 5 separator,
+  30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto,
+  and 1 isolation-shadow browser journey. Rollout remains off. No Railway
+  mutation, provider call, deployment, push, or pull request occurred.
+- Remaining: exhaustive teacher listening, a versioned integration into the
+  evaluation cohort, candidate scoring under identical preprocessing, and
+  separately licensed exact positives for free reeds, solo strings, pitched
+  percussion, and traditional instruments remain open.
+
 ## instrument-candidate-comparison-v1 — cohort identity gate — 2026-08-10
 
 - Scope: exact implementation commit
