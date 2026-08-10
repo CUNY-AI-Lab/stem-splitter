@@ -5,6 +5,37 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## audio-pipeline-promotion-v2 — pre-mutation provisioning gate — 2026-08-10
+
+- Miss: promotion v1 verified exact historical commits, but CI used a
+  depth-one checkout that could not contain those commits. It also had only a
+  next-stage gate, whose analyzer-absent, Railway-resource, and Railway-rollback
+  blockers necessarily remain true before the analyzer can be provisioned.
+- Contract: CI now fetches repository history, and schema v2 adds an explicit
+  `provision-audio-analysis` action gate. Before service creation it requires
+  the committed Phase 0/core/corpus/browser evidence plus native-amd64 image,
+  manual-listening, and frozen Railway baseline evidence. It rejects a non-off
+  rollout or an already-provisioned analyzer. Resource and rollback acceptance
+  remain mandatory for `shadow`, but no longer create a circular provisioning
+  prerequisite.
+- Current result: the action gate exits nonzero on exactly three missing
+  preconditions—native-amd64 image, manual listening, and Railway baseline.
+  The shadow gate remains non-promotable with six blockers: those three plus
+  analyzer absence, Railway resource acceptance, and Railway rollback.
+- Evidence: exact implementation commit `959940b` passes the schema-v2
+  typecheck/CLI and literal Phase 0 gate from a clean detached checkout under
+  Bun 1.3.14: all three application typechecks; 194 worker, 24 analyzer, 28
+  Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet tests; plus
+  19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+  `actionlint`, `git diff --check`, clean worktree readback, and
+  `git show --check` pass. The value-free live Railway pre-provision audit also
+  passes against the explicit canonical IDs with the analyzer absent, all
+  features off, zero mutations, zero provider calls, and no secrets printed.
+- Remaining: the local Docker engine did not become responsive after a bounded
+  Docker Desktop restart attempt. No role-v4 image, native-amd64 CI, manual
+  listening, Railway baseline, service, variable, provider call, deployment,
+  remote branch, or pull request was claimed or created.
+
 ## audio-pipeline-promotion-v1 — executable release ordering — 2026-08-10
 
 - Scope: a strict manifest and CLI now turn the phased processing roadmap into

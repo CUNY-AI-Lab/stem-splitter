@@ -114,6 +114,24 @@ gate at 8 preferred, 3 accepted alternatives, 0 mismatches and browser/FFmpeg
 decision parity at 11/11. No service, variable, provider call, migration,
 deployment, remote branch, or pull request changed.
 
+Exact provisioning-guard commit `959940b` advances the promotion schema to v2
+and separates “safe to create the private analyzer” from “safe to enter
+shadow.” The pre-mutation action gate requires native-amd64 role-v4 image,
+manual-listening, and frozen Railway baseline evidence; it intentionally does
+not require resource and rollback evidence that can exist only after the
+service is created. It currently fails on exactly those three prerequisites.
+The ordinary shadow gate now carries the baseline forward and computes six
+blockers. CI fetches full history so exact base/candidate commit verification
+can run instead of failing inside a depth-one checkout. A fresh detached
+checkout of `959940b` passes the v2 typecheck/CLI and literal Phase 0 command
+under Bun 1.3.14: 194 worker, 24 analyzer, 28 Railway host/migration, 5
+separator, 30 discovery, 9 YAMNet, and 19/6/1 browser tests. A read-only check
+of the explicit canonical Railway IDs still passes with the analyzer absent,
+features off, zero mutations, zero provider calls, and no secrets printed.
+Docker Desktop remained without a responsive engine even after a bounded
+restart attempt, so no current role-v4 image claim was added. No remote branch,
+pull request, Railway mutation, provider call, or deployment changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -439,6 +457,8 @@ deployment or enablement.
   no public domain. Keep the existing app service and its volume unchanged.
   Follow `docs/railway-audio-analysis-provisioning.md`; Railway variable edits
   redeploy by default, so assemble the reviewed batch with `--skip-deploys`.
+  The schema-v2 action gate now refuses this mutation until native-amd64 image,
+  manual-listening, and frozen Railway baseline evidence all exist.
 - [x] Give the service a least-privilege way to read one short-lived source URL;
   do not mount or share the app's persistent `/data` volume. The shared,
   versioned `analysis-source-scope-v2` contract now permits only canonical
@@ -1002,8 +1022,9 @@ canary. Student access remains off.
   student canary → default. Every step needs a rollback flag that does not
   require a schema rollback. The versioned promotion gate now encodes this
   ladder, refuses stage skips and paper acceptance, computes the next-stage
-  blockers, and runs explicitly in CI. It correctly leaves role v4 at `off`;
-  no rollout stage has been promoted.
+  blockers, and runs explicitly in CI. Schema v2 separately guards analyzer
+  provisioning so post-provision checks do not form a circular precondition.
+  It correctly leaves role v4 at `off`; no rollout stage has been promoted.
 - [ ] Automatically request at most one or two high-confidence additional
   isolations only after manual-query evidence supports it. Until then,
   discovery may suggest but must not spend.
