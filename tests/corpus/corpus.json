@@ -6,6 +6,8 @@
     "House rule (docs/superpowers/specs/2026-07-30-reliable-model-output-design.md):",
     "no audio ships in the repo — the caller supplies the audio. The audio/ dir",
     "is gitignored; the paths below are relative to the repo root.",
+    "Every file source has a contentSha256 pin for exact corpus identity.",
+    "Archive SHA-1 is checked as a second provenance signal when recorded.",
     "",
     "Licenses:",
     "  folk-duet: CC BY 3.0 — Jesse & Hope Wilder, \"Shine\" ( HopeAndJesseSingTogether )",
@@ -97,6 +99,7 @@
         "archiveIdentifier": "HopeAndJesseSingTogether",
         "license": "CC BY 3.0 US",
         "licenseUrl": "http://creativecommons.org/licenses/by/3.0/us/",
+        "contentSha256": "318e51a0e54f14c1f4c6fa39d944a2f1b7e373a432128fd10eff39ffd9f7d5dd",
         "verifiedAt": "2026-08-09"
       },
       "why": "Two simultaneous lead vocalists (Jesse and Hope Wilder) over sparse acoustic backing. Adversarial for a model trained on a single lead vocal: the harmony line is the thing most likely to be pushed into `other` instead of `vocals`. CC BY 3.0 (archive.org: HopeAndJesseSingTogether).",
@@ -122,6 +125,7 @@
         "archiveIdentifier": "mozart-symphony-41-in-c-k-551-jupiter",
         "license": "CC BY 4.0",
         "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "contentSha256": "89e73db8d34c9a1b876427f5f8a38bc7311b3c5b18e1b86a878f2fbd1e0f07f2",
         "verifiedAt": "2026-08-09"
       },
       "why": "Mozart Symphony 41 \"Jupiter\", 1st movement. Full orchestra: no lead vocal, no drum kit, no electric bass. This is the 'quiet but valid' trap the 2026-07-30 spec calls out — several contract tracks SHOULD come back near-silent, and the pipeline must not treat that as a transport failure. CC BY 4.0 (archive.org: mozart-symphony-41-in-c-k-551-jupiter).",
@@ -151,6 +155,7 @@
         "archiveIdentifier": "sharticlesep",
         "license": "CC BY 3.0",
         "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+        "contentSha256": "cb3bdf6c8cad47a4b37efe0a459b76dc8f3e22d74206a8d480f4f9aa4be397cf",
         "verifiedAt": "2026-08-09"
       },
       "why": "Dense layered guitar textures in a lo-fi shoegaze track. Adversarial for the 6-track split specifically: the `guitar` track is the one most likely to come back near-empty while `other` silently absorbs the whole wall of guitar. CC BY 3.0 (archive.org: sharticlesep, The Sharticles, \"Euphoria\").",
@@ -178,6 +183,7 @@
         "archiveIdentifier": "FinnAndersonMusic",
         "license": "CC BY 3.0",
         "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+        "contentSha256": "f2e6a2d69946c6172348c8cea4f9b2f8c64c57b27e415e9ef1f7c4cc2997c5f6",
         "verifiedAt": "2026-08-09"
       },
       "why": "Singer-songwriter track with real piano, strings and layered vocals. The 6-track split's `piano` track has actual content to find here, which is the complement to the shoegaze case. CC BY 3.0 (archive.org: FinnAndersonMusic, Finn Anderson, \"Uncharted Lands\").",
@@ -206,6 +212,7 @@
         "archiveFile": "jsjq2010-07-30s1t02.mp3",
         "license": "CC BY 3.0",
         "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+        "contentSha256": "9d3b219fc9ef34b50cfd1310dcb1733bf4d7068b84dad7b4186f9a471f0cbff4",
         "verifiedAt": "2026-08-09"
       },
       "why": "Live jazz quartet: tenor sax, harmonica, flute, guitar, bass, drums — no vocals, no piano, no electric instruments. Adversarial because horns are acoustically similar to vocals (sustained tonal content) and the model has no `sax` track to put them in. Sax and flute will land in `other` or bleed into `vocals`. CC BY 3.0 (archive.org: JeffSolonJazzQuartet07-30-2010PrideOfTheWestSilvertonCo, jsjq2010-07-30s1t02.mp3).",
@@ -237,6 +244,7 @@
         "archiveIdentifier": "drip-drop",
         "license": "CC BY 4.0",
         "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "contentSha256": "f75ccb681c2ae8be44cd7675bfa004204dcd68d7fa50b27d747ac5aaa6df651e",
         "verifiedAt": "2026-08-09"
       },
       "why": "Rap vocals over a synthesized beat. Adversarial because rap is spoken-word vocals — no sustained melodic contour — which most vocal-separation models train on less heavily. The beat has no acoustic drums, no guitar, no bass guitar: synthesized kick, snare, and bass. Tests whether `vocals` captures rhythmic speech and whether `other` holds the beat without swallowing it. CC BY 4.0 (archive.org: drip-drop, Jac Martin, \"Drip Drop\").",
@@ -268,6 +276,7 @@
         "archiveIdentifier": "southbound_202201",
         "license": "CC BY 4.0",
         "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "contentSha256": "0095913c8e485d6bb110068b061fddf20025ba015aa5b19d30680d1f40dd15cc",
         "verifiedAt": "2026-08-09"
       },
       "why": "Bluegrass: fiddle, banjo, mandolin, acoustic guitar, upright bass, and lead vocal. Adversarial because none of these instruments map cleanly to `guitar`, `bass`, or `drums`. Banjo and mandolin are plucked strings that the model may misclassify as guitar. Fiddle is bowed — sustained tonal content that may bleed into `vocals`. CC BY 4.0 (archive.org: southbound_202201, Sonny Young, \"High On a Mountain\").",
@@ -299,6 +308,7 @@
         "archiveIdentifier": "catboi-album",
         "archiveFile": "catboi-album1.mp3",
         "sha1": "e40a9a47715df9a858295296b473b98134927684",
+        "contentSha256": "68172c4e2018c6bfa627bab2ba5131343a5032fd5772354e7b90588c7404278f",
         "license": "CC BY 4.0",
         "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
         "verifiedAt": "2026-08-09"
@@ -332,6 +342,7 @@
         "archiveIdentifier": "catboi-album",
         "archiveFile": "catboi-album2.mp3",
         "sha1": "48f351a799155e15906694fc063dd43f6a5bc85c",
+        "contentSha256": "a929ec6515ecc915111d2de59acb9ff81d53a6194f2a551775859b0d291cd658",
         "license": "CC BY 4.0",
         "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
         "verifiedAt": "2026-08-09"
@@ -364,6 +375,7 @@
         "archiveIdentifier": "catboi-album",
         "archiveFile": "catboi-album3.mp3",
         "sha1": "cb50750aad311990db9a42a1fa76359285c7fbe8",
+        "contentSha256": "03499848f06938da5f51978efce91d8f7db7f1b7f898a1c2a44f46efa7c0383b",
         "license": "CC BY 4.0",
         "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
         "verifiedAt": "2026-08-09"
@@ -395,6 +407,7 @@
       "provenance": {
         "archiveIdentifier": "clockin-cats-das-dope-ding-dong",
         "sha1": "1b88a2f615742dd06ca36a4220e21c782727c948",
+        "contentSha256": "29fa53ba7debe2dc1505ff1cc8ea6d69903d4b9b40f9135e866b1e1ca443865f",
         "license": "CC0 1.0",
         "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
         "verifiedAt": "2026-08-09"

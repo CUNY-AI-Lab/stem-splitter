@@ -17,6 +17,7 @@ const manifest = JSON.parse(
       archiveIdentifier: string;
       archiveFile?: string;
       sha1?: string;
+      contentSha256: string;
       license: string;
       licenseUrl: string;
       verifiedAt: string;
@@ -107,6 +108,11 @@ test('authorized file corpus has fixed rights, coverage, and audible-instrument 
     );
     assert.doesNotMatch(provenance.license, /\b(?:NC|ND)\b/i);
     if (provenance.sha1) assert.match(provenance.sha1, /^[a-f0-9]{40}$/);
+    assert.match(
+      provenance.contentSha256,
+      /^[a-f0-9]{64}$/,
+      `${source.slug}: exact corpus content needs a SHA-256 pin`
+    );
 
     const licenseUrl = new URL(provenance.licenseUrl);
     assert.ok(['http:', 'https:'].includes(licenseUrl.protocol));

@@ -16,7 +16,7 @@ const corpus = JSON.parse(readFileSync('tests/corpus/corpus.json', 'utf8')) as {
     slug: string;
     kind: 'file' | 'youtube';
     source: string;
-    provenance?: { sha1?: string };
+    provenance?: { sha1?: string; contentSha256?: string };
   }>;
 };
 const expectations = JSON.parse(
@@ -93,8 +93,16 @@ try {
         `${expectation.slug}: ${source.source} is not hydrated; corpus audio is intentionally gitignored`
       );
     }
+    if (!source.provenance?.contentSha256) {
+      throw new Error(`${expectation.slug}: pinned corpus SHA-256 is missing`);
+    }
+    const sourceBytes = readFileSync(source.source);
+    const sha256 = createHash('sha256').update(sourceBytes).digest('hex');
+    if (sha256 !== source.provenance.contentSha256) {
+      throw new Error(`${expectation.slug}: hydrated audio does not match the pinned corpus SHA-256`);
+    }
     if (source.provenance?.sha1) {
-      const sha1 = createHash('sha1').update(readFileSync(source.source)).digest('hex');
+      const sha1 = createHash('sha1').update(sourceBytes).digest('hex');
       if (sha1 !== source.provenance.sha1) {
         throw new Error(`${expectation.slug}: hydrated audio does not match the recorded Archive SHA-1`);
       }

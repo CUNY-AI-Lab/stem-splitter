@@ -17,7 +17,8 @@ The fixed corpus now contains eleven authorized local sources. It adds two more
 arrangements from the original MT-32 album and one independently authored CC0
 house/electro recording, so the electronic negative control does not depend on
 one song or one album alone. Hydrated audio is gitignored and checked against
-its recorded Archive SHA-1 when available.
+a required repository SHA-256 pin for every source; the evaluator also checks
+the recorded Archive SHA-1 when available.
 
 ## FFmpeg-side result
 
