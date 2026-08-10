@@ -1009,6 +1009,11 @@ job.
   labels cello, contrabass, viola, and violin. TinySOL v6 source metadata, rather
   than an NSynth filename or family label, supplies the exact instrument truth;
   every vocabulary mapping remains candidate evidence pending teacher listening.
+- [ ] Add an owner-only TinySOL listening worksheet and deidentified finalizer,
+  then have an authorized teacher review all five controls and explicitly approve
+  the `Contrabass` to `double-bass` vocabulary mapping. Keep source labels,
+  vocabulary verdicts, candidate negatives, metrics, and plan integration as
+  separate fields; no verdict may be inferred from the metadata or filename.
 - [ ] Complete the exact-positive gap with harmonica, pitched percussion, and
   traditional instruments under separately reviewed licenses and immutable
   source pins. Keep each new corpus partition separate until teacher listening
