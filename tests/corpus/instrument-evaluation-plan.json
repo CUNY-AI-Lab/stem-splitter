@@ -1,6 +1,6 @@
 {
   "$schema": "stem-splitter.instrument-evaluation-plan.v1",
-  "version": "v3.2-genre-diverse-evaluation-v1",
+  "version": "v3.2-genre-diverse-evaluation-v2",
   "status": "review-pending-no-promotion-claim",
   "vocabulary": {
     "path": "instrument-discovery/vocabulary.json",
@@ -164,6 +164,7 @@
     "requiredMetrics": [
       "detection-precision",
       "detection-recall",
+      "selective-coverage",
       "abstention-rate",
       "service-failure-rate",
       "per-genre",

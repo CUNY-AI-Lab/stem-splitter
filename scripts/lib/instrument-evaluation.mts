@@ -18,9 +18,9 @@ export const INSTRUMENT_EVALUATION_PLAN_SCHEMA =
 export const INSTRUMENT_EVALUATION_REVIEW_SCHEMA =
   'stem-splitter.instrument-evaluation-review.v1' as const;
 export const INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA =
-  'stem-splitter.instrument-candidate-observations.v1' as const;
+  'stem-splitter.instrument-candidate-observations.v2' as const;
 export const INSTRUMENT_EVALUATION_METRICS_SCHEMA =
-  'stem-splitter.instrument-evaluation-metrics.v1' as const;
+  'stem-splitter.instrument-evaluation-metrics.v2' as const;
 export const INSTRUMENT_EVALUATION_PLAN_PATH =
   'tests/corpus/instrument-evaluation-plan.json' as const;
 
@@ -36,9 +36,16 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const CORPUS_KINDS = ['real-mix', 'isolated-control', 'synthetic-stem'] as const;
 const REVIEW_VERDICTS = ['audible', 'absent', 'uncertain'] as const;
 const CANDIDATE_STATES = ['possible', 'uncertain'] as const;
+const CANDIDATE_OUTCOMES = ['classified', 'abstained', 'degraded'] as const;
+const CANDIDATE_OUTCOME_REASONS = {
+  classified: ['threshold-policy-applied'],
+  abstained: ['no-label-cleared-threshold', 'insufficient-confidence-margin'],
+  degraded: ['service-timeout', 'service-unavailable', 'invalid-response', 'unsupported-source'],
+} as const;
 const REQUIRED_METRICS = [
   'detection-precision',
   'detection-recall',
+  'selective-coverage',
   'abstention-rate',
   'service-failure-rate',
   'per-genre',
@@ -75,6 +82,9 @@ const REQUIRED_REVIEW_KINDS: readonly InstrumentReviewKind[] = [
 type CorpusKind = (typeof CORPUS_KINDS)[number];
 type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 type CandidateState = (typeof CANDIDATE_STATES)[number];
+type CandidateOutcome = (typeof CANDIDATE_OUTCOMES)[number];
+type CandidateOutcomeReason =
+  (typeof CANDIDATE_OUTCOME_REASONS)[CandidateOutcome][number];
 
 export interface InstrumentEvaluationPlanSourceV1 {
   id: string;
@@ -143,7 +153,7 @@ export interface InstrumentEvaluationReviewV1 {
   }>;
 }
 
-export interface InstrumentCandidateObservationsV1 {
+export interface InstrumentCandidateObservationsV2 {
   $schema: typeof INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA;
   planPath: typeof INSTRUMENT_EVALUATION_PLAN_PATH;
   planVersion: string;
@@ -161,7 +171,8 @@ export interface InstrumentCandidateObservationsV1 {
     partitionId: string;
     id: string;
     sourceSha256: string;
-    status: 'complete' | 'degraded';
+    outcome: CandidateOutcome;
+    outcomeReason: CandidateOutcomeReason;
     detections: Array<{
       instrumentId: string;
       state: CandidateState;
@@ -170,8 +181,9 @@ export interface InstrumentCandidateObservationsV1 {
   }>;
 }
 
-export interface InstrumentMetricCountsV1 {
+export interface InstrumentMetricCountsV2 {
   evaluated: number;
+  classifiedDecisions: number;
   groundTruthAudible: number;
   groundTruthAbsent: number;
   groundTruthUncertain: number;
@@ -179,30 +191,33 @@ export interface InstrumentMetricCountsV1 {
   falsePositive: number;
   falseNegative: number;
   trueNegative: number;
-  candidateUncertain: number;
+  candidateUncertainDecisions: number;
+  sourceAbstentionDecisions: number;
   serviceFailureDecisions: number;
   precisionBasisPoints: number | null;
   recallBasisPoints: number | null;
+  selectiveCoverageRateBasisPoints: number | null;
   abstentionRateBasisPoints: number | null;
   serviceFailureRateBasisPoints: number | null;
 }
 
-export interface InstrumentEvaluationMetricsV1 {
+export interface InstrumentEvaluationMetricsV2 {
   $schema: typeof INSTRUMENT_EVALUATION_METRICS_SCHEMA;
   planVersion: string;
   reviewStatus: typeof REVIEW_STATUS;
-  candidate: InstrumentCandidateObservationsV1['candidate'];
-  diagnosticAllLabels: InstrumentMetricCountsV1 & {
+  candidate: InstrumentCandidateObservationsV2['candidate'];
+  diagnosticAllLabels: InstrumentMetricCountsV2 & {
     promotionUse: 'forbidden-overlapping-label-kinds';
   };
-  byKind: Record<InstrumentReviewKind, InstrumentMetricCountsV1>;
-  byGenre: Partial<Record<InstrumentFeedbackGenreFamily, InstrumentMetricCountsV1>>;
-  byInstrumentFamily: Record<string, InstrumentMetricCountsV1>;
-  byInstrument: Record<string, InstrumentMetricCountsV1>;
-  byCorpusKind: Partial<Record<CorpusKind, InstrumentMetricCountsV1>>;
+  byKind: Record<InstrumentReviewKind, InstrumentMetricCountsV2>;
+  byGenre: Partial<Record<InstrumentFeedbackGenreFamily, InstrumentMetricCountsV2>>;
+  byInstrumentFamily: Record<string, InstrumentMetricCountsV2>;
+  byInstrument: Record<string, InstrumentMetricCountsV2>;
+  byCorpusKind: Partial<Record<CorpusKind, InstrumentMetricCountsV2>>;
   coverage: {
     realMixSourcesByGenre: Partial<Record<InstrumentFeedbackGenreFamily, number>>;
     audibleSpecificSourcesByFamily: Record<string, number>;
+    abstainedSources: string[];
     degradedSources: string[];
     reviewUncertainDecisions: number;
   };
@@ -765,7 +780,7 @@ export function validateInstrumentCandidateObservations(
   value: unknown,
   plan: InstrumentEvaluationPlanV1,
   planSha256: string
-): InstrumentCandidateObservationsV1 {
+): InstrumentCandidateObservationsV2 {
   if (!record(value)) throw new Error('instrument candidate observations are invalid');
   exactKeys(
     value,
@@ -824,19 +839,31 @@ export function validateInstrumentCandidateObservations(
   const sources = value.sources.map((rawSource, index) => {
     const context = `candidate source ${index + 1}`;
     if (!record(rawSource)) throw new Error(`${context} is invalid`);
-    exactKeys(rawSource, ['partitionId', 'id', 'sourceSha256', 'status', 'detections'], context);
+    exactKeys(
+      rawSource,
+      ['partitionId', 'id', 'sourceSha256', 'outcome', 'outcomeReason', 'detections'],
+      context
+    );
     const expected = expectedSources[index];
     if (
       rawSource.partitionId !== expected.partitionId ||
       rawSource.id !== expected.id ||
       rawSource.sourceSha256 !== expected.sourceSha256 ||
-      (rawSource.status !== 'complete' && rawSource.status !== 'degraded') ||
+      typeof rawSource.outcome !== 'string' ||
+      !(CANDIDATE_OUTCOMES as readonly string[]).includes(rawSource.outcome) ||
       !Array.isArray(rawSource.detections)
     ) {
       throw new Error(`${context} does not match the pinned source plan`);
     }
-    if (rawSource.status === 'degraded' && rawSource.detections.length > 0) {
-      throw new Error(`${context} cannot report detections after a degraded inference`);
+    const outcome = rawSource.outcome as CandidateOutcome;
+    const outcomeReason = safeId(rawSource.outcomeReason, `${context} outcome reason`);
+    if (
+      !(CANDIDATE_OUTCOME_REASONS[outcome] as readonly string[]).includes(outcomeReason)
+    ) {
+      throw new Error(`${context} outcome reason does not match its outcome`);
+    }
+    if (outcome !== 'classified' && rawSource.detections.length > 0) {
+      throw new Error(`${context} cannot report detections after abstention or degradation`);
     }
     const seen = new Set<string>();
     const detections = rawSource.detections.map((rawDetection) => {
@@ -866,7 +893,8 @@ export function validateInstrumentCandidateObservations(
       partitionId: expected.partitionId,
       id: expected.id,
       sourceSha256: expected.sourceSha256,
-      status: rawSource.status as 'complete' | 'degraded',
+      outcome,
+      outcomeReason: outcomeReason as CandidateOutcomeReason,
       detections,
     };
   });
@@ -883,6 +911,7 @@ export function validateInstrumentCandidateObservations(
 
 interface MutableCounts {
   evaluated: number;
+  classifiedDecisions: number;
   groundTruthAudible: number;
   groundTruthAbsent: number;
   groundTruthUncertain: number;
@@ -890,13 +919,15 @@ interface MutableCounts {
   falsePositive: number;
   falseNegative: number;
   trueNegative: number;
-  candidateUncertain: number;
+  candidateUncertainDecisions: number;
+  sourceAbstentionDecisions: number;
   serviceFailureDecisions: number;
 }
 
 function emptyCounts(): MutableCounts {
   return {
     evaluated: 0,
+    classifiedDecisions: 0,
     groundTruthAudible: 0,
     groundTruthAbsent: 0,
     groundTruthUncertain: 0,
@@ -904,7 +935,8 @@ function emptyCounts(): MutableCounts {
     falsePositive: 0,
     falseNegative: 0,
     trueNegative: 0,
-    candidateUncertain: 0,
+    candidateUncertainDecisions: 0,
+    sourceAbstentionDecisions: 0,
     serviceFailureDecisions: 0,
   };
 }
@@ -913,7 +945,7 @@ function basisPoints(numerator: number, denominator: number): number | null {
   return denominator > 0 ? Math.round((numerator / denominator) * 10_000) : null;
 }
 
-function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV1 {
+function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV2 {
   return {
     ...counts,
     precisionBasisPoints: basisPoints(
@@ -924,7 +956,14 @@ function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV1 {
       counts.truePositive,
       counts.truePositive + counts.falseNegative
     ),
-    abstentionRateBasisPoints: basisPoints(counts.candidateUncertain, counts.evaluated),
+    selectiveCoverageRateBasisPoints: basisPoints(
+      counts.classifiedDecisions,
+      counts.evaluated
+    ),
+    abstentionRateBasisPoints: basisPoints(
+      counts.candidateUncertainDecisions + counts.sourceAbstentionDecisions,
+      counts.evaluated
+    ),
     serviceFailureRateBasisPoints: basisPoints(
       counts.serviceFailureDecisions,
       counts.evaluated
@@ -932,12 +971,12 @@ function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV1 {
   };
 }
 
-function mapCounts<K extends string>(map: Map<K, MutableCounts>): Record<K, InstrumentMetricCountsV1> {
+function mapCounts<K extends string>(map: Map<K, MutableCounts>): Record<K, InstrumentMetricCountsV2> {
   return Object.fromEntries(
     [...map.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => [key, finalizeCounts(value)])
-  ) as Record<K, InstrumentMetricCountsV1>;
+  ) as Record<K, InstrumentMetricCountsV2>;
 }
 
 function countsFor<K extends string>(map: Map<K, MutableCounts>, key: K): MutableCounts {
@@ -952,8 +991,7 @@ function countsFor<K extends string>(map: Map<K, MutableCounts>, key: K): Mutabl
 function addDecision(
   counts: MutableCounts,
   reviewVerdict: ReviewVerdict,
-  candidateState: CandidateState | 'absent',
-  degraded: boolean
+  candidateState: CandidateState | 'absent' | 'abstained' | 'degraded'
 ): void {
   if (reviewVerdict === 'uncertain') {
     counts.groundTruthUncertain += 1;
@@ -962,8 +1000,19 @@ function addDecision(
   counts.evaluated += 1;
   if (reviewVerdict === 'audible') counts.groundTruthAudible += 1;
   else counts.groundTruthAbsent += 1;
-  if (candidateState === 'uncertain') counts.candidateUncertain += 1;
-  if (degraded) counts.serviceFailureDecisions += 1;
+  if (candidateState === 'degraded') {
+    counts.serviceFailureDecisions += 1;
+    return;
+  }
+  if (candidateState === 'abstained') {
+    counts.sourceAbstentionDecisions += 1;
+    return;
+  }
+  if (candidateState === 'uncertain') {
+    counts.candidateUncertainDecisions += 1;
+    return;
+  }
+  counts.classifiedDecisions += 1;
   const predicted = candidateState === 'possible';
   if (reviewVerdict === 'audible') {
     if (predicted) counts.truePositive += 1;
@@ -978,8 +1027,8 @@ function addDecision(
 export function evaluateInstrumentCandidate(
   plan: InstrumentEvaluationPlanV1,
   review: InstrumentEvaluationReviewV1,
-  candidate: InstrumentCandidateObservationsV1
-): InstrumentEvaluationMetricsV1 {
+  candidate: InstrumentCandidateObservationsV2
+): InstrumentEvaluationMetricsV2 {
   if (
     review.planVersion !== plan.version ||
     candidate.planVersion !== plan.version ||
@@ -995,6 +1044,7 @@ export function evaluateInstrumentCandidate(
   const byCorpusKind = new Map<CorpusKind, MutableCounts>();
   const realMixSourcesByGenre = new Map<InstrumentFeedbackGenreFamily, number>();
   const audibleSpecificSourcesByFamily = new Map<string, Set<string>>();
+  const abstainedSources: string[] = [];
   const degradedSources: string[] = [];
   let reviewUncertainDecisions = 0;
 
@@ -1014,49 +1064,49 @@ export function evaluateInstrumentCandidate(
         (realMixSourcesByGenre.get(reviewedSource.genreFamily) ?? 0) + 1
       );
     }
-    if (candidateSource.status === 'degraded') {
-      degradedSources.push(`${candidateSource.partitionId}/${candidateSource.id}`);
-    }
+    const sourceIdentity = `${candidateSource.partitionId}/${candidateSource.id}`;
+    if (candidateSource.outcome === 'abstained') abstainedSources.push(sourceIdentity);
+    if (candidateSource.outcome === 'degraded') degradedSources.push(sourceIdentity);
     const detections = new Map(
       candidateSource.detections.map((detection) => [detection.instrumentId, detection])
     );
     for (const reviewedVerdict of reviewedSource.verdicts) {
       const option = INSTRUMENT_REVIEW_OPTIONS_BY_ID.get(reviewedVerdict.instrumentId)!;
       const detection = detections.get(reviewedVerdict.instrumentId);
-      const candidateState: CandidateState | 'absent' = detection?.state ?? 'absent';
+      const candidateState: CandidateState | 'absent' | 'abstained' | 'degraded' =
+        candidateSource.outcome === 'degraded'
+          ? 'degraded'
+          : candidateSource.outcome === 'abstained'
+            ? 'abstained'
+            : detection?.state ?? 'absent';
       if (reviewedVerdict.verdict === 'uncertain') reviewUncertainDecisions += 1;
-      addDecision(allCounts, reviewedVerdict.verdict, candidateState, candidateSource.status === 'degraded');
+      addDecision(allCounts, reviewedVerdict.verdict, candidateState);
       addDecision(
         countsFor(byKind, option.kind),
         reviewedVerdict.verdict,
-        candidateState,
-        candidateSource.status === 'degraded'
+        candidateState
       );
       addDecision(
         countsFor(byInstrument, option.id),
         reviewedVerdict.verdict,
-        candidateState,
-        candidateSource.status === 'degraded'
+        candidateState
       );
       if (option.kind === 'specific-instrument-or-voice') {
         addDecision(
           countsFor(byFamily, option.family),
           reviewedVerdict.verdict,
-          candidateState,
-          candidateSource.status === 'degraded'
+          candidateState
         );
         addDecision(
           countsFor(byCorpusKind, reviewedSource.corpusKind),
           reviewedVerdict.verdict,
-          candidateState,
-          candidateSource.status === 'degraded'
+          candidateState
         );
         if (reviewedSource.corpusKind === 'real-mix') {
           addDecision(
             countsFor(byGenre, reviewedSource.genreFamily),
             reviewedVerdict.verdict,
-            candidateState,
-            candidateSource.status === 'degraded'
+            candidateState
           );
         }
         if (reviewedVerdict.verdict === 'audible') {
@@ -1111,7 +1161,7 @@ export function evaluateInstrumentCandidate(
       ...finalizeCounts(allCounts),
       promotionUse: 'forbidden-overlapping-label-kinds',
     },
-    byKind: mapCounts(byKind) as Record<InstrumentReviewKind, InstrumentMetricCountsV1>,
+    byKind: mapCounts(byKind) as Record<InstrumentReviewKind, InstrumentMetricCountsV2>,
     byGenre: mapCounts(byGenre),
     byInstrumentFamily: mapCounts(byFamily),
     byInstrument: mapCounts(byInstrument),
@@ -1125,6 +1175,7 @@ export function evaluateInstrumentCandidate(
           .sort(([left], [right]) => left.localeCompare(right))
           .map(([family, sources]) => [family, sources.size])
       ),
+      abstainedSources,
       degradedSources,
       reviewUncertainDecisions,
     },
@@ -1133,7 +1184,7 @@ export function evaluateInstrumentCandidate(
     promotionEligible: false,
     promotionBlockers,
     caveat:
-      'All-label totals are diagnostic only because parent, child, ensemble, and production-texture labels overlap. Promotion requires separate kind, genre, family, quality-floor, human-selection, and Railway shadow evidence.',
+      'Precision and recall cover only definite classified decisions; abstentions and service failures have separate rates and never become absence claims. All-label totals are diagnostic only because parent, child, ensemble, and production-texture labels overlap. Promotion requires separate kind, genre, family, quality-floor, human-selection, and Railway shadow evidence.',
   };
 }
 

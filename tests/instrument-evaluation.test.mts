@@ -14,7 +14,7 @@ import {
   validateInstrumentCandidateObservations,
   validateInstrumentEvaluationPlan,
   validateInstrumentEvaluationReview,
-  type InstrumentCandidateObservationsV1,
+  type InstrumentCandidateObservationsV2,
   type InstrumentEvaluationPlanV1,
   type InstrumentEvaluationReviewV1,
 } from '../scripts/lib/instrument-evaluation.mts';
@@ -89,7 +89,7 @@ function completeReview(plan: InstrumentEvaluationPlanV1): InstrumentEvaluationR
 function perfectCandidate(
   plan: InstrumentEvaluationPlanV1,
   review: InstrumentEvaluationReviewV1
-): InstrumentCandidateObservationsV1 {
+): InstrumentCandidateObservationsV2 {
   return {
     $schema: INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA,
     planPath: INSTRUMENT_EVALUATION_PLAN_PATH,
@@ -108,7 +108,8 @@ function perfectCandidate(
       partitionId: source.partitionId,
       id: source.id,
       sourceSha256: source.sourceSha256,
-      status: 'complete',
+      outcome: 'classified',
+      outcomeReason: 'threshold-policy-applied',
       detections: source.verdicts
         .filter(({ verdict }) => verdict === 'audible')
         .map(({ instrumentId }) => ({
@@ -123,7 +124,7 @@ function perfectCandidate(
 test('genre-diverse evaluation plan binds exact real mixes, isolated controls, and coverage targets', () => {
   const plan = loadInstrumentEvaluationPlan(repositoryRoot);
   const summary = summarizeInstrumentEvaluationPlan(plan);
-  assert.equal(plan.version, 'v3.2-genre-diverse-evaluation-v1');
+  assert.equal(plan.version, 'v3.2-genre-diverse-evaluation-v2');
   assert.deepEqual(summary.sourcesByKind, {
     'real-mix': 11,
     'isolated-control': 8,
@@ -150,6 +151,16 @@ test('genre-diverse evaluation plan binds exact real mixes, isolated controls, a
     'free-reed',
     'traditional',
   ]);
+  assert.deepEqual(plan.reporting.requiredMetrics, [
+    'detection-precision',
+    'detection-recall',
+    'selective-coverage',
+    'abstention-rate',
+    'service-failure-rate',
+    'per-genre',
+    'per-instrument-family',
+    'per-review-kind',
+  ]);
   assert.equal(summary.promotionEligible, false);
   assert.deepEqual(summary.blockers, [
     'exhaustive-deidentified-review-missing',
@@ -167,6 +178,7 @@ test('evaluation plan fails closed on manifest, source, ontology, and reporting 
     (value: any) => { value.partitions[0].sources[0].sourceSha256 = '0'.repeat(64); },
     (value: any) => { value.vocabulary.reviewOntologyVersion = 'floating-ontology'; },
     (value: any) => { value.reporting.aggregateOnlyPromotionForbidden = false; },
+    (value: any) => { value.reporting.requiredMetrics.splice(2, 1); },
     (value: any) => { value.requiredCoverage.realMixGenreFamilies.pop(); },
     (value: any) => { value.requiredCoverage.instrumentFamilies.pop(); },
     (value: any) => { value.partitions[1].sources.reverse(); },
@@ -206,7 +218,7 @@ test('deidentified review must cover every pinned label and cannot carry reviewe
   );
 });
 
-test('candidate observations require exact pins, exact source order, and honest degraded state', () => {
+test('candidate observations require exact pins, source order, and explicit outcomes', () => {
   const plan = loadInstrumentEvaluationPlan(repositoryRoot);
   const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
   const review = validateInstrumentEvaluationReview(
@@ -233,10 +245,32 @@ test('candidate observations require exact pins, exact source order, and honest 
     /pinned source plan/
   );
   const degradedWithDetection = structuredClone(candidate) as any;
-  degradedWithDetection.sources[0].status = 'degraded';
+  degradedWithDetection.sources[0].outcome = 'degraded';
+  degradedWithDetection.sources[0].outcomeReason = 'service-timeout';
   assert.throws(
     () => validateInstrumentCandidateObservations(degradedWithDetection, plan, planSha256),
-    /cannot report detections/
+    /cannot report detections after abstention or degradation/
+  );
+  const abstainedWithDetection = structuredClone(candidate) as any;
+  abstainedWithDetection.sources[0].outcome = 'abstained';
+  abstainedWithDetection.sources[0].outcomeReason = 'no-label-cleared-threshold';
+  assert.throws(
+    () => validateInstrumentCandidateObservations(abstainedWithDetection, plan, planSha256),
+    /cannot report detections after abstention or degradation/
+  );
+  const mismatchedReason = structuredClone(candidate) as any;
+  mismatchedReason.sources[0].outcome = 'abstained';
+  mismatchedReason.sources[0].outcomeReason = 'threshold-policy-applied';
+  mismatchedReason.sources[0].detections = [];
+  assert.throws(
+    () => validateInstrumentCandidateObservations(mismatchedReason, plan, planSha256),
+    /outcome reason does not match/
+  );
+  const legacySchema = structuredClone(candidate) as any;
+  legacySchema.$schema = 'stem-splitter.instrument-candidate-observations.v1';
+  assert.throws(
+    () => validateInstrumentCandidateObservations(legacySchema, plan, planSha256),
+    /schema drifted/
   );
   const unknown = structuredClone(candidate) as any;
   unknown.sources[0].detections.push({
@@ -290,6 +324,40 @@ test('metrics stay separated by genre, family, kind, and corpus instead of promo
   assert.equal(metrics.byKind['specific-instrument-or-voice'].recallBasisPoints, 10_000);
 });
 
+test('an empty classified result is a negative decision while an empty abstention is not', () => {
+  const plan = loadInstrumentEvaluationPlan(repositoryRoot);
+  const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
+  const review = validateInstrumentEvaluationReview(
+    completeReview(plan),
+    plan,
+    planSha256
+  );
+  const classifiedValue = perfectCandidate(plan, review);
+  classifiedValue.sources[0].detections = [];
+  const classifiedMetrics = evaluateInstrumentCandidate(
+    plan,
+    review,
+    validateInstrumentCandidateObservations(classifiedValue, plan, planSha256)
+  );
+  assert.equal(classifiedMetrics.$schema, 'stem-splitter.instrument-evaluation-metrics.v2');
+  assert.equal(classifiedMetrics.byInstrument.voice.falseNegative, 1);
+  assert.equal(classifiedMetrics.byInstrument.voice.sourceAbstentionDecisions, 0);
+  assert.equal(classifiedMetrics.byInstrument.voice.abstentionRateBasisPoints, 0);
+
+  const abstainedValue = perfectCandidate(plan, review);
+  abstainedValue.sources[0].outcome = 'abstained';
+  abstainedValue.sources[0].outcomeReason = 'no-label-cleared-threshold';
+  abstainedValue.sources[0].detections = [];
+  const abstainedMetrics = evaluateInstrumentCandidate(
+    plan,
+    review,
+    validateInstrumentCandidateObservations(abstainedValue, plan, planSha256)
+  );
+  assert.equal(abstainedMetrics.byInstrument.voice.falseNegative, 0);
+  assert.equal(abstainedMetrics.byInstrument.voice.sourceAbstentionDecisions, 1);
+  assert.equal(abstainedMetrics.byInstrument.voice.abstentionRateBasisPoints, 526);
+});
+
 test('parent labels remain separate and uncertainty, false alerts, and outages stay visible', () => {
   const plan = loadInstrumentEvaluationPlan(repositoryRoot);
   const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
@@ -308,8 +376,12 @@ test('parent labels remain separate and uncertainty, false alerts, and outages s
   });
   const voice = candidateValue.sources[0].detections.find(({ instrumentId }) => instrumentId === 'voice')!;
   voice.state = 'uncertain';
-  candidateValue.sources[1].status = 'degraded';
+  candidateValue.sources[1].outcome = 'degraded';
+  candidateValue.sources[1].outcomeReason = 'service-timeout';
   candidateValue.sources[1].detections = [];
+  candidateValue.sources[2].outcome = 'abstained';
+  candidateValue.sources[2].outcomeReason = 'insufficient-confidence-margin';
+  candidateValue.sources[2].detections = [];
   const candidate = validateInstrumentCandidateObservations(
     candidateValue,
     plan,
@@ -328,8 +400,32 @@ test('parent labels remain separate and uncertainty, false alerts, and outages s
     'the brass parent label must not be counted as another specific brass instrument'
   );
   assert.equal(metrics.byInstrument.tuba.falsePositive, 1);
-  assert.ok(metrics.diagnosticAllLabels.candidateUncertain >= 1);
+  assert.ok(metrics.diagnosticAllLabels.candidateUncertainDecisions >= 1);
+  assert.ok(metrics.diagnosticAllLabels.sourceAbstentionDecisions > 0);
   assert.ok(metrics.diagnosticAllLabels.serviceFailureDecisions > 0);
+  assert.equal(
+    metrics.diagnosticAllLabels.classifiedDecisions,
+    metrics.diagnosticAllLabels.truePositive +
+      metrics.diagnosticAllLabels.falsePositive +
+      metrics.diagnosticAllLabels.falseNegative +
+      metrics.diagnosticAllLabels.trueNegative
+  );
+  assert.equal(
+    metrics.diagnosticAllLabels.evaluated,
+    metrics.diagnosticAllLabels.classifiedDecisions +
+      metrics.diagnosticAllLabels.candidateUncertainDecisions +
+      metrics.diagnosticAllLabels.sourceAbstentionDecisions +
+      metrics.diagnosticAllLabels.serviceFailureDecisions
+  );
+  assert.equal(metrics.byGenre['orchestral-chamber']?.classifiedDecisions, 0);
+  assert.equal(metrics.byGenre['orchestral-chamber']?.recallBasisPoints, null);
+  assert.equal(metrics.byGenre['orchestral-chamber']?.serviceFailureRateBasisPoints, 10_000);
+  assert.equal(metrics.byGenre.rock?.classifiedDecisions, 0);
+  assert.equal(metrics.byGenre.rock?.abstentionRateBasisPoints, 10_000);
+  assert.equal(metrics.byGenre.rock?.serviceFailureRateBasisPoints, 0);
+  assert.deepEqual(metrics.coverage.abstainedSources, [
+    'authorized-classroom-mixes-v1/shoegaze',
+  ]);
   assert.deepEqual(metrics.coverage.degradedSources, [
     'authorized-classroom-mixes-v1/orchestral',
   ]);
