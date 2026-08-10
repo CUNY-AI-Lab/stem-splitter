@@ -415,6 +415,32 @@ authoritative-Auto, and 1 isolation-shadow browser journey. No teacher verdict,
 flag, service, Railway state, provider call, deployment, push, or pull request
 changed.
 
+Exact VCSL-control commit `e94df1d` adds two small, separately partitioned
+source controls for the harmonica and pitched-percussion gaps. The manifest
+pins [VCSL](https://github.com/sgossner/VCSL) at immutable commit
+`c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e`, its non-truncated 4,550-entry
+tree observation, the full repository `LICENSE` and `README.md` bytes, their
+Git blob identities and SHA-256 values, and repository-level CC0 1.0 evidence.
+It selects a normal C4 sustain from a Hohner Special 20 harmonica and a C4 `ff`
+xylophone strike with a medium mallet. Source-authored instrument directories
+and filenames support only the `Harmonica` and `Xylophone` source labels;
+`harmonica` and `mallet-percussion` remain proposed classroom-vocabulary
+mappings awaiting teacher listening. The hydrator verifies both rights objects
+before audio, follows no redirects, enforces exact headers and byte ceilings,
+binds both SHA-256 and Git blob SHA-1, validates each pinned 24-bit WAV chunk
+surface, downloads and validates the complete missing tranche before storing
+anything, writes owner-only mode-`0600` files, and supports networkless
+readback. Nine focused tests cover rights, commit, tree, mapping, claim, URL,
+header, body, Git identity, PCM, partial-install, permission, symlink, manifest,
+and CLI drift. The two real 678,192- and 897,126-byte controls hydrated and
+passed offline verification. Exact Bun 1.3.14 passes all four typechecks; 282
+worker, 24 analyzer, 42 Railway host/config/migration/terminal, 5 separator, 30
+discovery, and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto, and 1
+isolation-shadow browser journey. Traditional-instrument exact-source evidence,
+the VCSL listening workflow, teacher decisions, and evaluation-plan integration
+remain open. No flag, service, Railway state, provider call, deployment, push,
+or pull request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -1039,10 +1065,19 @@ job.
   decide every proposed mapping, including `Contrabass` to `double-bass`, then
   approve a deidentified finalization. Do not infer acceptance from successful
   review completion.
-- [ ] Complete the exact-positive gap with harmonica, pitched percussion, and
-  traditional instruments under separately reviewed licenses and immutable
-  source pins. Keep each new corpus partition separate until teacher listening
-  and a new evaluation-plan version explicitly integrate it.
+- [x] Add immutable, separately licensed VCSL source controls for harmonica and
+  pitched percussion. Repository-authored source labels, complete CC0 evidence,
+  Git blob identities, SHA-256 pins, and exact WAV contracts are now checked;
+  proposed vocabulary mappings remain unreviewed and outside the current plan.
+- [ ] Add an owner-only VCSL listening worksheet and deidentified finalizer that
+  keeps the heard source label, typicality judgment, and proposed vocabulary
+  mapping separate. Do not infer `Xylophone` to `mallet-percussion` approval.
+- [ ] Have an authorized teacher listen to both VCSL controls and decide every
+  source-label, typicality, and vocabulary-mapping judgment.
+- [ ] Complete the remaining exact-positive gap with at least one traditional
+  instrument under separately reviewed rights and immutable source pins. Keep
+  every new corpus partition separate until teacher listening and a new
+  evaluation-plan version explicitly integrate it.
 - [ ] Choose exactly one replacement discovery classifier after the CLAP,
   YAMNet, and any license-cleared Essentia evidence is comparable. Give every
   prompt policy, checkpoint, label map, or preprocessing change a new

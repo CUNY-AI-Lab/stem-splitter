@@ -5,6 +5,44 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## vcsl-c1ea7bc-exact-controls-v1 — exact harmonica and pitched-percussion controls — 2026-08-10
+
+- Scope: exact implementation commit
+  `e94df1ddcfdab4e1eb97b18a6edcf5e40011c282` adds a VCSL manifest, strict
+  individual-object hydrator, and nine-test adversarial suite. It does not add
+  the controls to the current evaluation plan, complete human listening, create
+  candidate negatives or metrics, select a classifier, alter Auto or the 2/4/6
+  core contracts, authorize isolation, provision a service, or change a flag.
+- Rights and identity: the manifest freezes repository commit
+  `c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e`, its observed non-truncated
+  4,550-entry tree, and the exact `LICENSE` and `README.md` objects. Full byte
+  counts, Git blob SHA-1 values, and SHA-256 values bind repository-level CC0
+  1.0 evidence and the source's human-readable instrument naming policy.
+- Selection and claim boundary: one normal C4 sustain from a Hohner Special 20
+  harmonica and one C4 `ff` xylophone strike with a medium mallet fill the
+  harmonica and pitched-percussion source gaps. Exact truth stops at the
+  repository-authored `Harmonica` and `Xylophone` labels. The corresponding
+  `harmonica` and broader `mallet-percussion` vocabulary mappings remain
+  candidates awaiting teacher listening; typicality is also unreviewed.
+- Hydration boundary: rights bytes are fetched and validated before audio. Every
+  request refuses redirects and encoded bodies, enforces the exact content type,
+  disposition, length, timeout, and one-MiB ceiling, and binds both content and
+  Git-object digests. Both missing WAVs must download and pass their exact
+  24-bit PCM/chunk surfaces before either is installed. Owner-only hard-link
+  publication prevents overwrite; offline verification rejects relaxed modes,
+  symlinks, altered bytes, and structural drift.
+- Evidence and rollout: the real 678,192-byte harmonica and 897,126-byte
+  xylophone files hydrated at mode `0600` and passed networkless readback. Exact
+  Bun 1.3.14 passes four TypeScript checks; 282 worker, 24 analyzer, 42 Railway
+  host/config/migration/terminal, 5 separator, 30 discovery, and 9 YAMNet tests;
+  plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
+  journey. No Railway mutation, provider call, deployment, push, or pull request
+  occurred.
+- Remaining: build and complete a governed VCSL teacher review without inferring
+  source-label, typicality, or `Xylophone` to `mallet-percussion` acceptance.
+  Traditional-instrument exact-source evidence and a new evaluation-plan version
+  remain separate prerequisites; all classifier and rollout gates stay open.
+
 ## tinysol-exact-control-review-v1 — governed label and mapping review — 2026-08-10
 
 - Scope: exact implementation commit
