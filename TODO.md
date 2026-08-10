@@ -204,6 +204,24 @@ horizontal overflow, and no console warnings/errors. All processing flags stay
 off; no Railway mutation, provider call, push, pull request, or deployment
 occurred.
 
+Exact genre-diverse evaluation commit `6527828` freezes the first executable
+bridge from advisory detections to comparable evidence. Its content-hashed plan
+binds all 11 authorized real mixes and eight ChoraleBricks controls, seven
+real-mix genre families, all 10 vocabulary families, and the three distinct
+review kinds. An owner-only worksheet requires a reviewer to listen to every
+complete source and classify all 51 labels; its finalizer strips reviewer
+identity and binds the exact private bytes before a public artifact can be
+evaluated. Candidate reports require exact classifier/model/vocabulary/
+preprocessing/threshold pins and cannot hide degraded inference. Metrics stay
+separate by genre, specific-instrument family, review kind, instrument, and
+corpus kind; the overlapping all-label aggregate is explicitly ineligible for
+promotion. The exact commit passes the complete Bun 1.3.14 Phase 0 gate: 220
+worker, 24 analyzer, 31 Railway host/migration, 5 separator, 30 discovery, 9
+YAMNet, and 19/6/1 browser tests. No listening review or candidate report exists
+yet, no quality floor was selected, and all processing flags remain off.
+See the
+[genre-diverse evaluation contract](docs/evaluation/2026-08-10-genre-diverse-instrument-evaluation.md).
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -895,7 +913,10 @@ job.
 - [ ] Have an authorized teacher/domain reviewer verify every candidate positive
   and hard-negative annotation before using it to calculate precision/recall.
   Corpus metadata and rationale are testable provenance, not ground truth by
-  themselves.
+  themselves. The fixed listening protocol now has a private mode-`0600`,
+  no-overwrite worksheet and a strict deidentifying finalizer. This remains
+  unchecked because no authorized reviewer has completed all 19 sources × 51
+  labels and no public review artifact has been accepted.
 - [x] Add teacher feedback controls for confirmed, absent, and missed
   instruments without treating those reports as training labels until they are
   reviewed and de-identified. The append-only schema records exact analysis,
@@ -1102,15 +1123,31 @@ canary. Student access remains off.
 
 ## Phase 4 — iterative optimization beyond rock-band mixes
 
+- [x] Freeze the first genre-diverse evaluation and review contract before
+  adding more datasets or candidates. `tests/corpus/instrument-evaluation-plan.json`
+  binds 11 authorized real mixes and eight isolated controls to their exact
+  manifests and SHA-256 identities, requires seven real-mix genres, all 10
+  vocabulary families, and all three ontology kinds, and keeps real-mix versus
+  isolated-control reporting separate. The validator refuses source, ontology,
+  policy, vocabulary, and ordering drift; the evaluator exposes uncertainty,
+  false alerts, degraded sources, and coverage gaps and forbids promotion from
+  an overlapping all-label aggregate. This establishes the evidence shape but
+  does not supply human ground truth, candidate scores, Slakh/MedleyDB data, a
+  quality floor, or a promotion decision.
 - [ ] Establish an evaluation loop using authorized classroom tracks plus
   instrument-rich subsets of Slakh2100 and MedleyDB. Keep synthetic and real
-  results separate in reports.
+  results separate in reports. The current 11-real/8-isolated contract is the
+  authorized foundation; rights-reviewed, exact-hash Slakh2100 and MedleyDB
+  subsets remain to be selected and added as distinct partitions.
 - [ ] Measure detection precision/recall, abstention, SI-SDR/SDR improvement,
   target leakage, residual/reconstruction error where applicable, latency,
   provider errors, cache hit rate, cost, and blinded teacher listening ratings.
 - [ ] Review results by genre and instrument family so abundant drums, bass,
   guitar, and vocals cannot hide failures on reeds, bowed strings, brass,
-  keyboards, electronic textures, or traditional instruments.
+  keyboards, electronic textures, or traditional instruments. The v1
+  instrument evaluator now enforces the detection-side breakdown, but it has no
+  accepted human review or candidate artifact yet and does not cover separator,
+  provider, cost, or blinded-listening metrics.
 - [x] Enforce one-dimension candidates—role classifier, instrument classifier,
   vocabulary, thresholds, windowing, prompt policy, separator version, schema,
   or default routing—and record exact base/candidate commits and compiled pins.

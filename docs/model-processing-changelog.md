@@ -5,6 +5,41 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-evaluation-v1 — genre-diverse evidence gate — 2026-08-10
+
+- Scope: exact implementation commit
+  `65278281ecc8420aaf2ab73b4c3dbd9141696ddc` adds a strict evaluation plan,
+  private-to-public listening workflow, candidate schema, and metrics engine.
+  It adds no classifier selection, threshold, service, provider call, stem,
+  isolation request, flag change, or live rollout.
+- Corpus and coverage: the plan binds all 11 authorized real mixes and eight
+  ChoraleBricks isolated controls to exact manifest/source hashes. It requires
+  seven real-mix genres, all 10 vocabulary families, and the three distinct
+  review kinds while keeping real, isolated, and future synthetic partitions
+  separate. Slakh2100 and MedleyDB are not yet included.
+- Review and privacy: an owner-only, no-overwrite worksheet requires full-source
+  listening and all 51 verdicts for every source. The finalizer refuses drift,
+  partial review, unsafe input permissions, symbolic links, and mismatched
+  serialized bytes, then removes reviewer identity and binds the exact private
+  worksheet by SHA-256. No completed listening artifact exists yet.
+- Candidate and metrics: candidate input requires exact classifier, model,
+  vocabulary, preprocessing, threshold, source, and ordering pins. Reports
+  expose precision, recall, abstention, and service failure by review kind,
+  genre, specific-instrument family, instrument, and corpus kind. The
+  overlapping all-label aggregate is diagnostic and explicitly forbidden for
+  promotion. Degraded inference and review uncertainty stay visible.
+- Evidence: the exact commit passes four TypeScript checks; 220 worker, 24
+  analyzer, 31 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet
+  tests; plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow
+  browser journey under Bun 1.3.14. Focused review/evaluator coverage passes
+  10/10 and exercises completeness, identity stripping, byte binding, file
+  safety, pin drift, ordering, outage, uncertainty, and overlapping labels.
+- Rollout: off and ineligible. Exhaustive deidentified listening, one complete
+  candidate artifact, a selected quality floor, a reviewed candidate decision,
+  native-amd64 evidence for the chosen image, and Railway shadow evidence
+  remain open. No Railway mutation, push, pull request, provider call, or
+  deployment occurred.
+
 ## instrument-discovery-feedback-v1 — governed candidate evidence — 2026-08-10
 
 - Scope: exact implementation commit
