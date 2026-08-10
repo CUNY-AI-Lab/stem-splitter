@@ -167,6 +167,20 @@ Run the value-free executable gate against the explicit canonical IDs before
 provisioning:
 
 ```sh
+bun run check:audio-pipeline -- --require-action provision-audio-analysis
+```
+
+That repository-local action gate must exit zero before any Railway mutation.
+It requires the exact committed contracts and corpus evidence plus native-amd64
+role-v4 image, manual-listening, and frozen Railway baseline evidence. It does
+not require the analyzer's resource or rollback acceptance, because those can
+exist only after the private service is provisioned. In the current `off`
+manifest it intentionally fails on those three still-missing preconditions.
+
+Then confirm that the live project still satisfies the value-free
+pre-provision topology gate:
+
+```sh
 RAILWAY_CALLER=skill:use-railway@1.3.7 \
 RAILWAY_AGENT_SESSION=stem-splitter-audio-analysis-preflight \
 node scripts/check-railway-audio-analysis.mjs \

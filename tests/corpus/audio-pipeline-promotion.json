@@ -1,5 +1,5 @@
 {
-  "$schema": "stem-splitter.audio-pipeline-promotion.v1",
+  "$schema": "stem-splitter.audio-pipeline-promotion.v2",
   "releaseId": "v3.2-autosplit-role-v4",
   "baseCommit": "86cd50baf859214e63fb177e8c2bb8f88c612aa1",
   "candidateCommit": "89019023c1fb8da82bf6acfbf886a31a4b30d86b",
@@ -130,6 +130,7 @@
     "browserParity": true,
     "nativeAmd64Image": false,
     "manualListening": false,
+    "railwayBaseline": false,
     "railwayResourceAcceptance": false,
     "railwayShadow": false,
     "teacherBeta": false,
@@ -148,6 +149,7 @@
     "native-amd64-image-missing",
     "manual-listening-missing",
     "railway-resource-acceptance-missing",
+    "railway-baseline-missing",
     "railway-rollback-missing"
   ]
 }

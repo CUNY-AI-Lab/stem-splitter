@@ -9,6 +9,7 @@ import {
   AUDIO_PIPELINE_PROMOTION_MANIFEST_PATH,
   loadAudioPipelinePromotionManifest,
   promotionBlockers,
+  provisionAudioAnalysisBlockers,
   validateAudioPipelinePromotionManifest,
 } from '../scripts/lib/audio-pipeline-promotion.mts';
 import { AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION } from '../src/analysis/source-scope.ts';
@@ -58,9 +59,18 @@ test('the v3.2 manifest binds real commits, executable core contracts, and order
     [...manifest.blockers].sort(),
     promotionBlockers(manifest, 'shadow')
   );
+  const workflow = readFileSync(resolve(REPOSITORY_ROOT, '.github/workflows/ci.yml'), 'utf8');
+  assert.match(workflow, /fetch-depth:\s*0/);
 });
 
 test('a release may change exactly one declared axis and schema changes must be additive', () => {
+  const staleManifestSchema = cloneManifest();
+  staleManifestSchema.$schema = 'stem-splitter.audio-pipeline-promotion.v1';
+  assert.throws(
+    () => validateAudioPipelinePromotionManifest(staleManifestSchema),
+    /promotion schema version drifted/
+  );
+
   const twoAxes = cloneManifest();
   twoAxes.change.instrumentClassifier = true;
   assert.throws(
@@ -251,6 +261,7 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
     'audio-analysis-service-absent',
     'manual-listening-missing',
     'native-amd64-image-missing',
+    'railway-baseline-missing',
     'railway-resource-acceptance-missing',
     'railway-rollback-missing',
   ]);
@@ -260,6 +271,7 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
   shadowReady.components[0].provisioned = true;
   shadowReady.evidence.nativeAmd64Image = true;
   shadowReady.evidence.manualListening = true;
+  shadowReady.evidence.railwayBaseline = true;
   shadowReady.evidence.railwayResourceAcceptance = true;
   shadowReady.rollback.railwayRollbackTested = true;
   assert.deepEqual(promotionBlockers(shadowReady, 'shadow'), []);
@@ -285,6 +297,26 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
   ]);
 });
 
+test('Railway analyzer provisioning has a separate pre-mutation evidence gate', () => {
+  const current = loadAudioPipelinePromotionManifest(REPOSITORY_ROOT);
+  assert.deepEqual(provisionAudioAnalysisBlockers(current), [
+    'manual-listening-missing',
+    'native-amd64-image-missing',
+    'railway-baseline-missing',
+  ]);
+
+  const ready = structuredClone(current);
+  ready.evidence.nativeAmd64Image = true;
+  ready.evidence.manualListening = true;
+  ready.evidence.railwayBaseline = true;
+  assert.deepEqual(provisionAudioAnalysisBlockers(ready), []);
+
+  ready.components[0].provisioned = true;
+  assert.deepEqual(provisionAudioAnalysisBlockers(ready), [
+    'audio-analysis-already-provisioned',
+  ]);
+});
+
 test('the CLI reports blockers and fails only when a blocked stage is required', () => {
   const command = [
     '--experimental-strip-types',
@@ -305,4 +337,18 @@ test('the CLI reports blockers and fails only when a blocked stage is required',
   const summary = JSON.parse(required.stdout);
   assert.equal(summary.requestedStage, 'shadow');
   assert.deepEqual(summary.blockers, promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'shadow'));
+
+  const action = spawnSync(
+    process.execPath,
+    [...command, '--require-action', 'provision-audio-analysis'],
+    { cwd: REPOSITORY_ROOT, encoding: 'utf8' }
+  );
+  assert.equal(action.status, 1, action.stderr);
+  const actionSummary = JSON.parse(action.stdout);
+  assert.equal(actionSummary.requestedStage, null);
+  assert.equal(actionSummary.requestedAction, 'provision-audio-analysis');
+  assert.deepEqual(
+    actionSummary.blockers,
+    provisionAudioAnalysisBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT))
+  );
 });

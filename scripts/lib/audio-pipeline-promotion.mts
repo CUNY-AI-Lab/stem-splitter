@@ -8,7 +8,7 @@ import { getSeparationOptions } from '../../src/separation/options.ts';
 import { SAM_AUDIO_REPLICATE_VERSION } from './query-isolation-bakeoff.mts';
 
 export const AUDIO_PIPELINE_PROMOTION_SCHEMA =
-  'stem-splitter.audio-pipeline-promotion.v1' as const;
+  'stem-splitter.audio-pipeline-promotion.v2' as const;
 export const AUDIO_PIPELINE_PROMOTION_MANIFEST_PATH =
   'tests/corpus/audio-pipeline-promotion.json' as const;
 
@@ -36,6 +36,8 @@ export const AUDIO_PIPELINE_CHANGE_AXES = [
   'schema',
   'default-routing',
 ] as const;
+
+export const AUDIO_PIPELINE_ACTIONS = ['provision-audio-analysis'] as const;
 
 export const AUDIO_PIPELINE_COMPONENT_ORDER = [
   { id: 'audio-analysis', order: 1, dependsOn: [] },
@@ -110,6 +112,7 @@ export interface AudioPipelinePromotionManifest {
     browserParity: boolean;
     nativeAmd64Image: boolean;
     manualListening: boolean;
+    railwayBaseline: boolean;
     railwayResourceAcceptance: boolean;
     railwayShadow: boolean;
     teacherBeta: boolean;
@@ -383,6 +386,7 @@ function parseEvidence(value: unknown): AudioPipelinePromotionManifest['evidence
     'browserParity',
     'nativeAmd64Image',
     'manualListening',
+    'railwayBaseline',
     'railwayResourceAcceptance',
     'railwayShadow',
     'teacherBeta',
@@ -549,6 +553,7 @@ export function promotionBlockers(
     if (!manifest.evidence.browserParity) blockers.add('browser-parity-missing');
     if (!manifest.evidence.nativeAmd64Image) blockers.add('native-amd64-image-missing');
     if (!manifest.evidence.manualListening) blockers.add('manual-listening-missing');
+    if (!manifest.evidence.railwayBaseline) blockers.add('railway-baseline-missing');
     if (!manifest.evidence.railwayResourceAcceptance) {
       blockers.add('railway-resource-acceptance-missing');
     }
@@ -560,6 +565,22 @@ export function promotionBlockers(
   }
   if (requestedIndex >= 3 && !manifest.evidence.teacherBeta) blockers.add('teacher-beta-missing');
   if (requestedIndex >= 4 && !manifest.evidence.studentCanary) blockers.add('student-canary-missing');
+  return [...blockers].sort();
+}
+
+export function provisionAudioAnalysisBlockers(
+  manifest: AudioPipelinePromotionManifest
+): string[] {
+  const blockers = new Set<string>();
+  if (manifest.rolloutStage !== 'off') blockers.add('rollout-must-remain-off');
+  if (manifest.components[0].provisioned) blockers.add('audio-analysis-already-provisioned');
+  if (!manifest.evidence.cleanCommitPhase0) blockers.add('clean-commit-phase0-missing');
+  if (!manifest.evidence.coreContractRegression) blockers.add('core-contract-regression-missing');
+  if (!manifest.evidence.genreCorpus) blockers.add('genre-corpus-missing');
+  if (!manifest.evidence.browserParity) blockers.add('browser-parity-missing');
+  if (!manifest.evidence.nativeAmd64Image) blockers.add('native-amd64-image-missing');
+  if (!manifest.evidence.manualListening) blockers.add('manual-listening-missing');
+  if (!manifest.evidence.railwayBaseline) blockers.add('railway-baseline-missing');
   return [...blockers].sort();
 }
 
