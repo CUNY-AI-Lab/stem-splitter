@@ -177,7 +177,7 @@ while true; do
     exit 1
   fi
   if docker exec "$analysis_smoke_container" node -e \
-    "Promise.all([fetch('http://fixture:9090/healthz'),fetch('http://127.0.0.1:8080/readyz')]).then(async responses=>{const [fixture,ready]=await Promise.all(responses.map(response=>response.json()));if(!responses.every(response=>response.ok)||fixture.ok!==true||ready.ready!==true||ready.ffmpegVersion!=='8.0.3'||ready.classifierVersion!=='autosplit-role-v3')process.exit(1)}).catch(()=>process.exit(1))"; then
+    "Promise.all([fetch('http://fixture:9090/healthz'),fetch('http://127.0.0.1:8080/readyz')]).then(async responses=>{const [fixture,ready]=await Promise.all(responses.map(response=>response.json()));if(!responses.every(response=>response.ok)||fixture.ok!==true||ready.ready!==true||ready.ffmpegVersion!=='8.0.3'||ready.classifierVersion!=='autosplit-role-v3'||ready.sourceScopeVersion!=='analysis-source-scope-v2')process.exit(1)}).catch(()=>process.exit(1))"; then
     break
   fi
   if (( $(date +%s) - analysis_smoke_started >= analysis_smoke_timeout )); then
@@ -219,6 +219,11 @@ function sourceUrl(name) {
   return `${fixtureBase}/api/local-sources/uploads/${name}?expires=${expires}&signature=${'a'.repeat(43)}`;
 }
 
+function authoritativeSourceUrl() {
+  const expires = Math.floor(Date.now() / 1000) + 600;
+  return `${fixtureBase}/api/local-sources/auto-inputs/v1/smoke_auto_upload?expires=${expires}&signature=${'b'.repeat(43)}`;
+}
+
 function payload(name) {
   return {
     schemaVersion: '1',
@@ -238,6 +243,21 @@ async function analyze(name) {
       'content-type': 'application/json',
     },
     body: JSON.stringify(payload(name)),
+  });
+}
+
+async function analyzeAuthoritativeSnapshot(sourceType = 'upload') {
+  return fetch(`${serviceBase}/v1/analyze`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      ...payload('valid.wav'),
+      sourceUrl: authoritativeSourceUrl(),
+      sourceType,
+    }),
   });
 }
 
@@ -283,6 +303,7 @@ const ready = await body(readyResponse);
 assert(readyResponse.status === 200 && ready.ready === true, 'service is not ready');
 assert(ready.ffmpegVersion === '8.0.3', 'FFmpeg pin drifted');
 assert(ready.classifierVersion === 'autosplit-role-v3', 'classifier pin drifted');
+assert(ready.sourceScopeVersion === 'analysis-source-scope-v2', 'source-scope pin drifted');
 assert(ready.instrumentDiscovery === 'unconfigured', 'discovery must remain unconfigured');
 
 const unauthorized = await fetch(`${serviceBase}/v1/analyze`, { method: 'POST' });
@@ -310,6 +331,22 @@ assert(valid.timing?.analyzedSeconds > 0 && valid.timing.analyzedSeconds <= 45, 
 assert(valid.source?.schemaVersion === '1', 'analysis source identity schema drifted');
 assert(/^[0-9a-f]{64}$/.test(valid.source?.sha256), 'analysis source hash is invalid');
 assert(Number.isSafeInteger(valid.source?.bytes) && valid.source.bytes > 0, 'analysis source bytes are invalid');
+await assertClean();
+
+const authoritativeResponse = await analyzeAuthoritativeSnapshot();
+const authoritative = await body(authoritativeResponse);
+assert(authoritativeResponse.status === 200, `authoritative snapshot status ${authoritativeResponse.status}`);
+assert(
+  authoritative.source?.sha256 === valid.source.sha256 &&
+    authoritative.source?.bytes === valid.source.bytes,
+  'authoritative snapshot did not analyze the same stored bytes'
+);
+await assertClean();
+
+const mismatchedScopeResponse = await analyzeAuthoritativeSnapshot('archive');
+const mismatchedScope = await body(mismatchedScopeResponse);
+assert(mismatchedScopeResponse.status === 400, `source-scope mismatch status ${mismatchedScopeResponse.status}`);
+assert(mismatchedScope.error === 'source_type_scope_mismatch', 'source-scope mismatch was not rejected');
 await assertClean();
 
 const fingerprintResponse = await fingerprint('valid.wav');
@@ -363,7 +400,9 @@ console.log(
     status: 'passed',
     ffmpegVersion: ready.ffmpegVersion,
     classifierVersion: ready.classifierVersion,
+    sourceScopeVersion: ready.sourceScopeVersion,
     sourceFingerprint: 'verified',
+    authoritativeSnapshot: 'verified',
     maximumAnalyzedSeconds: maximum.timing.analyzedSeconds,
     malformed: 'rejected',
     declaredOversize: 'rejected',

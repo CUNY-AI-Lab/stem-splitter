@@ -47,7 +47,12 @@ called only when the app's separately compiled false-default flag requests it.
 Its success or failure cannot change the role classifier's core decision.
 
 `GET /healthz` proves the process is alive. `GET /readyz` returns 200 only when
-configuration, the exact FFmpeg/ffprobe pin, and the role classifier are usable.
+configuration, the exact FFmpeg/ffprobe pin, and the role classifier are usable;
+it also reports the compiled `analysis-source-scope-v2` contract. That scope
+accepts only the app's canonical three-segment `uploads/<id>/<file>` keys and
+immutable `auto-inputs/v1/<job>` snapshots. Auto snapshots are valid only for
+`sourceType: "upload"`. Stems, isolation inputs/outputs, arbitrary app paths,
+extra path segments, and noncanonical encodings fail before any fetch.
 `POST /v1/analyze` and `POST /v1/fingerprint` require the bearer token. Both
 stream the same allowlisted stored bytes through the same byte, time,
 concurrency, and cleanup boundary. The fingerprint route skips decode and
@@ -78,8 +83,9 @@ npm run smoke:audio-analysis:image -- stem-splitter-audio-analysis:local
 
 The smoke uses an internal-only fixture network and gives the analyzer no bind
 mounts. It verifies the image/runtime allowlist and limits, readiness/auth,
-source-fingerprint parity, short and maximum-duration decoding, malformed media, declared and streamed
-size enforcement, source-fetch timeout, concurrency rejection, temporary-file
+source-fingerprint parity, authoritative-snapshot scope, short and
+maximum-duration decoding, malformed media, declared and streamed size
+enforcement, source-fetch timeout, concurrency rejection, temporary-file
 cleanup, and log redaction. A passing local run is not native amd64 CI or
 Railway resource evidence.
 

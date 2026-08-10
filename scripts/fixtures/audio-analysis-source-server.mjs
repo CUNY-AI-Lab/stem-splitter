@@ -55,12 +55,15 @@ const server = createServer((request, response) => {
     response.setHeader('content-type', 'application/json');
     return response.end('{"ok":true}');
   }
-  if (!url.pathname.startsWith('/api/local-sources/uploads/')) {
+  let fixture;
+  if (url.pathname.startsWith('/api/local-sources/uploads/')) {
+    fixture = url.pathname.slice('/api/local-sources/uploads/'.length);
+  } else if (url.pathname === '/api/local-sources/auto-inputs/v1/smoke_auto_upload') {
+    fixture = 'valid.wav';
+  } else {
     response.statusCode = 404;
     return response.end();
   }
-
-  const fixture = url.pathname.slice('/api/local-sources/uploads/'.length);
   if (fixture === 'valid.wav') {
     const size = statSync(SOURCE_PATH).size;
     audioHeaders(response, size);

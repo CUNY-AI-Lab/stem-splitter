@@ -1,5 +1,6 @@
 import { AwsClient } from 'aws4fetch';
 import type { Env } from './env';
+import { audioAnalysisSourceScopeForKey } from './analysis/source-scope.ts';
 
 // Presigned URLs let the browser upload straight to R2 (and let the
 // separation backend download the source) without the audio bytes ever
@@ -118,11 +119,8 @@ export async function verifyLocalSource(
 
 const ISOLATION_SOURCE_KEY_PATTERN =
   /^isolation-inputs\/v1\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/[0-9a-f]{64}$/;
-const AUTO_SOURCE_KEY_PATTERN =
-  /^auto-inputs\/v1\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-
 export function isAuthoritativeAutoSourceKey(key: string): boolean {
-  return AUTO_SOURCE_KEY_PATTERN.test(key);
+  return audioAnalysisSourceScopeForKey(key) === 'authoritative_auto_snapshot';
 }
 
 /**
@@ -212,6 +210,9 @@ export async function presignDownload(env: Env, key: string): Promise<string> {
 
 /** Short-lived GET for the private analyzer; separate from the separator URL. */
 export async function presignAnalysisDownload(env: Env, key: string): Promise<string> {
+  if (!audioAnalysisSourceScopeForKey(key)) {
+    throw new Error('Invalid analysis source key');
+  }
   if (isLocalHosting(env)) {
     const expiresAt = Math.floor(Date.now() / 1000) + ANALYSIS_URL_TTL_SECONDS;
     const url = localObjectUrl(env, '/api/local-sources/', key);

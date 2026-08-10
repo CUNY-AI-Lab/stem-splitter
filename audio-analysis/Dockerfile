@@ -70,7 +70,7 @@ COPY audio-analysis/app.ts audio-analysis/classifier.ts audio-analysis/config.ts
 COPY audio-analysis/decoder.ts audio-analysis/discovery.ts audio-analysis/process.ts audio-analysis/request.ts ./audio-analysis/
 COPY audio-analysis/server.ts audio-analysis/source.ts ./audio-analysis/
 COPY public/autosplit.js ./public/autosplit.js
-COPY src/analysis/types.ts src/analysis/instrument-vocabulary.ts ./src/analysis/
+COPY src/analysis/types.ts src/analysis/instrument-vocabulary.ts src/analysis/source-scope.ts ./src/analysis/
 COPY instrument-discovery/vocabulary.json ./instrument-discovery/vocabulary.json
 RUN bun build audio-analysis/server.ts --target=node --format=esm --outfile=dist/server.mjs
 

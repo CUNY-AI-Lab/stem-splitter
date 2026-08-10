@@ -5,6 +5,29 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## analysis-source-scope-v2 — shared authoritative source allowlist — 2026-08-10
+
+- Miss: authoritative upload Auto signed the app-owned
+  `auto-inputs/v1/<job>` snapshot, but the real analyzer accepted only
+  `uploads/...`. Mocked browser E2E exercised the decision contract without
+  running the service's URL policy, so a deployed request would have degraded
+  to the frozen four-track fallback.
+- Contract: app and analyzer now compile one source-scope module. It accepts
+  only canonical `uploads/<id>/<file>` keys and exact
+  `auto-inputs/v1/<job>` snapshots; Auto snapshots require upload source type.
+  The app refuses to mint analyzer URLs for stems, query-isolation
+  inputs/outputs, malformed encodings, over-deep keys, or arbitrary internal
+  objects.
+- Version and rollback: `/readyz` reports `analysis-source-scope-v2`; the
+  constrained image gate requires that exact value and an actual analysis over
+  the authoritative-snapshot path. Older analyzers remain safely fail-lazy but
+  cannot pass the new release gate. `SERVER_AUTO_ENABLED=false` remains the
+  immediate rollback, without a schema change.
+- Evidence: all three typechecks plus the focused app/analyzer source tests pass
+  locally. Native-amd64 image, Railway resource/restart, real-source shadow,
+  and listening acceptance remain open. No service, variable, provider call,
+  migration, or deployment changed.
+
 ## authoritative-auto-upload-snapshot-v1 — immutable upload handoff — 2026-08-10
 
 - Scope: authoritative upload Auto now freezes the current stored upload into

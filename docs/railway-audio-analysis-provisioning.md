@@ -13,7 +13,7 @@ Do not provision the service until all of these are true:
   authoritative-mock suites pass;
 - the current digest-pinned image builds on a native amd64 CI runner, passes its
   runtime decoder allowlist, and reports FFmpeg `8.0.3` plus
-  `autosplit-role-v3` from `/readyz`;
+  `autosplit-role-v3` and `analysis-source-scope-v2` from `/readyz`;
 - a rollback baseline has recorded one authorized four-track job, output
   hashes, latency, and exact Replicate versions;
 - the canonical app service has an exact `REPLICATE_YT_MODEL_VERSION` staged
@@ -187,10 +187,13 @@ provider calls.
    building deployment is not success.
 2. From inside the app service's private network, read `/healthz` and
    `/readyz`. Require readiness to report FFmpeg `8.0.3` and
-   `autosplit-role-v3`.
+   `autosplit-role-v3` plus `analysis-source-scope-v2`.
 3. Confirm an unauthenticated `POST /v1/analyze` returns `401`, while the app's
    configured token succeeds only with an app-issued, ten-minute signed source
-   URL. Confirm a redirect response degrades to the four-track fallback and
+   URL. Exercise both an exact `uploads/<id>/<file>` key and an immutable
+   `auto-inputs/v1/<job>` upload snapshot. Reject an Auto snapshot paired with
+   YouTube or Archive source type, any extra path segment, stems, and isolation
+   paths. Confirm a redirect response degrades to the four-track fallback and
    receives no followed request carrying the bearer token.
 4. Exercise malformed media, declared and streamed size limits, maximum source
    duration, analyzer timeout, and two overlapping requests. Confirm one job

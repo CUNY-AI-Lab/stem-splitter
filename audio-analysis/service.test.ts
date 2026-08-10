@@ -11,6 +11,7 @@ import {
   PINNED_INSTRUMENT_VOCABULARY_SHA256,
   PINNED_INSTRUMENT_VOCABULARY_VERSION,
 } from '../src/analysis/types.ts';
+import { AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION } from '../src/analysis/source-scope.ts';
 import { createAudioAnalysisService, type SafeLogger } from './app.ts';
 import {
   ANALYSIS_SAMPLE_RATE,
@@ -20,11 +21,14 @@ import {
 import { analysisWindowPlan, decodeAnalysisWindows, DecoderError, probeDecoder } from './decoder.ts';
 import { InstrumentDiscoveryError } from './discovery.ts';
 import { fetchSourceToTemp, SourcePolicyError, validateSourceUrl } from './source.ts';
+import type { Env } from '../src/env.ts';
+import { presignAnalysisDownload } from '../src/r2.ts';
 
 const TOKEN = 'analysis-test-token-that-is-at-least-32-characters';
 const SOURCE_SHA256 = '1'.repeat(64);
 const sourceExpiry = Math.floor(Date.now() / 1000) + 10 * 60;
 const SOURCE_URL = `https://app.example/api/local-sources/uploads/test/source.wav?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`;
+const AUTO_SOURCE_URL = `https://app.example/api/local-sources/auto-inputs/v1/auto_job_123?expires=${sourceExpiry}&signature=${'b'.repeat(43)}`;
 const CORE_MODELS = [
   { id: 'vocals_instrumental', stems: ['vocals', 'instrumental'] },
   { id: 'htdemucs_ft', stems: ['vocals', 'drums', 'bass', 'other'] },
@@ -200,7 +204,12 @@ test('liveness is separate from decoder readiness and analysis requires bearer a
 
   const readiness = await service.fetch(new Request('http://analysis.test/readyz'));
   assert.equal(readiness.status, 200);
-  assert.equal((await readiness.json() as { ready: boolean }).ready, true);
+  const readinessBody = await readiness.json() as {
+    ready: boolean;
+    sourceScopeVersion: string;
+  };
+  assert.equal(readinessBody.ready, true);
+  assert.equal(readinessBody.sourceScopeVersion, AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION);
 
   const denied = await service.fetch(analyzeRequest(body(), 'wrong-token'));
   assert.equal(denied.status, 401);
@@ -511,15 +520,19 @@ test('request drift is rejected and ephemeral sources are cleaned after decode f
 test('source policy rejects credentials, unlisted origins, redirects, and oversized bodies', async () => {
   const limits = config({ maxSourceBytes: 4 });
   assert.throws(
-    () => validateSourceUrl('https://user:secret@app.example/source', limits),
+    () => validateSourceUrl('https://user:secret@app.example/source', limits, 'upload'),
     SourcePolicyError
   );
-  assert.throws(() => validateSourceUrl('https://metadata.internal/source', limits), SourcePolicyError);
+  assert.throws(
+    () => validateSourceUrl('https://metadata.internal/source', limits, 'upload'),
+    SourcePolicyError
+  );
   assert.throws(
     () =>
       validateSourceUrl(
         `https://app.example/healthz?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`,
-        limits
+        limits,
+        'upload'
       ),
     (error: unknown) => error instanceof SourcePolicyError && error.code === 'source_url_not_scoped'
   );
@@ -527,16 +540,40 @@ test('source policy rejects credentials, unlisted origins, redirects, and oversi
     () =>
       validateSourceUrl(
         `https://app.example/api/local-sources/uploads/test/source.wav?expires=${sourceExpiry + 3600}&signature=${'a'.repeat(43)}`,
-        limits
+        limits,
+        'upload'
       ),
     (error: unknown) => error instanceof SourcePolicyError && error.code === 'source_url_not_scoped'
   );
-  assert.equal(validateSourceUrl(SOURCE_URL, limits).origin, 'https://app.example');
+  assert.equal(validateSourceUrl(SOURCE_URL, limits, 'upload').origin, 'https://app.example');
+  assert.equal(
+    validateSourceUrl(AUTO_SOURCE_URL, limits, 'upload').origin,
+    'https://app.example',
+    'the analyzer must accept the app-owned snapshot used by authoritative upload Auto'
+  );
+  for (const unscoped of [
+    `https://app.example/api/local-sources/auto-inputs/v1/auto_job_123/extra?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`,
+    `https://app.example/api/local-sources/auto-inputs/v2/auto_job_123?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`,
+    `https://app.example/api/local-sources/isolation-inputs/v1/isolation_1/${'1'.repeat(64)}?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`,
+    `https://app.example/api/local-sources/stems/job/vocals.mp3?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`,
+  ]) {
+    assert.throws(
+      () => validateSourceUrl(unscoped, limits, 'upload'),
+      (error: unknown) =>
+        error instanceof SourcePolicyError && error.code === 'source_url_not_scoped'
+    );
+  }
+  assert.throws(
+    () => validateSourceUrl(AUTO_SOURCE_URL, limits, 'archive'),
+    (error: unknown) =>
+      error instanceof SourcePolicyError && error.code === 'source_type_scope_mismatch'
+  );
 
   await assert.rejects(
     fetchSourceToTemp(
       SOURCE_URL,
       limits,
+      'upload',
       undefined,
       async () => new Response(null, { status: 302, headers: { Location: 'https://other.test' } })
     ),
@@ -546,6 +583,7 @@ test('source policy rejects credentials, unlisted origins, redirects, and oversi
     fetchSourceToTemp(
       SOURCE_URL,
       limits,
+      'upload',
       undefined,
       async () =>
         new Response(new Uint8Array(5), {
@@ -560,6 +598,7 @@ test('source policy rejects credentials, unlisted origins, redirects, and oversi
   const source = await fetchSourceToTemp(
     SOURCE_URL,
     limits,
+    'upload',
     undefined,
     async () =>
       new Response(bytes, {
@@ -573,6 +612,27 @@ test('source policy rejects credentials, unlisted origins, redirects, and oversi
   } finally {
     await source.cleanup();
   }
+});
+
+test('the app signer and analyzer share the authoritative snapshot scope', async () => {
+  const env = {
+    LOCAL_HOSTING: 'true',
+    PUBLIC_BASE_URL: 'https://app.example',
+    WEBHOOK_SECRET: 'shared-source-scope-test-secret',
+  } as unknown as Env;
+  const signed = await presignAnalysisDownload(
+    env,
+    'auto-inputs/v1/auto_job_cross_service'
+  );
+  assert.equal(
+    validateSourceUrl(signed, config(), 'upload').pathname,
+    '/api/local-sources/auto-inputs/v1/auto_job_cross_service'
+  );
+  assert.throws(
+    () => validateSourceUrl(signed, config(), 'youtube'),
+    (error: unknown) =>
+      error instanceof SourcePolicyError && error.code === 'source_type_scope_mismatch'
+  );
 });
 
 test('window plan is bounded and the real decoder produces fixed-rate PCM', async () => {
@@ -647,6 +707,7 @@ test('container and build context freeze the runtime without shipping local audi
   assert.match(dockerfile, /COPY --from=ffmpeg-build \/opt\/ffmpeg\/bin\/ffprobe \/opt\/ffmpeg\/bin\/ffprobe/);
   assert.match(dockerfile, /RUN bun build audio-analysis\/server\.ts --target=node --format=esm --outfile=dist\/server\.mjs/);
   assert.match(dockerfile, /audio-analysis\/decoder\.ts audio-analysis\/discovery\.ts/);
+  assert.match(dockerfile, /src\/analysis\/source-scope\.ts/);
   assert.match(dockerfile, /COPY --from=application-build --chown=node:node \/app\/dist\/server\.mjs \.\/dist\/server\.mjs/);
   assert.doesNotMatch(dockerfile, /COPY --from=[^\n]+node_modules/);
   assert.match(dockerfile, /CMD \["node", "--max-old-space-size=256", "dist\/server\.mjs"\]/);

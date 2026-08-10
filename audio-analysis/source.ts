@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AudioAnalysisServiceConfig } from './config.ts';
+import {
+  scopedAudioAnalysisSourceFromLocalPath,
+} from '../src/analysis/source-scope.ts';
+import type { AudioSourceType } from '../src/analysis/types.ts';
 
 const ANALYSIS_URL_TTL_SECONDS = 10 * 60;
 const SOURCE_CLOCK_SKEW_SECONDS = 60;
@@ -23,6 +27,7 @@ export interface TemporarySource {
 export function validateSourceUrl(
   raw: string,
   config: AudioAnalysisServiceConfig,
+  sourceType: AudioSourceType,
   nowSeconds = Math.floor(Date.now() / 1000)
 ): URL {
   let url: URL;
@@ -44,10 +49,11 @@ export function validateSourceUrl(
   // Origin allowlisting alone would let a bearer-token holder make the
   // analyzer fetch arbitrary app endpoints rather than exactly one audio
   // object, which is broader authority than this service needs.
+  const scopedSource = scopedAudioAnalysisSourceFromLocalPath(url.pathname);
   const parameters = [...url.searchParams.keys()].sort();
   const expires = Number(url.searchParams.get('expires'));
   if (
-    !url.pathname.startsWith('/api/local-sources/uploads/') ||
+    !scopedSource ||
     parameters.length !== 2 ||
     parameters[0] !== 'expires' ||
     parameters[1] !== 'signature' ||
@@ -59,16 +65,23 @@ export function validateSourceUrl(
   ) {
     throw new SourcePolicyError('source_url_not_scoped');
   }
+  if (
+    scopedSource.scope === 'authoritative_auto_snapshot' &&
+    sourceType !== 'upload'
+  ) {
+    throw new SourcePolicyError('source_type_scope_mismatch');
+  }
   return url;
 }
 
 export async function fetchSourceToTemp(
   rawUrl: string,
   config: AudioAnalysisServiceConfig,
+  sourceType: AudioSourceType,
   signal?: AbortSignal,
   fetchImpl: typeof fetch = fetch
 ): Promise<TemporarySource> {
-  const url = validateSourceUrl(rawUrl, config);
+  const url = validateSourceUrl(rawUrl, config, sourceType);
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', abort, { once: true });

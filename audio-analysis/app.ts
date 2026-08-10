@@ -6,10 +6,12 @@ import {
   PINNED_INSTRUMENT_VOCABULARY_SHA256,
   PINNED_INSTRUMENT_VOCABULARY_VERSION,
   SOURCE_FINGERPRINT_SCHEMA_VERSION,
+  type AudioSourceType,
   type AudioAnalysisRequestV1,
   type AudioAnalysisResultV1,
   type InstrumentDiscoveryResultV1,
 } from '../src/analysis/types.ts';
+import { AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION } from '../src/analysis/source-scope.ts';
 import type { AudioAnalysisServiceConfig } from './config.ts';
 import { analyzePcm, roleClassifierVersion } from './classifier.ts';
 import {
@@ -45,6 +47,7 @@ export interface AudioAnalysisDependencies {
   fetchSource(
     sourceUrl: string,
     config: AudioAnalysisServiceConfig,
+    sourceType: AudioSourceType,
     signal?: AbortSignal
   ): Promise<TemporarySource>;
   decode(
@@ -156,6 +159,7 @@ export function createAudioAnalysisService(
           ? {
               ffmpegVersion: readiness.decoder.ffmpegVersion,
               classifierVersion: readiness.classifierVersion,
+              sourceScopeVersion: AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION,
               instrumentDiscovery: instrumentDiscoveryState,
             }
           : {}),
@@ -184,7 +188,12 @@ export function createAudioAnalysisService(
     let request: AudioAnalysisRequestV1 | undefined;
     try {
       request = parseAnalysisRequest(await readBoundedJson(c.req.raw));
-      source = await dependencies.fetchSource(request.sourceUrl, config, c.req.raw.signal);
+      source = await dependencies.fetchSource(
+        request.sourceUrl,
+        config,
+        request.sourceType,
+        c.req.raw.signal
+      );
       const decoded = await dependencies.decode(source.path, {
         timeoutMs: config.decoderTimeoutMs,
         maxSourceDurationSeconds: config.maxSourceDurationSeconds,
@@ -324,7 +333,12 @@ export function createAudioAnalysisService(
     try {
       const request = parseFingerprintRequest(await readBoundedJson(c.req.raw));
       sourceType = request.sourceType;
-      source = await dependencies.fetchSource(request.sourceUrl, config, c.req.raw.signal);
+      source = await dependencies.fetchSource(
+        request.sourceUrl,
+        config,
+        request.sourceType,
+        c.req.raw.signal
+      );
       const totalMs = Math.max(0, dependencies.now() - startedAt);
       if (totalMs > 60_000) throw new SourcePolicyError('source_fetch_timeout', 502);
       dependencies.logger.info('fingerprint_complete', {

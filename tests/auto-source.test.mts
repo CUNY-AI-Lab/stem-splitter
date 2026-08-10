@@ -10,8 +10,15 @@ import {
   discardAuthoritativeAutoSource,
   prepareAuthoritativeAutoSource,
 } from '../src/analysis/source.ts';
+import {
+  AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION,
+  scopedAudioAnalysisSourceFromLocalPath,
+} from '../src/analysis/source-scope.ts';
 import type { Env } from '../src/env.ts';
-import { isLocalSourceDownloadKey } from '../src/r2.ts';
+import {
+  isLocalSourceDownloadKey,
+  presignAnalysisDownload,
+} from '../src/r2.ts';
 
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const SOURCE_KEY = 'uploads/authoritative-auto/source.wav';
@@ -62,6 +69,13 @@ test('authoritative Auto snapshots one upload for both analysis and separation',
     assert.equal(prepared.snapshotKey.startsWith('uploads/'), false);
     assert.deepEqual(await storedBytes(bucket, prepared.snapshotKey), ORIGINAL);
 
+    const analysisUrl = new URL(await presignAnalysisDownload(env, prepared.snapshotKey));
+    assert.deepEqual(scopedAudioAnalysisSourceFromLocalPath(analysisUrl.pathname), {
+      key: prepared.snapshotKey,
+      scope: 'authoritative_auto_snapshot',
+    });
+    assert.equal(AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION, 'analysis-source-scope-v2');
+
     await bucket.put(SOURCE_KEY, REPLACEMENT, {
       httpMetadata: { contentType: 'audio/wav' },
     });
@@ -79,6 +93,40 @@ test('authoritative Auto snapshots one upload for both analysis and separation',
       'a byte-identical retry also leaves the snapshot unchanged'
     );
   });
+});
+
+test('analysis signing rejects outputs and query-isolation snapshots', async () => {
+  await withBucket(async (_bucket, env) => {
+    for (const key of [
+      'stems/job_1/vocals.mp3',
+      `isolation-inputs/v1/isolation_1/${'1'.repeat(64)}`,
+      'isolations/isolation_1/target.wav',
+      'uploads/too/many/source.wav',
+    ]) {
+      await assert.rejects(presignAnalysisDownload(env, key), /Invalid analysis source key/);
+    }
+  });
+});
+
+test('analysis source paths preserve canonical filenames without accepting encoded path tricks', () => {
+  assert.deepEqual(
+    scopedAudioAnalysisSourceFromLocalPath(
+      '/api/local-sources/uploads/source_1/My%20Song.wav'
+    ),
+    {
+      key: 'uploads/source_1/My Song.wav',
+      scope: 'stored_source',
+    }
+  );
+
+  for (const pathname of [
+    '/api/local-sources/uploads/source_1/%73ource.wav',
+    '/api/local-sources/uploads/source_1/source%2Fname.wav',
+    '/api/local-sources/uploads/source_1/%ZZ.wav',
+    '/api/local-sources/uploads/source_1/source.wav/extra',
+  ]) {
+    assert.equal(scopedAudioAnalysisSourceFromLocalPath(pathname), null);
+  }
 });
 
 test('a replacement before snapshotting becomes one frozen, internally consistent version', async () => {

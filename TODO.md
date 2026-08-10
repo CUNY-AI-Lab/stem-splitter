@@ -405,7 +405,12 @@ deployment or enablement.
   Follow `docs/railway-audio-analysis-provisioning.md`; Railway variable edits
   redeploy by default, so assemble the reviewed batch with `--skip-deploys`.
 - [x] Give the service a least-privilege way to read one short-lived source URL;
-  do not mount or share the app's persistent `/data` volume.
+  do not mount or share the app's persistent `/data` volume. The shared,
+  versioned `analysis-source-scope-v2` contract now permits only canonical
+  `uploads/<id>/<file>` objects and app-owned `auto-inputs/v1/<job>` snapshots;
+  the latter require upload source type. The app refuses to sign analyzer URLs
+  for stems, query-isolation snapshots/outputs, malformed keys, or extra path
+  segments, and `/readyz` exposes the exact compiled scope version.
 - [x] Decode only bounded beginning, middle, and end windows with FFmpeg and
   enforce byte, duration, phase-timeout, output, and concurrency limits.
 - [ ] Set and verify the Railway service's CPU, memory, restart, and ephemeral
@@ -492,6 +497,17 @@ deployment or enablement.
   discovery, and 9 YAMNet tests; plus 19 baseline, 6 authoritative-Auto, and 1
   isolation-shadow browser scenario. `git show --check` passes. Real Railway
   resource/restart evidence remains separate.
+- [x] Close the analyzer allowlist seam for the immutable upload handoff. A
+  cross-service audit reproduced that the app signed
+  `/api/local-sources/auto-inputs/v1/<job>` while the real service accepted only
+  `/api/local-sources/uploads/...`; the mocked authoritative browser suite did
+  not exercise that service policy, so a deployment would have fallen back to
+  four tracks. App and analyzer now compile one `analysis-source-scope-v2`
+  module. Cross-service tests prove the app-minted snapshot URL is accepted only
+  as an upload, while stems, isolation paths, malformed/over-deep keys, and
+  source-type mismatches fail before fetch. The constrained image smoke also
+  requires the readiness pin and an actual authoritative-snapshot analysis.
+  Native-amd64 and Railway image reproduction remain open.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.
   Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome,
