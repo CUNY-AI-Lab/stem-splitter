@@ -59,10 +59,11 @@ and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery
 The complete local Phase 0 command now passes 152 worker, 22 analyzer, 21
 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19
 flags-off browser, 4 authoritative-Auto browser, and 1 teacher-isolation-shadow
-test under exact Bun 1.3.14. The analyzer bundle and image smoke changed with
-the fingerprint contract, so the prior constrained image is predecessor
-evidence: rebuild it and repeat native CI before any Railway deployment. This
-local source gate does not close native CI or Railway acceptance.
+test under exact Bun 1.3.14. The fingerprint-capable analyzer also rebuilds and
+passes the constrained smoke on native arm64 as local image
+`sha256:e2ebd8c3…`, including analyze/fingerprint hash parity and a final 61.68
+MiB runtime sample. Native-amd64 CI and Railway must still reproduce the image;
+this local gate does not close either acceptance boundary.
 
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
@@ -343,6 +344,12 @@ deployment or enablement.
   logs. The current native arm64 image passed at a final 59.81 MiB sample; the
   existing emulated amd64 image passed at 253.4 MiB. These snapshots are not
   peak Railway metrics.
+- [x] Rebuild the fingerprint-capable analyzer from executable commit
+  `10f6b0a` on native arm64 and repeat the constrained smoke. Local image
+  `sha256:e2ebd8c3d2452ccd34be371ab9222a8a3f9408faaaf4e7cd7d306bbf45e6838f`
+  passes source-hash parity, auth, codec allowlists, resource boundaries,
+  malformed/oversize/timeout/concurrency failures, cleanup, and redaction. See
+  [the bound image evidence](docs/evaluation/2026-08-10-audio-analysis-fingerprint-image.md).
 - [ ] Reproduce the image on a native amd64 GitHub runner and Railway. Keep the
   CI runtime audit that permits only the six advertised demuxers, audio
   decoders, and file/pipe protocols; then exercise Railway CPU, memory, child

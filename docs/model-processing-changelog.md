@@ -34,12 +34,18 @@ promotion on their own.
 - Local gate: exact Bun 1.3.14 passes all three typechecks plus 152 worker, 22
   analyzer, 21 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19
   flags-off browser, 4 authoritative-Auto browser, and 1 isolation-shadow E2E
-  test. The analyzer image source changed, so its constrained-image smoke,
-  native CI, and Railway acceptance must be repeated before release.
+  test. Native-arm64 image
+  `sha256:e2ebd8c3d2452ccd34be371ab9222a8a3f9408faaaf4e7cd7d306bbf45e6838f`
+  also passes the constrained smoke, including analyze/fingerprint hash parity.
+  Native-amd64 CI and Railway acceptance must still repeat the image gate.
 - Source gate: exact implementation commit `10f6b0a` contains the source that
   passed that literal `test:phase0` command. It is local only: no remote branch,
   pull request, Railway variable, service, migration, or deployment contains
   this version yet.
+- Image evidence:
+  `docs/evaluation/2026-08-10-audio-analysis-fingerprint-image.md` binds the
+  local image identity, source hashes, command, result, resource sample, and
+  remaining promotion boundary.
 - Remaining gate: do not add `teacher_beta` mode or import the provider-start
   adapter until the hosted checkpoint/license provenance, semester budget,
   output hydration/retention, common quality/cost evaluation, and live Railway
