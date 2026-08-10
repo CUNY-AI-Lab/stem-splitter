@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -12,15 +23,48 @@ import {
   loadInstrumentEvaluationPlan,
   summarizeInstrumentEvaluationPlan,
   validateInstrumentCandidateObservations,
+  validateInstrumentCandidateExecutionEvidence,
   validateInstrumentEvaluationPlan,
   validateInstrumentEvaluationReview,
-  type InstrumentCandidateObservationsV2,
+  type InstrumentCandidateExecutionEvidenceV1,
+  type InstrumentCandidateObservationsV3,
   type InstrumentEvaluationPlanV1,
   type InstrumentEvaluationReviewV1,
 } from '../scripts/lib/instrument-evaluation.mts';
 import { INSTRUMENT_REVIEW_OPTIONS } from '../src/analysis/instrument-review.ts';
 
 const repositoryRoot = process.cwd();
+
+function fileSha256(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function candidateEvidence(): InstrumentCandidateExecutionEvidenceV1 {
+  const sourceReportPath = 'tests/fixtures/instrument-candidate-source-report.json';
+  const generatorPath = 'scripts/lib/instrument-evaluation.mts';
+  const dependencyLockPath = 'yamnet-comparator/uv.lock';
+  return {
+    sourceReport: {
+      path: sourceReportPath,
+      schema: 'stem-splitter.instrument-candidate-source-report.v1',
+      sha256: fileSha256(sourceReportPath),
+    },
+    generator: {
+      path: generatorPath,
+      sha256: fileSha256(generatorPath),
+    },
+    execution: {
+      imageId: `sha256:${'c'.repeat(64)}`,
+      imagePlatform: 'linux/amd64',
+      hostPlatform: 'linux/amd64',
+      emulated: false,
+    },
+    dependencyLock: {
+      path: dependencyLockPath,
+      sha256: fileSha256(dependencyLockPath),
+    },
+  };
+}
 
 function planSources(plan: InstrumentEvaluationPlanV1) {
   return plan.partitions.flatMap((partition) =>
@@ -89,7 +133,7 @@ function completeReview(plan: InstrumentEvaluationPlanV1): InstrumentEvaluationR
 function perfectCandidate(
   plan: InstrumentEvaluationPlanV1,
   review: InstrumentEvaluationReviewV1
-): InstrumentCandidateObservationsV2 {
+): InstrumentCandidateObservationsV3 {
   return {
     $schema: INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA,
     planPath: INSTRUMENT_EVALUATION_PLAN_PATH,
@@ -102,8 +146,13 @@ function perfectCandidate(
       vocabularyVersion: plan.vocabulary.version,
       vocabularySha256: plan.vocabulary.sha256,
       preprocessingVersion: 'analysis-windows-v1',
+      preprocessingSha256: 'd'.repeat(64),
+      classifierPolicyVersion: 'candidate-classifier-policy-v1',
+      classifierPolicySha256: 'e'.repeat(64),
       thresholdPolicyVersion: 'candidate-thresholds-v1',
+      thresholdPolicySha256: 'f'.repeat(64),
     },
+    evidence: candidateEvidence(),
     sources: review.sources.map((source) => ({
       partitionId: source.partitionId,
       id: source.id,
@@ -124,7 +173,7 @@ function perfectCandidate(
 test('genre-diverse evaluation plan binds exact real mixes, isolated controls, and coverage targets', () => {
   const plan = loadInstrumentEvaluationPlan(repositoryRoot);
   const summary = summarizeInstrumentEvaluationPlan(plan);
-  assert.equal(plan.version, 'v3.2-genre-diverse-evaluation-v2');
+  assert.equal(plan.version, 'v3.2-genre-diverse-evaluation-v3');
   assert.deepEqual(summary.sourcesByKind, {
     'real-mix': 11,
     'isolated-control': 8,
@@ -161,6 +210,14 @@ test('genre-diverse evaluation plan binds exact real mixes, isolated controls, a
     'per-instrument-family',
     'per-review-kind',
   ]);
+  assert.deepEqual(plan.candidateEvidence, {
+    executionPlatform: 'linux/amd64',
+    nativeExecutionRequired: true,
+    sourceReportDigestRequired: true,
+    generatorDigestRequired: true,
+    dependencyLockDigestRequired: true,
+    maximumEvidenceFileBytes: 16 * 1024 * 1024,
+  });
   assert.equal(summary.promotionEligible, false);
   assert.deepEqual(summary.blockers, [
     'exhaustive-deidentified-review-missing',
@@ -179,6 +236,7 @@ test('evaluation plan fails closed on manifest, source, ontology, and reporting 
     (value: any) => { value.vocabulary.reviewOntologyVersion = 'floating-ontology'; },
     (value: any) => { value.reporting.aggregateOnlyPromotionForbidden = false; },
     (value: any) => { value.reporting.requiredMetrics.splice(2, 1); },
+    (value: any) => { value.candidateEvidence.executionPlatform = 'linux/arm64'; },
     (value: any) => { value.requiredCoverage.realMixGenreFamilies.pop(); },
     (value: any) => { value.requiredCoverage.instrumentFamilies.pop(); },
     (value: any) => { value.partitions[1].sources.reverse(); },
@@ -238,6 +296,12 @@ test('candidate observations require exact pins, source order, and explicit outc
     () => validateInstrumentCandidateObservations(drifted, plan, planSha256),
     /vocabulary drifted/
   );
+  const unpinnedPolicy = structuredClone(candidate) as any;
+  delete unpinnedPolicy.candidate.thresholdPolicySha256;
+  assert.throws(
+    () => validateInstrumentCandidateObservations(unpinnedPolicy, plan, planSha256),
+    /candidate identity does not match/
+  );
   const reordered = structuredClone(candidate) as any;
   reordered.sources.reverse();
   assert.throws(
@@ -272,6 +336,12 @@ test('candidate observations require exact pins, source order, and explicit outc
     () => validateInstrumentCandidateObservations(legacySchema, plan, planSha256),
     /schema drifted/
   );
+  const ambiguousV2Schema = structuredClone(candidate) as any;
+  ambiguousV2Schema.$schema = 'stem-splitter.instrument-candidate-observations.v2';
+  assert.throws(
+    () => validateInstrumentCandidateObservations(ambiguousV2Schema, plan, planSha256),
+    /schema drifted/
+  );
   const unknown = structuredClone(candidate) as any;
   unknown.sources[0].detections.push({
     instrumentId: 'floating-label',
@@ -282,6 +352,109 @@ test('candidate observations require exact pins, source order, and explicit outc
     () => validateInstrumentCandidateObservations(unknown, plan, planSha256),
     /unknown, duplicated, or invalid/
   );
+});
+
+test('candidate execution evidence binds native image, report, generator, and lock bytes', () => {
+  const valid = candidateEvidence();
+  assert.deepEqual(validateInstrumentCandidateExecutionEvidence(valid, repositoryRoot), valid);
+
+  for (const invalid of [
+    { ...valid, sourceReport: { ...valid.sourceReport, sha256: '0'.repeat(64) } },
+    { ...valid, sourceReport: { ...valid.sourceReport, schema: 'stem-splitter.other-report.v1' } },
+    { ...valid, generator: { ...valid.generator, sha256: '0'.repeat(64) } },
+    { ...valid, generator: { path: 'package.json', sha256: fileSha256('package.json') } },
+    {
+      ...valid,
+      execution: { ...valid.execution, imageId: 'stem-splitter:latest' },
+    },
+    {
+      ...valid,
+      execution: { ...valid.execution, imagePlatform: 'linux/arm64' },
+    },
+    {
+      ...valid,
+      execution: { ...valid.execution, hostPlatform: 'darwin/arm64' },
+    },
+    {
+      ...valid,
+      execution: { ...valid.execution, emulated: true },
+    },
+    {
+      ...valid,
+      dependencyLock: { ...valid.dependencyLock, sha256: '0'.repeat(64) },
+    },
+    {
+      ...valid,
+      dependencyLock: { path: 'package.json', sha256: fileSha256('package.json') },
+    },
+  ]) {
+    assert.throws(
+      () => validateInstrumentCandidateExecutionEvidence(invalid, repositoryRoot),
+      /candidate/
+    );
+  }
+});
+
+test('candidate evidence refuses symbolic links and oversized report files', () => {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), 'stem-splitter-candidate-evidence-'));
+  try {
+    mkdirSync(join(temporaryRoot, 'reports'));
+    mkdirSync(join(temporaryRoot, 'scripts'));
+    mkdirSync(join(temporaryRoot, 'candidate'));
+    writeFileSync(
+      join(temporaryRoot, 'reports/source.json'),
+      '{"$schema":"stem-splitter.test-candidate-report.v1"}\n',
+      'utf8'
+    );
+    writeFileSync(join(temporaryRoot, 'scripts/generator.mts'), 'export {};\n', 'utf8');
+    writeFileSync(join(temporaryRoot, 'candidate/uv.lock'), 'fixture-lock\n', 'utf8');
+    const localEvidence: InstrumentCandidateExecutionEvidenceV1 = {
+      sourceReport: {
+        path: 'reports/source.json',
+        schema: 'stem-splitter.test-candidate-report.v1',
+        sha256: fileSha256(join(temporaryRoot, 'reports/source.json')),
+      },
+      generator: {
+        path: 'scripts/generator.mts',
+        sha256: fileSha256(join(temporaryRoot, 'scripts/generator.mts')),
+      },
+      execution: {
+        imageId: `sha256:${'a'.repeat(64)}`,
+        imagePlatform: 'linux/amd64',
+        hostPlatform: 'linux/amd64',
+        emulated: false,
+      },
+      dependencyLock: {
+        path: 'candidate/uv.lock',
+        sha256: fileSha256(join(temporaryRoot, 'candidate/uv.lock')),
+      },
+    };
+    assert.deepEqual(
+      validateInstrumentCandidateExecutionEvidence(localEvidence, temporaryRoot),
+      localEvidence
+    );
+
+    symlinkSync('source.json', join(temporaryRoot, 'reports/linked.json'));
+    const linked = structuredClone(localEvidence);
+    linked.sourceReport.path = 'reports/linked.json';
+    assert.throws(
+      () => validateInstrumentCandidateExecutionEvidence(linked, temporaryRoot),
+      /symbolic link/
+    );
+
+    const oversizedPath = join(temporaryRoot, 'reports/oversized.json');
+    writeFileSync(oversizedPath, '', 'utf8');
+    truncateSync(oversizedPath, 16 * 1024 * 1024 + 1);
+    const oversized = structuredClone(localEvidence);
+    oversized.sourceReport.path = 'reports/oversized.json';
+    oversized.sourceReport.sha256 = '0'.repeat(64);
+    assert.throws(
+      () => validateInstrumentCandidateExecutionEvidence(oversized, temporaryRoot),
+      /bounded repository file/
+    );
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true });
+  }
 });
 
 test('metrics stay separated by genre, family, kind, and corpus instead of promoting one aggregate', () => {
@@ -298,6 +471,7 @@ test('metrics stay separated by genre, family, kind, and corpus instead of promo
     planSha256
   );
   const metrics = evaluateInstrumentCandidate(plan, review, candidate);
+  assert.deepEqual(metrics.evidence, candidate.evidence);
   assert.equal(metrics.coverageReady, true);
   assert.deepEqual(metrics.coverageBlockers, []);
   assert.equal(metrics.promotionEligible, false);
@@ -339,7 +513,7 @@ test('an empty classified result is a negative decision while an empty abstentio
     review,
     validateInstrumentCandidateObservations(classifiedValue, plan, planSha256)
   );
-  assert.equal(classifiedMetrics.$schema, 'stem-splitter.instrument-evaluation-metrics.v2');
+  assert.equal(classifiedMetrics.$schema, 'stem-splitter.instrument-evaluation-metrics.v3');
   assert.equal(classifiedMetrics.byInstrument.voice.falseNegative, 1);
   assert.equal(classifiedMetrics.byInstrument.voice.sourceAbstentionDecisions, 0);
   assert.equal(classifiedMetrics.byInstrument.voice.abstentionRateBasisPoints, 0);

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 
 import {
   INSTRUMENT_FEEDBACK_GENRE_FAMILIES,
@@ -18,9 +18,9 @@ export const INSTRUMENT_EVALUATION_PLAN_SCHEMA =
 export const INSTRUMENT_EVALUATION_REVIEW_SCHEMA =
   'stem-splitter.instrument-evaluation-review.v1' as const;
 export const INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA =
-  'stem-splitter.instrument-candidate-observations.v2' as const;
+  'stem-splitter.instrument-candidate-observations.v3' as const;
 export const INSTRUMENT_EVALUATION_METRICS_SCHEMA =
-  'stem-splitter.instrument-evaluation-metrics.v2' as const;
+  'stem-splitter.instrument-evaluation-metrics.v3' as const;
 export const INSTRUMENT_EVALUATION_PLAN_PATH =
   'tests/corpus/instrument-evaluation-plan.json' as const;
 
@@ -33,6 +33,9 @@ const REVIEW_PROTOCOL = 'instrument-evaluation-listening-v1' as const;
 const SAFE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._@:+-]{0,199}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const IMAGE_SHA256 = /^sha256:[0-9a-f]{64}$/;
+const REPORT_SCHEMA = /^stem-splitter\.[a-z0-9.-]+\.v[1-9][0-9]*$/;
+const MAX_EVIDENCE_FILE_BYTES = 16 * 1024 * 1024;
 const CORPUS_KINDS = ['real-mix', 'isolated-control', 'synthetic-stem'] as const;
 const REVIEW_VERDICTS = ['audible', 'absent', 'uncertain'] as const;
 const CANDIDATE_STATES = ['possible', 'uncertain'] as const;
@@ -127,6 +130,14 @@ export interface InstrumentEvaluationPlanV1 {
     aggregateOnlyPromotionForbidden: true;
     requiredMetrics: string[];
   };
+  candidateEvidence: {
+    executionPlatform: 'linux/amd64';
+    nativeExecutionRequired: true;
+    sourceReportDigestRequired: true;
+    generatorDigestRequired: true;
+    dependencyLockDigestRequired: true;
+    maximumEvidenceFileBytes: typeof MAX_EVIDENCE_FILE_BYTES;
+  };
 }
 
 export interface InstrumentEvaluationReviewV1 {
@@ -153,7 +164,29 @@ export interface InstrumentEvaluationReviewV1 {
   }>;
 }
 
-export interface InstrumentCandidateObservationsV2 {
+export interface InstrumentCandidateExecutionEvidenceV1 {
+  sourceReport: {
+    path: string;
+    schema: string;
+    sha256: string;
+  };
+  generator: {
+    path: string;
+    sha256: string;
+  };
+  execution: {
+    imageId: string;
+    imagePlatform: 'linux/amd64';
+    hostPlatform: 'linux/amd64';
+    emulated: false;
+  };
+  dependencyLock: {
+    path: string;
+    sha256: string;
+  };
+}
+
+export interface InstrumentCandidateObservationsV3 {
   $schema: typeof INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA;
   planPath: typeof INSTRUMENT_EVALUATION_PLAN_PATH;
   planVersion: string;
@@ -165,8 +198,13 @@ export interface InstrumentCandidateObservationsV2 {
     vocabularyVersion: string;
     vocabularySha256: string;
     preprocessingVersion: string;
+    preprocessingSha256: string;
+    classifierPolicyVersion: string;
+    classifierPolicySha256: string;
     thresholdPolicyVersion: string;
+    thresholdPolicySha256: string;
   };
+  evidence: InstrumentCandidateExecutionEvidenceV1;
   sources: Array<{
     partitionId: string;
     id: string;
@@ -181,7 +219,7 @@ export interface InstrumentCandidateObservationsV2 {
   }>;
 }
 
-export interface InstrumentMetricCountsV2 {
+export interface InstrumentMetricCountsV3 {
   evaluated: number;
   classifiedDecisions: number;
   groundTruthAudible: number;
@@ -201,19 +239,20 @@ export interface InstrumentMetricCountsV2 {
   serviceFailureRateBasisPoints: number | null;
 }
 
-export interface InstrumentEvaluationMetricsV2 {
+export interface InstrumentEvaluationMetricsV3 {
   $schema: typeof INSTRUMENT_EVALUATION_METRICS_SCHEMA;
   planVersion: string;
   reviewStatus: typeof REVIEW_STATUS;
-  candidate: InstrumentCandidateObservationsV2['candidate'];
-  diagnosticAllLabels: InstrumentMetricCountsV2 & {
+  candidate: InstrumentCandidateObservationsV3['candidate'];
+  evidence: InstrumentCandidateExecutionEvidenceV1;
+  diagnosticAllLabels: InstrumentMetricCountsV3 & {
     promotionUse: 'forbidden-overlapping-label-kinds';
   };
-  byKind: Record<InstrumentReviewKind, InstrumentMetricCountsV2>;
-  byGenre: Partial<Record<InstrumentFeedbackGenreFamily, InstrumentMetricCountsV2>>;
-  byInstrumentFamily: Record<string, InstrumentMetricCountsV2>;
-  byInstrument: Record<string, InstrumentMetricCountsV2>;
-  byCorpusKind: Partial<Record<CorpusKind, InstrumentMetricCountsV2>>;
+  byKind: Record<InstrumentReviewKind, InstrumentMetricCountsV3>;
+  byGenre: Partial<Record<InstrumentFeedbackGenreFamily, InstrumentMetricCountsV3>>;
+  byInstrumentFamily: Record<string, InstrumentMetricCountsV3>;
+  byInstrument: Record<string, InstrumentMetricCountsV3>;
+  byCorpusKind: Partial<Record<CorpusKind, InstrumentMetricCountsV3>>;
   coverage: {
     realMixSourcesByGenre: Partial<Record<InstrumentFeedbackGenreFamily, number>>;
     audibleSpecificSourcesByFamily: Record<string, number>;
@@ -296,6 +335,136 @@ function uniqueStringArray(
 
 function digestFile(repositoryRoot: string, path: string): string {
   return createHash('sha256').update(readFileSync(resolve(repositoryRoot, path))).digest('hex');
+}
+
+function pinnedEvidenceFile(
+  repositoryRoot: string,
+  value: JsonRecord,
+  context: string
+): { path: string; sha256: string; bytes: Buffer } {
+  const path = relativePath(value.path, `${context} path`);
+  const expectedSha256 = sha256(value.sha256, `${context} SHA-256`);
+  const root = realpathSync(resolve(repositoryRoot));
+  let candidate = root;
+  for (const component of path.split('/')) {
+    candidate = resolve(candidate, component);
+    const metadata = lstatSync(candidate);
+    if (metadata.isSymbolicLink()) throw new Error(`${context} path contains a symbolic link`);
+  }
+  const resolvedPath = realpathSync(candidate);
+  const metadata = lstatSync(resolvedPath);
+  if (
+    !resolvedPath.startsWith(`${root}${sep}`) ||
+    !metadata.isFile() ||
+    metadata.size < 1 ||
+    metadata.size > MAX_EVIDENCE_FILE_BYTES
+  ) {
+    throw new Error(`${context} is not a bounded repository file`);
+  }
+  const bytes = readFileSync(resolvedPath);
+  const actualSha256 = createHash('sha256').update(bytes).digest('hex');
+  if (actualSha256 !== expectedSha256) throw new Error(`${context} content drifted`);
+  return { path, sha256: expectedSha256, bytes };
+}
+
+export function validateInstrumentCandidateExecutionEvidence(
+  value: unknown,
+  repositoryRoot = process.cwd()
+): InstrumentCandidateExecutionEvidenceV1 {
+  if (!record(value)) throw new Error('candidate execution evidence is invalid');
+  exactKeys(
+    value,
+    ['sourceReport', 'generator', 'execution', 'dependencyLock'],
+    'candidate execution evidence'
+  );
+  if (!record(value.sourceReport)) throw new Error('candidate source report is invalid');
+  exactKeys(
+    value.sourceReport,
+    ['path', 'schema', 'sha256'],
+    'candidate source report'
+  );
+  if (
+    typeof value.sourceReport.schema !== 'string' ||
+    !REPORT_SCHEMA.test(value.sourceReport.schema)
+  ) {
+    throw new Error('candidate source report schema is invalid');
+  }
+  const sourceReport = pinnedEvidenceFile(
+    repositoryRoot,
+    value.sourceReport,
+    'candidate source report'
+  );
+  let parsedReport: unknown;
+  try {
+    parsedReport = JSON.parse(sourceReport.bytes.toString('utf8'));
+  } catch {
+    throw new Error('candidate source report is not valid JSON');
+  }
+  if (!record(parsedReport) || parsedReport.$schema !== value.sourceReport.schema) {
+    throw new Error('candidate source report schema does not match its bytes');
+  }
+  if (!record(value.generator)) throw new Error('candidate generator evidence is invalid');
+  exactKeys(value.generator, ['path', 'sha256'], 'candidate generator evidence');
+  const generator = pinnedEvidenceFile(
+    repositoryRoot,
+    value.generator,
+    'candidate generator evidence'
+  );
+  if (!generator.path.startsWith('scripts/')) {
+    throw new Error('candidate generator must be a repository script');
+  }
+  if (!record(value.execution)) throw new Error('candidate execution identity is invalid');
+  exactKeys(
+    value.execution,
+    ['imageId', 'imagePlatform', 'hostPlatform', 'emulated'],
+    'candidate execution identity'
+  );
+  if (
+    typeof value.execution.imageId !== 'string' ||
+    !IMAGE_SHA256.test(value.execution.imageId) ||
+    value.execution.imagePlatform !== 'linux/amd64' ||
+    value.execution.hostPlatform !== 'linux/amd64' ||
+    value.execution.emulated !== false
+  ) {
+    throw new Error('candidate execution must be native linux/amd64 with an immutable image');
+  }
+  if (!record(value.dependencyLock)) {
+    throw new Error('candidate dependency-lock evidence is invalid');
+  }
+  exactKeys(
+    value.dependencyLock,
+    ['path', 'sha256'],
+    'candidate dependency-lock evidence'
+  );
+  const dependencyLock = pinnedEvidenceFile(
+    repositoryRoot,
+    value.dependencyLock,
+    'candidate dependency-lock evidence'
+  );
+  if (!/(?:^|\/)(?:uv\.lock|bun\.lock|package-lock\.json)$/.test(dependencyLock.path)) {
+    throw new Error('candidate dependency-lock path is invalid');
+  }
+  return {
+    sourceReport: {
+      path: sourceReport.path,
+      schema: value.sourceReport.schema,
+      sha256: sourceReport.sha256,
+    },
+    generator: {
+      path: generator.path,
+      sha256: generator.sha256,
+    },
+    execution: {
+      imageId: value.execution.imageId,
+      imagePlatform: 'linux/amd64',
+      hostPlatform: 'linux/amd64',
+      emulated: false,
+    },
+    dependencyLock: {
+      path: dependencyLock.path,
+      sha256: dependencyLock.sha256,
+    },
+  };
 }
 
 function genre(value: unknown, context: string): InstrumentFeedbackGenreFamily {
@@ -469,7 +638,16 @@ export function validateInstrumentEvaluationPlan(
   if (!record(value)) throw new Error('instrument evaluation plan is invalid');
   exactKeys(
     value,
-    ['$schema', 'version', 'status', 'vocabulary', 'partitions', 'requiredCoverage', 'reporting'],
+    [
+      '$schema',
+      'version',
+      'status',
+      'vocabulary',
+      'partitions',
+      'requiredCoverage',
+      'reporting',
+      'candidateEvidence',
+    ],
     'instrument evaluation plan'
   );
   if (
@@ -590,6 +768,31 @@ export function validateInstrumentEvaluationPlan(
   ) {
     throw new Error('instrument evaluation reporting policy drifted');
   }
+  if (!record(value.candidateEvidence)) {
+    throw new Error('instrument evaluation candidate evidence policy is invalid');
+  }
+  exactKeys(
+    value.candidateEvidence,
+    [
+      'executionPlatform',
+      'nativeExecutionRequired',
+      'sourceReportDigestRequired',
+      'generatorDigestRequired',
+      'dependencyLockDigestRequired',
+      'maximumEvidenceFileBytes',
+    ],
+    'instrument evaluation candidate evidence policy'
+  );
+  if (
+    value.candidateEvidence.executionPlatform !== 'linux/amd64' ||
+    value.candidateEvidence.nativeExecutionRequired !== true ||
+    value.candidateEvidence.sourceReportDigestRequired !== true ||
+    value.candidateEvidence.generatorDigestRequired !== true ||
+    value.candidateEvidence.dependencyLockDigestRequired !== true ||
+    value.candidateEvidence.maximumEvidenceFileBytes !== MAX_EVIDENCE_FILE_BYTES
+  ) {
+    throw new Error('instrument evaluation candidate evidence policy drifted');
+  }
   return {
     $schema: INSTRUMENT_EVALUATION_PLAN_SCHEMA,
     version,
@@ -614,6 +817,14 @@ export function validateInstrumentEvaluationPlan(
       isolatedAndMixedSeparate: true,
       aggregateOnlyPromotionForbidden: true,
       requiredMetrics,
+    },
+    candidateEvidence: {
+      executionPlatform: 'linux/amd64',
+      nativeExecutionRequired: true,
+      sourceReportDigestRequired: true,
+      generatorDigestRequired: true,
+      dependencyLockDigestRequired: true,
+      maximumEvidenceFileBytes: MAX_EVIDENCE_FILE_BYTES,
     },
   };
 }
@@ -779,12 +990,22 @@ export function validateInstrumentEvaluationReview(
 export function validateInstrumentCandidateObservations(
   value: unknown,
   plan: InstrumentEvaluationPlanV1,
-  planSha256: string
-): InstrumentCandidateObservationsV2 {
+  planSha256: string,
+  repositoryRoot = process.cwd()
+): InstrumentCandidateObservationsV3 {
   if (!record(value)) throw new Error('instrument candidate observations are invalid');
   exactKeys(
     value,
-    ['$schema', 'planPath', 'planVersion', 'planSha256', 'generatedAt', 'candidate', 'sources'],
+    [
+      '$schema',
+      'planPath',
+      'planVersion',
+      'planSha256',
+      'generatedAt',
+      'candidate',
+      'evidence',
+      'sources',
+    ],
     'instrument candidate observations'
   );
   validatePlanBinding(value, plan, planSha256, 'instrument candidate observations');
@@ -801,7 +1022,11 @@ export function validateInstrumentCandidateObservations(
       'vocabularyVersion',
       'vocabularySha256',
       'preprocessingVersion',
+      'preprocessingSha256',
+      'classifierPolicyVersion',
+      'classifierPolicySha256',
       'thresholdPolicyVersion',
+      'thresholdPolicySha256',
     ],
     'instrument candidate identity'
   );
@@ -820,9 +1045,25 @@ export function validateInstrumentCandidateObservations(
       value.candidate.preprocessingVersion,
       'candidate preprocessing version'
     ),
+    preprocessingSha256: sha256(
+      value.candidate.preprocessingSha256,
+      'candidate preprocessing SHA-256'
+    ),
+    classifierPolicyVersion: safeVersion(
+      value.candidate.classifierPolicyVersion,
+      'candidate classifier policy version'
+    ),
+    classifierPolicySha256: sha256(
+      value.candidate.classifierPolicySha256,
+      'candidate classifier policy SHA-256'
+    ),
     thresholdPolicyVersion: safeVersion(
       value.candidate.thresholdPolicyVersion,
       'candidate threshold policy version'
+    ),
+    thresholdPolicySha256: sha256(
+      value.candidate.thresholdPolicySha256,
+      'candidate threshold policy SHA-256'
     ),
   };
   if (
@@ -831,6 +1072,10 @@ export function validateInstrumentCandidateObservations(
   ) {
     throw new Error('candidate vocabulary drifted from the evaluation plan');
   }
+  const evidence = validateInstrumentCandidateExecutionEvidence(
+    value.evidence,
+    repositoryRoot
+  );
   if (!Array.isArray(value.sources)) throw new Error('candidate sources are invalid');
   const expectedSources = flattenedPlanSources(plan);
   if (value.sources.length !== expectedSources.length) {
@@ -905,6 +1150,7 @@ export function validateInstrumentCandidateObservations(
     planSha256,
     generatedAt,
     candidate,
+    evidence,
     sources,
   };
 }
@@ -945,7 +1191,7 @@ function basisPoints(numerator: number, denominator: number): number | null {
   return denominator > 0 ? Math.round((numerator / denominator) * 10_000) : null;
 }
 
-function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV2 {
+function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV3 {
   return {
     ...counts,
     precisionBasisPoints: basisPoints(
@@ -971,12 +1217,12 @@ function finalizeCounts(counts: MutableCounts): InstrumentMetricCountsV2 {
   };
 }
 
-function mapCounts<K extends string>(map: Map<K, MutableCounts>): Record<K, InstrumentMetricCountsV2> {
+function mapCounts<K extends string>(map: Map<K, MutableCounts>): Record<K, InstrumentMetricCountsV3> {
   return Object.fromEntries(
     [...map.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => [key, finalizeCounts(value)])
-  ) as Record<K, InstrumentMetricCountsV2>;
+  ) as Record<K, InstrumentMetricCountsV3>;
 }
 
 function countsFor<K extends string>(map: Map<K, MutableCounts>, key: K): MutableCounts {
@@ -1027,8 +1273,8 @@ function addDecision(
 export function evaluateInstrumentCandidate(
   plan: InstrumentEvaluationPlanV1,
   review: InstrumentEvaluationReviewV1,
-  candidate: InstrumentCandidateObservationsV2
-): InstrumentEvaluationMetricsV2 {
+  candidate: InstrumentCandidateObservationsV3
+): InstrumentEvaluationMetricsV3 {
   if (
     review.planVersion !== plan.version ||
     candidate.planVersion !== plan.version ||
@@ -1157,11 +1403,12 @@ export function evaluateInstrumentCandidate(
     planVersion: plan.version,
     reviewStatus: REVIEW_STATUS,
     candidate: candidate.candidate,
+    evidence: candidate.evidence,
     diagnosticAllLabels: {
       ...finalizeCounts(allCounts),
       promotionUse: 'forbidden-overlapping-label-kinds',
     },
-    byKind: mapCounts(byKind) as Record<InstrumentReviewKind, InstrumentMetricCountsV2>,
+    byKind: mapCounts(byKind) as Record<InstrumentReviewKind, InstrumentMetricCountsV3>,
     byGenre: mapCounts(byGenre),
     byInstrumentFamily: mapCounts(byFamily),
     byInstrument: mapCounts(byInstrument),
@@ -1213,6 +1460,7 @@ export function summarizeInstrumentEvaluationPlan(plan: InstrumentEvaluationPlan
     requiredGenreFamilies: plan.requiredCoverage.realMixGenreFamilies,
     requiredInstrumentFamilies: plan.requiredCoverage.instrumentFamilies,
     requiredReviewKinds: plan.requiredCoverage.reviewKinds,
+    candidateEvidence: plan.candidateEvidence,
     promotionEligible: false,
     blockers: [
       'exhaustive-deidentified-review-missing',
