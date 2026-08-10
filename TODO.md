@@ -394,6 +394,27 @@ traditional-instrument exact positives remain open. No evaluation-plan version,
 flag, service, Railway state, provider call, deployment, push, or pull request
 changed.
 
+Exact TinySOL-review commit `36ff60e` turns that staged source tranche into an
+executable human gate without manufacturing approval. `prepare:tinysol-review`
+revalidates the content-hashed v6 manifest and all five owner-only WAVs, then
+creates a no-overwrite mode-`0600` worksheet whose ten source-label and proposed-
+mapping judgments all begin unreviewed. `finalize:tinysol-review` requires an
+attributable reviewer, canonical time, fixed attestation, complete-source
+listening, both explicit judgments for every control, exact order, and exact
+private serialized bytes. Its deidentified output strips reviewer identity and
+local paths. Rejected and uncertain judgments remain valid review evidence but
+compute separate source-label, vocabulary-mapping, and `Contrabass` to
+`double-bass` approval blockers; review completion cannot become silent mapping
+acceptance. Candidate negatives, metrics, evaluation-plan integration,
+classifier selection, and promotion remain forbidden. The real preparation
+command produced a 3,083-byte private worksheet; overwrite and incomplete
+finalization failed closed, and no public review exists. Exact Bun 1.3.14 passes
+all four typechecks; 273 worker, 24 analyzer, 42 Railway host/config/migration/
+terminal, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+authoritative-Auto, and 1 isolation-shadow browser journey. No teacher verdict,
+flag, service, Railway state, provider call, deployment, push, or pull request
+changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -1009,11 +1030,15 @@ job.
   labels cello, contrabass, viola, and violin. TinySOL v6 source metadata, rather
   than an NSynth filename or family label, supplies the exact instrument truth;
   every vocabulary mapping remains candidate evidence pending teacher listening.
-- [ ] Add an owner-only TinySOL listening worksheet and deidentified finalizer,
-  then have an authorized teacher review all five controls and explicitly approve
-  the `Contrabass` to `double-bass` vocabulary mapping. Keep source labels,
-  vocabulary verdicts, candidate negatives, metrics, and plan integration as
-  separate fields; no verdict may be inferred from the metadata or filename.
+- [x] Add an owner-only TinySOL listening worksheet and deidentified finalizer.
+  Source-label and vocabulary-mapping judgments remain separate; rejected or
+  uncertain judgments finalize as evidence while retaining explicit blockers.
+  Candidate negatives, metrics, and plan integration stay separate, and no
+  verdict is inferred from metadata or filenames.
+- [ ] Have an authorized teacher review all five TinySOL controls and explicitly
+  decide every proposed mapping, including `Contrabass` to `double-bass`, then
+  approve a deidentified finalization. Do not infer acceptance from successful
+  review completion.
 - [ ] Complete the exact-positive gap with harmonica, pitched percussion, and
   traditional instruments under separately reviewed licenses and immutable
   source pins. Keep each new corpus partition separate until teacher listening

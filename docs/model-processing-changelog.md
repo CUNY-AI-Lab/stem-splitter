@@ -5,6 +5,84 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## tinysol-exact-control-review-v1 — governed label and mapping review — 2026-08-10
+
+- Scope: exact implementation commit
+  `36ff60edcb3e22d80118e1b9ddc3a04c868bc7eb` adds TinySOL-specific private
+  preparation, deidentified finalization, public-schema validation, and seven
+  focused regression tests. It does not complete a teacher review, integrate
+  the controls into the evaluation plan, create candidate negatives or metrics,
+  select a classifier, change Auto or core stems, authorize isolation, provision
+  a service, or change a flag.
+- Input boundary: preparation revalidates the exact content-hashed TinySOL v6
+  manifest and all five hydrated WAVs as owner-only regular files with pinned
+  byte counts and SHA-256 values. It writes one no-overwrite mode-`0600`
+  worksheet with exact private listening paths. Every source-label and proposed-
+  vocabulary judgment begins `unreviewed`; no verdict is inferred from the
+  metadata, filename, source label, or mapping.
+- Judgment semantics: each control separately records whether the dataset-
+  authored label matches the heard audio and whether the proposed classroom-
+  vocabulary mapping is approved, rejected, or uncertain. A rejected or
+  uncertain review can finalize as evidence, but computed summary fields retain
+  source-label, mapping, and specific `Contrabass` to `double-bass` blockers.
+  Review completion therefore cannot masquerade as mapping acceptance.
+- Human and privacy boundary: finalization requires a bounded attributable
+  reviewer, canonical time, fixed full-listening attestation, both completed
+  judgments for all five sources, exact control order, and the precise private
+  serialized bytes. The public artifact removes reviewer identity and local
+  audio paths, records no free-text feedback, and keeps candidate-negative,
+  evaluation-plan, candidate-metric, classifier-selection, and promotion claims
+  off. Non-owner, oversized, symbolic-link, incomplete, reordered, replaced,
+  summary-drifted, blocker-drifted, and claim-escalated inputs fail closed.
+- Evidence and rollout: the real preparation command created a 3,083-byte
+  mode-`0600` five-control, ten-judgment worksheet. A second preparation refused
+  overwrite and incomplete finalization produced no public artifact. Exact Bun
+  1.3.14 passes four TypeScript checks; 273 worker, 24 analyzer, 42 Railway host/
+  config/migration/terminal, 5 separator, 30 discovery, and 9 YAMNet tests; plus
+  19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+  No teacher verdict, Railway mutation, provider call, deployment, push, or pull
+  request occurred.
+- Remaining: an authorized teacher must listen to all five controls and
+  explicitly decide every source label and vocabulary mapping. An approved
+  deidentified artifact and a new evaluation-plan version remain prerequisites
+  for candidate metrics; all classifier and rollout gates stay separate.
+
+## tinysol-v6-exact-controls-v1 — exact free-reed and solo-string controls — 2026-08-10
+
+- Scope: exact implementation commit
+  `06599a7ee298d82eb639b62b7ed97a4a5c9f3ba3` adds a separately licensed
+  TinySOL v6 manifest, strict hydrator, and ten-test adversarial suite. It does
+  not change the existing evaluation-plan version, define a classifier
+  threshold, alter Auto or the 2/4/6 core contracts, provision a service,
+  change a flag, request an isolation, or call a provider.
+- Rights and identity: the manifest pins Zenodo record `3685367`, record and
+  concept DOI, CC BY 4.0 license, official MD5 values, independent SHA-256
+  values, the 317,576-byte 2,913-row metadata file, the 1,026,917,185-byte
+  archive, and its complete ordered 2,952-member tar surface. The current v6
+  identity is distinct from the older 2,478-sample v3 record.
+- Selection and claim boundary: one natural, non-digitally-retuned, ordinary
+  `mf` C4 note is selected per dataset-authored Accordion, Cello, Contrabass,
+  Viola, and Violin label by lowest instance id and then path. Exact-instrument
+  truth is limited to those source labels; the corresponding classroom-
+  vocabulary ids remain proposed mappings awaiting human listening. Candidate
+  negatives, current-plan use, classifier selection, and promotion are forbidden.
+- Hydration boundary: metadata is verified before the large archive request;
+  redirects, response drift, byte/hash mismatch, timeout, traversal, links,
+  duplicate members, malformed PCM, symlinked output, relaxed permissions, and
+  ambiguous local-source modes fail closed. The streaming parser scans the full
+  tar surface while retaining only five pinned WAVs, stores them mode `0600`,
+  removes temporary partial objects, and supports paired local-source and
+  offline verification.
+- Evidence and rollout: the real v6 archive and metadata hydrated all five
+  controls and passed offline readback. Exact Bun 1.3.14 passes four TypeScript
+  checks; 266 worker, 24 analyzer, 42 Railway host/config/migration/terminal,
+  5 separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+  authoritative-Auto, and 1 isolation-shadow browser journey. No Railway
+  mutation, provider call, deployment, push, or pull request occurred.
+- Remaining: teacher listening and versioned plan integration remain open;
+  harmonica, pitched-percussion, and traditional-instrument exact controls still
+  require separate rights and immutable-source review.
+
 ## nsynth-family-control-review-v1 — governed listening evidence — 2026-08-10
 
 - Scope: exact implementation commit
