@@ -443,12 +443,6 @@ app.put('/api/teacher/prompt', requireTeacher, async (c) => {
     );
   }
 
-  // Guides are cached per job and were written under the previous prompt, so a
-  // stale cache would silently outlive the edit. Clear it; guides regenerate
-  // lazily (~$0.005 each) the next time a student opens one.
-  const cleared = result.changed
-    ? await c.env.DB.prepare('DELETE FROM guides').run()
-    : null;
   return c.json({
     ...result.record,
     changed: result.changed,
@@ -458,7 +452,7 @@ app.put('/api/teacher/prompt', requireTeacher, async (c) => {
     basePromptVersion: SYSTEM_PROMPT_VERSION,
     basePromptHash,
     effectivePromptHash,
-    guidesCleared: cleared?.meta?.changes ?? 0,
+    guidesCleared: result.guidesCleared,
   });
 });
 

@@ -438,10 +438,17 @@ export async function setAmendment(
   changed: boolean;
   conflict: boolean;
   revision: PromptRevision | null;
+  guidesCleared: number;
 }> {
   const current = await getAmendment(env);
   if (current.amendment === amendment) {
-    return { record: current, changed: false, conflict: false, revision: null };
+    return {
+      record: current,
+      changed: false,
+      conflict: false,
+      revision: null,
+      guidesCleared: 0,
+    };
   }
 
   const nextRevision = expectedRevision + 1;
@@ -451,6 +458,14 @@ export async function setAmendment(
        SET amendment = ?, updated_by = ?, updated_at = datetime('now'), revision = revision + 1
        WHERE id = 1 AND revision = ? AND amendment <> ?`
     ).bind(amendment, username, expectedRevision, amendment),
+    // SQLite changes() here refers to the completed compare-and-swap above.
+    // This matters for two identical concurrent requests: the losing request
+    // can match the winner's amendment and username, but it must not invalidate
+    // a guide regenerated after the winning transaction committed.
+    env.DB.prepare(
+      `DELETE FROM guides
+       WHERE changes() = 1`
+    ),
     env.DB.prepare(
       `INSERT INTO assistant_prompt_revisions
          (settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
@@ -481,6 +496,7 @@ export async function setAmendment(
       changed: false,
       conflict: true,
       revision: null,
+      guidesCleared: 0,
     };
   }
 
@@ -488,8 +504,46 @@ export async function setAmendment(
     record: await getAmendment(env),
     changed: true,
     conflict: false,
-    revision: (await getPromptHistory(env, 1))[0] ?? null,
+    revision: await getPromptRevision(env, nextRevision),
+    guidesCleared: results[1]?.meta?.changes ?? 0,
   };
+}
+
+async function getPromptRevision(
+  env: Env,
+  settingsRevision: number
+): Promise<PromptRevision | null> {
+  const row = await env.DB.prepare(
+    `SELECT id, settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
+            effective_prompt_hash, updated_by, created_at
+     FROM assistant_prompt_revisions
+     WHERE settings_revision = ?`
+  )
+    .bind(settingsRevision)
+    .first<{
+      id: number;
+      settings_revision: number;
+      amendment: string;
+      change_note: string;
+      base_prompt_version: string;
+      base_prompt_hash: string;
+      effective_prompt_hash: string;
+      updated_by: string;
+      created_at: string;
+    }>();
+  return row
+    ? {
+        id: row.id,
+        settingsRevision: row.settings_revision,
+        amendment: row.amendment,
+        changeNote: row.change_note,
+        basePromptVersion: row.base_prompt_version,
+        basePromptHash: row.base_prompt_hash,
+        effectivePromptHash: row.effective_prompt_hash,
+        updatedBy: row.updated_by,
+        createdAt: row.created_at,
+      }
+    : null;
 }
 
 export async function getPromptHistory(

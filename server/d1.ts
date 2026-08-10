@@ -40,7 +40,7 @@ class PreparedStatement {
     return { results, success: true, meta: { changes: 0 } };
   }
 
-  async run(): Promise<{ success: true; meta: { changes: number; last_row_id: number } }> {
+  runSync(): { success: true; meta: { changes: number; last_row_id: number } } {
     const result = this.db.prepare(this.sql).run(...this.values);
     return {
       success: true,
@@ -49,6 +49,10 @@ class PreparedStatement {
         last_row_id: Number(result.lastInsertRowid),
       },
     };
+  }
+
+  async run(): Promise<{ success: true; meta: { changes: number; last_row_id: number } }> {
+    return this.runSync();
   }
 }
 
@@ -68,9 +72,12 @@ export class SqliteD1 {
 
   async batch<T = unknown>(statements: PreparedStatement[]): Promise<T[]> {
     const out: unknown[] = [];
-    this.db.exec('BEGIN');
+    // DatabaseSync is synchronous. Awaiting each already-completed statement
+    // lets another request issue BEGIN on this same connection mid-batch,
+    // violating the atomic D1 batch contract.
+    this.db.exec('BEGIN IMMEDIATE');
     try {
-      for (const statement of statements) out.push(await statement.run());
+      for (const statement of statements) out.push(statement.runSync());
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

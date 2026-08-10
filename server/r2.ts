@@ -63,11 +63,13 @@ export class FsR2Bucket {
   private ready: Promise<void>;
 
   constructor(root: string) {
-    this.blobDir = join(root, 'blobs');
-    this.metaDir = join(root, 'meta');
+    const blobDir = join(root, 'blobs');
+    const metaDir = join(root, 'meta');
+    this.blobDir = blobDir;
+    this.metaDir = metaDir;
     this.ready = (async () => {
-      await mkdir(this.blobDir, { recursive: true });
-      await mkdir(this.metaDir, { recursive: true });
+      await mkdir(blobDir, { recursive: true });
+      await mkdir(metaDir, { recursive: true });
     })();
   }
 
