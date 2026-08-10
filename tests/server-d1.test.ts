@@ -14,6 +14,7 @@ import {
   createInstrumentIsolation,
   expireTimedOutInstrumentIsolations,
   failInstrumentIsolation,
+  getInstrumentIsolation,
   InstrumentIsolationResourceError,
   listInstrumentIsolations,
   requeueInstrumentIsolation,
@@ -393,24 +394,75 @@ test('Railway boot adds Auto routing metadata without changing legacy job models
     db.applyNodeMigrations();
 
     const columns = await db.prepare("PRAGMA table_info('jobs')").all<{ name: string }>();
-    for (const name of ['routing_request', 'source_type', 'analysis']) {
+    for (const name of ['routing_request', 'source_type', 'source_hash', 'analysis']) {
       assert.equal(columns.results.filter((column) => column.name === name).length, 1, name);
     }
     const row = await db
-      .prepare('SELECT model, routing_request, source_type, analysis FROM jobs WHERE id = ?')
+      .prepare('SELECT model, routing_request, source_type, source_hash, analysis FROM jobs WHERE id = ?')
       .bind('legacy-job')
       .first<{
         model: string;
         routing_request: string | null;
         source_type: string | null;
+        source_hash: string | null;
         analysis: string | null;
       }>();
     assert.deepEqual({ ...row }, {
       model: 'htdemucs_ft',
       routing_request: null,
       source_type: null,
+      source_hash: null,
       analysis: null,
     });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('numbered source-hash migration preserves legacy jobs and constrains fingerprints', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-source-hash-migration-'));
+  try {
+    const db = new SqliteD1(join(directory, 'legacy.sqlite'));
+    db.applySchema(`
+      CREATE TABLE jobs (
+        id TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        source_key TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        external_id TEXT,
+        stems TEXT,
+        error TEXT,
+        model TEXT,
+        routing_request TEXT,
+        source_type TEXT,
+        analysis TEXT,
+        labels TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO jobs (id, filename, source_key, status, model)
+      VALUES ('legacy-job', 'song.wav', 'uploads/legacy/song.wav', 'done', 'htdemucs_ft');
+    `);
+    db.applySchema(readFileSync('migrations/0009-job-source-hash.sql', 'utf8'));
+
+    const legacy = await db.prepare('SELECT source_hash FROM jobs WHERE id = ?')
+      .bind('legacy-job')
+      .first<{ source_hash: string | null }>();
+    assert.equal(legacy?.source_hash, null);
+    await db.prepare('UPDATE jobs SET source_hash = ? WHERE id = ?')
+      .bind('a'.repeat(64), 'legacy-job')
+      .run();
+    assert.equal(
+      (await db.prepare('SELECT source_hash FROM jobs WHERE id = ?')
+        .bind('legacy-job')
+        .first<{ source_hash: string }>())?.source_hash,
+      'a'.repeat(64)
+    );
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_hash = ? WHERE id = ?')
+        .bind('A'.repeat(64), 'legacy-job')
+        .run(),
+      /CHECK constraint failed/
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -433,6 +485,7 @@ function isolationInput(id: string, target: string, hashCharacter = 'a') {
     normalizedTarget: target,
     analysisVocabularyVersion: 'classroom-instruments-v1',
     identity: isolationIdentity,
+    rolloutStage: 'teacher_beta' as const,
     now: new Date('2026-08-10T12:00:00.000Z'),
   };
 }
@@ -461,6 +514,10 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
         `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
          VALUES ('job-archive', 'archive.wav', 'uploads/archive/source.wav', 'done', 'htdemucs_ft', 'archive')`
       ),
+      db.prepare(
+        `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
+         VALUES ('job-shadow', 'shadow.wav', 'uploads/shadow/source.wav', 'done', 'htdemucs_ft', 'upload')`
+      ),
     ]);
     const env = { DB: db } as never;
 
@@ -488,6 +545,20 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
       (error: unknown) =>
         error instanceof InstrumentIsolationResourceError && error.code === 'job_not_found'
     );
+
+    const shadow = await createInstrumentIsolation(env, {
+      ...isolationInput('isolation_shadow', 'bass clarinet'),
+      jobId: 'job-shadow',
+      rolloutStage: undefined,
+    });
+    assert.equal(shadow.record.rolloutStage, 'shadow');
+    assert.equal(summarizeInstrumentIsolation(shadow.record).status, 'shadowed');
+    await assert.rejects(
+      claimInstrumentIsolation(env, shadow.record.id),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'invalid_transition'
+    );
+    assert.equal((await getInstrumentIsolation(env, shadow.record.id))?.attempts, 0);
 
     const first = await createInstrumentIsolation(env, isolationInput('isolation_one', 'saxophone'));
     assert.equal(first.created, true);
@@ -652,24 +723,54 @@ test('Railway boot and numbered migration both add isolation storage idempotentl
         db.applyNodeMigrations();
         db.applyNodeMigrations();
       } else {
-        const sql = readFileSync('migrations/0008-instrument-isolations.sql', 'utf8');
-        db.applySchema(sql);
-        db.applySchema(sql);
+        const createSql = readFileSync('migrations/0008-instrument-isolations.sql', 'utf8');
+        db.applySchema(createSql);
+        db.applySchema(createSql);
+        await db.prepare(
+          `INSERT INTO instrument_isolations
+            (id, job_id, requested_by, source_hash, source_type, normalized_target,
+             provider, provider_model, provider_version, provider_contract_version, cache_key)
+           VALUES ('legacy-isolation', 'legacy-job', 'legacy-teacher', ?, 'upload',
+             'saxophone', 'replicate', 'cjwbw/audiosep', ?,
+             'audiosep-replicate-v1', ?)`
+        )
+          .bind(
+            'a'.repeat(64),
+            isolationIdentity.version,
+            `query-isolation/v1/${'b'.repeat(64)}`
+          )
+          .run();
+        db.applySchema(readFileSync('migrations/0010-isolation-rollout-stage.sql', 'utf8'));
       }
 
       const columns = await db.prepare("PRAGMA table_info('instrument_isolations')")
-        .all<{ name: string }>();
+        .all<{ name: string; dflt_value: string | null }>();
       for (const name of [
         'job_id',
         'source_hash',
         'normalized_target',
         'provider_version',
         'cache_key',
+        'rollout_stage',
         'status',
         'attempts',
         'deadline_at',
       ]) {
         assert.equal(columns.results.filter((column) => column.name === name).length, 1, name);
+      }
+      assert.equal(
+        columns.results.find((column) => column.name === 'rollout_stage')?.dflt_value,
+        "'shadow'"
+      );
+      if (migration === 'numbered') {
+        assert.equal(
+          (
+            await db.prepare(
+              "SELECT rollout_stage FROM instrument_isolations WHERE id = 'legacy-isolation'"
+            ).first<{ rollout_stage: string }>()
+          )?.rollout_stage,
+          'shadow'
+        );
       }
       const indexes = await db.prepare("PRAGMA index_list('instrument_isolations')")
         .all<{ name: string }>();

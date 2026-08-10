@@ -28,6 +28,8 @@ OPENROUTER_API_KEY=sk-or-your-openrouter-key
 # timeouts at or below 28000 in total.
 # INSTRUMENT_DISCOVERY_ENABLED=true
 # QUERY_ISOLATION_ENABLED=true
+# QUERY_ISOLATION_MODE=shadow
+# REPLICATE_AUDIOSEP_VERSION=f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8
 
 # Fully local Audio Separator + BS-RoFormer development (no production
 # credentials required). These values override wrangler.jsonc in local mode.

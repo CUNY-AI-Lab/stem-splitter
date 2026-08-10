@@ -1,6 +1,7 @@
 import type { Env } from '../src/env';
 import { processingFeatureFlags } from '../src/features';
 import { audioAnalysisEndpoint } from '../src/analysis/http';
+import { audioSepReplicateIdentity } from '../src/isolation/options.ts';
 
 export type OptionalServiceConfigurationStatus =
   | 'unconfigured'
@@ -19,6 +20,8 @@ type RuntimeConfig = Pick<
   | 'SERVER_AUTO_MODE'
   | 'INSTRUMENT_DISCOVERY_ENABLED'
   | 'QUERY_ISOLATION_ENABLED'
+  | 'QUERY_ISOLATION_MODE'
+  | 'REPLICATE_AUDIOSEP_VERSION'
 >;
 
 function enabled(value: string | undefined): boolean {
@@ -63,6 +66,18 @@ export function audioAnalysisStatus(env: RuntimeConfig): OptionalServiceConfigur
   }
 }
 
+export function queryIsolationProviderStatus(
+  env: RuntimeConfig
+): OptionalServiceConfigurationStatus {
+  if (!env.REPLICATE_AUDIOSEP_VERSION) return 'unconfigured';
+  try {
+    audioSepReplicateIdentity(env);
+    return 'configured';
+  } catch {
+    return 'invalid';
+  }
+}
+
 export function runtimeConfigurationSummary(env: RuntimeConfig) {
   const flags = processingFeatureFlags(env);
   return {
@@ -70,7 +85,8 @@ export function runtimeConfigurationSummary(env: RuntimeConfig) {
     audioAnalysis: audioAnalysisStatus(env),
     serverAutoMode: flags.serverAutoMode,
     instrumentDiscovery: flags.instrumentDiscovery ? 'enabled' : 'disabled',
-    queryIsolation: flags.queryIsolation ? 'enabled' : 'disabled',
+    queryIsolationMode: flags.queryIsolationMode,
+    queryIsolationProvider: queryIsolationProviderStatus(env),
   } as const;
 }
 
@@ -97,6 +113,31 @@ export function runtimeConfigurationWarnings(env: RuntimeConfig): string[] {
   }
   if (summary.instrumentDiscovery === 'enabled' && summary.serverAutoMode === 'off') {
     warnings.push('instrument discovery is enabled while server Auto is off; the flag has no effect');
+  }
+  if (
+    env.QUERY_ISOLATION_MODE &&
+    env.QUERY_ISOLATION_MODE !== 'shadow' &&
+    enabled(env.QUERY_ISOLATION_ENABLED)
+  ) {
+    warnings.push(
+      `QUERY_ISOLATION_MODE=${env.QUERY_ISOLATION_MODE} is invalid; query isolation will remain off`
+    );
+  }
+  if (env.QUERY_ISOLATION_MODE === 'shadow' && !enabled(env.QUERY_ISOLATION_ENABLED)) {
+    warnings.push('QUERY_ISOLATION_MODE=shadow is ignored unless QUERY_ISOLATION_ENABLED=true');
+  }
+  if (summary.queryIsolationMode === 'shadow' && summary.audioAnalysis !== 'configured') {
+    warnings.push(
+      `query isolation shadow is enabled but audio analysis is ${summary.audioAnalysis}; source fingerprinting will be unavailable`
+    );
+  }
+  if (
+    summary.queryIsolationMode === 'shadow' &&
+    summary.queryIsolationProvider !== 'configured'
+  ) {
+    warnings.push(
+      `query isolation shadow is enabled but the reviewed provider identity is ${summary.queryIsolationProvider}; requests will remain unavailable`
+    );
   }
 
   return warnings;

@@ -1,6 +1,8 @@
 import {
   AUDIO_ANALYSIS_SCHEMA_VERSION,
+  SOURCE_FINGERPRINT_SCHEMA_VERSION,
   type AudioAnalysisRequestV1,
+  type AudioFingerprintRequestV1,
   type AudioSourceType,
   type CoreModelContract,
 } from '../src/analysis/types.ts';
@@ -16,6 +18,7 @@ const REQUEST_KEYS = new Set([
   'fallbackModel',
   'instrumentDiscovery',
 ]);
+const FINGERPRINT_REQUEST_KEYS = new Set(['schemaVersion', 'sourceUrl', 'sourceType']);
 
 export class AnalysisRequestError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -63,6 +66,24 @@ function parseCoreModels(value: unknown): CoreModelContract[] {
     seenModels.add(id);
     return { id, stems: [...candidate.stems] as string[] };
   });
+}
+
+function parseSourceFields(value: Record<string, unknown>): {
+  sourceUrl: string;
+  sourceType: AudioSourceType;
+} {
+  if (
+    typeof value.sourceUrl !== 'string' ||
+    !value.sourceUrl ||
+    value.sourceUrl.length > 4096 ||
+    /[\u0000-\u001f\u007f]/.test(value.sourceUrl)
+  ) {
+    throw new AnalysisRequestError('sourceUrl is invalid');
+  }
+  if (typeof value.sourceType !== 'string' || !SOURCE_TYPES.has(value.sourceType as AudioSourceType)) {
+    throw new AnalysisRequestError('sourceType is invalid');
+  }
+  return { sourceUrl: value.sourceUrl, sourceType: value.sourceType as AudioSourceType };
 }
 
 export async function readBoundedJson(request: Request): Promise<unknown> {
@@ -116,17 +137,7 @@ export function parseAnalysisRequest(value: unknown): AudioAnalysisRequestV1 {
   if (value.schemaVersion !== AUDIO_ANALYSIS_SCHEMA_VERSION) {
     throw new AnalysisRequestError('analysis schema version is unsupported');
   }
-  if (
-    typeof value.sourceUrl !== 'string' ||
-    !value.sourceUrl ||
-    value.sourceUrl.length > 4096 ||
-    /[\u0000-\u001f\u007f]/.test(value.sourceUrl)
-  ) {
-    throw new AnalysisRequestError('sourceUrl is invalid');
-  }
-  if (typeof value.sourceType !== 'string' || !SOURCE_TYPES.has(value.sourceType as AudioSourceType)) {
-    throw new AnalysisRequestError('sourceType is invalid');
-  }
+  const source = parseSourceFields(value);
   if (typeof value.instrumentDiscovery !== 'boolean') {
     throw new AnalysisRequestError('instrumentDiscovery must be boolean');
   }
@@ -139,10 +150,22 @@ export function parseAnalysisRequest(value: unknown): AudioAnalysisRequestV1 {
   }
   return {
     schemaVersion: AUDIO_ANALYSIS_SCHEMA_VERSION,
-    sourceUrl: value.sourceUrl,
-    sourceType: value.sourceType as AudioSourceType,
+    ...source,
     coreModels,
     fallbackModel: value.fallbackModel,
     instrumentDiscovery: value.instrumentDiscovery,
+  };
+}
+
+export function parseFingerprintRequest(value: unknown): AudioFingerprintRequestV1 {
+  if (!record(value) || !exactKeys(value, FINGERPRINT_REQUEST_KEYS)) {
+    throw new AnalysisRequestError('fingerprint request shape is invalid');
+  }
+  if (value.schemaVersion !== SOURCE_FINGERPRINT_SCHEMA_VERSION) {
+    throw new AnalysisRequestError('fingerprint schema version is unsupported');
+  }
+  return {
+    schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+    ...parseSourceFields(value),
   };
 }

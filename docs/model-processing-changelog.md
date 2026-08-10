@@ -5,6 +5,42 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## query-isolation-shadow-v1 — verified identity and demand only — 2026-08-10
+
+- Scope: authenticated stored-source fingerprinting, private job identity,
+  additive isolation rollout state, and a teacher-only shadow-create route.
+  No provider-start, webhook, output hydration, separator selection, core stem,
+  Auto threshold, Railway variable, or live deployment changed.
+- Source identity: the analyzer streams the exact allowlisted source into its
+  bounded temporary file while incrementally calculating SHA-256. Analysis can
+  return that identity out of band; `/v1/fingerprint` performs the same fetch
+  without decode. Both paths share authentication, redirect/origin checks,
+  byte/concurrency/time limits, cleanup, and log redaction. The app stores only
+  the lowercase digest and never includes it in student or teacher JSON.
+- Shadow boundary: only literal `QUERY_ISOLATION_ENABLED=true` plus absent or
+  literal `QUERY_ISOLATION_MODE=shadow` opens creation. Invalid modes fail off.
+  The route accepts only bounded `{target}` JSON from a signed-in teacher,
+  normalizes the target server-side, binds the authenticated username, requires
+  a completed core job and verified source identity, and records the reviewed
+  AudioSep contract identity without constructing its provider adapter.
+- Spend shield: shadow resources persist with `rollout_stage=shadow`; the claim
+  compare-and-set requires `teacher_beta`. Requests are idempotent by complete
+  cache identity and stop at two distinct targets. The response states
+  `providerStarted=false`, attempts stay zero, and the false-default regression
+  proves the route remains absent when the flags are omitted.
+- Migration: `0009` adds nullable constrained `jobs.source_hash`; `0010` adds
+  isolation rollout stage while forcing existing rows into `shadow`.
+  Railway boot checks both columns additively on every persistent-volume start.
+- Local gate: exact Bun 1.3.14 passes all three typechecks plus 152 worker, 22
+  analyzer, 21 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19
+  flags-off browser, 4 authoritative-Auto browser, and 1 isolation-shadow E2E
+  test. The analyzer image source changed, so its constrained-image smoke,
+  native CI, and Railway acceptance must be repeated before release.
+- Remaining gate: do not add `teacher_beta` mode or import the provider-start
+  adapter until the hosted checkpoint/license provenance, semester budget,
+  output hydration/retention, common quality/cost evaluation, and live Railway
+  rollback evidence all pass.
+
 ## audiosep-replicate-contract-v1 — dormant adapter and resource — 2026-08-10
 
 - Scope: query-isolation contract, offline provider guard, additive persistence,

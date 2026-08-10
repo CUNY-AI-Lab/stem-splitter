@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS jobs (
                                        -- NULL on pre-2026-07 rows; read as htdemucs_ft
   routing_request TEXT,                -- NULL for legacy/explicit jobs; "auto" when server analysis was requested
   source_type TEXT,                    -- upload | youtube | archive for analyzed jobs
+  source_hash TEXT                     -- server-verified lowercase SHA-256 of stored source bytes
+    CHECK (source_hash IS NULL OR (
+      length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
+    )),
   analysis TEXT,                       -- versioned AutoRoutingDecision JSON; never source audio/URL/credentials
   labels TEXT,                         -- JSON map: { "<stem name>": "<display label>" }
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -42,6 +46,8 @@ CREATE TABLE IF NOT EXISTS instrument_isolations (
       AND substr(cache_key, 1, 19) = 'query-isolation/v1/'
       AND substr(cache_key, 20) NOT GLOB '*[^0-9a-f]*'
     ),
+  rollout_stage TEXT NOT NULL DEFAULT 'shadow'
+    CHECK (rollout_stage IN ('shadow', 'teacher_beta')),
   status TEXT NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
   external_id TEXT,

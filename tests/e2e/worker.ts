@@ -64,8 +64,18 @@ export default {
           version: 'f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8',
           contractVersion: 'audiosep-replicate-v1',
         },
+        rolloutStage: 'teacher_beta',
       });
       return Response.json({ id: result.record.id, created: result.created });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/__e2e/job-source-hash') {
+      const jobId = url.searchParams.get('job');
+      if (!jobId) return new Response(null, { status: 400 });
+      const row = await env.DB.prepare('SELECT source_hash FROM jobs WHERE id = ?')
+        .bind(jobId)
+        .first<{ source_hash: string | null }>();
+      return row ? Response.json({ sourceHash: row.source_hash }) : new Response(null, { status: 404 });
     }
 
     if (request.method === 'POST' && url.pathname === '/__e2e/local-upload') {

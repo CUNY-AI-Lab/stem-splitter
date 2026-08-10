@@ -1,4 +1,5 @@
 import { test as base, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { HttpResponse, http } from 'msw';
@@ -120,6 +121,7 @@ function sourceHandlers({ network, server, analysisStatus = 200 }) {
   const archiveId = 'server-auto-open-audio';
   const archiveFile = 'fixture.wav';
   const analysisCalls = [];
+  const analysisHashes = [];
   const separatorInputs = [];
   let predictionCounter = 0;
 
@@ -131,13 +133,18 @@ function sourceHandlers({ network, server, analysisStatus = 200 }) {
       const bytes = Buffer.from(await stored.arrayBuffer());
       const expected = payload.sourceType === 'youtube' ? Buffer.from(youtubeAudio) : sourceAudio;
       expect(bytes.equals(expected)).toBe(true);
+      const sourceHash = createHash('sha256').update(bytes).digest('hex');
       const signed = new URL(payload.sourceUrl);
       const ttl = Number(signed.searchParams.get('expires')) - Math.floor(Date.now() / 1000);
       expect(ttl).toBeGreaterThan(0);
       expect(ttl).toBeLessThanOrEqual(10 * 60 + 2);
       analysisCalls.push(payload);
+      analysisHashes.push(sourceHash);
       return analysisStatus === 200
-        ? HttpResponse.json(analysisFixture())
+        ? HttpResponse.json({
+            ...analysisFixture(),
+            source: { schemaVersion: '1', sha256: sourceHash, bytes: bytes.byteLength },
+          })
         : HttpResponse.json({ error: 'offline' }, { status: analysisStatus });
     }),
     http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
@@ -192,7 +199,7 @@ function sourceHandlers({ network, server, analysisStatus = 200 }) {
     )
   );
 
-  return { youtubeAudio, archiveId, archiveFile, analysisCalls, separatorInputs };
+  return { youtubeAudio, archiveId, archiveFile, analysisCalls, analysisHashes, separatorInputs };
 }
 
 async function createAllSourceJobs(server) {
@@ -257,6 +264,13 @@ test('authoritative server Auto analyzes stored upload, YouTube, and Archive aud
     const stored = await readback.json();
     expect(stored.autoRouting).toEqual(job.autoRouting);
     expect(stored.model).toBe('htdemucs_6s');
+    expect(JSON.stringify(stored)).not.toContain(state.analysisHashes[index]);
+    const privateHash = await e2eFetch(
+      server,
+      `/__e2e/job-source-hash?job=${encodeURIComponent(job.id)}`
+    );
+    expect(privateHash.status).toBe(200);
+    expect(await privateHash.json()).toEqual({ sourceHash: state.analysisHashes[index] });
   }
 });
 

@@ -5,6 +5,7 @@ import {
   PINNED_INSTRUMENT_MODEL_SHA256,
   PINNED_INSTRUMENT_VOCABULARY_SHA256,
   PINNED_INSTRUMENT_VOCABULARY_VERSION,
+  SOURCE_FINGERPRINT_SCHEMA_VERSION,
   type AudioAnalysisRequestV1,
   type AudioAnalysisResultV1,
   type InstrumentDiscoveryResultV1,
@@ -22,7 +23,12 @@ import {
   httpInstrumentDiscoveryProvider,
   InstrumentDiscoveryError,
 } from './discovery.ts';
-import { AnalysisRequestError, parseAnalysisRequest, readBoundedJson } from './request.ts';
+import {
+  AnalysisRequestError,
+  parseAnalysisRequest,
+  parseFingerprintRequest,
+  readBoundedJson,
+} from './request.ts';
 import { fetchSourceToTemp, SourcePolicyError, type TemporarySource } from './source.ts';
 
 export interface SafeLogger {
@@ -262,7 +268,14 @@ export function createAudioAnalysisService(
           : {}),
       });
       c.header('Cache-Control', 'no-store');
-      return c.json(result);
+      return c.json({
+        ...result,
+        source: {
+          schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+          sha256: source.sha256,
+          bytes: source.bytes,
+        },
+      });
     } catch (error) {
       const status =
         error instanceof AnalysisRequestError || error instanceof SourcePolicyError
@@ -283,6 +296,71 @@ export function createAudioAnalysisService(
         totalMs: Math.max(0, dependencies.now() - startedAt),
       });
       return c.json({ error: code }, status as 400 | 413 | 415 | 422 | 500 | 502);
+    } finally {
+      active -= 1;
+      await source?.cleanup().catch(() => undefined);
+    }
+  });
+
+  // Exact-byte identity for explicit jobs that did not run Auto. This uses the
+  // same scoped source URL, byte cap, timeout, concurrency, and cleanup as the
+  // analyzer, but deliberately performs no decode or classifier work.
+  app.post('/v1/fingerprint', async (c) => {
+    if (!authorized(c.req.header('authorization'), config.token)) {
+      c.header('WWW-Authenticate', 'Bearer');
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    if (config.errors.length) return c.json({ error: 'service_not_ready' }, 503);
+    if (active >= config.maxConcurrency) {
+      c.header('Retry-After', '1');
+      return c.json({ error: 'analysis_busy' }, 503);
+    }
+
+    active += 1;
+    const requestId = randomUUID();
+    const startedAt = dependencies.now();
+    let source: TemporarySource | undefined;
+    let sourceType: string | undefined;
+    try {
+      const request = parseFingerprintRequest(await readBoundedJson(c.req.raw));
+      sourceType = request.sourceType;
+      source = await dependencies.fetchSource(request.sourceUrl, config, c.req.raw.signal);
+      const totalMs = Math.max(0, dependencies.now() - startedAt);
+      if (totalMs > 60_000) throw new SourcePolicyError('source_fetch_timeout', 502);
+      dependencies.logger.info('fingerprint_complete', {
+        requestId,
+        schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+        sourceType,
+        totalMs,
+      });
+      c.header('Cache-Control', 'no-store');
+      return c.json({
+        schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+        source: {
+          schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+          sha256: source.sha256,
+          bytes: source.bytes,
+        },
+        timing: { totalMs },
+      });
+    } catch (error) {
+      const status =
+        error instanceof AnalysisRequestError || error instanceof SourcePolicyError
+          ? error.status
+          : 500;
+      const code =
+        error instanceof AnalysisRequestError
+          ? 'invalid_request'
+          : error instanceof SourcePolicyError
+            ? error.code
+            : 'fingerprint_failed';
+      dependencies.logger.warn('fingerprint_failed', {
+        requestId,
+        ...(sourceType ? { sourceType } : {}),
+        code,
+        totalMs: Math.max(0, dependencies.now() - startedAt),
+      });
+      return c.json({ error: code }, status as 400 | 413 | 415 | 500 | 502 | 503);
     } finally {
       active -= 1;
       await source?.cleanup().catch(() => undefined);

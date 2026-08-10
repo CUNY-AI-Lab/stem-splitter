@@ -1,4 +1,5 @@
 import { open, mkdtemp, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AudioAnalysisServiceConfig } from './config.ts';
@@ -15,6 +16,7 @@ export class SourcePolicyError extends Error {
 export interface TemporarySource {
   path: string;
   bytes: number;
+  sha256: string;
   cleanup(): Promise<void>;
 }
 
@@ -101,6 +103,7 @@ export async function fetchSourceToTemp(
     handle = await open(path, 'wx', 0o600);
     const reader = response.body.getReader();
     let bytes = 0;
+    const sourceHash = createHash('sha256');
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -110,6 +113,7 @@ export async function fetchSourceToTemp(
           await reader.cancel('source is too large');
           throw new SourcePolicyError('source_too_large', 413);
         }
+        sourceHash.update(value);
         await handle.write(value);
       }
     } finally {
@@ -121,6 +125,7 @@ export async function fetchSourceToTemp(
     return {
       path,
       bytes,
+      sha256: sourceHash.digest('hex'),
       cleanup: () => rm(directory, { recursive: true, force: true }),
     };
   } catch (error) {

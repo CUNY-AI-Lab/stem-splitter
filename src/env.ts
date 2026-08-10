@@ -30,6 +30,8 @@ export type Env = {
   INSTRUMENT_DISCOVERY_ENABLED?: string;
   /** Optional target isolation resource; separate from core stems. */
   QUERY_ISOLATION_ENABLED?: string;
+  /** Rollout posture when query isolation is enabled: shadow (default) only. */
+  QUERY_ISOLATION_MODE?: string;
   /** Exact Replicate version for the dormant AudioSep query-isolation adapter. */
   REPLICATE_AUDIOSEP_VERSION?: string;
   /** Private base URL for the separate Railway audio-analysis service. */

@@ -69,8 +69,10 @@ healthcheck so a missing hash-pinned model cannot be promoted.
 Phase 3 does not add another Railway service at the outset. Its first candidate
 is a dormant, exact-version AudioSep adapter for the external Replicate API.
 Do not stage its version variable or enable its feature while provisioning the
-analysis/classifier services: the app still lacks the separate isolation
-resource, teacher-only route, budgets, and quality gate. SAM-Audio remains an
+analysis/classifier services. The app now has a separate resource and a
+teacher-only shadow route, but shadow rows cannot be claimed and the app has no
+provider-start path. Semester budgets, checkpoint provenance, and the quality
+gate remain open. SAM-Audio remains an
 evaluation-only community deployment subject to institutional license and
 checkpoint review. Banquet, if later justified, becomes its own scale-to-zero
 GPU service and never runs inside either warmed Railway CPU service.
@@ -131,6 +133,7 @@ runtime.
 | `SERVER_AUTO_MODE` | `off` |
 | `INSTRUMENT_DISCOVERY_ENABLED` | `false` |
 | `QUERY_ISOLATION_ENABLED` | `false` |
+| `QUERY_ISOLATION_MODE` | `off` |
 | `REPLICATE_AUDIOSEP_VERSION` | leave absent through Phases 1-2; review and stage one exact 64-hex version only with the Phase 3 isolation resource |
 
 The app and analyzer both compile the exact `autosplit-role-v3` pin. A response
@@ -178,6 +181,18 @@ argument; use a sealed shared variable and stdin.
    raw feature diagnostics local and do not store source URLs or signatures.
 8. Restart both Railway services and repeat readiness plus one shadow job.
 
+For the later Phase 3 demand-shadow gate, keep provider execution absent. Stage
+the reviewed `REPLICATE_AUDIOSEP_VERSION`, read it back without printing any
+token, then set `QUERY_ISOLATION_ENABLED=true` and
+`QUERY_ISOLATION_MODE=shadow` as one reviewed app release. A signed-in teacher
+request must make the analyzer fetch the stored bytes through
+`POST /v1/fingerprint`, persist no digest in either teacher or student JSON,
+normalize the target, deduplicate repeats, and stop at two targets per job.
+Verify the row reports `shadowed`, `attempts=0`, and `providerStarted=false`.
+Reject the release if any Replicate prediction is created or any shadow row can
+transition to processing. This gate records demand only; it does not approve
+the still-unverified hosted AudioSep checkpoint.
+
 For the later Phase 2 gate, deploy `instrument-discovery` before adding its
 three analyzer variables and keep `INSTRUMENT_DISCOVERY_ENABLED=false` on the
 app throughout. Before any teacher-shadow request, change the analyzer fetch
@@ -205,6 +220,12 @@ Discovery has its own earlier kill switch: keep or restore
 `INSTRUMENT_DISCOVERY_ENABLED=false`. That stops all discovery requests without
 changing server Auto, the analyzer, stored core decisions, or 2/4/6 jobs. Do
 not combine that rollback with a role-classifier or separator release.
+
+Query isolation has an independent rollback: restore
+`QUERY_ISOLATION_ENABLED=false` and verify readback. Historical teacher
+readback remains available, but no new shadow request can be created. Do not
+delete shadow rows during rollback; they are versioned demand evidence and
+cannot execute.
 
 Authoritative mode is not part of initial provisioning. It requires the pinned
 image, private-service resource tests, real-audio listening, restart,

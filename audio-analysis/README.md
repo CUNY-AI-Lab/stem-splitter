@@ -48,8 +48,12 @@ Its success or failure cannot change the role classifier's core decision.
 
 `GET /healthz` proves the process is alive. `GET /readyz` returns 200 only when
 configuration, the exact FFmpeg/ffprobe pin, and the role classifier are usable.
-`POST /v1/analyze` requires the bearer token. Responses and logs never contain
-the source URL, token, audio, or raw PCM.
+`POST /v1/analyze` and `POST /v1/fingerprint` require the bearer token. Both
+stream the same allowlisted stored bytes through the same byte, time,
+concurrency, and cleanup boundary. The fingerprint route skips decode and
+returns only a versioned lowercase SHA-256 plus byte count. The app persists
+the digest privately; student payloads and service logs never contain the
+digest, source URL, token, audio, or raw PCM.
 
 ## Local verification
 
@@ -74,7 +78,7 @@ npm run smoke:audio-analysis:image -- stem-splitter-audio-analysis:local
 
 The smoke uses an internal-only fixture network and gives the analyzer no bind
 mounts. It verifies the image/runtime allowlist and limits, readiness/auth,
-short and maximum-duration decoding, malformed media, declared and streamed
+source-fingerprint parity, short and maximum-duration decoding, malformed media, declared and streamed
 size enforcement, source-fetch timeout, concurrency rejection, temporary-file
 cleanup, and log redaction. A passing local run is not native amd64 CI or
 Railway resource evidence.

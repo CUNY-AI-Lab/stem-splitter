@@ -16,7 +16,8 @@ import {
   AUTO_ROUTING_REQUEST,
   configuredAudioAnalysisProvider,
   redactInstrumentDiscovery,
-  resolveAutoRouting,
+  requestSourceFingerprint,
+  resolveAutoRoutingWithSource,
   serverAutoCapability,
   type AudioSourceType,
   type AutoRoutingDecisionV1,
@@ -85,9 +86,16 @@ import {
 import { readBoundedTeacherJson, TeacherRequestError } from './teacher/request';
 import { JsonRequestError, readBoundedJsonRequest } from './http/bounded-request.ts';
 import {
+  createInstrumentIsolation,
+  InstrumentIsolationResourceError,
   listInstrumentIsolations,
   summarizeInstrumentIsolation,
 } from './isolation/resource.ts';
+import {
+  normalizeIsolationTarget,
+  QueryIsolationContractError,
+} from './isolation/contract.ts';
+import { audioSepReplicateIdentity } from './isolation/options.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -114,6 +122,7 @@ interface JobRow {
   routing_request: string | null;
   source_type: string | null;
   analysis: string | null;
+  source_hash: string | null;
   labels: string | null;
 }
 
@@ -123,6 +132,11 @@ interface AnnotationRow {
   at_seconds: number;
   text: string;
   created_at: string;
+}
+
+async function sha256Audio(data: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -568,6 +582,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let key: string;
   let filename: string;
   let sourceType: AudioSourceType;
+  let sourceHash: string | null = null;
 
   if (body?.youtubeUrl) {
     sourceType = 'youtube';
@@ -608,6 +623,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     }
     key = `uploads/${crypto.randomUUID()}/source.m4a`;
     filename = sanitizeFilename(audio.title) || 'youtube-audio';
+    sourceHash = await sha256Audio(audio.data);
     await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
   } else if (body?.archiveId) {
     sourceType = 'archive';
@@ -649,6 +665,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     const extension = audio.fileName.slice(audio.fileName.lastIndexOf('.')).toLowerCase();
     key = `uploads/${crypto.randomUUID()}/source${extension}`;
     filename = sanitizeFilename(audio.title) || 'archive-audio';
+    sourceHash = await sha256Audio(audio.data);
     await c.env.AUDIO.put(key, audio.data, {
       httpMetadata: { contentType: archiveContentType(audio.fileName) },
     });
@@ -675,7 +692,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   if (autoRequested && autoCapability) {
     const analysisUrl = await presignAnalysisDownload(c.env, key);
     const flags = processingFeatureFlags(c.env);
-    autoRouting = await resolveAutoRouting({
+    const resolution = await resolveAutoRoutingWithSource({
       sourceUrl: analysisUrl,
       sourceType,
       mode: autoCapability.mode,
@@ -687,31 +704,33 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       timeoutMs: audioAnalysisTimeoutMs(c.env),
       instrumentDiscovery: flags.instrumentDiscovery,
     });
+    autoRouting = resolution.decision;
+    if (resolution.sourceIdentity) {
+      sourceHash = sourceHash && sourceHash !== resolution.sourceIdentity.sha256
+        ? null
+        : resolution.sourceIdentity.sha256;
+    }
     model = autoRouting.resolvedCoreModel;
   }
 
   const id = crypto.randomUUID();
-  if (autoRouting) {
-    await c.env.DB.prepare(
-      'INSERT INTO jobs (id, filename, source_key, status, model, routing_request, source_type, analysis) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  await c.env.DB.prepare(
+    `INSERT INTO jobs
+      (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      id,
+      filename,
+      key,
+      'pending',
+      model,
+      autoRouting ? AUTO_ROUTING_REQUEST : null,
+      sourceType,
+      sourceHash,
+      autoRouting ? JSON.stringify(autoRouting) : null
     )
-      .bind(
-        id,
-        filename,
-        key,
-        'pending',
-        model,
-        AUTO_ROUTING_REQUEST,
-        sourceType,
-        JSON.stringify(autoRouting)
-      )
-      .run();
-  } else {
-    // Keep the kill-switch path compatible with the pre-routing schema/query.
-    await c.env.DB.prepare('INSERT INTO jobs (id, filename, source_key, status, model) VALUES (?, ?, ?, ?, ?)')
-      .bind(id, filename, key, 'pending', model)
-      .run();
-  }
+    .run();
 
   const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
 
@@ -805,9 +824,7 @@ app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
   }
 });
 
-// Historical readback stays available when the rollout flag is off. There is
-// intentionally no create/start route yet: provider provenance, source hashing,
-// semester budgets, and teacher-beta acceptance remain release gates.
+// Historical readback stays available when the rollout flag is off.
 app.get('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
   const jobId = c.req.param('id');
   const job = await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?')
@@ -819,6 +836,157 @@ app.get('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
     jobId,
     isolations: isolations.map(summarizeInstrumentIsolation),
   });
+});
+
+// Shadow records teacher demand against verified source bytes and an exact
+// reviewed provider identity. It cannot claim the row or start a prediction.
+app.post('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
+  if (processingFeatureFlags(c.env).queryIsolationMode !== 'shadow') {
+    return c.json({ error: 'Optional isolation is unavailable.' }, 404);
+  }
+
+  let body: { target?: unknown } | null;
+  try {
+    const parsed = await readBoundedTeacherJson(c.req.raw, MAX_SMALL_JSON_BYTES);
+    body = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as { target?: unknown })
+      : null;
+  } catch (error) {
+    if (error instanceof TeacherRequestError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    throw error;
+  }
+  if (
+    !body ||
+    Object.keys(body).length !== 1 ||
+    !Object.prototype.hasOwnProperty.call(body, 'target') ||
+    typeof body.target !== 'string'
+  ) {
+    return c.json({ error: 'target is required' }, 400);
+  }
+
+  let normalizedTarget: string;
+  try {
+    normalizedTarget = normalizeIsolationTarget(body.target);
+  } catch (error) {
+    if (error instanceof QueryIsolationContractError) {
+      return c.json({ error: error.message }, 400);
+    }
+    throw error;
+  }
+
+  const jobId = c.req.param('id');
+  const job = await c.env.DB.prepare(
+    'SELECT id, status, source_key, source_type, source_hash, routing_request, analysis FROM jobs WHERE id = ?'
+  )
+    .bind(jobId)
+    .first<Pick<
+      JobRow,
+      | 'id'
+      | 'status'
+      | 'source_key'
+      | 'source_type'
+      | 'source_hash'
+      | 'routing_request'
+      | 'analysis'
+    >>();
+  if (!job) return c.json({ error: 'Job not found' }, 404);
+  if (job.status !== 'done') {
+    return c.json({ error: 'The core split must finish before optional isolation.' }, 409);
+  }
+  if (!job.source_type || !['upload', 'youtube', 'archive'].includes(job.source_type)) {
+    return c.json({ error: 'This legacy job has no verifiable source type.' }, 409);
+  }
+  const sourceType = job.source_type as AudioSourceType;
+
+  let sourceHash = job.source_hash;
+  if (!sourceHash) {
+    try {
+      const sourceUrl = await presignAnalysisDownload(c.env, job.source_key);
+      const identity = await requestSourceFingerprint({
+        sourceUrl,
+        sourceType,
+        provider: configuredAudioAnalysisProvider(c.env),
+        timeoutMs: audioAnalysisTimeoutMs(c.env),
+      });
+      const updated = await c.env.DB.prepare(
+        'UPDATE jobs SET source_hash = ? WHERE id = ? AND source_hash IS NULL'
+      )
+        .bind(identity.sha256, job.id)
+        .run();
+      if (updated.meta.changes === 1) {
+        sourceHash = identity.sha256;
+      } else {
+        const current = await c.env.DB.prepare('SELECT source_hash FROM jobs WHERE id = ?')
+          .bind(job.id)
+          .first<Pick<JobRow, 'source_hash'>>();
+        if (!current?.source_hash || current.source_hash !== identity.sha256) {
+          return c.json({ error: 'The stored source identity changed; retry this request.' }, 409);
+        }
+        sourceHash = current.source_hash;
+      }
+    } catch {
+      return c.json({ error: 'The stored audio could not be verified for isolation.' }, 503);
+    }
+  }
+  if (!/^[0-9a-f]{64}$/.test(sourceHash)) {
+    return c.json({ error: 'The stored source identity is unavailable.' }, 500);
+  }
+
+  let identity;
+  try {
+    identity = audioSepReplicateIdentity(c.env);
+  } catch {
+    return c.json({ error: 'The reviewed isolation identity is unavailable.' }, 503);
+  }
+
+  let analysisVocabularyVersion: string | null = null;
+  if (job.routing_request === AUTO_ROUTING_REQUEST && job.analysis) {
+    try {
+      analysisVocabularyVersion =
+        parseAutoRoutingDecision(JSON.parse(job.analysis), STORED_CORE_MODELS).analysis
+          .vocabularyClassifier?.vocabularyVersion ?? null;
+    } catch {
+      // The stored Auto trace is advisory here. Its absence must not invent a
+      // vocabulary pin or invalidate the server-verified source identity.
+    }
+  }
+
+  const teacher = (await currentTeacher(c))!;
+  try {
+    const result = await createInstrumentIsolation(c.env, {
+      jobId,
+      requestedBy: teacher.username,
+      sourceHash,
+      sourceType,
+      normalizedTarget,
+      analysisVocabularyVersion,
+      identity,
+      rolloutStage: 'shadow',
+    });
+    const payload = {
+      jobId,
+      isolation: summarizeInstrumentIsolation(result.record),
+      created: result.created,
+      rollout: 'shadow' as const,
+      providerStarted: false as const,
+    };
+    return result.created ? c.json(payload, 201) : c.json(payload, 200);
+  } catch (error) {
+    if (error instanceof InstrumentIsolationResourceError) {
+      if (error.code === 'job_not_found') return c.json({ error: 'Job not found' }, 404);
+      if (
+        error.code === 'core_split_incomplete' ||
+        error.code === 'source_type_mismatch' ||
+        error.code === 'maximum_reached'
+      ) {
+        return c.json({ error: error.message }, 409);
+      }
+      if (error.code === 'invalid_request') return c.json({ error: error.message }, 400);
+    }
+    throw error;
+  }
 });
 
 // Shared, class-wide display labels for stem channels.

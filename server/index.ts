@@ -91,8 +91,9 @@ const env = {
   SERVER_AUTO_MODE: process.env.SERVER_AUTO_MODE,
   INSTRUMENT_DISCOVERY_ENABLED: process.env.INSTRUMENT_DISCOVERY_ENABLED,
   QUERY_ISOLATION_ENABLED: process.env.QUERY_ISOLATION_ENABLED,
-  // Dormant until Phase 3 adds a teacher-only isolation resource. Do not warn
-  // while the false-default feature is intentionally absent.
+  QUERY_ISOLATION_MODE: process.env.QUERY_ISOLATION_MODE,
+  // The reviewed identity may be recorded in shadow mode, but provider start
+  // remains impossible until a later teacher-beta execution slice.
   REPLICATE_AUDIOSEP_VERSION: process.env.REPLICATE_AUDIOSEP_VERSION,
   AUDIO_ANALYSIS_URL: process.env.AUDIO_ANALYSIS_URL,
   AUDIO_ANALYSIS_TOKEN: process.env.AUDIO_ANALYSIS_TOKEN,

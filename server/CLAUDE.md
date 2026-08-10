@@ -51,7 +51,7 @@ DATA_DIR=/tmp/ss PORT=8899 WEBHOOK_SECRET=s CLASS_CODE=c npm start   # throwaway
 Separation, YouTube import, analysis, coach, and teacher credentials
 (`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`,
 `REPLICATE_YT_MODEL` + `REPLICATE_YT_MODEL_VERSION`,
-the dormant `REPLICATE_AUDIOSEP_VERSION`,
+the shadow-only `REPLICATE_AUDIOSEP_VERSION`,
 `AUDIO_ANALYSIS_URL` + `AUDIO_ANALYSIS_TOKEN`, `OPENROUTER_API_KEY`, and
 `TEACHER_SEED`) are **not** required to boot—see "Fail-fast vs. fail-lazy"
 below. Without `TEACHER_SEED`, the instructor console has no provisioned
@@ -143,8 +143,9 @@ Reaching `SUCCESS` says the container started, not that the app works. The check
 
 ## Tests
 
-`npm run test:e2e` and `npm run test:e2e:auto` run against Miniflare, not this
-host, so they are necessary but not sufficient for a change here.
+`npm run test:e2e`, `npm run test:e2e:auto`, and
+`npm run test:e2e:isolation-shadow` run against Miniflare, not this host, so
+they are necessary but not sufficient for a change here.
 `npm run test:server` covers additive SQLite migration and value-free runtime
 configuration reporting. The public signed-source and webhook round trip still
 requires a real Railway flow.

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS instrument_isolations (
       AND substr(cache_key, 1, 19) = 'query-isolation/v1/'
       AND substr(cache_key, 20) NOT GLOB '*[^0-9a-f]*'
     ),
+  rollout_stage TEXT NOT NULL DEFAULT 'shadow'
+    CHECK (rollout_stage IN ('shadow', 'teacher_beta')),
   status TEXT NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
   external_id TEXT,

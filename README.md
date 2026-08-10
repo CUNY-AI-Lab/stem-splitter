@@ -103,7 +103,9 @@ latest non-secret evidence is under
 pins with `npm run check:replicate` and `npm run check:youtube` before release.
 The separate `npm run check:isolation` command vets a candidate AudioSep pin,
 but does not authorize or enable the dormant Phase 3 adapter. The teacher-only
-isolation read route cannot create a request or start a provider prediction.
+isolation shadow route records normalized demand and private source/cache
+identity only. Its rollout stage cannot be claimed, and no app route constructs
+or starts a provider prediction.
 
 ## Deferred Cloudflare migration (finished product only)
 
@@ -367,8 +369,9 @@ and stems are deleted at the local 30-day retention boundary.
 
 The analysis-service suite additionally runs a real FFmpeg decode and proves
 authentication, scoped source URLs, byte/duration/time/concurrency limits,
-ephemeral cleanup, separate health/readiness, and exact deterministic
-browser/server classifier parity. Server Auto remains disabled unless its
+ephemeral cleanup, private source-fingerprint parity, separate
+health/readiness, and exact deterministic browser/server classifier parity.
+Server Auto remains disabled unless its
 master flag and rollout mode are explicitly set; analyzer failure preserves the
 four-track fallback.
 

@@ -2,9 +2,10 @@
 
 This is a source-and-contract review, not a quality result or deployment
 approval. No prediction was started, no Railway variable was changed, and the
-application has no query-isolation create/start route. It now has an additive
-resource and teacher-only historical readback, but no production request can
-populate the resource or reach the provider.
+application has no query-isolation provider-start route. It now has an additive
+resource, teacher-only historical readback, and a false-default shadow-create
+route. That route can populate demand/cache metadata but cannot claim a row,
+construct the provider adapter, or reach Replicate.
 `QUERY_ISOLATION_ENABLED` remains false.
 
 ## Decision
@@ -45,12 +46,21 @@ failure. A teacher session can read bounded summaries; the class code and
 student job response cannot. Historical readback remains available after a
 flag rollback.
 
-The adapter itself remains unimported by `src/index.ts`. No production create,
-provider-start, webhook, or output-download route exists, so a flipped flag
-still cannot spend money. The next executable phase must bind a server-verified
-source hash, add a semester budget, resolve the checkpoint provenance blocker,
-test signed-source lifetime and output hydration/retention, and pass the fixed
-evaluation manifest before any route may construct the adapter.
+The private analyzer now exposes an authenticated `/v1/fingerprint` contract
+that streams the exact stored source through the same origin, redirect, byte,
+timeout, concurrency, and temporary-file controls as analysis. It returns a
+lowercase SHA-256 and byte count without decoding. The app persists the digest
+privately on `jobs`; neither teacher summaries nor student jobs expose it. A
+shadow request with no stored digest must obtain and compare-and-set this
+identity before it can create a resource row.
+
+The provider-start adapter itself remains unimported by `src/index.ts`. No
+provider-start, webhook, or output-download route exists, and shadow rows are
+excluded from the claim transition, so a flipped flag still cannot spend
+money. The next executable phase must add a semester budget, resolve the
+checkpoint provenance blocker, test signed-source lifetime and output
+hydration/retention, and pass the fixed evaluation manifest before any route
+may construct the adapter.
 
 ## Primary sources
 

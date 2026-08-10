@@ -3,10 +3,12 @@ import test from 'node:test';
 import {
   degradedAnalysis,
   parseAudioAnalysisResult,
+  parseAudioFingerprintResult,
   parseAutoRoutingDecision,
   parseBrowserAutoSummary,
 } from '../src/analysis/contract.ts';
-import { resolveAutoRouting } from '../src/analysis/routing.ts';
+import { resolveAutoRouting, resolveAutoRoutingWithSource } from '../src/analysis/routing.ts';
+import { requestSourceFingerprint } from '../src/analysis/fingerprint.ts';
 import { httpAudioAnalysisProvider } from '../src/analysis/http.ts';
 import { configuredAudioAnalysisProvider } from '../src/analysis/index.ts';
 import { redactInstrumentDiscovery } from '../src/analysis/redaction.ts';
@@ -23,6 +25,13 @@ import { getSeparationOptions } from '../src/separation/options.ts';
 const models = getSeparationOptions('replicate').models;
 const allowed = new Set(models.map((model) => model.id));
 const TEST_ANALYSIS_TOKEN = 'analysis-test-token-000000000000000';
+const SOURCE_SHA256 = 'a'.repeat(64);
+
+const sourceIdentity = {
+  schemaVersion: '1' as const,
+  sha256: SOURCE_SHA256,
+  bytes: 1234,
+};
 
 function validAnalysis(model = 'htdemucs_6s') {
   return {
@@ -89,6 +98,34 @@ test('disabled discovery strips classifier labels and vocabulary metadata', () =
   const result = parseAudioAnalysisResult(validAnalysis(), models, 'htdemucs_ft', false);
   assert.deepEqual(result.detectedInstruments, []);
   assert.equal(result.vocabularyClassifier, undefined);
+});
+
+test('source fingerprint metadata is exact, private, and bounded', () => {
+  assert.deepEqual(
+    parseAudioFingerprintResult({
+      schemaVersion: '1',
+      source: sourceIdentity,
+      timing: { totalMs: 12 },
+    }),
+    { schemaVersion: '1', source: sourceIdentity, timing: { totalMs: 12 } }
+  );
+  for (const invalid of [
+    { ...sourceIdentity, sha256: 'not-a-hash' },
+    { ...sourceIdentity, sha256: SOURCE_SHA256.toUpperCase() },
+    { ...sourceIdentity, bytes: 0 },
+    { ...sourceIdentity, bytes: 100 * 1024 * 1024 + 1 },
+    { ...sourceIdentity, unexpected: true },
+  ]) {
+    assert.throws(
+      () =>
+        parseAudioFingerprintResult({
+          schemaVersion: '1',
+          source: invalid,
+          timing: { totalMs: 12 },
+        }),
+      /fingerprint/
+    );
+  }
 });
 
 test('analysis v1 rejects core schema drift, floating pins, and unsupported models', () => {
@@ -388,6 +425,39 @@ test('authoritative Auto applies a valid core recommendation', async () => {
   assert.equal(route.analysis.detectedInstruments[0].id, 'saxophone');
 });
 
+test('Auto returns verified source identity out-of-band without persisting it in the decision', async () => {
+  const resolution = await resolveAutoRoutingWithSource({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'upload',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider({ ...validAnalysis('htdemucs_6s'), source: sourceIdentity }),
+    timeoutMs: 15_000,
+    instrumentDiscovery: false,
+  });
+  assert.deepEqual(resolution.sourceIdentity, sourceIdentity);
+  assert.equal(resolution.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal('source' in resolution.decision, false);
+  assert.doesNotMatch(JSON.stringify(resolution.decision), new RegExp(SOURCE_SHA256));
+
+  const malformed = await resolveAutoRoutingWithSource({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'upload',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider({ ...validAnalysis('htdemucs_6s'), source: { ...sourceIdentity, bytes: 0 } }),
+    timeoutMs: 15_000,
+    instrumentDiscovery: false,
+  });
+  assert.equal(malformed.sourceIdentity, null);
+  assert.equal(malformed.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(malformed.decision.analysis.degraded.active, false);
+});
+
 test('persisted Auto routing is normalized before teacher or student readback', async () => {
   const route = await resolveAutoRouting({
     sourceUrl: 'https://audio.invalid/source',
@@ -585,6 +655,41 @@ test('HTTP analysis adapter sends the private bearer token and versioned request
       coreModels: models.map(({ id, stems }) => ({ id, stems })),
       fallbackModel: 'htdemucs_ft',
       instrumentDiscovery: false,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('HTTP fingerprint adapter uses the same guarded origin and bounded contract', async () => {
+  const originalFetch = globalThis.fetch;
+  let observed: { url?: string; init?: RequestInit } = {};
+  globalThis.fetch = async (input, init) => {
+    observed = { url: String(input), init };
+    return new Response(
+      JSON.stringify({ schemaVersion: '1', source: sourceIdentity, timing: { totalMs: 8 } }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  };
+  try {
+    const adapter = httpAudioAnalysisProvider('https://analysis.test', TEST_ANALYSIS_TOKEN);
+    const identity = await requestSourceFingerprint({
+      sourceUrl: 'https://source.invalid/signed',
+      sourceType: 'archive',
+      provider: adapter,
+      timeoutMs: 15_000,
+    });
+    assert.deepEqual(identity, sourceIdentity);
+    assert.equal(observed.url, 'https://analysis.test/v1/fingerprint');
+    assert.equal(
+      new Headers(observed.init?.headers).get('authorization'),
+      `Bearer ${TEST_ANALYSIS_TOKEN}`
+    );
+    assert.equal(observed.init?.redirect, 'manual');
+    assert.deepEqual(JSON.parse(String(observed.init?.body)), {
+      schemaVersion: '1',
+      sourceUrl: 'https://source.invalid/signed',
+      sourceType: 'archive',
     });
   } finally {
     globalThis.fetch = originalFetch;

@@ -34,6 +34,26 @@ test('server Auto master flag controls rollout mode and invalid modes fail close
   );
 });
 
+test('query isolation is false-default and exposes only the shadow rollout', () => {
+  assert.equal(processingFeatureFlags({ QUERY_ISOLATION_MODE: 'shadow' }).queryIsolationMode, 'off');
+  assert.equal(
+    processingFeatureFlags({ QUERY_ISOLATION_ENABLED: 'false', QUERY_ISOLATION_MODE: 'shadow' })
+      .queryIsolationMode,
+    'off'
+  );
+  assert.equal(
+    processingFeatureFlags({ QUERY_ISOLATION_ENABLED: 'true' }).queryIsolationMode,
+    'shadow'
+  );
+  assert.equal(
+    processingFeatureFlags({
+      QUERY_ISOLATION_ENABLED: 'true',
+      QUERY_ISOLATION_MODE: 'teacher_beta',
+    }).queryIsolationMode,
+    'off'
+  );
+});
+
 test('discovery and isolation flags cannot change the frozen core catalogue', () => {
   const before = JSON.stringify(getSeparationOptions('replicate'));
   const flags = processingFeatureFlags({
@@ -42,5 +62,6 @@ test('discovery and isolation flags cannot change the frozen core catalogue', ()
   });
   assert.equal(flags.instrumentDiscovery, true);
   assert.equal(flags.queryIsolation, true);
+  assert.equal(flags.queryIsolationMode, 'shadow');
   assert.equal(JSON.stringify(getSeparationOptions('replicate')), before);
 });

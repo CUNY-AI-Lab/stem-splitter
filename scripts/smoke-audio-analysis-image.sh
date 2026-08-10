@@ -241,6 +241,21 @@ async function analyze(name) {
   });
 }
 
+async function fingerprint(name) {
+  return fetch(`${serviceBase}/v1/fingerprint`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      schemaVersion: '1',
+      sourceUrl: sourceUrl(name),
+      sourceType: 'upload',
+    }),
+  });
+}
+
 async function body(response) {
   const value = await response.json();
   assert(value && typeof value === 'object', 'response body is not an object');
@@ -274,6 +289,16 @@ const unauthorized = await fetch(`${serviceBase}/v1/analyze`, { method: 'POST' }
 assert(unauthorized.status === 401, `unauthorized status ${unauthorized.status}`);
 assert(unauthorized.headers.get('www-authenticate') === 'Bearer', 'missing bearer challenge');
 assert(JSON.stringify(await body(unauthorized)) === '{"error":"unauthorized"}', '401 body drifted');
+const unauthorizedFingerprint = await fetch(`${serviceBase}/v1/fingerprint`, { method: 'POST' });
+assert(unauthorizedFingerprint.status === 401, `fingerprint unauthorized status ${unauthorizedFingerprint.status}`);
+assert(
+  unauthorizedFingerprint.headers.get('www-authenticate') === 'Bearer',
+  'fingerprint missing bearer challenge'
+);
+assert(
+  JSON.stringify(await body(unauthorizedFingerprint)) === '{"error":"unauthorized"}',
+  'fingerprint 401 body drifted'
+);
 
 const validResponse = await analyze('valid.wav');
 const valid = await body(validResponse);
@@ -282,6 +307,23 @@ assert(valid.schemaVersion === '1', 'analysis schema drifted');
 assert(valid.roleClassifier?.version === 'autosplit-role-v3', 'role version drifted');
 assert(coreModels.some((model) => model.id === valid.decision?.resolvedCoreModel), 'unsupported decision');
 assert(valid.timing?.analyzedSeconds > 0 && valid.timing.analyzedSeconds <= 45, 'invalid timing');
+assert(valid.source?.schemaVersion === '1', 'analysis source identity schema drifted');
+assert(/^[0-9a-f]{64}$/.test(valid.source?.sha256), 'analysis source hash is invalid');
+assert(Number.isSafeInteger(valid.source?.bytes) && valid.source.bytes > 0, 'analysis source bytes are invalid');
+await assertClean();
+
+const fingerprintResponse = await fingerprint('valid.wav');
+const fingerprintResult = await body(fingerprintResponse);
+assert(fingerprintResponse.status === 200, `valid fingerprint status ${fingerprintResponse.status}`);
+assert(
+  JSON.stringify(Object.keys(fingerprintResult).sort()) ===
+    JSON.stringify(['schemaVersion', 'source', 'timing']),
+  'fingerprint response surface drifted'
+);
+assert(fingerprintResult.schemaVersion === '1', 'fingerprint schema drifted');
+assert(fingerprintResult.source?.sha256 === valid.source.sha256, 'fingerprint hash disagrees with analysis');
+assert(fingerprintResult.source?.bytes === valid.source.bytes, 'fingerprint bytes disagree with analysis');
+assert(fingerprintResult.timing?.totalMs >= 0, 'fingerprint timing is invalid');
 await assertClean();
 
 const maximumResponse = await analyze('max-duration.wav');
@@ -321,6 +363,7 @@ console.log(
     status: 'passed',
     ffmpegVersion: ready.ffmpegVersion,
     classifierVersion: ready.classifierVersion,
+    sourceFingerprint: 'verified',
     maximumAnalyzedSeconds: maximum.timing.analyzedSeconds,
     malformed: 'rejected',
     declaredOversize: 'rejected',

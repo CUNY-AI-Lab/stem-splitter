@@ -132,10 +132,29 @@ export class SqliteD1 {
           this.db.exec(`ALTER TABLE jobs ADD COLUMN ${column} TEXT`);
         }
       }
+      if (!jobColumns.some((candidate) => candidate.name === 'source_hash')) {
+        this.db.exec(
+          `ALTER TABLE jobs ADD COLUMN source_hash TEXT
+           CHECK (source_hash IS NULL OR (
+             length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
+           ))`
+        );
+      }
     }
 
     // New tables cannot be recovered by ALTER-column checks alone on an old
     // persistent volume. Keep this exact additive resource safe on every boot.
     this.db.exec(INSTRUMENT_ISOLATIONS_SCHEMA_SQL);
+    const isolationColumns = this.db
+      .prepare("PRAGMA table_info('instrument_isolations')")
+      .all() as Array<{ name: string }>;
+    if (
+      isolationColumns.length &&
+      !isolationColumns.some((column) => column.name === 'rollout_stage')
+    ) {
+      this.db.exec(
+        "ALTER TABLE instrument_isolations ADD COLUMN rollout_stage TEXT NOT NULL DEFAULT 'shadow' CHECK (rollout_stage IN ('shadow', 'teacher_beta'))"
+      );
+    }
   }
 }

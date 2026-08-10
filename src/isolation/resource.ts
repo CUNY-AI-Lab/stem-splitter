@@ -17,6 +17,8 @@ export const MAX_QUERY_ISOLATION_ATTEMPTS = 2;
 export const QUERY_ISOLATION_ATTEMPT_TIMEOUT_MS = 15 * 60 * 1000;
 
 export type InstrumentIsolationStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
+export type InstrumentIsolationRolloutStage = 'shadow' | 'teacher_beta';
+export type InstrumentIsolationSummaryStatus = InstrumentIsolationStatus | 'shadowed';
 export type InstrumentIsolationFailureCode = QueryIsolationFailureCode | 'timed_out';
 
 export interface InstrumentIsolationRecordV1 {
@@ -30,6 +32,7 @@ export interface InstrumentIsolationRecordV1 {
   analysisVocabularyVersion: string | null;
   identity: QueryIsolationProviderIdentityV1;
   cacheKey: string;
+  rolloutStage: InstrumentIsolationRolloutStage;
   status: InstrumentIsolationStatus;
   externalId: string | null;
   targetKey: string | null;
@@ -52,7 +55,8 @@ export interface InstrumentIsolationSummaryV1 {
   target: string;
   analysisVocabularyVersion: string | null;
   identity: QueryIsolationProviderIdentityV1;
-  status: InstrumentIsolationStatus;
+  rolloutStage: InstrumentIsolationRolloutStage;
+  status: InstrumentIsolationSummaryStatus;
   output: { targetAvailable: boolean; residualAvailable: boolean };
   failure: { code: InstrumentIsolationFailureCode; retryable: boolean } | null;
   attempts: number;
@@ -71,6 +75,7 @@ export interface CreateInstrumentIsolationInputV1 {
   normalizedTarget: string;
   analysisVocabularyVersion: string | null;
   identity: QueryIsolationProviderIdentityV1;
+  rolloutStage?: InstrumentIsolationRolloutStage;
   now?: Date;
 }
 
@@ -106,6 +111,7 @@ interface InstrumentIsolationRow {
   provider_version: string;
   provider_contract_version: string;
   cache_key: string;
+  rollout_stage: InstrumentIsolationRolloutStage;
   status: InstrumentIsolationStatus;
   external_id: string | null;
   target_key: string | null;
@@ -185,6 +191,7 @@ function recordFromRow(row: InstrumentIsolationRow): InstrumentIsolationRecordV1
       contractVersion: row.provider_contract_version,
     },
     cacheKey: row.cache_key,
+    rolloutStage: row.rollout_stage,
     status: row.status,
     externalId: row.external_id,
     targetKey: row.target_key,
@@ -213,7 +220,8 @@ export function summarizeInstrumentIsolation(
     target: record.normalizedTarget,
     analysisVocabularyVersion: record.analysisVocabularyVersion,
     identity: record.identity,
-    status: record.status,
+    rolloutStage: record.rolloutStage,
+    status: record.rolloutStage === 'shadow' ? 'shadowed' : record.status,
     output: {
       targetAvailable: record.targetKey !== null,
       residualAvailable: record.residualKey !== null,
@@ -268,6 +276,10 @@ export async function createInstrumentIsolation(
   }
   validateQueryIsolationCacheMaterial(input);
   validateQueryIsolationProviderIdentity(input.identity);
+  const rolloutStage = input.rolloutStage ?? 'shadow';
+  if (rolloutStage !== 'shadow' && rolloutStage !== 'teacher_beta') {
+    throw new InstrumentIsolationResourceError('invalid_request', 'Invalid isolation rollout stage');
+  }
   const now = validIsoDate(input.now ?? new Date());
   const cacheKey = await queryIsolationCacheKeyForMaterial(input, input.identity);
 
@@ -275,8 +287,9 @@ export async function createInstrumentIsolation(
     `INSERT INTO instrument_isolations
       (id, job_id, requested_by, source_hash, source_type, normalized_target,
        analysis_vocabulary_version, provider, provider_model, provider_version,
-       provider_contract_version, cache_key, status, max_attempts, created_at, updated_at)
-     SELECT ?, jobs.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?
+       provider_contract_version, cache_key, rollout_stage, status, max_attempts,
+       created_at, updated_at)
+     SELECT ?, jobs.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?
      FROM jobs
      WHERE jobs.id = ?
        AND jobs.status = 'done'
@@ -299,6 +312,7 @@ export async function createInstrumentIsolation(
       input.identity.version,
       input.identity.contractVersion,
       cacheKey,
+      rolloutStage,
       MAX_QUERY_ISOLATION_ATTEMPTS,
       now,
       now,
@@ -362,7 +376,8 @@ export async function claimInstrumentIsolation(
     `UPDATE instrument_isolations
      SET status = 'processing', attempts = attempts + 1, deadline_at = ?,
          failure_code = NULL, failure_retryable = NULL, updated_at = ?
-     WHERE id = ? AND status = 'queued' AND attempts < max_attempts
+     WHERE id = ? AND rollout_stage = 'teacher_beta'
+       AND status = 'queued' AND attempts < max_attempts
        AND NOT EXISTS (
          SELECT 1 FROM instrument_isolations active
          WHERE active.job_id = instrument_isolations.job_id

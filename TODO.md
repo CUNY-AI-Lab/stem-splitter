@@ -11,7 +11,7 @@
 **Current posture:** Phase 0 contracts, fixed corpus metadata, deterministic
 browser/server PCM parity, the flag-gated Phase 1B application path, and the
 Phase 1A service code are implemented locally. The minimized, digest-pinned
-role-v3 image now builds as `linux/amd64` under local emulation and passes its
+role-v3 image previously built as `linux/amd64` under local emulation and passed its
 runtime allowlist, non-root, health, readiness, authentication, eight-format
 decode, and eleven-source corpus gates on FFmpeg 8.0.3. The final image contains
 one bundled application artifact plus `ffmpeg` and `ffprobe`, rather than the
@@ -56,10 +56,22 @@ A path-scoped, secret-free native-amd64 image workflow is defined locally but
 has not yet run on GitHub, and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
-The complete local Phase 0 command passes 148 worker, 21 analyzer, 17 Railway
-host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
-browser, and 4 authoritative-Auto browser tests. This is source and local-image
-evidence only; it does not close native CI or Railway acceptance.
+The complete local Phase 0 command now passes 152 worker, 22 analyzer, 21
+Railway host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19
+flags-off browser, 4 authoritative-Auto browser, and 1 teacher-isolation-shadow
+test under exact Bun 1.3.14. The analyzer bundle and image smoke changed with
+the fingerprint contract, so the prior constrained image is predecessor
+evidence: rebuild it and repeat native CI before any Railway deployment. This
+local source gate does not close native CI or Railway acceptance.
+
+Phase 3 now has a false-default teacher shadow seam. The analyzer and server
+derive a private SHA-256 from the exact stored bytes; normalized target demand
+is idempotently recorded against the complete cache identity, capped at two per
+job, and redacted from student payloads. Shadow rows default to a non-executable
+rollout stage and cannot enter the provider claim transition. No Replicate
+prediction path, Railway variable change, or deployment was added. AudioSep
+checkpoint provenance, semester budgeting, quality/cost evaluation, output
+hydration/retention, and live rollback evidence remain open.
 
 This roadmap extends AutoSplit beyond assumptions inherited from a traditional
 rock-band mix. The goal is to recognize and optionally isolate instruments such
@@ -238,7 +250,7 @@ because its model or service is available.
 | 0 | Existing `stem-splitter` app | Already active on Railway; preserve it | Yes, but only through reviewed app releases |
 | 1 | Versioned audio-analysis API | New private Railway CPU service | No; shadow/advisory first |
 | 2 | Instrument classifier | New private Railway ML service, reachable only by the analyzer after parity | No; detection metadata only at first |
-| 3 | AudioSep query separator | Dormant adapter plus additive resource and teacher readback; no create/start route | No; explicit optional isolation only |
+| 3 | AudioSep query separator | Teacher-only shadow demand/resource path; provider execution remains impossible | No; explicit optional isolation only |
 | 4 | SAM-Audio comparison | Evaluation-only pinned Replicate integration | No until selected through review |
 | 5 | Banquet/Query-Bandit | Future private Cog or GPU service | No until a separate multi-stem design is accepted |
 
@@ -582,9 +594,11 @@ license status. Overall accuracy alone is insufficient.
   OpenAPI contract. Both bind `audio_file`/`text` to a one-URI output and reject
   code, version, or schema drift. The reviewed candidate is
   community-hosted `cjwbw/audiosep` version `f0700443…`, not an official
-  Audio-AGI service. The adapter remains unimported by app routes, the feature
-  flag remains false, and no provider call or spend path exists. The additive
-  resource has teacher-only readback but no production create/start route.
+  Audio-AGI service. The provider-start adapter remains unimported by app
+  routes, the feature flag remains false, and no provider call or spend path
+  exists. The additive resource has teacher-only readback plus a separately
+  gated shadow-create route that records demand and exact identity without
+  starting a prediction.
   The offline pin/schema regressions pass; authenticated remote-schema readback
   remains a pre-release gate because no local Replicate token was read.
 - [ ] Bind the pinned community image to an exact AudioSep checkpoint hash and
@@ -596,24 +610,29 @@ license status. Overall accuracy alone is insufficient.
 - [x] Create a separate `instrument_isolations` job/resource. Its additive
   fresh schema, numbered D1 migration, and idempotent Railway boot migration
   never append query output to core `stems` or claim reconstruction.
-- [ ] Require an explicit normalized target selected from detected candidates
-  or entered by an authorized teacher/tester. The resource constructor already
-  rejects noncanonical targets and records a requesting-teacher field, but the
-  future production create route must bind that field to the authenticated
-  session rather than client input.
+- [x] Require an explicit normalized target entered by an authorized teacher.
+  The shadow route takes only bounded `{target}` JSON, canonicalizes it on the
+  server, binds `requested_by` to the authenticated session, rejects the shared
+  class code, and never accepts a teacher identity from the client.
 - [x] Preserve the completed core split when an isolation is slow, timed out,
   rejected, or fails. Resource lifecycle tests read back unchanged core status,
   model, and stems after failure.
-- [ ] Cache by source hash, normalized target, provider, exact model version,
-  adapter contract, and analysis-vocabulary version. The resource now derives
-  and indexes that identity before transport URLs exist and deduplicates it
-  within one core job; cross-job output reuse awaits verified source hashing,
-  output hydration, and retention semantics.
+- [x] Bind within-job cache identity to a server-verified source hash,
+  normalized target, provider, exact model version, adapter contract, and
+  analysis-vocabulary version. The analyzer streams the exact stored bytes
+  through one bounded SHA-256 path; YouTube and Archive imports also hash their
+  server-fetched bytes before storage. The private digest persists on `jobs`
+  but is absent from student and teacher response bodies. Duplicate shadow
+  requests are idempotent.
+- [ ] Define cross-job output reuse only after output hydration, retention, and
+  deletion semantics can prove that a cached artifact is still authorized and
+  available. Matching source hashes alone do not authorize reuse.
 - [ ] Enforce per-track concurrency, semester budget, timeout, retry, and
   maximum-isolation limits before enabling the paid endpoint. The dormant
   resource now atomically enforces one processing request, two attempts,
-  15-minute deadlines, and two requests per track; server-verified source
-  hashing and a semester budget remain before any paid endpoint.
+  15-minute deadlines, and two requests per track. Shadow rows carry a distinct
+  rollout stage that the claim transition cannot select. A semester-wide
+  teacher/course budget remains before any paid endpoint.
 - [ ] Label outputs “optional instrument isolations,” with model/version and
   limitations available in the UI. The teacher-only API summary now supplies
   that label, exact identity, and limitations without storage keys; no UI is

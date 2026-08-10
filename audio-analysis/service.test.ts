@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -21,6 +22,7 @@ import { InstrumentDiscoveryError } from './discovery.ts';
 import { fetchSourceToTemp, SourcePolicyError, validateSourceUrl } from './source.ts';
 
 const TOKEN = 'analysis-test-token-that-is-at-least-32-characters';
+const SOURCE_SHA256 = '1'.repeat(64);
 const sourceExpiry = Math.floor(Date.now() / 1000) + 10 * 60;
 const SOURCE_URL = `https://app.example/api/local-sources/uploads/test/source.wav?expires=${sourceExpiry}&signature=${'a'.repeat(43)}`;
 const CORE_MODELS = [
@@ -61,6 +63,18 @@ function body(sourceType: 'upload' | 'youtube' | 'archive' = 'upload') {
 
 function analyzeRequest(payload: unknown = body(), token = TOKEN): Request {
   return new Request('http://analysis.test/v1/analyze', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+function fingerprintBody(sourceType: 'upload' | 'youtube' | 'archive' = 'upload') {
+  return { schemaVersion: '1', sourceUrl: SOURCE_URL, sourceType };
+}
+
+function fingerprintRequest(payload: unknown = fingerprintBody(), token = TOKEN): Request {
+  return new Request('http://analysis.test/v1/fingerprint', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -191,6 +205,9 @@ test('liveness is separate from decoder readiness and analysis requires bearer a
   const denied = await service.fetch(analyzeRequest(body(), 'wrong-token'));
   assert.equal(denied.status, 401);
   assert.equal(denied.headers.get('www-authenticate'), 'Bearer');
+  const fingerprintDenied = await service.fetch(fingerprintRequest(fingerprintBody(), 'wrong-token'));
+  assert.equal(fingerprintDenied.status, 401);
+  assert.equal(fingerprintDenied.headers.get('www-authenticate'), 'Bearer');
 });
 
 test('invalid decoder pin leaves readiness false without taking down liveness', async () => {
@@ -238,6 +255,7 @@ test('all source types are fetched, decoded, classified, cleaned, and logged wit
       return {
         path: '/ephemeral/source',
         bytes: 1234,
+        sha256: SOURCE_SHA256,
         cleanup: async () => {
           cleanupCount += 1;
         },
@@ -253,6 +271,11 @@ test('all source types are fetched, decoded, classified, cleaned, and logged wit
     assert.equal(response.headers.get('cache-control'), 'no-store');
     const result = await response.json() as any;
     assert.equal(result.schemaVersion, '1');
+    assert.deepEqual(result.source, {
+      schemaVersion: '1',
+      sha256: SOURCE_SHA256,
+      bytes: 1234,
+    });
     assert.equal(result.decision.resolvedCoreModel, 'htdemucs_ft');
     assert.equal(result.degraded.active, false);
   }
@@ -262,6 +285,57 @@ test('all source types are fetched, decoded, classified, cleaned, and logged wit
   assert.doesNotMatch(logs, /local-sources|signature|redacted|analysis-test-token/);
   assert.doesNotMatch(logs, /sourceBytes|sourceDurationSeconds/);
   assert.match(logs, /autosplit-role-v3|analysis_complete|htdemucs_ft|8\.0\.3/);
+});
+
+test('fingerprinting verifies stored bytes without decoder or classifier work', async () => {
+  let cleaned = false;
+  let decoded = false;
+  const logs: unknown[] = [];
+  const service = createAudioAnalysisService(config(), {
+    probe: async () => {
+      throw new DecoderError('decoder_unavailable');
+    },
+    fetchSource: async (url) => {
+      assert.equal(url, SOURCE_URL);
+      return {
+        path: '/ephemeral/source',
+        bytes: 4321,
+        sha256: SOURCE_SHA256,
+        cleanup: async () => {
+          cleaned = true;
+        },
+      };
+    },
+    decode: async () => {
+      decoded = true;
+      throw new Error('fingerprint route must not decode');
+    },
+    logger: {
+      info: (event, fields) => logs.push({ event, ...fields }),
+      warn: (event, fields) => logs.push({ event, ...fields }),
+    },
+  });
+  assert.equal((await service.fetch(new Request('http://analysis.test/readyz'))).status, 503);
+
+  const response = await service.fetch(fingerprintRequest());
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), {
+    schemaVersion: '1',
+    source: { schemaVersion: '1', sha256: SOURCE_SHA256, bytes: 4321 },
+    timing: { totalMs: 0 },
+  });
+  assert.equal(decoded, false);
+  assert.equal(cleaned, true);
+  const serializedLogs = JSON.stringify(logs);
+  assert.match(serializedLogs, /fingerprint_complete/);
+  assert.doesNotMatch(serializedLogs, new RegExp(SOURCE_SHA256));
+  assert.doesNotMatch(serializedLogs, /4321|local-sources|signature/);
+
+  const drifted = await service.fetch(
+    fingerprintRequest({ ...fingerprintBody(), unexpected: true })
+  );
+  assert.equal(drifted.status, 400);
 });
 
 test('reported total time includes synchronous role classification', async () => {
@@ -276,6 +350,7 @@ test('reported total time includes synchronous role classification', async () =>
     fetchSource: async () => ({
       path: '/ephemeral/source',
       bytes: 1,
+      sha256: SOURCE_SHA256,
       cleanup: async () => undefined,
     }),
     decode: async () => decoded(),
@@ -302,6 +377,7 @@ test('advisory discovery success and failure cannot change the core Auto decisio
     fetchSource: async () => ({
       path: '/tmp/source',
       bytes: 1,
+      sha256: SOURCE_SHA256,
       cleanup: async () => undefined,
     }),
     decode: async () => decoded(new Float32Array(45 * ANALYSIS_SAMPLE_RATE)),
@@ -382,7 +458,12 @@ test('concurrency limit rejects overlapping work instead of building an unbounde
     fetchSource: async () => {
       entered();
       await gate;
-      return { path: '/tmp/source', bytes: 1, cleanup: async () => undefined };
+      return {
+        path: '/tmp/source',
+        bytes: 1,
+        sha256: SOURCE_SHA256,
+        cleanup: async () => undefined,
+      };
     },
     decode: async () => decoded(),
     logger: { info: () => undefined, warn: () => undefined },
@@ -405,6 +486,7 @@ test('request drift is rejected and ephemeral sources are cleaned after decode f
     fetchSource: async () => ({
       path: '/tmp/source',
       bytes: 1,
+      sha256: SOURCE_SHA256,
       cleanup: async () => {
         cleaned = true;
       },
@@ -472,6 +554,24 @@ test('source policy rejects credentials, unlisted origins, redirects, and oversi
     ),
     (error: unknown) => error instanceof SourcePolicyError && error.code === 'source_too_large'
   );
+
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const source = await fetchSourceToTemp(
+    SOURCE_URL,
+    limits,
+    undefined,
+    async () =>
+      new Response(bytes, {
+        status: 200,
+        headers: { 'Content-Length': String(bytes.byteLength) },
+      })
+  );
+  try {
+    assert.equal(source.bytes, bytes.byteLength);
+    assert.equal(source.sha256, createHash('sha256').update(bytes).digest('hex'));
+  } finally {
+    await source.cleanup();
+  }
 });
 
 test('window plan is bounded and the real decoder produces fixed-rate PCM', async () => {

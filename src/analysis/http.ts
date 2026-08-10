@@ -1,9 +1,13 @@
-import type { AudioAnalysisProvider, AudioAnalysisRequestV1 } from './types';
+import type {
+  AudioAnalysisClient,
+  AudioAnalysisRequestV1,
+  AudioFingerprintRequestV1,
+} from './types';
 import { AudioAnalysisContractError } from './contract.ts';
 
 const MAX_ANALYSIS_RESPONSE_BYTES = 64 * 1024;
 
-export function audioAnalysisEndpoint(baseUrl: string): string {
+function audioServiceEndpoint(baseUrl: string, path: '/v1/analyze' | '/v1/fingerprint'): string {
   if (baseUrl !== baseUrl.trim()) {
     throw new AudioAnalysisContractError('audio analysis URL is not an approved service origin');
   }
@@ -24,8 +28,16 @@ export function audioAnalysisEndpoint(baseUrl: string): string {
   ) {
     throw new AudioAnalysisContractError('audio analysis URL is not an approved service origin');
   }
-  configured.pathname = '/v1/analyze';
+  configured.pathname = path;
   return configured.toString();
+}
+
+export function audioAnalysisEndpoint(baseUrl: string): string {
+  return audioServiceEndpoint(baseUrl, '/v1/analyze');
+}
+
+export function audioFingerprintEndpoint(baseUrl: string): string {
+  return audioServiceEndpoint(baseUrl, '/v1/fingerprint');
 }
 
 async function readBoundedResponse(response: Response): Promise<string> {
@@ -57,7 +69,7 @@ async function readBoundedResponse(response: Response): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
 }
 
-export function httpAudioAnalysisProvider(baseUrl: string, token: string): AudioAnalysisProvider {
+export function httpAudioAnalysisProvider(baseUrl: string, token: string): AudioAnalysisClient {
   if (
     token.length < 32 ||
     token !== token.trim() ||
@@ -65,39 +77,48 @@ export function httpAudioAnalysisProvider(baseUrl: string, token: string): Audio
   ) {
     throw new AudioAnalysisContractError('audio analysis token is invalid');
   }
-  const endpoint = audioAnalysisEndpoint(baseUrl);
+  const analysisEndpoint = audioAnalysisEndpoint(baseUrl);
+  const fingerprintEndpoint = audioFingerprintEndpoint(baseUrl);
+
+  async function requestJson(
+    endpoint: string,
+    request: AudioAnalysisRequestV1 | AudioFingerprintRequestV1,
+    signal?: AbortSignal
+  ): Promise<unknown> {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal,
+      // Workerd does not dispatch subrequests with redirect="error". Manual
+      // mode is portable and keeps the bearer token on the configured origin;
+      // the non-2xx check below rejects every redirect response.
+      redirect: 'manual',
+    });
+    if (!response.ok) throw new Error(`audio analysis failed (${response.status})`);
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+    if (contentType !== 'application/json') {
+      throw new AudioAnalysisContractError('audio analysis response is not JSON');
+    }
+    const declaredHeader = response.headers.get('content-length');
+    if (declaredHeader !== null) {
+      const declaredLength = Number(declaredHeader);
+      if (!Number.isSafeInteger(declaredLength) || declaredLength < 0) {
+        throw new AudioAnalysisContractError('audio analysis content length is invalid');
+      }
+      if (declaredLength > MAX_ANALYSIS_RESPONSE_BYTES) {
+        throw new AudioAnalysisContractError('audio analysis response is too large');
+      }
+    }
+    const text = await readBoundedResponse(response);
+    return JSON.parse(text) as unknown;
+  }
+
   return {
-    async analyze(request: AudioAnalysisRequestV1, signal?: AbortSignal): Promise<unknown> {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-        signal,
-        // Workerd does not dispatch subrequests with redirect="error". Manual
-        // mode is portable and keeps the bearer token on the configured origin;
-        // the non-2xx check below rejects every redirect response.
-        redirect: 'manual',
-      });
-      if (!response.ok) throw new Error(`audio analysis failed (${response.status})`);
-      const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-      if (contentType !== 'application/json') {
-        throw new AudioAnalysisContractError('audio analysis response is not JSON');
-      }
-      const declaredHeader = response.headers.get('content-length');
-      if (declaredHeader !== null) {
-        const declaredLength = Number(declaredHeader);
-        if (!Number.isSafeInteger(declaredLength) || declaredLength < 0) {
-          throw new AudioAnalysisContractError('audio analysis content length is invalid');
-        }
-        if (declaredLength > MAX_ANALYSIS_RESPONSE_BYTES) {
-          throw new AudioAnalysisContractError('audio analysis response is too large');
-        }
-      }
-      const text = await readBoundedResponse(response);
-      return JSON.parse(text) as unknown;
-    },
+    analyze: (request, signal) => requestJson(analysisEndpoint, request, signal),
+    fingerprint: (request, signal) => requestJson(fingerprintEndpoint, request, signal),
   };
 }

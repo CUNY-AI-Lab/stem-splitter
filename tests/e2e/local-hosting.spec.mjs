@@ -1664,6 +1664,20 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
   expect(teacherIsolations.body.isolations[0].limitations).toHaveLength(2);
 
+  const disabledIsolationCreate = await page.evaluate((jobId) =>
+    fetch(`/api/teacher/jobs/${jobId}/isolations`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'saxophone' }),
+    }).then(async (response) => ({ status: response.status, body: await response.json() })),
+    analysisJobId
+  );
+  expect(disabledIsolationCreate).toEqual({
+    status: 404,
+    body: { error: 'Optional isolation is unavailable.' },
+  });
+
   // The code-owned prompt is visible and formatted, but never an editable
   // control. It opens at the end and the upward caret jumps to the top.
   await expect(page.locator('#fixed-prompt-body')).toContainText('ACTING ON THE MIXER');

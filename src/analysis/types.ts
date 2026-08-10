@@ -1,6 +1,7 @@
 import type { SeparationOptionSummary } from '../separation/options';
 
 export const AUDIO_ANALYSIS_SCHEMA_VERSION = '1' as const;
+export const SOURCE_FINGERPRINT_SCHEMA_VERSION = '1' as const;
 export const AUTO_ROUTING_SCHEMA_VERSION = '1' as const;
 export const AUTO_ROUTING_REQUEST = 'auto' as const;
 export const PINNED_ROLE_CLASSIFIER_VERSION = 'autosplit-role-v3' as const;
@@ -13,6 +14,7 @@ export const PINNED_INSTRUMENT_VOCABULARY_VERSION = 'classroom-instruments-v1' a
 export const PINNED_INSTRUMENT_VOCABULARY_SHA256 =
   '72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140' as const;
 export const MAX_ANALYSIS_SECONDS = 45;
+export const MAX_AUDIO_SOURCE_BYTES = 100 * 1024 * 1024;
 export const MAX_DISCOVERY_WINDOWS = 3;
 export const MAX_DISCOVERY_WINDOW_SECONDS = 15;
 export const INSTRUMENT_DISCOVERY_SAMPLE_RATE = 22_050;
@@ -20,6 +22,13 @@ export const INSTRUMENT_DISCOVERY_SAMPLE_RATE = 22_050;
 export type AudioSourceType = 'upload' | 'youtube' | 'archive';
 export type CoreSplitChoice = 'two' | 'four' | 'six';
 export type CoreModelContract = Pick<SeparationOptionSummary, 'id' | 'stems'>;
+
+/** Private content identity. Never include it in student-facing job payloads. */
+export interface AudioSourceIdentityV1 {
+  schemaVersion: typeof SOURCE_FINGERPRINT_SCHEMA_VERSION;
+  sha256: string;
+  bytes: number;
+}
 
 /** Scalar role features from the existing bounded AutoSplit classifier. */
 export interface RoleFeaturesV1 {
@@ -119,8 +128,30 @@ export interface AudioAnalysisRequestV1 {
   instrumentDiscovery: boolean;
 }
 
+export interface AudioFingerprintRequestV1 {
+  schemaVersion: typeof SOURCE_FINGERPRINT_SCHEMA_VERSION;
+  sourceUrl: string;
+  sourceType: AudioSourceType;
+}
+
+export interface AudioFingerprintResultV1 {
+  schemaVersion: typeof SOURCE_FINGERPRINT_SCHEMA_VERSION;
+  source: AudioSourceIdentityV1;
+  timing: { totalMs: number };
+}
+
 export interface AudioAnalysisProvider {
   analyze(request: AudioAnalysisRequestV1, signal?: AbortSignal): Promise<unknown>;
+}
+
+export interface AudioAnalysisClient extends AudioAnalysisProvider {
+  fingerprint(request: AudioFingerprintRequestV1, signal?: AbortSignal): Promise<unknown>;
+}
+
+export interface AutoRoutingResolutionV1 {
+  decision: AutoRoutingDecisionV1;
+  /** Present only when the authenticated analyzer verified the stored bytes. */
+  sourceIdentity: AudioSourceIdentityV1 | null;
 }
 
 /** Small comparison payload from the browser; raw PCM and feature arrays stay out. */

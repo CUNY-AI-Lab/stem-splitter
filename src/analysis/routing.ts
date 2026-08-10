@@ -1,11 +1,18 @@
-import { AudioAnalysisContractError, degradedAnalysis, parseAudioAnalysisResult } from './contract.ts';
+import {
+  AudioAnalysisContractError,
+  degradedAnalysis,
+  parseAudioAnalysisResult,
+  parseAudioSourceIdentity,
+} from './contract.ts';
 import {
   AUDIO_ANALYSIS_SCHEMA_VERSION,
   AUTO_ROUTING_REQUEST,
   AUTO_ROUTING_SCHEMA_VERSION,
   type AudioAnalysisProvider,
+  type AudioSourceIdentityV1,
   type AudioSourceType,
   type AutoRoutingDecisionV1,
+  type AutoRoutingResolutionV1,
   type BrowserAutoSummaryV1,
 } from './types.ts';
 import type { SeparationOptionSummary } from '../separation/options';
@@ -27,9 +34,12 @@ function boundedTimeout(value: number): number {
   return Number.isFinite(value) ? Math.min(30_000, Math.max(1_000, Math.round(value))) : 15_000;
 }
 
-export async function resolveAutoRouting(input: ResolveAutoRoutingInput): Promise<AutoRoutingDecisionV1> {
+export async function resolveAutoRoutingWithSource(
+  input: ResolveAutoRoutingInput
+): Promise<AutoRoutingResolutionV1> {
   const startedAt = Date.now();
   let analysis;
+  let sourceIdentity: AudioSourceIdentityV1 | null = null;
 
   if (!input.provider) {
     analysis = degradedAnalysis(
@@ -65,6 +75,15 @@ export async function resolveAutoRouting(input: ResolveAutoRoutingInput): Promis
         ),
         timeout,
       ]);
+      if (wire && typeof wire === 'object' && !Array.isArray(wire) && 'source' in wire) {
+        try {
+          sourceIdentity = parseAudioSourceIdentity((wire as { source?: unknown }).source);
+        } catch {
+          // Fingerprint metadata is failure-local: malformed/missing identity
+          // disables isolation caching but cannot invalidate a valid core route.
+          sourceIdentity = null;
+        }
+      }
       analysis = parseAudioAnalysisResult(
         wire,
         input.coreModels,
@@ -99,19 +118,29 @@ export async function resolveAutoRouting(input: ResolveAutoRoutingInput): Promis
   const browserModel = input.browserAnalysis?.resolvedCoreModel;
 
   return {
-    schemaVersion: AUTO_ROUTING_SCHEMA_VERSION,
-    routingRequest: AUTO_ROUTING_REQUEST,
-    sourceType: input.sourceType,
-    mode: input.mode,
-    applied: input.mode === 'authoritative' && !analysis.degraded.active,
-    fallbackModel: input.fallbackModel,
-    resolvedCoreModel,
-    analysis,
-    ...(input.browserAnalysis ? { browserAnalysis: input.browserAnalysis } : {}),
-    comparison: browserModel && !analysis.degraded.active
-      ? browserModel === analysis.decision.resolvedCoreModel
-        ? 'agree'
-        : 'disagree'
-      : 'unavailable',
+    decision: {
+      schemaVersion: AUTO_ROUTING_SCHEMA_VERSION,
+      routingRequest: AUTO_ROUTING_REQUEST,
+      sourceType: input.sourceType,
+      mode: input.mode,
+      applied: input.mode === 'authoritative' && !analysis.degraded.active,
+      fallbackModel: input.fallbackModel,
+      resolvedCoreModel,
+      analysis,
+      ...(input.browserAnalysis ? { browserAnalysis: input.browserAnalysis } : {}),
+      comparison: browserModel && !analysis.degraded.active
+        ? browserModel === analysis.decision.resolvedCoreModel
+          ? 'agree'
+          : 'disagree'
+        : 'unavailable',
+    },
+    sourceIdentity,
   };
+}
+
+/** Backward-compatible routing helper for callers that do not need content identity. */
+export async function resolveAutoRouting(
+  input: ResolveAutoRoutingInput
+): Promise<AutoRoutingDecisionV1> {
+  return (await resolveAutoRoutingWithSource(input)).decision;
 }

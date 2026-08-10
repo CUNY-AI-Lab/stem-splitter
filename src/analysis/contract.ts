@@ -2,6 +2,7 @@ import {
   AUDIO_ANALYSIS_SCHEMA_VERSION,
   AUTO_ROUTING_REQUEST,
   AUTO_ROUTING_SCHEMA_VERSION,
+  MAX_AUDIO_SOURCE_BYTES,
   MAX_DISCOVERY_WINDOWS,
   MAX_ANALYSIS_SECONDS,
   PINNED_INSTRUMENT_CLASSIFIER_VERSION,
@@ -9,8 +10,11 @@ import {
   PINNED_INSTRUMENT_VOCABULARY_SHA256,
   PINNED_INSTRUMENT_VOCABULARY_VERSION,
   PINNED_ROLE_CLASSIFIER_VERSION,
+  SOURCE_FINGERPRINT_SCHEMA_VERSION,
   type AnalysisDegradedCode,
+  type AudioFingerprintResultV1,
   type AudioAnalysisResultV1,
+  type AudioSourceIdentityV1,
   type AudioSourceType,
   type AutoRoutingDecisionV1,
   type BrowserAutoSummaryV1,
@@ -150,6 +154,44 @@ const DISCOVERY_CODES = new Set<InstrumentDiscoveryCode>([
   'discovery_unavailable',
   'discovery_contract_invalid',
 ]);
+
+export function parseAudioSourceIdentity(value: unknown): AudioSourceIdentityV1 {
+  if (
+    !isRecord(value) ||
+    !exactKeys(value, ['schemaVersion', 'sha256', 'bytes']) ||
+    value.schemaVersion !== SOURCE_FINGERPRINT_SCHEMA_VERSION ||
+    typeof value.sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(value.sha256) ||
+    !Number.isSafeInteger(value.bytes) ||
+    (value.bytes as number) < 1 ||
+    (value.bytes as number) > MAX_AUDIO_SOURCE_BYTES
+  ) {
+    throw new AudioAnalysisContractError('source fingerprint is invalid');
+  }
+  return {
+    schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+    sha256: value.sha256,
+    bytes: value.bytes as number,
+  };
+}
+
+export function parseAudioFingerprintResult(value: unknown): AudioFingerprintResultV1 {
+  if (
+    !isRecord(value) ||
+    !exactKeys(value, ['schemaVersion', 'source', 'timing']) ||
+    value.schemaVersion !== SOURCE_FINGERPRINT_SCHEMA_VERSION ||
+    !isRecord(value.timing) ||
+    !exactKeys(value.timing, ['totalMs']) ||
+    !finiteBetween(value.timing.totalMs, 0, 60_000)
+  ) {
+    throw new AudioAnalysisContractError('source fingerprint response is invalid');
+  }
+  return {
+    schemaVersion: SOURCE_FINGERPRINT_SCHEMA_VERSION,
+    source: parseAudioSourceIdentity(value.source),
+    timing: { totalMs: value.timing.totalMs },
+  };
+}
 
 /** Validate the service boundary before any recommendation may route a paid job. */
 export function parseAudioAnalysisResult(
