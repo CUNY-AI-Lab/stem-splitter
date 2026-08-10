@@ -5,6 +5,42 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## audio-pipeline-promotion-v1 — executable release ordering — 2026-08-10
+
+- Scope: a strict manifest and CLI now turn the phased processing roadmap into
+  a checked release contract. They add no audio processing, service, variable,
+  credential, migration, provider call, deployment, or live rollout.
+- Candidate binding: release `v3.2-autosplit-role-v4` records exact base
+  `86cd50b` and candidate `8901902`, one `role-classifier` change axis,
+  `autosplit-role-v4+analysis-source-scope-v2`, and the compiled AudioSep and
+  SAM-Audio version pins. Floating versions and pin drift fail closed.
+- Stable contract: the manifest is compared directly with the executable
+  Replicate 2/4/6 catalogue, including every literal stem name. Instrument
+  discovery remains metadata, AudioSep remains contract-only, SAM-Audio remains
+  evaluation-only and license-blocked, and Banquet remains research-only.
+- Ordering and rollback: components must proceed as audio analysis → instrument
+  discovery → AudioSep → SAM-Audio → Banquet. A dependency cannot be accepted
+  on paper: it must be provisioned, enabled, externally exercised, and free of
+  blockers. Rollout may advance only one stage through `off`, `shadow`, teacher
+  beta, student canary, and default, with a tested false kill switch and no
+  schema rollback.
+- Current result: the exact manifest remains at `off`; all three feature flags
+  and modes remain disabled. Its computed blockers before `shadow` are the
+  absent analyzer service plus missing native-amd64 image, manual listening,
+  Railway resource acceptance, and Railway rollback evidence.
+- Evidence: exact implementation commit `ddd6236` passes the promotion
+  typecheck/CLI and literal Phase 0 gate from a clean detached checkout under
+  Bun 1.3.14: all three application typechecks; 193 worker, 24 analyzer, 28
+  Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet tests; plus
+  19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+  The checkout stayed clean and `git show --check` passed. Exact HEAD also
+  repeats the eleven-source FFmpeg corpus at 8 preferred, 3 accepted
+  alternatives, and 0 mismatches, with Chrome/FFmpeg decisions agreeing 11/11.
+- Remaining: native-amd64 image CI, manual listening, Railway resource and
+  restart acceptance, private analyzer provisioning, authorized shadow
+  journeys, stored live-decision readback, and rollback reproduction. No remote
+  branch or pull request contains this local evidence.
+
 ## autosplit-role-v4 — short-source codec parity — 2026-08-10
 
 - Miss: a real app-plus-analyzer composition test routed the same sustained

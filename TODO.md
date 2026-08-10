@@ -98,6 +98,22 @@ local and real-browser v4 gates without a mismatch. The current v4 image,
 native-amd64 CI, listening, Railway resources/restart, and service provisioning
 remain open.
 
+Exact promotion-gate commit `ddd6236` turns the ordered roadmap into a
+versioned, executable manifest without changing that off posture. It binds the
+role-v4 candidate to its exact base/candidate commits, compiled classifier and
+source-scope versions, frozen 2/4/6 catalogue, exact AudioSep/SAM-Audio pins,
+service dependency order, one declared change axis, false-default flags,
+stage-by-stage evidence, and flag-only rollback. The current manifest computes
+five blockers before `shadow`: the analyzer service is absent; native-amd64,
+manual-listening, Railway resource-acceptance, and Railway rollback evidence
+are missing. A fresh detached checkout of `ddd6236` passes the promotion
+typecheck/CLI and literal Phase 0 command under Bun 1.3.14: 193 worker, 24
+analyzer, 28 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, and
+19/6/1 browser tests. The exact commit also repeats the eleven-source FFmpeg
+gate at 8 preferred, 3 accepted alternatives, 0 mismatches and browser/FFmpeg
+decision parity at 11/11. No service, variable, provider call, migration,
+deployment, remote branch, or pull request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -976,21 +992,29 @@ canary. Student access remains off.
 - [ ] Review results by genre and instrument family so abundant drums, bass,
   guitar, and vocals cannot hide failures on reeds, bowed strings, brass,
   keyboards, electronic textures, or traditional instruments.
-- [ ] Tune one dimension at a time—vocabulary, thresholds, window placement,
-  prompt wording, or separator version—and record the before/after manifest,
-  metrics, model pins, and commit.
+- [x] Enforce one-dimension candidates—role classifier, instrument classifier,
+  vocabulary, thresholds, windowing, prompt policy, separator version, schema,
+  or default routing—and record exact base/candidate commits and compiled pins.
+  `tests/corpus/audio-pipeline-promotion.json` and its strict validator reject
+  multiple declared axes, non-additive schema work, floating artifacts, pin or
+  core-contract drift, and default-routing changes before the final stage.
 - [ ] Promote changes through `off` → `shadow` → `teacher beta` → bounded
   student canary → default. Every step needs a rollback flag that does not
-  require a schema rollback.
+  require a schema rollback. The versioned promotion gate now encodes this
+  ladder, refuses stage skips and paper acceptance, computes the next-stage
+  blockers, and runs explicitly in CI. It correctly leaves role v4 at `off`;
+  no rollout stage has been promoted.
 - [ ] Automatically request at most one or two high-confidence additional
   isolations only after manual-query evidence supports it. Until then,
   discovery may suggest but must not spend.
 - [ ] Re-run the frozen rock-band regression set on every optimization. Broader
   coverage is not acceptable if it silently worsens the current dependable
   paths.
-- [ ] Publish a model-processing changelog containing classifier vocabulary,
+- [x] Maintain a model-processing changelog containing classifier vocabulary,
   thresholds, checkpoint/version pins, evaluation summary, rollout stage, and
-  known regressions for every promoted change.
+  known regressions for every promoted change. The log now also binds the
+  executable promotion schema, current exact-commit evidence, and unresolved
+  release blockers; a changelog entry never authorizes promotion by itself.
 
 ## Phase 5 — coherent long-tail multi-stem research, only if needed
 
@@ -1008,20 +1032,31 @@ canary. Student access remains off.
 
 ## Breaking-change shields required throughout
 
-- [ ] Never use a floating provider `latest` version in a live path.
-- [ ] Never let a classifier label create a stem name that the selected
-  separator contract does not guarantee.
-- [ ] Never rename or reinterpret stored core stems in place; introduce a new
-  versioned contract or isolation resource.
-- [ ] Never make a new service credential boot-critical unless every request
-  path truly requires that service.
-- [ ] Never couple the app to a Railway-only import or filesystem assumption;
-  keep provider calls behind shared interfaces for the eventual migration.
-- [ ] Never combine a classifier rollout, separator-model change, schema
-  migration, and default-routing change in one release.
+- [x] Reject floating provider versions. Existing provider guards and the
+  promotion validator require exact compiled pins and explicitly reject
+  `latest`, branch names, moving heads, and nightlies.
+- [x] Keep classifier labels advisory. Only a concrete advertised separation
+  model may create tracks, and the promotion manifest is compared directly
+  with the executable 2/4/6 catalogue.
+- [x] Freeze stored core stem meanings in place. Contract regressions and the
+  promotion validator require a separately versioned contract or isolation
+  resource for any new output vocabulary.
+- [x] Keep optional service credentials fail-lazy. Railway host configuration
+  reports absent, incomplete, invalid, or configured optional services without
+  making their credentials boot-critical while their features are off.
+- [x] Keep provider calls behind shared interfaces. Railway filesystem and
+  process construction stay in the host adapter; shared application contracts
+  do not import Railway-specific implementations.
+- [x] Reject multi-axis releases. The promotion schema permits exactly one
+  declared axis and independently forbids destructive schema rollback and
+  early default-routing changes; the exact commit diff remains a required
+  review surface.
 - [ ] Never consider a Railway build or `SUCCESS` status sufficient evidence.
   Verify health, analysis readiness, one full authorized source journey, output
   media bytes, stored decision metadata, persistence, and rollback behavior.
+  The promotion gate now names and blocks on this evidence, but the current
+  manifest correctly records it as missing rather than treating booleans as
+  live proof.
 - [ ] Never migrate or deploy this unfinished pipeline to Cloudflare Workers.
 
 ## Research references
