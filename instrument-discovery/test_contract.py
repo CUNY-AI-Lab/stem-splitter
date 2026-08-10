@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from clap_backend import (
     build_prompt_pairs,
     pairwise_presence_scores,
+    pairwise_prompt_diagnostics,
     validate_audio_preprocessing,
     verify_model_directory,
 )
@@ -200,6 +201,23 @@ class ContractTest(unittest.TestCase):
         logits[0] = math.inf
         with self.assertRaisesRegex(DiscoveryContractError, "non-finite"):
             pairwise_presence_scores(logits, indexes)
+
+    def test_prompt_diagnostic_preserves_logits_without_changing_pairwise_score(self) -> None:
+        _prompts, indexes = build_prompt_pairs(self.vocabulary)
+        logits = [0.0] * (sum(len(group) for group in indexes) * 2)
+        sax_index = self.vocabulary.ids.index("saxophone")
+        sax_pair = indexes[sax_index][0]
+        logits[sax_pair * 2] = 1.25
+        logits[sax_pair * 2 + 1] = -0.75
+
+        diagnostics = pairwise_prompt_diagnostics(logits, indexes)
+        sax = diagnostics[sax_index][0]
+        self.assertEqual(sax["positiveLogit"], 1.25)
+        self.assertEqual(sax["negativeLogit"], -0.75)
+        self.assertEqual(sax["positiveMinusNegative"], 2.0)
+        self.assertAlmostEqual(
+            sax["presenceScore"], pairwise_presence_scores(logits, indexes)[sax_index]
+        )
 
     def test_checkpoint_preprocessing_requires_non_fusion_rand_trunc(self) -> None:
         model = SimpleNamespace(

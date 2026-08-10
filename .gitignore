@@ -24,6 +24,7 @@ output/
 
 # Corpus audio (CC-licensed downloads, not shipped in repo)
 tests/corpus/audio/
+/.instrument-discovery-score-audit.*
 
 # Node host (Railway) local data dir
 .railway-data/

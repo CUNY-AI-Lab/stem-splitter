@@ -25,6 +25,25 @@ promotion on their own.
 - Candidate vocabulary: `classroom-instruments-v1`, 51 labels in 10 families;
   content SHA-256
   `72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140`.
+- Candidate evaluation mapping: all eleven licensed file sources map their
+  corpus terms to reviewed vocabulary ids plus explicit hard negatives. Six
+  confusion trials record four currently evidence-backed directions and two
+  corpus gaps. A contract test binds the mapping to the exact classifier,
+  weight, vocabulary, sample-rate, and corpus terms. The mapping contains no
+  model scores and is not ground truth until human listening review.
+- Candidate disposition: reject this prompt/checkpoint pairing and keep rollout
+  off. The native-arm64 image completed all eleven licensed sources but
+  abstained on all 11 and surfaced 0/42 reviewed groups. A networkless
+  diagnostic then found the best expected-group pairwise means compressed to
+  `0.499894`–`0.500002`; positive-only ranking placed an accepted label in the
+  top 12 for only 13/42 groups (mean best rank 25.67 of 51). Lowering thresholds
+  cannot repair this result. Any prompt-policy or checkpoint replacement gets
+  a new classifier ID and repeats the corpus/human-review gates.
+- Next comparator: YAMNet is research-only and no artifact has been downloaded.
+  Its fixed 521-class AudioSet head covers many non-rock instruments without a
+  text-negation prompt, but exact source/weight/class-map hashes, weight-license
+  review, explicit ontology gaps, and networkless corpus/hard-negative evidence
+  precede any new image or Railway service. Essentia remains license-blocked.
 - Boundary: the analyzer may send at most three bounded 15-second 22,050 Hz
   mono f32le windows only to loopback or Railway private networking. It sends
   no source URL, storage credential, filename, class code, job id, or volume.
@@ -78,7 +97,7 @@ promotion on their own.
   native-amd64 evidence yet.
 - Not yet proven: native amd64 startup/inference, container/Railway restart and
   readiness recovery after a real PyTorch inference outlives its client
-  timeout, calibration, authorized truth labels, metrics, a dedicated
+  timeout, calibration, human-verified truth labels, metrics, a dedicated
   discovery-review UI, listening review, production resource/cost measurement,
   a successful native image CI run, or any Railway service.
 - Rollout: off. No Railway variable, service, or deployment change.

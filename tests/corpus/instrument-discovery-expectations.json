@@ -1,0 +1,245 @@
+{
+  "$schema": "stem-splitter.instrument-discovery-evaluation.v1",
+  "classifierVersion": "laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1",
+  "weightsSha256": "5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1",
+  "vocabularyVersion": "classroom-instruments-v1",
+  "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+  "analysisSampleRate": 22050,
+  "reviewStatus": "candidate-baseline-not-a-release-gate",
+  "sources": [
+    {
+      "slug": "folk-duet",
+      "expectedGroups": [
+        {
+          "corpusTerms": ["lead-vocals", "harmony-vocals"],
+          "acceptedIds": ["voice"]
+        },
+        {
+          "corpusTerms": ["acoustic-guitar"],
+          "acceptedIds": ["acoustic-guitar", "classical-guitar"]
+        }
+      ],
+      "hardNegativeIds": ["drum-kit", "drum-machine", "synthesizer"],
+      "rationale": "The duet annotation collapses two singers into the vocabulary's single voice label while retaining an explicit acoustic-guitar target and rhythm/electronic hard negatives."
+    },
+    {
+      "slug": "orchestral",
+      "expectedGroups": [
+        {
+          "corpusTerms": ["bowed-strings"],
+          "acceptedIds": ["strings", "violin", "viola", "cello", "double-bass"]
+        },
+        { "corpusTerms": ["flute"], "acceptedIds": ["flute"] },
+        { "corpusTerms": ["oboe"], "acceptedIds": ["oboe"] },
+        { "corpusTerms": ["bassoon"], "acceptedIds": ["bassoon"] },
+        { "corpusTerms": ["horn"], "acceptedIds": ["horn"] },
+        { "corpusTerms": ["trumpet"], "acceptedIds": ["trumpet"] },
+        { "corpusTerms": ["timpani"], "acceptedIds": ["timpani", "percussion"] }
+      ],
+      "hardNegativeIds": [
+        "voice",
+        "electric-guitar",
+        "bass-guitar",
+        "piano",
+        "synthesizer",
+        "drum-machine"
+      ],
+      "rationale": "The Jupiter movement tests orchestral families and the known fabricated-piano risk without treating parent and child string labels as separate recall wins."
+    },
+    {
+      "slug": "shoegaze",
+      "expectedGroups": [
+        { "corpusTerms": ["vocals"], "acceptedIds": ["voice"] },
+        { "corpusTerms": ["electric-guitar"], "acceptedIds": ["electric-guitar"] },
+        { "corpusTerms": ["bass-guitar"], "acceptedIds": ["bass-guitar"] },
+        { "corpusTerms": ["drum-kit"], "acceptedIds": ["drum-kit"] }
+      ],
+      "hardNegativeIds": ["double-bass", "synthesizer"],
+      "rationale": "The dense rock control supplies positive electric-guitar and bass-guitar evidence plus directional synthesizer and upright-bass confusion checks."
+    },
+    {
+      "slug": "piano-strings",
+      "expectedGroups": [
+        { "corpusTerms": ["vocals"], "acceptedIds": ["voice"] },
+        { "corpusTerms": ["piano"], "acceptedIds": ["piano"] },
+        {
+          "corpusTerms": ["bowed-strings"],
+          "acceptedIds": ["strings", "violin", "viola", "cello"]
+        },
+        { "corpusTerms": ["bass"], "acceptedIds": ["bass-guitar", "double-bass"] },
+        { "corpusTerms": ["drum-kit"], "acceptedIds": ["drum-kit"] }
+      ],
+      "hardNegativeIds": ["mallet-percussion", "vibraphone", "marimba", "synthesizer"],
+      "rationale": "The piano-led arrangement tests keys against pitched percussion while allowing the source annotation's nonspecific bass term to match either reviewed low-string label."
+    },
+    {
+      "slug": "jazz-sax",
+      "expectedGroups": [
+        { "corpusTerms": ["tenor-saxophone"], "acceptedIds": ["saxophone"] },
+        { "corpusTerms": ["harmonica"], "acceptedIds": ["harmonica"] },
+        { "corpusTerms": ["flute"], "acceptedIds": ["flute"] },
+        {
+          "corpusTerms": ["guitar"],
+          "acceptedIds": ["acoustic-guitar", "classical-guitar", "electric-guitar"]
+        },
+        { "corpusTerms": ["bass"], "acceptedIds": ["bass-guitar", "double-bass"] },
+        { "corpusTerms": ["drum-kit"], "acceptedIds": ["drum-kit"] }
+      ],
+      "hardNegativeIds": [
+        "brass",
+        "trumpet",
+        "trombone",
+        "horn",
+        "synthesizer",
+        "drum-machine"
+      ],
+      "rationale": "The quartet maps tenor saxophone to the reviewed saxophone label and makes brass-family detections explicit errors for the saxophone-versus-brass trial."
+    },
+    {
+      "slug": "hip-hop",
+      "expectedGroups": [
+        { "corpusTerms": ["rap-vocals"], "acceptedIds": ["voice"] },
+        { "corpusTerms": ["synth-bass"], "acceptedIds": ["synthesizer", "pad"] },
+        {
+          "corpusTerms": ["electronic-percussion"],
+          "acceptedIds": ["drum-machine", "percussion"]
+        }
+      ],
+      "hardNegativeIds": ["acoustic-guitar", "double-bass"],
+      "rationale": "The hip-hop source keeps rap, synthesized bass, and electronic percussion advisory while avoiding an invented synth-bass label outside the pinned vocabulary."
+    },
+    {
+      "slug": "bluegrass",
+      "expectedGroups": [
+        { "corpusTerms": ["vocals"], "acceptedIds": ["voice"] },
+        { "corpusTerms": ["fiddle"], "acceptedIds": ["violin"] },
+        { "corpusTerms": ["banjo"], "acceptedIds": ["banjo"] },
+        { "corpusTerms": ["mandolin"], "acceptedIds": ["mandolin"] },
+        {
+          "corpusTerms": ["acoustic-guitar"],
+          "acceptedIds": ["acoustic-guitar", "classical-guitar"]
+        },
+        { "corpusTerms": ["upright-bass"], "acceptedIds": ["double-bass"] }
+      ],
+      "hardNegativeIds": [
+        "bass-guitar",
+        "electric-guitar",
+        "synthesizer",
+        "drum-machine",
+        "piano"
+      ],
+      "rationale": "The traditional-string control maps fiddle and upright bass to reviewed labels and tests both directions of the bass-guitar/double-bass confusion."
+    },
+    {
+      "slug": "synthwave",
+      "expectedGroups": [
+        { "corpusTerms": ["vocals"], "acceptedIds": ["voice"] },
+        {
+          "corpusTerms": ["synthesizer", "synth-bass"],
+          "acceptedIds": ["synthesizer", "pad"]
+        },
+        {
+          "corpusTerms": ["programmed-drums"],
+          "acceptedIds": ["drum-machine", "percussion"]
+        }
+      ],
+      "hardNegativeIds": ["electric-guitar", "acoustic-guitar", "piano", "double-bass"],
+      "rationale": "The synthwave source collapses synthesizer and synth-bass into one reviewed electronic group and tests whether pitched attacks fabricate guitar or piano evidence."
+    },
+    {
+      "slug": "electronic-stiff-hand",
+      "expectedGroups": [
+        {
+          "corpusTerms": ["synthesizer", "synth-bass"],
+          "acceptedIds": ["synthesizer", "pad"]
+        },
+        {
+          "corpusTerms": ["programmed-drums"],
+          "acceptedIds": ["drum-machine", "percussion"]
+        }
+      ],
+      "hardNegativeIds": ["voice", "electric-guitar", "acoustic-guitar", "piano", "double-bass"],
+      "rationale": "This all-MT-32 arrangement is a hard negative for voice and acoustic-source labels while preserving advisory synthesizer and programmed-rhythm targets."
+    },
+    {
+      "slug": "electronic-back-counting",
+      "expectedGroups": [
+        {
+          "corpusTerms": ["synthesizer", "synth-bass"],
+          "acceptedIds": ["synthesizer", "pad"]
+        },
+        {
+          "corpusTerms": ["programmed-drums"],
+          "acceptedIds": ["drum-machine", "percussion"]
+        }
+      ],
+      "hardNegativeIds": ["voice", "electric-guitar", "acoustic-guitar", "piano", "double-bass"],
+      "rationale": "A second MT-32 arrangement checks that the candidate does not overfit one electronic track or translate generic pitched attacks into guitar and piano claims."
+    },
+    {
+      "slug": "electronic-house",
+      "expectedGroups": [
+        {
+          "corpusTerms": ["synthesizer", "synth-bass"],
+          "acceptedIds": ["synthesizer", "pad"]
+        },
+        {
+          "corpusTerms": ["programmed-drums"],
+          "acceptedIds": ["drum-machine", "percussion"]
+        }
+      ],
+      "hardNegativeIds": ["voice", "electric-guitar", "acoustic-guitar", "piano", "double-bass"],
+      "rationale": "The independently sourced house control tests electronic-family transfer and keeps guitar, piano, voice, and upright-bass detections reviewable as hard negatives."
+    }
+  ],
+  "confusionTrials": [
+    {
+      "id": "electric-guitar-vs-synthesizer",
+      "leftIds": ["electric-guitar"],
+      "rightIds": ["synthesizer"],
+      "status": "bidirectional",
+      "sourceSlugs": ["shoegaze", "electronic-stiff-hand"],
+      "rationale": "The corpus supplies one guitar-positive/synth-negative mix and one synth-positive/guitar-negative mix."
+    },
+    {
+      "id": "bass-guitar-vs-double-bass",
+      "leftIds": ["bass-guitar"],
+      "rightIds": ["double-bass"],
+      "status": "bidirectional",
+      "sourceSlugs": ["shoegaze", "bluegrass"],
+      "rationale": "Rock and bluegrass provide directional electric-bass and upright-bass trials."
+    },
+    {
+      "id": "piano-vs-mallet-percussion",
+      "leftIds": ["piano"],
+      "rightIds": ["mallet-percussion", "vibraphone", "marimba"],
+      "status": "one-direction",
+      "sourceSlugs": ["piano-strings"],
+      "rationale": "The piano-led source makes pitched-percussion labels explicit hard negatives."
+    },
+    {
+      "id": "saxophone-vs-brass",
+      "leftIds": ["saxophone"],
+      "rightIds": ["brass", "trumpet", "trombone", "horn"],
+      "status": "one-direction",
+      "sourceSlugs": ["jazz-sax"],
+      "rationale": "The jazz source contains saxophone but no reviewed brass instruments."
+    },
+    {
+      "id": "solo-strings-vs-string-section",
+      "leftIds": ["violin", "viola", "cello"],
+      "rightIds": ["strings"],
+      "status": "corpus-gap",
+      "sourceSlugs": [],
+      "rationale": "The current orchestral source legitimately contains both section and child timbres; a licensed solo-string source is still required."
+    },
+    {
+      "id": "pitched-percussion-vs-keys",
+      "leftIds": ["mallet-percussion", "vibraphone", "marimba"],
+      "rightIds": ["piano", "electric-piano"],
+      "status": "corpus-gap",
+      "sourceSlugs": [],
+      "rationale": "The corpus has a piano-positive control but no licensed pitched-percussion-positive recording for the reverse direction."
+    }
+  ]
+}

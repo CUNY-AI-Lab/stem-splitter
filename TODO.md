@@ -28,12 +28,15 @@ teacher-reviewable vocabulary, exact CLAP checkpoint/artifact pins, a bounded
 private PCM client, fail-lazy discovery traces, student-response redaction, and
 a teacher-authenticated analysis read route. A separate Python service,
 deterministic aggregation policy, process-fatal inference watchdog, and
-digest-pinned image recipe are implemented locally and pass 24
+digest-pinned image recipe are implemented locally and pass 29
 contract/fake-backend/process tests. A matching native arm64 image has started
 with networking disabled and a read-only root filesystem and completed real
 CLAP inference on a synthetic control; the `linux/amd64` target image also
-builds and matches the current source hashes. Native amd64 startup/inference,
-Railway sizing, real-corpus calibration, and service provisioning remain open.
+builds and matches the current source hashes. The eleven-source evaluation and
+networkless raw-logit audit reject the current prompt/checkpoint pairing, so it
+must not be calibrated or provisioned under the existing classifier ID. Native
+amd64 startup/inference, a replacement-candidate evaluation, Railway sizing,
+human-reviewed calibration, and service provisioning remain open.
 A path-scoped, secret-free native-amd64 image workflow is defined locally but
 has not yet run on GitHub, and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
@@ -266,6 +269,13 @@ job.
   instruments represented in the evaluation corpus. The uncalibrated
   `classroom-instruments-v1` candidate has 51 unique labels in 10 families and
   is locked to a content hash by a schema/integrity test.
+- [x] Define a pinned candidate evaluation mapping for all eleven licensed file
+  sources: reviewed corpus terms map to one or more vocabulary ids, explicit
+  hard negatives, and six named confusion trials. A contract test requires
+  exact classifier/weight/vocabulary pins, complete one-to-one corpus coverage,
+  known label ids, and real positive/negative evidence for every claimed
+  bidirectional trial. Its status is deliberately
+  `candidate-baseline-not-a-release-gate`; it contains no model scores.
 - [x] Freeze a separate discovery wire contract and analyzer client with exact
   schema, classifier revision, weight hash, vocabulary version/content hash,
   PCM rate/window, response-size, timeout, private-origin, and redirect pins.
@@ -304,21 +314,84 @@ job.
 - [ ] Prove the discovery container restarts cleanly after the watchdog kills a
   deliberately stuck real PyTorch inference. This requires the built model
   image plus Railway restart/readiness evidence before shadow traffic.
-- [ ] Compare Essentia/MTG-Jamendo on the same manifest only after documenting
-  whether its noncommercial model license fits the intended classroom and
-  institutional use.
+- [x] Audit the Essentia/MTG-Jamendo license boundary before downloading a
+  candidate. Official MTG sources conflict between CC BY-NC-SA and CC BY-NC-ND,
+  the model-directory license is internally inconsistent, and the exact
+  40-class instrument metadata has no resolving license field. Treat the model
+  as not cleared for Railway/container use; see
+  `docs/audits/2026-08-09-essentia-license-gate.md`.
+- [ ] Compare Essentia/MTG-Jamendo on the same manifest only after written MTG
+  clarification and institutional review cover the exact weight file,
+  noncommercial classroom inference, container distribution, and the AGPL
+  boundary if the Essentia runtime is used. Pin and hash the cleared artifact
+  before an offline bake-off; never infer approval from the educational intent.
+- [ ] Evaluate a fixed-label YAMNet baseline next, offline and without a new
+  service. First pin an exact TensorFlow Models commit, `yamnet.h5` byte
+  length/SHA-256 and weight-license determination, class-map hash, runtime, and
+  16 kHz/0.96-second preprocessing contract. Map only real YAMNet classes into
+  the candidate vocabulary and preserve gaps such as oboe, bassoon, viola, and
+  koto. Run the same licensed corpus, directional hard negatives, and reviewed
+  single-instrument controls in a networkless/read-only container; compare
+  per-label/family precision, recall, calibration, abstention, latency, and
+  memory before selecting anything. See
+  `docs/audits/2026-08-09-yamnet-comparator-gate.md`.
+- [ ] Choose exactly one replacement discovery classifier after the CLAP,
+  YAMNet, and any license-cleared Essentia evidence is comparable. Give every
+  prompt policy, checkpoint, label map, or preprocessing change a new
+  classifier ID; never inherit `instrument-discovery-v1` thresholds. Only the
+  selected candidate may proceed to a new private Railway service, and it stays
+  advisory until human-reviewed shadow evidence passes.
 - [x] Score multiple windows independently, then aggregate. On multi-window
   material, a sound confined to one window cannot become a track-level
   detection under the tested minimum-support rule; the documented one-window
   source exception still requires calibration. Fixed-corpus calibration
   against real CLAP output remains open.
+- [x] Add a pin-checked, non-mutating licensed-corpus evaluator for the CLAP
+  candidate. The manifest maps every reviewed corpus annotation to vocabulary
+  IDs, preserves directional hard negatives, reports candidate group coverage,
+  abstentions, family/genre summaries, latency, parent/child overlaps, and
+  confusion evidence, and refuses unknown labels or pin drift. Electric guitar
+  versus synthesizer and bass guitar versus double bass have bidirectional
+  corpus trials; piano versus mallet percussion and saxophone versus brass are
+  one-direction trials; solo strings versus section strings and pitched
+  percussion versus keys remain explicit corpus gaps. The runner makes no
+  precision claim and cannot change thresholds, Auto routing, or stem names.
+  The first constrained native-arm64 run completed all 11 sources but returned
+  no labels: 11 abstentions and 0/42 reviewed groups surfaced in 9,604 ms of
+  aggregate service time. Treat that as a failed usefulness gate and keep the
+  service off; inspect pre-threshold scores and prompt-policy bias before any
+  threshold change. Evidence is recorded in
+  `docs/audits/2026-08-09-instrument-discovery-candidate.md`.
+  A separate local amd64-on-arm64 attempt remained in vocabulary embedding
+  until the image's baked health policy marked it unhealthy; the runner
+  rejected the run and removed its container/network. That cross-architecture
+  cold-start failure is diagnostic only and supplies no native-amd64 evidence.
+  The image runner uses an ephemeral token, a per-run no-masquerade bridge with
+  an automatically allocated loopback port, a read-only/non-root container,
+  dropped capabilities, bounded CPU/RAM/swap/PIDs, and exclusive `0600`
+  evidence files.
+- [x] Add a networkless, offline-image raw-score audit that keeps diagnostic
+  arrays out of the service HTTP contract and deletes temporary decoded PCM on
+  exit. Across the first 33 real-audio windows, every expected, hard-negative,
+  and unreviewed score collapsed around `0.5`; the 42 best expected-group means
+  spanned only `0.499894`–`0.500002`. This rejects the current pairwise score as
+  a calibration basis and makes blind threshold lowering unsafe. Positive-only
+  ranking also failed: just 13/42 reviewed groups placed an accepted label in
+  the top 12, with a 25.67 mean best rank and repeated unrelated koto/sitar/
+  mallet-percussion leaders. Reject this prompt/checkpoint pairing rather than
+  tuning it into production.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label.
-- [ ] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine
+- [x] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine
   labels currently take the maximum of two prompt aliases while twenty-two use
   one, and CLAP-style text encoders may not treat “without” as reliable
   negation. Compare matched prompt counts and control/negation formulations on
   positive and hard-negative audio; any change requires a new classifier id.
+  The networkless raw-logit audit found matching negative prompts usually
+  outranked positives, while positive-only ranking still performed poorly and
+  showed strong label priors. The current candidate is rejected; a redesigned
+  prompt policy or replacement checkpoint must use a new ID and rerun all
+  evidence rather than inheriting these thresholds.
 - [ ] Review the vocabulary ontology and teacher display policy for overlapping
   parent/child results (`brass` plus `trumpet`, `strings` plus `violin`, or
   `percussion` plus `drum-kit`) and for production/timbre labels such as
@@ -330,7 +403,14 @@ job.
 - [ ] Specifically test similar-timbre confusions: electric guitar versus
   synthesizer, bass guitar versus double bass, piano versus mallet instruments,
   saxophone versus brass, solo strings versus string section, and pitched
-  percussion versus keys.
+  percussion versus keys. The candidate mapping identifies four currently
+  evidence-backed directions and explicitly records corpus gaps for solo
+  strings and pitched-percussion positives; do not check this off until actual
+  model scores and human listening verify the positive and hard-negative claims.
+- [ ] Have an authorized teacher/domain reviewer verify every candidate positive
+  and hard-negative annotation before using it to calculate precision/recall.
+  Corpus metadata and rationale are testable provenance, not ground truth by
+  themselves.
 - [ ] Add teacher feedback controls for confirmed, absent, and missed
   instruments without treating those reports as training labels until they are
   reviewed and de-identified.

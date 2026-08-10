@@ -76,6 +76,37 @@ def pairwise_presence_scores(
     return scores
 
 
+def pairwise_prompt_diagnostics(
+    logits: Sequence[float], instrument_pairs: Sequence[Sequence[int]]
+) -> list[list[dict[str, float]]]:
+    """Preserve positive/negative term logits for the offline audit only."""
+
+    expected_pairs = sum(len(indexes) for indexes in instrument_pairs)
+    if len(logits) != expected_pairs * 2:
+        raise DiscoveryContractError("CLAP text-logit count does not match the prompt policy")
+    diagnostics: list[list[dict[str, float]]] = []
+    for indexes in instrument_pairs:
+        if not indexes:
+            raise DiscoveryContractError("CLAP prompt policy has an empty instrument")
+        instrument: list[dict[str, float]] = []
+        for pair_index in indexes:
+            positive = float(logits[pair_index * 2])
+            negative = float(logits[pair_index * 2 + 1])
+            if not math.isfinite(positive) or not math.isfinite(negative):
+                raise DiscoveryContractError("CLAP returned a non-finite text logit")
+            delta = max(-60.0, min(60.0, negative - positive))
+            instrument.append(
+                {
+                    "positiveLogit": positive,
+                    "negativeLogit": negative,
+                    "positiveMinusNegative": positive - negative,
+                    "presenceScore": 1.0 / (1.0 + math.exp(delta)),
+                }
+            )
+        diagnostics.append(instrument)
+    return diagnostics
+
+
 def validate_audio_preprocessing(model: object, feature_extractor: object) -> str:
     """Freeze the checkpoint-compatible crop path before advertising readiness."""
 
@@ -253,6 +284,64 @@ class ClapBackend:
                 outputs.append(
                     {
                         instrument.id: instrument_scores[index]
+                        for index, instrument in enumerate(self.vocabulary.instruments)
+                    }
+                )
+        return outputs
+
+    def score_prompt_diagnostics(
+        self, windows: Sequence[Sequence[float]], sample_rate: int
+    ) -> list[dict[str, list[dict[str, float]]]]:
+        """Return raw paired prompt logits for a networkless batch audit.
+
+        The HTTP service never calls this method and its response contract does
+        not expose these arrays. Keeping the control in the same backend makes
+        the diagnostic use the exact audio crop, embeddings, and logit scale as
+        `score` without changing the production scoring path.
+        """
+
+        if (
+            self._model is None
+            or self._feature_extractor is None
+            or self._truncation_mode is None
+            or self._text_features is None
+            or self._numpy is None
+            or self._resample_poly is None
+            or self._torch is None
+        ):
+            raise RuntimeError("CLAP backend is not ready")
+        if sample_rate <= 0:
+            raise DiscoveryContractError("PCM sample rate is invalid")
+
+        np = self._numpy
+        torch = self._torch
+        outputs: list[dict[str, list[dict[str, float]]]] = []
+        with self._lock, torch.inference_mode():
+            for window_index, window in enumerate(windows):
+                source = np.asarray(window, dtype=np.float32)
+                resampled = self._resample_poly(source, CLAP_SAMPLE_RATE, sample_rate).astype(
+                    np.float32, copy=False
+                )
+                random_state = np.random.get_state()
+                np.random.seed(10_000 + window_index)
+                try:
+                    audio_inputs = self._feature_extractor(
+                        [resampled],
+                        sampling_rate=CLAP_SAMPLE_RATE,
+                        truncation=self._truncation_mode,
+                        padding="repeatpad",
+                        return_tensors="pt",
+                    )
+                finally:
+                    np.random.set_state(random_state)
+                audio_features = self._model.get_audio_features(**audio_inputs)
+                audio_features = torch.nn.functional.normalize(audio_features, dim=-1)
+                scale = self._model.logit_scale_a.exp()
+                logits = (audio_features @ self._text_features.T * scale)[0].tolist()
+                diagnostics = pairwise_prompt_diagnostics(logits, self._instrument_pairs)
+                outputs.append(
+                    {
+                        instrument.id: diagnostics[index]
                         for index, instrument in enumerate(self.vocabulary.instruments)
                     }
                 )
