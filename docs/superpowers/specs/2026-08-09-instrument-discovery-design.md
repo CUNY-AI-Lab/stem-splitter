@@ -168,9 +168,14 @@ remain promotion evidence.
 Full detections are persisted with the private job analysis for auditability.
 Student job responses strip vocabulary metadata and detections. A separate
 teacher-authenticated analysis endpoint is the only application surface that
-may expose them during the candidate phase. Teacher feedback is not a training
-label: confirmed, absent, and missed reports require a later additive schema,
-de-identification policy, and review workflow.
+may expose them during the candidate phase. The additive feedback schema stores
+append-only confirmed, absent, and missed observations plus reviewed genre,
+bound to the exact source, analysis, classifier, vocabulary, ontology, teacher,
+and prior revision. Specific instruments, family/ensemble labels, and
+production textures are distinct review kinds and must not be double-counted.
+These rows remain identified, unreviewed, and permanently training-ineligible;
+a later curation workflow must create a separate reviewed and de-identified
+artifact rather than promoting or rewriting candidate rows.
 
 ## Promotion gate
 

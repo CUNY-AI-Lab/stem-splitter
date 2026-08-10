@@ -11,7 +11,9 @@ Railway is the active host until the product is finished. Its Node service
 opens the SQLite database on the existing persistent app volume, applies the
 fresh schema plus additive Node migrations at boot, and retains teacher
 accounts, sessions, the current amendment, and prompt revision history across
-restarts. Do not run a D1 migration for Railway.
+restarts. The same boot path creates the additive candidate instrument-feedback
+table independently of the discovery feature flag, so historical reviews
+remain readable while inference is off. Do not run a D1 migration for Railway.
 
 Before provisioning a teacher, confirm the canonical app service is the
 Node/Railpack service identified in `server/CLAUDE.md`, not the legacy
@@ -29,8 +31,8 @@ history or process output.
 ## Deferred Cloudflare migrations
 
 Cloudflare is not an active release target. When the finished product is later
-migrated, an existing D1 deployment will need both teacher migrations before
-the corresponding code is deployed:
+migrated, an existing D1 deployment will need the applicable numbered
+migrations before the corresponding code is deployed:
 
 ```sh
 bun run db:migrate:4
@@ -49,9 +51,14 @@ against existing prompt-history identities:
 bun run db:migrate:7
 bun run db:migrate:12
 bun run db:migrate:13
+bun run db:migrate:14
 ```
 
-A fresh database uses `schema.sql` and already contains all five changes.
+Migration 14 adds append-only, source-bound candidate instrument feedback. It
+does not enable discovery, select a classifier, create a training dataset, or
+change a core split.
+
+A fresh database uses `schema.sql` and already contains all six changes.
 Migration 6 belongs to the separate Auto-routing feature and retains its own
 release gate.
 
@@ -198,6 +205,19 @@ the code version and current prompt revision as separate state, preserve the
 volume, and use a new governed amendment revision if the runtime content also
 needs restoration.
 
+Candidate instrument feedback follows a separate append-only evidence boundary.
+Only an authenticated teacher reviewing a stored, complete Auto analysis may
+record it. Every surfaced label must be marked confirmed or absent; missed
+labels must come from the pinned review vocabulary; and the reviewer records a
+genre context. Each row binds the teacher, exact source and analysis SHA-256,
+classifier and vocabulary pins, review-ontology version, and monotonic prior
+revision. API summaries omit reviewer and source identity. Database constraints
+keep every row identified, `unreviewed-candidate`, and training-ineligible, and
+prevent update or replacement; deletion follows the retained source job. These
+observations cannot change the concrete 2/4/6 model or request an isolation. A
+future training or evaluation dataset must be a separately reviewed and
+de-identified artifact, never a mutation or direct export of these rows.
+
 ## Login boundary
 
 Teacher login and prompt-save requests accept only byte- and time-bounded,
@@ -246,6 +266,12 @@ logging usernames, passwords, verifier material, or session cookies.
    login body returns 413, a stalled body returns 408, and a bounded
    failed-login burst returns 429 with `Retry-After` without revealing whether
    the username exists.
+11. If a completed reviewable Auto job is available, load its advisory analysis,
+    record a complete confirmed/absent review plus any genuinely missed
+    instruments, reload it, and confirm the revision persists while the core
+    model and isolation state remain unchanged. Treat this only as candidate
+    evidence; it does not close classifier calibration or human corpus-review
+    gates.
 
 ## Prompt editing and version control
 

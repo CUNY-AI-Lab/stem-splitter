@@ -79,8 +79,18 @@
   window support, and version provenance; it displays abstention and discovery
   failure honestly, leaks no source/weight hash, and offers no routing or
   isolation control. Confirmed logout removes the loaded evidence from the DOM.
-- [ ] Decide how parent categories, child instruments, and non-instrument
+- [x] Decide how parent categories, child instruments, and non-instrument
   production/timbre labels are reviewed and displayed without double-counting.
+  `instrument-review-ontology-v1` assigns every pinned label to a specific
+  instrument/voice, family/ensemble, or production-texture kind. The console
+  renders those kinds explicitly, and stored feedback declares overlap-aware
+  review rather than treating parent and child labels as independent counts.
+- [x] Add structured teacher feedback for confirmed, absent, and missed labels
+  plus reviewed genre. Revisions are append-only and bound to exact source,
+  analysis, classifier, vocabulary, ontology, teacher, and prior-revision
+  provenance. They remain identified, unreviewed, training-ineligible candidate
+  evidence and cannot route a split or request an isolation; any future ground
+  truth requires a separate reviewed and de-identified artifact.
 - [ ] Implement Essentia ONNX as an offline-only comparison only after written
   MTG and institutional license clearance for the exact weights, runtime, and
   container boundary; use the identical windows and manifest.

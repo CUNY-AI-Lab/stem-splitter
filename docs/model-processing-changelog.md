@@ -5,6 +5,50 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-discovery-feedback-v1 — governed candidate evidence — 2026-08-10
+
+- Scope: exact implementation commit
+  `d710fe9d81ba7adec039b5ab6a62d9d5d3ec2e6e` adds structured teacher feedback
+  to the existing private discovery review. It adds no classifier selection,
+  threshold, discovery request, provider call, stem, isolation request, flag
+  change, or live rollout.
+- Ontology and review: `instrument-review-ontology-v1` classifies every pinned
+  vocabulary label as a specific instrument/voice, family/ensemble, or
+  production texture. The console displays those kinds separately, requires a
+  confirmed/absent verdict for every surfaced label, limits missed observations
+  to omitted pinned labels, records genre context, and tells downstream review
+  not to double-count overlapping parent and child evidence.
+- Storage and provenance: additive schema 14 and the Railway boot migration add
+  immutable, append-only per-teacher revisions. Each insert is compare-and-swap
+  guarded and bound to the exact stored analysis bytes, source SHA-256,
+  classifier version, vocabulary version/content hash, ontology version, job,
+  teacher, and prior revision. Concurrent next-revision attempts yield one
+  winner; deleting the retained job cascades its feedback.
+- Privacy and non-interference: caller-supplied source or analysis identity is
+  rejected. Teacher API summaries omit reviewer and source fingerprints;
+  student job responses expose neither observations nor verdicts. Database
+  constraints permanently mark the rows identified, `unreviewed-candidate`,
+  and training-ineligible. Feedback cannot change the concrete 2/4/6 model or
+  start an isolation; any future ground truth requires a separately reviewed
+  and de-identified artifact.
+- Evidence: Bun 1.3.14 Phase 0 passes 210 worker, 24 analyzer, 31 Railway
+  host/migration, 5 separator, 30 discovery, and 9 YAMNet tests plus 19
+  flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey. The
+  instructor E2E covers authentication, complete verdicts, filter behavior,
+  exact readback, malformed/injected/stale requests, logout scrubbing, and
+  unchanged core routing. Its first visibility assertion caught author CSS
+  overriding the HTML `hidden` attribute; an explicit hidden-state rule fixed
+  the rendered leak before the full gate passed.
+- Visual QA: the exact latest files passed an in-app desktop/mobile journey.
+  Revision 1 survived server readback; filtering showed only Trumpet; verdict
+  targets measured 44 pixels; the 390×844 layout had no horizontal overflow;
+  and no dialog overlay, console warning, or console error appeared.
+- Rollout: off. Discovery, query isolation, and server Auto remain false in the
+  live environment. Classifier calibration, human corpus review, native-amd64
+  evidence, manual core-stem listening, and Railway analyzer provisioning
+  remain separate open gates. No Railway mutation, push, pull request, provider
+  call, or deployment occurred.
+
 ## instrument-discovery-teacher-review-v1 — advisory UI boundary — 2026-08-10
 
 - Scope: exact implementation commit

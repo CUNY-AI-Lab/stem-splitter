@@ -185,6 +185,25 @@ warnings/errors. Discovery, query isolation, and server Auto remain off; no
 provider route, database change, Railway mutation, push, pull request, or
 deployment was added.
 
+Exact teacher-feedback commit `d710fe9` turns that advisory display into
+governed candidate evidence without promoting it to ground truth. An
+authenticated teacher can classify every surfaced label as confirmed or
+absent, add missed instruments only from the pinned vocabulary, and record a
+reviewed genre. The review ontology presents specific instruments,
+family/ensemble labels, and production textures as distinct kinds so parent and
+child evidence is not silently double-counted. Each revision is append-only,
+bound to the exact stored analysis, source digest, classifier/vocabulary pins,
+ontology version, teacher, and prior revision, while teacher/student responses
+omit reviewer and source identity. Rows remain explicitly identified,
+unreviewed, and ineligible for training; they cannot change the concrete core
+model or request an isolation. The complete Bun 1.3.14 Phase 0 gate passes 210
+worker, 24 analyzer, 31 Railway host/migration, 5 separator, 30 discovery, 9
+YAMNet, and 19/6/1 browser tests. Desktop/mobile in-app QA confirms durable
+revision readback, a one-result vocabulary filter, 44-pixel verdict targets, no
+horizontal overflow, and no console warnings/errors. All processing flags stay
+off; no Railway mutation, provider call, push, pull request, or deployment
+occurred.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -852,11 +871,15 @@ job.
   showed strong label priors. The current candidate is rejected; a redesigned
   prompt policy or replacement checkpoint must use a new ID and rerun all
   evidence rather than inheriting these thresholds.
-- [ ] Review the vocabulary ontology and teacher display policy for overlapping
+- [x] Review the vocabulary ontology and teacher display policy for overlapping
   parent/child results (`brass` plus `trumpet`, `strings` plus `violin`, or
   `percussion` plus `drum-kit`) and for production/timbre labels such as
   `sampler` and `pad`. Do not double-count or present them as equivalent kinds
-  of evidence.
+  of evidence. `instrument-review-ontology-v1` now assigns every pinned label
+  to a specific instrument/voice, family/ensemble, or production-texture kind;
+  the console renders those kinds separately and the feedback policy explicitly
+  requires overlap-aware review rather than treating them as independent
+  instrument counts.
 - [x] Keep detection advisory: the authenticated instructor console displays
   “possible instruments,” confidence, state, window support, classifier and
   vocabulary provenance for one stored Auto job. Student payloads remain
@@ -873,9 +896,13 @@ job.
   and hard-negative annotation before using it to calculate precision/recall.
   Corpus metadata and rationale are testable provenance, not ground truth by
   themselves.
-- [ ] Add teacher feedback controls for confirmed, absent, and missed
+- [x] Add teacher feedback controls for confirmed, absent, and missed
   instruments without treating those reports as training labels until they are
-  reviewed and de-identified.
+  reviewed and de-identified. The append-only schema records exact analysis,
+  source, classifier, vocabulary, ontology, reviewer, revision, and genre
+  provenance. Database constraints permanently mark these rows identified,
+  unreviewed, and training-ineligible; a later curated artifact—not an update
+  to these rows—must carry any de-identification and ground-truth approval.
 
 **Gate:** choose a discovery classifier only after reporting per-instrument and
 per-genre precision/recall, calibration, abstention rate, latency, memory, and
