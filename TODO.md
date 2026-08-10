@@ -219,6 +219,10 @@ promotion. The exact commit passes the complete Bun 1.3.14 Phase 0 gate: 220
 worker, 24 analyzer, 31 Railway host/migration, 5 separator, 30 discovery, 9
 YAMNet, and 19/6/1 browser tests. No listening review or candidate report exists
 yet, no quality floor was selected, and all processing flags remain off.
+The final value-free Railway pre-provision readback still passes against the
+explicit canonical IDs with the analyzer absent, zero mutations, zero provider
+calls, and no secrets printed. The repository action gate remains correctly
+blocked only by manual listening and native-amd64 role-v4 image evidence.
 See the
 [genre-diverse evaluation contract](docs/evaluation/2026-08-10-genre-diverse-instrument-evaluation.md).
 

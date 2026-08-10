@@ -132,5 +132,12 @@ analyzer, 31 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet
 tests, plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
 journey. This verifies the evidence machinery, not musical accuracy.
 
+A value-free read-only check of the canonical Railway project/environment/app
+service also passes the pre-provision topology contract with `audio-analysis`
+absent, feature posture `off`, zero mutations, zero provider calls, and no
+secrets printed. The separate repository action gate exits nonzero on exactly
+`manual-listening-missing` and `native-amd64-image-missing`; no service should
+be created until both artifacts pass review.
+
 Railway remains the integration target while the product is unfinished.
 Cloudflare Workers migration remains deferred.

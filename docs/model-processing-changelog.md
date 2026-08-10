@@ -37,8 +37,10 @@ promotion on their own.
 - Rollout: off and ineligible. Exhaustive deidentified listening, one complete
   candidate artifact, a selected quality floor, a reviewed candidate decision,
   native-amd64 evidence for the chosen image, and Railway shadow evidence
-  remain open. No Railway mutation, push, pull request, provider call, or
-  deployment occurred.
+  remain open. The value-free canonical Railway pre-provision audit passes with
+  the analyzer absent and all features off; the repository action gate remains
+  blocked only by manual listening and native-amd64 role-v4 image evidence. No
+  Railway mutation, push, pull request, provider call, or deployment occurred.
 
 ## instrument-discovery-feedback-v1 — governed candidate evidence — 2026-08-10
 
