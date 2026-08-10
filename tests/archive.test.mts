@@ -155,6 +155,68 @@ test('Archive retry attempts share one request deadline', async () => {
   }
 });
 
+test('Archive metadata headers and body share one request deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    now += 20 * 1000 - 10;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull() {
+          return new Promise<void>(() => undefined);
+        },
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  };
+
+  try {
+    await assert.rejects(
+      () => fetchArchiveItem(IDENTIFIER),
+      (error: unknown) =>
+        error instanceof ArchiveError && error.code === 'archive_busy'
+    );
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Archive audio headers and body share one request deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 1_000;
+  let calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async (input) => {
+    calls += 1;
+    if (String(input).includes('/metadata/')) return metadataResponse();
+    now += 2 * 60 * 1000 - 10;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull() {
+          return new Promise<void>(() => undefined);
+        },
+      }),
+      { headers: { 'Content-Type': 'audio/mpeg' } }
+    );
+  };
+
+  try {
+    await assert.rejects(
+      () => fetchArchiveAudio(IDENTIFIER, FILE_NAME, {} as never),
+      (error: unknown) =>
+        error instanceof ArchiveError && error.code === 'archive_busy'
+    );
+    assert.equal(calls, 2);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Archive import rejects mislabeled non-audio bytes', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {

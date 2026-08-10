@@ -333,7 +333,7 @@ async function fetchWithBusyRetry(
   url: string,
   label: string,
   timeoutMs: number
-): Promise<Response> {
+): Promise<{ response: Response; deadline: number }> {
   let lastNetworkError: unknown;
   let sawBusy = false;
   const deadline = Date.now() + timeoutMs;
@@ -353,7 +353,7 @@ async function fetchWithBusyRetry(
         await res.body?.cancel().catch(() => undefined);
         continue;
       }
-      return res;
+      return { response: res, deadline };
     } catch (err) {
       if (err instanceof ArchiveError && err.code.startsWith('archive_untrusted')) throw err;
       lastNetworkError = err;
@@ -380,8 +380,23 @@ async function fetchWithBusyRetry(
   );
 }
 
+async function remainingArchiveBodyBudget(
+  response: Response,
+  deadline: number,
+  timedOut: () => ArchiveError
+): Promise<number> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs > 0) return remainingMs;
+  await response.body?.cancel().catch(() => undefined);
+  throw timedOut();
+}
+
 async function fetchJson(url: string, label: string): Promise<unknown> {
-  const res = await fetchWithBusyRetry(url, label, JSON_FETCH_TIMEOUT_MS);
+  const { response: res, deadline } = await fetchWithBusyRetry(
+    url,
+    label,
+    JSON_FETCH_TIMEOUT_MS
+  );
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
     throw new ArchiveError(`Internet Archive ${label} failed (${res.status}).`);
@@ -392,12 +407,14 @@ async function fetchJson(url: string, label: string): Promise<unknown> {
   }
   const unreadable = () =>
     new ArchiveError(`Internet Archive ${label} returned an unreadable response.`);
+  const timedOut = () =>
+    new ArchiveError(`Internet Archive ${label} timed out.`, 'archive_busy', true);
   const bytes = await readBoundedResponse(res, {
     maximumBytes: MAX_JSON_BYTES,
-    timeoutMs: JSON_FETCH_TIMEOUT_MS,
+    timeoutMs: await remainingArchiveBodyBudget(res, deadline, timedOut),
     errors: {
       tooLarge: () => new ArchiveError(`Internet Archive ${label} response was too large.`),
-      timedOut: () => new ArchiveError(`Internet Archive ${label} timed out.`, 'archive_busy', true),
+      timedOut,
       unreadable,
     },
   });
@@ -655,7 +672,11 @@ export async function fetchArchiveAudio(
 
   const url = `${DOWNLOAD_BASE}/${encodeURIComponent(identifier)}/${encodeURIComponent(track.name)}`;
 
-  const res = await fetchWithBusyRetry(url, 'download', AUDIO_FETCH_TIMEOUT_MS);
+  const { response: res, deadline } = await fetchWithBusyRetry(
+    url,
+    'download',
+    AUDIO_FETCH_TIMEOUT_MS
+  );
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
     throw new ArchiveError(`Could not download that track (${res.status}).`);
@@ -670,13 +691,14 @@ export async function fetchArchiveAudio(
       true
     );
   }
+  const timedOut = () =>
+    new ArchiveError('The Internet Archive download timed out.', 'archive_busy', true);
   const data = await readBoundedResponse(res, {
     maximumBytes: MAX_AUDIO_BYTES,
-    timeoutMs: AUDIO_FETCH_TIMEOUT_MS,
+    timeoutMs: await remainingArchiveBodyBudget(res, deadline, timedOut),
     errors: {
       tooLarge: () => new ArchiveError('That track is larger than 100 MB.', 'track_too_large'),
-      timedOut: () =>
-        new ArchiveError('The Internet Archive download timed out.', 'archive_busy', true),
+      timedOut,
       unreadable: () =>
         new ArchiveError(
           'The Internet Archive returned no usable audio for that track.',
