@@ -20,11 +20,15 @@ promotion on their own.
   longer contribute a parsed fingerprint. The server-owned import digest
   remains private and write-once, while the separator receives neither `auto`
   nor the analyzer's mismatched recommendation.
-- Evidence: 26/26 focused analysis tests and 5/5 authoritative-Auto browser
-  tests pass under Node 22.23.1 and Bun 1.3.14. The E2E exercises both YouTube
-  and Archive drift and reads back the independently calculated private digest.
-  Full committed-source Phase 0 evidence is recorded only after the exact
-  implementation commit passes from a clean detached worktree.
+- Evidence: exact executable-source commit `4b86991` passes the literal
+  `test:phase0` gate from a clean detached worktree under Bun 1.3.14: all three
+  typechecks; 157/157 worker, 22/22 analyzer, and 22/22 Railway/migration tests;
+  5/5 separator, 30/30 discovery, and 9/9 YAMNet-comparator tests; plus 19/19
+  baseline, 5/5 authoritative-Auto, and 1/1 isolation-shadow browser scenarios.
+  The E2E exercises both YouTube and Archive drift and reads back the
+  independently calculated private digest. `git show --check` also passes for
+  that implementation commit. This evidence is local only: no push, PR,
+  Railway mutation, or deployment occurred.
 - Remaining: browser-upload mutability, native-amd64 CI, Railway resource and
   restart acceptance, genre listening, and live shadow/rollback evidence remain
   gates before authoritative promotion.
