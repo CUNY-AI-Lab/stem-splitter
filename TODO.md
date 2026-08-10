@@ -366,6 +366,34 @@ journey. No teacher verdict was fabricated, no public review artifact exists,
 and no evaluation plan, flag, service, Railway state, provider, deployment,
 push, or pull request changed.
 
+Exact TinySOL-control commit `06599a7` adds the first separately licensed,
+exact-instrument tranche for the remaining Phase 2 ontology gaps. The manifest
+pins the current [TinySOL v6 Zenodo record](https://zenodo.org/records/3685367),
+CC BY 4.0 license, record and concept DOI, official MD5 values, independently
+computed SHA-256 values, the 317,576-byte 2,913-row metadata file, and the
+1,026,917,185-byte archive. A deterministic metadata rule selects one natural,
+non-digitally-retuned, ordinary `mf` C4 note per dataset-authored label, using
+the lowest instance id and then path: accordion, cello, contrabass, viola, and
+violin. The strict hydrator verifies the metadata before downloading the large
+archive, follows no redirect, binds the complete ordered 2,952-member tar
+surface (2,913 WAVs, 33 directories, and six auxiliary files), captures only
+the five selected WAVs, validates their exact PCM contracts, writes mode-`0600`
+files, and supports paired local-source and offline verification modes. Ten
+adversarial tests cover the stale-v3/version trap, rights and claim drift,
+metadata selection drift, redirects, headers and content, timeouts and partial
+cleanup, traversal, links, duplicate members, malformed WAVs, symlinked output,
+permissions, and ambiguous CLI modes. Exact instrument truth remains limited
+to TinySOL's source labels; vocabulary mappings are candidate positives awaiting
+teacher listening, and the current evaluation plan, candidate negatives,
+classifier selection, and promotion remain forbidden. Exact Bun 1.3.14 passes
+all four typechecks; 266 worker, 24 analyzer, 42 Railway host/config/migration/
+terminal, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+authoritative-Auto, and 1 isolation-shadow browser journey. Accordion and four
+solo-string labels are now source-covered; harmonica, pitched percussion, and
+traditional-instrument exact positives remain open. No evaluation-plan version,
+flag, service, Railway state, provider call, deployment, push, or pull request
+changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -977,9 +1005,14 @@ job.
 - [ ] Have an authorized teacher complete that private NSynth worksheet and
   approve its deidentified finalization. No review verdict may be prefilled or
   inferred from the dataset family, source, filename, or `instrument_str`.
-- [ ] Find separately licensed exact positives for free reeds, solo strings,
-  pitched percussion, and traditional instruments. Do not convert an NSynth
-  filename, family label, or source label into exact ground truth.
+- [x] Add separately licensed exact positives for accordion and the solo-string
+  labels cello, contrabass, viola, and violin. TinySOL v6 source metadata, rather
+  than an NSynth filename or family label, supplies the exact instrument truth;
+  every vocabulary mapping remains candidate evidence pending teacher listening.
+- [ ] Complete the exact-positive gap with harmonica, pitched percussion, and
+  traditional instruments under separately reviewed licenses and immutable
+  source pins. Keep each new corpus partition separate until teacher listening
+  and a new evaluation-plan version explicitly integrate it.
 - [ ] Choose exactly one replacement discovery classifier after the CLAP,
   YAMNet, and any license-cleared Essentia evidence is comparable. Give every
   prompt policy, checkpoint, label map, or preprocessing change a new
