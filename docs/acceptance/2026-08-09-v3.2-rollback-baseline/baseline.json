@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "1",
+  "capturedAt": "2026-08-10T00:04:40.169Z",
+  "base": "https://stem-splitter-production-78b9.up.railway.app",
+  "health": {
+    "ok": true,
+    "base": "https://stem-splitter-production-78b9.up.railway.app",
+    "promptSchema": "ready"
+  },
+  "catalogue": {
+    "backend": "replicate",
+    "defaultModel": "htdemucs_ft",
+    "model": {
+      "id": "htdemucs_ft",
+      "stems": [
+        "vocals",
+        "drums",
+        "bass",
+        "other"
+      ],
+      "engine": "DEMUCS"
+    }
+  },
+  "source": {
+    "filename": "electronic-stiff-hand.mp3",
+    "bytes": 3421199,
+    "sha256": "a929ec6515ecc915111d2de59acb9ff81d53a6194f2a551775859b0d291cd658"
+  },
+  "job": {
+    "id": "d0c038cd-6f75-49ad-a055-2d22377dbb6a",
+    "model": "htdemucs_ft",
+    "status": "done",
+    "expectedStems": [
+      "vocals",
+      "drums",
+      "bass",
+      "other"
+    ],
+    "startedAt": "2026-08-10T00:03:57.431Z",
+    "completedAt": "2026-08-10T00:04:40.169Z",
+    "latencyMs": 42738
+  },
+  "stems": [
+    {
+      "name": "vocals",
+      "bytes": 4068832,
+      "sha256": "49501e6cdb0cda3ca05364d4e07995a215f3fbf41a0be8994d8188a2e0242001"
+    },
+    {
+      "name": "drums",
+      "bytes": 4068832,
+      "sha256": "a44f5fb24b90a6816c5001806441ff37317f5ec648723ac2796d9c0cbccf7af0"
+    },
+    {
+      "name": "bass",
+      "bytes": 4068832,
+      "sha256": "3eb24962a76c0af21a0145c45afb08a2761e64999ccb015779ac82c0e22607ca"
+    },
+    {
+      "name": "other",
+      "bytes": 4068832,
+      "sha256": "8a6e89b0e06db477102a5373f069203ddccfaa9ceb6be14b914cbd667a7f85f4"
+    }
+  ],
+  "railway": {
+    "projectId": "f070742b-3375-4cba-9a86-335f39273c88",
+    "environmentId": "b3381640-1e2f-4765-8e15-15baec599ec2",
+    "serviceId": "f53a2915-087c-493a-a345-7a1fa73e6588",
+    "deploymentId": "7f4bc330-4c52-4257-8762-3b85a24b2d07",
+    "deployedCommit": "9c3120cbdf5b56b872384f155c746930e064aa09",
+    "imageDigest": "sha256:cf04a8a3d2b369009a9a0fe79cdda166c92937d117d5559cd00ed6b8807853ca"
+  },
+  "provider": {
+    "separation": {
+      "backend": "replicate",
+      "version": "5a7041cc9b82e5a558fea6b3d7b12dea89625e89da33f0447bd727c2d0ab9e77"
+    },
+    "youtubeConfigPlane": {
+      "model": "milwrite/yt-audio",
+      "stagedVersion": "bcd3b512921a6f3cec4ae01c966c78d320d2a3b512db913cdd02036ea2bff7f9"
+    }
+  }
+}

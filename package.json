@@ -27,6 +27,8 @@
     "test:e2e:crate:run": "./scripts/run-archive-crate-e2e.sh",
     "typecheck": "tsc --noEmit",
     "check:replicate": "node --experimental-strip-types scripts/check-replicate-pin.mjs",
+    "check:youtube": "node scripts/check-youtube-pin.mjs",
+    "baseline:railway": "node scripts/capture-railway-baseline.mjs",
     "eval:stems": "node scripts/eval-stems.mjs",
     "eval:auto": "node --import tsx scripts/eval-autosplit.mts",
     "eval:auto:browser": "node --import tsx scripts/eval-autosplit-browser.mts",

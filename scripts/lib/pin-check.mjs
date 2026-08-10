@@ -64,3 +64,46 @@ export function findPinViolations(surface, properties) {
 
   return failures;
 }
+
+/** Validate the separate Replicate yt-dlp pin used by the Railway importer. */
+export function findYouTubePinViolations(openapiSchema) {
+  const failures = [];
+  const components = openapiSchema?.components?.schemas ?? {};
+  const inputSchema = components.Input;
+  const input = resolveInputProperties(openapiSchema);
+  const output = components.Output;
+
+  for (const key of ['url', 'max_duration']) {
+    if (!(key in input)) failures.push(`input "${key}" no longer exists on the pinned version`);
+  }
+  if (input.url && input.url.type !== 'string') {
+    failures.push('input "url" is no longer a string');
+  }
+  if (input.max_duration && input.max_duration.type !== 'integer') {
+    failures.push('input "max_duration" is no longer an integer');
+  }
+  if (!inputSchema?.required?.includes('url')) {
+    failures.push('input "url" is no longer required');
+  }
+  if (!output || output.type !== 'object') {
+    failures.push('the pinned version no longer exposes an object Output schema');
+    return failures;
+  }
+  for (const key of ['audio', 'duration', 'title']) {
+    if (!(key in (output.properties ?? {}))) {
+      failures.push(`output "${key}" no longer exists on the pinned version`);
+    } else if (!output.required?.includes(key)) {
+      failures.push(`output "${key}" is no longer required`);
+    }
+  }
+  if (output.properties?.audio && output.properties.audio.type !== 'string') {
+    failures.push('output "audio" is no longer a string');
+  }
+  if (output.properties?.duration && output.properties.duration.type !== 'number') {
+    failures.push('output "duration" is no longer a number');
+  }
+  if (output.properties?.title && output.properties.title.type !== 'string') {
+    failures.push('output "title" is no longer a string');
+  }
+  return failures;
+}

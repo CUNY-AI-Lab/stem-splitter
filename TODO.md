@@ -33,8 +33,9 @@ contract/fake-backend/process tests. A matching native arm64 image has started
 with networking disabled and a read-only root filesystem and completed real
 CLAP inference on a synthetic control; the `linux/amd64` target image also
 builds and matches the current source hashes. Native amd64 startup/inference,
-Railway sizing, real-corpus calibration, and service provisioning remain open,
-and no detection has been promoted. See the
+Railway sizing, real-corpus calibration, and service provisioning remain open.
+A path-scoped, secret-free native-amd64 image workflow is defined locally but
+has not yet run on GitHub, and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
 
@@ -81,16 +82,20 @@ because its model or service is available.
 - [ ] Add a distributed teacher-login edge limit before increasing Railway
   replicas or performing the deferred Cloudflare migration; the process-local
   throttle intentionally does not claim cross-replica protection.
-- [ ] Capture a new baseline before pipeline work: commit SHA, full test result,
+- [x] Capture a new baseline before pipeline work: commit SHA, full test result,
   live `/healthz`, one authorized real-audio 4-track job, output hashes, latency,
-  and provider/model version. This is the rollback comparison point.
+  and provider/model version. This is the rollback comparison point. The live
+  evidence is recorded under
+  `docs/acceptance/2026-08-09-v3.2-rollback-baseline/`; all four outputs had
+  valid MP3 headers and distinct hashes. Manual listening remains a release gate.
 - [x] Record the canonical Railway project, environment, and service IDs and
   replace name-based release commands. The current local Railway link resolves
   to a same-named legacy workerd project and must never be treated as authority.
-- [ ] Before this branch can be deployed, stage an exact
+- [x] Before this branch can be deployed, stage an exact
   `REPLICATE_YT_MODEL_VERSION` on the canonical Railway service without
-  triggering an unrelated release. The live service currently has the model
-  name but not the new required version pin.
+  triggering an unrelated release. Version `bcd3b512…` passed the importer
+  schema guard and was staged with `--skip-deploys`; deployment
+  `7f4bc330…` remained active and unchanged.
 
 ## Service and dependency order
 
@@ -260,6 +265,11 @@ job.
   readiness and exits instead of monopolizing capacity indefinitely. Regression
   tests cover the permitted two-request race and prove the real fatal callback
   terminates a child process with exit code 70; they do not load PyTorch.
+- [x] Define a path-scoped native-amd64 CI image gate that verifies the pinned
+  image platform, non-root command, size ceiling, runtime surface, offline
+  readiness pins, empty mount surface, dropped capabilities, bounded CPU/RAM/
+  PIDs, authentication, and real synthetic-control inference. The workflow is
+  local-only until a remote branch/PR run proves it on GitHub infrastructure.
 - [ ] Prove the discovery container restarts cleanly after the watchdog kills a
   deliberately stuck real PyTorch inference. This requires the built model
   image plus Railway restart/readiness evidence before shadow traffic.

@@ -62,17 +62,25 @@ promotion on their own.
   the exact provenance manifest, including symlinks.
 - Real-model local smoke: a matching arm64 image ran as uid/gid `65532:65532`
   with networking disabled, a read-only root filesystem, a bounded tmpfs, two
-  CPUs, 4 GB RAM, and 128 PIDs. It returned the exact readiness pins and scored
-  a three-second synthetic control in 258–394 ms; post-warm container-memory
-  observations ranged roughly 405–745 MiB across repeated runs. The same
-  current source builds as a 2.11 GB `linux/amd64` image, but
+  CPUs, 4 GB RAM, and 128 PIDs. The hardened reusable smoke now also drops all
+  Linux capabilities, forbids swap, checks the empty mount surface, and freezes
+  the image platform, size, command, and application surface. It returned the
+  exact readiness pins and scored a three-second synthetic control in 258–394
+  ms; post-warm container-memory observations ranged roughly 405–745 MiB across
+  repeated runs. The same current source builds as a 2.11 GB `linux/amd64`
+  image, but
   emulated vocabulary warmup crossed its configured health window; that is a
   deployment risk signal, not native performance evidence.
+- Native CI definition: a path-scoped, read-only-permission workflow now builds
+  the exact `linux/amd64` source and reuses the hardened smoke with a 2.15 GiB
+  image ceiling, exact runtime surface/command, no mounts, and explicit
+  privilege/resource assertions. It has not run on GitHub and therefore is not
+  native-amd64 evidence yet.
 - Not yet proven: native amd64 startup/inference, container/Railway restart and
   readiness recovery after a real PyTorch inference outlives its client
   timeout, calibration, authorized truth labels, metrics, a dedicated
   discovery-review UI, listening review, production resource/cost measurement,
-  native image CI, or any Railway service.
+  a successful native image CI run, or any Railway service.
 - Rollout: off. No Railway variable, service, or deployment change.
 
 ## autosplit-role-v3 — candidate, rollout off — 2026-08-09

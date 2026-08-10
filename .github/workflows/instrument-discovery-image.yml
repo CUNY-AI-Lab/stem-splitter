@@ -1,0 +1,57 @@
+name: Instrument discovery image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .dockerignore
+      - .github/workflows/instrument-discovery-image.yml
+      - instrument-discovery/**
+      - scripts/smoke-instrument-discovery-image.sh
+  pull_request:
+    paths:
+      - .dockerignore
+      - .github/workflows/instrument-discovery-image.yml
+      - instrument-discovery/**
+      - scripts/smoke-instrument-discovery-image.sh
+
+concurrency:
+  group: stem-splitter-discovery-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-amd64-image:
+    name: Pinned discovery image (native amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify the native runner contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(docker info --format '{{.OSType}}/{{.Architecture}}')" = linux/x86_64
+      - name: Build the exact discovery source for linux/amd64
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: >-
+          docker build --pull --platform linux/amd64
+          --file instrument-discovery/Dockerfile
+          --tag stem-splitter-instrument-discovery:ci .
+      - name: Run offline, read-only, real-model smoke
+        env:
+          INSTRUMENT_DISCOVERY_EXPECTED_PLATFORM: linux/amd64
+          INSTRUMENT_DISCOVERY_MAX_IMAGE_BYTES: "2306867200"
+          INSTRUMENT_DISCOVERY_SMOKE_READY_SECONDS: "300"
+        run: >-
+          ./scripts/smoke-instrument-discovery-image.sh
+          stem-splitter-instrument-discovery:ci

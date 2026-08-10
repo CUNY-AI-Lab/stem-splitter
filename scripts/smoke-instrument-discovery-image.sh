@@ -3,6 +3,8 @@ set -euo pipefail
 
 discovery_smoke_image="${1:-${INSTRUMENT_DISCOVERY_IMAGE:-stem-splitter-instrument-discovery:v3.2-candidate}}"
 discovery_smoke_timeout="${INSTRUMENT_DISCOVERY_SMOKE_READY_SECONDS:-180}"
+discovery_smoke_expected_platform="${INSTRUMENT_DISCOVERY_EXPECTED_PLATFORM:-}"
+discovery_smoke_max_image_bytes="${INSTRUMENT_DISCOVERY_MAX_IMAGE_BYTES:-2306867200}"
 discovery_smoke_container="stem-splitter-instrument-discovery-smoke-$$"
 discovery_smoke_token="local-only-discovery-token-000000000000"
 
@@ -16,6 +18,23 @@ if (( discovery_smoke_timeout < 10 || discovery_smoke_timeout > 900 )); then
   printf '%s\n' 'INSTRUMENT_DISCOVERY_SMOKE_READY_SECONDS must be between 10 and 900.' >&2
   exit 2
 fi
+case "$discovery_smoke_expected_platform" in
+  ''|linux/amd64|linux/arm64) ;;
+  *)
+    printf '%s\n' 'INSTRUMENT_DISCOVERY_EXPECTED_PLATFORM must be linux/amd64 or linux/arm64.' >&2
+    exit 2
+    ;;
+esac
+case "$discovery_smoke_max_image_bytes" in
+  ''|*[!0-9]*)
+    printf '%s\n' 'INSTRUMENT_DISCOVERY_MAX_IMAGE_BYTES must be an integer.' >&2
+    exit 2
+    ;;
+esac
+if (( discovery_smoke_max_image_bytes < 1 )); then
+  printf '%s\n' 'INSTRUMENT_DISCOVERY_MAX_IMAGE_BYTES must be positive.' >&2
+  exit 2
+fi
 
 cleanup_discovery_smoke() {
   case "$discovery_smoke_container" in
@@ -27,22 +46,50 @@ cleanup_discovery_smoke() {
 trap cleanup_discovery_smoke EXIT
 
 test "$(docker image inspect --format '{{.Config.User}}' "$discovery_smoke_image")" = '65532:65532'
+test "$(docker image inspect --format '{{json .Config.Cmd}}' "$discovery_smoke_image")" = '["python","service.py"]'
+
+discovery_smoke_platform="$(
+  docker image inspect --format '{{.Os}}/{{.Architecture}}' "$discovery_smoke_image"
+)"
+if test -n "$discovery_smoke_expected_platform" \
+  && test "$discovery_smoke_platform" != "$discovery_smoke_expected_platform"; then
+  printf 'instrument-discovery platform mismatch: expected %s, received %s\n' \
+    "$discovery_smoke_expected_platform" "$discovery_smoke_platform" >&2
+  exit 1
+fi
+
+discovery_smoke_image_bytes="$(
+  docker image inspect --format '{{.Size}}' "$discovery_smoke_image"
+)"
+if (( discovery_smoke_image_bytes > discovery_smoke_max_image_bytes )); then
+  printf 'instrument-discovery image exceeds the %s-byte gate: %s bytes\n' \
+    "$discovery_smoke_max_image_bytes" "$discovery_smoke_image_bytes" >&2
+  exit 1
+fi
 
 docker run --detach \
   --name "$discovery_smoke_container" \
   --network none \
   --memory 4g \
+  --memory-swap 4g \
   --cpus 2 \
   --pids-limit 128 \
+  --cap-drop ALL \
   --read-only \
   --security-opt no-new-privileges \
-  --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
   --env "INSTRUMENT_DISCOVERY_TOKEN=$discovery_smoke_token" \
   --env PORT=8080 \
   "$discovery_smoke_image" >/dev/null
 
 test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$discovery_smoke_container")" = 'none'
 test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$discovery_smoke_container")" = 'true'
+test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$discovery_smoke_container")" = '["ALL"]'
+test "$(docker inspect --format '{{.HostConfig.Memory}}' "$discovery_smoke_container")" = '4294967296'
+test "$(docker inspect --format '{{.HostConfig.MemorySwap}}' "$discovery_smoke_container")" = '4294967296'
+test "$(docker inspect --format '{{.HostConfig.NanoCpus}}' "$discovery_smoke_container")" = '2000000000'
+test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "$discovery_smoke_container")" = '128'
+test "$(docker inspect --format '{{json .Mounts}}' "$discovery_smoke_container")" = '[]'
 
 discovery_smoke_started="$(date +%s)"
 while true; do
@@ -66,6 +113,9 @@ while true; do
   fi
   sleep 2
 done
+
+docker exec "$discovery_smoke_container" python -c \
+  "import os,pathlib; expected=['clap_backend.py','constants.py','contract.py','service.py','vocabulary.json']; actual=sorted(str(path.relative_to('/app')) for path in pathlib.Path('/app').rglob('*')); assert actual == expected, actual; assert os.getuid() == 65532 and os.getgid() == 65532; assert os.environ['HF_HUB_OFFLINE'] == '1' and os.environ['TRANSFORMERS_OFFLINE'] == '1' and os.environ['HF_HUB_DISABLE_TELEMETRY'] == '1'"
 
 docker exec "$discovery_smoke_container" python -c \
   "import json,urllib.request; result=json.load(urllib.request.urlopen('http://127.0.0.1:8080/readyz',timeout=4)); assert result == {'ready':True,'classifierVersion':'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1','weightsSha256':'5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1','vocabularyVersion':'classroom-instruments-v1','vocabularySha256':'72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140'}; print(json.dumps(result,sort_keys=True))"

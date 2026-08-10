@@ -59,6 +59,10 @@
   production/timbre labels are reviewed and displayed without double-counting.
 - [ ] Implement Essentia ONNX as an offline-only comparison after written
   licence review; use the identical windows and manifest.
+- [x] Define a path-scoped native-amd64 workflow that builds the exact current
+  image and reuses the offline, read-only real-model smoke under explicit
+  platform, size, resource, privilege, mount, authentication, and inference
+  checks. It remains local-only until a GitHub run succeeds.
 - [ ] Smoke the current image on native amd64. The 2.11 GB `linux/amd64` target
   builds locally and matches the current source hashes, but emulated startup
   crossed the image health window and cannot close this gate.

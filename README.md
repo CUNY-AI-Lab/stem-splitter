@@ -95,6 +95,10 @@ project setup, and the post-deploy verify loop.
 The separate private Auto analyzer has its own no-public-domain provisioning,
 shadow rollout, and rollback runbook in
 [Railway audio-analysis provisioning](docs/railway-audio-analysis-provisioning.md).
+The repeatable pre-release rollback capture is `npm run baseline:railway`; its
+latest non-secret evidence is under
+`docs/acceptance/2026-08-09-v3.2-rollback-baseline/`. Validate both provider
+pins with `npm run check:replicate` and `npm run check:youtube` before release.
 
 ## Deferred Cloudflare migration (finished product only)
 

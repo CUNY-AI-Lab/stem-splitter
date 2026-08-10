@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { findPinViolations, resolveInputProperties } from '../scripts/lib/pin-check.mjs';
+import {
+  findPinViolations,
+  findYouTubePinViolations,
+  resolveInputProperties,
+} from '../scripts/lib/pin-check.mjs';
 import { parseAudioSeparatorResult } from '../src/separation/audio-separator.ts';
 import {
   BS_ROFORMER_MODEL,
@@ -310,6 +314,42 @@ test('the version guard refuses to pass when it cannot read a schema', () => {
   assert.deepEqual(findPinViolations(replicateContractSurface(), {}), [
     'the pinned version exposes no Input schema — cannot verify anything',
   ]);
+});
+
+test('the YouTube version guard freezes the importer input and output contract', () => {
+  const schema = {
+    components: {
+      schemas: {
+        Input: {
+          required: ['url'],
+          properties: {
+            url: { type: 'string', format: 'uri' },
+            max_duration: { type: 'integer', default: 900 },
+          },
+        },
+        Output: {
+          type: 'object',
+          required: ['audio', 'duration', 'title'],
+          properties: {
+            audio: { type: 'string', format: 'uri' },
+            duration: { type: 'number' },
+            title: { type: 'string' },
+          },
+        },
+      },
+    },
+  };
+  assert.deepEqual(findYouTubePinViolations(schema), []);
+
+  const drifted = structuredClone(schema);
+  delete drifted.components.schemas.Input.properties.max_duration;
+  delete drifted.components.schemas.Output.properties.audio;
+  drifted.components.schemas.Output.required = ['duration', 'title'];
+  drifted.components.schemas.Input.required = [];
+  const failures = findYouTubePinViolations(drifted);
+  assert.ok(failures.some((line) => line.includes('input "max_duration"')));
+  assert.ok(failures.some((line) => line.includes('output "audio"')));
+  assert.ok(failures.some((line) => line.includes('input "url" is no longer required')));
 });
 
 test('Audio Separator result parser normalizes the two tracks', () => {
