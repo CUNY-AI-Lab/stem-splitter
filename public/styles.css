@@ -1658,6 +1658,89 @@ footer {
   padding-top: 0.65rem;
 }
 
+.teacher-analysis-review { margin-top: 2rem; }
+.teacher-analysis-form {
+  align-items: end;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.teacher-analysis-form .teacher-status { grid-column: 1 / -1; }
+.teacher-analysis-form .crate-page-btn { min-height: 2.75rem; }
+.teacher-analysis-card {
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+.teacher-analysis-summary {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0.9rem 0 1rem;
+}
+.teacher-analysis-summary > div {
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 7px;
+  min-width: 0;
+  padding: 0.7rem;
+}
+.teacher-analysis-summary dt {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.teacher-analysis-summary dd {
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+}
+.teacher-detection-list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.teacher-detection-item {
+  align-items: center;
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 7px;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 0.7rem;
+}
+.teacher-detection-item strong { color: var(--ink); font-size: 0.78rem; }
+.teacher-detection-state {
+  border: 1px solid var(--ok);
+  border-radius: 999px;
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  justify-self: start;
+  letter-spacing: 0.07em;
+  padding: 0.2rem 0.4rem;
+}
+.teacher-detection-state.uncertain {
+  border-color: var(--ink-faint);
+  color: var(--ink-faint);
+}
+.teacher-detection-meta { color: var(--ink-faint); font-size: 0.62rem; }
+.teacher-analysis-guard {
+  border-top: 1px dashed var(--panel-edge);
+  color: var(--hot);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  margin: 1rem 0 0;
+  padding-top: 0.75rem;
+}
+
 @media (max-width: 640px) {
   .teacher-section-head,
   .teacher-history-head { display: grid; }
@@ -1665,4 +1748,8 @@ footer {
   .teacher-actions { align-items: stretch; flex-direction: column; }
   .teacher-actions > * { width: 100%; }
   .teacher-edit-meta #amendment-meta { margin-left: 0; text-align: left; width: 100%; }
+  .teacher-analysis-form,
+  .teacher-analysis-summary,
+  .teacher-detection-item { grid-template-columns: 1fr; }
+  .teacher-analysis-form .crate-page-btn { width: 100%; }
 }

@@ -1543,6 +1543,39 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     body: JSON.stringify({ id: analysisJobId, analysis: privateAutoRouting, sourceHash }),
   });
   expect(seededAnalysis.status).toBe(200);
+  const emptyAnalysisJobId = 'teacher-discovery-empty-e2e';
+  const emptyAutoRouting = structuredClone(privateAutoRouting);
+  emptyAutoRouting.analysis.detectedInstruments = [];
+  emptyAutoRouting.analysis.decision.reason = 'candidate abstained';
+  const seededEmptyAnalysis = await e2eFetch(server, '/__e2e/job-analysis', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: emptyAnalysisJobId, analysis: emptyAutoRouting, sourceHash }),
+  });
+  expect(seededEmptyAnalysis.status).toBe(200);
+
+  const unavailableAnalysisJobId = 'teacher-discovery-unavailable-e2e';
+  const unavailableAutoRouting = structuredClone(privateAutoRouting);
+  delete unavailableAutoRouting.analysis.vocabularyClassifier;
+  unavailableAutoRouting.analysis.instrumentDiscovery = {
+    status: 'unavailable',
+    code: 'discovery_timeout',
+    totalMs: 25_000,
+    windowsAnalyzed: 0,
+  };
+  unavailableAutoRouting.analysis.detectedInstruments = [];
+  unavailableAutoRouting.analysis.decision.reason = 'core route survived discovery timeout';
+  const seededUnavailableAnalysis = await e2eFetch(server, '/__e2e/job-analysis', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: unavailableAnalysisJobId,
+      analysis: unavailableAutoRouting,
+      sourceHash,
+    }),
+  });
+  expect(seededUnavailableAnalysis.status).toBe(200);
+
   const seededIsolation = await e2eFetch(server, '/__e2e/job-isolation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1815,6 +1848,72 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('.teacher-history-item').last()).toContainText(changeNote);
   await expect(loadEarlier).toBeHidden();
 
+  // Candidate instrument detections are visible only through an explicit
+  // teacher review. The UI preserves their advisory status and never offers a
+  // stem-routing or provider-start control.
+  await expect(page.getByRole('heading', { name: 'AUTO ANALYSIS REVIEW' })).toBeVisible();
+  const analysisLoadButton = page.getByRole('button', { name: 'LOAD ADVISORY ANALYSIS' });
+  const analysisLoadButtonBox = await analysisLoadButton.boundingBox();
+  expect(analysisLoadButtonBox).not.toBeNull();
+  expect(analysisLoadButtonBox.height).toBeGreaterThanOrEqual(44);
+
+  await page.getByLabel('AUTO ANALYSIS JOB ID').fill('../private-job');
+  await analysisLoadButton.click();
+  await expect(page.locator('#analysis-status')).toHaveText('ENTER A VALID AUTO JOB ID.');
+  await expect(page.locator('#analysis-result')).toBeHidden();
+
+  await page.getByLabel('AUTO ANALYSIS JOB ID').fill(emptyAnalysisJobId);
+  await analysisLoadButton.click();
+  await expect(page.locator('#analysis-detections-empty')).toHaveText(
+    'The candidate classifier returned no possible instruments. This is an abstention, not proof that instruments are absent.'
+  );
+  await expect(page.locator('#analysis-detections-empty')).toBeVisible();
+  await expect(page.locator('.teacher-detection-item')).toHaveCount(0);
+
+  await page.getByLabel('AUTO ANALYSIS JOB ID').fill(unavailableAnalysisJobId);
+  await analysisLoadButton.click();
+  await expect(page.locator('#analysis-discovery-meta')).toHaveText(
+    'UNAVAILABLE · DISCOVERY_TIMEOUT · 25000 MS'
+  );
+  await expect(page.locator('#analysis-detections-empty')).toHaveText(
+    'No candidate detections are available for this stored Auto decision.'
+  );
+  await expect(page.locator('#analysis-core-route')).toHaveText(
+    'AUTHORITATIVE · APPLIED · htdemucs_6s'
+  );
+
+  await page.getByLabel('AUTO ANALYSIS JOB ID').fill(analysisJobId);
+  await analysisLoadButton.click();
+  await expect(page.locator('#analysis-status')).toHaveText(
+    'ADVISORY ANALYSIS LOADED — NO ROUTING OR ISOLATION CHANGE.'
+  );
+  await expect(page.locator('#analysis-result')).toBeVisible();
+  await expect(page.locator('#analysis-job-meta')).toHaveText(`JOB ${analysisJobId}`);
+  await expect(page.locator('#analysis-core-route')).toHaveText(
+    'AUTHORITATIVE · APPLIED · htdemucs_6s'
+  );
+  await expect(page.locator('#analysis-role-version')).toHaveText('autosplit-role-v4');
+  await expect(page.locator('#analysis-reason')).toHaveText('reviewed core route');
+  await expect(page.locator('#analysis-discovery-meta')).toContainText(
+    'COMPLETE · 3 WINDOWS · 120 MS · classroom-instruments-v1'
+  );
+  await expect(page.locator('#analysis-discovery-meta')).toContainText(
+    'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1'
+  );
+  await expect(page.locator('.teacher-detection-item')).toHaveCount(1);
+  await expect(page.locator('.teacher-detection-item')).toContainText('Saxophone');
+  await expect(page.locator('.teacher-detection-item')).toContainText('POSSIBLE');
+  await expect(page.locator('.teacher-detection-item')).toContainText('82.0% · 2 / 3 WINDOWS');
+  await expect(page.locator('.teacher-analysis-guard')).toHaveText(
+    'CORE 2 / 4 / 6 CONTRACT UNCHANGED · NO ISOLATION REQUESTED'
+  );
+  const displayedAnalysis = await page.locator('#analysis-result').textContent();
+  expect(displayedAnalysis).not.toContain(sourceHash);
+  expect(displayedAnalysis).not.toContain(
+    '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1'
+  );
+  await expect(page.getByRole('button', { name: /ISOLAT/i })).toHaveCount(0);
+
   // A failed logout must not tell the teacher the active HttpOnly session is
   // gone. Keep the console visible until the server confirms invalidation.
   await page.route('**/api/teacher/logout', (route) => route.abort('failed'));
@@ -1823,6 +1922,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#prompt-status')).toContainText(
     'SIGN OUT FAILED — YOUR SESSION MAY STILL BE ACTIVE'
   );
+  await expect(page.locator('#analysis-result')).toBeVisible();
   await expect(page.getByRole('button', { name: 'SIGN OUT' })).toBeEnabled();
   const afterFailedSignOut = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
@@ -1835,7 +1935,12 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment')).toHaveValue('');
   await expect(page.locator('.teacher-history-item')).toHaveCount(0);
   await expect(page.locator('#preview-body')).toBeEmpty();
+  await expect(page.locator('#analysis-job-id')).toHaveValue('');
+  await expect(page.locator('#analysis-result')).toBeHidden();
+  await expect(page.locator('.teacher-detection-item')).toHaveCount(0);
   expect(await page.locator('body').textContent()).not.toContain('Pagination amendment 42');
+  expect(await page.locator('body').textContent()).not.toContain(analysisJobId);
+  expect(await page.locator('body').textContent()).not.toContain('Saxophone');
   const afterSignOut = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
   );

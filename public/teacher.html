@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor</title>
-<link rel="stylesheet" href="/styles.css?v=teacher-20260810-2" />
+<link rel="stylesheet" href="/styles.css?v=teacher-20260810-3" />
 
 <div class="grain" aria-hidden="true"></div>
 
@@ -137,6 +137,65 @@
         LOAD EARLIER REVISIONS
       </button>
     </section>
+
+    <section class="teacher-analysis-review" aria-labelledby="analysis-review-title">
+      <h2 id="analysis-review-title" class="rack-title"><span>AUTO ANALYSIS REVIEW</span></h2>
+      <p class="teacher-help">
+        Review one stored Auto decision and any candidate instrument detections. These labels are
+        advisory evidence for authorized testers: they never add, rename, or select a stem and they
+        never start an optional isolation.
+      </p>
+      <form id="analysis-form" class="teacher-form teacher-analysis-form">
+        <label class="teacher-field" for="analysis-job-id">
+          <span class="mono">AUTO ANALYSIS JOB ID</span>
+          <input
+            id="analysis-job-id"
+            maxlength="128"
+            placeholder="Paste a completed Auto job ID"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+        </label>
+        <button type="submit" id="analysis-load" class="crate-page-btn">
+          LOAD ADVISORY ANALYSIS
+        </button>
+        <p id="analysis-status" class="mono teacher-status" aria-live="polite" hidden></p>
+      </form>
+
+      <article id="analysis-result" class="teacher-analysis-card" hidden>
+        <div class="teacher-section-head">
+          <div>
+            <p class="teacher-eyebrow mono">TEACHER ONLY · ADVISORY</p>
+            <h3>POSSIBLE INSTRUMENTS</h3>
+          </div>
+          <span id="analysis-job-meta" class="teacher-version"></span>
+        </div>
+        <dl class="teacher-analysis-summary">
+          <div>
+            <dt>Core route</dt>
+            <dd id="analysis-core-route"></dd>
+          </div>
+          <div>
+            <dt>Role classifier</dt>
+            <dd id="analysis-role-version"></dd>
+          </div>
+          <div>
+            <dt>Decision reason</dt>
+            <dd id="analysis-reason"></dd>
+          </div>
+          <div>
+            <dt>Discovery trace</dt>
+            <dd id="analysis-discovery-meta"></dd>
+          </div>
+        </dl>
+        <ol id="analysis-detections" class="teacher-detection-list"></ol>
+        <p id="analysis-detections-empty" class="teacher-help" hidden></p>
+        <p class="teacher-analysis-guard mono">
+          CORE 2 / 4 / 6 CONTRACT UNCHANGED · NO ISOLATION REQUESTED
+        </p>
+      </article>
+    </section>
   </section>
 
   <footer>
@@ -144,4 +203,4 @@
   </footer>
 </main>
 
-<script src="/teacher.js?v=teacher-20260810-2"></script>
+<script src="/teacher.js?v=teacher-20260810-3"></script>

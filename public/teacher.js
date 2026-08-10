@@ -32,6 +32,19 @@ const historyList = document.getElementById('prompt-history');
 const historyEmpty = document.getElementById('prompt-history-empty');
 const historyMoreBtn = document.getElementById('prompt-history-more');
 
+const analysisForm = document.getElementById('analysis-form');
+const analysisJobId = document.getElementById('analysis-job-id');
+const analysisLoadBtn = document.getElementById('analysis-load');
+const analysisStatus = document.getElementById('analysis-status');
+const analysisResult = document.getElementById('analysis-result');
+const analysisJobMeta = document.getElementById('analysis-job-meta');
+const analysisCoreRoute = document.getElementById('analysis-core-route');
+const analysisRoleVersion = document.getElementById('analysis-role-version');
+const analysisReason = document.getElementById('analysis-reason');
+const analysisDiscoveryMeta = document.getElementById('analysis-discovery-meta');
+const analysisDetections = document.getElementById('analysis-detections');
+const analysisDetectionsEmpty = document.getElementById('analysis-detections-empty');
+
 let maxChars = 2000;
 let maxChangeNoteChars = 240;
 let loadedAmendment = '';
@@ -39,6 +52,7 @@ let loadedRevision = 0;
 let showingPromptTop = false;
 let historyNextBeforeId = null;
 let historyLoading = false;
+let analysisLoadSequence = 0;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -67,6 +81,123 @@ function showStatus(message, isError = false) {
   promptStatus.classList.toggle('error', isError);
 }
 
+function showAnalysisStatus(message, isError = false) {
+  analysisStatus.hidden = !message;
+  analysisStatus.textContent = message;
+  analysisStatus.classList.toggle('error', isError);
+}
+
+function resetAnalysisResult({ clearInput = false } = {}) {
+  analysisResult.hidden = true;
+  analysisJobMeta.textContent = '';
+  analysisCoreRoute.textContent = '';
+  analysisRoleVersion.textContent = '';
+  analysisReason.textContent = '';
+  analysisDiscoveryMeta.textContent = '';
+  analysisDetections.replaceChildren();
+  analysisDetectionsEmpty.hidden = true;
+  analysisDetectionsEmpty.textContent = '';
+  if (clearInput) analysisForm.reset();
+}
+
+function confidencePercent(value) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function renderAnalysisReview(record) {
+  const routing = record?.autoRouting;
+  const analysis = routing?.analysis;
+  if (
+    !record ||
+    typeof record.jobId !== 'string' ||
+    !routing ||
+    !analysis ||
+    !['shadow', 'authoritative'].includes(routing.mode) ||
+    typeof routing.applied !== 'boolean' ||
+    typeof routing.resolvedCoreModel !== 'string' ||
+    typeof analysis.roleClassifier?.version !== 'string' ||
+    typeof analysis.decision?.reason !== 'string' ||
+    !Array.isArray(analysis.detectedInstruments)
+  ) {
+    throw new Error('Stored analysis has an unsupported display shape.');
+  }
+
+  analysisJobMeta.textContent = `JOB ${record.jobId}`;
+  const routeState = routing.applied ? 'APPLIED' : 'NOT APPLIED';
+  const degradedState = analysis.degraded?.active
+    ? ` · FALLBACK ${String(analysis.degraded.code || 'UNKNOWN').toUpperCase()}`
+    : '';
+  analysisCoreRoute.textContent =
+    `${routing.mode.toUpperCase()} · ${routeState} · ${routing.resolvedCoreModel}${degradedState}`;
+  analysisRoleVersion.textContent = analysis.roleClassifier.version;
+  analysisReason.textContent = analysis.decision.reason;
+
+  const discovery = analysis.instrumentDiscovery;
+  const classifier = analysis.vocabularyClassifier;
+  if (discovery?.status === 'complete') {
+    const classifierVersion = typeof classifier?.version === 'string'
+      ? classifier.version
+      : 'CLASSIFIER NOT RECORDED';
+    const vocabularyVersion = typeof classifier?.vocabularyVersion === 'string'
+      ? classifier.vocabularyVersion
+      : 'VOCABULARY NOT RECORDED';
+    analysisDiscoveryMeta.textContent =
+      `COMPLETE · ${discovery.windowsAnalyzed} WINDOWS · ${discovery.totalMs} MS · ` +
+      `${vocabularyVersion} · ${classifierVersion}`;
+  } else if (discovery?.status === 'unavailable') {
+    analysisDiscoveryMeta.textContent =
+      `UNAVAILABLE · ${String(discovery.code || 'NO CODE').toUpperCase()} · ` +
+      `${discovery.totalMs} MS`;
+  } else {
+    analysisDiscoveryMeta.textContent = 'NOT RECORDED';
+  }
+
+  analysisDetections.replaceChildren();
+  for (const detection of analysis.detectedInstruments) {
+    if (
+      !detection ||
+      typeof detection.label !== 'string' ||
+      typeof detection.confidence !== 'number' ||
+      !Number.isFinite(detection.confidence) ||
+      detection.confidence < 0 ||
+      detection.confidence > 1 ||
+      !['possible', 'uncertain'].includes(detection.state) ||
+      !Number.isSafeInteger(detection.windowSupport) ||
+      detection.windowSupport < 1 ||
+      !Number.isSafeInteger(detection.windowsAnalyzed) ||
+      detection.windowsAnalyzed < 1 ||
+      detection.windowSupport > detection.windowsAnalyzed
+    ) {
+      throw new Error('Stored instrument detection has an unsupported display shape.');
+    }
+    const item = document.createElement('li');
+    item.className = 'teacher-detection-item';
+
+    const label = document.createElement('strong');
+    label.textContent = detection.label;
+    const state = document.createElement('span');
+    state.className =
+      `teacher-detection-state ${detection.state === 'uncertain' ? 'uncertain' : ''}`;
+    state.textContent = detection.state.toUpperCase();
+    const metadata = document.createElement('span');
+    metadata.className = 'mono teacher-detection-meta';
+    metadata.textContent =
+      `${confidencePercent(detection.confidence)} · ` +
+      `${detection.windowSupport} / ${detection.windowsAnalyzed} WINDOWS`;
+
+    item.append(label, state, metadata);
+    analysisDetections.appendChild(item);
+  }
+
+  analysisDetectionsEmpty.hidden = analysis.detectedInstruments.length > 0;
+  if (analysis.detectedInstruments.length === 0) {
+    analysisDetectionsEmpty.textContent = discovery?.status === 'complete'
+      ? 'The candidate classifier returned no possible instruments. This is an abstention, not proof that instruments are absent.'
+      : 'No candidate detections are available for this stored Auto decision.';
+  }
+  analysisResult.hidden = false;
+}
+
 function clearTeacherConsole() {
   signinForm.reset();
   promptForm.reset();
@@ -84,6 +215,10 @@ function clearTeacherConsole() {
   previewWrap.open = false;
   renderHistory([]);
   setHistoryPagination(false, null);
+  analysisLoadSequence += 1;
+  analysisLoadBtn.disabled = false;
+  resetAnalysisResult({ clearInput: true });
+  showAnalysisStatus('');
   showingPromptTop = false;
   fixedPromptToggle.setAttribute('aria-expanded', 'false');
   fixedPromptToggleLabel.textContent = 'SEE THE TOP OF THE FIXED PROMPT';
@@ -332,6 +467,34 @@ signoutBtn.addEventListener('click', async () => {
     showStatus('SIGN OUT FAILED — YOUR SESSION MAY STILL BE ACTIVE. TRY AGAIN.', true);
   } finally {
     signoutBtn.disabled = false;
+  }
+});
+
+analysisForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const jobId = analysisJobId.value.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(jobId)) {
+    resetAnalysisResult();
+    showAnalysisStatus('ENTER A VALID AUTO JOB ID.', true);
+    analysisJobId.focus();
+    return;
+  }
+
+  const requestSequence = ++analysisLoadSequence;
+  analysisLoadBtn.disabled = true;
+  resetAnalysisResult();
+  showAnalysisStatus('LOADING ADVISORY ANALYSIS…');
+  try {
+    const record = await api(`/api/teacher/jobs/${encodeURIComponent(jobId)}/analysis`);
+    if (requestSequence !== analysisLoadSequence) return;
+    renderAnalysisReview(record);
+    showAnalysisStatus('ADVISORY ANALYSIS LOADED — NO ROUTING OR ISOLATION CHANGE.');
+  } catch (error) {
+    if (requestSequence !== analysisLoadSequence) return;
+    resetAnalysisResult();
+    showAnalysisStatus(error.message, true);
+  } finally {
+    if (requestSequence === analysisLoadSequence) analysisLoadBtn.disabled = false;
   }
 });
 
