@@ -6,8 +6,10 @@
   "include": [
     "scripts/check-instrument-evaluation.mts",
     "scripts/compare-instrument-candidates.mts",
+    "scripts/finalize-nsynth-family-control-review.mts",
     "scripts/finalize-instrument-evaluation-review.mts",
     "scripts/hydrate-nsynth-family-controls.mts",
+    "scripts/prepare-nsynth-family-control-review.mts",
     "scripts/prepare-instrument-evaluation-review.mts",
     "scripts/capture-yamnet-instrument-candidate.mts",
     "scripts/prepare-yamnet-candidate-source.mts",
@@ -15,10 +17,12 @@
     "scripts/lib/instrument-evaluation.mts",
     "scripts/lib/instrument-candidate-comparison.mts",
     "scripts/lib/nsynth-family-control-corpus.mts",
+    "scripts/lib/nsynth-family-control-review.mts",
     "scripts/lib/yamnet-candidate-capture.mts",
     "tests/instrument-evaluation-review.test.mts",
     "tests/instrument-evaluation.test.mts",
     "tests/nsynth-family-control-corpus.test.mts",
+    "tests/nsynth-family-control-review.test.mts",
     "tests/yamnet-candidate-capture.test.mts"
   ]
 }
