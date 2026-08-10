@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor</title>
-<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/styles.css?v=teacher-20260810-2" />
 
 <div class="grain" aria-hidden="true"></div>
 
@@ -10,7 +10,7 @@
   <header class="masthead">
     <p class="kicker">// instructor console</p>
     <h1>LISTENING<br /><span>GUY</span></h1>
-    <p class="tagline">Tune what the Listening Guide tells your students.</p>
+    <p class="tagline">Tune what the listening guide tells your students.</p>
   </header>
 
   <section id="signin-panel" class="deck teacher-panel" hidden>
@@ -24,7 +24,7 @@
         <span class="mono">PASSWORD</span>
         <input id="signin-password" name="password" type="password" autocomplete="current-password" required />
       </label>
-      <button type="submit" class="yt-go">SIGN IN</button>
+      <button type="submit" class="yt-go teacher-submit">SIGN IN</button>
       <p id="signin-error" class="mono teacher-error" hidden></p>
     </form>
   </section>
@@ -126,8 +126,16 @@
 
     <section class="teacher-history" aria-labelledby="prompt-history-title">
       <h2 id="prompt-history-title" class="rack-title"><span>PROMPT CHANGELOG</span></h2>
+      <p class="teacher-help">
+        Newest first. Each entry preserves the appended snapshot, change note, actor, timestamp,
+        fixed-prompt version, and base/effective policy fingerprints. Load earlier pages to follow
+        the complete runtime trail.
+      </p>
       <p id="prompt-history-empty" class="teacher-help">No runtime amendment revisions yet.</p>
       <ol id="prompt-history" class="teacher-history-list"></ol>
+      <button type="button" id="prompt-history-more" class="crate-page-btn" hidden>
+        LOAD EARLIER REVISIONS
+      </button>
     </section>
   </section>
 
@@ -136,4 +144,4 @@
   </footer>
 </main>
 
-<script src="/teacher.js"></script>
+<script src="/teacher.js?v=teacher-20260810-2"></script>

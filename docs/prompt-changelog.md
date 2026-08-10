@@ -2,8 +2,64 @@
 
 The fixed system prompt lives in `src/assistant/prompt.ts`. Its exported
 `SYSTEM_PROMPT_VERSION` is stored beside every runtime instructor amendment.
-The instructor API also fingerprints a deterministic rendered preview, so a
-text change is traceable even if a version bump is accidentally omitted.
+The instructor API fingerprints a deterministic multi-variant policy bundle,
+so a text change in any current conditional prompt arm remains traceable even
+if a version bump is accidentally omitted. The readable instructor preview is
+deliberately separate from that audit material.
+
+## 2026-08-10.2
+
+- Encoded provider titles plus student-authored labels and notes before placing
+  them in the system message. Embedded quotes, newlines, and Unicode line
+  separators remain literal data and cannot visually create a fixed-prompt
+  heading or rule block.
+- Explicitly classified the title, labels, and notes as untrusted data. The
+  authenticated instructor amendment remains the only runtime instruction
+  layer.
+- Added an injection-shaped fingerprint variant so changing or removing the
+  escaping behavior changes both the base/effective policy SHA-256 and guide
+  cache identity.
+- Bound successful prompt-save responses to the immutable revision inserted by
+  that request, preventing a later teacher save from mixing its amendment with
+  the first request's hashes during response readback.
+- Corrected teacher-session expiry to parse ISO timestamps before comparing
+  them with SQLite time, and made confirmed logout scrub teacher content from
+  the page while a failed logout leaves the console visibly active.
+- Versioned the instructor stylesheet and script together so Railway/browser
+  caches cannot retain older editor behavior. The upward caret now focuses and
+  brings the read-only prompt container into the viewport as it scrolls to the
+  true first line, rather than changing content above the visible page.
+- Validation: both TypeScript checks, 4 focused prompt-policy tests, all 28
+  Railway host/migration tests, and the targeted instructor browser journey
+  pass. Complete Phase 0 commands are green but explicitly rejected because
+  concurrent bakeoff source changed during the corrected all-source guard.
+  This remains focused local evidence, not current combined acceptance or a
+  GitHub/Railway release.
+
+## 2026-08-10.1
+
+- Replaced the single-example prompt fingerprint with schema
+  `stem-splitter.system-prompt-fingerprint.v1`, a deterministic bundle covering
+  guide and chat tasks, four-stem `other` and two-stem `instrumental` guidance,
+  empty and populated notes, known and unknown duration, and canonical and
+  customized channel labels.
+- Kept the instructor's Markdown-formatted prompt view as one readable example;
+  its display text is no longer misrepresented as the complete audit surface.
+- Required cached guide rows to match the current effective policy SHA-256 as
+  well as version and amendment revision. A fixed-text change missed by a
+  manual version bump therefore regenerates rather than serving stale prose.
+- Enforced the runtime changelog's append-only contract in the database: fresh
+  schema, Railway boot, and numbered migration 13 reject updates, deletes, and
+  replacement/conflicting inserts against existing revision identities.
+- Replaced the console's silent 40-row history ceiling with authenticated,
+  newest-first keyset pagination. Each response stays bounded while every
+  retained runtime revision remains reachable through **LOAD EARLIER
+  REVISIONS**.
+- Made authoritative seed reconciliation reject a supplied non-string teacher
+  display name before any account mutation, matching the documented
+  all-or-nothing provisioning boundary.
+- Left the fixed instructional prose unchanged. The version advances because
+  the stored base/effective hash semantics and guide-cache identity changed.
 
 ## 2026-08-08.1
 
@@ -23,8 +79,11 @@ A fixed-prompt change is complete only when the same commit:
 1. edits `src/assistant/prompt.ts`;
 2. increments `SYSTEM_PROMPT_VERSION`;
 3. adds a dated entry here explaining the behavioral change;
-4. updates prompt and instructor-console tests;
-5. passes unit, browser E2E, and Wrangler dry-run gates.
+4. updates the fingerprint bundle whenever a new conditional rendering arm is
+   added, plus prompt and instructor-console tests;
+5. passes shared and Railway-host typechecks, unit/server migration tests, the
+   instructor browser journey, and the complete Phase 0 gate. The Wrangler
+   dry-run belongs only to the deferred finished-product migration.
 
 Runtime instructor edits do not belong in this file. Their changelog is stored
 in `assistant_prompt_revisions`, keyed back to this code history through the

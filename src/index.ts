@@ -66,6 +66,7 @@ import {
 } from './assistant';
 import {
   buildSystemPromptPreview,
+  hashSystemPromptFingerprint,
   SYSTEM_PROMPT_VERSION,
 } from './assistant/prompt';
 import {
@@ -74,8 +75,7 @@ import {
   createSession,
   destroySession,
   getAmendment,
-  getPromptHistory,
-  hashPrompt,
+  getPromptHistoryPage,
   MAX_AMENDMENT_CHARS,
   MAX_CHANGE_NOTE_CHARS,
   normalizeAmendment,
@@ -382,11 +382,10 @@ app.get('/api/teacher/me', async (c) => {
 app.get('/api/teacher/prompt', requireTeacher, async (c) => {
   const record = await getAmendment(c.env);
   const basePrompt = buildSystemPromptPreview();
-  const effectivePrompt = buildSystemPromptPreview(record.amendment);
-  const [basePromptHash, effectivePromptHash, history] = await Promise.all([
-    hashPrompt(basePrompt),
-    hashPrompt(effectivePrompt),
-    getPromptHistory(c.env),
+  const [basePromptHash, effectivePromptHash, historyPage] = await Promise.all([
+    hashSystemPromptFingerprint(),
+    hashSystemPromptFingerprint(record.amendment),
+    getPromptHistoryPage(c.env),
   ]);
   return c.json({
     ...record,
@@ -396,7 +395,26 @@ app.get('/api/teacher/prompt', requireTeacher, async (c) => {
     basePromptVersion: SYSTEM_PROMPT_VERSION,
     basePromptHash,
     effectivePromptHash,
-    history,
+    history: historyPage.revisions,
+    historyHasMore: historyPage.hasMore,
+    historyNextBeforeId: historyPage.nextBeforeId,
+  });
+});
+
+app.get('/api/teacher/prompt/history', requireTeacher, async (c) => {
+  const beforeValue = c.req.query('before');
+  if (!beforeValue || !/^\d+$/.test(beforeValue)) {
+    return c.json({ error: 'A valid prompt history cursor is required.' }, 400);
+  }
+  const beforeId = Number(beforeValue);
+  if (!Number.isSafeInteger(beforeId) || beforeId < 1) {
+    return c.json({ error: 'A valid prompt history cursor is required.' }, 400);
+  }
+  const historyPage = await getPromptHistoryPage(c.env, beforeId);
+  return c.json({
+    history: historyPage.revisions,
+    historyHasMore: historyPage.hasMore,
+    historyNextBeforeId: historyPage.nextBeforeId,
   });
 });
 
@@ -440,11 +458,9 @@ app.put('/api/teacher/prompt', requireTeacher, async (c) => {
     );
   }
 
-  const basePrompt = buildSystemPromptPreview();
-  const effectivePrompt = buildSystemPromptPreview(amendment);
   const [basePromptHash, effectivePromptHash] = await Promise.all([
-    hashPrompt(basePrompt),
-    hashPrompt(effectivePrompt),
+    hashSystemPromptFingerprint(),
+    hashSystemPromptFingerprint(amendment),
   ]);
 
   const result = await setAmendment(
@@ -479,7 +495,7 @@ app.put('/api/teacher/prompt', requireTeacher, async (c) => {
   });
 });
 
-/** Preview the exact system prompt the Listening Guide will receive. */
+/** Preview one readable prompt example with the active instructor amendment. */
 app.get('/api/teacher/prompt/preview', requireTeacher, async (c) => {
   const { amendment } = await getAmendment(c.env);
   return c.json({ prompt: buildSystemPromptPreview(amendment) });

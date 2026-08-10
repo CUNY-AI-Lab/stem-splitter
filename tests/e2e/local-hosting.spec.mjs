@@ -1594,6 +1594,15 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page).toHaveURL(/\/teacher(?:\.html)?$/);
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
+  await expect(page.locator('.tagline')).toHaveText(
+    'Tune what the listening guide tells your students.'
+  );
+  expect(await page.locator('link[rel="stylesheet"]').getAttribute('href')).toMatch(/\?v=/);
+  expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
+  const signInButton = page.getByRole('button', { name: 'SIGN IN' });
+  const signInButtonBox = await signInButton.boundingBox();
+  expect(signInButtonBox).not.toBeNull();
+  expect(signInButtonBox.height).toBeGreaterThanOrEqual(44);
 
   // Wrong password is rejected, and the message does not reveal which half failed.
   await page.getByLabel('USERNAME').fill('e2eteacher');
@@ -1683,11 +1692,26 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     "WHO YOU'RE TALKING TO",
     'HOW YOU TALK (every message, both modes)',
   ]);
-  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-08.1');
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-10.2');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'SEE THE TOP OF THE FIXED PROMPT' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('button', { name: 'RETURN TO THE END OF THE FIXED PROMPT' })).toBeVisible();
+  await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
+  await expect
+    .poll(() =>
+      page.locator('#fixed-prompt-scroll').evaluate((node) =>
+        Math.round(node.getBoundingClientRect().top)
+      )
+    )
+    .toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(() =>
+      page.locator('#fixed-prompt-scroll').evaluate((node) =>
+        Math.round(node.getBoundingClientRect().top)
+      )
+    )
+    .toBeLessThanOrEqual(16);
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
@@ -1701,7 +1725,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment-meta')).toContainText('LAST EDITED BY E2ETEACHER');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-08.1');
+  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-10.2');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -1713,11 +1737,14 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   const trace = promptReadback.body;
   expect(trace.basePromptHash).toMatch(/^[a-f0-9]{64}$/);
   expect(trace.effectivePromptHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(trace.effectivePromptHash).not.toBe(trace.basePromptHash);
   expect(trace.history[0]).toMatchObject({
     settingsRevision: 1,
     amendment,
     changeNote,
-    basePromptVersion: '2026-08-08.1',
+    basePromptVersion: '2026-08-10.2',
+    basePromptHash: trace.basePromptHash,
+    effectivePromptHash: trace.effectivePromptHash,
     updatedBy: 'e2eteacher',
   });
 
@@ -1743,14 +1770,72 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect(staleSave.status).toBe(409);
   expect(staleSave.body.error).toContain('changed after you opened it');
 
-  // Survives a reload — the session is a cookie and the text is in D1.
+  // Build more than one bounded history page through the governed API. The
+  // console must expose the complete append-only trail rather than silently
+  // stopping at its newest 40 rows.
+  const paginated = await page.evaluate(async () => {
+    let expectedRevision = 1;
+    let latestAmendment = '';
+    for (let revision = 2; revision <= 42; revision += 1) {
+      latestAmendment = `Pagination amendment ${revision}`;
+      const response = await fetch('/api/teacher/prompt', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amendment: latestAmendment,
+          changeNote: `Pagination coverage ${revision}`,
+          expectedRevision,
+        }),
+      });
+      if (!response.ok) {
+        return { ok: false, status: response.status, body: await response.json() };
+      }
+      const body = await response.json();
+      expectedRevision = body.revision.settingsRevision;
+    }
+    return { ok: true, expectedRevision, latestAmendment };
+  });
+  expect(paginated).toEqual({
+    ok: true,
+    expectedRevision: 42,
+    latestAmendment: 'Pagination amendment 42',
+  });
+
+  // Current content, session, and newest history page survive reload.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('#console-panel')).toBeVisible();
-  await expect(page.locator('#amendment')).toHaveValue(amendment);
-  await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
+  await expect(page.locator('#amendment')).toHaveValue('Pagination amendment 42');
+  await expect(page.locator('.teacher-history-item')).toHaveCount(40);
+  await expect(page.locator('.teacher-history-item').first()).toContainText('REVISION 42');
+  const loadEarlier = page.getByRole('button', { name: 'LOAD EARLIER REVISIONS' });
+  await expect(loadEarlier).toBeVisible();
+  await loadEarlier.click();
+  await expect(page.locator('.teacher-history-item')).toHaveCount(42);
+  await expect(page.locator('.teacher-history-item').last()).toContainText(changeNote);
+  await expect(loadEarlier).toBeHidden();
+
+  // A failed logout must not tell the teacher the active HttpOnly session is
+  // gone. Keep the console visible until the server confirms invalidation.
+  await page.route('**/api/teacher/logout', (route) => route.abort('failed'));
+  await page.getByRole('button', { name: 'SIGN OUT' }).click();
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await expect(page.locator('#prompt-status')).toContainText(
+    'SIGN OUT FAILED — YOUR SESSION MAY STILL BE ACTIVE'
+  );
+  await expect(page.getByRole('button', { name: 'SIGN OUT' })).toBeEnabled();
+  const afterFailedSignOut = await page.evaluate(() =>
+    fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
+  );
+  expect(afterFailedSignOut).toBe(200);
+  await page.unroute('**/api/teacher/logout');
 
   await page.getByRole('button', { name: 'SIGN OUT' }).click();
   await expect(page.locator('#signin-panel')).toBeVisible();
+  await expect(page.locator('#amendment')).toHaveValue('');
+  await expect(page.locator('.teacher-history-item')).toHaveCount(0);
+  await expect(page.locator('#preview-body')).toBeEmpty();
+  expect(await page.locator('body').textContent()).not.toContain('Pagination amendment 42');
   const afterSignOut = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
   );

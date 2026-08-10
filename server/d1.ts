@@ -8,6 +8,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { JOB_SOURCE_IDENTITY_IMMUTABILITY_SQL } from '../src/analysis/schema.ts';
 import { INSTRUMENT_ISOLATIONS_SCHEMA_SQL } from '../src/isolation/schema.ts';
+import { PROMPT_HISTORY_IMMUTABILITY_SQL } from '../src/teacher/schema.ts';
 
 type Bindable = null | number | bigint | string | Uint8Array;
 
@@ -108,6 +109,13 @@ export class SqliteD1 {
       );
     }
 
+    const promptHistoryColumns = this.db
+      .prepare("PRAGMA table_info('assistant_prompt_revisions')")
+      .all() as Array<{ name: string }>;
+    if (promptHistoryColumns.length) {
+      this.db.exec(PROMPT_HISTORY_IMMUTABILITY_SQL);
+    }
+
     const guideColumns = this.db
       .prepare("PRAGMA table_info('guides')")
       .all() as Array<{ name: string }>;
@@ -120,6 +128,14 @@ export class SqliteD1 {
       if (!guideColumns.some((column) => column.name === 'prompt_revision')) {
         this.db.exec(
           'ALTER TABLE guides ADD COLUMN prompt_revision INTEGER NOT NULL DEFAULT -1'
+        );
+      }
+      if (!guideColumns.some((column) => column.name === 'prompt_hash')) {
+        this.db.exec(
+          `ALTER TABLE guides ADD COLUMN prompt_hash TEXT NOT NULL DEFAULT ''
+           CHECK (prompt_hash = '' OR (
+             length(prompt_hash) = 64 AND prompt_hash NOT GLOB '*[^0-9a-f]*'
+           ))`
         );
       }
     }

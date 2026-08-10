@@ -216,6 +216,7 @@ export async function syncTeachersFromSeed(env: Env): Promise<void> {
           !Number.isInteger(iterations) ||
           iterations < PBKDF2_ITERATIONS ||
           iterations > 10_000_000)) ||
+      (name !== undefined && typeof name !== 'string') ||
       (typeof name === 'string' && name.trim().length > 120)
     ) {
       console.error('TEACHER_SEED entry has invalid credential fields — no accounts changed');
@@ -321,8 +322,12 @@ export async function createSession(env: Env, username: string): Promise<string>
     .bind(await sha256Hex(token), username, expiresAt)
     .run();
 
-  // Opportunistic cleanup keeps the table from growing without a cron.
-  await env.DB.prepare("DELETE FROM teacher_sessions WHERE expires_at < datetime('now')").run();
+  // Sessions are stored as ISO-8601 (`T`/`Z`) while SQLite's datetime('now')
+  // uses a space separator. Parse both sides before comparing; a raw lexical
+  // comparison otherwise keeps a same-day expired ISO timestamp alive.
+  await env.DB.prepare(
+    "DELETE FROM teacher_sessions WHERE datetime(expires_at) <= datetime('now')"
+  ).run();
   return token;
 }
 
@@ -331,7 +336,7 @@ export async function resolveSession(env: Env, token: string | null): Promise<Te
   const row = await env.DB.prepare(
     `SELECT t.username, t.display_name FROM teacher_sessions s
      JOIN teachers t ON t.username = s.username
-     WHERE s.token_hash = ? AND s.expires_at > datetime('now')`
+     WHERE s.token_hash = ? AND datetime(s.expires_at) > datetime('now')`
   )
     .bind(await sha256Hex(token))
     .first<{ username: string; display_name: string }>();
@@ -496,11 +501,22 @@ export async function setAmendment(
     };
   }
 
+  // Read back the immutable row created by this request, not the mutable
+  // settings singleton. Another teacher may save after our batch commits but
+  // before this response is assembled; mixing that later amendment with this
+  // request's hashes would produce a false audit response.
+  const revision = await getPromptRevision(env, nextRevision);
+  if (!revision) throw new Error('Prompt revision missing after successful save');
   return {
-    record: await getAmendment(env),
+    record: {
+      amendment: revision.amendment,
+      updatedBy: revision.updatedBy,
+      updatedAt: revision.createdAt,
+      revision: revision.settingsRevision,
+    },
     changed: true,
     conflict: false,
-    revision: await getPromptRevision(env, nextRevision),
+    revision,
     guidesCleared: results[2]?.meta?.changes ?? 0,
   };
 }
@@ -546,15 +562,38 @@ export async function getPromptHistory(
   env: Env,
   limit = PROMPT_HISTORY_LIMIT
 ): Promise<PromptRevision[]> {
+  return (await getPromptHistoryPage(env, undefined, limit)).revisions;
+}
+
+export interface PromptHistoryPage {
+  revisions: PromptRevision[];
+  hasMore: boolean;
+  nextBeforeId: number | null;
+}
+
+/** Bounded newest-first keyset page; every retained revision remains reachable. */
+export async function getPromptHistoryPage(
+  env: Env,
+  beforeId?: number,
+  limit = PROMPT_HISTORY_LIMIT
+): Promise<PromptHistoryPage> {
   const safeLimit = Math.max(1, Math.min(PROMPT_HISTORY_LIMIT, Math.floor(limit)));
-  const result = await env.DB.prepare(
-    `SELECT id, settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
-            effective_prompt_hash, updated_by, created_at
-     FROM assistant_prompt_revisions
-     ORDER BY created_at DESC, id DESC
-     LIMIT ?`
-  )
-    .bind(safeLimit)
+  if (
+    beforeId !== undefined &&
+    (!Number.isSafeInteger(beforeId) || beforeId < 1)
+  ) {
+    throw new Error('Invalid prompt history cursor');
+  }
+  const query = `SELECT id, settings_revision, amendment, change_note, base_prompt_version,
+                        base_prompt_hash, effective_prompt_hash, updated_by, created_at
+                 FROM assistant_prompt_revisions
+                 ${beforeId === undefined ? '' : 'WHERE id < ?'}
+                 ORDER BY id DESC
+                 LIMIT ?`;
+  const statement = env.DB.prepare(query);
+  const result = await (beforeId === undefined
+    ? statement.bind(safeLimit + 1)
+    : statement.bind(beforeId, safeLimit + 1))
     .all<{
       id: number;
       settings_revision: number;
@@ -567,7 +606,9 @@ export async function getPromptHistory(
       created_at: string;
     }>();
 
-  return (result.results ?? []).map((row) => ({
+  const rows = result.results ?? [];
+  const hasMore = rows.length > safeLimit;
+  const revisions = rows.slice(0, safeLimit).map((row) => ({
     id: row.id,
     settingsRevision: row.settings_revision,
     amendment: row.amendment,
@@ -578,10 +619,11 @@ export async function getPromptHistory(
     updatedBy: row.updated_by,
     createdAt: row.created_at,
   }));
-}
-
-export function hashPrompt(value: string): Promise<string> {
-  return sha256Hex(value);
+  return {
+    revisions,
+    hasMore,
+    nextBeforeId: hasMore ? revisions.at(-1)?.id ?? null : null,
+  };
 }
 
 /** null when the text is unusable; callers turn that into a 400. */

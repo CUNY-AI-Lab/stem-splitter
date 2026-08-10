@@ -30,12 +30,15 @@ const previewBody = document.getElementById('preview-body');
 
 const historyList = document.getElementById('prompt-history');
 const historyEmpty = document.getElementById('prompt-history-empty');
+const historyMoreBtn = document.getElementById('prompt-history-more');
 
 let maxChars = 2000;
 let maxChangeNoteChars = 240;
 let loadedAmendment = '';
 let loadedRevision = 0;
 let showingPromptTop = false;
+let historyNextBeforeId = null;
+let historyLoading = false;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -62,6 +65,30 @@ function showStatus(message, isError = false) {
   promptStatus.hidden = !message;
   promptStatus.textContent = message;
   promptStatus.classList.toggle('error', isError);
+}
+
+function clearTeacherConsole() {
+  signinForm.reset();
+  promptForm.reset();
+  loadedAmendment = '';
+  loadedRevision = 0;
+  teacherWho.textContent = '';
+  fixedPromptMeta.textContent = '';
+  fixedPromptMeta.removeAttribute('title');
+  effectivePromptMeta.textContent = '';
+  effectivePromptMeta.removeAttribute('title');
+  amendmentMeta.textContent = '';
+  fixedPromptBody.replaceChildren();
+  previewBody.replaceChildren();
+  previewWrap.hidden = true;
+  previewWrap.open = false;
+  renderHistory([]);
+  setHistoryPagination(false, null);
+  showingPromptTop = false;
+  fixedPromptToggle.setAttribute('aria-expanded', 'false');
+  fixedPromptToggleLabel.textContent = 'SEE THE TOP OF THE FIXED PROMPT';
+  paintCounts();
+  showStatus('');
 }
 
 function shortHash(value) {
@@ -99,10 +126,11 @@ function paintMeta(record) {
     : 'NO RUNTIME EDITS YET';
   fixedPromptMeta.textContent =
     `${record.basePromptVersion} · ${shortHash(record.basePromptHash)}`;
-  fixedPromptMeta.title = `Base prompt SHA-256: ${record.basePromptHash || 'unavailable'}`;
+  fixedPromptMeta.title =
+    `Base multi-variant policy SHA-256: ${record.basePromptHash || 'unavailable'}`;
   effectivePromptMeta.textContent = `EFFECTIVE · ${shortHash(record.effectivePromptHash)}`;
   effectivePromptMeta.title =
-    `Effective prompt SHA-256: ${record.effectivePromptHash || 'unavailable'}`;
+    `Effective multi-variant policy SHA-256: ${record.effectivePromptHash || 'unavailable'}`;
 }
 
 function appendWords(element, text) {
@@ -192,12 +220,15 @@ function showPromptTop() {
   showingPromptTop = true;
   fixedPromptToggle.setAttribute('aria-expanded', 'true');
   fixedPromptToggleLabel.textContent = 'RETURN TO THE END OF THE FIXED PROMPT';
+  fixedPromptScroll.focus({ preventScroll: true });
   fixedPromptScroll.scrollTo({ top: 0, behavior: 'smooth' });
+  requestAnimationFrame(() => {
+    fixedPromptScroll.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
-function renderHistory(history) {
-  historyList.replaceChildren();
-  historyEmpty.hidden = history.length > 0;
+function renderHistory(history, append = false) {
+  if (!append) historyList.replaceChildren();
 
   for (const revision of history) {
     const item = document.createElement('li');
@@ -219,7 +250,8 @@ function renderHistory(history) {
       `${revision.updatedBy.toUpperCase()} · BASE ${revision.basePromptVersion} ` +
       `${shortHash(revision.basePromptHash)} · EFFECTIVE ${shortHash(revision.effectivePromptHash)}`;
     trace.title =
-      `Base SHA-256: ${revision.basePromptHash}\nEffective SHA-256: ${revision.effectivePromptHash}`;
+      `Base policy SHA-256: ${revision.basePromptHash}\n` +
+      `Effective policy SHA-256: ${revision.effectivePromptHash}`;
 
     const details = document.createElement('details');
     details.className = 'teacher-history-details';
@@ -241,6 +273,14 @@ function renderHistory(history) {
     item.append(head, trace, details);
     historyList.appendChild(item);
   }
+  historyEmpty.hidden = historyList.children.length > 0;
+}
+
+function setHistoryPagination(hasMore, nextBeforeId) {
+  historyNextBeforeId = hasMore && Number.isSafeInteger(nextBeforeId)
+    ? nextBeforeId
+    : null;
+  historyMoreBtn.hidden = historyNextBeforeId === null;
 }
 
 async function loadPrompt() {
@@ -256,6 +296,7 @@ async function loadPrompt() {
   paintCounts();
   paintMeta(record);
   renderHistory(record.history || []);
+  setHistoryPagination(record.historyHasMore, record.historyNextBeforeId);
   requestAnimationFrame(() => {
     fixedPromptScroll.scrollTop = fixedPromptScroll.scrollHeight;
   });
@@ -282,8 +323,16 @@ signinForm.addEventListener('submit', async (event) => {
 });
 
 signoutBtn.addEventListener('click', async () => {
-  await api('/api/teacher/logout', { method: 'POST' }).catch(() => {});
-  showPanel(false);
+  signoutBtn.disabled = true;
+  try {
+    await api('/api/teacher/logout', { method: 'POST' });
+    clearTeacherConsole();
+    showPanel(false);
+  } catch {
+    showStatus('SIGN OUT FAILED — YOUR SESSION MAY STILL BE ACTIVE. TRY AGAIN.', true);
+  } finally {
+    signoutBtn.disabled = false;
+  }
 });
 
 amendment.addEventListener('input', paintCounts);
@@ -346,6 +395,26 @@ previewBtn.addEventListener('click', async () => {
     previewWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (error) {
     showStatus(error.message, true);
+  }
+});
+
+historyMoreBtn.addEventListener('click', async () => {
+  if (historyLoading || historyNextBeforeId === null) return;
+  historyLoading = true;
+  historyMoreBtn.disabled = true;
+  historyMoreBtn.textContent = 'LOADING EARLIER REVISIONS…';
+  try {
+    const page = await api(
+      `/api/teacher/prompt/history?before=${encodeURIComponent(historyNextBeforeId)}`
+    );
+    renderHistory(page.history || [], true);
+    setHistoryPagination(page.historyHasMore, page.historyNextBeforeId);
+  } catch (error) {
+    showStatus(error.message, true);
+  } finally {
+    historyLoading = false;
+    historyMoreBtn.disabled = false;
+    historyMoreBtn.textContent = 'LOAD EARLIER REVISIONS';
   }
 });
 

@@ -5,8 +5,17 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { SqliteD1 } from '../server/d1.ts';
 import { cacheGuideIfPromptCurrent, getGuide } from '../src/assistant/index.ts';
-import { SYSTEM_PROMPT_VERSION } from '../src/assistant/prompt.ts';
-import { setAmendment } from '../src/teacher/auth.ts';
+import {
+  hashSystemPromptFingerprint,
+  SYSTEM_PROMPT_VERSION,
+} from '../src/assistant/prompt.ts';
+import {
+  createSession,
+  getPromptHistoryPage,
+  resolveSession,
+  setAmendment,
+  syncTeachersFromSeed,
+} from '../src/teacher/auth.ts';
 import { queryIsolationCacheKeyForMaterial } from '../src/isolation/contract.ts';
 import {
   attachInstrumentIsolationExternalId,
@@ -28,6 +37,20 @@ const promptTrace = (changeNote: string) => ({
   basePromptHash: 'a'.repeat(64),
   effectivePromptHash: 'b'.repeat(64),
 });
+
+const PROMPT_HISTORY_TABLE_SQL = `
+  CREATE TABLE assistant_prompt_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    settings_revision INTEGER NOT NULL UNIQUE,
+    amendment TEXT NOT NULL,
+    change_note TEXT NOT NULL,
+    base_prompt_version TEXT NOT NULL,
+    base_prompt_hash TEXT NOT NULL,
+    effective_prompt_hash TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`;
 
 test('Railway and CI use one exact Node runtime for the active SQLite host', () => {
   const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
@@ -60,6 +83,35 @@ test('Railway D1 batches cannot interleave transactions on one connection', asyn
       .prepare('SELECT value FROM entries ORDER BY value')
       .all<{ value: string }>();
     assert.deepEqual(rows.results.map((row) => row.value), ['a1', 'a2', 'b1', 'b2']);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('teacher sessions expire by parsed SQLite time, not timestamp text ordering', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-session-expiry-'));
+  try {
+    const db = new SqliteD1(join(directory, 'sessions.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    await db.prepare(
+      `INSERT INTO teachers (username, display_name, salt, password_hash, iterations)
+       VALUES ('teacher', 'Teacher', ?, ?, 210000)`
+    ).bind('a'.repeat(32), 'b'.repeat(64)).run();
+    const env = { DB: db } as never;
+
+    const expiredToken = await createSession(env, 'teacher');
+    await db.prepare(
+      "UPDATE teacher_sessions SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')"
+    ).run();
+    assert.equal(await resolveSession(env, expiredToken), null);
+
+    const activeToken = await createSession(env, 'teacher');
+    assert.deepEqual(await resolveSession(env, activeToken), {
+      username: 'teacher',
+      displayName: 'Teacher',
+    });
+    const sessions = await db.prepare('SELECT token_hash FROM teacher_sessions').all();
+    assert.equal(sessions.results.length, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -136,6 +188,57 @@ test('concurrent prompt saves atomically join history and guide invalidation', a
   }
 });
 
+test('a winning prompt response stays bound to its own revision after a later save', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-prompt-readback-race-'));
+  try {
+    const db = new SqliteD1(join(directory, 'prompt.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const directEnv = { DB: db } as never;
+    let injectedLaterSave = false;
+    const interleavingEnv = {
+      DB: {
+        prepare: (sql: string) => db.prepare(sql),
+        batch: async (statements: Parameters<typeof db.batch>[0]) => {
+          const results = await db.batch(statements);
+          if (!injectedLaterSave) {
+            injectedLaterSave = true;
+            await setAmendment(
+              directEnv,
+              'second teacher amendment',
+              'teacher-b',
+              1,
+              promptTrace('second save')
+            );
+          }
+          return results;
+        },
+      },
+    } as never;
+
+    const first = await setAmendment(
+      interleavingEnv,
+      'first teacher amendment',
+      'teacher-a',
+      0,
+      promptTrace('first save')
+    );
+    assert.equal(first.record.amendment, 'first teacher amendment');
+    assert.equal(first.record.updatedBy, 'teacher-a');
+    assert.equal(first.record.revision, 1);
+    assert.equal(first.revision?.settingsRevision, 1);
+
+    const current = await db.prepare(
+      'SELECT amendment, revision FROM assistant_settings WHERE id = 1'
+    ).first<{ amendment: string; revision: number }>();
+    assert.deepEqual(current ? { ...current } : current, {
+      amendment: 'second teacher amendment',
+      revision: 2,
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('prompt save rolls back settings and history when cache invalidation fails', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-prompt-rollback-'));
   try {
@@ -200,7 +303,7 @@ test('prompt save rolls back rather than reusing a conflicting history revision'
 
     await assert.rejects(
       setAmendment(env, 'candidate', 'teacher-a', 0, promptTrace('must not reuse history')),
-      /UNIQUE constraint failed: assistant_prompt_revisions\.settings_revision/
+      /assistant prompt history is append-only/
     );
     const settings = await db
       .prepare('SELECT amendment, revision FROM assistant_settings WHERE id = 1')
@@ -213,6 +316,204 @@ test('prompt save rolls back rather than reusing a conflicting history revision'
       { amendment: 'unrelated history', updated_by: 'teacher-b' },
     ]);
     assert.equal((await db.prepare('SELECT job_id FROM guides').all()).results.length, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('fresh prompt history cannot be updated, deleted, or replaced', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-prompt-immutable-'));
+  try {
+    const db = new SqliteD1(join(directory, 'prompt.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const env = { DB: db } as never;
+    await setAmendment(env, 'original amendment', 'teacher-a', 0, promptTrace('original'));
+
+    await assert.rejects(
+      db.prepare(
+        `INSERT INTO assistant_prompt_revisions
+           (settings_revision, amendment, change_note, base_prompt_version,
+            base_prompt_hash, effective_prompt_hash, updated_by)
+         VALUES (2, 'candidate', 'invalid trace', 'next', 'not-a-hash', ?, 'teacher-b')`
+      ).bind('d'.repeat(64)).run(),
+      /assistant prompt history row is invalid/
+    );
+    await assert.rejects(
+      db.prepare("UPDATE assistant_prompt_revisions SET amendment = 'rewritten'").run(),
+      /assistant prompt history is append-only/
+    );
+    await assert.rejects(
+      db.prepare('DELETE FROM assistant_prompt_revisions').run(),
+      /assistant prompt history is append-only/
+    );
+    await assert.rejects(
+      db
+        .prepare(
+          `INSERT OR REPLACE INTO assistant_prompt_revisions
+             (settings_revision, amendment, change_note, base_prompt_version,
+              base_prompt_hash, effective_prompt_hash, updated_by)
+           VALUES (1, 'rewritten', 'replace', 'other', ?, ?, 'teacher-b')`
+        )
+        .bind('c'.repeat(64), 'd'.repeat(64))
+        .run(),
+      /assistant prompt history is append-only/
+    );
+
+    const history = await db
+      .prepare('SELECT settings_revision, amendment, updated_by FROM assistant_prompt_revisions')
+      .all<{ settings_revision: number; amendment: string; updated_by: string }>();
+    assert.deepEqual(history.results.map((row) => ({ ...row })), [
+      { settings_revision: 1, amendment: 'original amendment', updated_by: 'teacher-a' },
+    ]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Railway boot and numbered migration both make legacy prompt history immutable', async () => {
+  for (const migration of ['railway', 'numbered'] as const) {
+    const directory = mkdtempSync(join(tmpdir(), `stem-splitter-prompt-${migration}-`));
+    try {
+      const db = new SqliteD1(join(directory, 'prompt.sqlite'));
+      db.applySchema(`${PROMPT_HISTORY_TABLE_SQL}
+        INSERT INTO assistant_prompt_revisions
+          (settings_revision, amendment, change_note, base_prompt_version,
+           base_prompt_hash, effective_prompt_hash, updated_by)
+        VALUES (1, 'legacy amendment', 'legacy', 'legacy', '${'a'.repeat(64)}',
+                '${'b'.repeat(64)}', 'teacher-a');
+      `);
+
+      if (migration === 'railway') {
+        db.applyNodeMigrations();
+        db.applyNodeMigrations();
+      } else {
+        const sql = readFileSync('migrations/0013-prompt-history-immutable.sql', 'utf8');
+        db.applySchema(sql);
+        db.applySchema(sql);
+      }
+
+      await assert.rejects(
+        db.prepare(
+          `INSERT INTO assistant_prompt_revisions
+             (settings_revision, amendment, change_note, base_prompt_version,
+              base_prompt_hash, effective_prompt_hash, updated_by)
+           VALUES (2, 'candidate', '', 'next', ?, ?, 'teacher-b')`
+        ).bind('c'.repeat(64), 'd'.repeat(64)).run(),
+        /assistant prompt history row is invalid/
+      );
+      await assert.rejects(
+        db.prepare("UPDATE assistant_prompt_revisions SET amendment = 'rewritten'").run(),
+        /assistant prompt history is append-only/
+      );
+      await assert.rejects(
+        db.prepare('DELETE FROM assistant_prompt_revisions').run(),
+        /assistant prompt history is append-only/
+      );
+      await assert.rejects(
+        db
+          .prepare(
+            `INSERT OR REPLACE INTO assistant_prompt_revisions
+               (settings_revision, amendment, change_note, base_prompt_version,
+                base_prompt_hash, effective_prompt_hash, updated_by)
+             VALUES (1, 'rewritten', 'replace', 'other', ?, ?, 'teacher-b')`
+          )
+          .bind('c'.repeat(64), 'd'.repeat(64))
+          .run(),
+        /assistant prompt history is append-only/
+      );
+      assert.equal(
+        (
+          await db
+            .prepare(
+              'SELECT id FROM assistant_prompt_revisions WHERE amendment = ? AND updated_by = ?'
+            )
+            .bind('legacy amendment', 'teacher-a')
+            .all()
+        ).results.length,
+        1
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test('prompt history pages expose every immutable revision without overlap', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-prompt-pages-'));
+  try {
+    const db = new SqliteD1(join(directory, 'prompt.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const env = { DB: db } as never;
+    for (let revision = 1; revision <= 43; revision += 1) {
+      const result = await setAmendment(
+        env,
+        `amendment ${revision}`,
+        'teacher-a',
+        revision - 1,
+        promptTrace(`revision ${revision}`)
+      );
+      assert.equal(result.changed, true);
+      assert.equal(result.revision?.settingsRevision, revision);
+    }
+
+    const newest = await getPromptHistoryPage(env);
+    assert.equal(newest.revisions.length, 40);
+    assert.equal(newest.hasMore, true);
+    assert.deepEqual(
+      [newest.revisions[0]?.settingsRevision, newest.revisions.at(-1)?.settingsRevision],
+      [43, 4]
+    );
+    assert.equal(newest.nextBeforeId, newest.revisions.at(-1)?.id);
+
+    const earlier = await getPromptHistoryPage(env, newest.nextBeforeId!);
+    assert.equal(earlier.hasMore, false);
+    assert.equal(earlier.nextBeforeId, null);
+    assert.deepEqual(
+      earlier.revisions.map((revision) => revision.settingsRevision),
+      [3, 2, 1]
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a malformed teacher display name leaves the authoritative seed unchanged', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-teacher-seed-'));
+  try {
+    const db = new SqliteD1(join(directory, 'teacher.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const record = {
+      username: 'instructor',
+      name: 'Original Teacher',
+      salt: 'a'.repeat(32),
+      hash: 'b'.repeat(64),
+      iterations: 210_000,
+    };
+    const env = { DB: db, TEACHER_SEED: JSON.stringify([record]) };
+    await syncTeachersFromSeed(env as never);
+
+    env.TEACHER_SEED = JSON.stringify([
+      { ...record, name: 'Uncommitted Rename' },
+      {
+        ...record,
+        username: 'second-teacher',
+        name: 42,
+      },
+    ]);
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      await syncTeachersFromSeed(env as never);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    const teachers = await db
+      .prepare('SELECT username, display_name FROM teachers ORDER BY username')
+      .all<{ username: string; display_name: string }>();
+    assert.deepEqual(teachers.results.map((row) => ({ ...row })), [
+      { username: 'instructor', display_name: 'Original Teacher' },
+    ]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -231,22 +532,54 @@ test('guide caching rejects an in-flight old prompt and filters old fixed versio
       createdAt: '2026-08-09T12:00:00.000Z',
     });
 
-    assert.equal(await cacheGuideIfPromptCurrent(env, guide('revision zero'), 0), true);
+    const revisionZeroHash = await hashSystemPromptFingerprint();
+    assert.equal(
+      await cacheGuideIfPromptCurrent(env, guide('revision zero'), 0, revisionZeroHash),
+      true
+    );
     assert.equal((await getGuide(env, 'job-a'))?.text, 'revision zero');
 
     await setAmendment(env, 'new class direction', 'teacher-a', 0, promptTrace('revision one'));
-    assert.equal(await cacheGuideIfPromptCurrent(env, guide('stale in-flight guide'), 0), false);
+    assert.equal(
+      await cacheGuideIfPromptCurrent(env, guide('stale in-flight guide'), 0, revisionZeroHash),
+      false
+    );
     assert.equal(await getGuide(env, 'job-a'), null);
 
-    assert.equal(await cacheGuideIfPromptCurrent(env, guide('revision one'), 1), true);
+    const revisionOneHash = await hashSystemPromptFingerprint('new class direction');
+    assert.equal(
+      await cacheGuideIfPromptCurrent(env, guide('revision one'), 1, revisionOneHash),
+      true
+    );
     assert.equal((await getGuide(env, 'job-a'))?.text, 'revision one');
     const stored = await db
-      .prepare('SELECT prompt_version, prompt_revision FROM guides WHERE job_id = ?')
+      .prepare('SELECT prompt_version, prompt_revision, prompt_hash FROM guides WHERE job_id = ?')
       .bind('job-a')
-      .first<{ prompt_version: string; prompt_revision: number }>();
+      .first<{ prompt_version: string; prompt_revision: number; prompt_hash: string }>();
     assert.deepEqual(
       { ...stored },
-      { prompt_version: SYSTEM_PROMPT_VERSION, prompt_revision: 1 }
+      {
+        prompt_version: SYSTEM_PROMPT_VERSION,
+        prompt_revision: 1,
+        prompt_hash: revisionOneHash,
+      }
+    );
+
+    await db
+      .prepare('UPDATE guides SET prompt_hash = ? WHERE job_id = ?')
+      .bind(revisionZeroHash, 'job-a')
+      .run();
+    assert.equal(await getGuide(env, 'job-a'), null);
+    await db
+      .prepare('UPDATE guides SET prompt_hash = ? WHERE job_id = ?')
+      .bind(revisionOneHash, 'job-a')
+      .run();
+    await assert.rejects(
+      db
+        .prepare('UPDATE guides SET prompt_hash = ? WHERE job_id = ?')
+        .bind('not-a-sha256', 'job-a')
+        .run(),
+      /CHECK constraint failed/
     );
 
     await db
@@ -318,13 +651,19 @@ test('Railway boot marks legacy guide rows for lazy prompt-aware regeneration', 
     const columns = await db.prepare("PRAGMA table_info('guides')").all<{ name: string }>();
     assert.equal(columns.results.filter((column) => column.name === 'prompt_version').length, 1);
     assert.equal(columns.results.filter((column) => column.name === 'prompt_revision').length, 1);
+    assert.equal(columns.results.filter((column) => column.name === 'prompt_hash').length, 1);
     const legacy = await db
-      .prepare('SELECT text, prompt_version, prompt_revision FROM guides WHERE job_id = ?')
+      .prepare('SELECT text, prompt_version, prompt_revision, prompt_hash FROM guides WHERE job_id = ?')
       .bind('legacy-job')
-      .first<{ text: string; prompt_version: string; prompt_revision: number }>();
+      .first<{
+        text: string;
+        prompt_version: string;
+        prompt_revision: number;
+        prompt_hash: string;
+      }>();
     assert.deepEqual(
       { ...legacy },
-      { text: 'old guide', prompt_version: '', prompt_revision: -1 }
+      { text: 'old guide', prompt_version: '', prompt_revision: -1, prompt_hash: '' }
     );
     assert.equal(await getGuide({ DB: db } as never, 'legacy-job'), null);
   } finally {
@@ -332,7 +671,7 @@ test('Railway boot marks legacy guide rows for lazy prompt-aware regeneration', 
   }
 });
 
-test('numbered guide-cache migration invalidates legacy rows without deleting them', async () => {
+test('numbered guide-cache migrations invalidate legacy rows without deleting them', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-guide-migration-sql-'));
   try {
     const db = new SqliteD1(join(directory, 'legacy.sqlite'));
@@ -355,14 +694,20 @@ test('numbered guide-cache migration invalidates legacy rows without deleting th
     `);
 
     db.applySchema(readFileSync('migrations/0007-guide-prompt-cache.sql', 'utf8'));
+    db.applySchema(readFileSync('migrations/0012-guide-prompt-hash.sql', 'utf8'));
 
     const legacy = await db
-      .prepare('SELECT text, prompt_version, prompt_revision FROM guides WHERE job_id = ?')
+      .prepare('SELECT text, prompt_version, prompt_revision, prompt_hash FROM guides WHERE job_id = ?')
       .bind('legacy-job')
-      .first<{ text: string; prompt_version: string; prompt_revision: number }>();
+      .first<{
+        text: string;
+        prompt_version: string;
+        prompt_revision: number;
+        prompt_hash: string;
+      }>();
     assert.deepEqual(
       { ...legacy },
-      { text: 'old guide', prompt_version: '', prompt_revision: -1 }
+      { text: 'old guide', prompt_version: '', prompt_revision: -1, prompt_hash: '' }
     );
     assert.equal(await getGuide({ DB: db } as never, 'legacy-job'), null);
   } finally {

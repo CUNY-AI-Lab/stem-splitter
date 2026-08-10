@@ -1459,6 +1459,20 @@ footer {
 .teacher-panel { margin-top: 1.2rem; }
 
 .teacher-form { display: grid; gap: 0.8rem; }
+.teacher-submit {
+  align-items: center;
+  display: inline-flex;
+  font-weight: 600;
+  justify-content: center;
+  line-height: 1.2;
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  width: 100%;
+}
+.teacher-submit:focus-visible {
+  outline: 2px solid var(--hot);
+  outline-offset: 3px;
+}
 .teacher-field { display: grid; gap: 0.3rem; }
 .teacher-field span { color: var(--ink-faint); font-size: 0.66rem; letter-spacing: 0.08em; }
 .teacher-field input {
