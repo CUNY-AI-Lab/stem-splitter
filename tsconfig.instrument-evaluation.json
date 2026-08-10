@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": [
+    "scripts/check-instrument-evaluation.mts",
+    "scripts/finalize-instrument-evaluation-review.mts",
+    "scripts/prepare-instrument-evaluation-review.mts",
+    "scripts/lib/instrument-evaluation-review.mts",
+    "scripts/lib/instrument-evaluation.mts",
+    "tests/instrument-evaluation-review.test.mts",
+    "tests/instrument-evaluation.test.mts"
+  ]
+}

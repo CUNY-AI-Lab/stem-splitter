@@ -1,0 +1,174 @@
+{
+  "$schema": "stem-splitter.instrument-evaluation-plan.v1",
+  "version": "v3.2-genre-diverse-evaluation-v1",
+  "status": "review-pending-no-promotion-claim",
+  "vocabulary": {
+    "path": "instrument-discovery/vocabulary.json",
+    "version": "classroom-instruments-v1",
+    "sha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+    "reviewOntologyVersion": "instrument-review-ontology-v1"
+  },
+  "partitions": [
+    {
+      "id": "authorized-classroom-mixes-v1",
+      "corpusKind": "real-mix",
+      "binding": "stem-splitter-corpus-v1",
+      "manifestPath": "tests/corpus/corpus.json",
+      "manifestSha256": "6c7da157f2364c7cfa3fef0b346f14a6baf0ec89e2aec10a4e21c63c86e86771",
+      "expectationsPath": "tests/corpus/instrument-discovery-expectations.json",
+      "expectationsSha256": "c3fbe177004adbd01b1896dc2944c41cb216f3df5a69f308d0c7a0bbc521e1f3",
+      "sources": [
+        {
+          "id": "folk-duet",
+          "sourceSha256": "318e51a0e54f14c1f4c6fa39d944a2f1b7e373a432128fd10eff39ffd9f7d5dd",
+          "genreFamily": "sparse-acoustic"
+        },
+        {
+          "id": "orchestral",
+          "sourceSha256": "89e73db8d34c9a1b876427f5f8a38bc7311b3c5b18e1b86a878f2fbd1e0f07f2",
+          "genreFamily": "orchestral-chamber"
+        },
+        {
+          "id": "shoegaze",
+          "sourceSha256": "cb3bdf6c8cad47a4b37efe0a459b76dc8f3e22d74206a8d480f4f9aa4be397cf",
+          "genreFamily": "rock"
+        },
+        {
+          "id": "piano-strings",
+          "sourceSha256": "f2e6a2d69946c6172348c8cea4f9b2f8c64c57b27e415e9ef1f7c4cc2997c5f6",
+          "genreFamily": "sparse-acoustic"
+        },
+        {
+          "id": "jazz-sax",
+          "sourceSha256": "9d3b219fc9ef34b50cfd1310dcb1733bf4d7068b84dad7b4186f9a471f0cbff4",
+          "genreFamily": "jazz"
+        },
+        {
+          "id": "hip-hop",
+          "sourceSha256": "f75ccb681c2ae8be44cd7675bfa004204dcd68d7fa50b27d747ac5aaa6df651e",
+          "genreFamily": "hip-hop"
+        },
+        {
+          "id": "bluegrass",
+          "sourceSha256": "0095913c8e485d6bb110068b061fddf20025ba015aa5b19d30680d1f40dd15cc",
+          "genreFamily": "folk-traditional"
+        },
+        {
+          "id": "synthwave",
+          "sourceSha256": "68172c4e2018c6bfa627bab2ba5131343a5032fd5772354e7b90588c7404278f",
+          "genreFamily": "electronic"
+        },
+        {
+          "id": "electronic-stiff-hand",
+          "sourceSha256": "a929ec6515ecc915111d2de59acb9ff81d53a6194f2a551775859b0d291cd658",
+          "genreFamily": "electronic"
+        },
+        {
+          "id": "electronic-back-counting",
+          "sourceSha256": "03499848f06938da5f51978efce91d8f7db7f1b7f898a1c2a44f46efa7c0383b",
+          "genreFamily": "electronic"
+        },
+        {
+          "id": "electronic-house",
+          "sourceSha256": "29fa53ba7debe2dc1505ff1cc8ea6d69903d4b9b40f9135e866b1e1ca443865f",
+          "genreFamily": "electronic"
+        }
+      ]
+    },
+    {
+      "id": "choralebricks-wind-controls-v1",
+      "corpusKind": "isolated-control",
+      "binding": "instrument-control-corpus-v1",
+      "manifestPath": "tests/corpus/instrument-control-manifest.json",
+      "manifestSha256": "b2bdd54eed7c9e1bc36e384cbee4cdb61d1532a6502443b558731b6630689b0f",
+      "expectationsPath": null,
+      "expectationsSha256": null,
+      "sources": [
+        {
+          "id": "flute-an1",
+          "sourceSha256": "bddb80b91627c35f8921924628de86709d239088cd6cc5199cff12c575b7d1e0",
+          "genreFamily": "other"
+        },
+        {
+          "id": "oboe-ba1",
+          "sourceSha256": "e0def2737a77dea90e237e41ab43012e5cb461b126df5909c55e7c73ad7b0ef7",
+          "genreFamily": "other"
+        },
+        {
+          "id": "clarinet-cr1",
+          "sourceSha256": "aa797937016741e79e9a6ca052fd7513e4b2c1745f7210e6ff2744f43e59d371",
+          "genreFamily": "other"
+        },
+        {
+          "id": "trumpet-an1",
+          "sourceSha256": "4c92fdc32afa92bfc4628ec174e867efe6ac307aed456f48f99bf5331c5223ff",
+          "genreFamily": "other"
+        },
+        {
+          "id": "horn-cr1",
+          "sourceSha256": "cfcd66bb8336cc59f685a83a99c3a881b5152e6c991826eee7ef7626d8ef030f",
+          "genreFamily": "other"
+        },
+        {
+          "id": "trombone-ba1",
+          "sourceSha256": "04934747ac767c1851c6be0fe79fbeb16328f9b2c2f5351a2b998c355da6f5c0",
+          "genreFamily": "other"
+        },
+        {
+          "id": "saxophone-cr1",
+          "sourceSha256": "77a481093761682d392e6eb839aa43a4b8d93e2ad20477718c524a159c78951a",
+          "genreFamily": "other"
+        },
+        {
+          "id": "tuba-an1",
+          "sourceSha256": "db6b8f063b31014d5215833b261066ce02b01975c44228f161d51645ca15c011",
+          "genreFamily": "other"
+        }
+      ]
+    }
+  ],
+  "requiredCoverage": {
+    "realMixGenreFamilies": [
+      "rock",
+      "jazz",
+      "orchestral-chamber",
+      "electronic",
+      "hip-hop",
+      "folk-traditional",
+      "sparse-acoustic"
+    ],
+    "instrumentFamilies": [
+      "voice",
+      "bowed-strings",
+      "plucked-strings",
+      "brass",
+      "woodwind",
+      "keys",
+      "electronic",
+      "percussion",
+      "free-reed",
+      "traditional"
+    ],
+    "reviewKinds": [
+      "specific-instrument-or-voice",
+      "family-or-ensemble",
+      "production-texture"
+    ],
+    "minimumRealMixSourcesPerGenre": 1,
+    "minimumAudibleSourcesPerInstrumentFamily": 1
+  },
+  "reporting": {
+    "syntheticAndRealSeparate": true,
+    "isolatedAndMixedSeparate": true,
+    "aggregateOnlyPromotionForbidden": true,
+    "requiredMetrics": [
+      "detection-precision",
+      "detection-recall",
+      "abstention-rate",
+      "service-failure-rate",
+      "per-genre",
+      "per-instrument-family",
+      "per-review-kind"
+    ]
+  }
+}
