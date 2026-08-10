@@ -52,12 +52,12 @@ promotion on their own.
   Keep `QUERY_ISOLATION_ENABLED=false` until then.
 - Evidence: `docs/evaluation/2026-08-10-query-isolation-provider-review.md` and
   the offline contract regressions in `tests/isolation.test.mts`.
-- Source gate: exact Bun 1.3.14 running the literal `test:phase0` command passes
-  all three typechecks plus 148 worker, 21 analyzer, 17 Railway-host/migration,
-  5 separator, 30 discovery, 9 YAMNet, 19 flags-off browser E2E, and 4
-  authoritative-Auto E2E tests. The authenticated remote OpenAPI readback was
-  not run because no local Replicate token was read; `npm run check:isolation`
-  remains a pre-release gate and starts no prediction.
+- Source gate: exact implementation commit `6fc8175` passes the literal
+  `test:phase0` command under Bun 1.3.14: all three typechecks plus 148 worker,
+  21 analyzer, 17 Railway-host/migration, 5 separator, 30 discovery, 9 YAMNet,
+  19 flags-off browser E2E, and 4 authoritative-Auto E2E tests. The authenticated
+  remote OpenAPI readback was not run because no local Replicate token was read;
+  `npm run check:isolation` remains a pre-release gate and starts no prediction.
 
 ## yamnet-fixed-v1 — offline comparator, not selected — 2026-08-09
 
