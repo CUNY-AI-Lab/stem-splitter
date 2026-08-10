@@ -55,6 +55,8 @@ because its model or service is available.
 - [x] Keep the active Railway `stem-splitter` Node/Railpack service as the app,
   storage, job-control, and webhook authority. Do not substitute the legacy
   Railway `web` service or move unfinished work to a Worker runtime.
+- [x] Keep a discrete `INSTRUCTOR` link in the mixer footer. The canonical live
+  Railway page renders `/teacher.html` at that link and the target returns 200.
 - [x] Keep the current provider-neutral 2-, 4-, and 6-track contracts and the
   pinned Replicate Demucs runner working while experiments are introduced.
 - [x] Keep four tracks as the conservative separation default until a new
@@ -89,12 +91,28 @@ because its model or service is available.
   revision with an authorized real teacher account, restart Railway, and prove
   that the revision persists. An isolated Node/SQLite save-login-restart-login
   readback now passes locally at revision 1; it does not substitute for the
-  real Railway/volume check. Never retrieve or expose the credential to
+  real Railway/volume check. A value-free canonical-service readback confirms
+  the `TEACHER_SEED` key is present, but key presence does not prove account
+  reconciliation or persistence. Never retrieve or expose the credential to
   automate that live check.
 - [x] Bound teacher login/prompt JSON by bytes and read time, equalize
   unknown-account PBKDF2 work,
   cap concurrent password checks, throttle failure bursts on the current
   single-replica Railway process, and make teacher responses `no-store`.
+- [x] Preserve the prompt/history/cache transaction under concurrent Railway
+  requests. A direct reproduction showed the Node D1 shim allowed a second
+  `batch()` to issue `BEGIN` while the first batch was suspended; each
+  synchronous SQLite batch now runs without an internal await. Prompt update,
+  append-only revision, and guide-cache deletion share one rollback boundary,
+  only the winning compare-and-swap may invalidate guides, and the save response
+  reads back its exact revision instead of whichever revision is newest.
+  Concurrent-batch, losing-CAS, and concurrent-save regressions pass at
+  `821f5e1`.
+- [x] Pin the active Railpack host and CI to exact Node `22.23.1` instead of a
+  floating `>=22.5`, declare matching Node types directly, and statically check
+  `server/` plus shared `src/`. This catches Railway-adapter errors that the
+  Worker-only typecheck cannot see. The package/runtime/typecheck slice is
+  committed at `821f5e1`.
 - [ ] Add a distributed teacher-login edge limit before increasing Railway
   replicas or performing the deferred Cloudflare migration; the process-local
   throttle intentionally does not claim cross-replica protection.
@@ -122,6 +140,41 @@ because its model or service is available.
   prediction identities, non-audio provider bodies, unsupported licence URLs,
   incomplete Archive duration/size metadata, and unapproved redirect origins;
   cancel rejected streams and log only safe error names/codes.
+- [x] Apply one wall-clock budget across Archive retry, redirect, header, and
+  body work and across each YouTube provider's session, prediction start/body,
+  polling, and output header/body. Map arbitrary provider stream and
+  playability errors to fixed local messages rather than reflecting provider
+  text. Focused regressions prove the Archive and Replicate phase budgets plus
+  safe stream-error normalization.
+- [x] Close the remaining Innertube transport boundary before remote Auto is a
+  release candidate. The injected fetch restricts requests and manually
+  validated redirects to the reviewed `www.youtube.com` session/player paths,
+  the exact `youtubei.googleapis.com/youtubei/*` alternate, and
+  `*.googlevideo.com/videoplayback`; it strips bearer, cookie, proxy, and
+  Google/YouTube identity headers on cross-origin hops, bounds internal
+  session/player bodies to 16 MiB, and retains the outer 100 MB streamed-audio
+  limit plus the shared 45-second deadline. Six focused regressions pass, and a
+  read-only live control imported the known 19-second video as 309,288 bytes.
+- [x] Bind the post-baseline timeout/error-normalization work to exact commits
+  `c367e23` and `fe112ef` and rerun the complete gate against intermediate source
+  `fe112ef`: 121 worker, 21 analyzer, 5 server/migration, 5 separator, 29
+  discovery, 19 browser E2E, and 4 authoritative Auto E2E tests pass. The
+  verification shell initially lacked the repository-pinned Bun executable, so
+  this intermediate gate ran directly through Node/npm/npx/uv; the later
+  `821f5e1` gate closes the local Bun-wrapper gap. Native GitHub remains open.
+- [x] Bind the Innertube transport boundary to exact executable-source commit
+  `fce98cf` and repeat its complete gate: 127 worker, 21 analyzer, 5
+  server/migration, 5 separator, 29 discovery, 19 browser E2E, and 4
+  authoritative Auto E2E tests pass through the underlying commands. This
+  committed-source result and one live control import do not constitute native
+  GitHub, Railway, or release acceptance.
+- [x] Bind the combined Railway transaction/runtime and import hardening to
+  exact executable-source commit `821f5e1`. An ephemeral exact Bun `1.3.14`
+  verified the frozen 160-package lock with no changes, then the literal
+  `test:phase0` passed all three typechecks plus 127 worker, 21 analyzer, 9
+  server/migration, 5 separator, 29 discovery, 19 browser E2E, and 4
+  authoritative Auto E2E tests. Native GitHub and Railway acceptance remain
+  separate gates.
 - [x] Record the canonical Railway project, environment, and service IDs and
   replace name-based release commands. The current local Railway link resolves
   to a same-named legacy workerd project and must never be treated as authority.
@@ -324,9 +377,11 @@ job.
   local-only until a remote branch/PR run proves it on GitHub infrastructure.
   `actionlint` passes; the earlier fresh native arm64 container run remains the
   local evidence, while a remote branch/PR run is still required.
-- [ ] Prove the discovery container restarts cleanly after the watchdog kills a
-  deliberately stuck real PyTorch inference. This requires the built model
-  image plus Railway restart/readiness evidence before shadow traffic.
+- [ ] After a replacement classifier passes local musical-usefulness and human
+  review, prove that selected discovery container restarts cleanly after the
+  watchdog kills a deliberately stuck real inference. Do not spend Railway
+  acceptance effort on the rejected CLAP prompt/checkpoint pairing. The chosen
+  image still requires Railway restart/readiness evidence before shadow traffic.
 - [x] Audit the Essentia/MTG-Jamendo license boundary before downloading a
   candidate. Official MTG sources conflict between CC BY-NC-SA and CC BY-NC-ND,
   the model-directory license is internally inconsistent, and the exact
@@ -393,6 +448,12 @@ job.
   the top 12, with a 25.67 mean best rank and repeated unrelated koto/sitar/
   mallet-percussion leaders. Reject this prompt/checkpoint pairing rather than
   tuning it into production.
+- [ ] Make the next candidate evaluator/report self-bind the executing Docker
+  image ID, `linux/amd64` platform, and dependency-lock identity in addition to
+  classifier/weight/vocabulary and diagnostic-source hashes. The rejected CLAP
+  audit manually records its native-arm64 image, but its JSON report is not
+  self-contained promotion evidence. Add an exact-schema regression before the
+  YAMNet or any replacement-candidate run.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label.
 - [x] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine

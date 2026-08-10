@@ -11,9 +11,9 @@ unchanged.
 
 ## Frozen inputs
 
-- Branch source: `codex/v3.2-audio-pipeline`, based on `08ca350`; the evaluator
-  slice is the commit that contains this audit. Diagnostic source hashes below
-  bind the two Python files used for the raw-score run.
+- Branch source: `codex/v3.2-audio-pipeline` commit `ccf7f53` (parent
+  `08ca350`). Diagnostic source hashes below bind the two Python files used for
+  the raw-score run.
 - Native image:
   `sha256:7fc21ac0244c65ef0742cb91d8203534ba330e1e8c609bf9b2a4d0dff3f91081`
   (`linux/arm64`, user `65532:65532`, command `python service.py`).
@@ -116,6 +116,11 @@ calibrating by simply lowering the existing family thresholds.
    tests.
 4. Repeat on native amd64 and then Railway with resource/restart evidence only
    after the candidate produces reviewable local detections.
+5. Make the next evaluator report self-record the executing image ID/platform
+   and dependency-lock identity. This rejected-candidate audit binds its image
+   manually above, but the current JSON schemas do not carry that runtime
+   identity themselves and must not be treated as self-contained promotion
+   evidence.
 
 Until those gates pass, `INSTRUMENT_DISCOVERY_ENABLED` stays false, detection
 remains advisory/tester-only, and no long-tail label may select a Demucs model

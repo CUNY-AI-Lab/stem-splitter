@@ -65,17 +65,23 @@ promotion on their own.
   application-level E2E proves the teacher analysis route rejects the class
   code and signed-out sessions while returning full metadata to a signed-in
   fixture teacher.
-- Evidence: 82 worker tests and 21 analyzer tests pass locally, including
+- Evidence source: evaluator, mapping, diagnostic, and research-gate files are
+  committed at `ccf7f53`; the raw-score report binds the committed
+  `score_audit.py` and `clap_backend.py` SHA-256 values. Final executable source
+  `821f5e1` passes 127 worker tests and 21 analyzer tests, including
   vocabulary integrity, content pins, private-origin/redirect controls,
-  bounded window transport, parent abort, malformed responses, and non-mutating
-  core routing.
-- Locally tested: 24 discovery-service contract/process tests cover authentication,
+  bounded window transport, parent abort, malformed responses, non-mutating
+  core routing, and candidate evaluation-map integrity. Native GitHub/image
+  evidence remains absent; the earlier constrained-image evidence is separately
+  bound to `d4c5781`.
+- Locally tested: 29 discovery-service contract/process/diagnostic tests cover authentication,
   readiness failure, pin drift, duplicate HTTP framing, rejected expectation
   handshakes, bounded pre-auth connections, slow-header timeout, pre-body
   capacity reservation, bounded PCM, non-finite samples, abstention, two-window
   support, uncertainty, pairwise prompt scoring, independent concurrent
-  watchdog generations, and a real child-process exit with code 70 without
-  loading PyTorch or model weights. The 29-package lock resolves and explicitly
+  watchdog generations, a real child-process exit with code 70 without loading
+  PyTorch or model weights, evaluator isolation/cleanup, and raw-logit
+  diagnostic parity. The 29-package lock resolves and explicitly
   pins the direct Hugging Face build dependency. Model startup additionally
   rejects any directory entry beyond the eight content-pinned artifacts and
   the exact provenance manifest, including symlinks.
@@ -134,6 +140,27 @@ promotion on their own.
   Railway HTTP origins only, validates a minimum-length bearer token, rejects
   URL credentials/path/query/fragment, uses Workerd-compatible manual redirect
   handling without following any 3xx, and caps streamed JSON at 64 KiB.
+- Import transport hardening: commits `c367e23` and `fe112ef` apply a single
+  wall-clock budget across Archive retry/redirect/header/body work and across
+  Replicate prediction start/body, polling, and output header/body work.
+  Innertube session, client lookup, and audio download share their own bounded
+  outer deadline. Arbitrary provider stream and playability errors are
+  normalized to fixed local messages rather than reflected. These changes do
+  not alter a classifier, separator, stem name, or 2/4/6 routing contract.
+- Innertube transport follow-up: exact commit `fce98cf` restricts the library's
+  injected fetch to reviewed `www.youtube.com` session/player paths, the exact
+  `youtubei.googleapis.com/youtubei/*` alternate, and
+  `*.googlevideo.com/videoplayback`. It manually validates at most three
+  redirects, strips bearer/cookie/proxy and Google/YouTube identity headers
+  across origins, and caps internally parsed session/player bodies at 16 MiB
+  while retaining the 100 MB streamed-audio cap and shared 45-second deadline.
+  Six focused regressions and a read-only 19-second/309,288-byte live control
+  pass; this does not establish Railway or musical-routing acceptance.
+- Railway host gate: exact commit `821f5e1` pins the active Node/Railpack host
+  and CI to Node 22.23.1, adds a dedicated host/shared-source typecheck, prevents
+  interleaved SQLite batches, and makes prompt update, winning-request guide
+  invalidation, and exact revision history one transaction. This changes no
+  classifier, separator, stem name, or 2/4/6 routing contract.
 - Decoder build policy: FFmpeg explicitly disables unused codec and format
   component families, then enables only the required audio
   demuxers/decoders/parsers, `aresample`, f32le output, and local file/pipe
@@ -148,6 +175,19 @@ promotion on their own.
   `d4c5781` passes the complete source gate: 105 worker,
   21 analyzer, 5 server/migration, 5 separator, 24 discovery, 19 browser E2E,
   and 4 authoritative Auto E2E tests.
+- Post-baseline evidence: exact source `fe112ef` passes focused import
+  regressions and the complete command set behind `test:phase0`: 121 worker, 21
+  analyzer, 5 server/migration, 5 separator, 29 discovery, 19 browser E2E, and
+  4 authoritative Auto E2E tests. The verification shell lacked the pinned Bun
+  executable, so the underlying scripts ran directly through Node/npm/npx/uv.
+  This superseded `d4c5781` as the local source gate, but not as constrained
+  image evidence; later exact-Bun evidence supersedes it again.
+- Final executable-source evidence: exact commit `821f5e1` passes
+  `bun@1.3.14 install --frozen-lockfile` with no changes and the literal
+  `test:phase0`: app, Railway-host/shared, and analyzer typechecks; 127 worker,
+  21 analyzer, 9 server/migration, 5 separator, 29 discovery, 19 browser E2E,
+  and 4 authoritative Auto E2E tests. It supersedes `fe112ef` and `fce98cf` as
+  the complete committed-source gate; the native GitHub/image run remains open.
 - Constrained image evidence: both the existing emulated amd64 image and the
   current native arm64 build passed the reusable internal-network smoke with a
   read-only root, no analyzer mounts, 1 vCPU, 1 GiB RAM, real short and
