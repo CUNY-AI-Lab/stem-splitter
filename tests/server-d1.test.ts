@@ -7,6 +7,18 @@ import { SqliteD1 } from '../server/d1.ts';
 import { cacheGuideIfPromptCurrent, getGuide } from '../src/assistant/index.ts';
 import { SYSTEM_PROMPT_VERSION } from '../src/assistant/prompt.ts';
 import { setAmendment } from '../src/teacher/auth.ts';
+import {
+  attachInstrumentIsolationExternalId,
+  claimInstrumentIsolation,
+  completeInstrumentIsolation,
+  createInstrumentIsolation,
+  expireTimedOutInstrumentIsolations,
+  failInstrumentIsolation,
+  InstrumentIsolationResourceError,
+  listInstrumentIsolations,
+  requeueInstrumentIsolation,
+  summarizeInstrumentIsolation,
+} from '../src/isolation/resource.ts';
 
 const promptTrace = (changeNote: string) => ({
   changeNote,
@@ -401,5 +413,273 @@ test('Railway boot adds Auto routing metadata without changing legacy job models
     });
   } finally {
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+const isolationIdentity = {
+  provider: 'replicate',
+  model: 'cjwbw/audiosep',
+  version: 'f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8',
+  contractVersion: 'audiosep-replicate-v1',
+};
+
+function isolationInput(id: string, target: string, hashCharacter = 'a') {
+  return {
+    id,
+    jobId: 'job-a',
+    requestedBy: 'teacher-a',
+    sourceHash: hashCharacter.repeat(64),
+    sourceType: 'upload' as const,
+    normalizedTarget: target,
+    analysisVocabularyVersion: 'classroom-instruments-v1',
+    identity: isolationIdentity,
+    now: new Date('2026-08-10T12:00:00.000Z'),
+  };
+}
+
+test('isolation lifecycle is bounded and cannot mutate a completed core split', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-isolation-resource-'));
+  try {
+    const db = new SqliteD1(join(directory, 'resource.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const coreStems = JSON.stringify([
+      { name: 'vocals', key: 'stems/job-a/vocals.mp3' },
+      { name: 'drums', key: 'stems/job-a/drums.mp3' },
+      { name: 'bass', key: 'stems/job-a/bass.mp3' },
+      { name: 'other', key: 'stems/job-a/other.mp3' },
+    ]);
+    await db.prepare(
+      `INSERT INTO jobs (id, filename, source_key, status, stems, model, source_type)
+       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done', ?, 'htdemucs_ft', 'upload')`
+    ).bind(coreStems).run();
+    await db.batch([
+      db.prepare(
+        `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
+         VALUES ('job-pending', 'pending.wav', 'uploads/pending/source.wav', 'processing', 'htdemucs_ft', 'upload')`
+      ),
+      db.prepare(
+        `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
+         VALUES ('job-archive', 'archive.wav', 'uploads/archive/source.wav', 'done', 'htdemucs_ft', 'archive')`
+      ),
+    ]);
+    const env = { DB: db } as never;
+
+    await assert.rejects(
+      createInstrumentIsolation(env, {
+        ...isolationInput('isolation_pending', 'saxophone'),
+        jobId: 'job-pending',
+      }),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'core_split_incomplete'
+    );
+    await assert.rejects(
+      createInstrumentIsolation(env, {
+        ...isolationInput('isolation_wrong_source', 'saxophone'),
+        jobId: 'job-archive',
+      }),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'source_type_mismatch'
+    );
+    await assert.rejects(
+      createInstrumentIsolation(env, {
+        ...isolationInput('isolation_missing_job', 'saxophone'),
+        jobId: 'job-missing',
+      }),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'job_not_found'
+    );
+
+    const first = await createInstrumentIsolation(env, isolationInput('isolation_one', 'saxophone'));
+    assert.equal(first.created, true);
+    assert.equal(first.record.status, 'queued');
+    assert.match(first.record.cacheKey, /^query-isolation\/v1\/[0-9a-f]{64}$/);
+
+    const duplicate = await createInstrumentIsolation(
+      env,
+      isolationInput('isolation_duplicate_transport', 'saxophone')
+    );
+    assert.equal(duplicate.created, false);
+    assert.equal(duplicate.record.id, 'isolation_one');
+
+    const second = await createInstrumentIsolation(env, isolationInput('isolation_two', 'trumpet'));
+    assert.equal(second.created, true);
+    await assert.rejects(
+      createInstrumentIsolation(env, isolationInput('isolation_three', 'violin')),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'maximum_reached'
+    );
+
+    const claimed = await claimInstrumentIsolation(
+      env,
+      first.record.id,
+      new Date('2026-08-10T12:01:00.000Z')
+    );
+    assert.equal(claimed.status, 'processing');
+    assert.equal(claimed.attempts, 1);
+    assert.equal(claimed.deadlineAt, '2026-08-10T12:16:00.000Z');
+    await attachInstrumentIsolationExternalId(
+      env,
+      first.record.id,
+      'prediction_1',
+      new Date('2026-08-10T12:01:01.000Z')
+    );
+    await assert.rejects(
+      claimInstrumentIsolation(env, second.record.id),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'invalid_transition'
+    );
+
+    const failed = await failInstrumentIsolation(
+      env,
+      first.record.id,
+      { code: 'provider_failed', retryable: true },
+      new Date('2026-08-10T12:02:00.000Z')
+    );
+    assert.deepEqual(failed.failure, { code: 'provider_failed', retryable: true });
+    const coreAfterFailure = await db.prepare(
+      'SELECT status, stems, model FROM jobs WHERE id = ?'
+    ).bind('job-a').first<{ status: string; stems: string; model: string }>();
+    assert.deepEqual(
+      { ...coreAfterFailure },
+      { status: 'done', stems: coreStems, model: 'htdemucs_ft' }
+    );
+
+    await requeueInstrumentIsolation(
+      env,
+      first.record.id,
+      new Date('2026-08-10T12:03:00.000Z')
+    );
+    await claimInstrumentIsolation(
+      env,
+      first.record.id,
+      new Date('2026-08-10T12:04:00.000Z')
+    );
+    assert.equal(
+      await expireTimedOutInstrumentIsolations(
+        env,
+        new Date('2026-08-10T12:19:00.001Z')
+      ),
+      1
+    );
+    await assert.rejects(
+      requeueInstrumentIsolation(env, first.record.id),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'invalid_transition'
+    );
+
+    await claimInstrumentIsolation(
+      env,
+      second.record.id,
+      new Date('2026-08-10T12:20:00.000Z')
+    );
+    await assert.rejects(
+      completeInstrumentIsolation(
+        env,
+        second.record.id,
+        'stems/job-a/other.mp3',
+        null,
+        new Date('2026-08-10T12:20:30.000Z')
+      ),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError && error.code === 'invalid_request'
+    );
+    const completed = await completeInstrumentIsolation(
+      env,
+      second.record.id,
+      'isolations/isolation_two/target.wav',
+      null,
+      new Date('2026-08-10T12:21:00.000Z')
+    );
+    const summary = summarizeInstrumentIsolation(completed);
+    assert.equal(summary.kind, 'optional_instrument_isolation');
+    assert.deepEqual(summary.output, { targetAvailable: true, residualAvailable: false });
+    assert.equal(summary.limitations.length, 2);
+    assert.deepEqual(
+      (await listInstrumentIsolations(env, 'job-a')).map((record) => record.id).sort(),
+      ['isolation_one', 'isolation_two']
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('concurrent isolation creation cannot exceed the per-track maximum', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-isolation-limit-'));
+  try {
+    const db = new SqliteD1(join(directory, 'limit.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    await db.prepare(
+      `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
+       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done', 'htdemucs_ft', 'upload')`
+    ).run();
+    const env = { DB: db } as never;
+    await createInstrumentIsolation(env, isolationInput('isolation_one', 'saxophone'));
+
+    const contenders = await Promise.allSettled([
+      createInstrumentIsolation(env, isolationInput('isolation_two', 'trumpet')),
+      createInstrumentIsolation(env, isolationInput('isolation_three', 'violin')),
+    ]);
+    assert.equal(contenders.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(contenders.filter((result) => result.status === 'rejected').length, 1);
+    assert.equal((await listInstrumentIsolations(env, 'job-a')).length, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Railway boot and numbered migration both add isolation storage idempotently', async () => {
+  for (const migration of ['node', 'numbered'] as const) {
+    const directory = mkdtempSync(join(tmpdir(), `stem-splitter-isolation-${migration}-`));
+    try {
+      const db = new SqliteD1(join(directory, 'legacy.sqlite'));
+      db.applySchema(`
+        CREATE TABLE jobs (
+          id TEXT PRIMARY KEY,
+          filename TEXT NOT NULL,
+          source_key TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          external_id TEXT,
+          stems TEXT,
+          error TEXT,
+          model TEXT,
+          labels TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO jobs (id, filename, source_key, status, model)
+        VALUES ('legacy-job', 'song.wav', 'uploads/legacy/song.wav', 'done', 'htdemucs_ft');
+      `);
+      if (migration === 'node') {
+        db.applyNodeMigrations();
+        db.applyNodeMigrations();
+      } else {
+        const sql = readFileSync('migrations/0008-instrument-isolations.sql', 'utf8');
+        db.applySchema(sql);
+        db.applySchema(sql);
+      }
+
+      const columns = await db.prepare("PRAGMA table_info('instrument_isolations')")
+        .all<{ name: string }>();
+      for (const name of [
+        'job_id',
+        'source_hash',
+        'normalized_target',
+        'provider_version',
+        'cache_key',
+        'status',
+        'attempts',
+        'deadline_at',
+      ]) {
+        assert.equal(columns.results.filter((column) => column.name === name).length, 1, name);
+      }
+      const indexes = await db.prepare("PRAGMA index_list('instrument_isolations')")
+        .all<{ name: string }>();
+      assert.ok(
+        indexes.results.some(
+          (index) => index.name === 'idx_instrument_isolations_one_processing_per_job'
+        )
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   }
 });

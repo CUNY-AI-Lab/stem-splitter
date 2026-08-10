@@ -1,6 +1,7 @@
 import app from '../../src/index';
 import { cleanupExpiredLocalAudio } from '../../src/r2';
 import type { Env } from '../../src/env';
+import { createInstrumentIsolation } from '../../src/isolation/resource.ts';
 
 const E2E_SECRET = 'local-hosting-e2e-only';
 
@@ -42,6 +43,29 @@ export default {
         )
         .run();
       return Response.json({ ok: true });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/__e2e/job-isolation') {
+      const body = (await request.json()) as { jobId?: unknown };
+      if (typeof body.jobId !== 'string' || !body.jobId) {
+        return new Response(null, { status: 400 });
+      }
+      const result = await createInstrumentIsolation(env, {
+        id: 'isolation_e2e_1',
+        jobId: body.jobId,
+        requestedBy: 'e2eteacher',
+        sourceHash: '1'.repeat(64),
+        sourceType: 'upload',
+        normalizedTarget: 'saxophone',
+        analysisVocabularyVersion: 'classroom-instruments-v1',
+        identity: {
+          provider: 'replicate',
+          model: 'cjwbw/audiosep',
+          version: 'f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8',
+          contractVersion: 'audiosep-replicate-v1',
+        },
+      });
+      return Response.json({ id: result.record.id, created: result.created });
     }
 
     if (request.method === 'POST' && url.pathname === '/__e2e/local-upload') {

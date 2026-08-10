@@ -5,6 +5,7 @@ import { findQueryIsolationPinViolations } from '../scripts/lib/pin-check.mjs';
 import {
   normalizeIsolationTarget,
   queryIsolationCacheKey,
+  queryIsolationCacheKeyForMaterial,
   validateQueryIsolationRequest,
 } from '../src/isolation/contract.ts';
 import {
@@ -74,6 +75,18 @@ test('query-isolation cache keys bind signal, prompt, vocabulary, provider, and 
   const baseline = await queryIsolationCacheKey(REQUEST, IDENTITY);
   assert.match(baseline, /^query-isolation\/v1\/[0-9a-f]{64}$/);
   assert.equal(await queryIsolationCacheKey(REQUEST, IDENTITY), baseline);
+  assert.equal(
+    await queryIsolationCacheKeyForMaterial(
+      {
+        sourceHash: REQUEST.sourceHash,
+        normalizedTarget: REQUEST.normalizedTarget,
+        analysisVocabularyVersion: REQUEST.analysisVocabularyVersion,
+      },
+      IDENTITY
+    ),
+    baseline,
+    'resource creation must bind the cache before expiring transport URLs exist'
+  );
 
   const requestChanges: QueryIsolationRequestV1[] = [
     { ...REQUEST, sourceHash: '2'.repeat(64) },

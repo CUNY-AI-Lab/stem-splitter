@@ -1,6 +1,6 @@
 # STEM Splitter: next implementation sequence
 
-**Updated:** 2026-08-09
+**Updated:** 2026-08-10
 
 **Active release target:** Railway
 
@@ -56,7 +56,7 @@ A path-scoped, secret-free native-amd64 image workflow is defined locally but
 has not yet run on GitHub, and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
-The complete local Phase 0 command passes 141 worker, 21 analyzer, 14 Railway
+The complete local Phase 0 command passes 148 worker, 21 analyzer, 17 Railway
 host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
 browser, and 4 authoritative-Auto browser tests. This is source and local-image
 evidence only; it does not close native CI or Railway acceptance.
@@ -238,7 +238,7 @@ because its model or service is available.
 | 0 | Existing `stem-splitter` app | Already active on Railway; preserve it | Yes, but only through reviewed app releases |
 | 1 | Versioned audio-analysis API | New private Railway CPU service | No; shadow/advisory first |
 | 2 | Instrument classifier | New private Railway ML service, reachable only by the analyzer after parity | No; detection metadata only at first |
-| 3 | AudioSep query separator | Dormant exact-pin Replicate adapter; no route/resource yet | No; explicit optional isolation only |
+| 3 | AudioSep query separator | Dormant adapter plus additive resource and teacher readback; no create/start route | No; explicit optional isolation only |
 | 4 | SAM-Audio comparison | Evaluation-only pinned Replicate integration | No until selected through review |
 | 5 | Banquet/Query-Bandit | Future private Cog or GPU service | No until a separate multi-stem design is accepted |
 
@@ -576,34 +576,48 @@ license status. Overall accuracy alone is insufficient.
 ### 3A. AudioSep pilot
 
 - [x] Add a separately pinned AudioSep Replicate runner and version variable.
-  `REPLICATE_AUDIOSEP_VERSION` accepts only the exact source-reviewed lowercase
-  64-hex id. Offline `test:worker` regressions bind that pin and schema surface;
+  `REPLICATE_AUDIOSEP_VERSION` accepts only the exact reviewed provider-version
+  lowercase 64-hex id. Offline `test:worker` regressions bind that pin and schema surface;
   the authenticated `npm run check:isolation` verifies the exact remote
   OpenAPI contract. Both bind `audio_file`/`text` to a one-URI output and reject
   code, version, or schema drift. The reviewed candidate is
   community-hosted `cjwbw/audiosep` version `f0700443…`, not an official
   Audio-AGI service. The adapter remains unimported by app routes, the feature
-  flag remains false, and no provider call, resource, or spend path exists.
+  flag remains false, and no provider call or spend path exists. The additive
+  resource has teacher-only readback but no production create/start route.
   The offline pin/schema regressions pass; authenticated remote-schema readback
   remains a pre-release gate because no local Replicate token was read.
 - [ ] Bind the pinned community image to an exact AudioSep checkpoint hash and
-  applicable weight license. The official source repository is MIT licensed
-  and a separate Hugging Face mirror labels its checkpoint Apache-2.0, but
-  neither fact proves which exact weight bytes the community Replicate version
-  executes.
-- [ ] Create a separate `instrument_isolations` job/resource. Never append a
-  query output to the core `stems` array or imply that independently queried
-  outputs sum back to the original mixture.
-- [ ] Require an explicit normalized target prompt selected from detected
-  candidates or entered by an authorized teacher/tester.
-- [ ] Preserve the completed core split when an isolation is slow, empty,
-  rejected, or fails. Query failure must be local to the query job.
+  applicable weight license. Replicate attributes the reviewed build to fork
+  commit `e3bd8d46…`, but that tree predates the Cog wrapper and contains no
+  checkpoint. The later wrapper at `5fa53949…` loads an untracked
+  `audiosep_base_4M_steps.ckpt`; neither official MIT source nor a separate
+  mirror's Apache-2.0 metadata proves which bytes the hosted image executes.
+- [x] Create a separate `instrument_isolations` job/resource. Its additive
+  fresh schema, numbered D1 migration, and idempotent Railway boot migration
+  never append query output to core `stems` or claim reconstruction.
+- [ ] Require an explicit normalized target selected from detected candidates
+  or entered by an authorized teacher/tester. The resource constructor already
+  rejects noncanonical targets and records a requesting-teacher field, but the
+  future production create route must bind that field to the authenticated
+  session rather than client input.
+- [x] Preserve the completed core split when an isolation is slow, timed out,
+  rejected, or fails. Resource lifecycle tests read back unchanged core status,
+  model, and stems after failure.
 - [ ] Cache by source hash, normalized target, provider, exact model version,
-  and analysis-vocabulary version.
+  adapter contract, and analysis-vocabulary version. The resource now derives
+  and indexes that identity before transport URLs exist and deduplicates it
+  within one core job; cross-job output reuse awaits verified source hashing,
+  output hydration, and retention semantics.
 - [ ] Enforce per-track concurrency, semester budget, timeout, retry, and
-  maximum-isolation limits before enabling the paid endpoint.
+  maximum-isolation limits before enabling the paid endpoint. The dormant
+  resource now atomically enforces one processing request, two attempts,
+  15-minute deadlines, and two requests per track; server-verified source
+  hashing and a semester budget remain before any paid endpoint.
 - [ ] Label outputs “optional instrument isolations,” with model/version and
-  limitations available in the UI. Do not call them mutually exclusive stems.
+  limitations available in the UI. The teacher-only API summary now supplies
+  that label, exact identity, and limitations without storage keys; no UI is
+  wired while execution is blocked.
 
 ### 3B. SAM-Audio bake-off
 

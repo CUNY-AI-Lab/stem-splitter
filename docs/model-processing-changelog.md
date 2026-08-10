@@ -5,11 +5,12 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
-## audiosep-replicate-contract-v1 — dormant adapter — 2026-08-10
+## audiosep-replicate-contract-v1 — dormant adapter and resource — 2026-08-10
 
-- Scope: query-isolation contract and offline provider guard only. No app
-  route, database resource, provider prediction, Railway change, feature-flag
-  change, separator selection, stem label, or 2/4/6 contract changed.
+- Scope: query-isolation contract, offline provider guard, additive persistence,
+  and teacher-only historical readback. No create/start route, provider
+  prediction, Railway change, feature-flag change, separator selection, stem
+  label, or 2/4/6 contract changed.
 - Candidate: community Replicate model `cjwbw/audiosep`, exact version
   `f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8`.
   The adapter requires that pin through `REPLICATE_AUDIOSEP_VERSION`; it never
@@ -22,27 +23,37 @@ promotion on their own.
   version, provider, model, exact provider version, and adapter-contract
   version. Expiring source/webhook URLs and transport job ids do not alter the
   signal/model identity.
+- Resource boundary: each row belongs to a completed core job but never changes
+  `jobs.stems`. A conditional insert atomically caps a track at two distinct
+  requests while returning a duplicate cache identity idempotently. A partial
+  unique index and compare-and-swap transitions permit one processing attempt
+  per track, two total attempts per request, and a 15-minute deadline. Failure
+  and timeout remain local to the isolation row. The signed-in teacher summary
+  labels the result “Optional instrument isolation,” reports exact provider
+  identity and overlap/reconstruction limitations, and exposes no storage key.
 - Provenance: AudioSep's official repository is MIT licensed and was reviewed
   at `944583f18b84589dc965de3ad77525c945334252`. Replicate attributes its
   separate community build to the `chenxwh/AudioSep` fork at
-  `e3bd8d4631206a1c1870ece762a8fa21da8794f7`; that distinction blocks any
-  claim that the hosted service is official. The source MIT license also does
-  not by itself bind the hosted checkpoint bytes or their license; that
-  provenance remains an explicit gate.
+  `e3bd8d4631206a1c1870ece762a8fa21da8794f7`, whose tree has no Cog wrapper,
+  predictor, or checkpoint. The wrapper first appears at later commit
+  `5fa5394910971d256beb8875f29e6f3aabcf1a8d` and loads
+  `checkpoint/audiosep_base_4M_steps.ckpt`, but that file is absent from Git.
+  The hosted bytes and their license therefore remain unverifiable; source
+  MIT or a separate mirror's Apache-2.0 metadata cannot close that chain.
 - Comparison disposition: SAM-Audio remains evaluation-only because its
   checkpoints are gated, its custom SAM License still needs institutional
   review, and the available Replicate implementation is community-hosted.
   Banquet remains Phase 5 because its documented query input is audio and its
   coherent long-tail multi-stem semantics need a separate design.
-- Gate: bind exact checkpoint/license provenance, then add the isolated
-  persistent resource, teacher authorization, budgets, timeout/concurrency
-  limits, output retention, common evaluation manifest, and quality/cost
+- Gate: bind exact checkpoint/license provenance, add server-verified source
+  hashing, semester budgets, create/start/webhook and output-retention paths,
+  signed-source lifetime tests, a common evaluation manifest, and a quality/cost
   decision before importing the adapter into an app route.
   Keep `QUERY_ISOLATION_ENABLED=false` until then.
 - Evidence: `docs/evaluation/2026-08-10-query-isolation-provider-review.md` and
   the offline contract regressions in `tests/isolation.test.mts`.
 - Source gate: exact Bun 1.3.14 running the literal `test:phase0` command passes
-  all three typechecks plus 148 worker, 21 analyzer, 14 Railway-host/migration,
+  all three typechecks plus 148 worker, 21 analyzer, 17 Railway-host/migration,
   5 separator, 30 discovery, 9 YAMNet, 19 flags-off browser E2E, and 4
   authoritative-Auto E2E tests. The authenticated remote OpenAPI readback was
   not run because no local Replicate token was read; `npm run check:isolation`

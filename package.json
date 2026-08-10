@@ -64,7 +64,9 @@
     "db:migrate:6": "wrangler d1 execute stem-splitter --remote --file=migrations/0006-audio-routing.sql",
     "db:migrate:6:local": "wrangler d1 execute stem-splitter --local --file=migrations/0006-audio-routing.sql",
     "db:migrate:7": "wrangler d1 execute stem-splitter --remote --file=migrations/0007-guide-prompt-cache.sql",
-    "db:migrate:7:local": "wrangler d1 execute stem-splitter --local --file=migrations/0007-guide-prompt-cache.sql"
+    "db:migrate:7:local": "wrangler d1 execute stem-splitter --local --file=migrations/0007-guide-prompt-cache.sql",
+    "db:migrate:8": "wrangler d1 execute stem-splitter --remote --file=migrations/0008-instrument-isolations.sql",
+    "db:migrate:8:local": "wrangler d1 execute stem-splitter --local --file=migrations/0008-instrument-isolations.sql"
   },
   "engines": {
     "node": "22.23.1"

@@ -19,6 +19,67 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at);
 
+-- Independently queried long-tail targets. These rows never alter jobs.stems,
+-- and their cache identity binds the source bytes, prompt, and exact provider.
+CREATE TABLE IF NOT EXISTS instrument_isolations (
+  id TEXT PRIMARY KEY,
+  schema_version TEXT NOT NULL DEFAULT '1' CHECK (schema_version = '1'),
+  job_id TEXT NOT NULL,
+  requested_by TEXT NOT NULL,
+  source_hash TEXT NOT NULL
+    CHECK (length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'),
+  source_type TEXT NOT NULL CHECK (source_type IN ('upload', 'youtube', 'archive')),
+  normalized_target TEXT NOT NULL CHECK (length(normalized_target) BETWEEN 2 AND 80),
+  analysis_vocabulary_version TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL,
+  provider_model TEXT NOT NULL,
+  provider_version TEXT NOT NULL
+    CHECK (length(provider_version) = 64 AND provider_version NOT GLOB '*[^0-9a-f]*'),
+  provider_contract_version TEXT NOT NULL,
+  cache_key TEXT NOT NULL
+    CHECK (
+      length(cache_key) = 83
+      AND substr(cache_key, 1, 19) = 'query-isolation/v1/'
+      AND substr(cache_key, 20) NOT GLOB '*[^0-9a-f]*'
+    ),
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
+  external_id TEXT,
+  target_key TEXT,
+  residual_key TEXT,
+  failure_code TEXT,
+  failure_retryable INTEGER CHECK (failure_retryable IS NULL OR failure_retryable IN (0, 1)),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts INTEGER NOT NULL DEFAULT 2 CHECK (max_attempts BETWEEN 1 AND 5),
+  deadline_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+  UNIQUE (job_id, cache_key),
+  CHECK (attempts <= max_attempts),
+  CHECK (status <> 'queued' OR (external_id IS NULL AND deadline_at IS NULL)),
+  CHECK (status <> 'processing' OR deadline_at IS NOT NULL),
+  CHECK (status <> 'succeeded' OR target_key IS NOT NULL),
+  CHECK (status <> 'failed' OR failure_code IS NOT NULL),
+  CHECK (
+    target_key IS NULL
+    OR substr(target_key, 1, length('isolations/' || id || '/')) = 'isolations/' || id || '/'
+  ),
+  CHECK (
+    residual_key IS NULL
+    OR substr(residual_key, 1, length('isolations/' || id || '/')) = 'isolations/' || id || '/'
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_instrument_isolations_job
+  ON instrument_isolations (job_id, created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_instrument_isolations_cache
+  ON instrument_isolations (cache_key, status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_instrument_isolations_one_processing_per_job
+  ON instrument_isolations (job_id) WHERE status = 'processing';
+
 -- Shared time-anchored notes on a track, shown as seek-bar markers.
 CREATE TABLE IF NOT EXISTS annotations (
   id TEXT PRIMARY KEY,

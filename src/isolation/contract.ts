@@ -12,6 +12,12 @@ const TARGET_PATTERN = /^[\p{L}\p{N}][\p{L}\p{M}\p{N}'’&+\-/ ]*$/u;
 
 export class QueryIsolationContractError extends Error {}
 
+export interface QueryIsolationCacheMaterialV1 {
+  sourceHash: string;
+  normalizedTarget: string;
+  analysisVocabularyVersion: string | null;
+}
+
 /**
  * One canonical noun-phrase form feeds provider calls, storage, and caching.
  * It deliberately rejects URLs, controls, and punctuation-heavy prose rather
@@ -46,23 +52,29 @@ export function validateQueryIsolationRequest(request: QueryIsolationRequestV1):
   if (!SAFE_ID_PATTERN.test(request.isolationId)) {
     throw new QueryIsolationContractError('Invalid isolation id');
   }
-  if (!SOURCE_HASH_PATTERN.test(request.sourceHash)) {
-    throw new QueryIsolationContractError('sourceHash must be a lowercase SHA-256 digest');
-  }
+  validateQueryIsolationCacheMaterial(request);
   if (!['upload', 'youtube', 'archive'].includes(request.sourceType)) {
     throw new QueryIsolationContractError('Unsupported isolation source type');
   }
-  if (normalizeIsolationTarget(request.normalizedTarget) !== request.normalizedTarget) {
+  requireHttpsUrl(request.sourceUrl, 'sourceUrl');
+  requireHttpsUrl(request.webhookUrl, 'webhookUrl');
+}
+
+export function validateQueryIsolationCacheMaterial(
+  material: QueryIsolationCacheMaterialV1
+): void {
+  if (!SOURCE_HASH_PATTERN.test(material.sourceHash)) {
+    throw new QueryIsolationContractError('sourceHash must be a lowercase SHA-256 digest');
+  }
+  if (normalizeIsolationTarget(material.normalizedTarget) !== material.normalizedTarget) {
     throw new QueryIsolationContractError('Isolation target is not in canonical form');
   }
   if (
-    request.analysisVocabularyVersion !== null &&
-    !SAFE_VERSION_LABEL_PATTERN.test(request.analysisVocabularyVersion)
+    material.analysisVocabularyVersion !== null &&
+    !SAFE_VERSION_LABEL_PATTERN.test(material.analysisVocabularyVersion)
   ) {
     throw new QueryIsolationContractError('Invalid analysis vocabulary version');
   }
-  requireHttpsUrl(request.sourceUrl, 'sourceUrl');
-  requireHttpsUrl(request.webhookUrl, 'webhookUrl');
 }
 
 export function validateQueryIsolationProviderIdentity(
@@ -94,18 +106,27 @@ export async function queryIsolationCacheKey(
   identity: QueryIsolationProviderIdentityV1
 ): Promise<string> {
   validateQueryIsolationRequest(request);
+  return queryIsolationCacheKeyForMaterial(request, identity);
+}
+
+/** Build the same cache key before short-lived transport URLs are minted. */
+export async function queryIsolationCacheKeyForMaterial(
+  material: QueryIsolationCacheMaterialV1,
+  identity: QueryIsolationProviderIdentityV1
+): Promise<string> {
+  validateQueryIsolationCacheMaterial(material);
   validateQueryIsolationProviderIdentity(identity);
-  const material = JSON.stringify([
+  const serialized = JSON.stringify([
     QUERY_ISOLATION_SCHEMA_VERSION,
-    request.sourceHash,
-    request.normalizedTarget,
+    material.sourceHash,
+    material.normalizedTarget,
     identity.provider,
     identity.model,
     identity.version,
     identity.contractVersion,
-    request.analysisVocabularyVersion,
+    material.analysisVocabularyVersion,
   ]);
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
   const hex = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0')
   ).join('');

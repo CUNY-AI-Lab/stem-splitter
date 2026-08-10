@@ -84,6 +84,10 @@ import {
 } from './teacher/auth';
 import { readBoundedTeacherJson, TeacherRequestError } from './teacher/request';
 import { JsonRequestError, readBoundedJsonRequest } from './http/bounded-request.ts';
+import {
+  listInstrumentIsolations,
+  summarizeInstrumentIsolation,
+} from './isolation/resource.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -799,6 +803,22 @@ app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
   } catch {
     return c.json({ error: 'Stored analysis is unavailable.' }, 500);
   }
+});
+
+// Historical readback stays available when the rollout flag is off. There is
+// intentionally no create/start route yet: provider provenance, source hashing,
+// semester budgets, and teacher-beta acceptance remain release gates.
+app.get('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
+  const jobId = c.req.param('id');
+  const job = await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?')
+    .bind(jobId)
+    .first<{ id: string }>();
+  if (!job) return c.json({ error: 'Job not found' }, 404);
+  const isolations = await listInstrumentIsolations(c.env, jobId);
+  return c.json({
+    jobId,
+    isolations: isolations.map(summarizeInstrumentIsolation),
+  });
 });
 
 // Shared, class-wide display labels for stem channels.

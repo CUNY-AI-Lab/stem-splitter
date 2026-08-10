@@ -1545,6 +1545,13 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     body: JSON.stringify({ id: analysisJobId, analysis: privateAutoRouting }),
   });
   expect(seededAnalysis.status).toBe(200);
+  const seededIsolation = await e2eFetch(server, '/__e2e/job-isolation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jobId: analysisJobId }),
+  });
+  expect(seededIsolation.status).toBe(200);
+  expect(await seededIsolation.json()).toEqual({ id: 'isolation_e2e_1', created: true });
 
   const studentReadback = await server.fetch(`http://stem-splitter.test/api/jobs/${analysisJobId}`);
   expect(studentReadback.status).toBe(200);
@@ -1552,6 +1559,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect(studentJob.autoRouting.resolvedCoreModel).toBe('htdemucs_6s');
   expect(studentJob.autoRouting.analysis.detectedInstruments).toEqual([]);
   expect(studentJob.autoRouting.analysis.vocabularyClassifier).toBeUndefined();
+  expect(studentJob.isolations).toBeUndefined();
 
   // The class code must not open the instructor console: it is a shared secret
   // every student holds, so it cannot gate what the Listening Guide is told to say.
@@ -1565,6 +1573,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     { headers: { 'x-class-code': CLASS_CODE } }
   );
   expect(analysisWithClassCode.status).toBe(401);
+  const isolationsWithClassCode = await server.fetch(
+    `http://stem-splitter.test/api/teacher/jobs/${analysisJobId}/isolations`,
+    { headers: { 'x-class-code': CLASS_CODE } }
+  );
+  expect(isolationsWithClassCode.status).toBe(401);
 
   const oversizedLogin = await server.fetch('http://stem-splitter.test/api/teacher/login', {
     method: 'POST',
@@ -1617,6 +1630,39 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect(teacherAnalysis.status).toBe(200);
   expect(teacherAnalysis.cacheControl).toBe('no-store');
   expect(teacherAnalysis.body.autoRouting).toEqual(privateAutoRouting);
+
+  const teacherIsolations = await page.evaluate((jobId) =>
+    fetch(`/api/teacher/jobs/${jobId}/isolations`, { credentials: 'same-origin' }).then(
+      async (response) => ({
+        status: response.status,
+        cacheControl: response.headers.get('cache-control'),
+        body: await response.json(),
+      })
+    ),
+    analysisJobId
+  );
+  expect(teacherIsolations.status).toBe(200);
+  expect(teacherIsolations.cacheControl).toBe('no-store');
+  expect(teacherIsolations.body).toMatchObject({
+    jobId: analysisJobId,
+    isolations: [
+      {
+        kind: 'optional_instrument_isolation',
+        label: 'Optional instrument isolation',
+        id: 'isolation_e2e_1',
+        target: 'saxophone',
+        status: 'queued',
+        output: { targetAvailable: false, residualAvailable: false },
+        identity: {
+          provider: 'replicate',
+          model: 'cjwbw/audiosep',
+          version: 'f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8',
+          contractVersion: 'audiosep-replicate-v1',
+        },
+      },
+    ],
+  });
+  expect(teacherIsolations.body.isolations[0].limitations).toHaveLength(2);
 
   // The code-owned prompt is visible and formatted, but never an editable
   // control. It opens at the end and the upward caret jumps to the top.
@@ -1704,6 +1750,13 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     analysisJobId
   );
   expect(analysisAfterSignOut).toBe(401);
+  const isolationsAfterSignOut = await page.evaluate((jobId) =>
+    fetch(`/api/teacher/jobs/${jobId}/isolations`, { credentials: 'same-origin' }).then(
+      (response) => response.status
+    ),
+    analysisJobId
+  );
+  expect(isolationsAfterSignOut).toBe(401);
 
   expect(browserErrors).toEqual([]);
   // Every non-2xx should be one of the auth checks this test intentionally makes.
