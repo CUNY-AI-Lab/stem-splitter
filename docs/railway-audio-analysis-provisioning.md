@@ -44,12 +44,13 @@ environment as `stem-splitter`.
   only and must not promote a deployment whose decoder or classifier is
   unavailable.
 - Start with one replica, a one-request application concurrency limit, one
-  vCPU, and 1 GiB RAM. Treat those CPU/RAM values as initial safety caps, not
+  vCPU, and 1 GB RAM (`1,000,000,000` bytes in Railway's limits readback).
+  Treat those CPU/RAM values as initial safety caps, not
   validated sizing: exercise maximum-duration, malformed, and concurrent
   requests while watching Railway metrics before accepting them.
 - Keep the Docker `256 MiB` Node heap cap. It complements but does not replace
   the Railway replica memory cap because FFmpeg runs in a child process.
-- Use restart-on-failure with a small bounded retry count. Do not enable
+- Use restart-on-failure with exactly three retries. Do not enable
   serverless sleep until cold-start readiness and the app timeout are measured
   together.
 
@@ -114,8 +115,8 @@ override it in Railway.
 | `INSTRUMENT_DISCOVERY_TORCH_THREADS` | `1` |
 | `INSTRUMENT_DISCOVERY_INFERENCE_TIMEOUT_SECONDS` | `30` |
 
-Configure this service's restart policy as `ON_FAILURE` with a nonzero retry
-limit and record the accepted limit. The inference watchdog deliberately exits
+Configure this service's restart policy as `ON_FAILURE` with exactly three
+retries and record that accepted limit. The inference watchdog deliberately exits
 nonzero, so a `NEVER` policy would turn a bounded model failure into an outage.
 
 Do not override the baked model or vocabulary paths. The image pins Python,
@@ -153,10 +154,32 @@ implicitly staged. When this runbook is authorized for execution, scope every
 command with the canonical project, environment, and service IDs and use
 `railway variable set --skip-deploys` while assembling each reviewed variable
 batch. Use `railway environment edit ... --stage` for the typed Dockerfile,
-healthcheck, replica, and restart-policy configuration. Read back the complete
-configuration before committing the staged change, then deploy the analyzer
-first with app Auto still off. Never pass a secret value as a command-line
-argument; use a sealed shared variable and stdin.
+`/readyz` healthcheck with a 120-second timeout, one replica, and `ON_FAILURE`
+with three retries. Railway resource overrides use the separate
+`serviceInstanceLimitsUpdate` API: set `vCPUs: 1` and `memoryGB: 1`, then require
+`serviceInstanceLimitOverride` to return exactly one CPU and
+`1,000,000,000` memory bytes. Read back the complete configuration before
+committing the staged change, then deploy the analyzer first with app Auto still
+off. Never pass a secret value as a command-line argument; use a sealed shared
+variable and stdin.
+
+Run the value-free executable gate against the explicit canonical IDs before
+provisioning:
+
+```sh
+RAILWAY_CALLER=skill:use-railway@1.3.7 \
+RAILWAY_AGENT_SESSION=stem-splitter-audio-analysis-preflight \
+node scripts/check-railway-audio-analysis.mjs \
+  --phase pre-provision \
+  --project f070742b-3375-4cba-9a86-335f39273c88 \
+  --environment b3381640-1e2f-4765-8e15-15baec599ec2 \
+  --app-service f53a2915-087c-493a-a345-7a1fa73e6588
+```
+
+After the analyzer reaches terminal `SUCCESS` with app flags still explicitly
+off, repeat with `--phase deployed-off`. The script reads secrets only inside
+its process to verify token parity; it emits no values and makes no mutations or
+provider calls.
 
 ## Verification order
 
