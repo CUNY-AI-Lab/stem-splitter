@@ -52,6 +52,8 @@ Separation, YouTube import, analysis, coach, and teacher credentials
 (`REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`,
 `REPLICATE_YT_MODEL` + `REPLICATE_YT_MODEL_VERSION`,
 the shadow-only `REPLICATE_AUDIOSEP_VERSION`,
+the dormant `QUERY_ISOLATION_COURSE_ID` + `QUERY_ISOLATION_SEMESTER_ID` +
+`QUERY_ISOLATION_MAX_PROVIDER_STARTS` budget policy,
 `AUDIO_ANALYSIS_URL` + `AUDIO_ANALYSIS_TOKEN`, `OPENROUTER_API_KEY`, and
 `TEACHER_SEED`) are **not** required to boot—see "Fail-fast vs. fail-lazy"
 below. Without `TEACHER_SEED`, the instructor console has no provisioned
@@ -106,8 +108,8 @@ Numbered `migrations/` remain deferred Cloudflare D1 migration inputs.
 `WEBHOOK_SECRET` and `CLASS_CODE` are required at boot and `process.exit(1)` if absent — every request path needs them, so booting without them only produces confusing 500s later.
 
 `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, the YouTube model/version
-pair, the dormant AudioSep version, the analysis URL/token pair,
-`OPENROUTER_API_KEY`, and `TEACHER_SEED` are
+pair, the dormant AudioSep version and course-semester budget, the analysis
+URL/token pair, `OPENROUTER_API_KEY`, and `TEACHER_SEED` are
 checked lazily. This is deliberate: without them, upload, mixer, labels, notes,
 and stem playback all still work. `/healthz.configuration` reports only
 value-free `configured`/`unconfigured`/`incomplete`/`invalid` states and rollout

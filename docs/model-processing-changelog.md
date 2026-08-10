@@ -5,6 +5,40 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## query-isolation-budget-v1 — atomic course-semester spend ceiling — 2026-08-10
+
+- Scope: exact implementation commit
+  `d207d4b7aedf6a9f9e9feeb869de18d5a0e27647` adds a dormant,
+  versioned course-semester provider-start budget. It does not add a provider-
+  start route, import the AudioSep adapter into the app, stage a provider pin or
+  budget variable, change a feature flag, alter a core stem, or make a paid
+  request.
+- Authorization boundary: every future teacher-beta claim must supply the exact
+  `course-semester-provider-starts-v1` policy. Missing, incomplete, malformed,
+  out-of-range, or changed configuration fails closed. The reservation insert
+  and queued-to-processing compare-and-set execute in one database batch, so
+  concurrent teachers cannot cross the shared course-semester ceiling.
+- Accounting semantics: a permanent immutable row records the isolation,
+  attempt, core job, cache identity, requesting teacher, course, semester,
+  policy, ceiling, and timestamp. Each retry consumes another provider start;
+  provider failure and ordinary job deletion do not refund it. A new semester
+  receives a new scope, while changing the ceiling or policy after the first
+  reservation is rejected. Shadow rows remain unclaimable and create no budget
+  evidence.
+- Migration and configuration: fresh schema, Railway boot migration, and
+  numbered migration `0015` carry byte-identical table/index/trigger SQL.
+  `/healthz` reports only `unconfigured`, `incomplete`, `invalid`, or
+  `configured`; all three variables remain optional and fail-lazy. The Phase 1
+  Railway gate rejects them if staged early.
+- Evidence and rollout: the exact clean commit passes all four TypeScript
+  checks; 228 worker, 24 analyzer, 33 Railway host/config/migration, 5
+  separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+  authoritative-Auto, and 1 isolation-shadow browser journey under Bun 1.3.14.
+  Rollout remains off. Checkpoint provenance, exact live scope/ceiling,
+  provider orchestration, output hydration/retention, quality/cost evaluation,
+  and Railway acceptance remain mandatory. No live migration, Railway mutation,
+  provider call, push, pull request, or deployment occurred.
+
 ## yamnet-candidate-capture-v1 — native report adapter — 2026-08-10
 
 - Scope: exact implementation commit

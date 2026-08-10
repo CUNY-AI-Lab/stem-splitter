@@ -12,7 +12,7 @@ construct the provider adapter, or reach Replicate.
 
 | Candidate | Verified capability and provenance | Current disposition |
 |---|---|---|
-| AudioSep | The official Audio-AGI repository describes 32 kHz, natural-language target separation and its source repository carries an MIT license. The reviewed repository head was `944583f18b84589dc965de3ad77525c945334252`. Replicate exposes community model `cjwbw/audiosep`, not an Audio-AGI-operated model, with immutable version `f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8`; its contract is `audio_file` plus `text` to one URI. Replicate attributes that build to fork commit `e3bd8d4631206a1c1870ece762a8fa21da8794f7`, but that tree contains no Cog wrapper, predictor, or checkpoint. The wrapper first appears later at `5fa5394910971d256beb8875f29e6f3aabcf1a8d` and references untracked `checkpoint/audiosep_base_4M_steps.ckpt`, whose bytes are absent from Git. A separate mirror labels a checkpoint Apache-2.0, but cannot bind those bytes to the hosted image. | Contract-only dormant adapter. The persistent resource and teacher readback are implemented without a provider-start path. Hosted checkpoint provenance, hashing, budgets, and quality gates still block execution. |
+| AudioSep | The official Audio-AGI repository describes 32 kHz, natural-language target separation and its source repository carries an MIT license. The reviewed repository head was `944583f18b84589dc965de3ad77525c945334252`. Replicate exposes community model `cjwbw/audiosep`, not an Audio-AGI-operated model, with immutable version `f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8`; its contract is `audio_file` plus `text` to one URI. Replicate attributes that build to fork commit `e3bd8d4631206a1c1870ece762a8fa21da8794f7`, but that tree contains no Cog wrapper, predictor, or checkpoint. The wrapper first appears later at `5fa5394910971d256beb8875f29e6f3aabcf1a8d` and references untracked `checkpoint/audiosep_base_4M_steps.ckpt`, whose bytes are absent from Git. A separate mirror labels a checkpoint Apache-2.0, but cannot bind those bytes to the hosted image. | Contract-only dormant adapter. The persistent resource, teacher readback, immutable source guard, and atomic course-semester budget ledger are implemented without a provider-start path. Hosted checkpoint provenance, live budget configuration/acceptance, provider orchestration, and quality gates still block execution. |
 | SAM-Audio | Meta's official repository at reviewed head `bb4c6999d2677c7402360e426afc01ddfad6dce0` supports text, visual, and span prompts and produces target plus residual. Checkpoints require approved Hugging Face access. Code and weights use the custom SAM License dated 2025-11-19 rather than a standard permissive license. The Replicate option found (`geopti/sam-audio-large`) is community-hosted. | Evaluation-only research. Do not add an app adapter, credential, or student choice before institutional license/checkpoint and hosting review. |
 | Banquet / Query-Bandit | The reviewed repository head was `79ed5bb75e5c3a40cd319d9d990cee913fc65c26`. Its code is MIT licensed and the README reports beyond-four-stem separation, including reeds and organs, but the documented bring-your-own-query path takes query audio rather than the normalized text target used by AudioSep/SAM-Audio. | Phase 5 only. It needs a different query/provenance design and a coherent multi-stem decision before any private GPU packaging. |
 
@@ -46,6 +46,17 @@ failure. A teacher session can read bounded summaries; the class code and
 student job response cannot. Historical readback remains available after a
 flag rollback.
 
+An additive `course-semester-provider-starts-v1` policy now requires one safe
+course id, semester id, and integer ceiling before the dormant claim transition
+can authorize any teacher-beta attempt. The reservation insert and state change
+run atomically. Concurrent teachers therefore share one ceiling; every retry
+consumes a new start; provider failure and ordinary job deletion do not refund
+spend; and a changed ceiling or policy fails closed once reservations exist.
+The no-cascade ledger is update/delete-immutable so ordinary retention cannot
+silently restore spend. Shadow rows cannot enter it. This is a local
+authorization mechanism, not proof of an accepted course budget: all three
+variables remain unset and no teacher-beta execution route exists.
+
 The private analyzer now exposes an authenticated `/v1/fingerprint` contract
 that streams the exact stored source through the same origin, redirect, byte,
 timeout, concurrency, and temporary-file controls as analysis. It returns a
@@ -70,10 +81,11 @@ or deletion rather than trusting an earlier cache identity.
 The provider-start adapter itself remains unimported by `src/index.ts`. No
 provider-start, webhook, or output-download route exists, and shadow rows are
 excluded from the claim transition, so a flipped flag still cannot spend
-money. The next executable phase must add a semester budget, resolve the
-checkpoint provenance blocker, test signed-source lifetime and output
-hydration/retention, and pass the fixed evaluation manifest before any route
-may construct the adapter.
+money. Before any route may construct the adapter, the next executable phase
+must resolve the checkpoint provenance blocker, select and approve the exact
+course/semester/ceiling, test signed-source lifetime and output
+hydration/retention, and pass the fixed evaluation manifest. That later route
+must use the existing atomic claim rather than inventing a second spend path.
 
 ## Primary sources
 

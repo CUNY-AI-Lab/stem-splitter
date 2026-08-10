@@ -271,6 +271,21 @@ separator, 30 discovery, 9 YAMNet, and 19/6/1 browser tests. No fresh native
 reports or candidate artifact were created, and all processing flags and live
 Railway topology remain unchanged.
 
+Exact query-isolation budget commit `d207d4b` closes the remaining local spend-
+ceiling seam without making AudioSep executable. A versioned, fail-closed
+policy binds one course, one semester, and a maximum number of provider starts.
+The claim transition atomically reserves from an immutable ledger before it can
+move a teacher-beta row to processing; concurrent teachers share the same
+course-semester ceiling, every retry consumes another start, deleting a job
+does not refund its spend, and changing the ceiling after reservations begin
+fails closed. Shadow demand cannot reserve budget, and missing, incomplete, or
+invalid policy configuration cannot authorize a claim. The exact commit passes
+the complete Bun 1.3.14 Phase 0 gate: 228 worker, 24 analyzer, 33 Railway
+host/config/migration, 5 separator, 30 discovery, 9 YAMNet, and 19/6/1 browser
+tests. No provider-start route imports the dormant adapter, and no Railway
+variable, live migration, service, prediction, deployment, push, or pull
+request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -278,10 +293,12 @@ job, and redacted from student payloads. The job digest is write-once after its
 first verification; its source key and type then freeze. Resource creation
 atomically requires the supplied source type and digest to equal the completed
 job. Shadow rows default to a non-executable rollout stage and cannot enter the
-provider claim transition. No Replicate
-prediction path, Railway variable change, or deployment was added. AudioSep
-checkpoint provenance, semester budgeting, quality/cost evaluation, output
-hydration/retention, and live rollback evidence remain open.
+provider claim transition. No Replicate prediction path, Railway variable
+change, or deployment was added. The course-semester reservation mechanism is
+implemented locally, but its canonical scope/ceiling and live teacher-beta
+acceptance are intentionally unset. AudioSep checkpoint provenance,
+quality/cost evaluation, output hydration/retention, and live rollback evidence
+remain open.
 The local CI workflow now invokes the isolation-shadow browser journey as an
 explicit source gate at commit `e67dd3b`; because the branch remains absent from
 GitHub, no native run has yet proved that committed workflow step.
@@ -1160,8 +1177,14 @@ license status. Overall accuracy alone is insufficient.
   maximum-isolation limits before enabling the paid endpoint. The dormant
   resource now atomically enforces one processing request, two attempts,
   15-minute deadlines, and two requests per track. Shadow rows carry a distinct
-  rollout stage that the claim transition cannot select. A semester-wide
-  teacher/course budget remains before any paid endpoint.
+  rollout stage that the claim transition cannot select. Commit `d207d4b` adds
+  a versioned course-semester provider-start ceiling and reserves it in the same
+  transaction as each claim. Reservations are immutable, shared across
+  teachers in the configured course, survive ordinary job deletion, charge
+  every retry, reject concurrent overspend, and freeze the policy once spend
+  begins. This combined item remains open because the canonical course,
+  semester, and ceiling are not configured or accepted on Railway and no paid
+  endpoint exists to exercise the complete provider lifecycle.
 - [ ] Label outputs “optional instrument isolations,” with model/version and
   limitations available in the UI. The teacher-only API summary now supplies
   that label, exact identity, and limitations without storage keys; no UI is

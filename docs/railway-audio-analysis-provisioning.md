@@ -76,11 +76,14 @@ analysis/classifier services. The app now has a separate resource and a
 teacher-only shadow route, but shadow rows cannot be claimed and the app has no
 provider-start path. Its pre-spend seam re-fingerprints the original into an
 app-owned immutable snapshot and the provider contract accepts only that
-snapshot URL; this guard does not authorize execution. Semester budgets,
-checkpoint provenance, and the quality gate remain open. SAM-Audio remains an
-evaluation-only community deployment subject to institutional license and
-checkpoint review. Banquet, if later justified, becomes its own scale-to-zero
-GPU service and never runs inside either warmed Railway CPU service.
+snapshot URL; this guard does not authorize execution. A local atomic budget
+ledger now requires an exact course, semester, and maximum provider-start count
+for every future teacher-beta claim. Those values remain deliberately absent;
+the hosted checkpoint provenance, budget approval/live acceptance, and quality
+gate remain open. SAM-Audio remains an evaluation-only community deployment
+subject to institutional license and checkpoint review. Banquet, if later
+justified, becomes its own scale-to-zero GPU service and never runs inside
+either warmed Railway CPU service.
 
 ## Variables
 
@@ -140,6 +143,9 @@ runtime.
 | `QUERY_ISOLATION_ENABLED` | `false` |
 | `QUERY_ISOLATION_MODE` | `off` |
 | `REPLICATE_AUDIOSEP_VERSION` | leave absent through Phases 1-2; review and stage one exact 64-hex version only with the Phase 3 isolation resource |
+| `QUERY_ISOLATION_COURSE_ID` | leave absent through Phases 1-2 and Phase 3 demand shadow; stage one reviewed lowercase course scope only for a later teacher-beta execution release |
+| `QUERY_ISOLATION_SEMESTER_ID` | leave absent through Phases 1-2 and Phase 3 demand shadow; stage the matching reviewed lowercase semester scope only for that later release |
+| `QUERY_ISOLATION_MAX_PROVIDER_STARTS` | leave absent through Phases 1-2 and Phase 3 demand shadow; stage an approved integer from 1 through 1000 only with the two scope variables |
 
 The app and analyzer both compile the exact `autosplit-role-v4` pin. A response
 from any other role-classifier version fails the analysis contract and takes
@@ -265,14 +271,29 @@ provider calls.
 For the later Phase 3 demand-shadow gate, keep provider execution absent. Stage
 the reviewed `REPLICATE_AUDIOSEP_VERSION`, read it back without printing any
 token, then set `QUERY_ISOLATION_ENABLED=true` and
-`QUERY_ISOLATION_MODE=shadow` as one reviewed app release. A signed-in teacher
-request must make the analyzer fetch the stored bytes through
+`QUERY_ISOLATION_MODE=shadow` as one reviewed app release. Keep
+`QUERY_ISOLATION_COURSE_ID`, `QUERY_ISOLATION_SEMESTER_ID`, and
+`QUERY_ISOLATION_MAX_PROVIDER_STARTS` absent: shadow demand neither needs nor
+may consume a paid-provider budget. A signed-in teacher request must make the
+analyzer fetch the stored bytes through
 `POST /v1/fingerprint`, persist no digest in either teacher or student JSON,
 normalize the target, deduplicate repeats, and stop at two targets per job.
 Verify the row reports `shadowed`, `attempts=0`, and `providerStarted=false`.
 Reject the release if any Replicate prediction is created or any shadow row can
 transition to processing. This gate records demand only; it does not approve
 the still-unverified hosted AudioSep checkpoint.
+
+Only a later, separately reviewed teacher-beta execution release may stage the
+three budget variables, and it must stage them as one set while execution stays
+off. Require `/healthz.configuration.queryIsolationBudget=configured` without
+printing the values. The first provider start freezes that exact policy for the
+course-semester scope; changing the maximum afterward must fail closed rather
+than silently increase the allowance. Verify concurrent claims across two
+teachers never exceed the ceiling, failed attempts and retries remain charged,
+ordinary job deletion does not refund spend, and a new semester starts with a
+separate zero-usage scope. Do not add that release until checkpoint provenance,
+provider output hydration/retention, the fixed quality/cost evaluation, and the
+provider-start/webhook path all pass review.
 
 For the later Phase 2 gate, deploy `instrument-discovery` before adding its
 three analyzer variables and keep `INSTRUMENT_DISCOVERY_ENABLED=false` on the
@@ -306,7 +327,9 @@ Query isolation has an independent rollback: restore
 `QUERY_ISOLATION_ENABLED=false` and verify readback. Historical teacher
 readback remains available, but no new shadow request can be created. Do not
 delete shadow rows during rollback; they are versioned demand evidence and
-cannot execute.
+cannot execute. A later teacher-beta rollback must also preserve the immutable
+budget ledger: disabling execution stops new reservations but does not refund
+provider starts already authorized.
 
 Authoritative mode is not part of initial provisioning. It requires the pinned
 image, private-service resource tests, real-audio listening, restart,
