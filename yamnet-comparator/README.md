@@ -48,5 +48,11 @@ npm run eval:yamnet:image
 The evaluator resolves the tag to an immutable image id, verifies the baked
 lock identity, and runs each source in an ephemeral non-root container with a
 read-only root, no network, dropped capabilities, bounded CPU/RAM/PIDs, and a
-private no-exec `/tmp`. Timing from an emulated amd64 image is diagnostic only;
-native amd64 and human review remain separate promotion gates.
+private no-exec `/tmp`. New corpus reports use schema v2 and bind the Node
+runtime, TypeScript configuration, dependency locks, every transitive host-side
+evaluator source, a SHA-256 checked before and after scoring every hydrated
+audio input, and the exact decoded PCM/window sample plan. The checked-in arm64
+schema-v1 reports remain immutable historical evidence and must be rerun rather
+than edited after source drift.
+Timing from an emulated amd64 image is diagnostic only; native amd64 and human
+review remain separate promotion gates.

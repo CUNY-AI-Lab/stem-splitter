@@ -86,6 +86,27 @@ storage credential, class code, job id, filename, or volume. This follows
 TensorFlow's [serialized-model security guidance](https://github.com/tensorflow/tensorflow/security)
 without turning the comparator into an application dependency.
 
+### Evaluator provenance follow-up
+
+The original arm64 corpus and control JSON remain immutable schema-v1
+historical artifacts. A later adversarial pass found that the corpus report did
+not name every transitive host-side source used for loading, decoding, window
+selection, and contract pins, and it retained only the corpus's legacy SHA-1
+for each hydrated file. Updating those recorded hashes in place would falsify
+the evidence.
+
+The current corpus evaluator therefore emits schema v2. It adds the exact Node
+version, TypeScript configuration, and dependency locks, plus a complete named
+SHA-256 map for the runner, loader, decoder, bounded process helper, windowing
+policy, analysis pins, vocabulary module/data,
+corpus, expectations, mapping, and package manifest, plus a SHA-256 checked
+before and after scoring for each hydrated audio input and a digest of the exact
+decoded PCM/window sample plan sent to the comparator. The evaluator also
+rejects any source-file drift during the run. The native-amd64 workflow watches
+the same paths so a transitive change cannot bypass the image gate. A new
+native-amd64 corpus-v2 report and refreshed control report remain required
+before this evaluator can support any later selection decision.
+
 ## Licensed-corpus result
 
 The durable, non-promotion report is
@@ -173,17 +194,19 @@ slice from performed-track evidence.
 
 ## Verification
 
-Exact Bun 1.3.14, invoked through its pinned npm package because this shell had
-no global Bun on `PATH`, ran the literal `test:phase0` command successfully:
+Exact executable-source commit `4cf452e` passed the literal `test:phase0`
+command under Bun 1.3.14, invoked through its pinned npm package because this
+shell had no global Bun on `PATH`:
 
-- 141 worker/shared-contract tests;
-- 21 analyzer tests;
-- 14 Railway-host and migration tests;
+- 152 worker/shared-contract tests;
+- 22 analyzer tests;
+- 22 Railway-host and migration tests;
 - 5 separator tests;
 - 30 discovery service/evaluator tests;
 - 9 dependency-light YAMNet contract tests;
 - 19 flags-off browser E2E tests; and
-- 4 authoritative server-Auto browser E2E tests.
+- 4 authoritative server-Auto plus 1 teacher-isolation-shadow browser E2E
+  tests.
 
 The YAMNet image separately passed a real eleven-source native arm64 run, the
 eight-control native-arm64 run, a current-source amd64-on-arm64 jazz-sax run,

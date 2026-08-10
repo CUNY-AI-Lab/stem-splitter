@@ -53,10 +53,18 @@ candidate negatives only: no teacher has listened to them, so the report makes
 no precision claim and selects no threshold. This is a stronger controlled
 comparison, not promotion evidence.
 A path-scoped, secret-free native-amd64 image workflow is defined locally but
-has not yet run on GitHub, and no detection has been promoted. See the
+has not yet run on GitHub, and no detection has been promoted. Its path filter
+now covers every transitive host-side evaluator source; otherwise decoder,
+windowing, corpus, or contract changes could bypass the native image gate.
+Future corpus reports use schema v2, bind those source digests, the Node
+runtime, TypeScript configuration, and dependency locks, and add both a
+before/after-verified SHA-256 for every hydrated audio input and a digest of the
+exact decoded PCM/window sample plan passed to the comparator. The existing
+arm64 v1 artifacts remain immutable historical evidence and require a clean v2
+rerun; their recorded digests must not be rewritten to match later source. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
-The complete local Phase 0 command now passes 152 worker, 22 analyzer, 21
+The complete local Phase 0 command now passes 152 worker, 22 analyzer, 22
 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19
 flags-off browser, 4 authoritative-Auto browser, and 1 teacher-isolation-shadow
 test under exact Bun 1.3.14. The fingerprint-capable analyzer also rebuilds and
@@ -68,8 +76,11 @@ this local gate does not close either acceptance boundary.
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
-job, and redacted from student payloads. Shadow rows default to a non-executable
-rollout stage and cannot enter the provider claim transition. No Replicate
+job, and redacted from student payloads. The job digest is write-once after its
+first verification; its source key and type then freeze. Resource creation
+atomically requires the supplied source type and digest to equal the completed
+job. Shadow rows default to a non-executable rollout stage and cannot enter the
+provider claim transition. No Replicate
 prediction path, Railway variable change, or deployment was added. AudioSep
 checkpoint provenance, semester budgeting, quality/cost evaluation, output
 hydration/retention, and live rollback evidence remain open.
@@ -289,6 +300,10 @@ individual target isolations.
 - [x] Make every new persistent schema change additive. Update `schema.sql`,
   the Railway `node:sqlite` migration path, its regression tests, and a future
   numbered D1 migration together.
+- [x] Keep timing assertions deterministic by injecting the service clock.
+  The full gate exposed a wall-clock millisecond-boundary failure in the
+  fingerprint contract test; fixed elapsed-time behavior now uses the existing
+  clock seam instead of assuming an async request completes in exactly 0 ms.
 - [x] Build a fixed, authorized eleven-source evaluation manifest spanning rock,
   jazz, orchestral/chamber, electronic, hip-hop, folk/traditional, and sparse
   acoustic music. Record source rights and expected audible instruments.
@@ -465,7 +480,12 @@ job.
   36-label mapping. Fifteen unsupported labels stay explicit. Every corpus
   source runs by immutable image ID in a distinct networkless, read-only,
   non-root, resource-bounded container, and the report binds the image, lock,
-  source, corpus, expectation, and mapping identities. The eleven-source run
+  source, corpus, expectation, and mapping identities. The hardened v2
+  evaluator additionally binds its transitive loader/decoder/windowing/contract
+  sources, runner, Node version, Bun lock, and each stable hydrated input's
+  SHA-256. Its native workflow watches all of those paths. The prior arm64 v1
+  JSON remains an immutable comparison artifact rather than current-evaluator
+  evidence. The eleven-source run
   ranked 16/40 eligible reviewed groups in the top 3, 21/40 in the top 5, and
   31/40 in the top 10, with a 3,507-basis-point mean reciprocal rank. No
   threshold was selected and no precision claim is available. See
@@ -549,8 +569,12 @@ job.
   immutable image ID, reject other platforms, compare the repository lock to a
   lock hash derived and baked inside that image, and pass an exact provenance
   object into version-bumped reports. Exact-schema and baked-lock mismatch
-  regressions pass. The rejected CLAP JSON remains historical non-self-contained
-  evidence; this hardening applies to the required YAMNet/replacement reruns.
+  regressions pass. YAMNet report schema v2 now also binds every transitive
+  host-side evaluation source, the Node runtime, TypeScript configuration,
+  dependency locks, stable SHA-256 of hydrated audio, and the exact decoded
+  PCM/window sample plan; its native workflow cannot skip those paths. The
+  rejected CLAP JSON and existing YAMNet v1 JSON remain historical evidence;
+  this hardening applies to the required clean YAMNet/replacement reruns.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label.
 - [x] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine
@@ -631,6 +655,35 @@ license status. Overall accuracy alone is insufficient.
   server-fetched bytes before storage. The private digest persists on `jobs`
   but is absent from student and teacher response bodies. Duplicate shadow
   requests are idempotent.
+  The digest is write-once after its first verification, and the resource's
+  conditional insert atomically requires exact equality with both the job's
+  stored source type and digest. Missing, legacy-null, changed, or caller-
+  supplied mismatched identities fail before a row can be created or returned
+  idempotently. The first-hash compare-and-set also binds the completed state,
+  source key, and source type that were fingerprinted. Once the digest exists,
+  database triggers freeze that key/type, and duplicate readback rechecks every
+  stored cache-material/provider field rather than trusting the cache-key string
+  alone.
+- [ ] Before enabling any provider-start path, fingerprint the source again
+  immediately before spend and compare it to the write-once job digest. A
+  still-valid browser PUT URL or later object replacement must not let the
+  provider consume bytes different from the cache identity or completed core
+  split; test overwrite, expiry, deletion, and same-digest retry cases.
+- [x] Re-run the complete local Phase 0 gate after write-once source identity,
+  atomic idempotent-read validation, and trigger-aware E2E schema integration.
+  On 2026-08-10 exact executable-source commit `4cf452e` passed a frozen Bun
+  1.3.14 install, all three typechecks, 152 worker, 22 analyzer, 22
+  Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19 flags-off
+  browser, 4 authoritative-Auto browser, and 1 isolation-shadow E2E test.
+  The commit whitespace check also passes. This is local committed-source
+  evidence, not a native GitHub run, migration application, or Railway
+  acceptance.
+- [x] Reconcile release state after `4cf452e`. The branch is still absent from
+  `origin` and has no pull request. The canonical Railway service's newest
+  deployment remains `SUCCESS` deployment `7f4bc330…` from 2026-08-08, so it
+  cannot contain the 2026-08-10 hardening. Value-free live readback still shows
+  healthy prompt storage, the footer instructor link, and a 200 teacher page;
+  no variable, service, migration, or deployment was changed during this audit.
 - [x] Bind the verified fingerprint/shadow implementation to exact commit
   `10f6b0a`. Exact Bun 1.3.14 passes the literal `test:phase0` command with 152
   worker, 22 analyzer, 21 Railway host/migration, 5 separator, 30 discovery, 9

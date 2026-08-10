@@ -54,6 +54,19 @@ privately on `jobs`; neither teacher summaries nor student jobs expose it. A
 shadow request with no stored digest must obtain and compare-and-set this
 identity before it can create a resource row.
 
+An adversarial storage follow-up makes that digest write-once after the first
+verification and freezes its source key/type so the locator cannot be rebound
+underneath it. The isolation repository's conditional insert now requires the
+caller digest and source type to equal the completed job's stored values in the
+same SQL statement; a legacy null, mismatch, or race cannot create a row. This
+comparison also governs idempotent reads of preexisting rows, which recheck the
+stored cache material and provider fields instead of trusting a cache-key string
+alone. The first-hash compare-and-set binds the completed status, source key,
+and source type that were fingerprinted, rather than updating a merely matching
+job id. This still does not prove future provider bytes: immediately before any
+paid start, the app must re-fingerprint the signed object and reject replacement, expiry,
+or deletion rather than trusting an earlier cache identity.
+
 The provider-start adapter itself remains unimported by `src/index.ts`. No
 provider-start, webhook, or output-download route exists, and shadow rows are
 excluded from the claim transition, so a flipped flag still cannot spend

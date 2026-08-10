@@ -29,19 +29,34 @@ promotion on their own.
   `providerStarted=false`, attempts stay zero, and the false-default regression
   proves the route remains absent when the flags are omitted.
 - Migration: `0009` adds nullable constrained `jobs.source_hash`; `0010` adds
-  isolation rollout stage while forcing existing rows into `shadow`.
-  Railway boot checks both columns additively on every persistent-volume start.
+  isolation rollout stage while forcing existing rows into `shadow`; `0011`
+  makes a non-null job digest and its source locator immutable while still
+  permitting the first legacy `NULL` to verified-hash transition.
+  Railway boot adds missing columns and installs the identity triggers on every
+  persistent-volume start.
+- Adversarial identity follow-up: resource creation no longer trusts a valid-
+  looking digest supplied by its caller. Its one conditional insert requires
+  the completed job's exact source type and stored digest to match, so a race,
+  legacy null, or future internal caller cannot create cache metadata for
+  different bytes. Idempotent reads rejoin the same job identity and recheck
+  every stored cache-material/provider field; database triggers freeze the key
+  and type once the digest exists. The first-hash compare-and-set also binds the
+  fingerprinted source key, type, and completed state. The provider-start phase
+  must still re-fingerprint the object immediately before spend to detect
+  object replacement after job creation.
 - Local gate: exact Bun 1.3.14 passes all three typechecks plus 152 worker, 22
-  analyzer, 21 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19
+  analyzer, 22 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19
   flags-off browser, 4 authoritative-Auto browser, and 1 isolation-shadow E2E
   test. Native-arm64 image
   `sha256:e2ebd8c3d2452ccd34be371ab9222a8a3f9408faaaf4e7cd7d306bbf45e6838f`
   also passes the constrained smoke, including analyze/fingerprint hash parity.
   Native-amd64 CI and Railway acceptance must still repeat the image gate.
-- Source gate: exact implementation commit `10f6b0a` contains the source that
-  passed that literal `test:phase0` command. It is local only: no remote branch,
-  pull request, Railway variable, service, migration, or deployment contains
-  this version yet.
+- Source gate: exact commit `10f6b0a` preserves the prior verified-fingerprint
+  and shadow-route baseline. Exact commit `4cf452e` adds the write-once digest
+  and locator triggers, atomic repository/cache-material identity checks, and
+  expanded evaluator provenance; it passed the updated literal `test:phase0`
+  command above. No remote branch, pull request, Railway variable, service,
+  migration, or deployment contains this follow-up yet.
 - Image evidence:
   `docs/evaluation/2026-08-10-audio-analysis-fingerprint-image.md` binds the
   local image identity, source hashes, command, result, resource sample, and
@@ -126,6 +141,14 @@ promotion on their own.
   networkless, read-only, resource-bounded container. The image bakes the exact
   dependency-lock and source hashes; the report binds those identities plus
   the corpus, reviewed expectations, mapping, and local decoder versions.
+- Evaluator provenance follow-up: schema v2 binds a before/after-stable SHA-256
+  for every hydrated input, the exact decoded PCM/window sample plan, the Node
+  runtime, TypeScript configuration and dependency locks, and every transitive
+  host-side source that can change loading, decoding, windowing, contracts, or
+  scoring. The native-amd64 workflow watches the same paths. Existing arm64
+  schema-v1 reports retain their original source hashes as immutable historical
+  evidence and need a new
+  v2 run; they are not rewritten when the evaluator changes.
 - Licensed-corpus result: 11 sources, 40 eligible reviewed groups, and 2
   unsupported groups. Top-3/top-5/top-10 coverage was 16/21/31; mean reciprocal
   rank was 3,507 basis points. Voice and keys ranked strongly, but brass,

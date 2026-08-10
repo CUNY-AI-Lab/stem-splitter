@@ -9,13 +9,14 @@ not authorize a release.
 - Canonical checkout: `/Users/milwright/Projects/dev/stem-splitter`.
 - Branch: `codex/v3.2-audio-pipeline`.
 - Implementation base: `9c3120c` (`feat: link footer to instructor console`).
-- The reviewed executable lineage now reaches local commit `4a3fbf1` (`fix:
-  fail closed on prompt history drift`). Discovery evaluation is bound to
+- The reviewed executable lineage now reaches local commit `4cf452e` (`fix:
+  harden source identity and evaluator provenance`). Discovery evaluation is bound to
   `ccf7f53`, teacher seed hardening to `e372ab4`, shared import deadlines to
   `c367e23` plus `fe112ef`, Innertube transport to `fce98cf`, Railway prompt
   transactions to `821f5e1`, prompt-aware guide caching to `e640c72`, and the
-  latest complete local source gate to `4a3fbf1`.
-- GitHub has no open pull request for this branch. PRs 1–5 are merged historical
+  prompt-history integrity to `4a3fbf1`, verified fingerprint/shadow routing to
+  `10f6b0a`, and the latest complete local source gate to `4cf452e`.
+- GitHub has no pull request for this branch. PRs 1–5 are merged historical
   work and must not be cited as delivery of this implementation. The current
   branch does not exist on `origin`.
 - Canonical Railway scope is project
@@ -27,8 +28,10 @@ not authorize a release.
   `web` service. Release commands now use explicit canonical IDs so that local
   link cannot redirect a write.
 - A value-free readback confirms the exact YouTube importer-version variable is
-  staged on the canonical Railway service. The latest successful deployment
-  predates that staged change and remains active. No service topology,
+  staged on the canonical Railway service. The newest deployment remains
+  `SUCCESS` deployment `7f4bc330-4c52-4257-8762-3b85a24b2d07`, created
+  2026-08-08T21:10:37.179Z; it predates `4cf452e` and the staged importer change.
+  No service topology,
   deployment, volume, or Cloudflare resource was created or changed.
 - The same value-free readback confirms only that the `TEACHER_SEED` key exists;
   its value was not read. The live mixer contains the discrete `INSTRUCTOR`
@@ -46,7 +49,8 @@ not authorize a release.
 | Phase 2 advisory isolation | An incomplete discovery schema initially broke five core tests and made a valid six-track authoritative result silently fall back to four. Version names alone also allowed model weights or vocabulary content to drift, and an unconstrained HTTPS target could exfiltrate PCM. | Discovery parsing is quarantined from core routing; schema, checkpoint, weight, vocabulary version, and vocabulary content hash are exact pins. The analyzer sends bounded PCM only to loopback/private Railway origins, rejects redirects and malformed tokens, and redacts labels/private pins from student responses. | Contract/client and teacher-auth/redaction E2E pass. The tested CLAP pairing is rejected; replacement calibration and any Railway service remain open. |
 | Phase 2 evaluation truth | A newly authored discovery expectation file named positives, hard negatives, and confusion coverage but was untracked and had no consumer, so pins or corpus labels could drift while “bidirectional” claims remained prose. | A contract test now binds all eleven licensed file sources to exact classifier/weight/vocabulary/sample-rate pins, requires every reviewed corpus term to map exactly once, rejects unknown/contradictory labels, and proves each claimed bidirectional trial has evidence in both directions. | Structural and raw-score gates pass as evidence collection. The current CLAP pairing fails usefulness; human listening and comparable replacement scores remain mandatory before promotion. |
 | Phase 2 isolated-control truth | Mixed recordings could not distinguish a weak classifier from an instrument masked by the arrangement, while calling every omitted label a negative would manufacture precision. | Eight exact-hash CC BY 4.0 ChoraleBricks tracks separately cover four woodwinds and four brass instruments. The same-origin hydrator bounds redirect, type, length, bytes, timeout, path, and overwrite behavior; the report keeps positives dataset-authored and all 278 non-positive labels candidate-only until teacher listening. | Live hydration, offline readback, native-arm64 scoring, and contract tests pass. Six eligible exact labels are top-three; oboe/tuba remain unsupported. No threshold or precision claim exists. |
-| Candidate-report provenance | The rejected CLAP report recorded classifier, weight, vocabulary, and some source hashes, but its Docker image/platform and dependency lock existed only in prose. A mutable tag could also be inspected and then retargeted before execution. | The hardened CLAP runners resolve and execute one immutable `linux/amd64` image ID and compare the worktree lock with a digest derived inside that image. The separate YAMNet comparator likewise binds immutable image/platform, baked lock and source hashes, official artifact/class-map pins, mapping, corpus, and expectations; non-amd64 reports are structurally marked comparison-only and never promotion-eligible. | Exact-schema, platform, baked-lock mismatch, shell-syntax, TypeScript, and candidate contract regressions pass in the worktree. Historical CLAP JSON remains rejection-only. The bound YAMNet arm64 report is a durable comparison, not native-amd64 or promotion evidence. |
+| Candidate-report provenance | The rejected CLAP report recorded classifier, weight, vocabulary, and some source hashes, but its Docker image/platform and dependency lock existed only in prose. A mutable tag could also be inspected and then retargeted before execution. The first YAMNet report omitted transitive host-side evaluator sources and per-input SHA-256, while its narrow workflow paths could skip decoder or corpus changes. | The hardened CLAP runners resolve and execute one immutable `linux/amd64` image ID and compare the worktree lock with a digest derived inside that image. YAMNet schema v2 likewise binds immutable image/platform, baked lock and image sources, official artifact/class-map pins, every transitive host evaluator source, Node runtime, TypeScript configuration, dependency locks, mapping/corpus/expectations, before/after-stable hydrated-audio SHA-256, and the exact decoded PCM/window sample plan; the native workflow watches the same paths. | Exact-schema, platform, baked-lock mismatch, shell-syntax, TypeScript, and candidate contract regressions pass locally. Historical CLAP JSON remains rejection-only, and the arm64 YAMNet v1 report remains immutable historical comparison evidence. A clean v2 native-amd64 rerun is still required. |
+| Phase 3 source identity | A route-level compare-and-set populated the right digest, but the repository accepted any valid-looking caller digest and nullable legacy source type; a race or future caller could bind cache metadata to bytes other than the completed job. A valid-looking cache key could also conceal a damaged row, and a later object replacement could make a paid provider consume bytes different from a correct earlier digest. | Numbered migration and Railway boot triggers make a non-null job digest, source key, and source type one immutable identity. Resource insert and idempotent readback require the completed job's exact identity; duplicate readback rechecks every stored cache-material/provider field. Explicit regressions reject null, mismatched, rebound, and preexisting inconsistent identities. | The complete local gate passes. Provider execution remains blocked; an immediate pre-spend re-fingerprint plus overwrite/expiry/deletion tests remains an explicit TODO before teacher beta. |
 | Browser responsiveness | Correct anti-alias resampling performed roughly 48 filter taps per output sample on the UI thread, risking a multi-second freeze on long tracks; Web Audio decode had no deadline and allocated the complete source. | Authoritative Auto no longer invokes Web Audio. Browser-only/shadow mode checks metadata first, caps sources at 5 minutes and 24 MiB, moves resampling/FFT into the worker, and gives decode and worker phases independent 20-second deadlines. | Real Chrome, policy unit test, and both Auto E2E paths pass. Proxy caps cannot exactly bound exotic multichannel/high-rate decoded PCM, so retiring the shadow decoder remains open. |
 | Browser/server window parity | The first browser guard wired no metadata events, so it always timed out; a separate downmix defect analyzed only the first third of sources shorter than 45 seconds while FFmpeg analyzed them in full. | Metadata success/error handlers are attached before loading. The browser now analyzes short sources in full and uses the same three 15-second positions as FFmpeg only when the source exceeds the budget; the flags-off E2E fixture must resolve to its measured two-track result rather than the four-track fallback. | Unit, targeted real-browser, and full flags-off E2E pass. |
 | Phase 1B fallback and transport | A degraded analyzer could falsely appear to agree with the browser fallback; a provider ignoring `AbortSignal` could hang job creation; an arbitrary HTTP URL, embedded URL credential, redirect, weak token, or malformed origin could leak the analyzer bearer token or signed source URL. Workerd also refuses to dispatch analyzer subrequests with `redirect: "error"`. | Degraded comparisons are `unavailable`; timeout uses an independent race; endpoint configuration accepts HTTPS plus loopback/private Railway HTTP only and rejects credentials/path/query/fragment; tokens require at least 32 characters; `redirect: "manual"` preserves Workerd compatibility while every 3xx is rejected without following; streamed JSON stops at 64 KiB. | Unit tests, Railway-host config tests, and all three mocked authoritative E2E journeys pass. |
@@ -58,9 +62,10 @@ not authorize a release.
 | Phase 1A decoder | Output-side seeking could decode from the start to reach later windows, consuming the timeout on long inputs. | FFmpeg uses bounded input-side accurate seeks for beginning, middle, and end; probe/decode share one phase deadline and stdout caps. | Real local fixture test passes. |
 | Phase 1A readiness | A classifier startup exception rejected the readiness promise and turned `/readyz` into a 500; liveness called the classifier too. | `/healthz` is process-only. Decoder and classifier failures settle to explicit 503 readiness reasons, and analysis stays unavailable. | Local service tests pass. |
 | Phase 1A privacy/versioning | Success logs omitted pins and included exact source byte count/duration. | Logs contain schema, classifier and FFmpeg versions plus bounded timing and decision metadata, but no URL, signature, token, raw features, source byte count, or source duration. | Local service tests inspect records. |
+| Deterministic acceptance timing | The fingerprint test asserted a real async request always completed within the same wall-clock millisecond, so a valid run intermittently reported 1 ms instead of 0 ms and failed the full gate. | The test now injects the service's existing clock dependency, preserving the exact timing contract without scheduler dependence. | The original full run failed at 21/22 analyzer tests and is not counted as acceptance. The corrected targeted test passes 22/22, and the complete frozen-install command subsequently passes. |
 | Build/release | The analysis README named a Dockerfile that did not exist; Docker contexts included ignored classroom corpus audio and could include `.dev.vars` variants; a broad FFmpeg build retained unnecessary codecs/formats; the final image copied static libraries, headers, examples, and 33 MB of unused root-project dependencies. | Non-root multi-stage image pins base digests and signature-verified FFmpeg checksum. FFmpeg explicitly disables unused component families and enables only required audio components and file/pipe protocols. Bun bundles the analyzer at build time; the runtime contains one application artifact plus `ffmpeg` and `ffprobe`. `.dockerignore` excludes secrets, corpus audio, caches, and private documents. | Local emulated `linux/amd64` role-v3 image passes runtime surface, readiness/auth, eight-format decode, and 11-source corpus gates. Native CI/Railway and resource gates remain. |
 | CI | The authoritative Auto E2E, analysis service, and current pinned image were absent from the GitHub workflow. | CI now runs analysis typecheck/tests, the three-source authoritative Auto suite, and a reusable constrained amd64 image smoke requiring FFmpeg 8.0.3, role v3 readiness, a narrow runtime surface, real short/max-duration audio, malformed/oversized/slow/concurrent cases, cleanup, and redacted logs. | The workflow is committed locally but the branch is not on GitHub, so no native GitHub run exists. The gitignored real corpus still requires a separate mounted/live run. |
-| YAMNet candidate CI | Local arm64 and amd64-under-emulation runs could hide native runner or image-surface failures. | A separate path-scoped, read-only-permission workflow pins Node 22.23.1, Python 3.12.13, action SHAs, `linux/amd64`, the image size/runtime/provenance surface, networkless constrained inference, and malformed PCM rejection. | Source and local native-arm64/emulated-amd64 smokes pass. The workflow has not run on GitHub, so native-amd64 evidence remains open. |
+| YAMNet candidate CI | Local arm64 and amd64-under-emulation runs could hide native runner or image-surface failures, and an incomplete path filter could avoid the workflow when a transitive evaluator dependency changed. | A separate path-scoped, read-only-permission workflow pins Node 22.23.1, Python 3.12.13, action SHAs, `linux/amd64`, the image size/runtime/provenance surface, networkless constrained inference, malformed PCM rejection, and every source path named by the v2 evaluator. | Source and local native-arm64/emulated-amd64 smokes pass for the prior source. The expanded workflow has not run on GitHub, so current native-amd64 evidence remains open. |
 | Railway configuration | Two projects share the same name, the YouTube fetcher requires an exact version, and variable edits redeploy by default. | Release docs use explicit IDs; the exact importer version was staged with deploys suppressed; the analyzer runbook uses typed Dockerfile configuration and value-free readiness reporting. | Value-free readback confirms the version key while the earlier successful deployment remains active; coordinated release activation remains. |
 
 ## Local validation evidence
@@ -126,6 +131,20 @@ tests bind the control manifest, secure hydrator, pending-review semantics,
 non-promotion report, and native image workflow. This remains local source and
 image evidence; no GitHub, Railway, or teacher-review gate changed state.
 
+The later query-isolation source-identity hardening was validated as exact
+executable-source commit `4cf452e`. The first complete run exposed two
+acceptance-fixture defects instead of being counted as a pass: a wall-clock
+millisecond assertion and an isolation seed whose digest did not match its core
+job. The corrected fixture stores and submits one exact digest, and the E2E
+schema loader now preserves trigger bodies containing internal semicolons. A
+fresh frozen Bun 1.3.14 install made no changes; the literal `test:phase0`
+command then passed all three typechecks, 152 worker tests, 22 analysis-service
+tests, 22 Railway server/migration tests, 5 separator tests, 30 discovery tests,
+9 YAMNet Python contracts, 19 flags-off browser journeys, 4 authoritative-Auto
+browser journeys, and 1 isolation-shadow journey. `git diff --check` also
+passes. This result is bound to the local commit, but not to a native GitHub
+run, applied Railway migration, or live service acceptance.
+
 The six Innertube-specific cases cover exact URL/path rejection, approved
 cross-origin redirect credential stripping, unapproved redirect rejection, the
 three-redirect ceiling, deadline preservation across redirects, and bounded
@@ -134,11 +153,12 @@ source imported “Me at the zoo” (19 seconds, 309,288 bytes). This is
 compatibility evidence, not musical-routing or Railway acceptance.
 
 Docker Desktop remained unavailable after its earlier metadata-store errors,
-so an existing stopped Colima VM was started without changing the active Docker
-context or its saved configuration. Its registered amd64 emulator provided an
-independent local build route. The first broad FFmpeg build reached irrelevant
-video/audio filter compilation and crashed under emulation; that failure
-exposed the overbroad build surface rather than becoming an accepted flake.
+so an existing stopped Colima VM was started without changing its saved
+configuration; Colima became the active Docker context. Its registered amd64
+emulator provided an independent local build route. The first broad FFmpeg
+build reached irrelevant video/audio filter compilation and crashed under
+emulation; that failure exposed the overbroad build surface rather than
+becoming an accepted flake.
 
 The corrected image compiles the checksum-pinned official FFmpeg 8.0.3 source
 with a reproducible single-job default, explicit component-family disables,
