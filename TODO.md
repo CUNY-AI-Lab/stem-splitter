@@ -624,6 +624,12 @@ license status. Overall accuracy alone is insufficient.
   server-fetched bytes before storage. The private digest persists on `jobs`
   but is absent from student and teacher response bodies. Duplicate shadow
   requests are idempotent.
+- [x] Bind the verified fingerprint/shadow implementation to exact commit
+  `10f6b0a`. Exact Bun 1.3.14 passes the literal `test:phase0` command with 152
+  worker, 22 analyzer, 21 Railway host/migration, 5 separator, 30 discovery, 9
+  YAMNet, 19 flags-off browser, 4 authoritative-Auto browser, and 1
+  isolation-shadow E2E test. No remote branch, PR, migration, Railway variable,
+  service, or deployment contains that commit.
 - [ ] Define cross-job output reuse only after output hydration, retention, and
   deletion semantics can prove that a cached artifact is still authorized and
   available. Matching source hashes alone do not authorize reuse.

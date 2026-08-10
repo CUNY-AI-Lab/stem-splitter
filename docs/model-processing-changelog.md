@@ -36,6 +36,10 @@ promotion on their own.
   flags-off browser, 4 authoritative-Auto browser, and 1 isolation-shadow E2E
   test. The analyzer image source changed, so its constrained-image smoke,
   native CI, and Railway acceptance must be repeated before release.
+- Source gate: exact implementation commit `10f6b0a` contains the source that
+  passed that literal `test:phase0` command. It is local only: no remote branch,
+  pull request, Railway variable, service, migration, or deployment contains
+  this version yet.
 - Remaining gate: do not add `teacher_beta` mode or import the provider-start
   adapter until the hosted checkpoint/license provenance, semester budget,
   output hydration/retention, common quality/cost evaluation, and live Railway
