@@ -411,8 +411,12 @@ deployment or enablement.
   explicit model plus `routingRequest: auto`, so it cannot bypass freezing.
   Because the job now retains the app-owned key, the later teacher-isolation
   boundary explicitly accepts that exact key family without accepting arbitrary
-  internal storage paths. Committed-source Phase 0 and real Railway resource
-  evidence remain separate gates below.
+  internal storage paths. Exact executable-source commit `e9f7ed9` passes the
+  literal Bun 1.3.14 Phase 0 gate from a clean detached worktree: all three
+  typechecks; 165 worker, 22 analyzer, 22 Railway/migration, 5 separator, 30
+  discovery, and 9 YAMNet tests; plus 19 baseline, 6 authoritative-Auto, and 1
+  isolation-shadow browser scenario. `git show --check` passes. Real Railway
+  resource/restart evidence remains separate.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.
   Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome,

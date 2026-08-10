@@ -20,21 +20,26 @@ promotion on their own.
 - Resource boundary: the Railway filesystem adapter streams writes through
   unique temporary files and serializes writers per key, so snapshotting the
   supported 100 MiB maximum does not first assemble an application-heap buffer.
-  Workerd wraps the bounded copy in a known-length stream before its object-store
-  put. A 60-second total copy deadline, recorded-size bound, collision check,
-  committed-size verification, and pre-job rollback fail closed.
+  The shared storage path supplies a known-length stream where the object-store
+  runtime requires one. A 60-second total copy deadline, recorded-size bound,
+  collision check, committed-size verification, and pre-job rollback fail closed.
 - Compatibility: authoritative mode freezes both current `model: auto` requests
   and the older valid explicit-model plus `routingRequest: auto` shape. Because
   the completed job now retains its app-owned snapshot key, the optional
   teacher-isolation source guard accepts that exact key family without widening
   to arbitrary internal storage paths.
-- Focused evidence: 38/38 source/routing tests and 6/6 authoritative-Auto browser
-  tests pass under Node 22.23.1 and Bun 1.3.14. The adversarial browser case
-  reuses the original PUT both before analyzer fetch and after analysis, then
-  proves the separator still downloads the initial snapshot bytes.
-- Remaining: exact committed-source Phase 0, native-amd64 CI, actual Railway
-  resource/restart acceptance, parity calibration, genre listening, and live
-  shadow/rollback evidence remain gates before authoritative promotion.
+- Evidence: exact executable-source commit `e9f7ed9` passes the literal
+  `test:phase0` gate from a clean detached worktree under Bun 1.3.14: all three
+  typechecks; 165/165 worker, 22/22 analyzer, and 22/22 Railway/migration tests;
+  5/5 separator, 30/30 discovery, and 9/9 YAMNet-comparator tests; plus 19/19
+  baseline, 6/6 authoritative-Auto, and 1/1 isolation-shadow browser scenarios.
+  The adversarial browser case reuses the original PUT both before analyzer
+  fetch and after analysis, then proves the separator still downloads the
+  initial snapshot bytes. `git show --check` also passes. This evidence is local
+  only: no push, PR, Railway mutation, or deployment occurred.
+- Remaining: native-amd64 CI, actual Railway resource/restart acceptance,
+  parity calibration, genre listening, and live shadow/rollback evidence remain
+  gates before authoritative promotion.
 
 ## server-auto-source-identity-v1 — imported-byte authority gate — 2026-08-10
 
