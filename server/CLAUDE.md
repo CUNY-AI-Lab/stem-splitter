@@ -84,7 +84,15 @@ or `--kv` output because both include raw secret values.
 - **D1** — `prepare().bind().first()/run()/all()`, `batch()`, `meta.changes`. `bind()` returns a *new* statement rather than mutating, matching D1; code in `src/` relies on that. `undefined` is coerced to `null` because `node:sqlite` rejects it.
 - **R2** — `put/get/head/delete/list`, plus the `R2Object` fields the call sites touch: `size`, `uploaded`, `httpMetadata`, `writeHttpMetadata(headers)`, and a streamed `body`. `writeHttpMetadata` is easy to miss; `/api/files/*` depends on it for content types.
 
-Objects are stored flat: `encodeURIComponent(key)` as the filename under `blobs/`, with a sidecar JSON in `meta/` carrying `size`/`uploaded`/`contentType`. Blob and meta are each written to a temp file and renamed, so a crash can't leave a meta entry pointing at a half-written blob. `uploaded` lives in that sidecar rather than on the filesystem because the 30-day retention logic in `src/r2.ts` reads `object.uploaded`, and mtime would be wrong after any copy or restore.
+Objects are stored flat: `encodeURIComponent(key)` as the filename under
+`blobs/`, with a sidecar JSON in `meta/` carrying
+`size`/`uploaded`/`contentType`. `put()` streams into unique temporary files and
+serializes writers per key; the prior complete blob remains visible until the
+new blob commits, so a concurrent browser PUT cannot splice its versions into
+an authoritative Auto snapshot. Blob and meta are each renamed only after the
+stream finishes. `uploaded` lives in the sidecar rather than on the filesystem
+because the 30-day retention logic in `src/r2.ts` reads `object.uploaded`, and
+mtime would be wrong after any copy or restore.
 
 `schema.sql` is applied on every boot and is canonical for fresh databases.
 `CREATE TABLE IF NOT EXISTS` cannot add a column to a table already stored on
@@ -115,7 +123,11 @@ These are properties of the app, not of the host, so the shims must not quietly 
 
 - **`/api/files/*` serves only `stems/`.** Uploaded originals are never served back out. Verify with a request for an `uploads/…` key; it must 404.
 - **30-day retention.** `src/r2.ts` enforces expiry on read and runs hourly cleanup whenever `isLocalHosting(env)` is true, which it is here. `list()` must keep returning accurate `uploaded` values or retention silently stops working.
-- **Uploads are fixed-length only.** `src/index.ts` rejects chunked and oversized uploads *before* reading the body. `put()` buffers fully (100 MB ceiling, enforced upstream), which is fine only because those checks come first.
+- **Uploads are fixed-length only.** `src/index.ts` rejects chunked and oversized
+  uploads *before* reading the body. `put()` streams the accepted body to disk;
+  do not reintroduce a full 100 MB application buffer. Shared authoritative Auto
+  also streams its source snapshot, and its analyzer/separator URLs must retain
+  the same app-owned key.
 - **`WEBHOOK_SECRET` is environment-specific.** It signs source URLs; use a
   fresh random value for local/test environments and never copy the Railway
   production value into them.

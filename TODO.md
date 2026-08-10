@@ -64,11 +64,17 @@ arm64 v1 artifacts remain immutable historical evidence and require a clean v2
 rerun; their recorded digests must not be rewritten to match later source. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
-The complete local Phase 0 command now passes 152 worker, 22 analyzer, 22
-Railway host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19
-flags-off browser, 4 authoritative-Auto browser, and 1 teacher-isolation-shadow
-test under exact Bun 1.3.14. The fingerprint-capable analyzer also rebuilds and
-passes the constrained smoke on native arm64 as local image
+Exact committed source `fe0a5ff` now passes the complete local Phase 0 command
+from a clean detached checkout: 181 worker, 22 analyzer, 28 Railway
+host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
+browser, 6 authoritative-Auto browser, and 1 teacher-isolation-shadow test
+under exact Bun 1.3.14, plus all three typechecks and `git diff --check`. This
+supersedes the earlier rejected moving-tree runs without rewriting their
+history. The same committed editor also passes an in-app desktop/mobile QA
+journey: versioned assets, tail-first read-only Markdown structure, true
+top-of-prompt caret navigation, distinct effective policy provenance, revision
+snapshot readback, and confirmed-logout DOM scrubbing. The fingerprint-capable
+analyzer also rebuilds and passes the constrained smoke on native arm64 as local image
 `sha256:e2ebd8c3…`, including analyze/fingerprint hash parity and a final 61.68
 MiB runtime sample. Native-amd64 CI and Railway must still reproduce the image;
 this local gate does not close either acceptance boundary.
@@ -84,6 +90,9 @@ provider claim transition. No Replicate
 prediction path, Railway variable change, or deployment was added. AudioSep
 checkpoint provenance, semester budgeting, quality/cost evaluation, output
 hydration/retention, and live rollback evidence remain open.
+The local CI workflow now invokes the isolation-shadow browser journey as an
+explicit source gate at commit `e67dd3b`; because the branch remains absent from
+GitHub, no native run has yet proved that committed workflow step.
 
 This roadmap extends AutoSplit beyond assumptions inherited from a traditional
 rock-band mix. The goal is to recognize and optionally isolate instruments such
@@ -123,12 +132,38 @@ because its model or service is available.
   prompt version/SHA, effective SHA, and amendment snapshot in revision history
   so prompt changes remain traceable without letting a browser edit fixed
   guardrails.
+- [x] Resolve the instructor landing-page browser review. The tagline now uses
+  sentence-case “listening guide.” A scoped submit style gives `SIGN IN` a
+  44-pixel minimum target, balanced vertical padding, centered text, and a
+  visible keyboard-focus outline without changing other `.yt-go` controls. The
+  teacher page versions its stylesheet and script together so neither stale
+  layout nor stale caret/pagination/logout behavior can survive the update. The
+  caret now focuses and brings the true first prompt line into the viewport.
+  Real-browser readback measures 44 pixels, and the instructor E2E asserts the
+  text, asset versioning, minimum target height, inner scroll, and viewport
+  position.
+- [x] Keep provider and student data from impersonating those fixed guardrails.
+  Prompt version `2026-08-10.2` JSON-escapes control characters and quotes in
+  the imported title, custom channel labels, and timeline notes before placing
+  them in the system message, and explicitly labels all three as untrusted data.
+  An injection-shaped fingerprint variant covers newline, quote, and Unicode
+  line-separator behavior so weakening that encoding changes the governed hash
+  and guide-cache identity. Direct policy tests prove those values cannot create
+  a new fixed-prompt line.
 - [x] Document Railway-first teacher provisioning, deprovisioning, rotation,
   rollback, and acceptance. Generate verifier records through a hidden prompt
   in an explicit Bash subprocess so the documented command is safe from the
   workspace's default Zsh as well as Bash. The helper bounds/validates stdin and
   seed identity fields before PBKDF2, with direct regressions. This documentation
   does not replace the authorized live persistence check below.
+- [x] Keep teacher governance complete beyond one browser page. The prompt API
+  returns a bounded newest-first page plus an authenticated keyset cursor; the
+  console appends earlier pages until every retained immutable revision is
+  reachable instead of silently stopping at 40. A 43-revision server regression
+  proves non-overlap and a 42-revision browser journey proves the complete trail.
+  Seed reconciliation also rejects a supplied non-string display name before
+  any authoritative account write, so malformed optional metadata cannot cause
+  a partial rename or provisioning change.
 - [ ] Complete the remaining live teacher-console acceptance check from
   `docs/superpowers/plans/2026-08-08-autosplit-prompt-governance.md`: save one
   revision with an authorized real teacher account, restart Railway, and prove
@@ -142,29 +177,65 @@ because its model or service is available.
   unknown-account PBKDF2 work,
   cap concurrent password checks, throttle failure bursts on the current
   single-replica Railway process, and make teacher responses `no-store`.
+- [x] Make session expiry and sign-out truthful. Parse stored ISO timestamps
+  before comparing them with SQLite time so a same-day expired session cannot
+  survive until midnight. The console now remains visibly signed in when the
+  logout request fails; only a confirmed server logout hides the console, and
+  that path clears the amendment, preview, prompt history, actor metadata, and
+  credentials from the DOM. Deterministic SQLite and real-browser regressions
+  cover expiry, cleanup, failed logout, confirmed revocation, and DOM scrubbing.
 - [x] Preserve the prompt/history/cache transaction under concurrent Railway
   requests. A direct reproduction showed the Node D1 shim allowed a second
   `batch()` to issue `BEGIN` while the first batch was suspended; each
   synchronous SQLite batch now runs without an internal await. Prompt update,
   append-only revision, and guide-cache deletion share one rollback boundary,
   only the winning compare-and-swap may invalidate guides, and the save response
-  reads back its exact revision instead of whichever revision is newest.
-  Concurrent-batch, losing-CAS, and concurrent-save regressions pass at
-  `821f5e1`.
+  is assembled from its immutable revision instead of rereading whichever
+  settings revision is newest. A forced later-save interleaving proves the first
+  response cannot mix the second teacher's amendment with the first teacher's
+  hashes. The original concurrent-batch, losing-CAS, and concurrent-save slice
+  is committed at `821f5e1`; exact commit `fe0a5ff` binds the exact-readback
+  follow-up and its clean combined gate.
 - [x] Prevent stale guide generations from undoing prompt governance. Each
-  cached guide records the code-owned `SYSTEM_PROMPT_VERSION` and monotonic
-  amendment revision; its single-statement upsert succeeds only while that
-  revision remains current. A guide begun before a teacher edit can finish for
-  its original caller but cannot repopulate the shared cache, and guides from an
-  older fixed prompt regenerate lazily. Railway's additive migration preserves
-  legacy rows with a deliberately ineligible cache identity. Focused tests also
-  prove transaction rollback when invalidation fails.
+  cached guide records the code-owned `SYSTEM_PROMPT_VERSION`, effective policy
+  SHA-256, and monotonic amendment revision; its single-statement upsert
+  succeeds only while that revision remains current. A guide begun before a
+  teacher edit can finish for its original caller but cannot repopulate the
+  shared cache. An older version or content-mismatched policy hash regenerates
+  lazily, so a missed manual version bump cannot serve stale guide prose.
+  Railway's additive migration preserves legacy rows with a deliberately
+  ineligible cache identity. Focused tests also prove transaction rollback when
+  invalidation fails.
 - [x] Fail closed on prompt-history drift. A pre-existing row for the next
   settings revision must raise an integrity error and roll back the setting,
   cache invalidation, and attempted history write; it may never be silently
   reused as the audit record for a different amendment. The compare-and-swap,
   required append, and winning-request-only invalidation now form a chained
   transaction, with a direct corruption/restore regression.
+- [x] Enforce append-only prompt history below the API layer. Fresh schema,
+  idempotent Railway boot migration, and numbered migration 13 install row-level
+  triggers that reject direct updates, deletes, and replacement/conflicting
+  inserts while allowing valid new revisions. A separate insert trigger rejects
+  malformed revision numbers, oversized content, empty/oversized notes,
+  malformed policy hashes/versions, and invalid actor identities before they
+  can become immutable audit evidence. Both TypeScript checks and 28 Railway
+  server/migration regressions pass; the complete source-stable gate is recorded
+  below. Keep database access restricted because a privileged schema
+  administrator can still remove triggers.
+- [x] Make prompt fingerprints cover the complete conditional policy surface.
+  The original SHA-256 input was only the readable four-stem guide preview, so
+  a fixed-text edit confined to chat mode, two-stem `instrumental` guidance,
+  populated notes, unknown duration, or custom labels could evade the promised
+  trace if its version bump were also missed. Keep the readable preview for the
+  teacher, but hash a schema-versioned deterministic bundle exercising every
+  current branch; bind it to a new prompt version, changelog entry, and direct
+  regressions. Prompt version `2026-08-10.2` and fingerprint schema v1 cover both
+  modes, every current data/rendering arm, and injection-shaped untrusted input.
+  Guide-cache reads require that same effective SHA, closing the stale-cache
+  path even if a future code edit misses the version bump. Four direct prompt
+  regressions pass; the accepted current frozen combined gate is recorded below.
+  This is local evidence only; it has no GitHub PR or Railway release and does
+  not close the real-teacher restart gate.
 - [x] Pin the active Railpack host and CI to exact Node `22.23.1` instead of a
   floating `>=22.5`, declare matching Node types directly, and statically check
   `server/` plus shared `src/`. This catches Railway-adapter errors that the
@@ -306,7 +377,11 @@ individual target isolations.
   clock seam instead of assuming an async request completes in exactly 0 ms.
 - [x] Build a fixed, authorized eleven-source evaluation manifest spanning rock,
   jazz, orchestral/chamber, electronic, hip-hop, folk/traditional, and sparse
-  acoustic music. Record source rights and expected audible instruments.
+  acoustic music. Record source rights and expected audible instruments. Commit
+  `0fbc62a` adds a required SHA-256 for every hydrated file source; both the
+  browser and FFmpeg evaluators fail before decoding on byte drift, while the
+  recorded Archive SHA-1 remains a second provenance check where available.
+  Independent readback confirms all 11 current hydrated files match those pins.
 - [x] Add contract tests proving that all new flags disabled produce the exact
   pre-change catalogue, job routing, stem names, and UI behavior.
 
@@ -708,6 +783,73 @@ license status. Overall accuracy alone is insufficient.
   scoped cleanup. This closes the source-byte barrier only; it does not enable
   a provider route, approve the unverified checkpoint, or close semester-budget
   and output-retention gates.
+- [ ] Before enabling provider execution, benchmark and cap snapshot preparation
+  against the canonical Railway service's actual memory, CPU, and disk limits.
+  The reader now fails closed at the stored size, 100 MB global ceiling, and
+  60-second deadline, but SHA-256 plus snapshot upload still buffers the verified
+  source in application memory. Define a streaming or service-offloaded path
+  before the eventual Cloudflare migration if that full-source allocation does
+  not fit its then-current runtime budget; do not let this dormant seam become a
+  hidden Railway-only assumption.
+- [x] Re-run the frozen combined Phase 0 gate against one stable executable
+  manifest after the prompt-policy/cache, prompt-history trigger, pre-spend
+  snapshot, and server-import identity changes. One green run is rejected as
+  acceptance because concurrent edits changed its manifest from `15344330…` to
+  `664b1093…`. After reconciliation, the accepted before/after SHA-256 matched
+  at `345a2122…`; exact Bun 1.3.14 checked 104 installs across 160 packages with
+  no changes, then passed all three typechecks, 160 worker, 22 analyzer, 24
+  Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19 flags-off
+  browser, 5 authoritative-Auto browser, and 1 isolation-shadow E2E test. The
+  first targeted isolation runs failed on a strip-only-incompatible parameter
+  property and runtime extensionless import; those failures were fixed and are
+  not counted as acceptance. At that checkpoint the accepted manifest was still
+  uncommitted, absent from GitHub, and absent from Railway; the later exact
+  `fe0a5ff` gate below supersedes that local evidence.
+- [x] Re-run the same literal gate after the immutable upload handoff and
+  prompt-history pagination landed. The first upload-snapshot authoritative
+  browser attempt failed 3/5 because the object-store runtime requires a
+  known-length stream; the fixed shared storage path supplies that length while
+  Railway continues streaming into unique temporary files. Two otherwise-green
+  combined runs are explicitly rejected because source changed while they ran
+  (`9b4c229c…` to `3cd801f6…`, then `ba35a080…` to `1a398b27…`). After
+  reconciling the legacy explicit-model plus `routingRequest: auto` path and
+  teacher-isolation compatibility, exact Bun 1.3.14 checked 104 installs across
+  160 packages with no changes. The accepted before/after executable SHA-256
+  matched at `1a398b27…`, and all three typechecks, 168 worker, 22 analyzer, 26
+  Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, 19 flags-off
+  browser, 6 authoritative-Auto browser, and 1 isolation-shadow E2E test passed.
+  `git diff --check` passes. This is stable dirty-tree evidence rooted at
+  `e9f7ed9`, not a committed combined-source artifact, GitHub run, applied
+  migration, or Railway acceptance.
+- [x] Validate prompt version `2026-08-10.2`, untrusted-data
+  escaping, exact winning-revision response binding, parsed session expiry,
+  history insert validation, confirmed-logout DOM scrubbing, the corpus-pin
+  commit `0fbc62a`, and CI isolation commit `e67dd3b`. An initial focused
+  interleaving assertion failed because a SQLite null-prototype row was compared
+  directly with a plain object; the assertion was corrected and that failed run
+  is not acceptance. Both TypeScript checks, 4 direct prompt-policy tests, 28
+  Railway server/migration tests, and the targeted real-browser instructor
+  journey pass. Live browser readback also proves the sentence-case tagline and
+  44-pixel sign-in target. At that checkpoint the focused evidence remained
+  uncommitted; it is now included in exact commit `fe0a5ff` and the complete
+  clean gate below. It still cannot close native CI, applied-migration,
+  real-teacher restart, listening, or resource gates.
+- [x] Obtain one complete source-stable Phase 0 run after concurrent bakeoff
+  edits stop. The earlier selected-path and moving-tree runs remain rejected.
+  After binding the teacher-governance implementation to exact commit
+  `fe0a5ff`, a clean detached checkout installed the frozen Bun 1.3.14 graph
+  and passed all three typechecks; 181 worker, 22 analyzer, 28 Railway, 5
+  separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+  authoritative-Auto, and 1 isolation-shadow browser journey. The detached
+  worktree remained clean and `git diff --check` passed. This proves current
+  committed local source only; GitHub native-amd64, applied Railway migrations,
+  service provisioning, real-teacher restart, and live audio acceptance remain.
+- [x] Bind the dormant pre-spend source guard to exact commit `15e782a` after
+  correcting its strip-only syntax/import defects. Its focused source/AudioSep
+  suite passes 11/11, and the source-stable `fe0a5ff` gate above includes both
+  the exact committed guard and the committed prompt follow-up. The branch
+  remains absent from `origin`, `gh pr list --head codex/v3.2-audio-pipeline
+  --state all` returns no pull request, and no Railway release contains it.
 - [x] Re-run the complete local Phase 0 gate after write-once source identity,
   atomic idempotent-read validation, and trigger-aware E2E schema integration.
   On 2026-08-10 exact executable-source commit `4cf452e` passed a frozen Bun
@@ -745,8 +887,13 @@ license status. Overall accuracy alone is insufficient.
 
 ### 3B. SAM-Audio bake-off
 
-- [ ] Add SAM-Audio only to the evaluation harness at first; do not expose two
-  paid implementations in the student interface.
+- [x] Add SAM-Audio only to the evaluation harness at first; do not expose two
+  paid implementations in the student interface. Commit `e0577d9` adds a
+  versioned offline preparation/scoring harness, exact community-schema pin
+  guard, shared AudioSep/SAM-Audio text and span modes, and 30 failure-closed
+  contract tests. Evidence commit `725316a` records the boundary. There is no
+  application adapter, route, credential, feature flag, provider prediction,
+  or student choice.
 - [ ] Complete institutional review of the SAM license, gated checkpoint terms,
   and the operational risk of any community-hosted Replicate deployment.
   The 2026-08-10 source review confirms a custom modifiable SAM License, gated

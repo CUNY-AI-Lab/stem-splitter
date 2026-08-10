@@ -37,6 +37,19 @@ promotion on their own.
   fetch and after analysis, then proves the separator still downloads the
   initial snapshot bytes. `git show --check` also passes. This evidence is local
   only: no push, PR, Railway mutation, or deployment occurred.
+- Combined-tree evidence: the earlier prompt-history pagination tree passed a
+  selected-path manifest at `1a398b27…`, but that inherited recipe was later
+  found to omit executable scripts and service/config trees. The widened guard
+  then rejected two otherwise-green commands because source changed during
+  execution (`fccaf815…` to `5e3adcd5…`, then `f059739f…` to `45f2d503…`).
+  Current combined acceptance is instead bound to exact commit `fe0a5ff`: a
+  clean detached checkout passes all three typechecks; 181 worker, 22 analyzer,
+  28 Railway, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19/6/1 browser
+  journeys. `git diff --check` passes and the checkout remains clean. Separate
+  desktop/mobile in-app QA verifies the governed teacher editor, versioned
+  assets, true top-of-prompt navigation, revision provenance, and logout
+  scrubbing. This remains local evidence only: no push, PR, Railway mutation,
+  provider call, or deployment occurred.
 - Remaining: native-amd64 CI, actual Railway resource/restart acceptance,
   parity calibration, genre listening, and live shadow/rollback evidence remain
   gates before authoritative promotion.
@@ -477,8 +490,8 @@ promotion on their own.
   history, and cache mutations instead of silently adopting unrelated audit
   history. These prompt-integrity changes alter no classifier, separator, stem
   name, or 2/4/6 routing contract; the native GitHub/image run remains open.
-- Candidate-report provenance hardening in the current worktree resolves an
-  instrument-discovery tag to one immutable Docker image ID, requires
+- Candidate-report provenance hardening committed at exact `1c3af0c` resolves
+  an instrument-discovery tag to one immutable Docker image ID, requires
   `linux/amd64`, verifies a dependency-lock SHA derived inside that image
   against the repository lock, and version-bumps both threshold and raw-score
   report schemas. The reports also bind every evaluation/diagnostic source that
