@@ -87,6 +87,16 @@ analyze/fingerprint hash parity and a final 61.68 MiB runtime sample. Commit
 historical rather than acceptance for the current source. Docker was installed
 but no daemon was running during the exact-commit gate; the revised image smoke,
 native-amd64 CI, and Railway reproduction remain open.
+Exact role-v4 source commit `8901902` now passes a fresh frozen Bun 1.3.14
+install and the literal Phase 0 command from a clean detached checkout: all
+three typechecks; 184 worker, 24 analyzer, 28 Railway host/migration, 5
+separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+authoritative-Auto, and 1 isolation-shadow browser journey. The new analyzer
+count includes the real upload/YouTube/Archive composition. The checkout stayed
+clean, `git show --check` passed, and exact HEAD repeated the eleven-source
+local and real-browser v4 gates without a mismatch. The current v4 image,
+native-amd64 CI, listening, Railway resources/restart, and service provisioning
+remain open.
 
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand

@@ -102,6 +102,20 @@ share, and 0.00496 percussive-high share; none crosses a decision boundary.
 - The earlier role-v3 image results remain immutable historical evidence. They
   do not accept the current role-v4 source.
 
+## Exact committed-source gate
+
+Executable-source commit `8901902` passed a fresh frozen Bun 1.3.14 install and
+the literal `test:phase0` command from a clean detached checkout. The result was
+all three typechecks; 184 worker, 24 analyzer, 28 Railway host/migration, 5
+separator, 30 instrument-discovery, and 9 YAMNet comparator tests; plus 19
+flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey. The
+new analyzer count includes the real three-source composition. The checkout
+remained clean, and `git show --check` passed.
+
+The exact same HEAD also repeated the local corpus at 8 preferred, 3 accepted
+alternatives, and 0 mismatches, and the real-browser comparison at 11/11
+decision agreement with 0 rejected choices.
+
 ## Gates still open
 
 - Build and run the role-v4/source-scope-v2 image on native amd64 CI, then

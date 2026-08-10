@@ -29,10 +29,16 @@ promotion on their own.
   alternatives, and 0 mismatches, with no v3 choice changed. Headless Chrome
   151 agrees with the FFmpeg decisions on all 11 sources under v4. See
   `docs/evaluation/autosplit-role-v4-candidate.md`.
-- Remaining: clean committed-source Phase 0, current v4 image/native-amd64 CI,
-  pinned-image decoder reproduction, manual listening, Railway resource and
-  restart acceptance, private-service provisioning, and shadow journeys. No
-  service, variable, provider call, migration, or deployment changed.
+- Exact source: commit `8901902` passes the frozen Bun 1.3.14 install and
+  literal `test:phase0` from a clean detached checkout: all three typechecks;
+  184 worker, 24 analyzer, 28 Railway host/migration, 5 separator, 30 discovery,
+  and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto, and 1
+  isolation-shadow browser journey. The checkout stayed clean and
+  `git show --check` passed.
+- Remaining: current v4 image/native-amd64 CI, pinned-image decoder
+  reproduction, manual listening, Railway resource and restart acceptance,
+  private-service provisioning, and shadow journeys. No service, variable,
+  provider call, migration, or deployment changed.
 
 ## analysis-source-scope-v2 — shared authoritative source allowlist — 2026-08-10
 
