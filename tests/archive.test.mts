@@ -130,6 +130,31 @@ test('Archive import refuses a cross-origin provider redirect', async () => {
   }
 });
 
+test('Archive retry attempts share one request deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 1_000;
+  let calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    calls += 1;
+    now += 20 * 1000;
+    return new Response(null, { status: 503 });
+  };
+
+  try {
+    await assert.rejects(
+      () => fetchArchiveItem(IDENTIFIER),
+      (error: unknown) =>
+        error instanceof ArchiveError && error.code === 'archive_busy'
+    );
+    assert.equal(calls, 1);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Archive import rejects mislabeled non-audio bytes', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {

@@ -106,3 +106,26 @@ test('bounded response cancels a body that stalls after headers', async () => {
   );
   assert.equal(canceled, true);
 });
+
+test('bounded response does not reflect a provider stream error', async () => {
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      pull() {
+        throw new Error('provider reflected secret');
+      },
+    })
+  );
+
+  await assert.rejects(
+    () =>
+      readBoundedResponse(response, {
+        maximumBytes: 10,
+        timeoutMs: 100,
+        errors: errors(),
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message === 'unreadable' &&
+      !error.message.includes('provider reflected secret')
+  );
+});

@@ -24,6 +24,7 @@ const REPLICATE_MAX_WAIT_MS = 4 * 60 * 1000; // covers cold boot + download
 const REPLICATE_START_TIMEOUT_MS = 75 * 1000;
 const REPLICATE_POLL_TIMEOUT_MS = 15 * 1000;
 const AUDIO_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+const INNERTUBE_MAX_WAIT_MS = 45 * 1000;
 const MAX_PREDICTION_BYTES = 64 * 1024;
 const PREDICTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 const PREDICTION_STATUSES = new Set([
@@ -149,6 +150,10 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
       true
     );
   }
+  const timedOut = failures.some(
+    ({ error }) => error instanceof YouTubeError && error.code === 'youtube_fetch_timeout'
+  );
+  if (timedOut) throw youtubeTimedOut();
   throw new YouTubeError(
     'YouTube blocked this import. Try a different video or upload the audio file.',
     'youtube_fetch_blocked',
@@ -158,15 +163,61 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
 
 // --- in-Worker fetch (youtubei.js) --------------------------------------
 
-async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
-  const yt = await Innertube.create({ generate_session_locally: true });
+function remainingTimeout(deadline: number, maximumMs: number): number {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw youtubeTimedOut();
+  return Math.min(maximumMs, remaining);
+}
 
-  let lastReason = 'unknown';
+async function withDeadline<T>(operation: () => Promise<T>, deadline: number): Promise<T> {
+  const timeoutMs = remainingTimeout(deadline, INNERTUBE_MAX_WAIT_MS);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(youtubeTimedOut()), timeoutMs);
+  });
+  try {
+    return await Promise.race([operation(), expired]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+function deadlineFetch(deadline: number): typeof fetch {
+  return async (input, init) => {
+    const timeoutSignal = AbortSignal.timeout(
+      remainingTimeout(deadline, INNERTUBE_MAX_WAIT_MS)
+    );
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, timeoutSignal])
+      : timeoutSignal;
+    try {
+      return await fetch(input, { ...init, signal });
+    } catch (error) {
+      if (timeoutSignal.aborted) throw youtubeTimedOut();
+      throw error;
+    }
+  };
+}
+
+async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
+  const deadline = Date.now() + INNERTUBE_MAX_WAIT_MS;
+  const yt = await withDeadline(
+    () => Innertube.create({
+      generate_session_locally: true,
+      fetch: deadlineFetch(deadline),
+    }),
+    deadline
+  );
+
   for (const client of CLIENTS) {
     let info;
     try {
-      info = await yt.getBasicInfo(videoId, { client });
-    } catch {
+      info = await withDeadline(() => yt.getBasicInfo(videoId, { client }), deadline);
+    } catch (error) {
+      if (
+        (error instanceof YouTubeError && error.code === 'youtube_fetch_timeout') ||
+        Date.now() >= deadline
+      ) throw youtubeTimedOut();
       continue; // client-specific parse/availability failure — try the next one
     }
 
@@ -182,23 +233,29 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
       );
     }
     if (info.playability_status && info.playability_status.status !== 'OK') {
-      lastReason = info.playability_status.reason || info.playability_status.status;
       continue;
     }
 
     // Audio-only M4A/AAC — Demucs ingests M4A directly, no transcoding needed.
     let stream;
     try {
-      stream = await info.download({ type: 'audio', quality: 'best', format: 'mp4', client });
-    } catch {
+      stream = await withDeadline(
+        () => info.download({ type: 'audio', quality: 'best', format: 'mp4', client }),
+        deadline
+      );
+    } catch (error) {
+      if (
+        (error instanceof YouTubeError && error.code === 'youtube_fetch_timeout') ||
+        Date.now() >= deadline
+      ) throw youtubeTimedOut();
       continue; // no matching format via this client — try the next one
     }
     const data = await readBoundedResponse(new Response(stream), {
       maximumBytes: MAX_AUDIO_BYTES,
-      timeoutMs: AUDIO_DOWNLOAD_TIMEOUT_MS,
+      timeoutMs: remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS),
       errors: {
         tooLarge: audioTooLarge,
-        timedOut: providerUnavailable,
+        timedOut: youtubeTimedOut,
         unreadable: invalidAudioResponse,
       },
     });
@@ -210,7 +267,7 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
   }
 
   throw new YouTubeError(
-    `Video is not playable (${lastReason}).`,
+    'Video is not playable with the available import clients.',
     'youtube_fetch_blocked',
     true
   );
@@ -230,21 +287,24 @@ async function replicateFetch(
   init: RequestInit,
   timeoutMs: number
 ): Promise<Response> {
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
     return await fetch(url, {
       ...init,
       // Keep the bearer token on the exact provider origin selected here. A
       // redirect is an error; callers never reissue it with credentials.
       redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
     });
   } catch {
+    if (signal.aborted) throw youtubeTimedOut();
     throw providerUnavailable();
   }
 }
 
 async function readPrediction(
   response: Response,
+  timeoutMs: number,
   expectedId?: string
 ): Promise<YtPrediction> {
   if (responseMediaType(response) !== 'application/json') {
@@ -253,10 +313,10 @@ async function readPrediction(
   }
   const bytes = await readBoundedResponse(response, {
     maximumBytes: MAX_PREDICTION_BYTES,
-    timeoutMs: REPLICATE_POLL_TIMEOUT_MS,
+    timeoutMs,
     errors: {
       tooLarge: providerUnavailable,
-      timedOut: providerUnavailable,
+      timedOut: youtubeTimedOut,
       unreadable: providerUnavailable,
     },
   });
@@ -332,6 +392,7 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
     throw new YouTubeError('Paste a full YouTube video link.', 'invalid_youtube_url');
   }
   const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const deadline = Date.now() + REPLICATE_MAX_WAIT_MS;
 
   const headers = {
     Authorization: `Bearer ${apiToken}`,
@@ -345,29 +406,30 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
       version: modelVersion,
       input: { url: canonicalUrl, max_duration: MAX_DURATION_SECONDS },
     }),
-  }, REPLICATE_START_TIMEOUT_MS);
+  }, remainingTimeout(deadline, REPLICATE_START_TIMEOUT_MS));
   if (!res.ok) {
     throw await replicateResponseError(res, 'prediction start');
   }
-  let prediction = await readPrediction(res);
+  let prediction = await readPrediction(
+    res,
+    remainingTimeout(deadline, REPLICATE_POLL_TIMEOUT_MS)
+  );
 
-  const deadline = Date.now() + REPLICATE_MAX_WAIT_MS;
   while (prediction.status === 'starting' || prediction.status === 'processing') {
-    if (Date.now() > deadline) {
-      throw new YouTubeError('YouTube fetch timed out — try again in a minute.');
-    }
-    await new Promise((r) => setTimeout(r, REPLICATE_POLL_MS));
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) {
-      throw new YouTubeError('YouTube fetch timed out — try again in a minute.');
-    }
+    await new Promise((r) =>
+      setTimeout(r, remainingTimeout(deadline, REPLICATE_POLL_MS))
+    );
     const poll = await replicateFetch(
       `${REPLICATE_API}/predictions/${encodeURIComponent(prediction.id)}`,
       { headers },
-      Math.min(REPLICATE_POLL_TIMEOUT_MS, remainingMs)
+      remainingTimeout(deadline, REPLICATE_POLL_TIMEOUT_MS)
     );
     if (!poll.ok) throw await replicateResponseError(poll, 'prediction poll');
-    prediction = await readPrediction(poll, prediction.id);
+    prediction = await readPrediction(
+      poll,
+      remainingTimeout(deadline, REPLICATE_POLL_TIMEOUT_MS),
+      prediction.id
+    );
   }
 
   if (prediction.status !== 'succeeded' || !prediction.output?.audio) {
@@ -384,7 +446,11 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
     );
   }
 
-  const data = await downloadPredictionFile(prediction.output.audio, apiToken);
+  const data = await downloadPredictionFile(
+    prediction.output.audio,
+    apiToken,
+    deadline
+  );
   return validateFetchedAudio({
     data,
     title: prediction.output.title || 'youtube-audio',
@@ -393,7 +459,12 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
 }
 
 /** Prediction file outputs are usually replicate.delivery URLs but can be inline data-URIs. */
-async function downloadPredictionFile(audio: string, apiToken: string): Promise<ArrayBuffer> {
+async function downloadPredictionFile(
+  audio: string,
+  apiToken: string,
+  deadline: number
+): Promise<ArrayBuffer> {
+  remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS);
   if (audio.startsWith('data:')) {
     const comma = audio.indexOf(',');
     const metadata = comma >= 0 ? audio.slice(5, comma).toLowerCase() : '';
@@ -444,7 +515,7 @@ async function downloadPredictionFile(audio: string, apiToken: string): Promise<
   const res = await replicateFetch(
     outputUrl,
     { headers: { Authorization: `Bearer ${apiToken}` } },
-    AUDIO_DOWNLOAD_TIMEOUT_MS
+    remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS)
   );
   if (!res.ok) throw await replicateResponseError(res, 'audio download');
 
@@ -455,10 +526,10 @@ async function downloadPredictionFile(audio: string, apiToken: string): Promise<
   }
   return readBoundedResponse(res, {
     maximumBytes: MAX_AUDIO_BYTES,
-    timeoutMs: AUDIO_DOWNLOAD_TIMEOUT_MS,
+    timeoutMs: remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS),
     errors: {
       tooLarge: audioTooLarge,
-      timedOut: providerUnavailable,
+      timedOut: youtubeTimedOut,
       unreadable: invalidAudioResponse,
     },
   });
@@ -514,6 +585,14 @@ function providerUnavailable(): YouTubeError {
   return new YouTubeError(
     'YouTube import is unavailable right now. Upload the audio file instead.',
     'youtube_fetch_unavailable',
+    true
+  );
+}
+
+function youtubeTimedOut(): YouTubeError {
+  return new YouTubeError(
+    'YouTube fetch timed out — try again in a minute.',
+    'youtube_fetch_timeout',
     true
   );
 }

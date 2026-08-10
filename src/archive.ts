@@ -336,13 +336,18 @@ async function fetchWithBusyRetry(
 ): Promise<Response> {
   let lastNetworkError: unknown;
   let sawBusy = false;
+  const deadline = Date.now() + timeoutMs;
 
   for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
+      const delayMs = RETRY_DELAYS_MS[attempt - 1];
+      if (Date.now() + delayMs >= deadline) break;
+      await new Promise((r) => setTimeout(r, delayMs));
     }
     try {
-      const res = await fetchArchiveOnce(url, timeoutMs);
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      const res = await fetchArchiveOnce(url, remainingMs);
       if (res.status === 429 || res.status >= 500) {
         sawBusy = true;
         await res.body?.cancel().catch(() => undefined);

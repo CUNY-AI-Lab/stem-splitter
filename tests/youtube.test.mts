@@ -256,6 +256,126 @@ test('Replicate fallback rejects an oversized declared audio body before bufferi
   }
 });
 
+test('Replicate four-minute budget includes the output download', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 1_000;
+  let calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    calls += 1;
+    now += 4 * 60 * 1000 + 1;
+    return Response.json({
+      id: 'yt-prediction',
+      status: 'succeeded',
+      output: {
+        audio: 'https://audio.replicate.delivery/fetched.m4a',
+        title: 'Track',
+        duration: 19,
+      },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_timeout'
+    );
+    assert.equal(calls, 1);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate output headers and body share the remaining four-minute budget', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const audio = makeM4a();
+  let now = 1_000;
+  let calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async (input) => {
+    calls += 1;
+    if (String(input).endsWith('/predictions')) {
+      now += 3 * 60 * 1000;
+      return Response.json({
+        id: 'yt-prediction',
+        status: 'succeeded',
+        output: {
+          audio: 'https://audio.replicate.delivery/fetched.m4a',
+          title: 'Track',
+          duration: 19,
+        },
+      });
+    }
+    now += 60 * 1000 + 1;
+    return new Response(audio, {
+      headers: {
+        'Content-Type': 'audio/mp4',
+        'Content-Length': String(audio.byteLength),
+      },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_timeout'
+    );
+    assert.equal(calls, 2);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Replicate four-minute budget includes a stalled prediction response body', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 1_000;
+  let calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    calls += 1;
+    now += 4 * 60 * 1000 - 10;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull() {
+          return new Promise<void>(() => undefined);
+        },
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        fetchViaReplicate(
+          'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+          TEST_ENV as never
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_timeout'
+    );
+    assert.equal(calls, 1);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Replicate YouTube fetch refuses an unpinned model without making a provider request', async () => {
   const originalFetch = globalThis.fetch;
   let called = false;

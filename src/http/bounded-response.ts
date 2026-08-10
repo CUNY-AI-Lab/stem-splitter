@@ -48,9 +48,15 @@ export async function readBoundedResponse(
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
+  const expectedErrors = new Set<Error>();
+  const mappedError = (factory: () => Error): Error => {
+    const error = factory();
+    expectedErrors.add(error);
+    return error;
+  };
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => reject(errors.timedOut()), timeoutMs);
+    timeout = setTimeout(() => reject(mappedError(() => errors.timedOut())), timeoutMs);
   });
 
   try {
@@ -58,12 +64,12 @@ export async function readBoundedResponse(
       const { done, value } = await Promise.race([reader.read(), deadline]);
       if (done) break;
       total += value.byteLength;
-      if (total > maximumBytes) throw errors.tooLarge();
+      if (total > maximumBytes) throw mappedError(() => errors.tooLarge());
       chunks.push(value);
     }
   } catch (error) {
     await reader.cancel('provider response body was rejected').catch(() => undefined);
-    if (error instanceof Error) throw error;
+    if (error instanceof Error && expectedErrors.has(error)) throw error;
     throw errors.unreadable();
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
