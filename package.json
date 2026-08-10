@@ -55,6 +55,7 @@
     "eval:yamnet:image": "./scripts/run-yamnet-comparator-eval.sh",
     "eval:yamnet:controls": "node --import tsx scripts/eval-yamnet-controls.mts",
     "hydrate:instrument-controls": "node --experimental-strip-types scripts/hydrate-instrument-controls.mts",
+    "hydrate:nsynth-controls": "node --experimental-strip-types scripts/hydrate-nsynth-family-controls.mts",
     "eval:selftest": "./scripts/selftest-eval-stems.sh",
     "test:corpus": "node scripts/run-audio-corpus.mjs",
     "probe:replicate": "node --experimental-strip-types scripts/probe-replicate-outputs.mjs",
