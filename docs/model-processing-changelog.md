@@ -5,6 +5,42 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-candidate-comparison-v1 — cohort identity gate — 2026-08-10
+
+- Scope: exact implementation commit
+  `1aad9ef7e77fbd2a7c9cae7805b5b081b990e317` adds a comparison-only
+  classifier cohort report and CLI. It does not select a classifier, define a
+  quality floor, provision a service, change a feature flag, route Auto, rename
+  a core stem, authorize an isolation, or call a provider.
+- Artifact boundary: one deidentified review and one to eight v3 candidate
+  artifacts are bounded before read and hashed by exact bytes. Existing review,
+  plan, candidate, native-image, source-report, generator, and dependency-lock
+  validators run again. Optional report output uses owner-only mode and refuses
+  overwrite; `--require-comparable` returns failure when the evidence cohort is
+  incomplete.
+- Breaking-change shield: each classifier version maps to one exact model,
+  vocabulary, preprocessing, classifier-policy, and threshold-policy identity
+  within the submitted cohort. Reusing that id after any content change fails
+  closed. Reusing a preprocessing, classifier-policy, or threshold-policy
+  version with a different SHA-256 also fails. Candidate reports sort by
+  classifier id, so caller order cannot change the comparison record.
+- Semantics: at least two candidates with definite classified decisions are
+  required for `comparable: true`. The abstention-only YAMNet adapter remains
+  visible but cannot satisfy this condition. Comparability remains distinct
+  from selection: the report always records null selection/quality-floor fields
+  and explicit missing license, calibration, latency/memory, human-decision,
+  and Railway-shadow evidence.
+- Evidence and rollout: exact Bun 1.3.14 passes four TypeScript checks; 240
+  worker, 24 analyzer, 42 Railway host/config/migration/terminal, 5 separator,
+  30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto,
+  and 1 isolation-shadow browser journey. Workflow YAML parsing and
+  `git show --check` pass. Rollout remains off. No Railway mutation, provider
+  call, deployment, push, or pull request occurred.
+- Remaining: a completed deidentified listening review, fresh native-amd64
+  candidate reports, at least two candidates with reviewed thresholds, a
+  predeclared quality floor, license/calibration/resource evidence, human
+  selection, and Railway shadow acceptance still block classifier selection.
+
 ## query-isolation-output-v1 — bounded terminal hydration — 2026-08-10
 
 - Scope: exact executable commit

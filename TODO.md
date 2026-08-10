@@ -308,6 +308,23 @@ from the completed core stems. Exact Bun 1.3.14 passes all four typechecks,
 imported by an app route. No prediction, Railway variable or service, live
 migration application, deployment, push, or pull request changed.
 
+Exact classifier-cohort commit `1aad9ef` adds the first executable comparison
+boundary for Phase 2 without selecting a model. One owner-only, no-overwrite
+report binds the exact deidentified review and up to eight v3 candidate
+artifacts by SHA-256, revalidates their transitive evidence, sorts them by
+classifier id, and rejects classifier-id reuse after model or policy drift.
+Preprocessing, classifier-policy, and threshold-policy version strings also
+cannot name different content across the cohort. At least two candidates must
+produce definite classified decisions, so the current abstention-only YAMNet
+adapter cannot satisfy comparability. Even a comparable fixture cohort remains
+unselectable until quality-floor, license, calibration, latency/memory, human-
+decision, and Railway-shadow evidence is bound. The exact Bun 1.3.14 Phase 0
+gate passes all four typechecks; 240 worker, 24 analyzer, 42 Railway host/
+config/migration/terminal, 5 separator, 30 discovery, and 9 YAMNet tests; plus
+19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+All processing flags remain off; no service, Railway mutation, provider call,
+deployment, push, or pull request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per

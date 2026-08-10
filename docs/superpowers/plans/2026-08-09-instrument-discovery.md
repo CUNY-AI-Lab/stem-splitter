@@ -80,6 +80,12 @@
   scoring, evaluator, source, PCM-plan, lock, and ordering pins. Until teacher
   listening selects a threshold it emits only explicit abstentions and cannot
   create an absence, accuracy, selection, service, or rollout claim.
+- [x] Add a classifier-neutral cohort comparison after model-specific capture.
+  It revalidates and content-hashes one exact review plus every v3 candidate,
+  rejects classifier or policy-version reuse after content drift, requires two
+  candidates with definite decisions for comparability, and keeps quality,
+  license, calibration, resource, human-selection, and Railway evidence as
+  explicit blockers rather than inferring a winner.
 - [x] Expose stored discovery evidence only through an explicit authenticated
   teacher review. The console displays possible/uncertain state, confidence,
   window support, and version provenance; it displays abstention and discovery
