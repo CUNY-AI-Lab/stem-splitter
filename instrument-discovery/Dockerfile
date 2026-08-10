@@ -11,6 +11,12 @@ COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY instrument-discovery/pyproject.toml instrument-discovery/uv.lock ./
 
+# Derive provenance from the exact lock bytes consumed by this build. The
+# evaluator reads this baked value from the selected image and refuses to emit
+# promotion evidence if it differs from the current repository lock.
+RUN mkdir -p /opt/instrument-discovery-provenance \
+  && python -c "import hashlib,pathlib; source=pathlib.Path('/app/uv.lock'); pathlib.Path('/opt/instrument-discovery-provenance/uv-lock.sha256').write_text(hashlib.sha256(source.read_bytes()).hexdigest() + '\\n', encoding='ascii')"
+
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
@@ -29,6 +35,7 @@ LABEL org.opencontainers.image.title="STEM Splitter instrument discovery" \
 WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY --from=build /models/larger_clap_music /models/larger_clap_music
+COPY --from=build /opt/instrument-discovery-provenance /opt/instrument-discovery-provenance
 COPY instrument-discovery/constants.py instrument-discovery/contract.py ./
 COPY instrument-discovery/clap_backend.py instrument-discovery/service.py ./
 COPY instrument-discovery/vocabulary.json ./vocabulary.json

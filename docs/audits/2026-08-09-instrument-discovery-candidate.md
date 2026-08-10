@@ -106,9 +106,11 @@ calibrating by simply lowering the existing family thresholds.
 
 ## Required next evidence
 
-1. Design a new diagnostic prompt/control policy or evaluate a different
-   pinned classifier. A production prompt-policy change requires a new
-   classifier ID and a complete rerun.
+1. A separately pinned YAMNet TFLite comparator has now completed the same
+   corpus and ranks substantially better, but it remains unselected because of
+   family failures, ontology gaps, missing controls, and absent calibration.
+   See `2026-08-09-yamnet-comparator-gate.md`. Any renewed CLAP prompt-policy
+   experiment still requires a new classifier ID and complete rerun.
 2. Calibrate per-family thresholds only from reviewed positives and hard
    negatives. Do not lower thresholds merely to eliminate abstentions.
 3. Add licensed positive controls for solo strings and pitched percussion; the
@@ -116,11 +118,15 @@ calibrating by simply lowering the existing family thresholds.
    tests.
 4. Repeat on native amd64 and then Railway with resource/restart evidence only
    after the candidate produces reviewable local detections.
-5. Make the next evaluator report self-record the executing image ID/platform
-   and dependency-lock identity. This rejected-candidate audit binds its image
-   manually above, but the current JSON schemas do not carry that runtime
-   identity themselves and must not be treated as self-contained promotion
-   evidence.
+5. The evaluator hardening after this rejected run now requires every future
+   promotion report to record the immutable executing image ID, exact
+   `linux/amd64` platform, and baked dependency-lock identity, with exact-schema
+   regressions. Comparison-only reports must bind and expose their non-target
+   platform and remain explicitly ineligible. Runners execute by resolved image
+   ID so a retag cannot swap the image between inspection and inference. This
+   does not retroactively upgrade the CLAP artifacts described here: their image
+   remains manually bound above and they must not be treated as self-contained
+   promotion evidence.
 
 Until those gates pass, `INSTRUMENT_DISCOVERY_ENABLED` stays false, detection
 remains advisory/tester-only, and no long-tail label may select a Demucs model

@@ -25,6 +25,9 @@ const CORPUS_PATH = 'tests/corpus/corpus.json';
 const EXPECTATIONS_PATH = 'tests/corpus/instrument-discovery-expectations.json';
 const VOCABULARY_PATH = 'instrument-discovery/vocabulary.json';
 const EVALUATION_SCHEMA = 'stem-splitter.instrument-discovery-evaluation.v1';
+const DISCOVERY_REPORT_SCHEMA = 'stem-splitter.instrument-discovery-evaluation-report.v2';
+const PROMOTION_PLATFORM = 'linux/amd64';
+const DEPENDENCY_LOCK_PATH = 'instrument-discovery/uv.lock';
 const MAX_SOURCE_DURATION_SECONDS = 15 * 60;
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 const DEFAULT_DECODER_TIMEOUT_MS = 60_000;
@@ -102,6 +105,17 @@ interface VocabularyDocument {
   instruments: InstrumentDefinition[];
 }
 
+export interface CandidateExecutionProvenance {
+  image: {
+    id: string;
+    platform: 'linux/amd64';
+  };
+  dependencyLock: {
+    path: typeof DEPENDENCY_LOCK_PATH;
+    sha256: string;
+  };
+}
+
 export interface EvaluatedExpectedGroup extends ExpectedInstrumentGroup {
   state: 'possible' | 'uncertain' | 'missed';
   matchedDetectionIds: string[];
@@ -139,6 +153,64 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[], cont
   ) {
     throw new Error(`${context} does not match the pinned schema`);
   }
+}
+
+export function validateCandidateExecutionProvenance(
+  value: unknown
+): CandidateExecutionProvenance {
+  if (!record(value)) throw new Error('candidate execution provenance is invalid');
+  exactKeys(value, ['image', 'dependencyLock'], 'candidate execution provenance');
+  if (!record(value.image)) throw new Error('candidate image provenance is invalid');
+  exactKeys(value.image, ['id', 'platform'], 'candidate image provenance');
+  if (
+    typeof value.image.id !== 'string' ||
+    !/^sha256:[a-f0-9]{64}$/.test(value.image.id) ||
+    value.image.platform !== PROMOTION_PLATFORM
+  ) {
+    throw new Error('candidate image provenance is invalid');
+  }
+  if (!record(value.dependencyLock)) {
+    throw new Error('candidate dependency-lock provenance is invalid');
+  }
+  exactKeys(
+    value.dependencyLock,
+    ['path', 'sha256'],
+    'candidate dependency-lock provenance'
+  );
+  if (
+    value.dependencyLock.path !== DEPENDENCY_LOCK_PATH ||
+    typeof value.dependencyLock.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(value.dependencyLock.sha256)
+  ) {
+    throw new Error('candidate dependency-lock provenance is invalid');
+  }
+  return {
+    image: {
+      id: value.image.id,
+      platform: PROMOTION_PLATFORM,
+    },
+    dependencyLock: {
+      path: DEPENDENCY_LOCK_PATH,
+      sha256: value.dependencyLock.sha256,
+    },
+  };
+}
+
+function executionProvenanceFromEnvironment(): CandidateExecutionProvenance {
+  return validateCandidateExecutionProvenance({
+    image: {
+      id: process.env.INSTRUMENT_DISCOVERY_EXECUTION_IMAGE_ID,
+      platform: process.env.INSTRUMENT_DISCOVERY_EXECUTION_PLATFORM,
+    },
+    dependencyLock: {
+      path: DEPENDENCY_LOCK_PATH,
+      sha256: process.env.INSTRUMENT_DISCOVERY_DEPENDENCY_LOCK_SHA256,
+    },
+  });
+}
+
+function sha256File(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 function normalizedId(value: unknown, context: string): string {
@@ -599,6 +671,7 @@ function parseArguments(args: string[]): { outputPath?: string; slugs: Set<strin
 
 async function main(): Promise<void> {
   const { outputPath, slugs } = parseArguments(process.argv.slice(2));
+  const execution = executionProvenanceFromEnvironment();
   const { corpusSources, expectations, vocabulary } = loadAndValidateEvaluationInputs();
   // Keep CLI-only decoder/network dependencies out of the pure manifest and
   // scoring seam imported by the broad Node strip-types unit-test runner.
@@ -716,7 +789,7 @@ async function main(): Promise<void> {
   }));
 
   const report = {
-    $schema: EVALUATION_SCHEMA,
+    $schema: DISCOVERY_REPORT_SCHEMA,
     generatedAt: new Date().toISOString(),
     reviewStatus: expectations.reviewStatus,
     interpretation: {
@@ -724,6 +797,17 @@ async function main(): Promise<void> {
       thresholdMutation: 'none',
       precisionClaim: 'not-available-from-non-exhaustive-review-annotations',
       recallClaim: 'candidate-annotated-group-coverage-only',
+    },
+    execution,
+    evaluationSourceSha256: {
+      evaluator: sha256File('scripts/eval-instrument-discovery.mts'),
+      runner: sha256File('scripts/run-instrument-discovery-eval.sh'),
+      corpusManifest: sha256File(CORPUS_PATH),
+      expectations: sha256File(EXPECTATIONS_PATH),
+      vocabulary: sha256File(VOCABULARY_PATH),
+      analysisConfig: sha256File('audio-analysis/config.ts'),
+      analysisDecoder: sha256File('audio-analysis/decoder.ts'),
+      discoveryClient: sha256File('audio-analysis/discovery.ts'),
     },
     serviceOriginKind,
     classifier: {

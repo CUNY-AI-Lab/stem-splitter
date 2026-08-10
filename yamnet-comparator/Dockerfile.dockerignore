@@ -1,0 +1,9 @@
+**
+!yamnet-comparator/
+!yamnet-comparator/*.py
+!yamnet-comparator/pyproject.toml
+!yamnet-comparator/uv.lock
+!yamnet-comparator/mapping.json
+!yamnet-comparator/Dockerfile
+!instrument-discovery/
+!instrument-discovery/vocabulary.json

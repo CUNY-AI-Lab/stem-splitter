@@ -1,6 +1,6 @@
 # Instrument discovery design — v3.2 Phase 2
 
-**Status:** local candidate; rollout off
+**Status:** local candidates evaluated; no classifier selected; rollout off
 
 ## Purpose
 
@@ -63,6 +63,28 @@ then takes the maximum over that instrument's terms. A prompt-template,
 synonym-aggregation, softmax-policy, or model-revision change requires a new
 classifier id even if the weight file is unchanged. These scores are candidate
 signals, not calibrated probabilities.
+
+The fixed-corpus and raw-score audits reject this CLAP prompt/checkpoint
+pairing. It remains implemented only as evidence of the private service
+boundary; its thresholds must not be tuned and it must not be provisioned.
+
+## YAMNet comparison boundary
+
+`yamnet-comparator/` is a separate offline CLI image, not an alternate backend
+inside the discovery service. It pins Google's official unquantized YAMNet
+TFLite version 1, Kaggle's version-specific Apache 2.0 metadata, the exact
+model archive and flatbuffer, a TensorFlow Models commit and 521-class map, a
+three-package runtime lock, and a 36-label mapping into the same classroom
+vocabulary. Fifteen unsupported classroom labels remain explicit gaps.
+
+Each corpus source runs by immutable image ID in a distinct networkless,
+read-only, non-root container. YAMNet's uncalibrated fixed-label scores support
+ranking and threshold-sweep comparison only; no threshold, detection state, or
+service contract derives from them. The first eleven-source run is promising
+relative to CLAP but fails brass, woodwind, free-reed, confusion, calibration,
+and reviewed-control gates. It therefore changes none of the service diagram,
+application pins, or rollout state above. See
+`docs/audits/2026-08-09-yamnet-comparator-gate.md`.
 
 ## Essentia comparison boundary
 

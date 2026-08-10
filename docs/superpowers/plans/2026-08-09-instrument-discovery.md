@@ -49,16 +49,35 @@
 - [x] Add an independently tracked, process-fatal watchdog for every permitted
   concurrent inference. Prove a fast second call cannot disarm a stuck first
   call and prove the production fatal path exits a child process with code 70.
-- [ ] Extend the authorized corpus with reviewed instrument truth and explicit
-  unknowns; do not manufacture negatives from missing annotations.
-- [ ] Run CLAP on the fixed corpus and record per-label/per-genre metrics,
-  confusion pairs, abstention, latency, and memory.
-- [ ] Compare one- versus two-alias labels and negative-prompt controls so the
-  max-over-synonyms policy cannot silently reward labels with more prompts.
+- [x] Add a pin-checked eleven-source expectation map with explicit reviewed
+  groups, directional hard negatives, coverage tags, and documented confusion
+  gaps. These non-exhaustive annotations remain candidate coverage evidence,
+  not precision ground truth; authorized single-instrument controls and teacher
+  listening review remain open.
+- [x] Run CLAP on the fixed corpus and record coverage, genre/family slices,
+  confusion pairs, abstention, latency, and networkless raw scores. Reject the
+  tested prompt/checkpoint pairing: it abstained on all eleven tracks, surfaced
+  0/42 reviewed groups, and positive-only ranking placed only 13/42 in the top
+  twelve.
+- [x] Measure one- versus two-alias labels, positive/negative prompt behavior,
+  and prompt-count bias. Pairwise scores collapsed around `0.5`, negative
+  prompts frequently outranked positives, and positive-only ranking still
+  failed. Any prompt or checkpoint revision receives a new classifier id.
+- [x] Implement and run a separately pinned YAMNet TFLite comparator on the
+  same licensed sources in one networkless, read-only container per source.
+  Bind the exact official artifact/license metadata, class map, 36-label
+  mapping, dependency lock, source hashes, image ID/platform, and corpus inputs.
+  Record top-k ranks, threshold sweeps, family slices, hard-negative alerts, and
+  confusion margins without selecting a threshold.
+- [ ] Add authorized, teacher-reviewed single-instrument positives and
+  exhaustive negatives to the YAMNet comparison. Its current 21/40 top-five
+  result is promising, but 0/2 brass, 0/3 woodwind, 0/1 free-reed, fifteen
+  ontology gaps, failed confusions, and absent calibration block selection.
 - [ ] Decide how parent categories, child instruments, and non-instrument
   production/timbre labels are reviewed and displayed without double-counting.
-- [ ] Implement Essentia ONNX as an offline-only comparison after written
-  licence review; use the identical windows and manifest.
+- [ ] Implement Essentia ONNX as an offline-only comparison only after written
+  MTG and institutional license clearance for the exact weights, runtime, and
+  container boundary; use the identical windows and manifest.
 - [x] Define a path-scoped native-amd64 workflow that builds the exact current
   image and reuses the offline, read-only real-model smoke under explicit
   platform, size, resource, privilege, mount, authentication, and inference

@@ -45,6 +45,12 @@ model weights at the pinned Hugging Face revision:
 docker build -f instrument-discovery/Dockerfile .
 ```
 
+The build derives a SHA-256 identity from the exact `uv.lock` bytes it consumes
+and bakes only that digest into `/opt/instrument-discovery-provenance`. Candidate
+evaluation resolves the image reference to its immutable image ID, requires the
+Railway target platform `linux/amd64`, and refuses to run if the baked digest
+does not match the current repository lock.
+
 The locked smoke starts the image with networking disabled, a read-only root,
 bounded CPU/RAM/PIDs, a non-root user, and an ephemeral no-exec `/tmp`; it then
 checks the exact readiness pins and runs one real synthetic-control inference:
@@ -87,8 +93,9 @@ The runner generates an ephemeral bearer token, starts the offline-forced image
 on a per-run no-masquerade Docker bridge with an automatically allocated
 loopback host port, a read-only root, and bounded CPU/RAM/swap/PIDs, waits for
 the pinned model to become ready, and always removes the container and network.
-The report includes exact classifier/
-vocabulary/decoder pins, hashes of the locally supplied audio, per-source
+The versioned report includes the executing Docker image ID, exact
+`linux/amd64` platform, baked dependency-lock identity, classifier/
+vocabulary/decoder pins, hashes of the evaluation sources and locally supplied audio, per-source
 detections, annotated-group coverage, hard-negative hits, abstentions,
 family/genre summaries, timing, parent/child overlap candidates, and the
 confusion-trial gaps. It never prints the token or audio and never mutates
@@ -115,13 +122,18 @@ until an offline diagnostic exposes pre-threshold scores and measures the
 current positive/`without` prompt policy against controlled alternatives; any
 prompt-policy change receives a new classifier ID and a full corpus rerun.
 
+Native-arm64 smoke runs remain useful for development, but they cannot emit a
+candidate report. Promotion evidence must use the image evaluator against a
+`linux/amd64` image; supplying plausible provenance variables directly to the
+lower-level evaluator is not a substitute for the runner's image/lock checks.
+
 The offline raw-score audit is separate from the HTTP service and runs with no
 container network. It bind-mounts the diagnostic code and temporary decoded PCM
 read-only, captures current per-window label scores, then deletes the PCM:
 
 ```sh
 umask 077
-INSTRUMENT_DISCOVERY_IMAGE=stem-splitter-instrument-discovery:v3.2-native-smoke \
+INSTRUMENT_DISCOVERY_IMAGE=stem-splitter-instrument-discovery:v3.2-amd64-candidate \
   npm run --silent eval:instrument-scores:image \
   > /tmp/instrument-discovery-score-audit.json
 ```
@@ -138,6 +150,11 @@ rank was 25.67, and unrelated koto/sitar/mallet-percussion labels repeatedly
 dominated. Treat the current prompt/checkpoint pairing as rejected. Any revised
 policy receives a new classifier ID and must rerun the entire corpus before
 threshold calibration or teacher shadow.
+
+The historical CLAP score report predates execution provenance schema v3 and
+remains non-self-contained rejection evidence. Every replacement run now
+records the immutable image ID, `linux/amd64` platform, baked lock identity,
+and hashes of all four Python sources that shape the diagnostic.
 
 ## Runtime variables
 

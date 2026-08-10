@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 from contract import FamilyThresholds, Instrument, Vocabulary
 from score_audit import (
@@ -10,6 +12,7 @@ from score_audit import (
     build_label_record,
     summarize_finite_values,
     summarize_values,
+    validate_execution_provenance,
 )
 
 
@@ -35,6 +38,42 @@ def vocabulary() -> Vocabulary:
 
 
 class ScoreAuditTests(unittest.TestCase):
+    def test_execution_provenance_requires_exact_amd64_image_and_baked_lock(self) -> None:
+        image_id = f"sha256:{'a' * 64}"
+        lock_sha = "b" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            baked = Path(directory) / "uv-lock.sha256"
+            baked.write_text(f"{lock_sha}\n", "ascii")
+            self.assertEqual(
+                validate_execution_provenance(
+                    image_id,
+                    "linux/amd64",
+                    lock_sha,
+                    baked_lock_sha_path=baked,
+                ),
+                {
+                    "image": {"id": image_id, "platform": "linux/amd64"},
+                    "dependencyLock": {
+                        "path": "instrument-discovery/uv.lock",
+                        "sha256": lock_sha,
+                    },
+                },
+            )
+            with self.assertRaisesRegex(ScoreAuditError, "promotion platform"):
+                validate_execution_provenance(
+                    image_id,
+                    "linux/arm64",
+                    lock_sha,
+                    baked_lock_sha_path=baked,
+                )
+            with self.assertRaisesRegex(ScoreAuditError, "does not match"):
+                validate_execution_provenance(
+                    image_id,
+                    "linux/amd64",
+                    "c" * 64,
+                    baked_lock_sha_path=baked,
+                )
+
     def test_label_record_preserves_raw_windows_and_current_threshold_state(self) -> None:
         candidate = vocabulary()
         record = build_label_record(

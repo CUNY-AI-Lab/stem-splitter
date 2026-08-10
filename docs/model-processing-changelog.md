@@ -5,6 +5,49 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## yamnet-fixed-v1 — offline comparator, not selected — 2026-08-09
+
+- Scope: candidate evaluation only. No application dependency, feature flag,
+  service, separator model, stem label, 2/4/6 contract, or role-classifier
+  threshold changed.
+- Classifier: Google's official unquantized YAMNet TFLite version 1 with
+  classifier id
+  `google-yamnet-tflite-v1-max-class-top3-patch-mean-second-window-v1@kaggle-version-763`.
+  The exact Kaggle model/instance/version, Apache 2.0 metadata, archive and
+  model byte lengths/SHA-256 values, TensorFlow Models revision, 521-class map,
+  Python dependency lock, and preprocessing contract are pinned and checked.
+- Ontology: 36 of 51 `classroom-instruments-v1` labels map only to exact
+  AudioSet classes. Fifteen labels remain explicit gaps; the comparator does
+  not infer narrower labels from broad or combined YAMNet classes.
+- Scoring: maximum across mapped classes, top-three-patch mean, and the
+  second-highest analysis window with a single-window exception. No threshold,
+  calibration, `possible`, or `uncertain` policy was selected.
+- Isolation: each source runs by immutable image ID in a distinct non-root,
+  networkless, read-only, resource-bounded container. The image bakes the exact
+  dependency-lock and source hashes; the report binds those identities plus
+  the corpus, reviewed expectations, mapping, and local decoder versions.
+- Licensed-corpus result: 11 sources, 40 eligible reviewed groups, and 2
+  unsupported groups. Top-3/top-5/top-10 coverage was 16/21/31; mean reciprocal
+  rank was 3,507 basis points. Voice and keys ranked strongly, but brass,
+  woodwind, and free-reed placed 0/2, 0/3, and 0/1 groups in the top five.
+  Several directional confusions failed and two remain corpus gaps.
+- Evidence: `docs/audits/2026-08-09-yamnet-comparator-gate.md` and
+  `docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-corpus.json`
+  (SHA-256
+  `b59d4f7d32bfb999263a26bd7abb3313afe49111c96e23f7d162d4efba09fe93`).
+  A native arm64 image completed the full corpus; an emulated amd64 image
+  completed a one-source numeric-parity check. Neither supplies native-amd64 or
+  Railway sizing evidence.
+- Disposition: promising comparison baseline, not selected. Add authorized
+  single-instrument positives, exhaustive negatives, human listening review,
+  calibrated abstention, and native-amd64 evidence before reconsidering it.
+  Keep discovery off and provision no service.
+- Source gate: the literal exact-Bun `test:phase0` command passes 132 worker,
+  21 analyzer, 14 Railway-host/migration, 5 separator, 30 discovery, 9 YAMNet,
+  19 flags-off browser E2E, and 4 authoritative-Auto E2E tests. Local arm64 and
+  emulated amd64 image evidence remain distinct from native-amd64 and Railway
+  acceptance.
+
 ## instrument-discovery-v1 — contract/client candidate, rollout off — 2026-08-09
 
 - Scope: advisory detection metadata only. No separator model, stem label,
@@ -39,11 +82,11 @@ promotion on their own.
   top 12 for only 13/42 groups (mean best rank 25.67 of 51). Lowering thresholds
   cannot repair this result. Any prompt-policy or checkpoint replacement gets
   a new classifier ID and repeats the corpus/human-review gates.
-- Next comparator: YAMNet is research-only and no artifact has been downloaded.
-  Its fixed 521-class AudioSet head covers many non-rock instruments without a
-  text-negation prompt, but exact source/weight/class-map hashes, weight-license
-  review, explicit ontology gaps, and networkless corpus/hard-negative evidence
-  precede any new image or Railway service. Essentia remains license-blocked.
+- Replacement comparison: the separately versioned `yamnet-fixed-v1` offline
+  comparator completed the same corpus and is recorded above. It ranks far
+  better than this rejected CLAP pairing but remains unselected because of
+  family failures, ontology gaps, incomplete controls, and absent calibration.
+  Essentia remains license-blocked.
 - Boundary: the analyzer may send at most three bounded 15-second 22,050 Hz
   mono f32le windows only to loopback or Railway private networking. It sends
   no source URL, storage credential, filename, class code, job id, or volume.
@@ -192,6 +235,14 @@ promotion on their own.
   history, and cache mutations instead of silently adopting unrelated audit
   history. These prompt-integrity changes alter no classifier, separator, stem
   name, or 2/4/6 routing contract; the native GitHub/image run remains open.
+- Candidate-report provenance hardening in the current worktree resolves an
+  instrument-discovery tag to one immutable Docker image ID, requires
+  `linux/amd64`, verifies a dependency-lock SHA derived inside that image
+  against the repository lock, and version-bumps both threshold and raw-score
+  report schemas. The reports also bind every evaluation/diagnostic source that
+  shapes their results. This does not make the rejected historical CLAP JSON
+  promotion evidence and changes no classifier, threshold, routing choice, or
+  stem contract.
 - Constrained image evidence: both the existing emulated amd64 image and the
   current native arm64 build passed the reusable internal-network smoke with a
   read-only root, no analyzer mounts, 1 vCPU, 1 GiB RAM, real short and

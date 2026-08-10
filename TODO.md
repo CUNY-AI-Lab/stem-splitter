@@ -28,19 +28,29 @@ teacher-reviewable vocabulary, exact CLAP checkpoint/artifact pins, a bounded
 private PCM client, fail-lazy discovery traces, student-response redaction, and
 a teacher-authenticated analysis read route. A separate Python service,
 deterministic aggregation policy, process-fatal inference watchdog, and
-digest-pinned image recipe are implemented locally and pass 29
+digest-pinned image recipe are implemented locally and pass 30
 contract/fake-backend/process tests. A matching native arm64 image has started
 with networking disabled and a read-only root filesystem and completed real
 CLAP inference on a synthetic control; the `linux/amd64` target image also
 builds and matches the current source hashes. The eleven-source evaluation and
 networkless raw-logit audit reject the current prompt/checkpoint pairing, so it
-must not be calibrated or provisioned under the existing classifier ID. Native
-amd64 startup/inference, a replacement-candidate evaluation, Railway sizing,
-human-reviewed calibration, and service provisioning remain open.
+must not be calibrated or provisioned under the existing classifier ID. A
+separate pinned, networkless YAMNet TFLite comparator now covers 36/51
+classroom labels and completed the same licensed corpus. It ranked 21/40
+eligible reviewed groups in the top five, but placed no reviewed brass,
+woodwind, or free-reed group there and retains 15 explicit ontology gaps.
+Treat it as a promising comparison baseline, not a selected classifier: no
+threshold, feature flag, application dependency, or service was added. Native
+amd64 startup/inference, Railway sizing, human-reviewed calibration, and
+service provisioning remain open.
 A path-scoped, secret-free native-amd64 image workflow is defined locally but
 has not yet run on GitHub, and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
+The complete local Phase 0 command passes 132 worker, 21 analyzer, 14 Railway
+host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
+browser, and 4 authoritative-Auto browser tests. This is source and local-image
+evidence only; it does not close native CI or Railway acceptance.
 
 This roadmap extends AutoSplit beyond assumptions inherited from a traditional
 rock-band mix. The goal is to recognize and optionally isolate instruments such
@@ -419,16 +429,27 @@ job.
   noncommercial classroom inference, container distribution, and the AGPL
   boundary if the Essentia runtime is used. Pin and hash the cleared artifact
   before an offline bake-off; never infer approval from the educational intent.
-- [ ] Evaluate a fixed-label YAMNet baseline next, offline and without a new
-  service. First pin an exact TensorFlow Models commit, `yamnet.h5` byte
-  length/SHA-256 and weight-license determination, class-map hash, runtime, and
-  16 kHz/0.96-second preprocessing contract. Map only real YAMNet classes into
-  the candidate vocabulary and preserve gaps such as oboe, bassoon, viola, and
-  koto. Run the same licensed corpus, directional hard negatives, and reviewed
-  single-instrument controls in a networkless/read-only container; compare
-  per-label/family precision, recall, calibration, abstention, latency, and
-  memory before selecting anything. See
-  `docs/audits/2026-08-09-yamnet-comparator-gate.md`.
+- [x] Implement and run a fixed-label YAMNet baseline offline, without a new
+  service. The comparator pins Google's official unquantized TFLite version 1,
+  Kaggle model/instance/version and Apache 2.0 metadata, archive/model bytes and
+  SHA-256 values, TensorFlow Models revision and 521-class map, exact LiteRT/
+  NumPy/SciPy lock, 16 kHz preprocessing, scoring policy, vocabulary, and
+  36-label mapping. Fifteen unsupported labels stay explicit. Every corpus
+  source runs by immutable image ID in a distinct networkless, read-only,
+  non-root, resource-bounded container, and the report binds the image, lock,
+  source, corpus, expectation, and mapping identities. The eleven-source run
+  ranked 16/40 eligible reviewed groups in the top 3, 21/40 in the top 5, and
+  31/40 in the top 10, with a 3,507-basis-point mean reciprocal rank. No
+  threshold was selected and no precision claim is available. See
+  `docs/audits/2026-08-09-yamnet-comparator-gate.md` and the bound report under
+  `docs/acceptance/2026-08-09-yamnet-comparator/`.
+- [ ] Extend the YAMNet comparison with authorized, teacher-reviewed
+  single-instrument positives and exhaustive negatives. Recalculate family
+  ranking, precision/recall, calibration, abstention, latency, and memory on
+  native amd64. Its current 0/2 brass, 0/3 woodwind, and 0/1 free-reed top-five
+  results, fifteen ontology gaps, failed confusion directions, two missing
+  confusion trials, and non-exhaustive annotations block classifier selection
+  and threshold calibration.
 - [ ] Choose exactly one replacement discovery classifier after the CLAP,
   YAMNet, and any license-cleared Essentia evidence is comparable. Give every
   prompt policy, checkpoint, label map, or preprocessing change a new
@@ -474,12 +495,15 @@ job.
   the top 12, with a 25.67 mean best rank and repeated unrelated koto/sitar/
   mallet-percussion leaders. Reject this prompt/checkpoint pairing rather than
   tuning it into production.
-- [ ] Make the next candidate evaluator/report self-bind the executing Docker
-  image ID, `linux/amd64` platform, and dependency-lock identity in addition to
-  classifier/weight/vocabulary and diagnostic-source hashes. The rejected CLAP
-  audit manually records its native-arm64 image, but its JSON report is not
-  self-contained promotion evidence. Add an exact-schema regression before the
-  YAMNet or any replacement-candidate run.
+- [x] Make every future candidate evaluator/report self-bind the executing
+  Docker image ID, exact `linux/amd64` promotion platform, and dependency-lock
+  identity in addition to classifier/weight/vocabulary and evaluation-source
+  hashes. Both image runners resolve a mutable tag once and execute the
+  immutable image ID, reject other platforms, compare the repository lock to a
+  lock hash derived and baked inside that image, and pass an exact provenance
+  object into version-bumped reports. Exact-schema and baked-lock mismatch
+  regressions pass. The rejected CLAP JSON remains historical non-self-contained
+  evidence; this hardening applies to the required YAMNet/replacement reruns.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label.
 - [x] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine

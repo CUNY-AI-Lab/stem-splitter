@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   evaluateDiscoveryObservation,
   loadAndValidateEvaluationInputs,
+  validateCandidateExecutionProvenance,
 } from '../scripts/eval-instrument-discovery.mts';
 import type { InstrumentDetectionV1 } from '../src/analysis/types.ts';
 
@@ -122,6 +123,30 @@ test('candidate evaluation rejects classifier ids outside the pinned vocabulary'
   );
 });
 
+test('candidate report provenance accepts only an exact linux/amd64 image and lock identity', () => {
+  const valid = {
+    image: {
+      id: `sha256:${'a'.repeat(64)}`,
+      platform: 'linux/amd64',
+    },
+    dependencyLock: {
+      path: 'instrument-discovery/uv.lock',
+      sha256: 'b'.repeat(64),
+    },
+  };
+  assert.deepEqual(validateCandidateExecutionProvenance(valid), valid);
+
+  for (const invalid of [
+    { ...valid, extra: true },
+    { ...valid, image: { ...valid.image, platform: 'linux/arm64' } },
+    { ...valid, image: { ...valid.image, id: 'stem-splitter:latest' } },
+    { ...valid, dependencyLock: { ...valid.dependencyLock, path: 'other.lock' } },
+    { ...valid, dependencyLock: { ...valid.dependencyLock, sha256: 'short' } },
+  ]) {
+    assert.throws(() => validateCandidateExecutionProvenance(invalid), /provenance|schema/);
+  }
+});
+
 test('image evaluation runner is ephemeral, constrained, and writes private evidence', () => {
   const runner = readFileSync('scripts/run-instrument-discovery-eval.sh', 'utf8');
   const evaluator = readFileSync('scripts/eval-instrument-discovery.mts', 'utf8');
@@ -147,10 +172,17 @@ test('image evaluation runner is ephemeral, constrained, and writes private evid
   assert.match(runner, /INSTRUMENT_DISCOVERY_EVAL_READY_SECONDS:-240/);
   assert.match(runner, /discovery_eval_health.*unhealthy/s);
   assert.match(runner, /discovery_eval_failure_reason=unhealthy/);
+  assert.match(runner, /docker image inspect --format '\{\{\.Id\}\}'/);
+  assert.match(runner, /linux\/amd64/);
+  assert.match(runner, /instrument-discovery-provenance\/uv-lock\.sha256/);
+  assert.match(runner, /INSTRUMENT_DISCOVERY_EXECUTION_IMAGE_ID/);
+  assert.match(runner, /INSTRUMENT_DISCOVERY_DEPENDENCY_LOCK_SHA256/);
   assert.doesNotMatch(runner, /--network[ =]host/);
   assert.match(evaluator, /flag: 'wx', mode: 0o600/);
   assert.match(evaluator, /MAX_SOURCE_BYTES = 100 \* 1024 \* 1024/);
   assert.match(evaluator, /createReadStream\(path\)/);
+  assert.match(evaluator, /stem-splitter\.instrument-discovery-evaluation-report\.v2/);
+  assert.match(evaluator, /evaluationSourceSha256/);
 });
 
 test('offline score audit is networkless and cleans up its private PCM workspace', () => {
@@ -174,7 +206,13 @@ test('offline score audit is networkless and cleans up its private PCM workspace
   }
   assert.match(runner, /trap cleanup EXIT HUP INT TERM/);
   assert.match(runner, /docker rm --force "\$discovery_score_container"/);
+  assert.match(runner, /docker image inspect --format '\{\{\.Id\}\}'/);
+  assert.match(runner, /linux\/amd64/);
+  assert.match(runner, /instrument-discovery-provenance\/uv-lock\.sha256/);
+  assert.match(runner, /INSTRUMENT_DISCOVERY_EXECUTION_IMAGE_ID/);
+  assert.match(runner, /INSTRUMENT_DISCOVERY_DEPENDENCY_LOCK_SHA256/);
   assert.match(audit, /diagnosticOnly.*True/s);
   assert.match(audit, /networkRequired.*False/s);
   assert.match(audit, /thresholdMutation.*none/s);
+  assert.match(audit, /stem-splitter\.instrument-discovery-score-audit\.v3/);
 });

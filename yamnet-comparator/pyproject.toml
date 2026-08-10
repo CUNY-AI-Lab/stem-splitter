@@ -1,0 +1,13 @@
+[project]
+name = "stem-splitter-yamnet-comparator"
+version = "0.1.0"
+description = "Offline-only fixed-label YAMNet comparator for STEM Splitter"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "ai-edge-litert==2.0.3",
+  "numpy==2.3.5",
+  "scipy==1.16.3",
+]
+
+[tool.uv]
+package = false

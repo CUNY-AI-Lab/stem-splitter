@@ -21,6 +21,8 @@ from statistics import median
 from typing import Mapping, Sequence
 
 import clap_backend as clap_backend_module
+import constants as constants_module
+import contract as contract_module
 from clap_backend import ClapBackend
 from constants import (
     CLASSIFIER_VERSION,
@@ -33,11 +35,18 @@ from constants import (
 from contract import Instrument, Vocabulary, aggregate_window_scores, load_vocabulary
 
 INPUT_SCHEMA = "stem-splitter.instrument-discovery-score-audit-input.v1"
-OUTPUT_SCHEMA = "stem-splitter.instrument-discovery-score-audit.v2"
+OUTPUT_SCHEMA = "stem-splitter.instrument-discovery-score-audit.v3"
 MAX_MANIFEST_BYTES = 1024 * 1024
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SHA1_PATTERN = re.compile(r"^[a-f0-9]{40}$")
+SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+IMAGE_ID_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+PROMOTION_PLATFORM = "linux/amd64"
+DEPENDENCY_LOCK_SOURCE_PATH = "instrument-discovery/uv.lock"
+BAKED_DEPENDENCY_LOCK_SHA_PATH = Path(
+    "/opt/instrument-discovery-provenance/uv-lock.sha256"
+)
 
 
 class ScoreAuditError(ValueError):
@@ -47,6 +56,38 @@ class ScoreAuditError(ValueError):
 def _exact_keys(value: Mapping[str, object], keys: set[str], context: str) -> None:
     if set(value) != keys:
         raise ScoreAuditError(f"{context} keys do not match the audit schema")
+
+
+def validate_execution_provenance(
+    image_id: object,
+    platform: object,
+    dependency_lock_sha256: object,
+    *,
+    baked_lock_sha_path: Path = BAKED_DEPENDENCY_LOCK_SHA_PATH,
+) -> dict[str, object]:
+    """Bind a score report to the exact target image and lock used to build it."""
+    if not isinstance(image_id, str) or not IMAGE_ID_PATTERN.fullmatch(image_id):
+        raise ScoreAuditError("execution image identity is invalid")
+    if platform != PROMOTION_PLATFORM:
+        raise ScoreAuditError("execution platform is not the promotion platform")
+    if (
+        not isinstance(dependency_lock_sha256, str)
+        or not SHA256_PATTERN.fullmatch(dependency_lock_sha256)
+    ):
+        raise ScoreAuditError("dependency-lock identity is invalid")
+    try:
+        baked_lock_sha = baked_lock_sha_path.read_text("ascii")
+    except (OSError, UnicodeError) as error:
+        raise ScoreAuditError("baked dependency-lock identity is unavailable") from error
+    if baked_lock_sha != f"{dependency_lock_sha256}\n":
+        raise ScoreAuditError("dependency-lock identity does not match the executing image")
+    return {
+        "image": {"id": image_id, "platform": PROMOTION_PLATFORM},
+        "dependencyLock": {
+            "path": DEPENDENCY_LOCK_SOURCE_PATH,
+            "sha256": dependency_lock_sha256,
+        },
+    }
 
 
 def _id_list(value: object, context: str, *, allow_empty: bool = False) -> list[str]:
@@ -397,6 +438,11 @@ def _finite_distribution_by_category_and_prompt_count(
 
 
 def run_audit(manifest_path: Path) -> dict[str, object]:
+    execution = validate_execution_provenance(
+        os.environ.get("INSTRUMENT_DISCOVERY_EXECUTION_IMAGE_ID"),
+        os.environ.get("INSTRUMENT_DISCOVERY_EXECUTION_PLATFORM"),
+        os.environ.get("INSTRUMENT_DISCOVERY_DEPENDENCY_LOCK_SHA256"),
+    )
     document, manifest_bytes = _read_manifest(manifest_path)
     _exact_keys(
         document,
@@ -542,10 +588,17 @@ def run_audit(manifest_path: Path) -> dict[str, object]:
         "networkRequired": False,
         "routingEffect": "none",
         "thresholdMutation": "none",
+        "execution": execution,
         "diagnosticSourceSha256": {
             "scoreAudit": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "clapBackend": hashlib.sha256(
                 Path(str(clap_backend_module.__file__)).read_bytes()
+            ).hexdigest(),
+            "constants": hashlib.sha256(
+                Path(str(constants_module.__file__)).read_bytes()
+            ).hexdigest(),
+            "contract": hashlib.sha256(
+                Path(str(contract_module.__file__)).read_bytes()
             ).hexdigest(),
         },
         "inputManifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),

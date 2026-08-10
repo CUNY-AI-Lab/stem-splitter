@@ -1,0 +1,5155 @@
+{
+  "$schema": "stem-splitter.yamnet-comparator-evaluation.v1",
+  "generatedAt": "2026-08-10T03:00:33.842Z",
+  "status": "comparison-only-no-threshold",
+  "promotionEligible": false,
+  "caveat": "Corpus annotations are non-exhaustive. Rank and threshold-sweep results are not precision claims and cannot select a live threshold without reviewed controls.",
+  "candidate": {
+    "classifierVersion": "google-yamnet-tflite-v1-max-class-top3-patch-mean-second-window-v1@kaggle-version-763",
+    "modelSha256": "141fba1cdaae842c816f28edc4937e8b4f0af4c8df21862ccc6b52dc567993c3",
+    "classMapSha256": "cdf24d193e196d9e95912a2667051ae203e92a2ba09449218ccb40ef787c6df2",
+    "mappingSha256": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318",
+    "vocabularyVersion": "classroom-instruments-v1",
+    "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+    "scoringPolicyVersion": "max-class-top3-patch-mean-second-window-v1",
+    "scoringPolicy": {
+      "classAggregation": "maximum",
+      "patchAggregation": "top-k-mean",
+      "topPatchCount": 3,
+      "trackAggregation": "second-highest-window",
+      "singleWindowException": true,
+      "thresholdSelection": "none"
+    },
+    "supportedIds": [
+      "voice",
+      "strings",
+      "violin",
+      "cello",
+      "double-bass",
+      "acoustic-guitar",
+      "electric-guitar",
+      "bass-guitar",
+      "harp",
+      "banjo",
+      "mandolin",
+      "brass",
+      "trumpet",
+      "trombone",
+      "horn",
+      "saxophone",
+      "clarinet",
+      "flute",
+      "piano",
+      "electric-piano",
+      "organ",
+      "harpsichord",
+      "synthesizer",
+      "sampler",
+      "drum-machine",
+      "drum-kit",
+      "percussion",
+      "timpani",
+      "mallet-percussion",
+      "vibraphone",
+      "bell",
+      "accordion",
+      "harmonica",
+      "sitar",
+      "tabla",
+      "steelpan"
+    ],
+    "unsupported": [
+      {
+        "instrumentId": "viola",
+        "reason": "YAMNet has no viola class distinct from violin or bowed strings."
+      },
+      {
+        "instrumentId": "classical-guitar",
+        "reason": "YAMNet has no classical-guitar class distinct from acoustic guitar."
+      },
+      {
+        "instrumentId": "ukulele",
+        "reason": "YAMNet has no ukulele class."
+      },
+      {
+        "instrumentId": "tuba",
+        "reason": "YAMNet has no tuba class."
+      },
+      {
+        "instrumentId": "oboe",
+        "reason": "YAMNet has no oboe class."
+      },
+      {
+        "instrumentId": "bassoon",
+        "reason": "YAMNet has no bassoon class."
+      },
+      {
+        "instrumentId": "pipe-organ",
+        "reason": "YAMNet has no pipe-organ class distinct from generic organ."
+      },
+      {
+        "instrumentId": "pad",
+        "reason": "YAMNet has no synthesizer-pad class distinct from synthesizer."
+      },
+      {
+        "instrumentId": "marimba",
+        "reason": "YAMNet combines marimba and xylophone; the shared class maps only to mallet percussion."
+      },
+      {
+        "instrumentId": "bongos",
+        "reason": "YAMNet has no bongo class."
+      },
+      {
+        "instrumentId": "oud",
+        "reason": "YAMNet has no oud class."
+      },
+      {
+        "instrumentId": "erhu",
+        "reason": "YAMNet has no erhu class."
+      },
+      {
+        "instrumentId": "koto",
+        "reason": "YAMNet has no koto class."
+      },
+      {
+        "instrumentId": "shamisen",
+        "reason": "YAMNet has no shamisen class."
+      },
+      {
+        "instrumentId": "gamelan",
+        "reason": "YAMNet has no gamelan class."
+      }
+    ],
+    "officialLicense": "Apache 2.0",
+    "kaggleVersionId": 763,
+    "tensorflowModelsRevision": "4d7bdd8c170ee90850f2f9ccef0f6d19b817de35"
+  },
+  "execution": {
+    "id": "sha256:84be0205ccd53da93791a9c843ede0ae77ab1d12b6c1ebffc4712120ca14a14c",
+    "platform": "linux/arm64",
+    "sizeBytes": 673683451,
+    "host": "darwin/arm64",
+    "emulated": false,
+    "lockSha256": "b4cb15c5bf6fc4e68b9e3a7d617fc6ad81302ce35c3466cd70ba8f5626de4e3e",
+    "sourceSha256": {
+      "instrument-discovery/vocabulary.json": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+      "yamnet-comparator/Dockerfile": "f445e15af270a6104581173338cbeea73936bed3e558bfeff25e05718eb6a24b",
+      "yamnet-comparator/backend.py": "29bc8aedb22448407112886a24c5b8810512adf0d87743e5d78b2471f7e1d5a8",
+      "yamnet-comparator/cli.py": "04ed09cedf4e2f4abd5a5a88656df582975976bb08ed562788c0a7ca1fd24b4e",
+      "yamnet-comparator/constants.py": "ade425d97df99f89dba8a4b97431206542fd9162c1a819712bedb4028f0c6f35",
+      "yamnet-comparator/contract.py": "1e909097b01a383a187eb6db328276abada4215b18add056c07192ef66b2eec1",
+      "yamnet-comparator/download_model.py": "7fea299940051c5ab094aaa89f8f8ad993872e7d0f7cb85dd50787682e2f1c35",
+      "yamnet-comparator/mapping.json": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318"
+    }
+  },
+  "evaluationSources": {
+    "corpusPath": "tests/corpus/corpus.json",
+    "corpusSha256": "6c53088bf90e0ecb9df9ece69f974af65354c70ae57d5e7861d19ba59f193cab",
+    "groundTruthPath": "tests/corpus/instrument-discovery-expectations.json",
+    "groundTruthSha256": "c3fbe177004adbd01b1896dc2944c41cb216f3df5a69f308d0c7a0bbc521e1f3",
+    "mappingPath": "yamnet-comparator/mapping.json",
+    "mappingSha256": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318",
+    "evaluatorPath": "scripts/eval-yamnet-comparator.mts",
+    "evaluatorSha256": "6d6da0733c90771e2a51f3c548eaaf8dded2fd9b18eb6c2648572e367b32ac91",
+    "ffmpegVersion": "8.1.2",
+    "ffprobeVersion": "8.1.2",
+    "analysisSampleRate": 22050
+  },
+  "summary": {
+    "sources": 11,
+    "eligibleExpectedGroups": 40,
+    "unsupportedExpectedGroups": 2,
+    "top3ExpectedGroups": 16,
+    "top5ExpectedGroups": 21,
+    "top10ExpectedGroups": 31,
+    "meanReciprocalRankBasisPoints": 3507,
+    "thresholdSweep": [
+      {
+        "threshold": 0.05,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 10,
+        "expectedRecallBasisPoints": 2500,
+        "hardNegativeAlerts": 5
+      },
+      {
+        "threshold": 0.1,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 6,
+        "expectedRecallBasisPoints": 1500,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.15,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 4,
+        "expectedRecallBasisPoints": 1000,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.2,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 2,
+        "expectedRecallBasisPoints": 500,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.25,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 1,
+        "expectedRecallBasisPoints": 250,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.3,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.35,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.4,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.45,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.5,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.55,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.6,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.65,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.7,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.75,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.8,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.85,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.9,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      },
+      {
+        "threshold": 0.95,
+        "eligibleExpectedGroups": 40,
+        "expectedHits": 0,
+        "expectedRecallBasisPoints": 0,
+        "hardNegativeAlerts": 0
+      }
+    ],
+    "totalLoadMs": 4425,
+    "totalInferenceMs": 392,
+    "totalComparatorMs": 4921
+  },
+  "byCoverage": {
+    "banjo": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3336
+    },
+    "bowed-strings": {
+      "sources": 2,
+      "eligibleExpectedGroups": 10,
+      "unsupportedExpectedGroups": 2,
+      "top5ExpectedGroups": 4,
+      "meanReciprocalRankBasisPoints": 3223
+    },
+    "brass": {
+      "sources": 1,
+      "eligibleExpectedGroups": 5,
+      "unsupportedExpectedGroups": 2,
+      "top5ExpectedGroups": 1,
+      "meanReciprocalRankBasisPoints": 2752
+    },
+    "dense-mix": {
+      "sources": 1,
+      "eligibleExpectedGroups": 4,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3125
+    },
+    "digital-jazz": {
+      "sources": 2,
+      "eligibleExpectedGroups": 4,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 2929
+    },
+    "electric-guitar": {
+      "sources": 1,
+      "eligibleExpectedGroups": 4,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3125
+    },
+    "electronic": {
+      "sources": 4,
+      "eligibleExpectedGroups": 9,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 6,
+      "meanReciprocalRankBasisPoints": 4357
+    },
+    "electronic-percussion": {
+      "sources": 1,
+      "eligibleExpectedGroups": 3,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 5476
+    },
+    "fiddle": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3336
+    },
+    "folk": {
+      "sources": 1,
+      "eligibleExpectedGroups": 2,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 6667
+    },
+    "folk-traditional": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3336
+    },
+    "harmonica": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 1,
+      "meanReciprocalRankBasisPoints": 1094
+    },
+    "hip-hop": {
+      "sources": 1,
+      "eligibleExpectedGroups": 3,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 5476
+    },
+    "house": {
+      "sources": 1,
+      "eligibleExpectedGroups": 2,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 6667
+    },
+    "jazz": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 1,
+      "meanReciprocalRankBasisPoints": 1094
+    },
+    "mandolin": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3336
+    },
+    "multi-vocal": {
+      "sources": 1,
+      "eligibleExpectedGroups": 2,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 6667
+    },
+    "orchestral": {
+      "sources": 1,
+      "eligibleExpectedGroups": 5,
+      "unsupportedExpectedGroups": 2,
+      "top5ExpectedGroups": 1,
+      "meanReciprocalRankBasisPoints": 2752
+    },
+    "piano": {
+      "sources": 1,
+      "eligibleExpectedGroups": 5,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3694
+    },
+    "programmed-drums": {
+      "sources": 4,
+      "eligibleExpectedGroups": 9,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 6,
+      "meanReciprocalRankBasisPoints": 4357
+    },
+    "reeds": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 1,
+      "meanReciprocalRankBasisPoints": 1094
+    },
+    "rock": {
+      "sources": 1,
+      "eligibleExpectedGroups": 4,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3125
+    },
+    "singer-songwriter": {
+      "sources": 1,
+      "eligibleExpectedGroups": 5,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3694
+    },
+    "sparse-acoustic": {
+      "sources": 1,
+      "eligibleExpectedGroups": 2,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 6667
+    },
+    "spoken-vocal": {
+      "sources": 1,
+      "eligibleExpectedGroups": 3,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 5476
+    },
+    "synth-bass": {
+      "sources": 1,
+      "eligibleExpectedGroups": 3,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 5476
+    },
+    "synthesizer": {
+      "sources": 4,
+      "eligibleExpectedGroups": 9,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 6,
+      "meanReciprocalRankBasisPoints": 4357
+    },
+    "upright-bass": {
+      "sources": 1,
+      "eligibleExpectedGroups": 6,
+      "unsupportedExpectedGroups": 0,
+      "top5ExpectedGroups": 3,
+      "meanReciprocalRankBasisPoints": 3336
+    },
+    "woodwinds": {
+      "sources": 2,
+      "eligibleExpectedGroups": 11,
+      "unsupportedExpectedGroups": 2,
+      "top5ExpectedGroups": 2,
+      "meanReciprocalRankBasisPoints": 1847
+    }
+  },
+  "byFamily": {
+    "bowed-strings": {
+      "eligibleGroups": 4,
+      "top5Groups": 3,
+      "meanRank": 8
+    },
+    "brass": {
+      "eligibleGroups": 2,
+      "top5Groups": 0,
+      "meanRank": 9
+    },
+    "cross-family": {
+      "eligibleGroups": 7,
+      "top5Groups": 3,
+      "meanRank": 5.857
+    },
+    "electronic": {
+      "eligibleGroups": 5,
+      "top5Groups": 3,
+      "meanRank": 5
+    },
+    "free-reed": {
+      "eligibleGroups": 1,
+      "top5Groups": 0,
+      "meanRank": 25
+    },
+    "keys": {
+      "eligibleGroups": 1,
+      "top5Groups": 1,
+      "meanRank": 1
+    },
+    "percussion": {
+      "eligibleGroups": 4,
+      "top5Groups": 2,
+      "meanRank": 11.5
+    },
+    "plucked-strings": {
+      "eligibleGroups": 7,
+      "top5Groups": 3,
+      "meanRank": 6.714
+    },
+    "voice": {
+      "eligibleGroups": 6,
+      "top5Groups": 6,
+      "meanRank": 2.667
+    },
+    "woodwind": {
+      "eligibleGroups": 3,
+      "top5Groups": 0,
+      "meanRank": 16.333
+    }
+  },
+  "confusionTrials": [
+    {
+      "id": "electric-guitar-vs-synthesizer",
+      "status": "bidirectional",
+      "observations": [
+        {
+          "slug": "shoegaze",
+          "expectedSide": "left",
+          "leftScore": 0.01727835,
+          "rightScore": 0.00191275,
+          "expectedMargin": 0.015365600000000002
+        },
+        {
+          "slug": "electronic-stiff-hand",
+          "expectedSide": "right",
+          "leftScore": 0.00806656,
+          "rightScore": 0.00692395,
+          "expectedMargin": -0.0011426100000000005
+        }
+      ]
+    },
+    {
+      "id": "bass-guitar-vs-double-bass",
+      "status": "bidirectional",
+      "observations": [
+        {
+          "slug": "shoegaze",
+          "expectedSide": "left",
+          "leftScore": 0.02285799,
+          "rightScore": 0.00168931,
+          "expectedMargin": 0.021168680000000002
+        },
+        {
+          "slug": "bluegrass",
+          "expectedSide": "right",
+          "leftScore": 0.00324017,
+          "rightScore": 0.00053955,
+          "expectedMargin": -0.00270062
+        }
+      ]
+    },
+    {
+      "id": "piano-vs-mallet-percussion",
+      "status": "one-direction",
+      "observations": [
+        {
+          "slug": "piano-strings",
+          "expectedSide": "left",
+          "leftScore": 0.11378268,
+          "rightScore": 0.00019196,
+          "expectedMargin": 0.11359071999999999
+        }
+      ]
+    },
+    {
+      "id": "saxophone-vs-brass",
+      "status": "one-direction",
+      "observations": [
+        {
+          "slug": "jazz-sax",
+          "expectedSide": "left",
+          "leftScore": 0.05869943,
+          "rightScore": 0.09829991,
+          "expectedMargin": -0.03960048000000001
+        }
+      ]
+    },
+    {
+      "id": "solo-strings-vs-string-section",
+      "status": "corpus-gap",
+      "observations": []
+    },
+    {
+      "id": "pitched-percussion-vs-keys",
+      "status": "corpus-gap",
+      "observations": []
+    }
+  ],
+  "observations": [
+    {
+      "slug": "folk-duet",
+      "coverage": [
+        "folk",
+        "sparse-acoustic",
+        "multi-vocal"
+      ],
+      "sourceSha1": "66522de337c871f96b6d01aa886052a79ccaa7f6",
+      "sourceBytes": 6042822,
+      "sourceDurationSeconds": 256.333,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 430,
+      "inferenceMs": 36,
+      "timingMs": 475,
+      "trackScores": {
+        "voice": 0.035249,
+        "strings": 0.0072792,
+        "violin": 0.00581613,
+        "cello": 0.00215751,
+        "double-bass": 0.00292564,
+        "acoustic-guitar": 0.28633144,
+        "electric-guitar": 0.01274948,
+        "bass-guitar": 0.02152843,
+        "harp": 0.13885572,
+        "banjo": 0.00086101,
+        "mandolin": 0.0034095,
+        "brass": 0.00040275,
+        "trumpet": 0.00002997,
+        "trombone": 0.00009525,
+        "horn": 0.00003353,
+        "saxophone": 0.00008587,
+        "clarinet": 0.0000399,
+        "flute": 0.00007537,
+        "piano": 0.006456,
+        "electric-piano": 0.00413917,
+        "organ": 0.00025068,
+        "harpsichord": 0.00084243,
+        "synthesizer": 0.00216034,
+        "sampler": 0.00118342,
+        "drum-machine": 0.00026858,
+        "drum-kit": 0.00092549,
+        "percussion": 0.00937239,
+        "timpani": 0.00011159,
+        "mallet-percussion": 0.00493855,
+        "vibraphone": 0.00381078,
+        "bell": 0.00048363,
+        "accordion": 0.00001252,
+        "harmonica": 0.00008588,
+        "sitar": 0.00002019,
+        "tabla": 0.00000687,
+        "steelpan": 0.00000777
+      },
+      "topMapped": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.28633144
+        },
+        {
+          "id": "harp",
+          "score": 0.13885572
+        },
+        {
+          "id": "voice",
+          "score": 0.035249
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.02152843
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.01274948
+        },
+        {
+          "id": "percussion",
+          "score": 0.00937239
+        },
+        {
+          "id": "strings",
+          "score": 0.0072792
+        },
+        {
+          "id": "piano",
+          "score": 0.006456
+        },
+        {
+          "id": "violin",
+          "score": 0.00581613
+        },
+        {
+          "id": "mallet-percussion",
+          "score": 0.00493855
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00413917
+        },
+        {
+          "id": "vibraphone",
+          "score": 0.00381078
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99892205
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.61938143
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.58292335
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.49555984
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.48160669
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.26272666
+          },
+          {
+            "index": 194,
+            "mid": "/m/03m5k",
+            "displayName": "Harp",
+            "top3Mean": 0.13885571
+          },
+          {
+            "index": 266,
+            "mid": "/m/07pkxdp",
+            "displayName": "Lullaby",
+            "top3Mean": 0.12337007
+          },
+          {
+            "index": 245,
+            "mid": "/m/0326g",
+            "displayName": "Flamenco",
+            "top3Mean": 0.04252197
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.03524901
+          },
+          {
+            "index": 146,
+            "mid": "/m/07xzm",
+            "displayName": "Ukulele",
+            "top3Mean": 0.03136705
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.03005242
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.9948566
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.25256988
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.19277783
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.17447257
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.13145243
+          },
+          {
+            "index": 266,
+            "mid": "/m/07pkxdp",
+            "displayName": "Lullaby",
+            "top3Mean": 0.12906626
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.10555191
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.07169017
+          },
+          {
+            "index": 249,
+            "mid": "/m/0y4f8",
+            "displayName": "Vocal music",
+            "top3Mean": 0.04053556
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.03930402
+          },
+          {
+            "index": 250,
+            "mid": "/m/0z9c",
+            "displayName": "A capella",
+            "top3Mean": 0.02752636
+          },
+          {
+            "index": 247,
+            "mid": "/m/05fw6t",
+            "displayName": "Music for children",
+            "top3Mean": 0.02255901
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 0.99993658
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99888974
+          },
+          {
+            "index": 209,
+            "mid": "/m/0l14t7",
+            "displayName": "Singing bowl",
+            "top3Mean": 0.60409009
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.41651198
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.41557559
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.41052306
+          },
+          {
+            "index": 137,
+            "mid": "/m/018vs",
+            "displayName": "Bass guitar",
+            "top3Mean": 0.36855546
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.28633142
+          },
+          {
+            "index": 194,
+            "mid": "/m/03m5k",
+            "displayName": "Harp",
+            "top3Mean": 0.26164034
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.14456469
+          },
+          {
+            "index": 495,
+            "mid": "/m/01v_m0",
+            "displayName": "Sine wave",
+            "top3Mean": 0.13457265
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.08589678
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "lead-vocals",
+            "harmony-vocals"
+          ],
+          "acceptedIds": [
+            "voice"
+          ],
+          "supportedAcceptedIds": [
+            "voice"
+          ],
+          "state": "eligible",
+          "score": 0.035249,
+          "rank": 3,
+          "family": "voice"
+        },
+        {
+          "corpusTerms": [
+            "acoustic-guitar"
+          ],
+          "acceptedIds": [
+            "acoustic-guitar",
+            "classical-guitar"
+          ],
+          "supportedAcceptedIds": [
+            "acoustic-guitar"
+          ],
+          "state": "eligible",
+          "score": 0.28633144,
+          "rank": 1,
+          "family": "plucked-strings"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "synthesizer",
+          "score": 0.00216034
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.00092549
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.00026858
+        }
+      ]
+    },
+    {
+      "slug": "orchestral",
+      "coverage": [
+        "orchestral",
+        "bowed-strings",
+        "brass",
+        "woodwinds"
+      ],
+      "sourceSha1": "6f7ba42746688742d8d690797389628e4b4cf545",
+      "sourceBytes": 20025268,
+      "sourceDurationSeconds": 500.523,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 416,
+      "inferenceMs": 35,
+      "timingMs": 461,
+      "trackScores": {
+        "voice": 0.0020324,
+        "strings": 0.15502563,
+        "violin": 0.18339818,
+        "cello": 0.05077529,
+        "double-bass": 0.01251249,
+        "acoustic-guitar": 0.00051638,
+        "electric-guitar": 0.00031645,
+        "bass-guitar": 0.00007107,
+        "harp": 0.00006318,
+        "banjo": 0.00006117,
+        "mandolin": 0.00133923,
+        "brass": 0.01293256,
+        "trumpet": 0.00670015,
+        "trombone": 0.0046022,
+        "horn": 0.00275765,
+        "saxophone": 0.00048643,
+        "clarinet": 0.00079792,
+        "flute": 0.00106033,
+        "piano": 0.00644887,
+        "electric-piano": 0.00083404,
+        "organ": 0.01579944,
+        "harpsichord": 0.00291926,
+        "synthesizer": 0.00123074,
+        "sampler": 0.00097186,
+        "drum-machine": 0.00002466,
+        "drum-kit": 0.00030845,
+        "percussion": 0.00233663,
+        "timpani": 0.00040157,
+        "mallet-percussion": 0.00072409,
+        "vibraphone": 0.00006051,
+        "bell": 0.00092824,
+        "accordion": 0.00183212,
+        "harmonica": 0.00027255,
+        "sitar": 0.00002516,
+        "tabla": 6.1e-7,
+        "steelpan": 0.00022045
+      },
+      "topMapped": [
+        {
+          "id": "violin",
+          "score": 0.18339818
+        },
+        {
+          "id": "strings",
+          "score": 0.15502563
+        },
+        {
+          "id": "cello",
+          "score": 0.05077529
+        },
+        {
+          "id": "organ",
+          "score": 0.01579944
+        },
+        {
+          "id": "brass",
+          "score": 0.01293256
+        },
+        {
+          "id": "double-bass",
+          "score": 0.01251249
+        },
+        {
+          "id": "trumpet",
+          "score": 0.00670015
+        },
+        {
+          "id": "piano",
+          "score": 0.00644887
+        },
+        {
+          "id": "trombone",
+          "score": 0.0046022
+        },
+        {
+          "id": "harpsichord",
+          "score": 0.00291926
+        },
+        {
+          "id": "horn",
+          "score": 0.00275765
+        },
+        {
+          "id": "percussion",
+          "score": 0.00233663
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99880749
+          },
+          {
+            "index": 184,
+            "mid": "/m/0l14_3",
+            "displayName": "Bowed string instrument",
+            "top3Mean": 0.3317605
+          },
+          {
+            "index": 186,
+            "mid": "/m/07y_7",
+            "displayName": "Violin, fiddle",
+            "top3Mean": 0.27215865
+          },
+          {
+            "index": 179,
+            "mid": "/m/05pd6",
+            "displayName": "Orchestra",
+            "top3Mean": 0.25927699
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.21280916
+          },
+          {
+            "index": 188,
+            "mid": "/m/01xqw",
+            "displayName": "Cello",
+            "top3Mean": 0.11873283
+          },
+          {
+            "index": 232,
+            "mid": "/m/0ggq0m",
+            "displayName": "Classical music",
+            "top3Mean": 0.10208195
+          },
+          {
+            "index": 185,
+            "mid": "/m/02qmj0d",
+            "displayName": "String section",
+            "top3Mean": 0.06842279
+          },
+          {
+            "index": 262,
+            "mid": "/m/025td0t",
+            "displayName": "Background music",
+            "top3Mean": 0.06028275
+          },
+          {
+            "index": 263,
+            "mid": "/m/02cjck",
+            "displayName": "Theme music",
+            "top3Mean": 0.05703734
+          },
+          {
+            "index": 518,
+            "mid": "/m/07c52",
+            "displayName": "Television",
+            "top3Mean": 0.05544296
+          },
+          {
+            "index": 233,
+            "mid": "/m/05lls",
+            "displayName": "Opera",
+            "top3Mean": 0.03606053
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99708867
+          },
+          {
+            "index": 179,
+            "mid": "/m/05pd6",
+            "displayName": "Orchestra",
+            "top3Mean": 0.3272061
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.25645247
+          },
+          {
+            "index": 232,
+            "mid": "/m/0ggq0m",
+            "displayName": "Classical music",
+            "top3Mean": 0.19178498
+          },
+          {
+            "index": 186,
+            "mid": "/m/07y_7",
+            "displayName": "Violin, fiddle",
+            "top3Mean": 0.18339819
+          },
+          {
+            "index": 184,
+            "mid": "/m/0l14_3",
+            "displayName": "Bowed string instrument",
+            "top3Mean": 0.15502563
+          },
+          {
+            "index": 180,
+            "mid": "/m/01kcd",
+            "displayName": "Brass instrument",
+            "top3Mean": 0.10549361
+          },
+          {
+            "index": 190,
+            "mid": "/m/085jw",
+            "displayName": "Wind instrument, woodwind instrument",
+            "top3Mean": 0.06003283
+          },
+          {
+            "index": 181,
+            "mid": "/m/0319l",
+            "displayName": "French horn",
+            "top3Mean": 0.05889559
+          },
+          {
+            "index": 188,
+            "mid": "/m/01xqw",
+            "displayName": "Cello",
+            "top3Mean": 0.05077529
+          },
+          {
+            "index": 183,
+            "mid": "/m/07c6l",
+            "displayName": "Trombone",
+            "top3Mean": 0.04215027
+          },
+          {
+            "index": 191,
+            "mid": "/m/0l14j_",
+            "displayName": "Flute",
+            "top3Mean": 0.0405961
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99777889
+          },
+          {
+            "index": 179,
+            "mid": "/m/05pd6",
+            "displayName": "Orchestra",
+            "top3Mean": 0.196151
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.05156697
+          },
+          {
+            "index": 184,
+            "mid": "/m/0l14_3",
+            "displayName": "Bowed string instrument",
+            "top3Mean": 0.04391834
+          },
+          {
+            "index": 263,
+            "mid": "/m/02cjck",
+            "displayName": "Theme music",
+            "top3Mean": 0.039945
+          },
+          {
+            "index": 186,
+            "mid": "/m/07y_7",
+            "displayName": "Violin, fiddle",
+            "top3Mean": 0.03860226
+          },
+          {
+            "index": 262,
+            "mid": "/m/025td0t",
+            "displayName": "Background music",
+            "top3Mean": 0.02551669
+          },
+          {
+            "index": 232,
+            "mid": "/m/0ggq0m",
+            "displayName": "Classical music",
+            "top3Mean": 0.02334111
+          },
+          {
+            "index": 518,
+            "mid": "/m/07c52",
+            "displayName": "Television",
+            "top3Mean": 0.02180357
+          },
+          {
+            "index": 150,
+            "mid": "/m/013y1f",
+            "displayName": "Organ",
+            "top3Mean": 0.01662899
+          },
+          {
+            "index": 274,
+            "mid": "/t/dd00035",
+            "displayName": "Exciting music",
+            "top3Mean": 0.01626027
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "bowed-strings"
+          ],
+          "acceptedIds": [
+            "strings",
+            "violin",
+            "viola",
+            "cello",
+            "double-bass"
+          ],
+          "supportedAcceptedIds": [
+            "strings",
+            "violin",
+            "cello",
+            "double-bass"
+          ],
+          "state": "eligible",
+          "score": 0.18339818,
+          "rank": 1,
+          "family": "bowed-strings"
+        },
+        {
+          "corpusTerms": [
+            "flute"
+          ],
+          "acceptedIds": [
+            "flute"
+          ],
+          "supportedAcceptedIds": [
+            "flute"
+          ],
+          "state": "eligible",
+          "score": 0.00106033,
+          "rank": 17,
+          "family": "woodwind"
+        },
+        {
+          "corpusTerms": [
+            "oboe"
+          ],
+          "acceptedIds": [
+            "oboe"
+          ],
+          "supportedAcceptedIds": [],
+          "state": "unsupported",
+          "score": null,
+          "rank": null,
+          "family": "unsupported"
+        },
+        {
+          "corpusTerms": [
+            "bassoon"
+          ],
+          "acceptedIds": [
+            "bassoon"
+          ],
+          "supportedAcceptedIds": [],
+          "state": "unsupported",
+          "score": null,
+          "rank": null,
+          "family": "unsupported"
+        },
+        {
+          "corpusTerms": [
+            "horn"
+          ],
+          "acceptedIds": [
+            "horn"
+          ],
+          "supportedAcceptedIds": [
+            "horn"
+          ],
+          "state": "eligible",
+          "score": 0.00275765,
+          "rank": 11,
+          "family": "brass"
+        },
+        {
+          "corpusTerms": [
+            "trumpet"
+          ],
+          "acceptedIds": [
+            "trumpet"
+          ],
+          "supportedAcceptedIds": [
+            "trumpet"
+          ],
+          "state": "eligible",
+          "score": 0.00670015,
+          "rank": 7,
+          "family": "brass"
+        },
+        {
+          "corpusTerms": [
+            "timpani"
+          ],
+          "acceptedIds": [
+            "timpani",
+            "percussion"
+          ],
+          "supportedAcceptedIds": [
+            "timpani",
+            "percussion"
+          ],
+          "state": "eligible",
+          "score": 0.00233663,
+          "rank": 12,
+          "family": "percussion"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "piano",
+          "score": 0.00644887
+        },
+        {
+          "id": "voice",
+          "score": 0.0020324
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00123074
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00031645
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00007107
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.00002466
+        }
+      ]
+    },
+    {
+      "slug": "shoegaze",
+      "coverage": [
+        "rock",
+        "electric-guitar",
+        "dense-mix"
+      ],
+      "sourceSha1": "cdd5b8e19c623f90a7b03540d7da3024acbb4d46",
+      "sourceBytes": 2793984,
+      "sourceDurationSeconds": 212.043,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 429,
+      "inferenceMs": 35,
+      "timingMs": 473,
+      "trackScores": {
+        "voice": 0.02039161,
+        "strings": 0.00484919,
+        "violin": 0.00333501,
+        "cello": 0.00091821,
+        "double-bass": 0.00168931,
+        "acoustic-guitar": 0.0174998,
+        "electric-guitar": 0.01727835,
+        "bass-guitar": 0.02285799,
+        "harp": 0.00078843,
+        "banjo": 0.00135718,
+        "mandolin": 0.00090971,
+        "brass": 0.00110992,
+        "trumpet": 0.00022132,
+        "trombone": 0.00029609,
+        "horn": 0.00003421,
+        "saxophone": 0.00248354,
+        "clarinet": 0.0001845,
+        "flute": 0.00126649,
+        "piano": 0.00116424,
+        "electric-piano": 0.00067177,
+        "organ": 0.00062087,
+        "harpsichord": 0.00035024,
+        "synthesizer": 0.00191275,
+        "sampler": 0.00255196,
+        "drum-machine": 0.00136384,
+        "drum-kit": 0.15166516,
+        "percussion": 0.15781457,
+        "timpani": 0.00052057,
+        "mallet-percussion": 0.00297639,
+        "vibraphone": 0.00015672,
+        "bell": 0.00409235,
+        "accordion": 0.00059371,
+        "harmonica": 0.00150909,
+        "sitar": 0.00057247,
+        "tabla": 0.00074034,
+        "steelpan": 0.00240454
+      },
+      "topMapped": [
+        {
+          "id": "percussion",
+          "score": 0.15781457
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.15166516
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.02285799
+        },
+        {
+          "id": "voice",
+          "score": 0.02039161
+        },
+        {
+          "id": "acoustic-guitar",
+          "score": 0.0174998
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.01727835
+        },
+        {
+          "id": "strings",
+          "score": 0.00484919
+        },
+        {
+          "id": "bell",
+          "score": 0.00409235
+        },
+        {
+          "id": "violin",
+          "score": 0.00333501
+        },
+        {
+          "id": "mallet-percussion",
+          "score": 0.00297639
+        },
+        {
+          "id": "sampler",
+          "score": 0.00255196
+        },
+        {
+          "id": "saxophone",
+          "score": 0.00248354
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.97348213
+          },
+          {
+            "index": 0,
+            "mid": "/m/09x0r",
+            "displayName": "Speech",
+            "top3Mean": 0.86459589
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.58363056
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.56014699
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.49783126
+          },
+          {
+            "index": 160,
+            "mid": "/m/06rvn",
+            "displayName": "Snare drum",
+            "top3Mean": 0.40201721
+          },
+          {
+            "index": 161,
+            "mid": "/m/03t3fj",
+            "displayName": "Rimshot",
+            "top3Mean": 0.39734712
+          },
+          {
+            "index": 163,
+            "mid": "/m/0bm02",
+            "displayName": "Bass drum",
+            "top3Mean": 0.3845512
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.32705173
+          },
+          {
+            "index": 166,
+            "mid": "/m/01qbl",
+            "displayName": "Cymbal",
+            "top3Mean": 0.18516827
+          },
+          {
+            "index": 167,
+            "mid": "/m/03qtq",
+            "displayName": "Hi-hat",
+            "top3Mean": 0.14251046
+          },
+          {
+            "index": 162,
+            "mid": "/m/02k_mr",
+            "displayName": "Drum roll",
+            "top3Mean": 0.11327251
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.98428541
+          },
+          {
+            "index": 214,
+            "mid": "/m/06by7",
+            "displayName": "Rock music",
+            "top3Mean": 0.21809869
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.16256598
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.15781458
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.15166517
+          },
+          {
+            "index": 220,
+            "mid": "/m/05w3f",
+            "displayName": "Psychedelic rock",
+            "top3Mean": 0.12792261
+          },
+          {
+            "index": 216,
+            "mid": "/m/05r6t",
+            "displayName": "Punk rock",
+            "top3Mean": 0.11849234
+          },
+          {
+            "index": 219,
+            "mid": "/m/07sbbz2",
+            "displayName": "Rock and roll",
+            "top3Mean": 0.0918164
+          },
+          {
+            "index": 161,
+            "mid": "/m/03t3fj",
+            "displayName": "Rimshot",
+            "top3Mean": 0.08816769
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.08574148
+          },
+          {
+            "index": 218,
+            "mid": "/m/0dl5d",
+            "displayName": "Progressive rock",
+            "top3Mean": 0.08029586
+          },
+          {
+            "index": 163,
+            "mid": "/m/0bm02",
+            "displayName": "Bass drum",
+            "top3Mean": 0.07672609
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "mid": "/m/09x0r",
+            "displayName": "Speech",
+            "top3Mean": 0.97729021
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.93524283
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.19953148
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.19219692
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.15778255
+          },
+          {
+            "index": 136,
+            "mid": "/m/02sgy",
+            "displayName": "Electric guitar",
+            "top3Mean": 0.14093715
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.07981461
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.07763296
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.06984537
+          },
+          {
+            "index": 436,
+            "mid": "/m/07q7njn",
+            "displayName": "Chink, clink",
+            "top3Mean": 0.06407522
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.05161239
+          },
+          {
+            "index": 160,
+            "mid": "/m/06rvn",
+            "displayName": "Snare drum",
+            "top3Mean": 0.05133694
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "vocals"
+          ],
+          "acceptedIds": [
+            "voice"
+          ],
+          "supportedAcceptedIds": [
+            "voice"
+          ],
+          "state": "eligible",
+          "score": 0.02039161,
+          "rank": 4,
+          "family": "voice"
+        },
+        {
+          "corpusTerms": [
+            "electric-guitar"
+          ],
+          "acceptedIds": [
+            "electric-guitar"
+          ],
+          "supportedAcceptedIds": [
+            "electric-guitar"
+          ],
+          "state": "eligible",
+          "score": 0.01727835,
+          "rank": 6,
+          "family": "plucked-strings"
+        },
+        {
+          "corpusTerms": [
+            "bass-guitar"
+          ],
+          "acceptedIds": [
+            "bass-guitar"
+          ],
+          "supportedAcceptedIds": [
+            "bass-guitar"
+          ],
+          "state": "eligible",
+          "score": 0.02285799,
+          "rank": 3,
+          "family": "plucked-strings"
+        },
+        {
+          "corpusTerms": [
+            "drum-kit"
+          ],
+          "acceptedIds": [
+            "drum-kit"
+          ],
+          "supportedAcceptedIds": [
+            "drum-kit"
+          ],
+          "state": "eligible",
+          "score": 0.15166516,
+          "rank": 2,
+          "family": "percussion"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "synthesizer",
+          "score": 0.00191275
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00168931
+        }
+      ]
+    },
+    {
+      "slug": "piano-strings",
+      "coverage": [
+        "singer-songwriter",
+        "piano",
+        "bowed-strings"
+      ],
+      "sourceSha1": "428c10d640bb62c1a0e3319aa073a60fb01a825c",
+      "sourceBytes": 6992020,
+      "sourceDurationSeconds": 224.711,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 358,
+      "inferenceMs": 36,
+      "timingMs": 405,
+      "trackScores": {
+        "voice": 0.06043648,
+        "strings": 0.0074853,
+        "violin": 0.00413055,
+        "cello": 0.00447626,
+        "double-bass": 0.00352897,
+        "acoustic-guitar": 0.03553403,
+        "electric-guitar": 0.0016894,
+        "bass-guitar": 0.00178454,
+        "harp": 0.00469604,
+        "banjo": 0.00065025,
+        "mandolin": 0.00099187,
+        "brass": 0.00075651,
+        "trumpet": 0.000252,
+        "trombone": 0.00012007,
+        "horn": 0.00006019,
+        "saxophone": 0.00057874,
+        "clarinet": 0.00031511,
+        "flute": 0.00028785,
+        "piano": 0.11378268,
+        "electric-piano": 0.03062811,
+        "organ": 0.00228262,
+        "harpsichord": 0.00174081,
+        "synthesizer": 0.00207974,
+        "sampler": 0.00098517,
+        "drum-machine": 0.0000041,
+        "drum-kit": 0.0001356,
+        "percussion": 0.00266565,
+        "timpani": 0.00000827,
+        "mallet-percussion": 0.00019196,
+        "vibraphone": 0.00007043,
+        "bell": 0.00089088,
+        "accordion": 0.00006749,
+        "harmonica": 0.00026508,
+        "sitar": 0.00043867,
+        "tabla": 0.00005212,
+        "steelpan": 0.0000011
+      },
+      "topMapped": [
+        {
+          "id": "piano",
+          "score": 0.11378268
+        },
+        {
+          "id": "voice",
+          "score": 0.06043648
+        },
+        {
+          "id": "acoustic-guitar",
+          "score": 0.03553403
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.03062811
+        },
+        {
+          "id": "strings",
+          "score": 0.0074853
+        },
+        {
+          "id": "harp",
+          "score": 0.00469604
+        },
+        {
+          "id": "cello",
+          "score": 0.00447626
+        },
+        {
+          "id": "violin",
+          "score": 0.00413055
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00352897
+        },
+        {
+          "id": "percussion",
+          "score": 0.00266565
+        },
+        {
+          "id": "organ",
+          "score": 0.00228262
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00207974
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.97839314
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.1673907
+          },
+          {
+            "index": 189,
+            "mid": "/m/02fsn",
+            "displayName": "Double bass",
+            "top3Mean": 0.14954543
+          },
+          {
+            "index": 148,
+            "mid": "/m/05r5c",
+            "displayName": "Piano",
+            "top3Mean": 0.11378268
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.10020975
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.09040309
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.08747285
+          },
+          {
+            "index": 188,
+            "mid": "/m/01xqw",
+            "displayName": "Cello",
+            "top3Mean": 0.06913188
+          },
+          {
+            "index": 184,
+            "mid": "/m/0l14_3",
+            "displayName": "Bowed string instrument",
+            "top3Mean": 0.0673383
+          },
+          {
+            "index": 266,
+            "mid": "/m/07pkxdp",
+            "displayName": "Lullaby",
+            "top3Mean": 0.06445952
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.06043648
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.05560266
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.96095133
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.14523832
+          },
+          {
+            "index": 260,
+            "mid": "/m/05rwpb",
+            "displayName": "Independent music",
+            "top3Mean": 0.14387906
+          },
+          {
+            "index": 253,
+            "mid": "/m/02mscn",
+            "displayName": "Christian music",
+            "top3Mean": 0.12498385
+          },
+          {
+            "index": 249,
+            "mid": "/m/0y4f8",
+            "displayName": "Vocal music",
+            "top3Mean": 0.08856241
+          },
+          {
+            "index": 224,
+            "mid": "/m/01lyv",
+            "displayName": "Country",
+            "top3Mean": 0.06030132
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.03238423
+          },
+          {
+            "index": 271,
+            "mid": "/t/dd00031",
+            "displayName": "Happy music",
+            "top3Mean": 0.03067208
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.03055242
+          },
+          {
+            "index": 254,
+            "mid": "/m/016cjb",
+            "displayName": "Gospel music",
+            "top3Mean": 0.02803536
+          },
+          {
+            "index": 268,
+            "mid": "/m/0140xf",
+            "displayName": "Christmas music",
+            "top3Mean": 0.02648833
+          },
+          {
+            "index": 250,
+            "mid": "/m/0z9c",
+            "displayName": "A capella",
+            "top3Mean": 0.02064026
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.98401755
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.15358782
+          },
+          {
+            "index": 148,
+            "mid": "/m/05r5c",
+            "displayName": "Piano",
+            "top3Mean": 0.15164772
+          },
+          {
+            "index": 149,
+            "mid": "/m/01s0ps",
+            "displayName": "Electric piano",
+            "top3Mean": 0.11636659
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.06968287
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.04772666
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.04764378
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.04511802
+          },
+          {
+            "index": 155,
+            "mid": "/m/03q5t",
+            "displayName": "Harpsichord",
+            "top3Mean": 0.03972526
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.03553403
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.03432246
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "vocals"
+          ],
+          "acceptedIds": [
+            "voice"
+          ],
+          "supportedAcceptedIds": [
+            "voice"
+          ],
+          "state": "eligible",
+          "score": 0.06043648,
+          "rank": 2,
+          "family": "voice"
+        },
+        {
+          "corpusTerms": [
+            "piano"
+          ],
+          "acceptedIds": [
+            "piano"
+          ],
+          "supportedAcceptedIds": [
+            "piano"
+          ],
+          "state": "eligible",
+          "score": 0.11378268,
+          "rank": 1,
+          "family": "keys"
+        },
+        {
+          "corpusTerms": [
+            "bowed-strings"
+          ],
+          "acceptedIds": [
+            "strings",
+            "violin",
+            "viola",
+            "cello"
+          ],
+          "supportedAcceptedIds": [
+            "strings",
+            "violin",
+            "cello"
+          ],
+          "state": "eligible",
+          "score": 0.0074853,
+          "rank": 5,
+          "family": "bowed-strings"
+        },
+        {
+          "corpusTerms": [
+            "bass"
+          ],
+          "acceptedIds": [
+            "bass-guitar",
+            "double-bass"
+          ],
+          "supportedAcceptedIds": [
+            "bass-guitar",
+            "double-bass"
+          ],
+          "state": "eligible",
+          "score": 0.00352897,
+          "rank": 9,
+          "family": "cross-family"
+        },
+        {
+          "corpusTerms": [
+            "drum-kit"
+          ],
+          "acceptedIds": [
+            "drum-kit"
+          ],
+          "supportedAcceptedIds": [
+            "drum-kit"
+          ],
+          "state": "eligible",
+          "score": 0.0001356,
+          "rank": 28,
+          "family": "percussion"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "synthesizer",
+          "score": 0.00207974
+        },
+        {
+          "id": "mallet-percussion",
+          "score": 0.00019196
+        },
+        {
+          "id": "vibraphone",
+          "score": 0.00007043
+        }
+      ]
+    },
+    {
+      "slug": "jazz-sax",
+      "coverage": [
+        "jazz",
+        "reeds",
+        "woodwinds",
+        "harmonica"
+      ],
+      "sourceSha1": "2e581faec89ef9bd257c1d5a85868c07d34c7f26",
+      "sourceBytes": 15185948,
+      "sourceDurationSeconds": 600.561,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 413,
+      "inferenceMs": 36,
+      "timingMs": 458,
+      "trackScores": {
+        "voice": 0.05875228,
+        "strings": 0.01342564,
+        "violin": 0.00746792,
+        "cello": 0.00617456,
+        "double-bass": 0.01777723,
+        "acoustic-guitar": 0.00318018,
+        "electric-guitar": 0.00304559,
+        "bass-guitar": 0.00481273,
+        "harp": 0.00272674,
+        "banjo": 0.00105053,
+        "mandolin": 0.00102276,
+        "brass": 0.09829991,
+        "trumpet": 0.05735894,
+        "trombone": 0.06791342,
+        "horn": 0.00334956,
+        "saxophone": 0.05869943,
+        "clarinet": 0.00545048,
+        "flute": 0.00107585,
+        "piano": 0.01687487,
+        "electric-piano": 0.00311405,
+        "organ": 0.02730021,
+        "harpsichord": 0.00094055,
+        "synthesizer": 0.00059547,
+        "sampler": 0.00076898,
+        "drum-machine": 0.00014737,
+        "drum-kit": 0.06542805,
+        "percussion": 0.11375366,
+        "timpani": 0.0001841,
+        "mallet-percussion": 0.00219271,
+        "vibraphone": 0.00043973,
+        "bell": 0.00418475,
+        "accordion": 0.00518144,
+        "harmonica": 0.00129807,
+        "sitar": 0.00012846,
+        "tabla": 0.00035023,
+        "steelpan": 0.00497016
+      },
+      "topMapped": [
+        {
+          "id": "percussion",
+          "score": 0.11375366
+        },
+        {
+          "id": "brass",
+          "score": 0.09829991
+        },
+        {
+          "id": "trombone",
+          "score": 0.06791342
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.06542805
+        },
+        {
+          "id": "voice",
+          "score": 0.05875228
+        },
+        {
+          "id": "saxophone",
+          "score": 0.05869943
+        },
+        {
+          "id": "trumpet",
+          "score": 0.05735894
+        },
+        {
+          "id": "organ",
+          "score": 0.02730021
+        },
+        {
+          "id": "double-bass",
+          "score": 0.01777723
+        },
+        {
+          "id": "piano",
+          "score": 0.01687487
+        },
+        {
+          "id": "strings",
+          "score": 0.01342564
+        },
+        {
+          "id": "violin",
+          "score": 0.00746792
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.87448406
+          },
+          {
+            "index": 0,
+            "mid": "/m/09x0r",
+            "displayName": "Speech",
+            "top3Mean": 0.52600771
+          },
+          {
+            "index": 230,
+            "mid": "/m/03_d0",
+            "displayName": "Jazz",
+            "top3Mean": 0.07446494
+          },
+          {
+            "index": 501,
+            "mid": "/t/dd00126",
+            "displayName": "Inside, large room or hall",
+            "top3Mean": 0.05176926
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.03395488
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.03248387
+          },
+          {
+            "index": 179,
+            "mid": "/m/05pd6",
+            "displayName": "Orchestra",
+            "top3Mean": 0.02987867
+          },
+          {
+            "index": 180,
+            "mid": "/m/01kcd",
+            "displayName": "Brass instrument",
+            "top3Mean": 0.02112977
+          },
+          {
+            "index": 243,
+            "mid": "/m/0g293",
+            "displayName": "Music of Latin America",
+            "top3Mean": 0.01568156
+          },
+          {
+            "index": 502,
+            "mid": "/t/dd00127",
+            "displayName": "Inside, public space",
+            "top3Mean": 0.01457864
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.01437097
+          },
+          {
+            "index": 192,
+            "mid": "/m/06ncr",
+            "displayName": "Saxophone",
+            "top3Mean": 0.01366447
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.97902703
+          },
+          {
+            "index": 230,
+            "mid": "/m/03_d0",
+            "displayName": "Jazz",
+            "top3Mean": 0.34616658
+          },
+          {
+            "index": 179,
+            "mid": "/m/05pd6",
+            "displayName": "Orchestra",
+            "top3Mean": 0.1911139
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.1250899
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.11375365
+          },
+          {
+            "index": 180,
+            "mid": "/m/01kcd",
+            "displayName": "Brass instrument",
+            "top3Mean": 0.09829991
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.07794953
+          },
+          {
+            "index": 169,
+            "mid": "/m/07brj",
+            "displayName": "Tambourine",
+            "top3Mean": 0.07397556
+          },
+          {
+            "index": 243,
+            "mid": "/m/0g293",
+            "displayName": "Music of Latin America",
+            "top3Mean": 0.07047223
+          },
+          {
+            "index": 183,
+            "mid": "/m/07c6l",
+            "displayName": "Trombone",
+            "top3Mean": 0.06791342
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.06542805
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.05875228
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.98345917
+          },
+          {
+            "index": 230,
+            "mid": "/m/03_d0",
+            "displayName": "Jazz",
+            "top3Mean": 0.37592268
+          },
+          {
+            "index": 0,
+            "mid": "/m/09x0r",
+            "displayName": "Speech",
+            "top3Mean": 0.3247762
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.24752857
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.22501512
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.18833543
+          },
+          {
+            "index": 161,
+            "mid": "/m/03t3fj",
+            "displayName": "Rimshot",
+            "top3Mean": 0.18401216
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.1760904
+          },
+          {
+            "index": 160,
+            "mid": "/m/06rvn",
+            "displayName": "Snare drum",
+            "top3Mean": 0.15547372
+          },
+          {
+            "index": 180,
+            "mid": "/m/01kcd",
+            "displayName": "Brass instrument",
+            "top3Mean": 0.11714343
+          },
+          {
+            "index": 58,
+            "mid": "/m/0l15bq",
+            "displayName": "Clapping",
+            "top3Mean": 0.10362355
+          },
+          {
+            "index": 179,
+            "mid": "/m/05pd6",
+            "displayName": "Orchestra",
+            "top3Mean": 0.10148147
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "tenor-saxophone"
+          ],
+          "acceptedIds": [
+            "saxophone"
+          ],
+          "supportedAcceptedIds": [
+            "saxophone"
+          ],
+          "state": "eligible",
+          "score": 0.05869943,
+          "rank": 6,
+          "family": "woodwind"
+        },
+        {
+          "corpusTerms": [
+            "harmonica"
+          ],
+          "acceptedIds": [
+            "harmonica"
+          ],
+          "supportedAcceptedIds": [
+            "harmonica"
+          ],
+          "state": "eligible",
+          "score": 0.00129807,
+          "rank": 25,
+          "family": "free-reed"
+        },
+        {
+          "corpusTerms": [
+            "flute"
+          ],
+          "acceptedIds": [
+            "flute"
+          ],
+          "supportedAcceptedIds": [
+            "flute"
+          ],
+          "state": "eligible",
+          "score": 0.00107585,
+          "rank": 26,
+          "family": "woodwind"
+        },
+        {
+          "corpusTerms": [
+            "guitar"
+          ],
+          "acceptedIds": [
+            "acoustic-guitar",
+            "classical-guitar",
+            "electric-guitar"
+          ],
+          "supportedAcceptedIds": [
+            "acoustic-guitar",
+            "electric-guitar"
+          ],
+          "state": "eligible",
+          "score": 0.00318018,
+          "rank": 20,
+          "family": "plucked-strings"
+        },
+        {
+          "corpusTerms": [
+            "bass"
+          ],
+          "acceptedIds": [
+            "bass-guitar",
+            "double-bass"
+          ],
+          "supportedAcceptedIds": [
+            "bass-guitar",
+            "double-bass"
+          ],
+          "state": "eligible",
+          "score": 0.01777723,
+          "rank": 9,
+          "family": "cross-family"
+        },
+        {
+          "corpusTerms": [
+            "drum-kit"
+          ],
+          "acceptedIds": [
+            "drum-kit"
+          ],
+          "supportedAcceptedIds": [
+            "drum-kit"
+          ],
+          "state": "eligible",
+          "score": 0.06542805,
+          "rank": 4,
+          "family": "percussion"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "brass",
+          "score": 0.09829991
+        },
+        {
+          "id": "trombone",
+          "score": 0.06791342
+        },
+        {
+          "id": "trumpet",
+          "score": 0.05735894
+        },
+        {
+          "id": "horn",
+          "score": 0.00334956
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00059547
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.00014737
+        }
+      ]
+    },
+    {
+      "slug": "hip-hop",
+      "coverage": [
+        "hip-hop",
+        "spoken-vocal",
+        "electronic-percussion",
+        "synth-bass"
+      ],
+      "sourceSha1": "bc2ad7edff1e653d87faf4deb8f96770d33124bb",
+      "sourceBytes": 5116800,
+      "sourceDurationSeconds": 127.92,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 414,
+      "inferenceMs": 36,
+      "timingMs": 459,
+      "trackScores": {
+        "voice": 0.0263783,
+        "strings": 0.00148722,
+        "violin": 0.00144303,
+        "cello": 0.000196,
+        "double-bass": 0.00011216,
+        "acoustic-guitar": 0.00219704,
+        "electric-guitar": 0.00171991,
+        "bass-guitar": 0.00093713,
+        "harp": 0.0001174,
+        "banjo": 0.00017588,
+        "mandolin": 0.00034162,
+        "brass": 0.00013547,
+        "trumpet": 0.00009455,
+        "trombone": 0.00003067,
+        "horn": 0.00000441,
+        "saxophone": 0.0000835,
+        "clarinet": 0.00001984,
+        "flute": 0.0001169,
+        "piano": 0.00064505,
+        "electric-piano": 0.00036109,
+        "organ": 0.00011677,
+        "harpsichord": 0.00040824,
+        "synthesizer": 0.01368134,
+        "sampler": 0.01269415,
+        "drum-machine": 0.00063411,
+        "drum-kit": 0.0018607,
+        "percussion": 0.00151772,
+        "timpani": 0.00001214,
+        "mallet-percussion": 0.00008233,
+        "vibraphone": 0.00000875,
+        "bell": 0.00038769,
+        "accordion": 0.00010349,
+        "harmonica": 0.0003212,
+        "sitar": 0.00008912,
+        "tabla": 0.00003779,
+        "steelpan": 0.00001829
+      },
+      "topMapped": [
+        {
+          "id": "voice",
+          "score": 0.0263783
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.01368134
+        },
+        {
+          "id": "sampler",
+          "score": 0.01269415
+        },
+        {
+          "id": "acoustic-guitar",
+          "score": 0.00219704
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.0018607
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00171991
+        },
+        {
+          "id": "percussion",
+          "score": 0.00151772
+        },
+        {
+          "id": "strings",
+          "score": 0.00148722
+        },
+        {
+          "id": "violin",
+          "score": 0.00144303
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00093713
+        },
+        {
+          "id": "piano",
+          "score": 0.00064505
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.00063411
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99768955
+          },
+          {
+            "index": 180,
+            "mid": "/m/01kcd",
+            "displayName": "Brass instrument",
+            "top3Mean": 0.56574291
+          },
+          {
+            "index": 0,
+            "mid": "/m/09x0r",
+            "displayName": "Speech",
+            "top3Mean": 0.54151052
+          },
+          {
+            "index": 183,
+            "mid": "/m/07c6l",
+            "displayName": "Trombone",
+            "top3Mean": 0.51084161
+          },
+          {
+            "index": 182,
+            "mid": "/m/07gql",
+            "displayName": "Trumpet",
+            "top3Mean": 0.16216992
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.15665931
+          },
+          {
+            "index": 184,
+            "mid": "/m/0l14_3",
+            "displayName": "Bowed string instrument",
+            "top3Mean": 0.08274025
+          },
+          {
+            "index": 189,
+            "mid": "/m/02fsn",
+            "displayName": "Double bass",
+            "top3Mean": 0.07488602
+          },
+          {
+            "index": 188,
+            "mid": "/m/01xqw",
+            "displayName": "Cello",
+            "top3Mean": 0.07328905
+          },
+          {
+            "index": 187,
+            "mid": "/m/0d8_n",
+            "displayName": "Pizzicato",
+            "top3Mean": 0.05666208
+          },
+          {
+            "index": 221,
+            "mid": "/m/06j6l",
+            "displayName": "Rhythm and blues",
+            "top3Mean": 0.03531003
+          },
+          {
+            "index": 186,
+            "mid": "/m/07y_7",
+            "displayName": "Violin, fiddle",
+            "top3Mean": 0.03522393
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.98558205
+          },
+          {
+            "index": 31,
+            "mid": "/m/06bxc",
+            "displayName": "Rapping",
+            "top3Mean": 0.10650305
+          },
+          {
+            "index": 212,
+            "mid": "/m/0glt670",
+            "displayName": "Hip hop music",
+            "top3Mean": 0.10151943
+          },
+          {
+            "index": 274,
+            "mid": "/t/dd00035",
+            "displayName": "Exciting music",
+            "top3Mean": 0.05541855
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.04344795
+          },
+          {
+            "index": 223,
+            "mid": "/m/06cqb",
+            "displayName": "Reggae",
+            "top3Mean": 0.0304848
+          },
+          {
+            "index": 221,
+            "mid": "/m/06j6l",
+            "displayName": "Rhythm and blues",
+            "top3Mean": 0.03006599
+          },
+          {
+            "index": 227,
+            "mid": "/m/02x8m",
+            "displayName": "Funk",
+            "top3Mean": 0.02891721
+          },
+          {
+            "index": 211,
+            "mid": "/m/064t9",
+            "displayName": "Pop music",
+            "top3Mean": 0.02633761
+          },
+          {
+            "index": 260,
+            "mid": "/m/05rwpb",
+            "displayName": "Independent music",
+            "top3Mean": 0.02468455
+          },
+          {
+            "index": 246,
+            "mid": "/m/0155w",
+            "displayName": "Blues",
+            "top3Mean": 0.02157668
+          },
+          {
+            "index": 265,
+            "mid": "/m/0l14gg",
+            "displayName": "Soundtrack music",
+            "top3Mean": 0.02138007
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.98748279
+          },
+          {
+            "index": 0,
+            "mid": "/m/09x0r",
+            "displayName": "Speech",
+            "top3Mean": 0.38908985
+          },
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 0.3337166
+          },
+          {
+            "index": 31,
+            "mid": "/m/06bxc",
+            "displayName": "Rapping",
+            "top3Mean": 0.08279842
+          },
+          {
+            "index": 212,
+            "mid": "/m/0glt670",
+            "displayName": "Hip hop music",
+            "top3Mean": 0.05220595
+          },
+          {
+            "index": 274,
+            "mid": "/t/dd00035",
+            "displayName": "Exciting music",
+            "top3Mean": 0.0472444
+          },
+          {
+            "index": 221,
+            "mid": "/m/06j6l",
+            "displayName": "Rhythm and blues",
+            "top3Mean": 0.03019225
+          },
+          {
+            "index": 265,
+            "mid": "/m/0l14gg",
+            "displayName": "Soundtrack music",
+            "top3Mean": 0.02807998
+          },
+          {
+            "index": 246,
+            "mid": "/m/0155w",
+            "displayName": "Blues",
+            "top3Mean": 0.02717383
+          },
+          {
+            "index": 260,
+            "mid": "/m/05rwpb",
+            "displayName": "Independent music",
+            "top3Mean": 0.02643458
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.02637829
+          },
+          {
+            "index": 491,
+            "mid": "/m/07p78v5",
+            "displayName": "Zing",
+            "top3Mean": 0.02529703
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "rap-vocals"
+          ],
+          "acceptedIds": [
+            "voice"
+          ],
+          "supportedAcceptedIds": [
+            "voice"
+          ],
+          "state": "eligible",
+          "score": 0.0263783,
+          "rank": 1,
+          "family": "voice"
+        },
+        {
+          "corpusTerms": [
+            "synth-bass"
+          ],
+          "acceptedIds": [
+            "synthesizer",
+            "pad"
+          ],
+          "supportedAcceptedIds": [
+            "synthesizer"
+          ],
+          "state": "eligible",
+          "score": 0.01368134,
+          "rank": 2,
+          "family": "electronic"
+        },
+        {
+          "corpusTerms": [
+            "electronic-percussion"
+          ],
+          "acceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "supportedAcceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "state": "eligible",
+          "score": 0.00151772,
+          "rank": 7,
+          "family": "cross-family"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.00219704
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00011216
+        }
+      ]
+    },
+    {
+      "slug": "bluegrass",
+      "coverage": [
+        "folk-traditional",
+        "banjo",
+        "mandolin",
+        "fiddle",
+        "upright-bass"
+      ],
+      "sourceSha1": "68e3100486cddf5b551ef5ef4151f1665c786e8a",
+      "sourceBytes": 3851824,
+      "sourceDurationSeconds": 187.15,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 396,
+      "inferenceMs": 35,
+      "timingMs": 440,
+      "trackScores": {
+        "voice": 0.01177336,
+        "strings": 0.00786622,
+        "violin": 0.00618617,
+        "cello": 0.00045824,
+        "double-bass": 0.00053955,
+        "acoustic-guitar": 0.20457202,
+        "electric-guitar": 0.00578428,
+        "bass-guitar": 0.00324017,
+        "harp": 0.00088709,
+        "banjo": 0.00244903,
+        "mandolin": 0.00468045,
+        "brass": 0.00023304,
+        "trumpet": 0.00013651,
+        "trombone": 0.00002209,
+        "horn": 0.00000305,
+        "saxophone": 0.00146151,
+        "clarinet": 0.00012266,
+        "flute": 0.00037407,
+        "piano": 0.00875118,
+        "electric-piano": 0.0024243,
+        "organ": 0.00067289,
+        "harpsichord": 0.00149911,
+        "synthesizer": 0.00079725,
+        "sampler": 0.00068123,
+        "drum-machine": 0.00004176,
+        "drum-kit": 0.00063078,
+        "percussion": 0.00149278,
+        "timpani": 1.5e-7,
+        "mallet-percussion": 0.00017474,
+        "vibraphone": 0.00002882,
+        "bell": 0.0007599,
+        "accordion": 0.0001769,
+        "harmonica": 0.00100985,
+        "sitar": 0.00014104,
+        "tabla": 0.00000848,
+        "steelpan": 0.0000113
+      },
+      "topMapped": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.20457202
+        },
+        {
+          "id": "voice",
+          "score": 0.01177336
+        },
+        {
+          "id": "piano",
+          "score": 0.00875118
+        },
+        {
+          "id": "strings",
+          "score": 0.00786622
+        },
+        {
+          "id": "violin",
+          "score": 0.00618617
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00578428
+        },
+        {
+          "id": "mandolin",
+          "score": 0.00468045
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00324017
+        },
+        {
+          "id": "banjo",
+          "score": 0.00244903
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.0024243
+        },
+        {
+          "id": "harpsichord",
+          "score": 0.00149911
+        },
+        {
+          "id": "percussion",
+          "score": 0.00149278
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99698788
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.50804406
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.42275432
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.397194
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.29602775
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.21262191
+          },
+          {
+            "index": 145,
+            "mid": "/m/01bns_",
+            "displayName": "Zither",
+            "top3Mean": 0.02434074
+          },
+          {
+            "index": 224,
+            "mid": "/m/01lyv",
+            "displayName": "Country",
+            "top3Mean": 0.02306336
+          },
+          {
+            "index": 247,
+            "mid": "/m/05fw6t",
+            "displayName": "Music for children",
+            "top3Mean": 0.0182531
+          },
+          {
+            "index": 266,
+            "mid": "/m/07pkxdp",
+            "displayName": "Lullaby",
+            "top3Mean": 0.01795589
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.0167532
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99647576
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.20457202
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.1213874
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.10808513
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.09260852
+          },
+          {
+            "index": 224,
+            "mid": "/m/01lyv",
+            "displayName": "Country",
+            "top3Mean": 0.07460184
+          },
+          {
+            "index": 139,
+            "mid": "/m/06w87",
+            "displayName": "Steel guitar, slide guitar",
+            "top3Mean": 0.07229734
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.06690001
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.03465805
+          },
+          {
+            "index": 268,
+            "mid": "/m/0140xf",
+            "displayName": "Christmas music",
+            "top3Mean": 0.03224398
+          },
+          {
+            "index": 253,
+            "mid": "/m/02mscn",
+            "displayName": "Christian music",
+            "top3Mean": 0.02946268
+          },
+          {
+            "index": 265,
+            "mid": "/m/0l14gg",
+            "displayName": "Soundtrack music",
+            "top3Mean": 0.0270851
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99600476
+          },
+          {
+            "index": 190,
+            "mid": "/m/085jw",
+            "displayName": "Wind instrument, woodwind instrument",
+            "top3Mean": 0.15461797
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.14126213
+          },
+          {
+            "index": 193,
+            "mid": "/m/01wy6",
+            "displayName": "Clarinet",
+            "top3Mean": 0.12927085
+          },
+          {
+            "index": 192,
+            "mid": "/m/06ncr",
+            "displayName": "Saxophone",
+            "top3Mean": 0.08466949
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.07486188
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.06422783
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.05905333
+          },
+          {
+            "index": 188,
+            "mid": "/m/01xqw",
+            "displayName": "Cello",
+            "top3Mean": 0.05302645
+          },
+          {
+            "index": 184,
+            "mid": "/m/0l14_3",
+            "displayName": "Bowed string instrument",
+            "top3Mean": 0.04809825
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.03407181
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "vocals"
+          ],
+          "acceptedIds": [
+            "voice"
+          ],
+          "supportedAcceptedIds": [
+            "voice"
+          ],
+          "state": "eligible",
+          "score": 0.01177336,
+          "rank": 2,
+          "family": "voice"
+        },
+        {
+          "corpusTerms": [
+            "fiddle"
+          ],
+          "acceptedIds": [
+            "violin"
+          ],
+          "supportedAcceptedIds": [
+            "violin"
+          ],
+          "state": "eligible",
+          "score": 0.00618617,
+          "rank": 5,
+          "family": "bowed-strings"
+        },
+        {
+          "corpusTerms": [
+            "banjo"
+          ],
+          "acceptedIds": [
+            "banjo"
+          ],
+          "supportedAcceptedIds": [
+            "banjo"
+          ],
+          "state": "eligible",
+          "score": 0.00244903,
+          "rank": 9,
+          "family": "plucked-strings"
+        },
+        {
+          "corpusTerms": [
+            "mandolin"
+          ],
+          "acceptedIds": [
+            "mandolin"
+          ],
+          "supportedAcceptedIds": [
+            "mandolin"
+          ],
+          "state": "eligible",
+          "score": 0.00468045,
+          "rank": 7,
+          "family": "plucked-strings"
+        },
+        {
+          "corpusTerms": [
+            "acoustic-guitar"
+          ],
+          "acceptedIds": [
+            "acoustic-guitar",
+            "classical-guitar"
+          ],
+          "supportedAcceptedIds": [
+            "acoustic-guitar"
+          ],
+          "state": "eligible",
+          "score": 0.20457202,
+          "rank": 1,
+          "family": "plucked-strings"
+        },
+        {
+          "corpusTerms": [
+            "upright-bass"
+          ],
+          "acceptedIds": [
+            "double-bass"
+          ],
+          "supportedAcceptedIds": [
+            "double-bass"
+          ],
+          "state": "eligible",
+          "score": 0.00053955,
+          "rank": 21,
+          "family": "bowed-strings"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "piano",
+          "score": 0.00875118
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00578428
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00324017
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00079725
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.00004176
+        }
+      ]
+    },
+    {
+      "slug": "synthwave",
+      "coverage": [
+        "electronic",
+        "synthesizer",
+        "programmed-drums"
+      ],
+      "sourceSha1": "e40a9a47715df9a858295296b473b98134927684",
+      "sourceBytes": 3812262,
+      "sourceDurationSeconds": 179.973,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 392,
+      "inferenceMs": 35,
+      "timingMs": 437,
+      "trackScores": {
+        "voice": 0.02448845,
+        "strings": 0.00804553,
+        "violin": 0.00653014,
+        "cello": 0.00235146,
+        "double-bass": 0.00488049,
+        "acoustic-guitar": 0.00496718,
+        "electric-guitar": 0.00335574,
+        "bass-guitar": 0.00270892,
+        "harp": 0.0052424,
+        "banjo": 0.01021665,
+        "mandolin": 0.00551238,
+        "brass": 0.00685339,
+        "trumpet": 0.00298963,
+        "trombone": 0.00259089,
+        "horn": 0.00017931,
+        "saxophone": 0.00303119,
+        "clarinet": 0.00230506,
+        "flute": 0.0012564,
+        "piano": 0.0174487,
+        "electric-piano": 0.01113346,
+        "organ": 0.00621154,
+        "harpsichord": 0.00436027,
+        "synthesizer": 0.02058519,
+        "sampler": 0.02061841,
+        "drum-machine": 0.00774903,
+        "drum-kit": 0.05173205,
+        "percussion": 0.07053592,
+        "timpani": 0.00016465,
+        "mallet-percussion": 0.00495551,
+        "vibraphone": 0.00047988,
+        "bell": 0.00295097,
+        "accordion": 0.05531443,
+        "harmonica": 0.00273777,
+        "sitar": 0.0002037,
+        "tabla": 0.00071515,
+        "steelpan": 0.01166459
+      },
+      "topMapped": [
+        {
+          "id": "percussion",
+          "score": 0.07053592
+        },
+        {
+          "id": "accordion",
+          "score": 0.05531443
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.05173205
+        },
+        {
+          "id": "voice",
+          "score": 0.02448845
+        },
+        {
+          "id": "sampler",
+          "score": 0.02061841
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.02058519
+        },
+        {
+          "id": "piano",
+          "score": 0.0174487
+        },
+        {
+          "id": "steelpan",
+          "score": 0.01166459
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.01113346
+        },
+        {
+          "id": "banjo",
+          "score": 0.01021665
+        },
+        {
+          "id": "strings",
+          "score": 0.00804553
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.00774903
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99768686
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.62241119
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.56172222
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.45031011
+          },
+          {
+            "index": 163,
+            "mid": "/m/0bm02",
+            "displayName": "Bass drum",
+            "top3Mean": 0.37286636
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.36788711
+          },
+          {
+            "index": 160,
+            "mid": "/m/06rvn",
+            "displayName": "Snare drum",
+            "top3Mean": 0.29445529
+          },
+          {
+            "index": 161,
+            "mid": "/m/03t3fj",
+            "displayName": "Rimshot",
+            "top3Mean": 0.26828358
+          },
+          {
+            "index": 166,
+            "mid": "/m/01qbl",
+            "displayName": "Cymbal",
+            "top3Mean": 0.20785649
+          },
+          {
+            "index": 167,
+            "mid": "/m/03qtq",
+            "displayName": "Hi-hat",
+            "top3Mean": 0.20111059
+          },
+          {
+            "index": 158,
+            "mid": "/m/0cfdd",
+            "displayName": "Drum machine",
+            "top3Mean": 0.19544937
+          },
+          {
+            "index": 227,
+            "mid": "/m/02x8m",
+            "displayName": "Funk",
+            "top3Mean": 0.05573152
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99242789
+          },
+          {
+            "index": 251,
+            "mid": "/m/0164x2",
+            "displayName": "Music of Africa",
+            "top3Mean": 0.08885439
+          },
+          {
+            "index": 223,
+            "mid": "/m/06cqb",
+            "displayName": "Reggae",
+            "top3Mean": 0.07321347
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.06853902
+          },
+          {
+            "index": 267,
+            "mid": "/m/01z7dr",
+            "displayName": "Video game music",
+            "top3Mean": 0.06224522
+          },
+          {
+            "index": 227,
+            "mid": "/m/02x8m",
+            "displayName": "Funk",
+            "top3Mean": 0.05246551
+          },
+          {
+            "index": 265,
+            "mid": "/m/0l14gg",
+            "displayName": "Soundtrack music",
+            "top3Mean": 0.04329523
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.04266285
+          },
+          {
+            "index": 170,
+            "mid": "/m/05r5wn",
+            "displayName": "Rattle (instrument)",
+            "top3Mean": 0.04173209
+          },
+          {
+            "index": 271,
+            "mid": "/t/dd00031",
+            "displayName": "Happy music",
+            "top3Mean": 0.03820832
+          },
+          {
+            "index": 274,
+            "mid": "/t/dd00035",
+            "displayName": "Exciting music",
+            "top3Mean": 0.03775445
+          },
+          {
+            "index": 222,
+            "mid": "/m/0gywn",
+            "displayName": "Soul music",
+            "top3Mean": 0.03758879
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99460775
+          },
+          {
+            "index": 204,
+            "mid": "/m/0mkg",
+            "displayName": "Accordion",
+            "top3Mean": 0.08103659
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.07053592
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.06726357
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.05436367
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.05173205
+          },
+          {
+            "index": 203,
+            "mid": "/m/03qjg",
+            "displayName": "Harmonica",
+            "top3Mean": 0.04919925
+          },
+          {
+            "index": 251,
+            "mid": "/m/0164x2",
+            "displayName": "Music of Africa",
+            "top3Mean": 0.03787124
+          },
+          {
+            "index": 267,
+            "mid": "/m/01z7dr",
+            "displayName": "Video game music",
+            "top3Mean": 0.03321607
+          },
+          {
+            "index": 271,
+            "mid": "/t/dd00031",
+            "displayName": "Happy music",
+            "top3Mean": 0.03158814
+          },
+          {
+            "index": 230,
+            "mid": "/m/03_d0",
+            "displayName": "Jazz",
+            "top3Mean": 0.03151788
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "vocals"
+          ],
+          "acceptedIds": [
+            "voice"
+          ],
+          "supportedAcceptedIds": [
+            "voice"
+          ],
+          "state": "eligible",
+          "score": 0.02448845,
+          "rank": 4,
+          "family": "voice"
+        },
+        {
+          "corpusTerms": [
+            "synthesizer",
+            "synth-bass"
+          ],
+          "acceptedIds": [
+            "synthesizer",
+            "pad"
+          ],
+          "supportedAcceptedIds": [
+            "synthesizer"
+          ],
+          "state": "eligible",
+          "score": 0.02058519,
+          "rank": 6,
+          "family": "electronic"
+        },
+        {
+          "corpusTerms": [
+            "programmed-drums"
+          ],
+          "acceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "supportedAcceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "state": "eligible",
+          "score": 0.07053592,
+          "rank": 1,
+          "family": "cross-family"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "piano",
+          "score": 0.0174487
+        },
+        {
+          "id": "acoustic-guitar",
+          "score": 0.00496718
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00488049
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00335574
+        }
+      ]
+    },
+    {
+      "slug": "electronic-stiff-hand",
+      "coverage": [
+        "electronic",
+        "digital-jazz",
+        "synthesizer",
+        "programmed-drums"
+      ],
+      "sourceSha1": "48f351a799155e15906694fc063dd43f6a5bc85c",
+      "sourceBytes": 3421199,
+      "sourceDurationSeconds": 169.502,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 426,
+      "inferenceMs": 36,
+      "timingMs": 471,
+      "trackScores": {
+        "voice": 0.01503082,
+        "strings": 0.00955569,
+        "violin": 0.00762065,
+        "cello": 0.00146252,
+        "double-bass": 0.00311587,
+        "acoustic-guitar": 0.05030428,
+        "electric-guitar": 0.00806656,
+        "bass-guitar": 0.00839003,
+        "harp": 0.00755544,
+        "banjo": 0.00507075,
+        "mandolin": 0.00976619,
+        "brass": 0.00056309,
+        "trumpet": 0.00021767,
+        "trombone": 0.00011863,
+        "horn": 0.00000782,
+        "saxophone": 0.00127714,
+        "clarinet": 0.00021429,
+        "flute": 0.00057575,
+        "piano": 0.01446132,
+        "electric-piano": 0.00924891,
+        "organ": 0.00324829,
+        "harpsichord": 0.00702275,
+        "synthesizer": 0.00692395,
+        "sampler": 0.00468358,
+        "drum-machine": 0.00234924,
+        "drum-kit": 0.0125637,
+        "percussion": 0.01576811,
+        "timpani": 0.00001118,
+        "mallet-percussion": 0.00313941,
+        "vibraphone": 0.00035999,
+        "bell": 0.00193123,
+        "accordion": 0.00136774,
+        "harmonica": 0.00046638,
+        "sitar": 0.00218737,
+        "tabla": 0.00156034,
+        "steelpan": 0.00200095
+      },
+      "topMapped": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.05030428
+        },
+        {
+          "id": "percussion",
+          "score": 0.01576811
+        },
+        {
+          "id": "voice",
+          "score": 0.01503082
+        },
+        {
+          "id": "piano",
+          "score": 0.01446132
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.0125637
+        },
+        {
+          "id": "mandolin",
+          "score": 0.00976619
+        },
+        {
+          "id": "strings",
+          "score": 0.00955569
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00924891
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00839003
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00806656
+        },
+        {
+          "id": "violin",
+          "score": 0.00762065
+        },
+        {
+          "id": "harp",
+          "score": 0.00755544
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99726081
+          },
+          {
+            "index": 247,
+            "mid": "/m/05fw6t",
+            "displayName": "Music for children",
+            "top3Mean": 0.07495485
+          },
+          {
+            "index": 271,
+            "mid": "/t/dd00031",
+            "displayName": "Happy music",
+            "top3Mean": 0.04650155
+          },
+          {
+            "index": 253,
+            "mid": "/m/02mscn",
+            "displayName": "Christian music",
+            "top3Mean": 0.04296013
+          },
+          {
+            "index": 254,
+            "mid": "/m/016cjb",
+            "displayName": "Gospel music",
+            "top3Mean": 0.03955458
+          },
+          {
+            "index": 265,
+            "mid": "/m/0l14gg",
+            "displayName": "Soundtrack music",
+            "top3Mean": 0.02880435
+          },
+          {
+            "index": 262,
+            "mid": "/m/025td0t",
+            "displayName": "Background music",
+            "top3Mean": 0.0286631
+          },
+          {
+            "index": 251,
+            "mid": "/m/0164x2",
+            "displayName": "Music of Africa",
+            "top3Mean": 0.02791786
+          },
+          {
+            "index": 273,
+            "mid": "/t/dd00034",
+            "displayName": "Tender music",
+            "top3Mean": 0.02279313
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.0193078
+          },
+          {
+            "index": 268,
+            "mid": "/m/0140xf",
+            "displayName": "Christmas music",
+            "top3Mean": 0.01897129
+          },
+          {
+            "index": 489,
+            "mid": "/m/07qfgpx",
+            "displayName": "Jingle, tinkle",
+            "top3Mean": 0.01846239
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99515867
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.06779995
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.06700791
+          },
+          {
+            "index": 245,
+            "mid": "/m/0326g",
+            "displayName": "Flamenco",
+            "top3Mean": 0.06587779
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.06472123
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.05364898
+          },
+          {
+            "index": 243,
+            "mid": "/m/0g293",
+            "displayName": "Music of Latin America",
+            "top3Mean": 0.03596678
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.03342522
+          },
+          {
+            "index": 145,
+            "mid": "/m/01bns_",
+            "displayName": "Zither",
+            "top3Mean": 0.03065417
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.03045674
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.02940602
+          },
+          {
+            "index": 224,
+            "mid": "/m/01lyv",
+            "displayName": "Country",
+            "top3Mean": 0.02866226
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99680549
+          },
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 0.74077559
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.08498681
+          },
+          {
+            "index": 187,
+            "mid": "/m/0d8_n",
+            "displayName": "Pizzicato",
+            "top3Mean": 0.08368766
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.07617027
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.07164145
+          },
+          {
+            "index": 518,
+            "mid": "/m/07c52",
+            "displayName": "Television",
+            "top3Mean": 0.0531984
+          },
+          {
+            "index": 145,
+            "mid": "/m/01bns_",
+            "displayName": "Zither",
+            "top3Mean": 0.05298774
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.05030428
+          },
+          {
+            "index": 224,
+            "mid": "/m/01lyv",
+            "displayName": "Country",
+            "top3Mean": 0.04540579
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.04018364
+          },
+          {
+            "index": 245,
+            "mid": "/m/0326g",
+            "displayName": "Flamenco",
+            "top3Mean": 0.03721245
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "synthesizer",
+            "synth-bass"
+          ],
+          "acceptedIds": [
+            "synthesizer",
+            "pad"
+          ],
+          "supportedAcceptedIds": [
+            "synthesizer"
+          ],
+          "state": "eligible",
+          "score": 0.00692395,
+          "rank": 14,
+          "family": "electronic"
+        },
+        {
+          "corpusTerms": [
+            "programmed-drums"
+          ],
+          "acceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "supportedAcceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "state": "eligible",
+          "score": 0.01576811,
+          "rank": 2,
+          "family": "cross-family"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.05030428
+        },
+        {
+          "id": "voice",
+          "score": 0.01503082
+        },
+        {
+          "id": "piano",
+          "score": 0.01446132
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00806656
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00311587
+        }
+      ]
+    },
+    {
+      "slug": "electronic-back-counting",
+      "coverage": [
+        "electronic",
+        "digital-jazz",
+        "synthesizer",
+        "programmed-drums"
+      ],
+      "sourceSha1": "cb50750aad311990db9a42a1fa76359285c7fbe8",
+      "sourceBytes": 4856750,
+      "sourceDurationSeconds": 244.827,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 363,
+      "inferenceMs": 36,
+      "timingMs": 408,
+      "trackScores": {
+        "voice": 0.0184629,
+        "strings": 0.00383409,
+        "violin": 0.00327609,
+        "cello": 0.00107526,
+        "double-bass": 0.0009716,
+        "acoustic-guitar": 0.09584455,
+        "electric-guitar": 0.0044873,
+        "bass-guitar": 0.00537621,
+        "harp": 0.00098542,
+        "banjo": 0.00422037,
+        "mandolin": 0.00376582,
+        "brass": 0.00064021,
+        "trumpet": 0.00033078,
+        "trombone": 0.00015662,
+        "horn": 0.00002147,
+        "saxophone": 0.00051759,
+        "clarinet": 0.00014595,
+        "flute": 0.00049926,
+        "piano": 0.00437262,
+        "electric-piano": 0.0036978,
+        "organ": 0.0005344,
+        "harpsichord": 0.00142868,
+        "synthesizer": 0.02087968,
+        "sampler": 0.01674051,
+        "drum-machine": 0.00187162,
+        "drum-kit": 0.00349163,
+        "percussion": 0.00410335,
+        "timpani": 0.00002617,
+        "mallet-percussion": 0.00075852,
+        "vibraphone": 0.00006991,
+        "bell": 0.00559369,
+        "accordion": 0.00129578,
+        "harmonica": 0.00062017,
+        "sitar": 0.00031618,
+        "tabla": 0.00020081,
+        "steelpan": 0.00015043
+      },
+      "topMapped": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.09584455
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.02087968
+        },
+        {
+          "id": "voice",
+          "score": 0.0184629
+        },
+        {
+          "id": "sampler",
+          "score": 0.01674051
+        },
+        {
+          "id": "bell",
+          "score": 0.00559369
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00537621
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.0044873
+        },
+        {
+          "id": "piano",
+          "score": 0.00437262
+        },
+        {
+          "id": "banjo",
+          "score": 0.00422037
+        },
+        {
+          "id": "percussion",
+          "score": 0.00410335
+        },
+        {
+          "id": "strings",
+          "score": 0.00383409
+        },
+        {
+          "id": "mandolin",
+          "score": 0.00376582
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99572533
+          },
+          {
+            "index": 156,
+            "mid": "/m/0l14md",
+            "displayName": "Percussion",
+            "top3Mean": 0.70272785
+          },
+          {
+            "index": 157,
+            "mid": "/m/02hnl",
+            "displayName": "Drum kit",
+            "top3Mean": 0.59919327
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.48705912
+          },
+          {
+            "index": 158,
+            "mid": "/m/0cfdd",
+            "displayName": "Drum machine",
+            "top3Mean": 0.47634172
+          },
+          {
+            "index": 159,
+            "mid": "/m/026t6",
+            "displayName": "Drum",
+            "top3Mean": 0.45709935
+          },
+          {
+            "index": 163,
+            "mid": "/m/0bm02",
+            "displayName": "Bass drum",
+            "top3Mean": 0.33025515
+          },
+          {
+            "index": 160,
+            "mid": "/m/06rvn",
+            "displayName": "Snare drum",
+            "top3Mean": 0.25907242
+          },
+          {
+            "index": 166,
+            "mid": "/m/01qbl",
+            "displayName": "Cymbal",
+            "top3Mean": 0.24969481
+          },
+          {
+            "index": 167,
+            "mid": "/m/03qtq",
+            "displayName": "Hi-hat",
+            "top3Mean": 0.22223032
+          },
+          {
+            "index": 161,
+            "mid": "/m/03t3fj",
+            "displayName": "Rimshot",
+            "top3Mean": 0.22075939
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.11229569
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.98298091
+          },
+          {
+            "index": 260,
+            "mid": "/m/05rwpb",
+            "displayName": "Independent music",
+            "top3Mean": 0.10203645
+          },
+          {
+            "index": 222,
+            "mid": "/m/0gywn",
+            "displayName": "Soul music",
+            "top3Mean": 0.09668297
+          },
+          {
+            "index": 214,
+            "mid": "/m/06by7",
+            "displayName": "Rock music",
+            "top3Mean": 0.06021805
+          },
+          {
+            "index": 220,
+            "mid": "/m/05w3f",
+            "displayName": "Psychedelic rock",
+            "top3Mean": 0.04797286
+          },
+          {
+            "index": 219,
+            "mid": "/m/07sbbz2",
+            "displayName": "Rock and roll",
+            "top3Mean": 0.04506793
+          },
+          {
+            "index": 24,
+            "mid": "/m/015lz1",
+            "displayName": "Singing",
+            "top3Mean": 0.04408268
+          },
+          {
+            "index": 258,
+            "mid": "/m/06rqw",
+            "displayName": "Ska",
+            "top3Mean": 0.04282283
+          },
+          {
+            "index": 217,
+            "mid": "/m/0dls3",
+            "displayName": "Grunge",
+            "top3Mean": 0.03868119
+          },
+          {
+            "index": 197,
+            "mid": "/m/027m70_",
+            "displayName": "Jingle bell",
+            "top3Mean": 0.03788967
+          },
+          {
+            "index": 227,
+            "mid": "/m/02x8m",
+            "displayName": "Funk",
+            "top3Mean": 0.03708915
+          },
+          {
+            "index": 224,
+            "mid": "/m/01lyv",
+            "displayName": "Country",
+            "top3Mean": 0.03596034
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99815559
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.09703913
+          },
+          {
+            "index": 138,
+            "mid": "/m/042v_gx",
+            "displayName": "Acoustic guitar",
+            "top3Mean": 0.09584456
+          },
+          {
+            "index": 134,
+            "mid": "/m/0fx80y",
+            "displayName": "Plucked string instrument",
+            "top3Mean": 0.08386359
+          },
+          {
+            "index": 135,
+            "mid": "/m/0342h",
+            "displayName": "Guitar",
+            "top3Mean": 0.08069664
+          },
+          {
+            "index": 153,
+            "mid": "/m/0l14qv",
+            "displayName": "Synthesizer",
+            "top3Mean": 0.05719408
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.04658888
+          },
+          {
+            "index": 267,
+            "mid": "/m/01z7dr",
+            "displayName": "Video game music",
+            "top3Mean": 0.04519409
+          },
+          {
+            "index": 141,
+            "mid": "/m/07s0s5r",
+            "displayName": "Strum",
+            "top3Mean": 0.0408026
+          },
+          {
+            "index": 149,
+            "mid": "/m/01s0ps",
+            "displayName": "Electric piano",
+            "top3Mean": 0.03745491
+          },
+          {
+            "index": 262,
+            "mid": "/m/025td0t",
+            "displayName": "Background music",
+            "top3Mean": 0.03388339
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "synthesizer",
+            "synth-bass"
+          ],
+          "acceptedIds": [
+            "synthesizer",
+            "pad"
+          ],
+          "supportedAcceptedIds": [
+            "synthesizer"
+          ],
+          "state": "eligible",
+          "score": 0.02087968,
+          "rank": 2,
+          "family": "electronic"
+        },
+        {
+          "corpusTerms": [
+            "programmed-drums"
+          ],
+          "acceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "supportedAcceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "state": "eligible",
+          "score": 0.00410335,
+          "rank": 10,
+          "family": "cross-family"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "acoustic-guitar",
+          "score": 0.09584455
+        },
+        {
+          "id": "voice",
+          "score": 0.0184629
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.0044873
+        },
+        {
+          "id": "piano",
+          "score": 0.00437262
+        },
+        {
+          "id": "double-bass",
+          "score": 0.0009716
+        }
+      ]
+    },
+    {
+      "slug": "electronic-house",
+      "coverage": [
+        "electronic",
+        "house",
+        "synthesizer",
+        "programmed-drums"
+      ],
+      "sourceSha1": "1b88a2f615742dd06ca36a4220e21c782727c948",
+      "sourceBytes": 4461797,
+      "sourceDurationSeconds": 111.543,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 388,
+      "inferenceMs": 36,
+      "timingMs": 434,
+      "trackScores": {
+        "voice": 0.00192695,
+        "strings": 0.00068784,
+        "violin": 0.00054658,
+        "cello": 0.00014442,
+        "double-bass": 0.00035134,
+        "acoustic-guitar": 0.00081254,
+        "electric-guitar": 0.00064245,
+        "bass-guitar": 0.00191466,
+        "harp": 0.00005245,
+        "banjo": 0.00002812,
+        "mandolin": 0.00002869,
+        "brass": 0.00043905,
+        "trumpet": 0.00011882,
+        "trombone": 0.00005434,
+        "horn": 0.00000881,
+        "saxophone": 0.00017648,
+        "clarinet": 0.00001027,
+        "flute": 0.00033605,
+        "piano": 0.00438782,
+        "electric-piano": 0.00338608,
+        "organ": 0.00029533,
+        "harpsichord": 0.00015642,
+        "synthesizer": 0.11751002,
+        "sampler": 0.07963348,
+        "drum-machine": 0.04148133,
+        "drum-kit": 0.03280985,
+        "percussion": 0.03408568,
+        "timpani": 0.00138023,
+        "mallet-percussion": 0.00043826,
+        "vibraphone": 0.00001938,
+        "bell": 0.00019592,
+        "accordion": 0.00003477,
+        "harmonica": 0.00003529,
+        "sitar": 0.00005282,
+        "tabla": 0.00029027,
+        "steelpan": 0.00001357
+      },
+      "topMapped": [
+        {
+          "id": "synthesizer",
+          "score": 0.11751002
+        },
+        {
+          "id": "sampler",
+          "score": 0.07963348
+        },
+        {
+          "id": "drum-machine",
+          "score": 0.04148133
+        },
+        {
+          "id": "percussion",
+          "score": 0.03408568
+        },
+        {
+          "id": "drum-kit",
+          "score": 0.03280985
+        },
+        {
+          "id": "piano",
+          "score": 0.00438782
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00338608
+        },
+        {
+          "id": "voice",
+          "score": 0.00192695
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.00191466
+        },
+        {
+          "id": "timpani",
+          "score": 0.00138023
+        },
+        {
+          "id": "acoustic-guitar",
+          "score": 0.00081254
+        },
+        {
+          "id": "strings",
+          "score": 0.00068784
+        }
+      ],
+      "topAudioSetByWindow": [
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.96244985
+          },
+          {
+            "index": 59,
+            "mid": "/m/01jg02",
+            "displayName": "Heart sounds, heartbeat",
+            "top3Mean": 0.93050009
+          },
+          {
+            "index": 133,
+            "mid": "/m/04szw",
+            "displayName": "Musical instrument",
+            "top3Mean": 0.49966836
+          },
+          {
+            "index": 60,
+            "mid": "/m/01jg1z",
+            "displayName": "Heart murmur",
+            "top3Mean": 0.43759677
+          },
+          {
+            "index": 516,
+            "mid": "/m/07p_0gm",
+            "displayName": "Throbbing",
+            "top3Mean": 0.42052197
+          },
+          {
+            "index": 153,
+            "mid": "/m/0l14qv",
+            "displayName": "Synthesizer",
+            "top3Mean": 0.36871865
+          },
+          {
+            "index": 210,
+            "mid": "/m/01hgjl",
+            "displayName": "Scratching (performance technique)",
+            "top3Mean": 0.32667661
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.29312369
+          },
+          {
+            "index": 507,
+            "mid": "/m/096m7z",
+            "displayName": "Noise",
+            "top3Mean": 0.17801833
+          },
+          {
+            "index": 154,
+            "mid": "/m/01v1d8",
+            "displayName": "Sampler",
+            "top3Mean": 0.17470066
+          },
+          {
+            "index": 490,
+            "mid": "/m/07rcgpl",
+            "displayName": "Hum",
+            "top3Mean": 0.16232093
+          },
+          {
+            "index": 158,
+            "mid": "/m/0cfdd",
+            "displayName": "Drum machine",
+            "top3Mean": 0.13502237
+          }
+        ],
+        [
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.99503773
+          },
+          {
+            "index": 234,
+            "mid": "/m/02lkt",
+            "displayName": "Electronic music",
+            "top3Mean": 0.10367004
+          },
+          {
+            "index": 237,
+            "mid": "/m/07s72n",
+            "displayName": "Dubstep",
+            "top3Mean": 0.09079012
+          },
+          {
+            "index": 154,
+            "mid": "/m/01v1d8",
+            "displayName": "Sampler",
+            "top3Mean": 0.04778125
+          },
+          {
+            "index": 238,
+            "mid": "/m/0283d",
+            "displayName": "Drum and bass",
+            "top3Mean": 0.04205512
+          },
+          {
+            "index": 153,
+            "mid": "/m/0l14qv",
+            "displayName": "Synthesizer",
+            "top3Mean": 0.0357012
+          },
+          {
+            "index": 239,
+            "mid": "/m/0m0jc",
+            "displayName": "Electronica",
+            "top3Mean": 0.03373989
+          },
+          {
+            "index": 498,
+            "mid": "/m/0c1dj",
+            "displayName": "Sound effect",
+            "top3Mean": 0.02205332
+          },
+          {
+            "index": 158,
+            "mid": "/m/0cfdd",
+            "displayName": "Drum machine",
+            "top3Mean": 0.02010501
+          },
+          {
+            "index": 147,
+            "mid": "/m/05148p4",
+            "displayName": "Keyboard (musical)",
+            "top3Mean": 0.01885002
+          },
+          {
+            "index": 212,
+            "mid": "/m/0glt670",
+            "displayName": "Hip hop music",
+            "top3Mean": 0.01630931
+          },
+          {
+            "index": 227,
+            "mid": "/m/02x8m",
+            "displayName": "Funk",
+            "top3Mean": 0.01506889
+          }
+        ],
+        [
+          {
+            "index": 494,
+            "mid": "/m/028v0c",
+            "displayName": "Silence",
+            "top3Mean": 1
+          },
+          {
+            "index": 132,
+            "mid": "/m/04rlf",
+            "displayName": "Music",
+            "top3Mean": 0.91291171
+          },
+          {
+            "index": 490,
+            "mid": "/m/07rcgpl",
+            "displayName": "Hum",
+            "top3Mean": 0.32182661
+          },
+          {
+            "index": 516,
+            "mid": "/m/07p_0gm",
+            "displayName": "Throbbing",
+            "top3Mean": 0.29869053
+          },
+          {
+            "index": 507,
+            "mid": "/m/096m7z",
+            "displayName": "Noise",
+            "top3Mean": 0.25463533
+          },
+          {
+            "index": 13,
+            "mid": "/m/01j3sz",
+            "displayName": "Laughter",
+            "top3Mean": 0.22853993
+          },
+          {
+            "index": 42,
+            "mid": "/m/01b_21",
+            "displayName": "Cough",
+            "top3Mean": 0.19872147
+          },
+          {
+            "index": 125,
+            "mid": "/m/07pjwq1",
+            "displayName": "Buzz",
+            "top3Mean": 0.19112474
+          },
+          {
+            "index": 294,
+            "mid": "/m/07yv9",
+            "displayName": "Vehicle",
+            "top3Mean": 0.1881305
+          },
+          {
+            "index": 509,
+            "mid": "/m/07rgkc5",
+            "displayName": "Static",
+            "top3Mean": 0.18768673
+          },
+          {
+            "index": 16,
+            "mid": "/m/07s04w4",
+            "displayName": "Snicker",
+            "top3Mean": 0.18601984
+          },
+          {
+            "index": 329,
+            "mid": "/m/0k5j",
+            "displayName": "Aircraft",
+            "top3Mean": 0.1844849
+          }
+        ]
+      ],
+      "expectedGroups": [
+        {
+          "corpusTerms": [
+            "synthesizer",
+            "synth-bass"
+          ],
+          "acceptedIds": [
+            "synthesizer",
+            "pad"
+          ],
+          "supportedAcceptedIds": [
+            "synthesizer"
+          ],
+          "state": "eligible",
+          "score": 0.11751002,
+          "rank": 1,
+          "family": "electronic"
+        },
+        {
+          "corpusTerms": [
+            "programmed-drums"
+          ],
+          "acceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "supportedAcceptedIds": [
+            "drum-machine",
+            "percussion"
+          ],
+          "state": "eligible",
+          "score": 0.04148133,
+          "rank": 3,
+          "family": "cross-family"
+        }
+      ],
+      "hardNegatives": [
+        {
+          "id": "piano",
+          "score": 0.00438782
+        },
+        {
+          "id": "voice",
+          "score": 0.00192695
+        },
+        {
+          "id": "acoustic-guitar",
+          "score": 0.00081254
+        },
+        {
+          "id": "electric-guitar",
+          "score": 0.00064245
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00035134
+        }
+      ]
+    }
+  ]
+}

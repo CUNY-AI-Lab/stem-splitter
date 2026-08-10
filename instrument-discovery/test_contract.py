@@ -96,6 +96,8 @@ class ContractTest(unittest.TestCase):
         self.assertIn("python:3.12.13-slim-bookworm@sha256:", dockerfile)
         self.assertIn("ghcr.io/astral-sh/uv:0.11.32@sha256:", dockerfile)
         self.assertIn("uv sync --frozen", dockerfile)
+        self.assertIn("/opt/instrument-discovery-provenance/uv-lock.sha256", dockerfile)
+        self.assertIn("hashlib.sha256(source.read_bytes()).hexdigest()", dockerfile)
         self.assertIn("HF_HUB_OFFLINE=1", dockerfile)
         self.assertIn("TRANSFORMERS_OFFLINE=1", dockerfile)
         self.assertIn("USER 65532:65532", dockerfile)
