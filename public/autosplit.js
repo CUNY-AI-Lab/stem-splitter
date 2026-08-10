@@ -25,7 +25,7 @@
   // the role thresholds. This avoids hardware AudioContext rates becoming an
   // untracked classifier-version change.
   const ANALYSIS_SAMPLE_RATE = 22050;
-  const ROLE_CLASSIFIER_VERSION = 'autosplit-role-v3';
+  const ROLE_CLASSIFIER_VERSION = 'autosplit-role-v4';
   // Web Audio materializes the complete decoded source before downmixing its
   // three analysis windows. Cap duration and compressed bytes as conservative
   // memory proxies; authoritative Auto analyzes the stored source on Railway.
@@ -174,7 +174,16 @@
         lastOnset = i;
       }
     }
-    const onsetsPerSecond = onsetFrames.length / trackSeconds;
+    // One isolated peak is not evidence of a repeating attack role. Short AAC
+    // sources can acquire exactly one priming/padding discontinuity during
+    // import, which previously inflated to >0.45 onsets/second and changed an
+    // otherwise sustained source from two tracks to four. Require two
+    // independently located peaks before any onset-derived routing feature is
+    // nonzero. Longer sources were already protected by the rate threshold;
+    // this closes the short-source/container boundary without weakening real
+    // rhythm-section evidence.
+    const supportedOnsetFrames = onsetFrames.length >= 2 ? onsetFrames : [];
+    const onsetsPerSecond = supportedOnsetFrames.length / trackSeconds;
 
     // A pitched attack is an onset whose sounding body is a harmonic comb.
     // Look at the onset frame and the one after it: the very first frame of an
@@ -185,7 +194,7 @@
     // See tests/autosplit.test.mts for the corpus those numbers come from.
     const HARMONIC_ATTACK = 4.5;
     let pitchedAttacks = 0;
-    for (const i of onsetFrames) {
+    for (const i of supportedOnsetFrames) {
       const here = harmonicStrength[i] || 0;
       const next = harmonicStrength[i + 1] || 0;
       if (Math.max(here, next) > HARMONIC_ATTACK) pitchedAttacks++;

@@ -4,7 +4,7 @@ export const AUDIO_ANALYSIS_SCHEMA_VERSION = '1' as const;
 export const SOURCE_FINGERPRINT_SCHEMA_VERSION = '1' as const;
 export const AUTO_ROUTING_SCHEMA_VERSION = '1' as const;
 export const AUTO_ROUTING_REQUEST = 'auto' as const;
-export const PINNED_ROLE_CLASSIFIER_VERSION = 'autosplit-role-v3' as const;
+export const PINNED_ROLE_CLASSIFIER_VERSION = 'autosplit-role-v4' as const;
 export const INSTRUMENT_DISCOVERY_SCHEMA_VERSION = '1' as const;
 export const PINNED_INSTRUMENT_CLASSIFIER_VERSION =
   'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1' as const;

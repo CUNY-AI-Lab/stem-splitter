@@ -198,7 +198,7 @@ const EXPECTED_SOURCE_BINDINGS = {
   subjective: {
     manifestPath: CORE_CORPUS_PATH,
     expectationPath: AUTO_EXPECTATIONS_PATH,
-    classifierVersion: 'autosplit-role-v3',
+    classifierVersion: 'autosplit-role-v4',
     identityPolicy: 'content-sha256-required',
   },
 };

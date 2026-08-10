@@ -177,7 +177,7 @@ while true; do
     exit 1
   fi
   if docker exec "$analysis_smoke_container" node -e \
-    "Promise.all([fetch('http://fixture:9090/healthz'),fetch('http://127.0.0.1:8080/readyz')]).then(async responses=>{const [fixture,ready]=await Promise.all(responses.map(response=>response.json()));if(!responses.every(response=>response.ok)||fixture.ok!==true||ready.ready!==true||ready.ffmpegVersion!=='8.0.3'||ready.classifierVersion!=='autosplit-role-v3'||ready.sourceScopeVersion!=='analysis-source-scope-v2')process.exit(1)}).catch(()=>process.exit(1))"; then
+    "Promise.all([fetch('http://fixture:9090/healthz'),fetch('http://127.0.0.1:8080/readyz')]).then(async responses=>{const [fixture,ready]=await Promise.all(responses.map(response=>response.json()));if(!responses.every(response=>response.ok)||fixture.ok!==true||ready.ready!==true||ready.ffmpegVersion!=='8.0.3'||ready.classifierVersion!=='autosplit-role-v4'||ready.sourceScopeVersion!=='analysis-source-scope-v2')process.exit(1)}).catch(()=>process.exit(1))"; then
     break
   fi
   if (( $(date +%s) - analysis_smoke_started >= analysis_smoke_timeout )); then
@@ -302,7 +302,7 @@ const readyResponse = await fetch(`${serviceBase}/readyz`);
 const ready = await body(readyResponse);
 assert(readyResponse.status === 200 && ready.ready === true, 'service is not ready');
 assert(ready.ffmpegVersion === '8.0.3', 'FFmpeg pin drifted');
-assert(ready.classifierVersion === 'autosplit-role-v3', 'classifier pin drifted');
+assert(ready.classifierVersion === 'autosplit-role-v4', 'classifier pin drifted');
 assert(ready.sourceScopeVersion === 'analysis-source-scope-v2', 'source-scope pin drifted');
 assert(ready.instrumentDiscovery === 'unconfigured', 'discovery must remain unconfigured');
 
@@ -325,7 +325,7 @@ const validResponse = await analyze('valid.wav');
 const valid = await body(validResponse);
 assert(validResponse.status === 200, `valid analysis status ${validResponse.status}`);
 assert(valid.schemaVersion === '1', 'analysis schema drifted');
-assert(valid.roleClassifier?.version === 'autosplit-role-v3', 'role version drifted');
+assert(valid.roleClassifier?.version === 'autosplit-role-v4', 'role version drifted');
 assert(coreModels.some((model) => model.id === valid.decision?.resolvedCoreModel), 'unsupported decision');
 assert(valid.timing?.analyzedSeconds > 0 && valid.timing.analyzedSeconds <= 45, 'invalid timing');
 assert(valid.source?.schemaVersion === '1', 'analysis source identity schema drifted');

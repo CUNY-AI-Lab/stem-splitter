@@ -12,7 +12,7 @@
     "subjective": {
       "manifestPath": "tests/corpus/corpus.json",
       "expectationPath": "tests/corpus/autosplit-expectations.json",
-      "classifierVersion": "autosplit-role-v3",
+      "classifierVersion": "autosplit-role-v4",
       "identityPolicy": "content-sha256-required"
     }
   },

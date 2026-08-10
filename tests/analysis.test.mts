@@ -152,7 +152,7 @@ test('analysis v1 rejects core schema drift, floating pins, and unsupported mode
   assert.throws(
     () =>
       parseAudioAnalysisResult(
-        { ...validAnalysis(), roleClassifier: { version: 'autosplit-role-v2' } },
+        { ...validAnalysis(), roleClassifier: { version: 'autosplit-role-v3' } },
         models,
         'htdemucs_ft',
         true
@@ -670,7 +670,7 @@ test('missing, failed, malformed, and service-degraded analysis all preserve the
     ['malformed', provider({ schemaVersion: '9' })],
     [
       'classifier-version-mismatch',
-      provider({ ...validAnalysis(), roleClassifier: { version: 'autosplit-role-v2' } }),
+      provider({ ...validAnalysis(), roleClassifier: { version: 'autosplit-role-v3' } }),
     ],
     [
       'degraded',

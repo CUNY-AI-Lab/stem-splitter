@@ -164,7 +164,7 @@ test('corpus expectations cannot invent models or tracks outside the frozen core
 
 test('AutoSplit review expectations cover every authorized source without inventing stem labels', () => {
   assert.equal(autoExpectations.schemaVersion, '1');
-  assert.equal(autoExpectations.classifierVersion, 'autosplit-role-v3');
+  assert.equal(autoExpectations.classifierVersion, 'autosplit-role-v4');
   assert.equal(autoExpectations.analysisSampleRate, 22_050);
   const fileSlugs = manifest.sources
     .filter((source) => source.kind === 'file')

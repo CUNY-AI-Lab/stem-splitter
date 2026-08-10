@@ -293,7 +293,7 @@ test('all source types are fetched, decoded, classified, cleaned, and logged wit
   const logs = JSON.stringify(logRecords);
   assert.doesNotMatch(logs, /local-sources|signature|redacted|analysis-test-token/);
   assert.doesNotMatch(logs, /sourceBytes|sourceDurationSeconds/);
-  assert.match(logs, /autosplit-role-v3|analysis_complete|htdemucs_ft|8\.0\.3/);
+  assert.match(logs, /autosplit-role-v4|analysis_complete|htdemucs_ft|8\.0\.3/);
 });
 
 test('fingerprinting verifies stored bytes without decoder or classifier work', async () => {

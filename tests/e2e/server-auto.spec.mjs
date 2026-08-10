@@ -87,7 +87,7 @@ const test = base.extend({
 function analysisFixture(model = 'htdemucs_6s') {
   return {
     schemaVersion: '1',
-    roleClassifier: { version: 'autosplit-role-v3' },
+    roleClassifier: { version: 'autosplit-role-v4' },
     decision: {
       choice: model === 'htdemucs_6s' ? 'six' : 'four',
       resolvedCoreModel: model,
@@ -268,7 +268,7 @@ test('authoritative server Auto analyzes stored upload, YouTube, and Archive aud
     expect(job.sourceType).toBe(['upload', 'youtube', 'archive'][index]);
     expect(job.autoRouting.schemaVersion).toBe('1');
     expect(job.autoRouting.resolvedCoreModel).toBe('htdemucs_6s');
-    expect(job.autoRouting.analysis.roleClassifier.version).toBe('autosplit-role-v3');
+    expect(job.autoRouting.analysis.roleClassifier.version).toBe('autosplit-role-v4');
 
     const readback = await server.fetch(`/api/jobs/${job.id}`);
     expect(readback.status).toBe(200);

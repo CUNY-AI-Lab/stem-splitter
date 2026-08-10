@@ -1501,7 +1501,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     resolvedCoreModel: 'htdemucs_6s',
     analysis: {
       schemaVersion: '1',
-      roleClassifier: { version: 'autosplit-role-v3' },
+      roleClassifier: { version: 'autosplit-role-v4' },
       vocabularyClassifier: {
         version: 'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1',
         weightsSha256: '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1',

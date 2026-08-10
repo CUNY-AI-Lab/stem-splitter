@@ -13,7 +13,7 @@ Do not provision the service until all of these are true:
   authoritative-mock suites pass;
 - the current digest-pinned image builds on a native amd64 CI runner, passes its
   runtime decoder allowlist, and reports FFmpeg `8.0.3` plus
-  `autosplit-role-v3` and `analysis-source-scope-v2` from `/readyz`;
+  `autosplit-role-v4` and `analysis-source-scope-v2` from `/readyz`;
 - a rollback baseline has recorded one authorized four-track job, output
   hashes, latency, and exact Replicate versions;
 - the canonical app service has an exact `REPLICATE_YT_MODEL_VERSION` staged
@@ -139,7 +139,7 @@ runtime.
 | `QUERY_ISOLATION_MODE` | `off` |
 | `REPLICATE_AUDIOSEP_VERSION` | leave absent through Phases 1-2; review and stage one exact 64-hex version only with the Phase 3 isolation resource |
 
-The app and analyzer both compile the exact `autosplit-role-v3` pin. A response
+The app and analyzer both compile the exact `autosplit-role-v4` pin. A response
 from any other role-classifier version fails the analysis contract and takes
 the explicit four-track fallback; changing a Railway variable cannot bypass
 that compatibility gate.
@@ -187,7 +187,7 @@ provider calls.
    building deployment is not success.
 2. From inside the app service's private network, read `/healthz` and
    `/readyz`. Require readiness to report FFmpeg `8.0.3` and
-   `autosplit-role-v3` plus `analysis-source-scope-v2`.
+   `autosplit-role-v4` plus `analysis-source-scope-v2`.
 3. Confirm an unauthenticated `POST /v1/analyze` returns `401`, while the app's
    configured token succeeds only with an app-issued, ten-minute signed source
    URL. Exercise both an exact `uploads/<id>/<file>` key and an immutable

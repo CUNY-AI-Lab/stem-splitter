@@ -180,6 +180,21 @@ test('unaccompanied choir chooses 2 parts', () => {
   assert.equal(classify(track).choice, AutoSplit.TWO);
 });
 
+test('one short-source boundary peak cannot manufacture a moving low-end role', () => {
+  const track = drone(90, 2);
+  track[Math.floor(SR * 1.1)] += 0.95;
+  const features = AutoSplit.extractFeatures(track, SR);
+  assert.equal(features.onsetsPerSecond, 0);
+  assert.equal(AutoSplit.chooseSplit(features).choice, AutoSplit.TWO);
+
+  const repeated = drone(90, 2);
+  repeated[Math.floor(SR * 0.65)] += 0.95;
+  repeated[Math.floor(SR * 1.35)] += 0.95;
+  const repeatedFeatures = AutoSplit.extractFeatures(repeated, SR);
+  assert.ok(Number(repeatedFeatures.onsetsPerSecond) > 0.45);
+  assert.equal(AutoSplit.chooseSplit(repeatedFeatures).choice, AutoSplit.FOUR);
+});
+
 test('voice with frame drum and low line chooses 4 parts', () => {
   const track = silence();
   mixInto(track, voice(260, SECONDS), 0, 0.6);

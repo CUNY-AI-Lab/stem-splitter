@@ -5,6 +5,35 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## autosplit-role-v4 — short-source codec parity — 2026-08-10
+
+- Miss: a real app-plus-analyzer composition test routed the same sustained
+  two-second source to two tracks as upload/Archive WAV but four tracks after a
+  YouTube-shaped AAC/M4A transcode. One codec-boundary peak counted as roughly
+  0.5 onsets per second and manufactured repeating-attack evidence.
+- Contract: onset-derived routing features now remain zero until at least two
+  refractory-separated peaks exist. Once supported, the full event count and
+  all existing duration-normalized thresholds apply unchanged. The analysis
+  schema, `analysis-source-scope-v2`, provider pins, and concrete 2/4/6 stem
+  contracts do not change.
+- Version and rollback: browser, app, analyzer, corpus expectations,
+  query-isolation provenance, E2E fixtures, and image smoke move together to
+  exact `autosplit-role-v4`. A stale v3 analyzer fails the compiled contract and
+  uses the frozen default. `SERVER_AUTO_ENABLED=false` remains the immediate
+  rollback; live posture is still off.
+- Evidence: the focused classifier suite passes 23/23. The composed test uses
+  the real analyzer, signed stored-source fetch, FFmpeg decode, classifier,
+  hashing, and cleanup for upload, YouTube AAC/M4A, and Archive, then proves
+  three non-degraded v4 decisions and three concrete two-stem provider inputs.
+  Local FFmpeg 8.1.2 repeats the fixed corpus at 8 preferred, 3 accepted
+  alternatives, and 0 mismatches, with no v3 choice changed. Headless Chrome
+  151 agrees with the FFmpeg decisions on all 11 sources under v4. See
+  `docs/evaluation/autosplit-role-v4-candidate.md`.
+- Remaining: clean committed-source Phase 0, current v4 image/native-amd64 CI,
+  pinned-image decoder reproduction, manual listening, Railway resource and
+  restart acceptance, private-service provisioning, and shadow journeys. No
+  service, variable, provider call, migration, or deployment changed.
+
 ## analysis-source-scope-v2 — shared authoritative source allowlist — 2026-08-10
 
 - Miss: authoritative upload Auto signed the app-owned

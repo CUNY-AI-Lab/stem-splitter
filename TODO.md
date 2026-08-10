@@ -16,10 +16,16 @@ runtime allowlist, non-root, health, readiness, authentication, eight-format
 decode, and eleven-source corpus gates on FFmpeg 8.0.3. The final image contains
 one bundled application artifact plus `ffmpeg` and `ffprobe`, rather than the
 root project's unused runtime dependencies. Server Auto remains off live and no
-additional Railway service has been provisioned. Local FFmpeg, real Chrome, and
-the pinned image agree on all eleven authorized v3 routing choices (8 preferred,
-3 accepted alternatives). Native CI, manual stem listening, resource-limit
-testing, and live Railway acceptance remain gates before authority. See the
+additional Railway service has been provisioned. A new role-v4 candidate closes
+a short-source AAC boundary-peak discrepancy while preserving all eleven
+authorized local corpus decisions (8 preferred, 3 accepted alternatives). A
+real app-plus-analyzer composition test now fetches stored upload, YouTube, and
+Archive bytes through the signed source boundary before sending only concrete
+models to the separator. Headless Chrome 151 and local FFmpeg 8.1.2 now agree on
+all eleven v4 corpus choices. The earlier role-v3 image remains historical
+evidence; role v4 still requires its own pinned-image, native CI, manual
+listening, resource-limit, and live Railway acceptance gates before authority.
+See the
 [adversarial hardening audit](docs/audits/2026-08-09-audio-pipeline-phase0.md)
 and [model-processing changelog](docs/model-processing-changelog.md).
 
@@ -448,8 +454,9 @@ deployment or enablement.
   passes source-hash parity, auth, codec allowlists, resource boundaries,
   malformed/oversize/timeout/concurrency failures, cleanup, and redaction. See
   [the bound image evidence](docs/evaluation/2026-08-10-audio-analysis-fingerprint-image.md).
-- [ ] Reproduce the image on a native amd64 GitHub runner and Railway. Keep the
-  CI runtime audit that permits only the six advertised demuxers, audio
+- [ ] Build and reproduce the current role-v4/source-scope-v2 image on a native
+  amd64 GitHub runner and Railway. Keep the CI runtime audit that permits only
+  the six advertised demuxers, audio
   decoders, and file/pipe protocols; then exercise Railway CPU, memory, child
   process, concurrency, timeout, and ephemeral-disk limits. Local emulation is
   not production resource evidence.
@@ -518,12 +525,24 @@ deployment or enablement.
   pre-provision gate also passes with the analyzer absent, all related features
   off, zero mutations, zero provider calls, and no secrets printed.
   Native-amd64 and Railway image reproduction remain open.
+- [x] Compose the actual app and analyzer before provisioning. A real local
+  integration test now stores or freezes upload WAV, YouTube AAC/M4A, and
+  Archive WAV sources; makes the analyzer fetch each app-signed URL; runs real
+  FFmpeg decode, role classification, hashing, and cleanup; and proves the
+  separator receives three concrete two-stem inputs, never `auto`. This test
+  exposed role v3's one-boundary-peak AAC discrepancy. Versioned role v4
+  requires two refractory-separated onset peaks, restores three-source parity,
+  and preserves all eleven fixed-corpus decisions. See
+  `docs/evaluation/autosplit-role-v4-candidate.md`. Current image, native CI,
+  manual listening, and Railway execution remain open.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.
-  Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome,
-  local FFmpeg, and the pinned FFmpeg 8.0.3 image agree on all 11 choices. Keep
-  this gate open until native CI/Railway and the manual stem listening checks
-  pass; decision agreement alone does not establish musical usefulness.
+  Local role v4 is 11/11 accepted (8 preferred, 3 alternatives) and changes no
+  v3 corpus choice. Real Chrome agrees with local FFmpeg on all 11 v4 choices;
+  the pinned FFmpeg 8.0.3 image still proves only historical v3 source. Keep
+  this gate open until the v4 image, native CI/Railway, and manual stem
+  listening checks pass; decision agreement alone does not establish musical
+  usefulness.
 - [ ] Make the server decision authoritative for all source types only after the
   parity gate passes. Keep the old catalogue default as an explicit fallback,
   never an implicit claim that remote audio was analyzed.
