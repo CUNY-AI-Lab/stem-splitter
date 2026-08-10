@@ -1,5 +1,9 @@
 import type { Env } from '../env.ts';
 import {
+  validateQueryIsolationBudgetPolicy,
+  type QueryIsolationBudgetPolicyV1,
+} from './budget.ts';
+import {
   normalizeIsolationTarget,
   queryIsolationCacheKeyForMaterial,
   validateQueryIsolationCacheMaterial,
@@ -79,6 +83,16 @@ export interface CreateInstrumentIsolationInputV1 {
   now?: Date;
 }
 
+export interface ClaimInstrumentIsolationOptionsV1 {
+  budget: QueryIsolationBudgetPolicyV1;
+  now?: Date;
+}
+
+export interface QueryIsolationBudgetUsageV1 extends QueryIsolationBudgetPolicyV1 {
+  reservedProviderStarts: number;
+  remainingProviderStarts: number;
+}
+
 export type InstrumentIsolationResourceErrorCode =
   | 'invalid_request'
   | 'job_not_found'
@@ -87,6 +101,8 @@ export type InstrumentIsolationResourceErrorCode =
   | 'source_identity_mismatch'
   | 'cache_identity_mismatch'
   | 'maximum_reached'
+  | 'budget_exhausted'
+  | 'budget_policy_mismatch'
   | 'isolation_not_found'
   | 'invalid_transition';
 
@@ -410,29 +426,191 @@ async function requireIsolation(
   throw new InstrumentIsolationResourceError('invalid_transition', message);
 }
 
+function validatedBudgetPolicy(
+  value: QueryIsolationBudgetPolicyV1
+): QueryIsolationBudgetPolicyV1 {
+  try {
+    return validateQueryIsolationBudgetPolicy(value);
+  } catch (error) {
+    throw new InstrumentIsolationResourceError(
+      'invalid_request',
+      error instanceof Error ? error.message : 'Invalid query-isolation budget policy'
+    );
+  }
+}
+
+async function budgetUsageRow(
+  env: Pick<Env, 'DB'>,
+  budget: QueryIsolationBudgetPolicyV1
+): Promise<{ reserved: number; policyMismatches: number }> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS reserved,
+       COALESCE(SUM(
+         CASE WHEN policy_version <> ? OR maximum_provider_starts <> ? THEN 1 ELSE 0 END
+       ), 0) AS policy_mismatches
+     FROM instrument_isolation_budget_reservations
+     WHERE course_id = ? AND semester_id = ?`
+  )
+    .bind(
+      budget.policyVersion,
+      budget.maximumProviderStarts,
+      budget.courseId,
+      budget.semesterId
+    )
+    .first<{ reserved: number; policy_mismatches: number }>();
+  return {
+    reserved: Number(row?.reserved ?? 0),
+    policyMismatches: Number(row?.policy_mismatches ?? 0),
+  };
+}
+
+export async function getInstrumentIsolationBudgetUsage(
+  env: Pick<Env, 'DB'>,
+  input: QueryIsolationBudgetPolicyV1
+): Promise<QueryIsolationBudgetUsageV1> {
+  const budget = validatedBudgetPolicy(input);
+  const usage = await budgetUsageRow(env, budget);
+  if (usage.policyMismatches > 0) {
+    throw new InstrumentIsolationResourceError(
+      'budget_policy_mismatch',
+      'The course-semester isolation budget policy changed after reservations began'
+    );
+  }
+  if (!Number.isSafeInteger(usage.reserved) || usage.reserved < 0) {
+    throw new InstrumentIsolationResourceError(
+      'invalid_request',
+      'Stored query-isolation budget usage is invalid'
+    );
+  }
+  return {
+    ...budget,
+    reservedProviderStarts: usage.reserved,
+    remainingProviderStarts: Math.max(0, budget.maximumProviderStarts - usage.reserved),
+  };
+}
+
 export async function claimInstrumentIsolation(
   env: Pick<Env, 'DB'>,
   id: string,
-  now = new Date()
+  options: ClaimInstrumentIsolationOptionsV1
 ): Promise<InstrumentIsolationRecordV1> {
+  validateId(id, 'isolation id');
+  if (!options || !options.budget) {
+    throw new InstrumentIsolationResourceError(
+      'invalid_request',
+      'A course-semester isolation budget is required before provider start'
+    );
+  }
+  const budget = validatedBudgetPolicy(options.budget);
+  const now = options.now ?? new Date();
   const startedAt = validIsoDate(now);
   const deadlineAt = validIsoDate(new Date(now.getTime() + QUERY_ISOLATION_ATTEMPT_TIMEOUT_MS));
-  const result = await env.DB.prepare(
-    `UPDATE instrument_isolations
-     SET status = 'processing', attempts = attempts + 1, deadline_at = ?,
-         failure_code = NULL, failure_retryable = NULL, updated_at = ?
-     WHERE id = ? AND rollout_stage = 'teacher_beta'
-       AND status = 'queued' AND attempts < max_attempts
-       AND NOT EXISTS (
-         SELECT 1 FROM instrument_isolations active
-         WHERE active.job_id = instrument_isolations.job_id
-           AND active.status = 'processing' AND active.id <> instrument_isolations.id
-       )`
-  )
-    .bind(deadlineAt, startedAt, id)
-    .run();
-  if (result.meta.changes !== 1) {
-    return requireIsolation(env, id, 'Isolation is not claimable or this track is already active');
+  const results = (await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO instrument_isolation_budget_reservations
+        (isolation_id, attempt_number, job_id, cache_key, requested_by, course_id,
+         semester_id, policy_version, maximum_provider_starts, reserved_at)
+       SELECT candidate.id, candidate.attempts + 1, candidate.job_id,
+         candidate.cache_key, candidate.requested_by, ?, ?, ?, ?, ?
+       FROM instrument_isolations candidate
+       WHERE candidate.id = ?
+         AND candidate.rollout_stage = 'teacher_beta'
+         AND candidate.status = 'queued'
+         AND candidate.attempts < candidate.max_attempts
+         AND NOT EXISTS (
+           SELECT 1 FROM instrument_isolations active
+           WHERE active.job_id = candidate.job_id
+             AND active.status = 'processing' AND active.id <> candidate.id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM instrument_isolation_budget_reservations prior
+           WHERE prior.course_id = ? AND prior.semester_id = ?
+             AND (
+               prior.policy_version <> ?
+               OR prior.maximum_provider_starts <> ?
+             )
+         )
+         AND (
+           SELECT COUNT(*) FROM instrument_isolation_budget_reservations usage
+           WHERE usage.course_id = ? AND usage.semester_id = ?
+         ) < ?
+       ON CONFLICT(isolation_id, attempt_number) DO NOTHING`
+    ).bind(
+      budget.courseId,
+      budget.semesterId,
+      budget.policyVersion,
+      budget.maximumProviderStarts,
+      startedAt,
+      id,
+      budget.courseId,
+      budget.semesterId,
+      budget.policyVersion,
+      budget.maximumProviderStarts,
+      budget.courseId,
+      budget.semesterId,
+      budget.maximumProviderStarts
+    ),
+    env.DB.prepare(
+      `UPDATE instrument_isolations
+       SET status = 'processing', attempts = attempts + 1, deadline_at = ?,
+           failure_code = NULL, failure_retryable = NULL, updated_at = ?
+       WHERE id = ? AND rollout_stage = 'teacher_beta'
+         AND status = 'queued' AND attempts < max_attempts
+         AND NOT EXISTS (
+           SELECT 1 FROM instrument_isolations active
+           WHERE active.job_id = instrument_isolations.job_id
+             AND active.status = 'processing' AND active.id <> instrument_isolations.id
+         )
+         AND EXISTS (
+           SELECT 1 FROM instrument_isolation_budget_reservations reservation
+           WHERE reservation.isolation_id = instrument_isolations.id
+             AND reservation.attempt_number = instrument_isolations.attempts + 1
+             AND reservation.job_id = instrument_isolations.job_id
+             AND reservation.cache_key = instrument_isolations.cache_key
+             AND reservation.requested_by = instrument_isolations.requested_by
+             AND reservation.course_id = ?
+             AND reservation.semester_id = ?
+             AND reservation.policy_version = ?
+             AND reservation.maximum_provider_starts = ?
+         )`
+    ).bind(
+      deadlineAt,
+      startedAt,
+      id,
+      budget.courseId,
+      budget.semesterId,
+      budget.policyVersion,
+      budget.maximumProviderStarts
+    ),
+  ])) as Array<{ meta: { changes: number } }>;
+  if (results[1]?.meta.changes !== 1) {
+    const record = await getInstrumentIsolation(env, id);
+    if (!record) {
+      throw new InstrumentIsolationResourceError('isolation_not_found', 'Isolation not found');
+    }
+    if (
+      record.rolloutStage === 'teacher_beta' &&
+      record.status === 'queued' &&
+      record.attempts < record.maxAttempts
+    ) {
+      const usage = await budgetUsageRow(env, budget);
+      if (usage.policyMismatches > 0) {
+        throw new InstrumentIsolationResourceError(
+          'budget_policy_mismatch',
+          'The course-semester isolation budget policy changed after reservations began'
+        );
+      }
+      if (usage.reserved >= budget.maximumProviderStarts) {
+        throw new InstrumentIsolationResourceError(
+          'budget_exhausted',
+          'The course-semester optional-isolation provider-start budget is exhausted'
+        );
+      }
+    }
+    throw new InstrumentIsolationResourceError(
+      'invalid_transition',
+      'Isolation is not claimable or this track is already active'
+    );
   }
   return (await getInstrumentIsolation(env, id))!;
 }

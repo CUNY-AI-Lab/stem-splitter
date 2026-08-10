@@ -141,6 +141,7 @@ test('pre-provision gate rejects the wrong project surface, enabled flags, float
   variables.SERVER_AUTO_ENABLED = 'true';
   variables.REPLICATE_YT_MODEL_VERSION = 'latest';
   variables.REPLICATE_AUDIOSEP_VERSION = 'b'.repeat(64);
+  variables.QUERY_ISOLATION_COURSE_ID = 'music-101';
   variables.AUDIO_ANALYSIS_URL = 'http://orphaned.railway.internal:8080';
   const failures = findRailwayAudioAnalysisPreProvisionViolations({
     services: [...services(), { ...services()[1], id: 'duplicate' }],
@@ -152,6 +153,7 @@ test('pre-provision gate rejects the wrong project surface, enabled flags, float
   assert.ok(failures.some((failure) => failure.includes('64-hex')));
   assert.ok(failures.some((failure) => failure.includes('SERVER_AUTO_ENABLED')));
   assert.ok(failures.some((failure) => failure.includes('REPLICATE_AUDIOSEP_VERSION')));
+  assert.ok(failures.some((failure) => failure.includes('QUERY_ISOLATION_COURSE_ID')));
   assert.ok(failures.some((failure) => failure.includes('AUDIO_ANALYSIS_URL')));
 });
 

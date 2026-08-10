@@ -34,6 +34,12 @@ export type Env = {
   QUERY_ISOLATION_MODE?: string;
   /** Exact Replicate version for the dormant AudioSep query-isolation adapter. */
   REPLICATE_AUDIOSEP_VERSION?: string;
+  /** Canonical course scope for the dormant query-isolation spend budget. */
+  QUERY_ISOLATION_COURSE_ID?: string;
+  /** Canonical semester scope for the dormant query-isolation spend budget. */
+  QUERY_ISOLATION_SEMESTER_ID?: string;
+  /** Integer provider-start reservations permitted for that course and semester. */
+  QUERY_ISOLATION_MAX_PROVIDER_STARTS?: string;
   /** Private base URL for the separate Railway audio-analysis service. */
   AUDIO_ANALYSIS_URL?: string;
   /** Bounded request timeout in milliseconds; defaults to 15000, capped at 30000. */

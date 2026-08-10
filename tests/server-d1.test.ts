@@ -18,6 +18,7 @@ import {
   syncTeachersFromSeed,
 } from '../src/teacher/auth.ts';
 import { queryIsolationCacheKeyForMaterial } from '../src/isolation/contract.ts';
+import { QUERY_ISOLATION_BUDGET_POLICY_VERSION } from '../src/isolation/budget.ts';
 import {
   attachInstrumentIsolationExternalId,
   claimInstrumentIsolation,
@@ -25,6 +26,7 @@ import {
   createInstrumentIsolation,
   expireTimedOutInstrumentIsolations,
   failInstrumentIsolation,
+  getInstrumentIsolationBudgetUsage,
   getInstrumentIsolation,
   InstrumentIsolationResourceError,
   listInstrumentIsolations,
@@ -1123,6 +1125,17 @@ const isolationIdentity = {
   contractVersion: 'audiosep-replicate-v1',
 };
 
+const isolationBudget = {
+  policyVersion: QUERY_ISOLATION_BUDGET_POLICY_VERSION,
+  courseId: 'music-101',
+  semesterId: '2026-fall',
+  maximumProviderStarts: 20,
+} as const;
+
+function isolationClaimOptions(now?: Date) {
+  return { budget: isolationBudget, now };
+}
+
 function isolationInput(id: string, target: string, hashCharacter = 'a') {
   return {
     id,
@@ -1233,11 +1246,20 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
     assert.equal(shadow.record.rolloutStage, 'shadow');
     assert.equal(summarizeInstrumentIsolation(shadow.record).status, 'shadowed');
     await assert.rejects(
-      claimInstrumentIsolation(env, shadow.record.id),
+      claimInstrumentIsolation(env, shadow.record.id, isolationClaimOptions()),
       (error: unknown) =>
         error instanceof InstrumentIsolationResourceError && error.code === 'invalid_transition'
     );
     assert.equal((await getInstrumentIsolation(env, shadow.record.id))?.attempts, 0);
+    assert.equal(
+      (
+        await db.prepare(
+          'SELECT COUNT(*) AS count FROM instrument_isolation_budget_reservations'
+        ).first<{ count: number }>()
+      )?.count,
+      0,
+      'shadow demand must never reserve paid-provider budget'
+    );
 
     const first = await createInstrumentIsolation(env, isolationInput('isolation_one', 'saxophone'));
     assert.equal(first.created, true);
@@ -1262,7 +1284,7 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
     const claimed = await claimInstrumentIsolation(
       env,
       first.record.id,
-      new Date('2026-08-10T12:01:00.000Z')
+      isolationClaimOptions(new Date('2026-08-10T12:01:00.000Z'))
     );
     assert.equal(claimed.status, 'processing');
     assert.equal(claimed.attempts, 1);
@@ -1274,7 +1296,7 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
       new Date('2026-08-10T12:01:01.000Z')
     );
     await assert.rejects(
-      claimInstrumentIsolation(env, second.record.id),
+      claimInstrumentIsolation(env, second.record.id, isolationClaimOptions()),
       (error: unknown) =>
         error instanceof InstrumentIsolationResourceError && error.code === 'invalid_transition'
     );
@@ -1302,7 +1324,7 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
     await claimInstrumentIsolation(
       env,
       first.record.id,
-      new Date('2026-08-10T12:04:00.000Z')
+      isolationClaimOptions(new Date('2026-08-10T12:04:00.000Z'))
     );
     assert.equal(
       await expireTimedOutInstrumentIsolations(
@@ -1320,7 +1342,7 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
     await claimInstrumentIsolation(
       env,
       second.record.id,
-      new Date('2026-08-10T12:20:00.000Z')
+      isolationClaimOptions(new Date('2026-08-10T12:20:00.000Z'))
     );
     await assert.rejects(
       completeInstrumentIsolation(
@@ -1343,6 +1365,11 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
     const summary = summarizeInstrumentIsolation(completed);
     assert.equal(summary.kind, 'optional_instrument_isolation');
     assert.deepEqual(summary.output, { targetAvailable: true, residualAvailable: false });
+    assert.deepEqual(await getInstrumentIsolationBudgetUsage(env, isolationBudget), {
+      ...isolationBudget,
+      reservedProviderStarts: 3,
+      remainingProviderStarts: 17,
+    });
     assert.equal(summary.limitations.length, 2);
     assert.deepEqual(
       (await listInstrumentIsolations(env, 'job-a')).map((record) => record.id).sort(),
@@ -1451,6 +1478,125 @@ test('an idempotent isolation read fails closed on job or cache-material drift',
   }
 });
 
+test('course-semester isolation budget reservations are atomic and fail closed on drift', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-isolation-budget-'));
+  try {
+    const db = new SqliteD1(join(directory, 'budget.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    for (const id of ['job-a', 'job-b']) {
+      await db.prepare(
+        `INSERT INTO jobs
+          (id, filename, source_key, status, model, source_type, source_hash)
+         VALUES (?, 'source.wav', ?, 'done', 'htdemucs_ft', 'upload', ?)`
+      )
+        .bind(id, `uploads/${id}/source.wav`, 'a'.repeat(64))
+        .run();
+    }
+    const env = { DB: db } as never;
+    const first = await createInstrumentIsolation(
+      env,
+      isolationInput('budget_one', 'saxophone')
+    );
+    const second = await createInstrumentIsolation(env, {
+      ...isolationInput('budget_two', 'trumpet'),
+      jobId: 'job-b',
+    });
+    await assert.rejects(
+      claimInstrumentIsolation(env, first.record.id, undefined as never),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'invalid_request' &&
+        /budget is required/.test(error.message)
+    );
+    assert.equal((await getInstrumentIsolation(env, first.record.id))?.attempts, 0);
+    const oneStartBudget = { ...isolationBudget, maximumProviderStarts: 1 };
+    const contenders = await Promise.allSettled([
+      claimInstrumentIsolation(env, first.record.id, {
+        budget: oneStartBudget,
+        now: new Date('2026-08-10T13:00:00.000Z'),
+      }),
+      claimInstrumentIsolation(env, second.record.id, {
+        budget: oneStartBudget,
+        now: new Date('2026-08-10T13:00:00.000Z'),
+      }),
+    ]);
+    assert.equal(contenders.filter(({ status }) => status === 'fulfilled').length, 1);
+    const rejected = contenders.find(({ status }) => status === 'rejected');
+    assert.ok(
+      rejected?.status === 'rejected' &&
+        rejected.reason instanceof InstrumentIsolationResourceError &&
+        rejected.reason.code === 'budget_exhausted'
+    );
+    assert.deepEqual(await getInstrumentIsolationBudgetUsage(env, oneStartBudget), {
+      ...oneStartBudget,
+      reservedProviderStarts: 1,
+      remainingProviderStarts: 0,
+    });
+    const reservations = await db.prepare(
+      `SELECT isolation_id, attempt_number, job_id, cache_key, requested_by,
+         course_id, semester_id
+       FROM instrument_isolation_budget_reservations`
+    ).all<{
+      isolation_id: string;
+      attempt_number: number;
+      job_id: string;
+      cache_key: string;
+      requested_by: string;
+      course_id: string;
+      semester_id: string;
+    }>();
+    assert.equal(reservations.results.length, 1);
+    assert.equal(reservations.results[0].attempt_number, 1);
+    assert.match(reservations.results[0].cache_key, /^query-isolation\/v1\/[0-9a-f]{64}$/);
+    assert.equal(reservations.results[0].requested_by, 'teacher-a');
+    assert.equal(reservations.results[0].course_id, 'music-101');
+    assert.equal(reservations.results[0].semester_id, '2026-fall');
+    await assert.rejects(
+      db.prepare(
+        'UPDATE instrument_isolation_budget_reservations SET maximum_provider_starts = 2'
+      ).run(),
+      /budget reservations are immutable/
+    );
+    await assert.rejects(
+      db.prepare('DELETE FROM instrument_isolation_budget_reservations').run(),
+      /budget reservations are immutable/
+    );
+
+    const queuedId = contenders[0].status === 'rejected' ? first.record.id : second.record.id;
+    assert.equal((await getInstrumentIsolation(env, queuedId))?.attempts, 0);
+    await db.prepare('DELETE FROM jobs WHERE id = ?')
+      .bind(reservations.results[0].job_id)
+      .run();
+    assert.deepEqual(await getInstrumentIsolationBudgetUsage(env, oneStartBudget), {
+      ...oneStartBudget,
+      reservedProviderStarts: 1,
+      remainingProviderStarts: 0,
+    });
+    await assert.rejects(
+      claimInstrumentIsolation(env, queuedId, {
+        budget: { ...oneStartBudget, maximumProviderStarts: 2 },
+      }),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'budget_policy_mismatch'
+    );
+
+    const nextSemester = { ...oneStartBudget, semesterId: '2027-spring' };
+    const nextClaim = await claimInstrumentIsolation(env, queuedId, {
+      budget: nextSemester,
+      now: new Date('2027-01-10T13:00:00.000Z'),
+    });
+    assert.equal(nextClaim.status, 'processing');
+    assert.deepEqual(await getInstrumentIsolationBudgetUsage(env, nextSemester), {
+      ...nextSemester,
+      reservedProviderStarts: 1,
+      remainingProviderStarts: 0,
+    });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('concurrent isolation creation cannot exceed the per-track maximum', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-isolation-limit-'));
   try {
@@ -1520,6 +1666,12 @@ test('Railway boot and numbered migration both add isolation storage idempotentl
           )
           .run();
         db.applySchema(readFileSync('migrations/0010-isolation-rollout-stage.sql', 'utf8'));
+        const budgetSql = readFileSync(
+          'migrations/0015-instrument-isolation-budget.sql',
+          'utf8'
+        );
+        db.applySchema(budgetSql);
+        db.applySchema(budgetSql);
       }
 
       const columns = await db.prepare("PRAGMA table_info('instrument_isolations')")
@@ -1558,6 +1710,25 @@ test('Railway boot and numbered migration both add isolation storage idempotentl
           (index) => index.name === 'idx_instrument_isolations_one_processing_per_job'
         )
       );
+      const budgetTable = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'instrument_isolation_budget_reservations'"
+      ).first<{ name: string }>();
+      assert.equal(budgetTable?.name, 'instrument_isolation_budget_reservations');
+      const budgetIndexes = await db.prepare(
+        "PRAGMA index_list('instrument_isolation_budget_reservations')"
+      ).all<{ name: string }>();
+      assert.ok(
+        budgetIndexes.results.some(
+          (index) => index.name === 'idx_instrument_isolation_budget_scope'
+        )
+      );
+      const budgetTriggers = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'instrument_isolation_budget_reservations_%' ORDER BY name"
+      ).all<{ name: string }>();
+      assert.deepEqual(budgetTriggers.results.map(({ name }) => name), [
+        'instrument_isolation_budget_reservations_no_delete',
+        'instrument_isolation_budget_reservations_no_update',
+      ]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

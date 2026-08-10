@@ -1,6 +1,7 @@
 import type { Env } from '../src/env';
 import { processingFeatureFlags } from '../src/features';
 import { audioAnalysisEndpoint } from '../src/analysis/http';
+import { queryIsolationBudgetConfigurationStatus } from '../src/isolation/budget.ts';
 import { audioSepReplicateIdentity } from '../src/isolation/options.ts';
 
 export type OptionalServiceConfigurationStatus =
@@ -22,6 +23,9 @@ type RuntimeConfig = Pick<
   | 'QUERY_ISOLATION_ENABLED'
   | 'QUERY_ISOLATION_MODE'
   | 'REPLICATE_AUDIOSEP_VERSION'
+  | 'QUERY_ISOLATION_COURSE_ID'
+  | 'QUERY_ISOLATION_SEMESTER_ID'
+  | 'QUERY_ISOLATION_MAX_PROVIDER_STARTS'
 >;
 
 function enabled(value: string | undefined): boolean {
@@ -87,6 +91,7 @@ export function runtimeConfigurationSummary(env: RuntimeConfig) {
     instrumentDiscovery: flags.instrumentDiscovery ? 'enabled' : 'disabled',
     queryIsolationMode: flags.queryIsolationMode,
     queryIsolationProvider: queryIsolationProviderStatus(env),
+    queryIsolationBudget: queryIsolationBudgetConfigurationStatus(env),
   } as const;
 }
 
@@ -137,6 +142,14 @@ export function runtimeConfigurationWarnings(env: RuntimeConfig): string[] {
   ) {
     warnings.push(
       `query isolation shadow is enabled but the reviewed provider identity is ${summary.queryIsolationProvider}; requests will remain unavailable`
+    );
+  }
+  if (
+    summary.queryIsolationBudget === 'incomplete' ||
+    summary.queryIsolationBudget === 'invalid'
+  ) {
+    warnings.push(
+      `query isolation budget configuration is ${summary.queryIsolationBudget}; provider starts will remain unavailable`
     );
   }
 

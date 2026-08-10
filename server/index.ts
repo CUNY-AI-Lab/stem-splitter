@@ -95,6 +95,9 @@ const env = {
   // The reviewed identity may be recorded in shadow mode, but provider start
   // remains impossible until a later teacher-beta execution slice.
   REPLICATE_AUDIOSEP_VERSION: process.env.REPLICATE_AUDIOSEP_VERSION,
+  QUERY_ISOLATION_COURSE_ID: process.env.QUERY_ISOLATION_COURSE_ID,
+  QUERY_ISOLATION_SEMESTER_ID: process.env.QUERY_ISOLATION_SEMESTER_ID,
+  QUERY_ISOLATION_MAX_PROVIDER_STARTS: process.env.QUERY_ISOLATION_MAX_PROVIDER_STARTS,
   AUDIO_ANALYSIS_URL: process.env.AUDIO_ANALYSIS_URL,
   AUDIO_ANALYSIS_TOKEN: process.env.AUDIO_ANALYSIS_TOKEN,
   AUDIO_ANALYSIS_TIMEOUT_MS: process.env.AUDIO_ANALYSIS_TIMEOUT_MS,

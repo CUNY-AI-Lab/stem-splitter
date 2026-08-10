@@ -88,7 +88,9 @@
     "db:migrate:13": "wrangler d1 execute stem-splitter --remote --file=migrations/0013-prompt-history-immutable.sql",
     "db:migrate:13:local": "wrangler d1 execute stem-splitter --local --file=migrations/0013-prompt-history-immutable.sql",
     "db:migrate:14": "wrangler d1 execute stem-splitter --remote --file=migrations/0014-instrument-discovery-feedback.sql",
-    "db:migrate:14:local": "wrangler d1 execute stem-splitter --local --file=migrations/0014-instrument-discovery-feedback.sql"
+    "db:migrate:14:local": "wrangler d1 execute stem-splitter --local --file=migrations/0014-instrument-discovery-feedback.sql",
+    "db:migrate:15": "wrangler d1 execute stem-splitter --remote --file=migrations/0015-instrument-isolation-budget.sql",
+    "db:migrate:15:local": "wrangler d1 execute stem-splitter --local --file=migrations/0015-instrument-isolation-budget.sql"
   },
   "engines": {
     "node": "22.23.1"

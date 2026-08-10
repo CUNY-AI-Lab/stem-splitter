@@ -17,6 +17,9 @@ const disabled = {
   QUERY_ISOLATION_ENABLED: undefined,
   QUERY_ISOLATION_MODE: undefined,
   REPLICATE_AUDIOSEP_VERSION: undefined,
+  QUERY_ISOLATION_COURSE_ID: undefined,
+  QUERY_ISOLATION_SEMESTER_ID: undefined,
+  QUERY_ISOLATION_MAX_PROVIDER_STARTS: undefined,
 };
 const ANALYSIS_TOKEN = 'analysis-test-token-000000000000000';
 const YOUTUBE_TOKEN = 'youtube-test-token-000000000';
@@ -163,6 +166,7 @@ test('authoritative Auto cannot look ready when its analyzer is absent', () => {
     instrumentDiscovery: 'disabled',
     queryIsolationMode: 'off',
     queryIsolationProvider: 'unconfigured',
+    queryIsolationBudget: 'unconfigured',
   });
   assert.ok(
     runtimeConfigurationWarnings(env).some((warning) =>
@@ -181,6 +185,27 @@ test('query isolation shadow reports missing fingerprint and provider dependenci
   const warnings = runtimeConfigurationWarnings(env);
   assert.ok(warnings.some((warning) => warning.includes('source fingerprinting will be unavailable')));
   assert.ok(warnings.some((warning) => warning.includes('reviewed provider identity is unconfigured')));
+});
+
+test('query isolation budget configuration is additive and fails lazy', () => {
+  const incomplete = { ...disabled, QUERY_ISOLATION_COURSE_ID: 'music-101' };
+  assert.equal(runtimeConfigurationSummary(incomplete).queryIsolationBudget, 'incomplete');
+  assert.ok(
+    runtimeConfigurationWarnings(incomplete).some((warning) =>
+      warning.includes('budget configuration is incomplete')
+    )
+  );
+  const configured = {
+    ...disabled,
+    QUERY_ISOLATION_COURSE_ID: 'music-101',
+    QUERY_ISOLATION_SEMESTER_ID: '2026-fall',
+    QUERY_ISOLATION_MAX_PROVIDER_STARTS: '40',
+  };
+  assert.equal(runtimeConfigurationSummary(configured).queryIsolationBudget, 'configured');
+  assert.equal(
+    runtimeConfigurationWarnings(configured).some((warning) => warning.includes('budget')),
+    false
+  );
 });
 
 test('query isolation mode fails closed and a mode string alone is ignored', () => {

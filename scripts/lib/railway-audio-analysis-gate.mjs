@@ -93,6 +93,15 @@ function validateSafeAppOffVariables(appVariables, { requireAnalysis = false } =
   if (value(appVariables, 'REPLICATE_AUDIOSEP_VERSION') !== undefined) {
     failures.push('REPLICATE_AUDIOSEP_VERSION must remain absent during Phase 1');
   }
+  for (const name of [
+    'QUERY_ISOLATION_COURSE_ID',
+    'QUERY_ISOLATION_SEMESTER_ID',
+    'QUERY_ISOLATION_MAX_PROVIDER_STARTS',
+  ]) {
+    if (value(appVariables, name) !== undefined) {
+      failures.push(`${name} must remain absent during Phase 1`);
+    }
+  }
   if (!requireAnalysis) {
     for (const name of [
       'AUDIO_ANALYSIS_URL',

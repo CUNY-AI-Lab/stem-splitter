@@ -9,6 +9,12 @@ import {
   validateQueryIsolationRequest,
 } from '../src/isolation/contract.ts';
 import {
+  QUERY_ISOLATION_BUDGET_POLICY_VERSION,
+  queryIsolationBudgetConfigurationStatus,
+  queryIsolationBudgetPolicy,
+  validateQueryIsolationBudgetPolicy,
+} from '../src/isolation/budget.ts';
+import {
   AUDIOSEP_REPLICATE_MODEL,
   audioSepReplicateIdentity,
   queryIsolationReplicateContractSurface,
@@ -40,6 +46,46 @@ const IDENTITY = {
   version: AUDIOSEP_PIN,
   contractVersion: 'audiosep-replicate-v1',
 };
+
+test('query-isolation spend requires one exact course-semester budget policy', () => {
+  const configured = {
+    QUERY_ISOLATION_COURSE_ID: 'music-101',
+    QUERY_ISOLATION_SEMESTER_ID: '2026-fall',
+    QUERY_ISOLATION_MAX_PROVIDER_STARTS: '40',
+  };
+  assert.equal(queryIsolationBudgetConfigurationStatus({}), 'unconfigured');
+  assert.throws(() => queryIsolationBudgetPolicy({}), /not configured/);
+  assert.equal(
+    queryIsolationBudgetConfigurationStatus({ QUERY_ISOLATION_COURSE_ID: 'music-101' }),
+    'incomplete'
+  );
+  assert.throws(
+    () => queryIsolationBudgetPolicy({ QUERY_ISOLATION_COURSE_ID: 'music-101' }),
+    /not configured/
+  );
+  for (const drifted of [
+    { ...configured, QUERY_ISOLATION_COURSE_ID: 'Music 101' },
+    { ...configured, QUERY_ISOLATION_SEMESTER_ID: '../2026-fall' },
+    { ...configured, QUERY_ISOLATION_MAX_PROVIDER_STARTS: '0' },
+    { ...configured, QUERY_ISOLATION_MAX_PROVIDER_STARTS: '040' },
+    { ...configured, QUERY_ISOLATION_MAX_PROVIDER_STARTS: '1001' },
+  ]) {
+    assert.equal(queryIsolationBudgetConfigurationStatus(drifted), 'invalid');
+    assert.throws(() => queryIsolationBudgetPolicy(drifted), /not configured/);
+  }
+  const policy = queryIsolationBudgetPolicy(configured);
+  assert.deepEqual(policy, {
+    policyVersion: QUERY_ISOLATION_BUDGET_POLICY_VERSION,
+    courseId: 'music-101',
+    semesterId: '2026-fall',
+    maximumProviderStarts: 40,
+  });
+  assert.equal(validateQueryIsolationBudgetPolicy(policy), policy);
+  assert.throws(
+    () => validateQueryIsolationBudgetPolicy({ ...policy, maximumProviderStarts: 1001 }),
+    /provider-start budget/
+  );
+});
 
 test('query targets normalize once into a bounded cache/provider form', () => {
   assert.equal(normalizeIsolationTarget('  BASS\tClarinet  '), 'bass clarinet');
