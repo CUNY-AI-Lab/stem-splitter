@@ -664,11 +664,21 @@ license status. Overall accuracy alone is insufficient.
   database triggers freeze that key/type, and duplicate readback rechecks every
   stored cache-material/provider field rather than trusting the cache-key string
   alone.
-- [ ] Before enabling any provider-start path, fingerprint the source again
-  immediately before spend and compare it to the write-once job digest. A
-  still-valid browser PUT URL or later object replacement must not let the
-  provider consume bytes different from the cache identity or completed core
-  split; test overwrite, expiry, deletion, and same-digest retry cases.
+- [x] Before enabling any provider-start path, fingerprint the source again
+  immediately before spend and compare it to the write-once job digest. The
+  guard now copies those exact verified bytes to a deterministic, app-owned
+  `isolation-inputs/v1/<isolation>/<sha256>` snapshot before minting a fresh
+  15-minute provider URL. Browser upload routes cannot address that prefix, so
+  an earlier replacement fails the digest comparison and a later replacement
+  cannot change what the provider consumes. The provider contract rejects any
+  URL whose snapshot suffix does not bind the same isolation id and digest.
+  The read is byte- and time-bounded against stored object metadata before the
+  app buffers or hashes it. Railway filesystem-adapter regressions cover a
+  different-digest overwrite, post-check overwrite, metadata/body length drift,
+  retention expiry, deletion, signed-URL expiry, same-digest retry, and narrowly
+  scoped cleanup. This closes the source-byte barrier only; it does not enable
+  a provider route, approve the unverified checkpoint, or close semester-budget
+  and output-retention gates.
 - [x] Re-run the complete local Phase 0 gate after write-once source identity,
   atomic idempotent-read validation, and trigger-aware E2E schema integration.
   On 2026-08-10 exact executable-source commit `4cf452e` passed a frozen Bun

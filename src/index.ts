@@ -5,6 +5,7 @@ import type { Env } from './env';
 import {
   getRetainedAudio,
   isLocalHosting,
+  isLocalSourceDownloadKey,
   maintainLocalAudioRetention,
   presignAnalysisDownload,
   presignUpload,
@@ -256,7 +257,7 @@ app.put('/api/local-uploads/*', requireClassCode, async (c) => {
 app.get('/api/local-sources/*', async (c) => {
   if (!isLocalHosting(c.env)) return c.text('Not found', 404);
   const key = localObjectKey(c.req.url, '/api/local-sources/');
-  if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
+  if (!key || !isLocalSourceDownloadKey(key)) return c.text('Not found', 404);
   if (!(await verifyLocalSource(c.env, key, c.req.query('expires'), c.req.query('signature')))) {
     return c.text('Forbidden', 403);
   }

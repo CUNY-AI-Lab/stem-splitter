@@ -7,6 +7,7 @@ import type { Env } from './env';
 
 const SOURCE_URL_TTL_SECONDS = 6 * 60 * 60;
 const ANALYSIS_URL_TTL_SECONDS = 10 * 60;
+const ISOLATION_URL_TTL_SECONDS = 15 * 60;
 const LOCAL_AUDIO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCAL_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -92,12 +93,17 @@ export async function verifyLocalSource(
   env: Env,
   key: string,
   expiresValue: string | undefined,
-  signatureValue: string | undefined
+  signatureValue: string | undefined,
+  nowSeconds = Math.floor(Date.now() / 1000)
 ): Promise<boolean> {
   if (!expiresValue || !signatureValue || !/^\d+$/.test(expiresValue)) return false;
   const expiresAt = Number(expiresValue);
-  const now = Math.floor(Date.now() / 1000);
-  if (!Number.isSafeInteger(expiresAt) || expiresAt < now || expiresAt > now + SOURCE_URL_TTL_SECONDS + 60) {
+  if (
+    !Number.isSafeInteger(nowSeconds) ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt < nowSeconds ||
+    expiresAt > nowSeconds + SOURCE_URL_TTL_SECONDS + 60
+  ) {
     return false;
   }
   const signature = decodeBase64Url(signatureValue);
@@ -108,6 +114,18 @@ export async function verifyLocalSource(
     signature,
     signaturePayload(key, expiresAt)
   );
+}
+
+const ISOLATION_SOURCE_KEY_PATTERN =
+  /^isolation-inputs\/v1\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/[0-9a-f]{64}$/;
+
+/**
+ * Local source GETs expose ordinary uploads and app-owned isolation snapshots.
+ * The upload PUT route deliberately accepts only `uploads/`, so a browser PUT
+ * can never overwrite an isolation snapshot even if its original URL is live.
+ */
+export function isLocalSourceDownloadKey(key: string): boolean {
+  return key.startsWith('uploads/') || ISOLATION_SOURCE_KEY_PATTERN.test(key);
 }
 
 function isExpiredLocalObject(object: R2Object, nowMs: number): boolean {
@@ -191,4 +209,19 @@ export async function presignAnalysisDownload(env: Env, key: string): Promise<st
     return url.toString();
   }
   return presign(env, 'GET', key, ANALYSIS_URL_TTL_SECONDS);
+}
+
+/** Fresh GET for an app-owned, immutable isolation input snapshot. */
+export async function presignIsolationDownload(env: Env, key: string): Promise<string> {
+  if (!ISOLATION_SOURCE_KEY_PATTERN.test(key)) {
+    throw new Error('Invalid isolation source key');
+  }
+  if (isLocalHosting(env)) {
+    const expiresAt = Math.floor(Date.now() / 1000) + ISOLATION_URL_TTL_SECONDS;
+    const url = localObjectUrl(env, '/api/local-sources/', key);
+    url.searchParams.set('expires', String(expiresAt));
+    url.searchParams.set('signature', await signLocalSource(env, key, expiresAt));
+    return url.toString();
+  }
+  return presign(env, 'GET', key, ISOLATION_URL_TTL_SECONDS);
 }

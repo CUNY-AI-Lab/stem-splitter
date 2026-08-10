@@ -5,6 +5,35 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## query-isolation-source-guard-v1 — immutable pre-spend input — 2026-08-10
+
+- Scope: a dormant pre-spend source guard, app-owned input snapshot, fresh
+  15-minute provider URL, provider-contract enforcement, and cleanup seam. No
+  provider-start route, Replicate prediction, flag, Railway variable, migration,
+  deployment, core stem, Auto threshold, or student/teacher payload changed.
+- Race closure: the app reads the stored original at the spend boundary,
+  bounds that read by stored byte count and a 60-second deadline, fingerprints
+  those exact bytes, compares them with the write-once job digest, and publishes
+  only matching bytes under
+  `isolation-inputs/v1/<isolation>/<sha256>`. Browser PUT routes accept only the
+  separate `uploads/` prefix. Replacing the original before verification fails;
+  replacing it afterward cannot affect the immutable provider input.
+- Contract: query-isolation requests now reject ordinary upload URLs and require
+  the source URL path to bind the same isolation id and SHA-256 as the request.
+  This prevents a future app route from bypassing the snapshot seam while using
+  the existing dormant AudioSep adapter.
+- Evidence: four Railway filesystem-adapter regressions cover different-digest
+  and post-check overwrites, deletion, 30-day retention expiry, 15-minute URL
+  expiry, stored-metadata/body-length drift, byte-identical retry, snapshot
+  persistence, and narrow cleanup. The targeted source/AudioSep suite passes
+  11/11. Full Phase 0 evidence is recorded only after all remaining gates
+  complete against one stable committed tree; passing a combined dirty working
+  tree is not durable release evidence.
+- Remaining: hosted checkpoint/license provenance, semester budgets,
+  provider-start/webhook orchestration, output hydration/retention, common
+  quality/cost evaluation, native-amd64 and Railway acceptance, and rollback
+  evidence remain mandatory before paid execution.
+
 ## query-isolation-shadow-v1 — verified identity and demand only — 2026-08-10
 
 - Scope: authenticated stored-source fingerprinting, private job identity,

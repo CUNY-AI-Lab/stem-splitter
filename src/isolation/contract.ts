@@ -33,7 +33,7 @@ export function normalizeIsolationTarget(value: string): string {
   return normalized;
 }
 
-function requireHttpsUrl(value: string, field: string): void {
+function requireHttpsUrl(value: string, field: string): URL {
   let url: URL;
   try {
     url = new URL(value);
@@ -42,6 +42,18 @@ function requireHttpsUrl(value: string, field: string): void {
   }
   if (url.protocol !== 'https:' || url.username || url.password) {
     throw new QueryIsolationContractError(`${field} must be a credential-free HTTPS URL`);
+  }
+  return url;
+}
+
+function requireIsolationSnapshotUrl(request: QueryIsolationRequestV1): void {
+  const url = requireHttpsUrl(request.sourceUrl, 'sourceUrl');
+  const expectedSuffix =
+    `/isolation-inputs/v1/${request.isolationId}/${request.sourceHash}`;
+  if (!url.pathname.endsWith(expectedSuffix)) {
+    throw new QueryIsolationContractError(
+      'sourceUrl must address the verified isolation source snapshot'
+    );
   }
 }
 
@@ -56,7 +68,7 @@ export function validateQueryIsolationRequest(request: QueryIsolationRequestV1):
   if (!['upload', 'youtube', 'archive'].includes(request.sourceType)) {
     throw new QueryIsolationContractError('Unsupported isolation source type');
   }
-  requireHttpsUrl(request.sourceUrl, 'sourceUrl');
+  requireIsolationSnapshotUrl(request);
   requireHttpsUrl(request.webhookUrl, 'webhookUrl');
 }
 

@@ -24,7 +24,9 @@ const AUDIOSEP_PIN = 'f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2
 const REQUEST: QueryIsolationRequestV1 = {
   schemaVersion: QUERY_ISOLATION_SCHEMA_VERSION,
   isolationId: 'isolation_test_1',
-  sourceUrl: 'https://stem.example/api/local-sources/source-token',
+  sourceUrl:
+    `https://stem.example/api/local-sources/isolation-inputs/v1/` +
+    `isolation_test_1/${'1'.repeat(64)}?expires=123&signature=test`,
   sourceHash: '1'.repeat(64),
   sourceType: 'upload',
   normalizedTarget: 'bass clarinet',
@@ -62,6 +64,14 @@ test('query-isolation requests fail closed on transport and identity drift', () 
     /credential-free HTTPS/
   );
   assert.throws(
+    () =>
+      validateQueryIsolationRequest({
+        ...REQUEST,
+        sourceUrl: 'https://stem.example/api/local-sources/uploads/still-mutable.wav',
+      }),
+    /verified isolation source snapshot/
+  );
+  assert.throws(
     () => audioSepReplicateIdentity({ REPLICATE_AUDIOSEP_VERSION: 'latest' }),
     /exact lowercase 64-character hash/
   );
@@ -89,7 +99,13 @@ test('query-isolation cache keys bind signal, prompt, vocabulary, provider, and 
   );
 
   const requestChanges: QueryIsolationRequestV1[] = [
-    { ...REQUEST, sourceHash: '2'.repeat(64) },
+    {
+      ...REQUEST,
+      sourceHash: '2'.repeat(64),
+      sourceUrl:
+        `https://stem.example/api/local-sources/isolation-inputs/v1/` +
+        `isolation_test_1/${'2'.repeat(64)}?expires=123&signature=test`,
+    },
     { ...REQUEST, normalizedTarget: 'contrabass clarinet' },
     { ...REQUEST, analysisVocabularyVersion: 'classroom-instruments-v2' },
   ];
@@ -110,7 +126,9 @@ test('query-isolation cache keys bind signal, prompt, vocabulary, provider, and 
       {
         ...REQUEST,
         isolationId: 'a_different_transport_job',
-        sourceUrl: 'https://stem.example/api/local-sources/fresh-token',
+        sourceUrl:
+          `https://stem.example/api/local-sources/isolation-inputs/v1/` +
+          `a_different_transport_job/${'1'.repeat(64)}?expires=456&signature=fresh`,
         webhookUrl: 'https://stem.example/api/webhooks/query-isolation?signature=fresh',
       },
       IDENTITY

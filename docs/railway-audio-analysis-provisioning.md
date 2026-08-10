@@ -71,8 +71,10 @@ is a dormant, exact-version AudioSep adapter for the external Replicate API.
 Do not stage its version variable or enable its feature while provisioning the
 analysis/classifier services. The app now has a separate resource and a
 teacher-only shadow route, but shadow rows cannot be claimed and the app has no
-provider-start path. Semester budgets, checkpoint provenance, and the quality
-gate remain open. SAM-Audio remains an
+provider-start path. Its pre-spend seam re-fingerprints the original into an
+app-owned immutable snapshot and the provider contract accepts only that
+snapshot URL; this guard does not authorize execution. Semester budgets,
+checkpoint provenance, and the quality gate remain open. SAM-Audio remains an
 evaluation-only community deployment subject to institutional license and
 checkpoint review. Banquet, if later justified, becomes its own scale-to-zero
 GPU service and never runs inside either warmed Railway CPU service.
