@@ -1,6 +1,7 @@
 import type { Env } from '../env';
 import { validateQueryIsolationRequest } from './contract.ts';
 import { audioSepReplicateIdentity } from './options.ts';
+import { validatedQueryIsolationOutputUrl } from './output.ts';
 import {
   QUERY_ISOLATION_SCHEMA_VERSION,
   type QueryIsolationProvider,
@@ -26,19 +27,6 @@ function failed(
     status: 'failed',
     failure: { code, retryable, message },
   };
-}
-
-function safeReplicateOutputUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const url = new URL(value);
-    const hostAllowed =
-      url.hostname === 'replicate.delivery' || url.hostname.endsWith('.replicate.delivery');
-    if (url.protocol !== 'https:' || url.username || url.password || !hostAllowed) return null;
-    return url.toString();
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -99,8 +87,11 @@ export function audioSepReplicateProvider(
         return { schemaVersion: QUERY_ISOLATION_SCHEMA_VERSION, status: 'processing' };
       }
       if (prediction.status === 'succeeded') {
-        const targetUrl = safeReplicateOutputUrl(prediction.output);
-        if (!targetUrl) {
+        let targetUrl: string;
+        try {
+          if (typeof prediction.output !== 'string') throw new Error('invalid output');
+          targetUrl = validatedQueryIsolationOutputUrl(prediction.output);
+        } catch {
           return failed(
             'invalid_provider_response',
             false,

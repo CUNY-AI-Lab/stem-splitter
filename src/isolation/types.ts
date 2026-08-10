@@ -28,7 +28,8 @@ export interface QueryIsolationRequestV1 {
 export type QueryIsolationFailureCode =
   | 'provider_failed'
   | 'provider_canceled'
-  | 'invalid_provider_response';
+  | 'invalid_provider_response'
+  | 'output_ingestion_failed';
 
 export interface QueryIsolationFailureV1 {
   code: QueryIsolationFailureCode;

@@ -22,7 +22,6 @@ import { QUERY_ISOLATION_BUDGET_POLICY_VERSION } from '../src/isolation/budget.t
 import {
   attachInstrumentIsolationExternalId,
   claimInstrumentIsolation,
-  completeInstrumentIsolation,
   createInstrumentIsolation,
   expireTimedOutInstrumentIsolations,
   failInstrumentIsolation,
@@ -33,6 +32,11 @@ import {
   requeueInstrumentIsolation,
   summarizeInstrumentIsolation,
 } from '../src/isolation/resource.ts';
+import {
+  claimInstrumentIsolationIngestion,
+  completeInstrumentIsolationIngestion,
+} from '../src/isolation/ingestion.ts';
+import type { StoredQueryIsolationOutputV1 } from '../src/isolation/output.ts';
 import {
   getLatestInstrumentDiscoveryFeedback,
   InstrumentDiscoveryFeedbackError,
@@ -1136,6 +1140,25 @@ function isolationClaimOptions(now?: Date) {
   return { budget: isolationBudget, now };
 }
 
+function storedIsolationOutput(
+  isolationId: string,
+  kind: 'target' | 'residual',
+  createdAt = '2026-08-10T12:20:30.000Z'
+): StoredQueryIsolationOutputV1 {
+  return {
+    isolationId,
+    kind,
+    storageKey: `isolations/${isolationId}/${kind}.wav`,
+    sha256: (kind === 'target' ? 'c' : 'd').repeat(64),
+    bytes: 48,
+    contentType: 'audio/wav',
+    createdAt,
+    retainedUntil: new Date(
+      Date.parse(createdAt) + 30 * 24 * 60 * 60 * 1000
+    ).toISOString(),
+  };
+}
+
 function isolationInput(id: string, target: string, hashCharacter = 'a') {
   return {
     id,
@@ -1344,22 +1367,40 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
       second.record.id,
       isolationClaimOptions(new Date('2026-08-10T12:20:00.000Z'))
     );
+    await attachInstrumentIsolationExternalId(
+      env,
+      second.record.id,
+      'prediction_2',
+      new Date('2026-08-10T12:20:01.000Z')
+    );
+    const ingestionLease = await claimInstrumentIsolationIngestion(
+      env,
+      second.record.id,
+      'prediction_2',
+      {
+        leaseId: 'ingestion_2',
+        now: new Date('2026-08-10T12:20:02.000Z'),
+      }
+    );
     await assert.rejects(
-      completeInstrumentIsolation(
+      completeInstrumentIsolationIngestion(
         env,
-        second.record.id,
-        'stems/job-a/other.mp3',
-        null,
+        ingestionLease,
+        {
+          target: {
+            ...storedIsolationOutput(second.record.id, 'target'),
+            storageKey: 'stems/job-a/other.mp3',
+          },
+        },
         new Date('2026-08-10T12:20:30.000Z')
       ),
       (error: unknown) =>
-        error instanceof InstrumentIsolationResourceError && error.code === 'invalid_request'
+        /Invalid stored isolation output identity/.test(String(error))
     );
-    const completed = await completeInstrumentIsolation(
+    const completed = await completeInstrumentIsolationIngestion(
       env,
-      second.record.id,
-      'isolations/isolation_two/target.wav',
-      null,
+      ingestionLease,
+      { target: storedIsolationOutput(second.record.id, 'target') },
       new Date('2026-08-10T12:21:00.000Z')
     );
     const summary = summarizeInstrumentIsolation(completed);
@@ -1672,6 +1713,12 @@ test('Railway boot and numbered migration both add isolation storage idempotentl
         );
         db.applySchema(budgetSql);
         db.applySchema(budgetSql);
+        const ingestionSql = readFileSync(
+          'migrations/0016-instrument-isolation-output-ingestion.sql',
+          'utf8'
+        );
+        db.applySchema(ingestionSql);
+        db.applySchema(ingestionSql);
       }
 
       const columns = await db.prepare("PRAGMA table_info('instrument_isolations')")
@@ -1729,6 +1776,86 @@ test('Railway boot and numbered migration both add isolation storage idempotentl
         'instrument_isolation_budget_reservations_no_delete',
         'instrument_isolation_budget_reservations_no_update',
       ]);
+      const ingestionTable = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'instrument_isolation_ingestion_leases'"
+      ).first<{ name: string }>();
+      assert.equal(ingestionTable?.name, 'instrument_isolation_ingestion_leases');
+      const ingestionIndexes = await db.prepare(
+        "PRAGMA index_list('instrument_isolation_ingestion_leases')"
+      ).all<{ name: string }>();
+      assert.ok(
+        ingestionIndexes.results.some(
+          (index) => index.name === 'idx_instrument_isolation_ingestion_deadline'
+        )
+      );
+      const outputTable = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'instrument_isolation_outputs'"
+      ).first<{ name: string }>();
+      assert.equal(outputTable?.name, 'instrument_isolation_outputs');
+      const outputIndexes = await db.prepare(
+        "PRAGMA index_list('instrument_isolation_outputs')"
+      ).all<{ name: string }>();
+      assert.ok(
+        outputIndexes.results.some(
+          (index) => index.name === 'idx_instrument_isolation_outputs_retention'
+        )
+      );
+      const outputTriggers = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'instrument_isolation_outputs_%' ORDER BY name"
+      ).all<{ name: string }>();
+      assert.deepEqual(outputTriggers.results.map(({ name }) => name), [
+        'instrument_isolation_outputs_no_replace',
+        'instrument_isolation_outputs_no_update',
+      ]);
+      await db.prepare(
+        `INSERT INTO instrument_isolations
+          (id, job_id, requested_by, source_hash, source_type, normalized_target,
+           provider, provider_model, provider_version, provider_contract_version, cache_key)
+         VALUES ('migration-output', 'legacy-job', 'teacher-a', ?, 'upload',
+           'saxophone', 'replicate', 'cjwbw/audiosep', ?,
+           'audiosep-replicate-v1', ?)`
+      )
+        .bind(
+          'a'.repeat(64),
+          isolationIdentity.version,
+          `query-isolation/v1/${'e'.repeat(64)}`
+        )
+        .run();
+      await db.prepare(
+        `INSERT INTO instrument_isolation_outputs
+          (isolation_id, kind, storage_key, sha256, bytes, content_type,
+           retained_until, created_at)
+         VALUES ('migration-output', 'target',
+           'isolations/migration-output/target.wav', ?, 48, 'audio/wav',
+           '2026-09-09T12:00:00.000Z', '2026-08-10T12:00:00.000Z')`
+      ).bind('f'.repeat(64)).run();
+      await assert.rejects(
+        db.prepare(
+          `UPDATE instrument_isolation_outputs SET bytes = 50
+           WHERE isolation_id = 'migration-output'`
+        ).run(),
+        /instrument isolation output identity is immutable/
+      );
+      await assert.rejects(
+        db.prepare(
+          `INSERT OR REPLACE INTO instrument_isolation_outputs
+            (isolation_id, kind, storage_key, sha256, bytes, content_type,
+             retained_until, created_at)
+           VALUES ('migration-output', 'target',
+             'isolations/migration-output/target.wav', ?, 48, 'audio/wav',
+             '2026-09-09T12:00:00.000Z', '2026-08-10T12:00:00.000Z')`
+        ).bind('f'.repeat(64)).run(),
+        /instrument isolation output identity is immutable/
+      );
+      await db.prepare("DELETE FROM instrument_isolations WHERE id = 'migration-output'").run();
+      assert.equal(
+        (
+          await db.prepare(
+            "SELECT COUNT(*) AS count FROM instrument_isolation_outputs WHERE isolation_id = 'migration-output'"
+          ).first<{ count: number }>()
+        )?.count,
+        0
+      );
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

@@ -103,6 +103,9 @@ export type InstrumentIsolationResourceErrorCode =
   | 'maximum_reached'
   | 'budget_exhausted'
   | 'budget_policy_mismatch'
+  | 'provider_identity_mismatch'
+  | 'ingestion_busy'
+  | 'ingestion_attempts_exhausted'
   | 'isolation_not_found'
   | 'invalid_transition';
 
@@ -153,7 +156,6 @@ interface CoreJobRow {
 const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const SAFE_USERNAME_PATTERN = /^[a-z0-9._-]{1,64}$/i;
 const SAFE_EXTERNAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-const SAFE_STORAGE_CONTROL_PATTERN = /[\u0000-\u001f\u007f]/u;
 const LIMITATIONS = Object.freeze([
   'This output was independently queried and is not part of the core stem set.',
   'It may overlap other outputs and is not guaranteed to reconstruct the original mixture.',
@@ -168,21 +170,6 @@ function validIsoDate(value: Date): string {
 
 function validateId(value: string, field: string): void {
   if (!SAFE_ID_PATTERN.test(value)) {
-    throw new InstrumentIsolationResourceError('invalid_request', `Invalid ${field}`);
-  }
-}
-
-function validateStorageKey(id: string, value: string, field: string): void {
-  const requiredPrefix = `isolations/${id}/`;
-  if (
-    value.length < 1 ||
-    value.length > 512 ||
-    !value.startsWith(requiredPrefix) ||
-    value.startsWith('/') ||
-    value.includes('\\') ||
-    value.split('/').includes('..') ||
-    SAFE_STORAGE_CONTROL_PATTERN.test(value)
-  ) {
     throw new InstrumentIsolationResourceError('invalid_request', `Invalid ${field}`);
   }
 }
@@ -637,29 +624,6 @@ export async function attachInstrumentIsolationExternalId(
   return (await getInstrumentIsolation(env, id))!;
 }
 
-export async function completeInstrumentIsolation(
-  env: Pick<Env, 'DB'>,
-  id: string,
-  targetKey: string,
-  residualKey: string | null = null,
-  now = new Date()
-): Promise<InstrumentIsolationRecordV1> {
-  validateStorageKey(id, targetKey, 'target storage key');
-  if (residualKey !== null) validateStorageKey(id, residualKey, 'residual storage key');
-  const result = await env.DB.prepare(
-    `UPDATE instrument_isolations
-     SET status = 'succeeded', target_key = ?, residual_key = ?, deadline_at = NULL,
-         failure_code = NULL, failure_retryable = NULL, updated_at = ?
-     WHERE id = ? AND status = 'processing'`
-  )
-    .bind(targetKey, residualKey, validIsoDate(now), id)
-    .run();
-  if (result.meta.changes !== 1) {
-    return requireIsolation(env, id, 'Isolation is not processing');
-  }
-  return (await getInstrumentIsolation(env, id))!;
-}
-
 export async function failInstrumentIsolation(
   env: Pick<Env, 'DB'>,
   id: string,
@@ -679,7 +643,12 @@ export async function failInstrumentIsolation(
     `UPDATE instrument_isolations
      SET status = 'failed', failure_code = ?, failure_retryable = ?, deadline_at = NULL,
          updated_at = ?
-     WHERE id = ? AND status = 'processing'`
+     WHERE id = ? AND status = 'processing'
+       AND NOT EXISTS (
+         SELECT 1 FROM instrument_isolation_ingestion_leases ingestion
+         WHERE ingestion.isolation_id = instrument_isolations.id
+           AND ingestion.lease_id IS NOT NULL
+       )`
   )
     .bind(failure.code, failure.retryable ? 1 : 0, validIsoDate(now), id)
     .run();
@@ -718,7 +687,12 @@ export async function expireTimedOutInstrumentIsolations(
     `UPDATE instrument_isolations
      SET status = 'failed', failure_code = 'timed_out', failure_retryable = 1,
          deadline_at = NULL, updated_at = ?
-     WHERE status = 'processing' AND deadline_at <= ?`
+     WHERE status = 'processing' AND deadline_at <= ?
+       AND NOT EXISTS (
+         SELECT 1 FROM instrument_isolation_ingestion_leases ingestion
+         WHERE ingestion.isolation_id = instrument_isolations.id
+           AND ingestion.lease_id IS NOT NULL
+       )`
   )
     .bind(timestamp, timestamp)
     .run();
