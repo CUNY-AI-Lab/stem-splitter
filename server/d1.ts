@@ -7,6 +7,7 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import { JOB_SOURCE_IDENTITY_IMMUTABILITY_SQL } from '../src/analysis/schema.ts';
+import { INSTRUMENT_DISCOVERY_FEEDBACK_SCHEMA_SQL } from '../src/analysis/instrument-feedback-schema.ts';
 import { INSTRUMENT_ISOLATIONS_SCHEMA_SQL } from '../src/isolation/schema.ts';
 import { PROMPT_HISTORY_IMMUTABILITY_SQL } from '../src/teacher/schema.ts';
 
@@ -174,5 +175,10 @@ export class SqliteD1 {
         "ALTER TABLE instrument_isolations ADD COLUMN rollout_stage TEXT NOT NULL DEFAULT 'shadow' CHECK (rollout_stage IN ('shadow', 'teacher_beta'))"
       );
     }
+
+    // Historical analysis remains reviewable while discovery is off. This
+    // additive teacher-only evidence table is therefore independent of the
+    // discovery service flag and safe to create on every boot.
+    this.db.exec(INSTRUMENT_DISCOVERY_FEEDBACK_SCHEMA_SQL);
   }
 }

@@ -32,6 +32,19 @@ import {
   parseBrowserAutoSummary,
   AudioAnalysisContractError,
 } from './analysis/contract';
+import {
+  getLatestInstrumentDiscoveryFeedback,
+  INSTRUMENT_DISCOVERY_FEEDBACK_SCHEMA_VERSION,
+  INSTRUMENT_FEEDBACK_GENRE_FAMILIES,
+  InstrumentDiscoveryFeedbackError,
+  recordInstrumentDiscoveryFeedback,
+  summarizeInstrumentDiscoveryFeedback,
+  type InstrumentDiscoveryFeedbackTargetV1,
+} from './analysis/instrument-feedback.ts';
+import {
+  INSTRUMENT_REVIEW_ONTOLOGY_VERSION,
+  INSTRUMENT_REVIEW_OPTIONS,
+} from './analysis/instrument-review.ts';
 import { processingFeatureFlags } from './features';
 import { getBackend, type SeparationResult } from './separation';
 import {
@@ -142,6 +155,10 @@ interface AnnotationRow {
 async function sha256Audio(data: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Text(value: string): Promise<string> {
+  return sha256Audio(new TextEncoder().encode(value).slice().buffer as ArrayBuffer);
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -891,6 +908,177 @@ app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
     });
   } catch {
     return c.json({ error: 'Stored analysis is unavailable.' }, 500);
+  }
+});
+
+interface InstrumentFeedbackJobRow {
+  id: string;
+  routing_request: string | null;
+  source_hash: string | null;
+  analysis: string | null;
+}
+
+async function loadInstrumentFeedbackTarget(
+  c: Context<{ Bindings: Env }>,
+  reviewer: string
+): Promise<{ target: InstrumentDiscoveryFeedbackTargetV1 } | { response: Response }> {
+  const row = await c.env.DB.prepare(
+    'SELECT id, routing_request, source_hash, analysis FROM jobs WHERE id = ?'
+  )
+    .bind(c.req.param('id'))
+    .first<InstrumentFeedbackJobRow>();
+  if (!row) return { response: c.json({ error: 'Job not found' }, 404) };
+  if (row.routing_request !== AUTO_ROUTING_REQUEST || !row.analysis) {
+    return { response: c.json({ error: 'This job has no Auto analysis.' }, 404) };
+  }
+  if (!row.source_hash || !/^[0-9a-f]{64}$/.test(row.source_hash)) {
+    return {
+      response: c.json(
+        { error: 'This analysis has no verified source identity for review.' },
+        409
+      ),
+    };
+  }
+  try {
+    const autoRouting = parseAutoRoutingDecision(JSON.parse(row.analysis), STORED_CORE_MODELS);
+    const discovery = autoRouting.analysis.instrumentDiscovery;
+    const classifier = autoRouting.analysis.vocabularyClassifier;
+    if (discovery?.status !== 'complete' || !classifier) {
+      return {
+        response: c.json(
+          { error: 'This analysis has no complete candidate discovery to review.' },
+          409
+        ),
+      };
+    }
+    return {
+      target: {
+        jobId: row.id,
+        reviewer,
+        rawAnalysis: row.analysis,
+        analysisSha256: await sha256Text(row.analysis),
+        sourceSha256: row.source_hash,
+        classifierVersion: classifier.version,
+        vocabularyVersion: classifier.vocabularyVersion,
+        vocabularySha256: classifier.vocabularySha256,
+        detectedInstrumentIds: autoRouting.analysis.detectedInstruments.map(({ id }) => id),
+      },
+    };
+  } catch {
+    return { response: c.json({ error: 'Stored analysis is unavailable.' }, 500) };
+  }
+}
+
+function instrumentFeedbackPolicy() {
+  return {
+    evidenceStatus: 'unreviewed-candidate' as const,
+    deidentified: false as const,
+    trainingEligible: false as const,
+    affectsCoreRouting: false as const,
+    requestsIsolation: false as const,
+    overlapHandling: 'review-separately-do-not-double-count' as const,
+  };
+}
+
+function instrumentFeedbackContext(
+  target: InstrumentDiscoveryFeedbackTargetV1,
+  latest: Awaited<ReturnType<typeof getLatestInstrumentDiscoveryFeedback>>
+) {
+  return {
+    schemaVersion: INSTRUMENT_DISCOVERY_FEEDBACK_SCHEMA_VERSION,
+    jobId: target.jobId,
+    provenance: {
+      analysisSha256: target.analysisSha256,
+      classifierVersion: target.classifierVersion,
+      vocabularyVersion: target.vocabularyVersion,
+      reviewOntologyVersion: INSTRUMENT_REVIEW_ONTOLOGY_VERSION,
+    },
+    detectedInstrumentIds: target.detectedInstrumentIds,
+    genreFamilies: INSTRUMENT_FEEDBACK_GENRE_FAMILIES,
+    reviewOptions: INSTRUMENT_REVIEW_OPTIONS,
+    policy: instrumentFeedbackPolicy(),
+    currentRevision: latest?.revision ?? 0,
+    latest: latest ? summarizeInstrumentDiscoveryFeedback(latest) : null,
+  };
+}
+
+// Historical feedback remains readable while discovery is off. It is tied to
+// the current teacher, exact stored analysis bytes, source identity, and pins.
+app.get('/api/teacher/jobs/:id/instrument-feedback', requireTeacher, async (c) => {
+  const teacher = (await currentTeacher(c))!;
+  const loaded = await loadInstrumentFeedbackTarget(c, teacher.username);
+  if ('response' in loaded) return loaded.response;
+  const latest = await getLatestInstrumentDiscoveryFeedback(c.env, loaded.target);
+  return c.json(instrumentFeedbackContext(loaded.target, latest));
+});
+
+app.post('/api/teacher/jobs/:id/instrument-feedback', requireTeacher, async (c) => {
+  let body: {
+    expectedRevision?: unknown;
+    genreFamily?: unknown;
+    observations?: unknown;
+  } | null;
+  try {
+    const parsed = await readBoundedTeacherJson(c.req.raw, 16 * 1024);
+    body = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as {
+          expectedRevision?: unknown;
+          genreFamily?: unknown;
+          observations?: unknown;
+        })
+      : null;
+  } catch (error) {
+    if (error instanceof TeacherRequestError) {
+      return c.json({ error: error.message }, error.status);
+    }
+    throw error;
+  }
+  if (
+    !body ||
+    Object.keys(body).length !== 3 ||
+    !Object.prototype.hasOwnProperty.call(body, 'expectedRevision') ||
+    !Object.prototype.hasOwnProperty.call(body, 'genreFamily') ||
+    !Object.prototype.hasOwnProperty.call(body, 'observations') ||
+    !Number.isSafeInteger(body.expectedRevision) ||
+    (body.expectedRevision as number) < 0 ||
+    typeof body.genreFamily !== 'string' ||
+    !INSTRUMENT_FEEDBACK_GENRE_FAMILIES.includes(body.genreFamily as never) ||
+    !Array.isArray(body.observations)
+  ) {
+    return c.json({ error: 'Instrument feedback body is invalid.' }, 400);
+  }
+
+  const teacher = (await currentTeacher(c))!;
+  const loaded = await loadInstrumentFeedbackTarget(c, teacher.username);
+  if ('response' in loaded) return loaded.response;
+  try {
+    const result = await recordInstrumentDiscoveryFeedback(c.env, {
+      ...loaded.target,
+      expectedRevision: body.expectedRevision as number,
+      genreFamily: body.genreFamily as (typeof INSTRUMENT_FEEDBACK_GENRE_FAMILIES)[number],
+      observations: body.observations as never,
+    });
+    return c.json(
+      {
+        jobId: loaded.target.jobId,
+        changed: result.changed,
+        policy: instrumentFeedbackPolicy(),
+        feedback: summarizeInstrumentDiscoveryFeedback(result.record),
+      },
+      result.changed ? 201 : 200
+    );
+  } catch (error) {
+    if (error instanceof InstrumentDiscoveryFeedbackError) {
+      if (error.code === 'job_not_found') return c.json({ error: error.message }, 404);
+      if (error.code === 'analysis_changed' || error.code === 'conflict') {
+        return c.json({ error: error.message }, 409);
+      }
+      if (error.code === 'stored_invalid') {
+        return c.json({ error: 'Stored instrument feedback is unavailable.' }, 500);
+      }
+      return c.json({ error: error.message }, 400);
+    }
+    throw error;
   }
 });
 

@@ -44,6 +44,18 @@ const analysisReason = document.getElementById('analysis-reason');
 const analysisDiscoveryMeta = document.getElementById('analysis-discovery-meta');
 const analysisDetections = document.getElementById('analysis-detections');
 const analysisDetectionsEmpty = document.getElementById('analysis-detections-empty');
+const analysisFeedbackPanel = document.getElementById('analysis-feedback-panel');
+const analysisFeedbackMeta = document.getElementById('analysis-feedback-meta');
+const analysisFeedbackForm = document.getElementById('analysis-feedback-form');
+const analysisFeedbackDetectedFieldset = document.getElementById(
+  'analysis-feedback-detected-fieldset'
+);
+const analysisFeedbackDetected = document.getElementById('analysis-feedback-detected');
+const analysisFeedbackGenre = document.getElementById('analysis-feedback-genre');
+const analysisFeedbackFilter = document.getElementById('analysis-feedback-filter');
+const analysisFeedbackMissed = document.getElementById('analysis-feedback-missed');
+const analysisFeedbackSubmit = document.getElementById('analysis-feedback-submit');
+const analysisFeedbackStatus = document.getElementById('analysis-feedback-status');
 
 let maxChars = 2000;
 let maxChangeNoteChars = 240;
@@ -53,6 +65,9 @@ let showingPromptTop = false;
 let historyNextBeforeId = null;
 let historyLoading = false;
 let analysisLoadSequence = 0;
+let loadedFeedbackJobId = '';
+let loadedFeedbackRevision = 0;
+let loadedFeedbackDetectedIds = [];
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -87,6 +102,28 @@ function showAnalysisStatus(message, isError = false) {
   analysisStatus.classList.toggle('error', isError);
 }
 
+function showFeedbackStatus(message, isError = false) {
+  analysisFeedbackStatus.hidden = !message;
+  analysisFeedbackStatus.textContent = message;
+  analysisFeedbackStatus.classList.toggle('error', isError);
+}
+
+function resetInstrumentFeedback() {
+  analysisFeedbackPanel.hidden = true;
+  analysisFeedbackMeta.textContent = '';
+  analysisFeedbackDetected.replaceChildren();
+  analysisFeedbackMissed.replaceChildren();
+  analysisFeedbackGenre.replaceChildren();
+  analysisFeedbackFilter.value = '';
+  analysisFeedbackDetectedFieldset.hidden = false;
+  analysisFeedbackForm.reset();
+  analysisFeedbackSubmit.disabled = false;
+  showFeedbackStatus('');
+  loadedFeedbackJobId = '';
+  loadedFeedbackRevision = 0;
+  loadedFeedbackDetectedIds = [];
+}
+
 function resetAnalysisResult({ clearInput = false } = {}) {
   analysisResult.hidden = true;
   analysisJobMeta.textContent = '';
@@ -97,6 +134,7 @@ function resetAnalysisResult({ clearInput = false } = {}) {
   analysisDetections.replaceChildren();
   analysisDetectionsEmpty.hidden = true;
   analysisDetectionsEmpty.textContent = '';
+  resetInstrumentFeedback();
   if (clearInput) analysisForm.reset();
 }
 
@@ -156,6 +194,8 @@ function renderAnalysisReview(record) {
   for (const detection of analysis.detectedInstruments) {
     if (
       !detection ||
+      typeof detection.id !== 'string' ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(detection.id) ||
       typeof detection.label !== 'string' ||
       typeof detection.confidence !== 'number' ||
       !Number.isFinite(detection.confidence) ||
@@ -172,6 +212,7 @@ function renderAnalysisReview(record) {
     }
     const item = document.createElement('li');
     item.className = 'teacher-detection-item';
+    item.dataset.instrumentId = detection.id;
 
     const label = document.createElement('strong');
     label.textContent = detection.label;
@@ -196,6 +237,232 @@ function renderAnalysisReview(record) {
       : 'No candidate detections are available for this stored Auto decision.';
   }
   analysisResult.hidden = false;
+  return discovery?.status === 'complete' && Boolean(classifier);
+}
+
+const FEEDBACK_KIND_LABELS = Object.freeze({
+  'specific-instrument-or-voice': 'SPECIFIC INSTRUMENT / VOICE',
+  'family-or-ensemble': 'FAMILY / ENSEMBLE',
+  'production-texture': 'PRODUCTION TEXTURE',
+});
+
+function reviewOptionMap(context) {
+  if (!Array.isArray(context?.reviewOptions) || context.reviewOptions.length < 1) {
+    throw new Error('Review vocabulary is unavailable.');
+  }
+  const options = new Map();
+  for (const option of context.reviewOptions) {
+    if (
+      !option ||
+      typeof option.id !== 'string' ||
+      typeof option.label !== 'string' ||
+      typeof option.family !== 'string' ||
+      !Object.prototype.hasOwnProperty.call(FEEDBACK_KIND_LABELS, option.kind) ||
+      options.has(option.id)
+    ) {
+      throw new Error('Review vocabulary has an unsupported display shape.');
+    }
+    options.set(option.id, option);
+  }
+  return options;
+}
+
+function makeFeedbackKindBadge(option) {
+  const badge = document.createElement('span');
+  badge.className = `teacher-feedback-kind ${option.kind}`;
+  badge.textContent = FEEDBACK_KIND_LABELS[option.kind];
+  return badge;
+}
+
+function makeFeedbackVerdictControl(instrumentId, verdict, labelText) {
+  const label = document.createElement('label');
+  label.className = 'teacher-feedback-choice';
+  const input = document.createElement('input');
+  input.type = 'radio';
+  input.name = `feedback-verdict-${instrumentId}`;
+  input.value = verdict;
+  const text = document.createElement('span');
+  text.textContent = labelText;
+  label.append(input, text);
+  return label;
+}
+
+function renderInstrumentFeedbackContext(context) {
+  if (
+    !context ||
+    context.schemaVersion !== '1' ||
+    typeof context.jobId !== 'string' ||
+    !Number.isSafeInteger(context.currentRevision) ||
+    context.currentRevision < 0 ||
+    !Array.isArray(context.detectedInstrumentIds) ||
+    !Array.isArray(context.genreFamilies) ||
+    !context.provenance ||
+    typeof context.provenance.analysisSha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(context.provenance.analysisSha256) ||
+    context.policy?.evidenceStatus !== 'unreviewed-candidate' ||
+    context.policy?.deidentified !== false ||
+    context.policy?.trainingEligible !== false ||
+    context.policy?.affectsCoreRouting !== false ||
+    context.policy?.requestsIsolation !== false ||
+    context.policy?.overlapHandling !== 'review-separately-do-not-double-count'
+  ) {
+    throw new Error('Instrument feedback context has an unsupported display shape.');
+  }
+  const options = reviewOptionMap(context);
+  const detectedIds = new Set(context.detectedInstrumentIds);
+  if (detectedIds.size !== context.detectedInstrumentIds.length) {
+    throw new Error('Instrument feedback context contains duplicate detections.');
+  }
+  for (const id of detectedIds) {
+    if (!options.has(id)) throw new Error('Instrument feedback context contains an unknown detection.');
+  }
+
+  const latestObservations = new Map();
+  if (context.latest !== null) {
+    if (
+      !context.latest ||
+      context.latest.schemaVersion !== '1' ||
+      context.latest.revision !== context.currentRevision ||
+      context.latest.evidenceStatus !== 'unreviewed-candidate' ||
+      context.latest.deidentified !== false ||
+      context.latest.trainingEligible !== false ||
+      !Array.isArray(context.latest.observations)
+    ) {
+      throw new Error('Stored instrument feedback has an unsupported display shape.');
+    }
+    for (const observation of context.latest.observations) {
+      if (
+        !observation ||
+        typeof observation.instrumentId !== 'string' ||
+        !['confirmed', 'absent', 'missed'].includes(observation.verdict) ||
+        latestObservations.has(observation.instrumentId)
+      ) {
+        throw new Error('Stored instrument feedback has an unsupported observation.');
+      }
+      latestObservations.set(observation.instrumentId, observation.verdict);
+    }
+  }
+
+  loadedFeedbackJobId = context.jobId;
+  loadedFeedbackRevision = context.currentRevision;
+  loadedFeedbackDetectedIds = [...detectedIds];
+  analysisFeedbackMeta.textContent =
+    `REVISION ${context.currentRevision} · TARGET ${context.provenance.analysisSha256.slice(0, 12)}`;
+
+  analysisFeedbackGenre.replaceChildren();
+  for (const genre of context.genreFamilies) {
+    if (typeof genre !== 'string' || !/^[a-z]+(?:-[a-z]+)*$/.test(genre)) {
+      throw new Error('Review genre vocabulary is invalid.');
+    }
+    const option = document.createElement('option');
+    option.value = genre;
+    option.textContent = genre.replaceAll('-', ' ').toUpperCase();
+    analysisFeedbackGenre.appendChild(option);
+  }
+  analysisFeedbackGenre.value = context.latest?.genreFamily || 'unknown';
+
+  analysisFeedbackDetected.replaceChildren();
+  analysisFeedbackDetectedFieldset.hidden = detectedIds.size === 0;
+  for (const instrumentId of detectedIds) {
+    const option = options.get(instrumentId);
+    const row = document.createElement('div');
+    row.className = 'teacher-feedback-detected-row';
+
+    const identity = document.createElement('div');
+    identity.className = 'teacher-feedback-identity';
+    const name = document.createElement('strong');
+    name.textContent = option.label;
+    const family = document.createElement('span');
+    family.className = 'mono teacher-feedback-family';
+    family.textContent = option.family.replaceAll('-', ' ').toUpperCase();
+    identity.append(name, makeFeedbackKindBadge(option), family);
+
+    const choices = document.createElement('div');
+    choices.className = 'teacher-feedback-choices';
+    const confirmed = makeFeedbackVerdictControl(instrumentId, 'confirmed', 'Confirmed audible');
+    const absent = makeFeedbackVerdictControl(instrumentId, 'absent', 'Absent / false alert');
+    choices.append(confirmed, absent);
+    const prior = latestObservations.get(instrumentId);
+    if (prior === 'confirmed' || prior === 'absent') {
+      choices.querySelector(`input[value="${prior}"]`).checked = true;
+    }
+    row.append(identity, choices);
+    analysisFeedbackDetected.appendChild(row);
+  }
+
+  analysisFeedbackMissed.replaceChildren();
+  const kindGroups = new Map();
+  for (const option of options.values()) {
+    if (detectedIds.has(option.id)) continue;
+    if (!kindGroups.has(option.kind)) kindGroups.set(option.kind, []);
+    kindGroups.get(option.kind).push(option);
+  }
+  for (const [kind, groupOptions] of kindGroups) {
+    const group = document.createElement('section');
+    group.className = 'teacher-feedback-missed-group';
+    const title = document.createElement('h4');
+    title.textContent = FEEDBACK_KIND_LABELS[kind];
+    const list = document.createElement('div');
+    list.className = 'teacher-feedback-check-grid';
+    for (const option of groupOptions) {
+      const label = document.createElement('label');
+      label.className = 'teacher-feedback-check';
+      label.dataset.search =
+        `${option.label} ${option.id} ${option.family} ${FEEDBACK_KIND_LABELS[option.kind]}`.toLowerCase();
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.value = option.id;
+      input.checked = latestObservations.get(option.id) === 'missed';
+      const text = document.createElement('span');
+      text.textContent = option.label;
+      const family = document.createElement('small');
+      family.textContent = option.family.replaceAll('-', ' ');
+      label.append(input, text, family);
+      list.appendChild(label);
+    }
+    group.append(title, list);
+    analysisFeedbackMissed.appendChild(group);
+  }
+  filterInstrumentFeedbackVocabulary();
+
+  showFeedbackStatus(
+    context.latest
+      ? `REVISION ${context.currentRevision} LOADED · UNREVIEWED CANDIDATE EVIDENCE.`
+      : 'NO FEEDBACK REVISION YET.'
+  );
+  analysisFeedbackPanel.hidden = false;
+}
+
+function filterInstrumentFeedbackVocabulary() {
+  const query = analysisFeedbackFilter.value.trim().toLowerCase();
+  for (const group of analysisFeedbackMissed.querySelectorAll('.teacher-feedback-missed-group')) {
+    let visible = 0;
+    for (const option of group.querySelectorAll('.teacher-feedback-check')) {
+      option.hidden = Boolean(query) && !option.dataset.search.includes(query);
+      if (!option.hidden) visible += 1;
+    }
+    group.hidden = visible === 0;
+  }
+}
+
+function collectInstrumentFeedbackObservations() {
+  const observations = [];
+  for (const instrumentId of loadedFeedbackDetectedIds) {
+    const checked = analysisFeedbackDetected.querySelector(
+      `input[name="feedback-verdict-${instrumentId}"]:checked`
+    );
+    if (!checked) {
+      throw new Error('MARK EVERY SURFACED LABEL CONFIRMED OR ABSENT.');
+    }
+    observations.push({ instrumentId, verdict: checked.value });
+  }
+  for (const checked of analysisFeedbackMissed.querySelectorAll('input[type="checkbox"]:checked')) {
+    observations.push({ instrumentId: checked.value, verdict: 'missed' });
+  }
+  if (observations.length === 0) {
+    throw new Error('RECORD AT LEAST ONE CONFIRMED, ABSENT, OR MISSED OBSERVATION.');
+  }
+  return observations;
 }
 
 function clearTeacherConsole() {
@@ -487,8 +754,19 @@ analysisForm.addEventListener('submit', async (event) => {
   try {
     const record = await api(`/api/teacher/jobs/${encodeURIComponent(jobId)}/analysis`);
     if (requestSequence !== analysisLoadSequence) return;
-    renderAnalysisReview(record);
-    showAnalysisStatus('ADVISORY ANALYSIS LOADED — NO ROUTING OR ISOLATION CHANGE.');
+    const feedbackAvailable = renderAnalysisReview(record);
+    if (feedbackAvailable) {
+      const feedback = await api(
+        `/api/teacher/jobs/${encodeURIComponent(jobId)}/instrument-feedback`
+      );
+      if (requestSequence !== analysisLoadSequence) return;
+      renderInstrumentFeedbackContext(feedback);
+    }
+    showAnalysisStatus(
+      feedbackAvailable
+        ? 'ADVISORY ANALYSIS AND CANDIDATE REVIEW LOADED — NO ROUTING OR ISOLATION CHANGE.'
+        : 'ADVISORY ANALYSIS LOADED — NO ROUTING OR ISOLATION CHANGE.'
+    );
   } catch (error) {
     if (requestSequence !== analysisLoadSequence) return;
     resetAnalysisResult();
@@ -497,6 +775,56 @@ analysisForm.addEventListener('submit', async (event) => {
     if (requestSequence === analysisLoadSequence) analysisLoadBtn.disabled = false;
   }
 });
+
+analysisFeedbackForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!loadedFeedbackJobId) {
+    showFeedbackStatus('LOAD A REVIEWABLE AUTO ANALYSIS FIRST.', true);
+    return;
+  }
+  let observations;
+  try {
+    observations = collectInstrumentFeedbackObservations();
+  } catch (error) {
+    showFeedbackStatus(error.message, true);
+    return;
+  }
+
+  const requestSequence = analysisLoadSequence;
+  analysisFeedbackSubmit.disabled = true;
+  showFeedbackStatus('RECORDING CANDIDATE FEEDBACK…');
+  try {
+    const result = await api(
+      `/api/teacher/jobs/${encodeURIComponent(loadedFeedbackJobId)}/instrument-feedback`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          expectedRevision: loadedFeedbackRevision,
+          genreFamily: analysisFeedbackGenre.value,
+          observations,
+        }),
+      }
+    );
+    if (requestSequence !== analysisLoadSequence) return;
+    const context = await api(
+      `/api/teacher/jobs/${encodeURIComponent(loadedFeedbackJobId)}/instrument-feedback`
+    );
+    if (requestSequence !== analysisLoadSequence) return;
+    renderInstrumentFeedbackContext(context);
+    showFeedbackStatus(
+      result.changed
+        ? `REVISION ${result.feedback.revision} RECORDED · UNREVIEWED · NOT TRAINING ELIGIBLE.`
+        : `NO CHANGE · REVISION ${result.feedback.revision} RETAINED.`
+    );
+  } catch (error) {
+    if (requestSequence !== analysisLoadSequence) return;
+    showFeedbackStatus(error.message, true);
+  } finally {
+    if (requestSequence === analysisLoadSequence) analysisFeedbackSubmit.disabled = false;
+  }
+});
+
+analysisFeedbackFilter.addEventListener('input', filterInstrumentFeedbackVocabulary);
 
 amendment.addEventListener('input', paintCounts);
 changeNote.addEventListener('input', paintCounts);

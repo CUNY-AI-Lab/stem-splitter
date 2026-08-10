@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor</title>
-<link rel="stylesheet" href="/styles.css?v=teacher-20260810-3" />
+<link rel="stylesheet" href="/styles.css?v=teacher-20260810-5" />
 
 <div class="grain" aria-hidden="true"></div>
 
@@ -191,6 +191,69 @@
         </dl>
         <ol id="analysis-detections" class="teacher-detection-list"></ol>
         <p id="analysis-detections-empty" class="teacher-help" hidden></p>
+
+        <section
+          id="analysis-feedback-panel"
+          class="teacher-feedback-panel"
+          aria-labelledby="analysis-feedback-title"
+          hidden
+        >
+          <div class="teacher-section-head">
+            <div>
+              <p class="teacher-eyebrow mono">STRUCTURED REVIEW · APPEND ONLY</p>
+              <h3 id="analysis-feedback-title">Candidate feedback</h3>
+            </div>
+            <span id="analysis-feedback-meta" class="teacher-version"></span>
+          </div>
+          <p class="teacher-help">
+            Mark every surfaced label confirmed or absent, then add any audible instrument the
+            candidate missed. Family/ensemble labels and production textures remain separate
+            evidence kinds and must not be double-counted with specific instruments.
+          </p>
+          <form id="analysis-feedback-form" class="teacher-form">
+            <fieldset id="analysis-feedback-detected-fieldset" class="teacher-feedback-fieldset">
+              <legend class="mono">SURFACED LABELS · REVIEW EVERY ONE</legend>
+              <div id="analysis-feedback-detected" class="teacher-feedback-detected"></div>
+            </fieldset>
+
+            <label class="teacher-field" for="analysis-feedback-genre">
+              <span class="mono">REVIEWED GENRE / MUSICAL CONTEXT</span>
+              <select id="analysis-feedback-genre" required></select>
+            </label>
+
+            <details class="teacher-feedback-missed-wrap">
+              <summary class="mono">ADD AUDIBLE INSTRUMENTS THE CANDIDATE MISSED</summary>
+              <p class="teacher-help">
+                These are missed observations, not automatic isolation requests. Choose only
+                labels you heard in the stored source.
+              </p>
+              <label class="teacher-field" for="analysis-feedback-filter">
+                <span class="mono">FILTER THE REVIEW VOCABULARY</span>
+                <input
+                  id="analysis-feedback-filter"
+                  type="search"
+                  placeholder="e.g. trumpet, reeds, traditional"
+                  autocomplete="off"
+                />
+              </label>
+              <div id="analysis-feedback-missed" class="teacher-feedback-missed"></div>
+            </details>
+
+            <button type="submit" id="analysis-feedback-submit" class="yt-go teacher-feedback-submit">
+              RECORD CANDIDATE FEEDBACK
+            </button>
+            <p
+              id="analysis-feedback-status"
+              class="mono teacher-status"
+              aria-live="polite"
+              hidden
+            ></p>
+          </form>
+          <p class="teacher-feedback-guard mono">
+            UNREVIEWED · IDENTIFIED · NOT TRAINING ELIGIBLE · NO ROUTING OR ISOLATION EFFECT
+          </p>
+        </section>
+
         <p class="teacher-analysis-guard mono">
           CORE 2 / 4 / 6 CONTRACT UNCHANGED · NO ISOLATION REQUESTED
         </p>
@@ -203,4 +266,4 @@
   </footer>
 </main>
 
-<script src="/teacher.js?v=teacher-20260810-3"></script>
+<script src="/teacher.js?v=teacher-20260810-5"></script>

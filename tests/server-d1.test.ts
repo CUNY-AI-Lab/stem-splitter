@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +31,13 @@ import {
   requeueInstrumentIsolation,
   summarizeInstrumentIsolation,
 } from '../src/isolation/resource.ts';
+import {
+  getLatestInstrumentDiscoveryFeedback,
+  InstrumentDiscoveryFeedbackError,
+  recordInstrumentDiscoveryFeedback,
+  summarizeInstrumentDiscoveryFeedback,
+} from '../src/analysis/instrument-feedback.ts';
+import { INSTRUMENT_REVIEW_ONTOLOGY_VERSION } from '../src/analysis/instrument-review.ts';
 
 const promptTrace = (changeNote: string) => ({
   changeNote,
@@ -83,6 +91,253 @@ test('Railway D1 batches cannot interleave transactions on one connection', asyn
       .prepare('SELECT value FROM entries ORDER BY value')
       .all<{ value: string }>();
     assert.deepEqual(rows.results.map((row) => row.value), ['a1', 'a2', 'b1', 'b2']);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('candidate instrument feedback is revisioned, source-bound, and never training eligible', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-instrument-feedback-'));
+  try {
+    const db = new SqliteD1(join(directory, 'feedback.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const rawAnalysis = JSON.stringify({ exact: 'stored-analysis-v1' });
+    const sourceSha256 = '1'.repeat(64);
+    await db.prepare(
+      `INSERT INTO jobs
+        (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
+       VALUES ('feedback-job', 'review.wav', 'uploads/review/source.wav', 'done',
+               'htdemucs_6s', 'auto', 'upload', ?, ?)`
+    ).bind(sourceSha256, rawAnalysis).run();
+    const env = { DB: db } as never;
+    const target = {
+      jobId: 'feedback-job',
+      reviewer: 'teacher-a',
+      rawAnalysis,
+      analysisSha256: createHash('sha256').update(rawAnalysis).digest('hex'),
+      sourceSha256,
+      classifierVersion: 'candidate-classifier-v1',
+      vocabularyVersion: 'classroom-instruments-v1',
+      vocabularySha256: '3'.repeat(64),
+      detectedInstrumentIds: ['saxophone'],
+    } as const;
+
+    const first = await recordInstrumentDiscoveryFeedback(env, {
+      ...target,
+      id: 'feedback_revision_1',
+      expectedRevision: 0,
+      genreFamily: 'jazz',
+      observations: [
+        { instrumentId: 'saxophone', verdict: 'confirmed' },
+        { instrumentId: 'trumpet', verdict: 'missed' },
+      ],
+      now: new Date('2026-08-10T12:00:00.000Z'),
+    });
+    assert.equal(first.changed, true);
+    assert.equal(first.record.revision, 1);
+    assert.equal(first.record.reviewer, 'teacher-a');
+    assert.equal(first.record.sourceSha256, sourceSha256);
+    assert.equal(first.record.reviewOntologyVersion, INSTRUMENT_REVIEW_ONTOLOGY_VERSION);
+    assert.equal(first.record.deidentified, false);
+    assert.equal(first.record.trainingEligible, false);
+
+    const unchanged = await recordInstrumentDiscoveryFeedback(env, {
+      ...target,
+      expectedRevision: 1,
+      genreFamily: 'jazz',
+      observations: [
+        { instrumentId: 'trumpet', verdict: 'missed' },
+        { instrumentId: 'saxophone', verdict: 'confirmed' },
+      ],
+    });
+    assert.equal(unchanged.changed, false);
+    assert.equal(unchanged.record.id, first.record.id);
+
+    const second = await recordInstrumentDiscoveryFeedback(env, {
+      ...target,
+      id: 'feedback_revision_2',
+      expectedRevision: 1,
+      genreFamily: 'folk-traditional',
+      observations: [
+        { instrumentId: 'saxophone', verdict: 'absent' },
+        { instrumentId: 'trumpet', verdict: 'missed' },
+      ],
+      now: new Date('2026-08-10T12:01:00.000Z'),
+    });
+    assert.equal(second.record.revision, 2);
+    assert.deepEqual(summarizeInstrumentDiscoveryFeedback(second.record), {
+      schemaVersion: '1',
+      revision: 2,
+      genreFamily: 'folk-traditional',
+      observations: [
+        { instrumentId: 'saxophone', verdict: 'absent' },
+        { instrumentId: 'trumpet', verdict: 'missed' },
+      ],
+      evidenceStatus: 'unreviewed-candidate',
+      deidentified: false,
+      trainingEligible: false,
+      createdAt: '2026-08-10T12:01:00.000Z',
+    });
+    await assert.rejects(
+      recordInstrumentDiscoveryFeedback(env, {
+        ...target,
+        expectedRevision: 1,
+        genreFamily: 'rock',
+        observations: [{ instrumentId: 'saxophone', verdict: 'confirmed' }],
+      }),
+      (error) =>
+        error instanceof InstrumentDiscoveryFeedbackError && error.code === 'conflict'
+    );
+    await assert.rejects(
+      recordInstrumentDiscoveryFeedback(env, {
+        ...target,
+        analysisSha256: '2'.repeat(64),
+        expectedRevision: 0,
+        genreFamily: 'rock',
+        observations: [{ instrumentId: 'saxophone', verdict: 'confirmed' }],
+      }),
+      (error) =>
+        error instanceof InstrumentDiscoveryFeedbackError &&
+        error.code === 'invalid_request' &&
+        /fingerprint/.test(error.message)
+    );
+    await assert.rejects(
+      recordInstrumentDiscoveryFeedback(env, {
+        ...target,
+        rawAnalysis: '{"changed":true}',
+        analysisSha256: createHash('sha256').update('{"changed":true}').digest('hex'),
+        expectedRevision: 0,
+        genreFamily: 'rock',
+        observations: [{ instrumentId: 'saxophone', verdict: 'confirmed' }],
+      }),
+      (error) =>
+        error instanceof InstrumentDiscoveryFeedbackError && error.code === 'analysis_changed'
+    );
+    await assert.rejects(
+      db.prepare(
+        "UPDATE instrument_discovery_feedback SET genre_family = 'rock' WHERE id = 'feedback_revision_2'"
+      ).run(),
+      /revisions are immutable/
+    );
+    const stored = await db.prepare(
+      `SELECT reviewer, source_sha256, deidentified, training_eligible
+       FROM instrument_discovery_feedback WHERE id = 'feedback_revision_2'`
+    ).first<{
+      reviewer: string;
+      source_sha256: string;
+      deidentified: number;
+      training_eligible: number;
+    }>();
+    assert.deepEqual({ ...stored }, {
+      reviewer: 'teacher-a',
+      source_sha256: sourceSha256,
+      deidentified: 0,
+      training_eligible: 0,
+    });
+    assert.equal(
+      (await getLatestInstrumentDiscoveryFeedback(env, target))?.id,
+      'feedback_revision_2'
+    );
+
+    await db.prepare("DELETE FROM jobs WHERE id = 'feedback-job'").run();
+    assert.equal(
+      (await db.prepare('SELECT id FROM instrument_discovery_feedback').all()).results.length,
+      0,
+      'feedback retention must follow deletion of its source job'
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('Railway boot and numbered migration both add immutable feedback storage idempotently', async () => {
+  for (const migration of ['node', 'numbered'] as const) {
+    const directory = mkdtempSync(join(tmpdir(), `stem-splitter-feedback-${migration}-`));
+    try {
+      const db = new SqliteD1(join(directory, 'feedback.sqlite'));
+      db.applySchema('CREATE TABLE jobs (id TEXT PRIMARY KEY);');
+      if (migration === 'node') {
+        db.applyNodeMigrations();
+        db.applyNodeMigrations();
+      } else {
+        const sql = readFileSync('migrations/0014-instrument-discovery-feedback.sql', 'utf8');
+        db.applySchema(sql);
+        db.applySchema(sql);
+      }
+      const columns = await db.prepare("PRAGMA table_info('instrument_discovery_feedback')")
+        .all<{ name: string }>();
+      assert.deepEqual(
+        columns.results.map(({ name }) => name),
+        [
+          'id', 'schema_version', 'job_id', 'reviewer', 'revision', 'analysis_sha256',
+          'source_sha256', 'classifier_version', 'vocabulary_version', 'vocabulary_sha256',
+          'review_ontology_version', 'genre_family', 'observations', 'evidence_status',
+          'deidentified', 'training_eligible', 'created_at',
+        ]
+      );
+      const triggers = await db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'instrument_discovery_feedback_%' ORDER BY name"
+      ).all<{ name: string }>();
+      assert.deepEqual(triggers.results.map(({ name }) => name), [
+        'instrument_discovery_feedback_no_replace',
+        'instrument_discovery_feedback_no_update',
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test('concurrent candidate feedback submissions create exactly one next revision', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-feedback-race-'));
+  try {
+    const db = new SqliteD1(join(directory, 'feedback.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    const rawAnalysis = JSON.stringify({ exact: 'race-analysis-v1' });
+    const sourceSha256 = '4'.repeat(64);
+    await db.prepare(
+      `INSERT INTO jobs
+        (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
+       VALUES ('feedback-race', 'race.wav', 'uploads/race/source.wav', 'done',
+               'htdemucs_ft', 'auto', 'upload', ?, ?)`
+    ).bind(sourceSha256, rawAnalysis).run();
+    const target = {
+      jobId: 'feedback-race',
+      reviewer: 'teacher-a',
+      rawAnalysis,
+      analysisSha256: createHash('sha256').update(rawAnalysis).digest('hex'),
+      sourceSha256,
+      classifierVersion: 'candidate-classifier-v1',
+      vocabularyVersion: 'classroom-instruments-v1',
+      vocabularySha256: '5'.repeat(64),
+      detectedInstrumentIds: ['saxophone'],
+      expectedRevision: 0,
+      observations: [{ instrumentId: 'saxophone', verdict: 'confirmed' as const }],
+    };
+    const results = await Promise.allSettled([
+      recordInstrumentDiscoveryFeedback({ DB: db } as never, {
+        ...target,
+        id: 'feedback_race_a',
+        genreFamily: 'jazz',
+      }),
+      recordInstrumentDiscoveryFeedback({ DB: db } as never, {
+        ...target,
+        id: 'feedback_race_b',
+        genreFamily: 'rock',
+      }),
+    ]);
+    assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 1);
+    const rejected = results.find(({ status }) => status === 'rejected');
+    assert.equal(rejected?.status, 'rejected');
+    assert.ok(
+      rejected.status === 'rejected' &&
+        rejected.reason instanceof InstrumentDiscoveryFeedbackError &&
+        rejected.reason.code === 'conflict'
+    );
+    const rows = await db.prepare(
+      'SELECT revision FROM instrument_discovery_feedback WHERE job_id = ?'
+    ).bind('feedback-race').all<{ revision: number }>();
+    assert.deepEqual(rows.results.map(({ revision }) => ({ revision })), [{ revision: 1 }]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
