@@ -9,6 +9,7 @@
     "scripts/finalize-nsynth-family-control-review.mts",
     "scripts/finalize-instrument-evaluation-review.mts",
     "scripts/hydrate-nsynth-family-controls.mts",
+    "scripts/hydrate-tinysol-exact-controls.mts",
     "scripts/prepare-nsynth-family-control-review.mts",
     "scripts/prepare-instrument-evaluation-review.mts",
     "scripts/capture-yamnet-instrument-candidate.mts",
@@ -18,11 +19,13 @@
     "scripts/lib/instrument-candidate-comparison.mts",
     "scripts/lib/nsynth-family-control-corpus.mts",
     "scripts/lib/nsynth-family-control-review.mts",
+    "scripts/lib/tinysol-exact-control-corpus.mts",
     "scripts/lib/yamnet-candidate-capture.mts",
     "tests/instrument-evaluation-review.test.mts",
     "tests/instrument-evaluation.test.mts",
     "tests/nsynth-family-control-corpus.test.mts",
     "tests/nsynth-family-control-review.test.mts",
+    "tests/tinysol-exact-control-corpus.test.mts",
     "tests/yamnet-candidate-capture.test.mts"
   ]
 }
