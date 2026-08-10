@@ -367,6 +367,26 @@ browser/server classifier parity. Server Auto remains disabled unless its
 master flag and rollout mode are explicitly set; analyzer failure preserves the
 four-track fallback.
 
+## Offline long-tail instrument controls
+
+The v3.2 research path includes eight exact-hash ChoraleBricks isolated
+woodwind/brass controls under CC BY 4.0. Audio is hydrated into the gitignored
+corpus directory; only provenance, media pins, evaluator code, and non-
+promotion reports are committed.
+
+```sh
+bun run hydrate:instrument-controls
+bun run hydrate:instrument-controls --verify-only
+bun run eval:yamnet:controls --image stem-splitter-yamnet-comparator:v3.2-arm64-candidate
+```
+
+The hydrator follows one reviewed same-origin redirect and refuses URL drift,
+oversized or mismatched bytes, symlinks, and overwrites. The current report
+keeps dataset-authored positives and exhaustive candidate negatives in a
+teacher-review-pending state. It does not calculate precision, select a
+threshold, enable discovery, alter Auto routing, or provision a Railway
+service.
+
 ## Costs (rough, per class of 20 students × 100 songs)
 
 | Item | Cost |

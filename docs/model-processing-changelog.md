@@ -31,18 +31,36 @@ promotion on their own.
   rank was 3,507 basis points. Voice and keys ranked strongly, but brass,
   woodwind, and free-reed placed 0/2, 0/3, and 0/1 groups in the top five.
   Several directional confusions failed and two remain corpus gaps.
+- Isolated-control extension: a separately versioned ChoraleBricks v1 manifest
+  pins eight CC BY 4.0 performed tracks across flute, oboe, clarinet, trumpet,
+  French horn, trombone, alto saxophone, and tuba. Its same-origin one-redirect
+  hydrator enforces exact type, length, SHA-256, no-clobber output, and offline
+  verification while keeping audio gitignored. Dataset labels remain
+  `dataset-authored-awaiting-teacher-listening`; exhaustive non-positive labels
+  are candidate negatives and cannot support precision yet.
+- Isolated-control result: six exact positives are supported; four ranked
+  first and all six ranked in the top three (8,056-basis-point MRR). Oboe and
+  tuba remain unsupported. Oboe strongly surfaced trumpet/brass, horn ranked
+  behind trombone, and tuba surfaced double bass behind broad brass. The report
+  records 278 candidate-negative annotations, selects no threshold, and makes
+  no precision claim.
 - Evidence: `docs/audits/2026-08-09-yamnet-comparator-gate.md` and
   `docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-corpus.json`
   (SHA-256
   `b59d4f7d32bfb999263a26bd7abb3313afe49111c96e23f7d162d4efba09fe93`).
+  The control report is
+  `docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json`
+  (SHA-256
+  `67d133c03c2e28221acc0d458e0dc137ee28987ef5c622bec4e93d46a5e663c0`).
   A native arm64 image completed the full corpus; an emulated amd64 image
   completed a one-source numeric-parity check. Neither supplies native-amd64 or
   Railway sizing evidence.
-- Disposition: promising comparison baseline, not selected. Add authorized
-  single-instrument positives, exhaustive negatives, human listening review,
-  calibrated abstention, and native-amd64 evidence before reconsidering it.
+- Disposition: promising comparison baseline, not selected. Complete human
+  listening review of the isolated positives and candidate negatives, add
+  missing ontology/family controls, calibrate abstention, and produce native-
+  amd64 evidence before reconsidering it.
   Keep discovery off and provision no service.
-- Source gate: the literal exact-Bun `test:phase0` command passes 132 worker,
+- Source gate: exact Bun 1.3.14 running the literal `test:phase0` command passes 141 worker,
   21 analyzer, 14 Railway-host/migration, 5 separator, 30 discovery, 9 YAMNet,
   19 flags-off browser E2E, and 4 authoritative-Auto E2E tests. Local arm64 and
   emulated amd64 image evidence remain distinct from native-amd64 and Railway

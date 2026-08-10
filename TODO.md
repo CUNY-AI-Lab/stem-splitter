@@ -43,11 +43,20 @@ Treat it as a promising comparison baseline, not a selected classifier: no
 threshold, feature flag, application dependency, or service was added. Native
 amd64 startup/inference, Railway sizing, human-reviewed calibration, and
 service provisioning remain open.
+A separately versioned ChoraleBricks control corpus now pins eight CC BY 4.0
+isolated performances across four woodwinds and four brass instruments. Its
+same-origin, one-redirect hydrator verified every declared byte count and
+SHA-256 while keeping audio gitignored. On native arm64, all six YAMNet-
+supported exact instruments ranked in the top three and four ranked first;
+oboe and tuba remain explicit unsupported gaps. The 278 non-positive labels are
+candidate negatives only: no teacher has listened to them, so the report makes
+no precision claim and selects no threshold. This is a stronger controlled
+comparison, not promotion evidence.
 A path-scoped, secret-free native-amd64 image workflow is defined locally but
 has not yet run on GitHub, and no detection has been promoted. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
-The complete local Phase 0 command passes 132 worker, 21 analyzer, 14 Railway
+The complete local Phase 0 command passes 141 worker, 21 analyzer, 14 Railway
 host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
 browser, and 4 authoritative-Auto browser tests. This is source and local-image
 evidence only; it does not close native CI or Railway acceptance.
@@ -443,13 +452,32 @@ job.
   threshold was selected and no precision claim is available. See
   `docs/audits/2026-08-09-yamnet-comparator-gate.md` and the bound report under
   `docs/acceptance/2026-08-09-yamnet-comparator/`.
-- [ ] Extend the YAMNet comparison with authorized, teacher-reviewed
-  single-instrument positives and exhaustive negatives. Recalculate family
-  ranking, precision/recall, calibration, abstention, latency, and memory on
-  native amd64. Its current 0/2 brass, 0/3 woodwind, and 0/1 free-reed top-five
-  results, fifteen ontology gaps, failed confusion directions, two missing
-  confusion trials, and non-exhaustive annotations block classifier selection
-  and threshold calibration.
+- [x] Extend the YAMNet comparison with authorized, exact-hash isolated-
+  instrument controls and exhaustive **candidate** negatives. ChoraleBricks v1
+  supplies flute, oboe, clarinet, trumpet, horn, trombone, saxophone, and tuba
+  under CC BY 4.0. A bounded hydrator accepts one exact same-origin 307,
+  refuses symlinks and mismatched existing files, and verifies content type,
+  length, SHA-256, and offline readback. The native-arm64 report places all six
+  supported exact positives in the top three (four top-one; 8,056-basis-point
+  MRR), keeps oboe/tuba unsupported, records 278 candidate negatives, and
+  explicitly makes no precision claim or threshold selection.
+- [ ] Have an authorized teacher listen to every isolated positive and every
+  candidate-negative alert before changing the manifest review state. Only
+  then recalculate family precision/recall, calibration, abstention, latency,
+  and memory on native amd64. The mixed-corpus brass/woodwind failures, high
+  oboe-to-trumpet/brass and horn-to-trombone confusions, fifteen ontology gaps,
+  missing free-reed controls, failed confusion directions, and absent native
+  runner result still block classifier selection and threshold calibration.
+- [ ] Add a second rights-reviewed control tranche only after the listening
+  protocol is fixed. [NSynth](https://magenta.tensorflow.org/datasets/nsynth)
+  is CC BY 4.0 and offers 305,979 four-second
+  monophonic notes across 1,006 sampled instruments, but its eleven labels are
+  broad families rather than reliable exact instrument identities. Use it for
+  acoustic/electronic/synthetic and family-level diversity, keep it separate
+  from performed-track results, and find separately licensed exact positives
+  for free reeds, solo strings, pitched percussion, and traditional
+  instruments. Never convert a filename or family label into exact ground
+  truth.
 - [ ] Choose exactly one replacement discovery classifier after the CLAP,
   YAMNet, and any license-cleared Essentia evidence is comparable. Give every
   prompt policy, checkpoint, label map, or preprocessing change a new

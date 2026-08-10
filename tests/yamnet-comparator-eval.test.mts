@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -6,6 +7,11 @@ import {
   secondWindowScore,
   validateComparatorOutput,
 } from '../scripts/eval-yamnet-comparator.mts';
+import {
+  summarizeYamnetControlObservations,
+  type YamnetControlObservation,
+} from '../scripts/eval-yamnet-controls.mts';
+import { validateSmokeOutput } from '../scripts/smoke-yamnet-comparator-image.mts';
 
 const mapping = JSON.parse(readFileSync('yamnet-comparator/mapping.json', 'utf8')) as {
   mapped: Array<{ instrumentId: string }>;
@@ -83,6 +89,27 @@ test('YAMNet comparator output requires every exact artifact and mapped-score pi
   assert.throws(() => validateComparatorOutput(reordered, 1, supportedIds), /class identity/);
 });
 
+test('YAMNet image smoke validates the complete synthetic-control response', () => {
+  const output = validOutput();
+  assert.deepEqual(validateSmokeOutput(output, supportedIds), {
+    loadMs: 140,
+    timingMs: 170,
+    resampledSamples: 48_000,
+    patches: 6,
+    inferenceMs: 30,
+    metricCount: 36,
+    topClassCount: 12,
+  });
+
+  const nonfinite = structuredClone(output);
+  nonfinite.windows[0].metrics.voice.top3Mean = Number.NaN;
+  assert.throws(() => validateSmokeOutput(nonfinite, supportedIds), /score/);
+
+  const inconsistentTiming = structuredClone(output);
+  inconsistentTiming.timingMs = 100;
+  assert.throws(() => validateSmokeOutput(inconsistentTiming, supportedIds), /timing/);
+});
+
 test('YAMNet mapping preserves unsupported labels and selects no threshold', () => {
   assert.equal(supportedIds.length, 36);
   assert.equal(mapping.unsupported.length, 15);
@@ -97,8 +124,166 @@ test('YAMNet mapping preserves unsupported labels and selects no threshold', () 
   assert.equal(raw.scoringPolicy.thresholdSelection, 'none');
 });
 
+test('YAMNet control summary separates ranking evidence from pending negative review', () => {
+  const observations: YamnetControlObservation[] = [
+    {
+      id: 'flute-an1',
+      instrument: 'flute',
+      family: 'woodwind',
+      positiveIds: ['flute'],
+      sourceBytes: 1,
+      sourceSha256: 'a'.repeat(64),
+      sourceDurationSeconds: 1,
+      declaredDurationSeconds: 1,
+      analyzedSeconds: 1,
+      windowsAnalyzed: 1,
+      loadMs: 10,
+      inferenceMs: 20,
+      timingMs: 30,
+      trackScores: { flute: 0.8, clarinet: 0.6, brass: 0.2 },
+      positives: [{ id: 'flute', state: 'eligible', score: 0.8, rank: 1 }],
+      specificPositive: { id: 'flute', state: 'eligible', score: 0.8, rank: 1 },
+      candidateNegativeCount: 2,
+      topCandidateNegatives: [{ id: 'clarinet', score: 0.6 }],
+      topMapped: [{ id: 'flute', score: 0.8 }],
+    },
+    {
+      id: 'trumpet-an1',
+      instrument: 'trumpet',
+      family: 'brass',
+      positiveIds: ['brass', 'trumpet'],
+      sourceBytes: 1,
+      sourceSha256: 'b'.repeat(64),
+      sourceDurationSeconds: 1,
+      declaredDurationSeconds: 1,
+      analyzedSeconds: 1,
+      windowsAnalyzed: 1,
+      loadMs: 11,
+      inferenceMs: 21,
+      timingMs: 32,
+      trackScores: { trumpet: 0.4, brass: 0.45, saxophone: 0.3 },
+      positives: [
+        { id: 'brass', state: 'eligible', score: 0.45, rank: 3 },
+        { id: 'trumpet', state: 'eligible', score: 0.4, rank: 4 },
+      ],
+      specificPositive: { id: 'trumpet', state: 'eligible', score: 0.4, rank: 4 },
+      candidateNegativeCount: 1,
+      topCandidateNegatives: [{ id: 'saxophone', score: 0.3 }],
+      topMapped: [{ id: 'brass', score: 0.45 }],
+    },
+    {
+      id: 'oboe-ba1',
+      instrument: 'oboe',
+      family: 'woodwind',
+      positiveIds: ['oboe'],
+      sourceBytes: 1,
+      sourceSha256: 'c'.repeat(64),
+      sourceDurationSeconds: 1,
+      declaredDurationSeconds: 1,
+      analyzedSeconds: 1,
+      windowsAnalyzed: 1,
+      loadMs: 12,
+      inferenceMs: 22,
+      timingMs: 34,
+      trackScores: { flute: 0.7, clarinet: 0.3 },
+      positives: [{ id: 'oboe', state: 'unsupported', score: null, rank: null }],
+      specificPositive: { id: 'oboe', state: 'unsupported', score: null, rank: null },
+      candidateNegativeCount: 2,
+      topCandidateNegatives: [{ id: 'flute', score: 0.7 }],
+      topMapped: [{ id: 'flute', score: 0.7 }],
+    },
+  ];
+  const summary = summarizeYamnetControlObservations(observations, [0.5]);
+  assert.deepEqual(
+    {
+      controls: summary.controls,
+      eligible: summary.eligibleSpecificPositives,
+      unsupported: summary.unsupportedSpecificPositives,
+      top1: summary.top1SpecificPositives,
+      top3: summary.top3SpecificPositives,
+      top5: summary.top5SpecificPositives,
+      mrr: summary.meanReciprocalRankBasisPoints,
+      annotations: summary.candidateNegativeAnnotations,
+    },
+    { controls: 3, eligible: 2, unsupported: 1, top1: 1, top3: 1, top5: 2, mrr: 6250, annotations: 5 }
+  );
+  assert.deepEqual(summary.thresholdSweep, [
+    {
+      threshold: 0.5,
+      eligibleSpecificPositives: 2,
+      specificPositiveHits: 1,
+      candidateNegativeAlerts: 2,
+      precisionClaim: 'none-review-pending',
+    },
+  ]);
+});
+
+test('YAMNet long-tail control report is self-bound and cannot claim calibration or promotion', () => {
+  const reportPath =
+    'docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json';
+  const report = JSON.parse(readFileSync(reportPath, 'utf8')) as any;
+  const manifestPath = 'tests/corpus/instrument-control-manifest.json';
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as any;
+  const digest = (path: string) =>
+    createHash('sha256').update(readFileSync(path)).digest('hex');
+  assert.equal(report.$schema, 'stem-splitter.yamnet-control-evaluation.v1');
+  assert.equal(report.status, 'dataset-authored-controls-awaiting-teacher-listening');
+  assert.equal(report.promotionEligible, false);
+  assert.equal(report.thresholdSelected, null);
+  assert.equal(report.precisionClaim, 'none-review-pending');
+  assert.equal(report.corpus.manifestSha256, digest(manifestPath));
+  assert.equal(report.evaluator.sha256, digest('scripts/eval-yamnet-controls.mts'));
+  const expectedSourcePins = {
+    comparatorEvaluator: 'scripts/eval-yamnet-comparator.mts',
+    controlManifestLibrary: 'scripts/lib/instrument-control-corpus.mts',
+    controlHydrator: 'scripts/hydrate-instrument-controls.mts',
+    analysisConfig: 'audio-analysis/config.ts',
+    analysisDecoder: 'audio-analysis/decoder.ts',
+    discoveryWindowPolicy: 'audio-analysis/discovery.ts',
+  };
+  assert.deepEqual(Object.keys(report.evaluator.sourcePins), Object.keys(expectedSourcePins));
+  for (const [name, path] of Object.entries(expectedSourcePins)) {
+    assert.equal(report.evaluator.sourcePins[name].path, path);
+    assert.equal(report.evaluator.sourcePins[name].sha256, digest(path));
+  }
+  assert.equal(
+    report.execution.id,
+    'sha256:84be0205ccd53da93791a9c843ede0ae77ab1d12b6c1ebffc4712120ca14a14c'
+  );
+  assert.equal(report.execution.platform, 'linux/arm64');
+  assert.equal(report.execution.emulated, false);
+  assert.deepEqual(
+    {
+      controls: report.summary.controls,
+      eligible: report.summary.eligibleSpecificPositives,
+      unsupported: report.summary.unsupportedSpecificPositives,
+      top1: report.summary.top1SpecificPositives,
+      top3: report.summary.top3SpecificPositives,
+      mrr: report.summary.meanReciprocalRankBasisPoints,
+      negatives: report.summary.candidateNegativeAnnotations,
+    },
+    { controls: 8, eligible: 6, unsupported: 2, top1: 4, top3: 6, mrr: 8056, negatives: 278 }
+  );
+  assert.ok(
+    report.summary.thresholdSweep.every(
+      (item: any) => item.precisionClaim === 'none-review-pending'
+    )
+  );
+  assert.deepEqual(
+    report.observations.map((observation: any) => observation.id),
+    manifest.controls.map((control: any) => control.id)
+  );
+  for (const observation of report.observations) {
+    const control = manifest.controls.find((candidate: any) => candidate.id === observation.id);
+    assert.ok(control);
+    assert.equal(observation.sourceSha256, control.media.sha256);
+    assert.deepEqual(observation.positiveIds, control.positiveIds);
+  }
+});
+
 test('YAMNet corpus evaluator constrains every inference container and binds image source', () => {
   const evaluator = readFileSync('scripts/eval-yamnet-comparator.mts', 'utf8');
+  const controlsEvaluator = readFileSync('scripts/eval-yamnet-controls.mts', 'utf8');
   const runner = readFileSync('scripts/run-yamnet-comparator-eval.sh', 'utf8');
   for (const requirement of [
     "'--pull'",
@@ -126,4 +311,46 @@ test('YAMNet corpus evaluator constrains every inference container and binds ima
   assert.match(evaluator, /threshold-sweep results are not precision claims/);
   assert.match(runner, /YAMNET_COMPARATOR_IMAGE/);
   assert.doesNotMatch(evaluator, /--network[ =]host/);
+  assert.match(controlsEvaluator, /dataset-authored-controls-awaiting-teacher-listening/);
+  assert.match(controlsEvaluator, /precisionClaim: 'none-review-pending'/);
+  assert.match(controlsEvaluator, /thresholdSelected: null/);
+  assert.match(controlsEvaluator, /runComparator\(/);
+  assert.match(controlsEvaluator, /manifestSha256: sha256File\(INSTRUMENT_CONTROL_MANIFEST_PATH\)/);
+});
+
+test('YAMNet native image workflow is path-scoped, pinned, and runs the constrained smoke', () => {
+  const workflow = readFileSync('.github/workflows/yamnet-comparator-image.yml', 'utf8');
+  const smoke = readFileSync('scripts/smoke-yamnet-comparator-image.mts', 'utf8');
+  assert.match(workflow, /runs-on: ubuntu-24\.04/);
+  assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(workflow, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+  assert.match(workflow, /node-version: "22\.23\.1"/);
+  assert.match(workflow, /docker build --pull --platform linux\/amd64/);
+  assert.match(workflow, /YAMNET_COMPARATOR_EXPECTED_PLATFORM: linux\/amd64/);
+  assert.match(workflow, /smoke-yamnet-comparator-image\.mts/);
+  assert.doesNotMatch(workflow, /secrets\./);
+  for (const requirement of [
+    "'--pull'",
+    "'never'",
+    "'--network'",
+    "'none'",
+    "'--read-only'",
+    "'/tmp:rw,noexec,nosuid,nodev,size=64m'",
+    "'--cap-drop'",
+    "'ALL'",
+    "'no-new-privileges'",
+    "'--pids-limit'",
+    "'--cpus'",
+    "'--memory'",
+    "'--memory-swap'",
+    "'--log-driver'",
+    "'none'",
+  ]) {
+    assert.equal(smoke.includes(requirement), true, `image smoke is missing ${requirement}`);
+  }
+  assert.match(smoke, /source-sha256\.json/);
+  assert.match(smoke, /LICENSE\.YAMNET/);
+  assert.match(smoke, /PCM contains a non-finite sample/);
+  assert.match(smoke, /PCM sample rate does not match the comparator pin/);
+  assert.doesNotMatch(smoke, /--network[ =]host/);
 });

@@ -9,6 +9,13 @@ human-review, native-amd64, or service gates. No threshold was selected, no
 Railway service was created, and `INSTRUMENT_DISCOVERY_ENABLED` stays absent or
 false.
 
+Eight exact-hash ChoraleBricks controls substantially strengthen the
+woodwind/brass evidence: every YAMNet-supported exact instrument ranked in the
+top three. They also confirm blocking ontology and confusion problems. Oboe and
+tuba have no exact YAMNet labels, an isolated oboe ranked trumpet/brass first,
+and horn ranked behind trombone. Dataset-authored isolated-track labels are not
+silently promoted to teacher-reviewed ground truth.
+
 YAMNet remains advisory research only. It cannot change Auto's concrete 2/4/6
 route, alter the provider model, append or rename a stem, or expose labels to
 students.
@@ -118,12 +125,58 @@ largest observed mapped-score difference between the two architectures was
 `0.00000014`. This is numerical-parity evidence only: emulated timing is not a
 native-amd64 performance or Railway-sizing result.
 
+## Isolated woodwind and brass controls
+
+The versioned manifest
+[`instrument-control-manifest.json`](../../tests/corpus/instrument-control-manifest.json)
+pins eight performed ChoraleBricks tracks: flute, oboe, clarinet, trumpet,
+French horn, trombone, alto saxophone, and tuba. The official dataset describes
+its individual tracks as isolated recordings and licenses the website data
+under CC BY 4.0. Audio remains gitignored. The hydrator accepts only the exact
+AudioLabs origin and route, one exact same-origin 307 into the hashed media
+route, `audio/mp4`, the declared length, a 2 MiB ceiling, and the recorded
+SHA-256. It refuses symlinked output and mismatched existing files, writes with
+no-clobber semantics, and supports a networkless verification pass.
+
+The bound native-arm64 control report is
+[`native-arm64-controls.json`](../acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json)
+(SHA-256
+`67d133c03c2e28221acc0d458e0dc137ee28987ef5c622bec4e93d46a5e663c0`).
+Its manifest SHA-256 is
+`b2bdd54eed7c9e1bc36e384cbee4cdb61d1532a6502443b558731b6630689b0f`.
+Across eight controls:
+
+- six exact positives were eligible and oboe/tuba stayed explicitly
+  unsupported;
+- 4/6 eligible exact positives ranked first and all 6/6 ranked in the top
+  three, for an 8,056-basis-point mean reciprocal rank;
+- woodwinds placed 3/3 eligible exact positives first; brass placed 1/3 first
+  and 3/3 in the top three;
+- horn ranked third behind broad brass and trombone; trombone ranked second
+  behind broad brass; and
+- isolated oboe ranked trumpet and brass first, while tuba's broad brass score
+  was useful but its exact label remained unavailable.
+
+All 278 vocabulary labels outside each control's declared positives remain
+`candidate-only-awaiting-teacher-listening`. The threshold sweep therefore
+labels every negative alert `none-review-pending`, makes no precision claim,
+and selects no threshold. This evidence cannot enable a flag, service, or UI.
+
+The official [NSynth dataset](https://magenta.tensorflow.org/datasets/nsynth)
+was considered for the next tranche, not substituted for these exact controls.
+Its release contains 305,979 four-second monophonic notes
+from 1,006 sampled instruments under CC BY 4.0, but annotates only eleven broad
+families. It can strengthen acoustic/electronic/synthetic and family-level
+coverage; it cannot establish exact oboe, tuba, free-reed, or traditional-
+instrument truth. Synthetic/sample-library results must remain a separate
+slice from performed-track evidence.
+
 ## Verification
 
-The exact Bun 1.3.14 install completed with the frozen lock and no changes. The
-literal `test:phase0` command passed:
+Exact Bun 1.3.14, invoked through its pinned npm package because this shell had
+no global Bun on `PATH`, ran the literal `test:phase0` command successfully:
 
-- 132 worker/shared-contract tests;
+- 141 worker/shared-contract tests;
 - 21 analyzer tests;
 - 14 Railway-host and migration tests;
 - 5 separator tests;
@@ -132,10 +185,12 @@ literal `test:phase0` command passed:
 - 19 flags-off browser E2E tests; and
 - 4 authoritative server-Auto browser E2E tests.
 
-The YAMNet image separately passed a real eleven-source native arm64 run and a
-current-source amd64-on-arm64 jazz-sax run under the locked container controls.
-No test or report authorizes classifier selection, a Railway service, or live
-rollout.
+The YAMNet image separately passed a real eleven-source native arm64 run, the
+eight-control native-arm64 run, a current-source amd64-on-arm64 jazz-sax run,
+and both native-arm64 and emulated-amd64 constrained image smokes. The new
+native-amd64 GitHub workflow is defined but has not run because the branch is
+local. No test or report authorizes classifier selection, a Railway service,
+or live rollout.
 
 ## Comparator disposition
 
@@ -144,9 +199,10 @@ collapse and yields substantially better corpus ranking. That makes YAMNet a
 useful baseline for the next candidate, not a production choice. Selection is
 blocked by:
 
-1. missing authorized single-instrument positives and exhaustive negative
-   controls;
-2. no teacher/domain listening review of corpus annotations;
+1. no teacher/domain listening review of the isolated positives or exhaustive
+   candidate negatives;
+2. material exact-label confusions on oboe, horn, and tuba despite strong
+   controlled rankings elsewhere;
 3. weak brass, woodwind, free-reed, and several confusion results;
 4. fifteen explicit ontology gaps, including several requested orchestral and
    traditional instruments;
@@ -155,10 +211,10 @@ blocked by:
 7. no reason yet to provision a service for a candidate that has not cleared
    the offline gate.
 
-The next evidence unit should add reviewed single-instrument controls and
-exhaustive negatives, then compare a specialized fixed-label head or a
-reviewed transfer-learning head against this frozen result. Essentia remains
-blocked until the exact weight and runtime license boundary receives written
+The next evidence unit is teacher listening review of the isolated controls,
+followed by native-amd64 execution and a specialized fixed-label or reviewed
+transfer-learning head against this frozen baseline. Essentia remains blocked
+until the exact weight and runtime license boundary receives written
 clarification and institutional review. Only one selected candidate may later
 proceed to a private Railway service, with flags still off and no student or
 routing effect.

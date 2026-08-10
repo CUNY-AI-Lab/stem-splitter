@@ -1,0 +1,91 @@
+name: YAMNet comparator image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/yamnet-comparator-image.yml
+      - docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json
+      - instrument-discovery/vocabulary.json
+      - package.json
+      - scripts/hydrate-instrument-controls.mts
+      - scripts/eval-yamnet-comparator.mts
+      - scripts/eval-yamnet-controls.mts
+      - scripts/lib/instrument-control-corpus.mts
+      - scripts/smoke-yamnet-comparator-image.mts
+      - tests/corpus/instrument-control-manifest.json
+      - tests/instrument-control-corpus.test.mts
+      - tests/yamnet-comparator-eval.test.mts
+      - yamnet-comparator/**
+  pull_request:
+    paths:
+      - .github/workflows/yamnet-comparator-image.yml
+      - docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json
+      - instrument-discovery/vocabulary.json
+      - package.json
+      - scripts/hydrate-instrument-controls.mts
+      - scripts/eval-yamnet-comparator.mts
+      - scripts/eval-yamnet-controls.mts
+      - scripts/lib/instrument-control-corpus.mts
+      - scripts/smoke-yamnet-comparator-image.mts
+      - tests/corpus/instrument-control-manifest.json
+      - tests/instrument-control-corpus.test.mts
+      - tests/yamnet-comparator-eval.test.mts
+      - yamnet-comparator/**
+
+concurrency:
+  group: stem-splitter-yamnet-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-amd64-image:
+    name: Pinned YAMNet comparator (native amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.13"
+      - name: Verify the native runner contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(docker info --format '{{.OSType}}/{{.Architecture}}')" = linux/x86_64
+          test "$(node --version)" = v22.23.1
+          test "$(python --version)" = "Python 3.12.13"
+      - name: Run dependency-light comparator contracts
+        run: python -m unittest discover -s yamnet-comparator -p 'test_*.py'
+      - name: Run manifest, evaluator, and image-smoke contracts
+        run: >-
+          node --experimental-strip-types --test
+          tests/instrument-control-corpus.test.mts
+          tests/yamnet-comparator-eval.test.mts
+      - name: Build the exact comparator source for linux/amd64
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: >-
+          docker build --pull --platform linux/amd64
+          --file yamnet-comparator/Dockerfile
+          --tag stem-splitter-yamnet-comparator:ci .
+      - name: Run constrained offline inference and rejection smoke
+        env:
+          YAMNET_COMPARATOR_EXPECTED_PLATFORM: linux/amd64
+          YAMNET_COMPARATOR_MAX_IMAGE_BYTES: "805306368"
+          YAMNET_COMPARATOR_SMOKE_TIMEOUT_MS: "60000"
+        run: >-
+          node --experimental-strip-types
+          scripts/smoke-yamnet-comparator-image.mts
+          stem-splitter-yamnet-comparator:ci

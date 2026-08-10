@@ -50,7 +50,7 @@ interface MappedClass {
   displayName: string;
 }
 
-interface MappingDocument {
+export interface MappingDocument {
   classifierVersion: string;
   modelSha256: string;
   classMapSha256: string;
@@ -68,7 +68,7 @@ interface WindowMetric {
   patchesAtLeastHalf: number;
 }
 
-interface ComparatorWindow {
+export interface ComparatorWindow {
   resampledSamples: number;
   patches: number;
   inferenceMs: number;
@@ -81,13 +81,13 @@ interface ComparatorWindow {
   }>;
 }
 
-interface ComparatorResult {
+export interface ComparatorResult {
   loadMs: number;
   timingMs: number;
   windows: ComparatorWindow[];
 }
 
-interface ImageExecution {
+export interface ImageExecution {
   id: string;
   platform: 'linux/amd64' | 'linux/arm64';
   sizeBytes: number;
@@ -142,7 +142,7 @@ function sha256Bytes(value: Buffer | string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function sha256File(path: string): string {
+export function sha256File(path: string): string {
   return sha256Bytes(readFileSync(path));
 }
 
@@ -167,7 +167,7 @@ function normalizedId(value: unknown, context: string): string {
   return value;
 }
 
-function loadMapping(vocabularyIds: string[]): MappingDocument {
+export function loadMapping(vocabularyIds: string[]): MappingDocument {
   const bytes = readFileSync(MAPPING_PATH);
   if (sha256Bytes(bytes) !== MAPPING_SHA256) throw new Error('YAMNet mapping bytes drifted');
   const value: unknown = JSON.parse(bytes.toString('utf8'));
@@ -429,7 +429,7 @@ function readImageFile(imageId: string, path: string, maximumBytes: number): Buf
   return result.stdout;
 }
 
-function inspectImage(imageReference: string): ImageExecution {
+export function inspectImage(imageReference: string): ImageExecution {
   if (!imageReference || /[\s\u0000-\u001f\u007f]/.test(imageReference)) {
     throw new Error('YAMNet image reference is invalid');
   }
@@ -507,7 +507,7 @@ function comparatorTimeout(emulated: boolean): number {
   return value;
 }
 
-function runComparator(
+export function runComparator(
   execution: ImageExecution,
   slug: string,
   pcm: Buffer,
@@ -589,7 +589,7 @@ function runComparator(
   }
 }
 
-function decoderVersion(binary: 'ffmpeg' | 'ffprobe'): string {
+export function decoderVersion(binary: 'ffmpeg' | 'ffprobe'): string {
   const firstLine = execFileSync(binary, ['-version'], {
     encoding: 'utf8',
     timeout: 5_000,
@@ -600,7 +600,7 @@ function decoderVersion(binary: 'ffmpeg' | 'ffprobe'): string {
   return match[1];
 }
 
-function trackScores(result: ComparatorResult, supportedIds: string[]): Record<string, number> {
+export function trackScores(result: ComparatorResult, supportedIds: string[]): Record<string, number> {
   const scores: Record<string, number> = {};
   for (const id of supportedIds) {
     scores[id] = secondWindowScore(result.windows.map((window) => window.metrics[id].top3Mean));

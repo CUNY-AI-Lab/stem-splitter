@@ -1,0 +1,2043 @@
+{
+  "$schema": "stem-splitter.yamnet-control-evaluation.v1",
+  "generatedAt": "2026-08-10T03:44:13.107Z",
+  "status": "dataset-authored-controls-awaiting-teacher-listening",
+  "promotionEligible": false,
+  "thresholdSelected": null,
+  "precisionClaim": "none-review-pending",
+  "caveat": "ChoraleBricks identifies these as isolated instrument tracks, but an authorized teacher has not listened to each positive and candidate negative. Rankings and diagnostic alerts cannot select thresholds or support precision claims.",
+  "corpus": {
+    "manifestPath": "tests/corpus/instrument-control-manifest.json",
+    "manifestSha256": "b2bdd54eed7c9e1bc36e384cbee4cdb61d1532a6502443b558731b6630689b0f",
+    "version": "choralebricks-wind-controls-v1",
+    "reviewStatus": "dataset-authored-awaiting-teacher-listening",
+    "negativePolicy": {
+      "basis": "all-vocabulary-ids-except-positive-ids",
+      "reviewStatus": "candidate-only-awaiting-teacher-listening",
+      "precisionClaim": "none"
+    },
+    "dataset": {
+      "name": "ChoraleBricks",
+      "version": "1.1.0",
+      "recordingType": "isolated-performed-wind-instrument-tracks",
+      "landingPage": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks",
+      "paperUrl": "https://transactions.ismir.net/articles/10.5334/tismir.252",
+      "paperDoi": "10.5334/tismir.252",
+      "zenodoConceptDoi": "10.5281/zenodo.15081740",
+      "zenodoRecordId": "20849469",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "citation": "Stefan Balke, Axel Berndt, and Meinard Mueller. ChoraleBricks: A Modular Multitrack Dataset for Wind Music Research. TISMIR 8(1), 39-54, 2025.",
+      "verifiedAt": "2026-08-09"
+    },
+    "audioDistribution": "gitignored-hydrated-by-exact-sha256"
+  },
+  "candidate": {
+    "classifierVersion": "google-yamnet-tflite-v1-max-class-top3-patch-mean-second-window-v1@kaggle-version-763",
+    "modelSha256": "141fba1cdaae842c816f28edc4937e8b4f0af4c8df21862ccc6b52dc567993c3",
+    "classMapSha256": "cdf24d193e196d9e95912a2667051ae203e92a2ba09449218ccb40ef787c6df2",
+    "mappingPath": "yamnet-comparator/mapping.json",
+    "mappingSha256": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318",
+    "vocabularyVersion": "classroom-instruments-v1",
+    "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+    "scoringPolicy": {
+      "classAggregation": "maximum",
+      "patchAggregation": "top-k-mean",
+      "topPatchCount": 3,
+      "trackAggregation": "second-highest-window",
+      "singleWindowException": true,
+      "thresholdSelection": "none"
+    },
+    "supportedIds": [
+      "voice",
+      "strings",
+      "violin",
+      "cello",
+      "double-bass",
+      "acoustic-guitar",
+      "electric-guitar",
+      "bass-guitar",
+      "harp",
+      "banjo",
+      "mandolin",
+      "brass",
+      "trumpet",
+      "trombone",
+      "horn",
+      "saxophone",
+      "clarinet",
+      "flute",
+      "piano",
+      "electric-piano",
+      "organ",
+      "harpsichord",
+      "synthesizer",
+      "sampler",
+      "drum-machine",
+      "drum-kit",
+      "percussion",
+      "timpani",
+      "mallet-percussion",
+      "vibraphone",
+      "bell",
+      "accordion",
+      "harmonica",
+      "sitar",
+      "tabla",
+      "steelpan"
+    ],
+    "unsupported": [
+      {
+        "instrumentId": "viola",
+        "reason": "YAMNet has no viola class distinct from violin or bowed strings."
+      },
+      {
+        "instrumentId": "classical-guitar",
+        "reason": "YAMNet has no classical-guitar class distinct from acoustic guitar."
+      },
+      {
+        "instrumentId": "ukulele",
+        "reason": "YAMNet has no ukulele class."
+      },
+      {
+        "instrumentId": "tuba",
+        "reason": "YAMNet has no tuba class."
+      },
+      {
+        "instrumentId": "oboe",
+        "reason": "YAMNet has no oboe class."
+      },
+      {
+        "instrumentId": "bassoon",
+        "reason": "YAMNet has no bassoon class."
+      },
+      {
+        "instrumentId": "pipe-organ",
+        "reason": "YAMNet has no pipe-organ class distinct from generic organ."
+      },
+      {
+        "instrumentId": "pad",
+        "reason": "YAMNet has no synthesizer-pad class distinct from synthesizer."
+      },
+      {
+        "instrumentId": "marimba",
+        "reason": "YAMNet combines marimba and xylophone; the shared class maps only to mallet percussion."
+      },
+      {
+        "instrumentId": "bongos",
+        "reason": "YAMNet has no bongo class."
+      },
+      {
+        "instrumentId": "oud",
+        "reason": "YAMNet has no oud class."
+      },
+      {
+        "instrumentId": "erhu",
+        "reason": "YAMNet has no erhu class."
+      },
+      {
+        "instrumentId": "koto",
+        "reason": "YAMNet has no koto class."
+      },
+      {
+        "instrumentId": "shamisen",
+        "reason": "YAMNet has no shamisen class."
+      },
+      {
+        "instrumentId": "gamelan",
+        "reason": "YAMNet has no gamelan class."
+      }
+    ]
+  },
+  "execution": {
+    "id": "sha256:84be0205ccd53da93791a9c843ede0ae77ab1d12b6c1ebffc4712120ca14a14c",
+    "platform": "linux/arm64",
+    "sizeBytes": 673683451,
+    "host": "darwin/arm64",
+    "emulated": false,
+    "lockSha256": "b4cb15c5bf6fc4e68b9e3a7d617fc6ad81302ce35c3466cd70ba8f5626de4e3e",
+    "sourceSha256": {
+      "instrument-discovery/vocabulary.json": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+      "yamnet-comparator/Dockerfile": "f445e15af270a6104581173338cbeea73936bed3e558bfeff25e05718eb6a24b",
+      "yamnet-comparator/backend.py": "29bc8aedb22448407112886a24c5b8810512adf0d87743e5d78b2471f7e1d5a8",
+      "yamnet-comparator/cli.py": "04ed09cedf4e2f4abd5a5a88656df582975976bb08ed562788c0a7ca1fd24b4e",
+      "yamnet-comparator/constants.py": "ade425d97df99f89dba8a4b97431206542fd9162c1a819712bedb4028f0c6f35",
+      "yamnet-comparator/contract.py": "1e909097b01a383a187eb6db328276abada4215b18add056c07192ef66b2eec1",
+      "yamnet-comparator/download_model.py": "7fea299940051c5ab094aaa89f8f8ad993872e7d0f7cb85dd50787682e2f1c35",
+      "yamnet-comparator/mapping.json": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318"
+    }
+  },
+  "evaluator": {
+    "path": "scripts/eval-yamnet-controls.mts",
+    "sha256": "c41ecd6c6acb0e8e2ab3eba1edd614ad52792ed9322291bff49555f12d12d055",
+    "sourcePins": {
+      "comparatorEvaluator": {
+        "path": "scripts/eval-yamnet-comparator.mts",
+        "sha256": "9c581a3f913bcce2738d943668ca7790389bb532d6ad1a4f887d50fc2de429c4"
+      },
+      "controlManifestLibrary": {
+        "path": "scripts/lib/instrument-control-corpus.mts",
+        "sha256": "a18e185f741adbc3aea3e786587e544c4ba83b540f96ba652255f28b28b92fcd"
+      },
+      "controlHydrator": {
+        "path": "scripts/hydrate-instrument-controls.mts",
+        "sha256": "6b7f3cd1bfc7501d24c72951dd4c66b1e53e7f379466169a2d232d3b2c3bdee9"
+      },
+      "analysisConfig": {
+        "path": "audio-analysis/config.ts",
+        "sha256": "cae402eab305539fb08a16ab048a0e56b1bb755b1ab5d9a1db01b20bc5733344"
+      },
+      "analysisDecoder": {
+        "path": "audio-analysis/decoder.ts",
+        "sha256": "9f582859b7219bf43b7d84923814b26ceb36f04c514154c8c1dc1e0709736b29"
+      },
+      "discoveryWindowPolicy": {
+        "path": "audio-analysis/discovery.ts",
+        "sha256": "c85db5f3ad0cec25ad5d4f17ae077a276b15a4c90192619a463a8ac4faa11f05"
+      }
+    },
+    "ffmpegVersion": "8.1.2",
+    "ffprobeVersion": "8.1.2",
+    "analysisSampleRate": 22050,
+    "maximumSourceDurationSeconds": 120
+  },
+  "summary": {
+    "controls": 8,
+    "eligibleSpecificPositives": 6,
+    "unsupportedSpecificPositives": 2,
+    "top1SpecificPositives": 4,
+    "top3SpecificPositives": 6,
+    "top5SpecificPositives": 6,
+    "top10SpecificPositives": 6,
+    "meanReciprocalRankBasisPoints": 8056,
+    "candidateNegativeAnnotations": 278,
+    "thresholdSweep": [
+      {
+        "threshold": 0.05,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 32,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.1,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 21,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.15,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 21,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.2,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 18,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.25,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 11,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.3,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 8,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.35,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 5,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.4,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 6,
+        "candidateNegativeAlerts": 5,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.45,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 5,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.5,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 4,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.55,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 3,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.6,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 3,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.65,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 3,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.7,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 3,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.75,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 3,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.8,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 3,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.85,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 5,
+        "candidateNegativeAlerts": 1,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.9,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 4,
+        "candidateNegativeAlerts": 0,
+        "precisionClaim": "none-review-pending"
+      },
+      {
+        "threshold": 0.95,
+        "eligibleSpecificPositives": 6,
+        "specificPositiveHits": 3,
+        "candidateNegativeAlerts": 0,
+        "precisionClaim": "none-review-pending"
+      }
+    ],
+    "totalLoadMs": 3220,
+    "totalInferenceMs": 280,
+    "totalComparatorMs": 3577
+  },
+  "byFamily": {
+    "brass": {
+      "controls": 4,
+      "eligibleSpecificPositives": 3,
+      "unsupportedSpecificPositives": 1,
+      "top1SpecificPositives": 1,
+      "top3SpecificPositives": 3,
+      "top5SpecificPositives": 3,
+      "top10SpecificPositives": 3,
+      "meanReciprocalRankBasisPoints": 6111,
+      "candidateNegativeAnnotations": 137,
+      "thresholdSweep": [
+        {
+          "threshold": 0.05,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 15,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.1,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 9,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.15,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 9,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.2,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 7,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.25,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 5,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.3,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 5,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.35,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 3,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.4,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 3,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.45,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 3,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.5,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.55,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.6,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.65,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.7,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.75,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.8,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.85,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 0,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.9,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 1,
+          "candidateNegativeAlerts": 0,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.95,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 1,
+          "candidateNegativeAlerts": 0,
+          "precisionClaim": "none-review-pending"
+        }
+      ],
+      "totalLoadMs": 1691,
+      "totalInferenceMs": 140,
+      "totalComparatorMs": 1869
+    },
+    "woodwind": {
+      "controls": 4,
+      "eligibleSpecificPositives": 3,
+      "unsupportedSpecificPositives": 1,
+      "top1SpecificPositives": 3,
+      "top3SpecificPositives": 3,
+      "top5SpecificPositives": 3,
+      "top10SpecificPositives": 3,
+      "meanReciprocalRankBasisPoints": 10000,
+      "candidateNegativeAnnotations": 141,
+      "thresholdSweep": [
+        {
+          "threshold": 0.05,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 17,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.1,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 12,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.15,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 12,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.2,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 11,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.25,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 6,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.3,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 3,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.35,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.4,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.45,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.5,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.55,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.6,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.65,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.7,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.75,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.8,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 2,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.85,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 1,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.9,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 3,
+          "candidateNegativeAlerts": 0,
+          "precisionClaim": "none-review-pending"
+        },
+        {
+          "threshold": 0.95,
+          "eligibleSpecificPositives": 3,
+          "specificPositiveHits": 2,
+          "candidateNegativeAlerts": 0,
+          "precisionClaim": "none-review-pending"
+        }
+      ],
+      "totalLoadMs": 1529,
+      "totalInferenceMs": 140,
+      "totalComparatorMs": 1708
+    }
+  },
+  "observations": [
+    {
+      "id": "flute-an1",
+      "instrument": "flute",
+      "family": "woodwind",
+      "positiveIds": [
+        "flute"
+      ],
+      "sourceBytes": 1063644,
+      "sourceSha256": "bddb80b91627c35f8921924628de86709d239088cd6cc5199cff12c575b7d1e0",
+      "sourceDurationSeconds": 57.328005,
+      "declaredDurationSeconds": 57.328005,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 357,
+      "inferenceMs": 35,
+      "timingMs": 402,
+      "trackScores": {
+        "voice": 0.00034152,
+        "strings": 0.00384885,
+        "violin": 0.00410537,
+        "cello": 0.00020697,
+        "double-bass": 0.00002519,
+        "acoustic-guitar": 0.0000534,
+        "electric-guitar": 0.00004326,
+        "bass-guitar": 0.00000127,
+        "harp": 0.00006994,
+        "banjo": 0.00000301,
+        "mandolin": 0.00041537,
+        "brass": 0.00560786,
+        "trumpet": 0.00592757,
+        "trombone": 0.00002788,
+        "horn": 0.00002583,
+        "saxophone": 0.0009222,
+        "clarinet": 0.08489706,
+        "flute": 0.96714195,
+        "piano": 0.0023483,
+        "electric-piano": 0.00056116,
+        "organ": 0.00023671,
+        "harpsichord": 0.00033059,
+        "synthesizer": 0.00018735,
+        "sampler": 0.00006094,
+        "drum-machine": 7e-8,
+        "drum-kit": 0.00000999,
+        "percussion": 0.00036948,
+        "timpani": 0,
+        "mallet-percussion": 0.00007735,
+        "vibraphone": 7e-7,
+        "bell": 0.0001285,
+        "accordion": 0.00011043,
+        "harmonica": 0.00213965,
+        "sitar": 0.00000298,
+        "tabla": 0.00000142,
+        "steelpan": 1.7e-7
+      },
+      "positives": [
+        {
+          "id": "flute",
+          "state": "eligible",
+          "score": 0.96714195,
+          "rank": 1
+        }
+      ],
+      "specificPositive": {
+        "id": "flute",
+        "state": "eligible",
+        "score": 0.96714195,
+        "rank": 1
+      },
+      "candidateNegativeCount": 35,
+      "topCandidateNegatives": [
+        {
+          "id": "clarinet",
+          "score": 0.08489706
+        },
+        {
+          "id": "trumpet",
+          "score": 0.00592757
+        },
+        {
+          "id": "brass",
+          "score": 0.00560786
+        },
+        {
+          "id": "violin",
+          "score": 0.00410537
+        },
+        {
+          "id": "strings",
+          "score": 0.00384885
+        },
+        {
+          "id": "piano",
+          "score": 0.0023483
+        },
+        {
+          "id": "harmonica",
+          "score": 0.00213965
+        },
+        {
+          "id": "saxophone",
+          "score": 0.0009222
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00056116
+        },
+        {
+          "id": "mandolin",
+          "score": 0.00041537
+        },
+        {
+          "id": "percussion",
+          "score": 0.00036948
+        },
+        {
+          "id": "voice",
+          "score": 0.00034152
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "flute",
+          "score": 0.96714195
+        },
+        {
+          "id": "clarinet",
+          "score": 0.08489706
+        },
+        {
+          "id": "trumpet",
+          "score": 0.00592757
+        },
+        {
+          "id": "brass",
+          "score": 0.00560786
+        },
+        {
+          "id": "violin",
+          "score": 0.00410537
+        },
+        {
+          "id": "strings",
+          "score": 0.00384885
+        },
+        {
+          "id": "piano",
+          "score": 0.0023483
+        },
+        {
+          "id": "harmonica",
+          "score": 0.00213965
+        },
+        {
+          "id": "saxophone",
+          "score": 0.0009222
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00056116
+        },
+        {
+          "id": "mandolin",
+          "score": 0.00041537
+        },
+        {
+          "id": "percussion",
+          "score": 0.00036948
+        }
+      ]
+    },
+    {
+      "id": "oboe-ba1",
+      "instrument": "oboe",
+      "family": "woodwind",
+      "positiveIds": [
+        "oboe"
+      ],
+      "sourceBytes": 791847,
+      "sourceSha256": "e0def2737a77dea90e237e41ab43012e5cb461b126df5909c55e7c73ad7b0ef7",
+      "sourceDurationSeconds": 44.880998,
+      "declaredDurationSeconds": 44.880998,
+      "analyzedSeconds": 44.881,
+      "windowsAnalyzed": 3,
+      "loadMs": 429,
+      "inferenceMs": 35,
+      "timingMs": 474,
+      "trackScores": {
+        "voice": 0.00222846,
+        "strings": 0.02411419,
+        "violin": 0.03149167,
+        "cello": 0.00042046,
+        "double-bass": 0.00007308,
+        "acoustic-guitar": 0.00013372,
+        "electric-guitar": 0.00039658,
+        "bass-guitar": 0.00001035,
+        "harp": 0.0000137,
+        "banjo": 0.00017055,
+        "mandolin": 0.00054027,
+        "brass": 0.81025529,
+        "trumpet": 0.87484505,
+        "trombone": 0.02567235,
+        "horn": 0.01040224,
+        "saxophone": 0.06501755,
+        "clarinet": 0.24784004,
+        "flute": 0.07366035,
+        "piano": 0.00497413,
+        "electric-piano": 0.00170938,
+        "organ": 0.00030706,
+        "harpsichord": 0.0004257,
+        "synthesizer": 0.00245173,
+        "sampler": 0.00115776,
+        "drum-machine": 0.0000131,
+        "drum-kit": 0.00041405,
+        "percussion": 0.0028112,
+        "timpani": 0.0000011,
+        "mallet-percussion": 0.00001553,
+        "vibraphone": 9e-7,
+        "bell": 0.00167965,
+        "accordion": 0.02430286,
+        "harmonica": 0.03521892,
+        "sitar": 0.00005979,
+        "tabla": 0.0000016,
+        "steelpan": 1.8e-7
+      },
+      "positives": [
+        {
+          "id": "oboe",
+          "state": "unsupported",
+          "score": null,
+          "rank": null
+        }
+      ],
+      "specificPositive": {
+        "id": "oboe",
+        "state": "unsupported",
+        "score": null,
+        "rank": null
+      },
+      "candidateNegativeCount": 36,
+      "topCandidateNegatives": [
+        {
+          "id": "trumpet",
+          "score": 0.87484505
+        },
+        {
+          "id": "brass",
+          "score": 0.81025529
+        },
+        {
+          "id": "clarinet",
+          "score": 0.24784004
+        },
+        {
+          "id": "flute",
+          "score": 0.07366035
+        },
+        {
+          "id": "saxophone",
+          "score": 0.06501755
+        },
+        {
+          "id": "harmonica",
+          "score": 0.03521892
+        },
+        {
+          "id": "violin",
+          "score": 0.03149167
+        },
+        {
+          "id": "trombone",
+          "score": 0.02567235
+        },
+        {
+          "id": "accordion",
+          "score": 0.02430286
+        },
+        {
+          "id": "strings",
+          "score": 0.02411419
+        },
+        {
+          "id": "horn",
+          "score": 0.01040224
+        },
+        {
+          "id": "piano",
+          "score": 0.00497413
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "trumpet",
+          "score": 0.87484505
+        },
+        {
+          "id": "brass",
+          "score": 0.81025529
+        },
+        {
+          "id": "clarinet",
+          "score": 0.24784004
+        },
+        {
+          "id": "flute",
+          "score": 0.07366035
+        },
+        {
+          "id": "saxophone",
+          "score": 0.06501755
+        },
+        {
+          "id": "harmonica",
+          "score": 0.03521892
+        },
+        {
+          "id": "violin",
+          "score": 0.03149167
+        },
+        {
+          "id": "trombone",
+          "score": 0.02567235
+        },
+        {
+          "id": "accordion",
+          "score": 0.02430286
+        },
+        {
+          "id": "strings",
+          "score": 0.02411419
+        },
+        {
+          "id": "horn",
+          "score": 0.01040224
+        },
+        {
+          "id": "piano",
+          "score": 0.00497413
+        }
+      ]
+    },
+    {
+      "id": "clarinet-cr1",
+      "instrument": "clarinet",
+      "family": "woodwind",
+      "positiveIds": [
+        "clarinet"
+      ],
+      "sourceBytes": 888017,
+      "sourceSha256": "aa797937016741e79e9a6ca052fd7513e4b2c1745f7210e6ff2744f43e59d371",
+      "sourceDurationSeconds": 48.5,
+      "declaredDurationSeconds": 48.5,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 358,
+      "inferenceMs": 35,
+      "timingMs": 402,
+      "trackScores": {
+        "voice": 0.00073256,
+        "strings": 0.21431455,
+        "violin": 0.23918245,
+        "cello": 0.01628332,
+        "double-bass": 0.00549797,
+        "acoustic-guitar": 0.00038898,
+        "electric-guitar": 0.00056932,
+        "bass-guitar": 0.00006134,
+        "harp": 0.00015011,
+        "banjo": 0.0000967,
+        "mandolin": 0.00143947,
+        "brass": 0.16318898,
+        "trumpet": 0.04365027,
+        "trombone": 0.00450261,
+        "horn": 0.00704841,
+        "saxophone": 0.33213479,
+        "clarinet": 0.95488948,
+        "flute": 0.26361885,
+        "piano": 0.01685355,
+        "electric-piano": 0.00294471,
+        "organ": 0.00068653,
+        "harpsichord": 0.00179601,
+        "synthesizer": 0.00391776,
+        "sampler": 0.00126724,
+        "drum-machine": 0.00000284,
+        "drum-kit": 0.00005604,
+        "percussion": 0.00129134,
+        "timpani": 3.7e-7,
+        "mallet-percussion": 0.00010996,
+        "vibraphone": 0.00000361,
+        "bell": 0.00038777,
+        "accordion": 0.00436011,
+        "harmonica": 0.02757988,
+        "sitar": 0.00009135,
+        "tabla": 0.00000122,
+        "steelpan": 0.00000109
+      },
+      "positives": [
+        {
+          "id": "clarinet",
+          "state": "eligible",
+          "score": 0.95488948,
+          "rank": 1
+        }
+      ],
+      "specificPositive": {
+        "id": "clarinet",
+        "state": "eligible",
+        "score": 0.95488948,
+        "rank": 1
+      },
+      "candidateNegativeCount": 35,
+      "topCandidateNegatives": [
+        {
+          "id": "saxophone",
+          "score": 0.33213479
+        },
+        {
+          "id": "flute",
+          "score": 0.26361885
+        },
+        {
+          "id": "violin",
+          "score": 0.23918245
+        },
+        {
+          "id": "strings",
+          "score": 0.21431455
+        },
+        {
+          "id": "brass",
+          "score": 0.16318898
+        },
+        {
+          "id": "trumpet",
+          "score": 0.04365027
+        },
+        {
+          "id": "harmonica",
+          "score": 0.02757988
+        },
+        {
+          "id": "piano",
+          "score": 0.01685355
+        },
+        {
+          "id": "cello",
+          "score": 0.01628332
+        },
+        {
+          "id": "horn",
+          "score": 0.00704841
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00549797
+        },
+        {
+          "id": "trombone",
+          "score": 0.00450261
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "clarinet",
+          "score": 0.95488948
+        },
+        {
+          "id": "saxophone",
+          "score": 0.33213479
+        },
+        {
+          "id": "flute",
+          "score": 0.26361885
+        },
+        {
+          "id": "violin",
+          "score": 0.23918245
+        },
+        {
+          "id": "strings",
+          "score": 0.21431455
+        },
+        {
+          "id": "brass",
+          "score": 0.16318898
+        },
+        {
+          "id": "trumpet",
+          "score": 0.04365027
+        },
+        {
+          "id": "harmonica",
+          "score": 0.02757988
+        },
+        {
+          "id": "piano",
+          "score": 0.01685355
+        },
+        {
+          "id": "cello",
+          "score": 0.01628332
+        },
+        {
+          "id": "horn",
+          "score": 0.00704841
+        },
+        {
+          "id": "double-bass",
+          "score": 0.00549797
+        }
+      ]
+    },
+    {
+      "id": "trumpet-an1",
+      "instrument": "trumpet",
+      "family": "brass",
+      "positiveIds": [
+        "brass",
+        "trumpet"
+      ],
+      "sourceBytes": 1139897,
+      "sourceSha256": "4c92fdc32afa92bfc4628ec174e867efe6ac307aed456f48f99bf5331c5223ff",
+      "sourceDurationSeconds": 57.328005,
+      "declaredDurationSeconds": 57.328005,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 431,
+      "inferenceMs": 35,
+      "timingMs": 476,
+      "trackScores": {
+        "voice": 0.00003244,
+        "strings": 0.00448345,
+        "violin": 0.00347121,
+        "cello": 0.00029837,
+        "double-bass": 0.00010651,
+        "acoustic-guitar": 0.00009698,
+        "electric-guitar": 0.00015221,
+        "bass-guitar": 0.00001399,
+        "harp": 0.00001715,
+        "banjo": 0.00004913,
+        "mandolin": 0.00066632,
+        "brass": 0.95253646,
+        "trumpet": 0.96957642,
+        "trombone": 0.09339338,
+        "horn": 0.02925083,
+        "saxophone": 0.01286573,
+        "clarinet": 0.01662151,
+        "flute": 0.05865482,
+        "piano": 0.01248825,
+        "electric-piano": 0.00483788,
+        "organ": 0.00021695,
+        "harpsichord": 0.00071356,
+        "synthesizer": 0.00837092,
+        "sampler": 0.00392331,
+        "drum-machine": 0.00012614,
+        "drum-kit": 0.00076729,
+        "percussion": 0.00525265,
+        "timpani": 0.00000261,
+        "mallet-percussion": 0.00003132,
+        "vibraphone": 0.00000165,
+        "bell": 0.00095896,
+        "accordion": 0.00033268,
+        "harmonica": 0.00179258,
+        "sitar": 0.00000318,
+        "tabla": 1.2e-7,
+        "steelpan": 3.8e-7
+      },
+      "positives": [
+        {
+          "id": "brass",
+          "state": "eligible",
+          "score": 0.95253646,
+          "rank": 2
+        },
+        {
+          "id": "trumpet",
+          "state": "eligible",
+          "score": 0.96957642,
+          "rank": 1
+        }
+      ],
+      "specificPositive": {
+        "id": "trumpet",
+        "state": "eligible",
+        "score": 0.96957642,
+        "rank": 1
+      },
+      "candidateNegativeCount": 34,
+      "topCandidateNegatives": [
+        {
+          "id": "trombone",
+          "score": 0.09339338
+        },
+        {
+          "id": "flute",
+          "score": 0.05865482
+        },
+        {
+          "id": "horn",
+          "score": 0.02925083
+        },
+        {
+          "id": "clarinet",
+          "score": 0.01662151
+        },
+        {
+          "id": "saxophone",
+          "score": 0.01286573
+        },
+        {
+          "id": "piano",
+          "score": 0.01248825
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00837092
+        },
+        {
+          "id": "percussion",
+          "score": 0.00525265
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00483788
+        },
+        {
+          "id": "strings",
+          "score": 0.00448345
+        },
+        {
+          "id": "sampler",
+          "score": 0.00392331
+        },
+        {
+          "id": "violin",
+          "score": 0.00347121
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "trumpet",
+          "score": 0.96957642
+        },
+        {
+          "id": "brass",
+          "score": 0.95253646
+        },
+        {
+          "id": "trombone",
+          "score": 0.09339338
+        },
+        {
+          "id": "flute",
+          "score": 0.05865482
+        },
+        {
+          "id": "horn",
+          "score": 0.02925083
+        },
+        {
+          "id": "clarinet",
+          "score": 0.01662151
+        },
+        {
+          "id": "saxophone",
+          "score": 0.01286573
+        },
+        {
+          "id": "piano",
+          "score": 0.01248825
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00837092
+        },
+        {
+          "id": "percussion",
+          "score": 0.00525265
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00483788
+        },
+        {
+          "id": "strings",
+          "score": 0.00448345
+        }
+      ]
+    },
+    {
+      "id": "horn-cr1",
+      "instrument": "horn",
+      "family": "brass",
+      "positiveIds": [
+        "brass",
+        "horn"
+      ],
+      "sourceBytes": 875571,
+      "sourceSha256": "cfcd66bb8336cc59f685a83a99c3a881b5152e6c991826eee7ef7626d8ef030f",
+      "sourceDurationSeconds": 48.5,
+      "declaredDurationSeconds": 48.5,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 419,
+      "inferenceMs": 35,
+      "timingMs": 463,
+      "trackScores": {
+        "voice": 0.00155373,
+        "strings": 0.01099297,
+        "violin": 0.0056494,
+        "cello": 0.0097223,
+        "double-bass": 0.012755,
+        "acoustic-guitar": 0.00228561,
+        "electric-guitar": 0.00524887,
+        "bass-guitar": 0.00300493,
+        "harp": 0.00007683,
+        "banjo": 0.00018059,
+        "mandolin": 0.00143741,
+        "brass": 0.88778929,
+        "trumpet": 0.34562179,
+        "trombone": 0.82370281,
+        "horn": 0.40107925,
+        "saxophone": 0.03601153,
+        "clarinet": 0.0209772,
+        "flute": 0.01913907,
+        "piano": 0.0185217,
+        "electric-piano": 0.01066583,
+        "organ": 0.00085668,
+        "harpsichord": 0.00175853,
+        "synthesizer": 0.03777315,
+        "sampler": 0.01586203,
+        "drum-machine": 0.00041104,
+        "drum-kit": 0.00111546,
+        "percussion": 0.00198839,
+        "timpani": 0.00020879,
+        "mallet-percussion": 0.00003077,
+        "vibraphone": 0.00000346,
+        "bell": 0.00063592,
+        "accordion": 0.00386145,
+        "harmonica": 0.00374808,
+        "sitar": 0.00045891,
+        "tabla": 0.00001836,
+        "steelpan": 4.2e-7
+      },
+      "positives": [
+        {
+          "id": "brass",
+          "state": "eligible",
+          "score": 0.88778929,
+          "rank": 1
+        },
+        {
+          "id": "horn",
+          "state": "eligible",
+          "score": 0.40107925,
+          "rank": 3
+        }
+      ],
+      "specificPositive": {
+        "id": "horn",
+        "state": "eligible",
+        "score": 0.40107925,
+        "rank": 3
+      },
+      "candidateNegativeCount": 34,
+      "topCandidateNegatives": [
+        {
+          "id": "trombone",
+          "score": 0.82370281
+        },
+        {
+          "id": "trumpet",
+          "score": 0.34562179
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.03777315
+        },
+        {
+          "id": "saxophone",
+          "score": 0.03601153
+        },
+        {
+          "id": "clarinet",
+          "score": 0.0209772
+        },
+        {
+          "id": "flute",
+          "score": 0.01913907
+        },
+        {
+          "id": "piano",
+          "score": 0.0185217
+        },
+        {
+          "id": "sampler",
+          "score": 0.01586203
+        },
+        {
+          "id": "double-bass",
+          "score": 0.012755
+        },
+        {
+          "id": "strings",
+          "score": 0.01099297
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.01066583
+        },
+        {
+          "id": "cello",
+          "score": 0.0097223
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "brass",
+          "score": 0.88778929
+        },
+        {
+          "id": "trombone",
+          "score": 0.82370281
+        },
+        {
+          "id": "horn",
+          "score": 0.40107925
+        },
+        {
+          "id": "trumpet",
+          "score": 0.34562179
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.03777315
+        },
+        {
+          "id": "saxophone",
+          "score": 0.03601153
+        },
+        {
+          "id": "clarinet",
+          "score": 0.0209772
+        },
+        {
+          "id": "flute",
+          "score": 0.01913907
+        },
+        {
+          "id": "piano",
+          "score": 0.0185217
+        },
+        {
+          "id": "sampler",
+          "score": 0.01586203
+        },
+        {
+          "id": "double-bass",
+          "score": 0.012755
+        },
+        {
+          "id": "strings",
+          "score": 0.01099297
+        }
+      ]
+    },
+    {
+      "id": "trombone-ba1",
+      "instrument": "trombone",
+      "family": "brass",
+      "positiveIds": [
+        "brass",
+        "trombone"
+      ],
+      "sourceBytes": 901952,
+      "sourceSha256": "04934747ac767c1851c6be0fe79fbeb16328f9b2c2f5351a2b998c355da6f5c0",
+      "sourceDurationSeconds": 44.880998,
+      "declaredDurationSeconds": 44.880998,
+      "analyzedSeconds": 44.881,
+      "windowsAnalyzed": 3,
+      "loadMs": 417,
+      "inferenceMs": 35,
+      "timingMs": 461,
+      "trackScores": {
+        "voice": 0.00003187,
+        "strings": 0.00132691,
+        "violin": 0.0001689,
+        "cello": 0.00195821,
+        "double-bass": 0.0019956,
+        "acoustic-guitar": 0.00005961,
+        "electric-guitar": 0.00015431,
+        "bass-guitar": 0.00011324,
+        "harp": 4.2e-7,
+        "banjo": 3.6e-7,
+        "mandolin": 0.00001653,
+        "brass": 0.94242418,
+        "trumpet": 0.06525761,
+        "trombone": 0.86730021,
+        "horn": 0.3074732,
+        "saxophone": 0.00823963,
+        "clarinet": 0.00116038,
+        "flute": 0.00011817,
+        "piano": 0.0022939,
+        "electric-piano": 0.00068138,
+        "organ": 0.00031536,
+        "harpsichord": 0.00026122,
+        "synthesizer": 0.00510842,
+        "sampler": 0.00191878,
+        "drum-machine": 0.00000113,
+        "drum-kit": 0.00001858,
+        "percussion": 0.0001641,
+        "timpani": 9.1e-7,
+        "mallet-percussion": 4e-8,
+        "vibraphone": 1e-8,
+        "bell": 0.00003252,
+        "accordion": 0.00026043,
+        "harmonica": 0.00003299,
+        "sitar": 0.00000436,
+        "tabla": 2e-8,
+        "steelpan": 0
+      },
+      "positives": [
+        {
+          "id": "brass",
+          "state": "eligible",
+          "score": 0.94242418,
+          "rank": 1
+        },
+        {
+          "id": "trombone",
+          "state": "eligible",
+          "score": 0.86730021,
+          "rank": 2
+        }
+      ],
+      "specificPositive": {
+        "id": "trombone",
+        "state": "eligible",
+        "score": 0.86730021,
+        "rank": 2
+      },
+      "candidateNegativeCount": 34,
+      "topCandidateNegatives": [
+        {
+          "id": "horn",
+          "score": 0.3074732
+        },
+        {
+          "id": "trumpet",
+          "score": 0.06525761
+        },
+        {
+          "id": "saxophone",
+          "score": 0.00823963
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00510842
+        },
+        {
+          "id": "piano",
+          "score": 0.0022939
+        },
+        {
+          "id": "double-bass",
+          "score": 0.0019956
+        },
+        {
+          "id": "cello",
+          "score": 0.00195821
+        },
+        {
+          "id": "sampler",
+          "score": 0.00191878
+        },
+        {
+          "id": "strings",
+          "score": 0.00132691
+        },
+        {
+          "id": "clarinet",
+          "score": 0.00116038
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.00068138
+        },
+        {
+          "id": "organ",
+          "score": 0.00031536
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "brass",
+          "score": 0.94242418
+        },
+        {
+          "id": "trombone",
+          "score": 0.86730021
+        },
+        {
+          "id": "horn",
+          "score": 0.3074732
+        },
+        {
+          "id": "trumpet",
+          "score": 0.06525761
+        },
+        {
+          "id": "saxophone",
+          "score": 0.00823963
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.00510842
+        },
+        {
+          "id": "piano",
+          "score": 0.0022939
+        },
+        {
+          "id": "double-bass",
+          "score": 0.0019956
+        },
+        {
+          "id": "cello",
+          "score": 0.00195821
+        },
+        {
+          "id": "sampler",
+          "score": 0.00191878
+        },
+        {
+          "id": "strings",
+          "score": 0.00132691
+        },
+        {
+          "id": "clarinet",
+          "score": 0.00116038
+        }
+      ]
+    },
+    {
+      "id": "saxophone-cr1",
+      "instrument": "saxophone",
+      "family": "woodwind",
+      "positiveIds": [
+        "saxophone"
+      ],
+      "sourceBytes": 889719,
+      "sourceSha256": "77a481093761682d392e6eb839aa43a4b8d93e2ad20477718c524a159c78951a",
+      "sourceDurationSeconds": 48.5,
+      "declaredDurationSeconds": 48.5,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 385,
+      "inferenceMs": 35,
+      "timingMs": 430,
+      "trackScores": {
+        "voice": 0.00413683,
+        "strings": 0.2068571,
+        "violin": 0.22105442,
+        "cello": 0.01115277,
+        "double-bass": 0.0047987,
+        "acoustic-guitar": 0.00141253,
+        "electric-guitar": 0.00177764,
+        "bass-guitar": 0.00055402,
+        "harp": 0.00011121,
+        "banjo": 0.00011828,
+        "mandolin": 0.00200199,
+        "brass": 0.28332623,
+        "trumpet": 0.08461254,
+        "trombone": 0.02350606,
+        "horn": 0.01193563,
+        "saxophone": 0.9070458,
+        "clarinet": 0.25567163,
+        "flute": 0.0852573,
+        "piano": 0.03196687,
+        "electric-piano": 0.0101141,
+        "organ": 0.00067317,
+        "harpsichord": 0.00122188,
+        "synthesizer": 0.01007729,
+        "sampler": 0.00433123,
+        "drum-machine": 0.00005555,
+        "drum-kit": 0.00070834,
+        "percussion": 0.00296405,
+        "timpani": 0.0000013,
+        "mallet-percussion": 0.0000725,
+        "vibraphone": 0.00000233,
+        "bell": 0.000171,
+        "accordion": 0.02903364,
+        "harmonica": 0.02237697,
+        "sitar": 0.00010286,
+        "tabla": 0.00004887,
+        "steelpan": 6.8e-7
+      },
+      "positives": [
+        {
+          "id": "saxophone",
+          "state": "eligible",
+          "score": 0.9070458,
+          "rank": 1
+        }
+      ],
+      "specificPositive": {
+        "id": "saxophone",
+        "state": "eligible",
+        "score": 0.9070458,
+        "rank": 1
+      },
+      "candidateNegativeCount": 35,
+      "topCandidateNegatives": [
+        {
+          "id": "brass",
+          "score": 0.28332623
+        },
+        {
+          "id": "clarinet",
+          "score": 0.25567163
+        },
+        {
+          "id": "violin",
+          "score": 0.22105442
+        },
+        {
+          "id": "strings",
+          "score": 0.2068571
+        },
+        {
+          "id": "flute",
+          "score": 0.0852573
+        },
+        {
+          "id": "trumpet",
+          "score": 0.08461254
+        },
+        {
+          "id": "piano",
+          "score": 0.03196687
+        },
+        {
+          "id": "accordion",
+          "score": 0.02903364
+        },
+        {
+          "id": "trombone",
+          "score": 0.02350606
+        },
+        {
+          "id": "harmonica",
+          "score": 0.02237697
+        },
+        {
+          "id": "horn",
+          "score": 0.01193563
+        },
+        {
+          "id": "cello",
+          "score": 0.01115277
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "saxophone",
+          "score": 0.9070458
+        },
+        {
+          "id": "brass",
+          "score": 0.28332623
+        },
+        {
+          "id": "clarinet",
+          "score": 0.25567163
+        },
+        {
+          "id": "violin",
+          "score": 0.22105442
+        },
+        {
+          "id": "strings",
+          "score": 0.2068571
+        },
+        {
+          "id": "flute",
+          "score": 0.0852573
+        },
+        {
+          "id": "trumpet",
+          "score": 0.08461254
+        },
+        {
+          "id": "piano",
+          "score": 0.03196687
+        },
+        {
+          "id": "accordion",
+          "score": 0.02903364
+        },
+        {
+          "id": "trombone",
+          "score": 0.02350606
+        },
+        {
+          "id": "harmonica",
+          "score": 0.02237697
+        },
+        {
+          "id": "horn",
+          "score": 0.01193563
+        }
+      ]
+    },
+    {
+      "id": "tuba-an1",
+      "instrument": "tuba",
+      "family": "brass",
+      "positiveIds": [
+        "brass",
+        "tuba"
+      ],
+      "sourceBytes": 1131045,
+      "sourceSha256": "db6b8f063b31014d5215833b261066ce02b01975c44228f161d51645ca15c011",
+      "sourceDurationSeconds": 57.328005,
+      "declaredDurationSeconds": 57.328005,
+      "analyzedSeconds": 45,
+      "windowsAnalyzed": 3,
+      "loadMs": 424,
+      "inferenceMs": 35,
+      "timingMs": 469,
+      "trackScores": {
+        "voice": 0.00143948,
+        "strings": 0.19192512,
+        "violin": 0.02430387,
+        "cello": 0.20699105,
+        "double-bass": 0.52170038,
+        "acoustic-guitar": 0.01405902,
+        "electric-guitar": 0.01543466,
+        "bass-guitar": 0.17805842,
+        "harp": 0.00008762,
+        "banjo": 0.00028861,
+        "mandolin": 0.00059344,
+        "brass": 0.84585832,
+        "trumpet": 0.06664505,
+        "trombone": 0.45824557,
+        "horn": 0.22494514,
+        "saxophone": 0.08727531,
+        "clarinet": 0.0029355,
+        "flute": 0.00055987,
+        "piano": 0.06035464,
+        "electric-piano": 0.03631365,
+        "organ": 0.00158985,
+        "harpsichord": 0.00129211,
+        "synthesizer": 0.02695479,
+        "sampler": 0.00625283,
+        "drum-machine": 0.00015967,
+        "drum-kit": 0.0016804,
+        "percussion": 0.00943672,
+        "timpani": 0.00044362,
+        "mallet-percussion": 0.00006062,
+        "vibraphone": 0.00001755,
+        "bell": 0.00028577,
+        "accordion": 0.00189482,
+        "harmonica": 0.00013605,
+        "sitar": 0.00004831,
+        "tabla": 0.00010118,
+        "steelpan": 4.4e-7
+      },
+      "positives": [
+        {
+          "id": "brass",
+          "state": "eligible",
+          "score": 0.84585832,
+          "rank": 1
+        },
+        {
+          "id": "tuba",
+          "state": "unsupported",
+          "score": null,
+          "rank": null
+        }
+      ],
+      "specificPositive": {
+        "id": "tuba",
+        "state": "unsupported",
+        "score": null,
+        "rank": null
+      },
+      "candidateNegativeCount": 35,
+      "topCandidateNegatives": [
+        {
+          "id": "double-bass",
+          "score": 0.52170038
+        },
+        {
+          "id": "trombone",
+          "score": 0.45824557
+        },
+        {
+          "id": "horn",
+          "score": 0.22494514
+        },
+        {
+          "id": "cello",
+          "score": 0.20699105
+        },
+        {
+          "id": "strings",
+          "score": 0.19192512
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.17805842
+        },
+        {
+          "id": "saxophone",
+          "score": 0.08727531
+        },
+        {
+          "id": "trumpet",
+          "score": 0.06664505
+        },
+        {
+          "id": "piano",
+          "score": 0.06035464
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.03631365
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.02695479
+        },
+        {
+          "id": "violin",
+          "score": 0.02430387
+        }
+      ],
+      "topMapped": [
+        {
+          "id": "brass",
+          "score": 0.84585832
+        },
+        {
+          "id": "double-bass",
+          "score": 0.52170038
+        },
+        {
+          "id": "trombone",
+          "score": 0.45824557
+        },
+        {
+          "id": "horn",
+          "score": 0.22494514
+        },
+        {
+          "id": "cello",
+          "score": 0.20699105
+        },
+        {
+          "id": "strings",
+          "score": 0.19192512
+        },
+        {
+          "id": "bass-guitar",
+          "score": 0.17805842
+        },
+        {
+          "id": "saxophone",
+          "score": 0.08727531
+        },
+        {
+          "id": "trumpet",
+          "score": 0.06664505
+        },
+        {
+          "id": "piano",
+          "score": 0.06035464
+        },
+        {
+          "id": "electric-piano",
+          "score": 0.03631365
+        },
+        {
+          "id": "synthesizer",
+          "score": 0.02695479
+        }
+      ]
+    }
+  ]
+}

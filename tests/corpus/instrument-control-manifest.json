@@ -1,0 +1,192 @@
+{
+  "$schema": "stem-splitter.instrument-control-corpus.v1",
+  "version": "choralebricks-wind-controls-v1",
+  "reviewStatus": "dataset-authored-awaiting-teacher-listening",
+  "vocabularyVersion": "classroom-instruments-v1",
+  "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+  "dataset": {
+    "name": "ChoraleBricks",
+    "version": "1.1.0",
+    "recordingType": "isolated-performed-wind-instrument-tracks",
+    "landingPage": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks",
+    "paperUrl": "https://transactions.ismir.net/articles/10.5334/tismir.252",
+    "paperDoi": "10.5334/tismir.252",
+    "zenodoConceptDoi": "10.5281/zenodo.15081740",
+    "zenodoRecordId": "20849469",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "citation": "Stefan Balke, Axel Berndt, and Meinard Mueller. ChoraleBricks: A Modular Multitrack Dataset for Wind Music Research. TISMIR 8(1), 39-54, 2025.",
+    "verifiedAt": "2026-08-09"
+  },
+  "downloadPolicy": {
+    "sourceOrigin": "https://www.audiolabs-erlangen.de",
+    "sourcePathPrefix": "/resources/MIR/2025-ChoraleBricks/",
+    "redirectStatus": 307,
+    "redirectOrigin": "https://www.audiolabs-erlangen.de",
+    "redirectPathPrefix": "/media/pages/resources/MIR/2025-ChoraleBricks/",
+    "maximumRedirects": 1,
+    "maximumBytesPerFile": 2097152,
+    "contentType": "audio/mp4",
+    "requestTimeoutMs": 30000,
+    "outputDirectory": "tests/corpus/audio/instrument-controls-v1"
+  },
+  "negativePolicy": {
+    "basis": "all-vocabulary-ids-except-positive-ids",
+    "reviewStatus": "candidate-only-awaiting-teacher-listening",
+    "precisionClaim": "none"
+  },
+  "controls": [
+    {
+      "id": "flute-an1",
+      "pieceId": "Anonymous_AusMeinesHerzensGrunde",
+      "pieceCode": "AN1",
+      "part": "soprano",
+      "instrument": "flute",
+      "trackFile": "01_fl.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Anonymous_AusMeinesHerzensGrunde/tracks/01_fl.m4a",
+      "localFile": "flute-an1.m4a",
+      "media": {
+        "bytes": 1063644,
+        "sha256": "bddb80b91627c35f8921924628de86709d239088cd6cc5199cff12c575b7d1e0",
+        "durationSeconds": 57.328005,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["flute"]
+    },
+    {
+      "id": "oboe-ba1",
+      "pieceId": "Bach_IchStehAnDeinerKrippe",
+      "pieceCode": "BA1",
+      "part": "soprano",
+      "instrument": "oboe",
+      "trackFile": "01_ob.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Bach_IchStehAnDeinerKrippe/tracks/01_ob.m4a",
+      "localFile": "oboe-ba1.m4a",
+      "media": {
+        "bytes": 791847,
+        "sha256": "e0def2737a77dea90e237e41ab43012e5cb461b126df5909c55e7c73ad7b0ef7",
+        "durationSeconds": 44.880998,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["oboe"]
+    },
+    {
+      "id": "clarinet-cr1",
+      "pieceId": "Crueger_AufAufMeinHerzMitFreuden",
+      "pieceCode": "CR1",
+      "part": "soprano",
+      "instrument": "clarinet",
+      "trackFile": "01_cl.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Crueger_AufAufMeinHerzMitFreuden/tracks/01_cl.m4a",
+      "localFile": "clarinet-cr1.m4a",
+      "media": {
+        "bytes": 888017,
+        "sha256": "aa797937016741e79e9a6ca052fd7513e4b2c1745f7210e6ff2744f43e59d371",
+        "durationSeconds": 48.5,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["clarinet"]
+    },
+    {
+      "id": "trumpet-an1",
+      "pieceId": "Anonymous_AusMeinesHerzensGrunde",
+      "pieceCode": "AN1",
+      "part": "soprano",
+      "instrument": "trumpet",
+      "trackFile": "01_tp.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Anonymous_AusMeinesHerzensGrunde/tracks/01_tp.m4a",
+      "localFile": "trumpet-an1.m4a",
+      "media": {
+        "bytes": 1139897,
+        "sha256": "4c92fdc32afa92bfc4628ec174e867efe6ac307aed456f48f99bf5331c5223ff",
+        "durationSeconds": 57.328005,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["brass", "trumpet"]
+    },
+    {
+      "id": "horn-cr1",
+      "pieceId": "Crueger_AufAufMeinHerzMitFreuden",
+      "pieceCode": "CR1",
+      "part": "tenor",
+      "instrument": "horn",
+      "trackFile": "03_fho.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Crueger_AufAufMeinHerzMitFreuden/tracks/03_fho.m4a",
+      "localFile": "horn-cr1.m4a",
+      "media": {
+        "bytes": 875571,
+        "sha256": "cfcd66bb8336cc59f685a83a99c3a881b5152e6c991826eee7ef7626d8ef030f",
+        "durationSeconds": 48.5,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["brass", "horn"]
+    },
+    {
+      "id": "trombone-ba1",
+      "pieceId": "Bach_IchStehAnDeinerKrippe",
+      "pieceCode": "BA1",
+      "part": "bass",
+      "instrument": "trombone",
+      "trackFile": "04_tb.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Bach_IchStehAnDeinerKrippe/tracks/04_tb.m4a",
+      "localFile": "trombone-ba1.m4a",
+      "media": {
+        "bytes": 901952,
+        "sha256": "04934747ac767c1851c6be0fe79fbeb16328f9b2c2f5351a2b998c355da6f5c0",
+        "durationSeconds": 44.880998,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["brass", "trombone"]
+    },
+    {
+      "id": "saxophone-cr1",
+      "pieceId": "Crueger_AufAufMeinHerzMitFreuden",
+      "pieceCode": "CR1",
+      "part": "soprano",
+      "instrument": "saxophone",
+      "trackFile": "01_as.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Crueger_AufAufMeinHerzMitFreuden/tracks/01_as.m4a",
+      "localFile": "saxophone-cr1.m4a",
+      "media": {
+        "bytes": 889719,
+        "sha256": "77a481093761682d392e6eb839aa43a4b8d93e2ad20477718c524a159c78951a",
+        "durationSeconds": 48.5,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["saxophone"]
+    },
+    {
+      "id": "tuba-an1",
+      "pieceId": "Anonymous_AusMeinesHerzensGrunde",
+      "pieceCode": "AN1",
+      "part": "bass",
+      "instrument": "tuba",
+      "trackFile": "04_tba.m4a",
+      "sourceUrl": "https://www.audiolabs-erlangen.de/resources/MIR/2025-ChoraleBricks/Anonymous_AusMeinesHerzensGrunde/tracks/04_tba.m4a",
+      "localFile": "tuba-an1.m4a",
+      "media": {
+        "bytes": 1131045,
+        "sha256": "db6b8f063b31014d5215833b261066ce02b01975c44228f161d51645ca15c011",
+        "durationSeconds": 57.328005,
+        "sampleRate": 44100,
+        "channels": 1,
+        "codec": "aac"
+      },
+      "positiveIds": ["brass", "tuba"]
+    }
+  ]
+}
