@@ -42,6 +42,8 @@
     "finalize:instrument-review": "node --experimental-strip-types scripts/finalize-instrument-evaluation-review.mts",
     "prepare:nsynth-review": "node --experimental-strip-types scripts/prepare-nsynth-family-control-review.mts",
     "finalize:nsynth-review": "node --experimental-strip-types scripts/finalize-nsynth-family-control-review.mts",
+    "prepare:tinysol-review": "node --experimental-strip-types scripts/prepare-tinysol-exact-control-review.mts",
+    "finalize:tinysol-review": "node --experimental-strip-types scripts/finalize-tinysol-exact-control-review.mts",
     "prepare:yamnet-candidate": "node --experimental-strip-types scripts/prepare-yamnet-candidate-source.mts",
     "capture:yamnet-candidate": "node --experimental-strip-types scripts/capture-yamnet-instrument-candidate.mts",
     "export:audio-listening": "tsc -p tsconfig.audio-pipeline.json --noEmit && node --experimental-strip-types scripts/export-audio-pipeline-listening-bundle.mts",
