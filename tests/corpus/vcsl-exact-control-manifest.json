@@ -1,0 +1,151 @@
+{
+  "$schema": "stem-splitter.vcsl-exact-control-corpus.v1",
+  "version": "vcsl-c1ea7bc-exact-controls-v1",
+  "reviewStatus": "repository-authored-exact-labels-awaiting-teacher-listening",
+  "reviewVocabulary": {
+    "path": "instrument-discovery/vocabulary.json",
+    "version": "classroom-instruments-v1",
+    "sha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140"
+  },
+  "repository": {
+    "name": "Versilian Community Sample Library",
+    "shortName": "VCSL",
+    "owner": "sgossner",
+    "repositoryUrl": "https://github.com/sgossner/VCSL",
+    "commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+    "commitUrl": "https://github.com/sgossner/VCSL/commit/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+    "committedAt": "2026-01-14T20:39:38Z",
+    "treeApiUrl": "https://api.github.com/repos/sgossner/VCSL/git/trees/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e?recursive=1",
+    "treeEntryCount": 4550,
+    "treeTruncated": false,
+    "recordingType": "isolated-single-instrument-samples",
+    "license": "CC0-1.0",
+    "licenseCanonicalUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "licenseEvidence": {
+      "sourcePath": "LICENSE",
+      "url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/LICENSE",
+      "gitBlobSha1": "0e259d42c996742e9e3cba14c677129b2c1b6311",
+      "bytes": 7048,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+      "contentType": "text/plain"
+    },
+    "readmeEvidence": {
+      "sourcePath": "README.md",
+      "url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "gitBlobSha1": "655eaa2be2a415dfa526bf6e7729aa40590ac0e8",
+      "bytes": 4365,
+      "sha256": "6f7214a188f106c917d6503748485413c3e47cf56bce69f82beb9d16aa0894a9",
+      "contentType": "text/plain"
+    },
+    "citation": "Versilian Studios LLC and VCSL contributors. Versilian Community Sample Library (VCSL), repository commit c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e, committed 2026-01-14. CC0 1.0 Universal.",
+    "verifiedAt": "2026-08-10"
+  },
+  "hydration": {
+    "requestTimeoutMs": 120000,
+    "maximumResponseBytes": 1048576,
+    "outputDirectory": "tests/corpus/audio/vcsl-exact-controls-v1"
+  },
+  "selectionPolicy": {
+    "controlsPerCoverageGroup": 1,
+    "harmonica": "Hohner Special 20 in C, normal C4 sustain",
+    "pitchedPercussion": "xylophone, medium mallet, C4, ff, round robin 01, far microphone",
+    "selectionAuthority": "immutable-repository-path-and-blob",
+    "teacherMustReviewTypicality": true
+  },
+  "coverage": {
+    "filledExactPositiveGroups": ["harmonica", "pitched-percussion"],
+    "remainingExactPositiveGroups": ["traditional-instruments"]
+  },
+  "claimPolicy": {
+    "groundTruthLevel": "repository-authored-instrument-directory-and-filename",
+    "exactInstrumentClaims": "source-label-only",
+    "vocabularyPositiveClaims": "candidate-awaiting-teacher-listening",
+    "candidateNegativeClaims": "none",
+    "teacherMustReviewEveryControl": true,
+    "mixedTrackUse": "forbidden",
+    "currentEvaluationPlanUse": "forbidden",
+    "reportingPartition": "isolated-exact-control",
+    "classifierSelectionUse": "forbidden-until-reviewed-and-plan-integrated",
+    "promotionUse": "forbidden-until-reviewed-and-plan-integrated"
+  },
+  "controls": [
+    {
+      "id": "vcsl-harmonica-special20-c4-normal",
+      "sourceInstrument": "Harmonica",
+      "vocabularyId": "harmonica",
+      "coverageGroup": "harmonica",
+      "sourcePath": "Aerophones/Free Aerophones/Harmonica-Hohner-Special20-C/Sustains/Normal/Hohner-Special20_Normal_C4.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Aerophones/Free%20Aerophones/Harmonica-Hohner-Special20-C/Sustains/Normal/Hohner-Special20_Normal_C4.wav",
+      "gitBlobSha1": "fd3b6a0d917520b051e9ea64f5901ed195c27dc3",
+      "localFile": "vcsl-harmonica-special20-c4-normal.wav",
+      "sourceMetadata": {
+        "instrumentModel": "Hohner Special 20",
+        "instrumentKey": "C",
+        "articulation": "sustain-normal",
+        "pitch": "C4"
+      },
+      "response": {
+        "contentType": "audio/wav",
+        "contentDisposition": "attachment; filename=Aerophones/Free Aerophones/Harmonica-Hohner-Special20-C/Sustains/Normal/Hohner-Special20_Normal_C4.wav"
+      },
+      "media": {
+        "bytes": 678192,
+        "sha256": "ffb181bf9db1e30eb1b4824a9e923c6c81bd0c411143996639fe829131a47744",
+        "riffBytes": 678184,
+        "formatTag": 1,
+        "sampleRate": 44100,
+        "channels": 1,
+        "bitsPerSample": 24,
+        "byteRate": 132300,
+        "blockAlign": 3,
+        "dataBytes": 678147,
+        "frameCount": 226049,
+        "codec": "pcm_s24le",
+        "chunks": [
+          { "id": "fmt ", "bytes": 16 },
+          { "id": "data", "bytes": 678147 }
+        ]
+      }
+    },
+    {
+      "id": "vcsl-xylophone-medium-c4-ff",
+      "sourceInstrument": "Xylophone",
+      "vocabularyId": "mallet-percussion",
+      "coverageGroup": "pitched-percussion",
+      "sourcePath": "Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_C4_ff_01_far.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Idiophones/Struck%20Idiophones/Xylophone/Medium%20Mallets/Xylo_Medium_C4_ff_01_far.wav",
+      "gitBlobSha1": "af5c4ea6431fc38aa5049cd202dde9e58102e6b7",
+      "localFile": "vcsl-xylophone-medium-c4-ff.wav",
+      "sourceMetadata": {
+        "mallet": "medium",
+        "pitch": "C4",
+        "dynamic": "ff",
+        "roundRobin": 1,
+        "microphone": "far"
+      },
+      "response": {
+        "contentType": "audio/wav",
+        "contentDisposition": "attachment; filename=Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_C4_ff_01_far.wav"
+      },
+      "media": {
+        "bytes": 897126,
+        "sha256": "ef8650516f0734369c5f409f726315db13544e508f59cb82cf46f4206c10518d",
+        "riffBytes": 897118,
+        "formatTag": 1,
+        "sampleRate": 44100,
+        "channels": 2,
+        "bitsPerSample": 24,
+        "byteRate": 264600,
+        "blockAlign": 6,
+        "dataBytes": 892044,
+        "frameCount": 148674,
+        "codec": "pcm_s24le",
+        "chunks": [
+          { "id": "fmt ", "bytes": 18 },
+          { "id": "data", "bytes": 892044 },
+          { "id": "_PMX", "bytes": 5028 }
+        ]
+      }
+    }
+  ]
+}

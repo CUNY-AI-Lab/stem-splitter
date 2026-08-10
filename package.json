@@ -61,6 +61,7 @@
     "hydrate:instrument-controls": "node --experimental-strip-types scripts/hydrate-instrument-controls.mts",
     "hydrate:nsynth-controls": "node --experimental-strip-types scripts/hydrate-nsynth-family-controls.mts",
     "hydrate:tinysol-controls": "node --experimental-strip-types scripts/hydrate-tinysol-exact-controls.mts",
+    "hydrate:vcsl-controls": "node --experimental-strip-types scripts/hydrate-vcsl-exact-controls.mts",
     "eval:selftest": "./scripts/selftest-eval-stems.sh",
     "test:corpus": "node scripts/run-audio-corpus.mjs",
     "probe:replicate": "node --experimental-strip-types scripts/probe-replicate-outputs.mjs",
