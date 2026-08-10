@@ -459,23 +459,15 @@ export async function setAmendment(
        WHERE id = 1 AND revision = ? AND amendment <> ?`
     ).bind(amendment, username, expectedRevision, amendment),
     // SQLite changes() here refers to the completed compare-and-swap above.
-    // This matters for two identical concurrent requests: the losing request
-    // can match the winner's amendment and username, but it must not invalidate
-    // a guide regenerated after the winning transaction committed.
-    env.DB.prepare(
-      `DELETE FROM guides
-       WHERE changes() = 1`
-    ),
+    // A losing request inserts nothing. A winner must insert exactly one new
+    // audit row: a pre-existing next revision is integrity drift and must fail
+    // the batch, rolling the setting back instead of silently reusing history.
     env.DB.prepare(
       `INSERT INTO assistant_prompt_revisions
          (settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
           effective_prompt_hash, updated_by)
        SELECT ?, ?, ?, ?, ?, ?, ?
-       WHERE EXISTS (
-         SELECT 1 FROM assistant_settings
-         WHERE id = 1 AND revision = ? AND amendment = ? AND updated_by = ?
-       )
-       ON CONFLICT(settings_revision) DO NOTHING`
+       WHERE changes() = 1`
     ).bind(
       nextRevision,
       amendment,
@@ -483,10 +475,14 @@ export async function setAmendment(
       trace.basePromptVersion,
       trace.basePromptHash,
       trace.effectivePromptHash,
-      username,
-      nextRevision,
-      amendment,
       username
+    ),
+    // changes() now refers to the history insert. This matters for two
+    // identical concurrent requests: the loser must not invalidate a guide
+    // regenerated after the winner committed.
+    env.DB.prepare(
+      `DELETE FROM guides
+       WHERE changes() = 1`
     ),
   ]);
 
@@ -505,7 +501,7 @@ export async function setAmendment(
     changed: true,
     conflict: false,
     revision: await getPromptRevision(env, nextRevision),
-    guidesCleared: results[1]?.meta?.changes ?? 0,
+    guidesCleared: results[2]?.meta?.changes ?? 0,
   };
 }
 

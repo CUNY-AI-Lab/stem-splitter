@@ -166,6 +166,44 @@ test('prompt save rolls back settings and history when cache invalidation fails'
   }
 });
 
+test('prompt save rolls back rather than reusing a conflicting history revision', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-prompt-history-drift-'));
+  try {
+    const db = new SqliteD1(join(directory, 'prompt.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    await db.batch([
+      db.prepare(
+        `INSERT INTO assistant_prompt_revisions
+          (settings_revision, amendment, change_note, base_prompt_version, base_prompt_hash,
+           effective_prompt_hash, updated_by)
+         VALUES (1, 'unrelated history', 'pre-existing drift', 'old', ?, ?, 'teacher-b')`
+      ).bind('c'.repeat(64), 'd'.repeat(64)),
+      db.prepare(
+        "INSERT INTO guides (job_id, text, model) VALUES ('job-a', 'current guide', 'model')"
+      ),
+    ]);
+    const env = { DB: db } as never;
+
+    await assert.rejects(
+      setAmendment(env, 'candidate', 'teacher-a', 0, promptTrace('must not reuse history')),
+      /UNIQUE constraint failed: assistant_prompt_revisions\.settings_revision/
+    );
+    const settings = await db
+      .prepare('SELECT amendment, revision FROM assistant_settings WHERE id = 1')
+      .first<{ amendment: string; revision: number }>();
+    assert.deepEqual({ ...settings }, { amendment: '', revision: 0 });
+    const history = await db
+      .prepare('SELECT amendment, updated_by FROM assistant_prompt_revisions')
+      .all<{ amendment: string; updated_by: string }>();
+    assert.deepEqual(history.results.map((row) => ({ ...row })), [
+      { amendment: 'unrelated history', updated_by: 'teacher-b' },
+    ]);
+    assert.equal((await db.prepare('SELECT job_id FROM guides').all()).results.length, 1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('guide caching rejects an in-flight old prompt and filters old fixed versions', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-guide-prompt-'));
   try {
