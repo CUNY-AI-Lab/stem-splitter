@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { endianness } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { ANALYSIS_SAMPLE_RATE } from '../audio-analysis/config.ts';
@@ -166,18 +167,18 @@ function sha256Bytes(value: Buffer | string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-export function sha256File(path: string): string {
-  return sha256Bytes(readFileSync(path));
+export function sha256File(path: string, repositoryRoot = process.cwd()): string {
+  return sha256Bytes(readFileSync(resolve(repositoryRoot, path)));
 }
 
-export function yamnetEvaluationSourcePins(): Record<
+export function yamnetEvaluationSourcePins(repositoryRoot = process.cwd()): Record<
   keyof typeof YAMNET_EVALUATION_SOURCE_PATHS,
   { path: string; sha256: string }
 > {
   return Object.fromEntries(
     Object.entries(YAMNET_EVALUATION_SOURCE_PATHS).map(([name, path]) => [
       name,
-      { path, sha256: sha256File(path) },
+      { path, sha256: sha256File(path, repositoryRoot) },
     ])
   ) as Record<
     keyof typeof YAMNET_EVALUATION_SOURCE_PATHS,
@@ -222,8 +223,11 @@ function normalizedId(value: unknown, context: string): string {
   return value;
 }
 
-export function loadMapping(vocabularyIds: string[]): MappingDocument {
-  const bytes = readFileSync(MAPPING_PATH);
+export function loadMapping(
+  vocabularyIds: string[],
+  repositoryRoot = process.cwd()
+): MappingDocument {
+  const bytes = readFileSync(resolve(repositoryRoot, MAPPING_PATH));
   if (sha256Bytes(bytes) !== MAPPING_SHA256) throw new Error('YAMNet mapping bytes drifted');
   const value: unknown = JSON.parse(bytes.toString('utf8'));
   if (!record(value)) throw new Error('YAMNet mapping root is invalid');

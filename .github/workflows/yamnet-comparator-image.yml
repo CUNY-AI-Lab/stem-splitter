@@ -19,7 +19,11 @@ on:
       - scripts/hydrate-instrument-controls.mts
       - scripts/eval-yamnet-comparator.mts
       - scripts/eval-yamnet-controls.mts
+      - scripts/capture-yamnet-instrument-candidate.mts
+      - scripts/prepare-yamnet-candidate-source.mts
       - scripts/lib/instrument-control-corpus.mts
+      - scripts/lib/instrument-evaluation.mts
+      - scripts/lib/yamnet-candidate-capture.mts
       - scripts/run-yamnet-comparator-eval.sh
       - scripts/smoke-yamnet-comparator-image.mts
       - src/analysis/instrument-vocabulary.ts
@@ -27,8 +31,11 @@ on:
       - tests/corpus/corpus.json
       - tests/corpus/instrument-discovery-expectations.json
       - tests/corpus/instrument-control-manifest.json
+      - tests/corpus/instrument-evaluation-plan.json
       - tests/instrument-control-corpus.test.mts
+      - tests/yamnet-candidate-capture.test.mts
       - tests/yamnet-comparator-eval.test.mts
+      - tsconfig.instrument-evaluation.json
       - yamnet-comparator/**
   pull_request:
     paths:
@@ -46,7 +53,11 @@ on:
       - scripts/hydrate-instrument-controls.mts
       - scripts/eval-yamnet-comparator.mts
       - scripts/eval-yamnet-controls.mts
+      - scripts/capture-yamnet-instrument-candidate.mts
+      - scripts/prepare-yamnet-candidate-source.mts
       - scripts/lib/instrument-control-corpus.mts
+      - scripts/lib/instrument-evaluation.mts
+      - scripts/lib/yamnet-candidate-capture.mts
       - scripts/run-yamnet-comparator-eval.sh
       - scripts/smoke-yamnet-comparator-image.mts
       - src/analysis/instrument-vocabulary.ts
@@ -54,8 +65,11 @@ on:
       - tests/corpus/corpus.json
       - tests/corpus/instrument-discovery-expectations.json
       - tests/corpus/instrument-control-manifest.json
+      - tests/corpus/instrument-evaluation-plan.json
       - tests/instrument-control-corpus.test.mts
+      - tests/yamnet-candidate-capture.test.mts
       - tests/yamnet-comparator-eval.test.mts
+      - tsconfig.instrument-evaluation.json
       - yamnet-comparator/**
 
 concurrency:
@@ -96,6 +110,7 @@ jobs:
         run: >-
           node --experimental-strip-types --test
           tests/instrument-control-corpus.test.mts
+          tests/yamnet-candidate-capture.test.mts
           tests/yamnet-comparator-eval.test.mts
       - name: Build the exact comparator source for linux/amd64
         env:

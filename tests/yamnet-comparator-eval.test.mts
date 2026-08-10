@@ -356,12 +356,23 @@ test('YAMNet native image workflow is path-scoped, pinned, and runs the constrai
   assert.match(workflow, /docker build --pull --platform linux\/amd64/);
   assert.match(workflow, /YAMNET_COMPARATOR_EXPECTED_PLATFORM: linux\/amd64/);
   assert.match(workflow, /smoke-yamnet-comparator-image\.mts/);
+  assert.match(workflow, /tests\/yamnet-candidate-capture\.test\.mts/);
   assert.doesNotMatch(workflow, /secrets\./);
   for (const path of Object.values(YAMNET_EVALUATION_SOURCE_PATHS)) {
     const covered =
       workflow.includes(`- ${path}`) ||
       (path.startsWith('yamnet-comparator/') && workflow.includes('- yamnet-comparator/**'));
     assert.equal(covered, true, `native workflow does not watch ${path}`);
+  }
+  for (const path of [
+    'scripts/capture-yamnet-instrument-candidate.mts',
+    'scripts/prepare-yamnet-candidate-source.mts',
+    'scripts/lib/yamnet-candidate-capture.mts',
+    'scripts/lib/instrument-evaluation.mts',
+    'tests/corpus/instrument-evaluation-plan.json',
+    'tests/yamnet-candidate-capture.test.mts',
+  ]) {
+    assert.equal(workflow.includes(`- ${path}`), true, `native workflow does not watch ${path}`);
   }
   for (const requirement of [
     "'--pull'",

@@ -39,6 +39,8 @@
     "check:instrument-evaluation": "node --experimental-strip-types scripts/check-instrument-evaluation.mts",
     "prepare:instrument-review": "node --experimental-strip-types scripts/prepare-instrument-evaluation-review.mts",
     "finalize:instrument-review": "node --experimental-strip-types scripts/finalize-instrument-evaluation-review.mts",
+    "prepare:yamnet-candidate": "node --experimental-strip-types scripts/prepare-yamnet-candidate-source.mts",
+    "capture:yamnet-candidate": "node --experimental-strip-types scripts/capture-yamnet-instrument-candidate.mts",
     "export:audio-listening": "tsc -p tsconfig.audio-pipeline.json --noEmit && node --experimental-strip-types scripts/export-audio-pipeline-listening-bundle.mts",
     "check:youtube": "node scripts/check-youtube-pin.mjs",
     "baseline:railway": "node scripts/capture-railway-baseline.mjs",
