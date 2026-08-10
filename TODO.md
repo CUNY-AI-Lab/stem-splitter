@@ -167,6 +167,24 @@ a native GitHub run remain absent, so both manifest booleans stay false and the
 pre-mutation action gate still fails on exactly those two conditions. No push,
 pull request, Railway mutation, provider call, or deployment occurred.
 
+Exact teacher-review commit `671c262` makes the already-private Phase 2
+discovery evidence usable without advancing the rejected CLAP candidate. The
+authenticated instructor console now loads one stored Auto job by bounded ID,
+shows its concrete core route, role-classifier version, decision reason,
+discovery status, vocabulary/classifier version, and possible/uncertain
+detections with confidence and window support. Its copy and controls explicitly
+preserve the 2/4/6 contract and cannot create an isolation. Invalid IDs are
+rejected before a request; abstention is not presented as instrument absence;
+discovery timeout leaves the successful core route visible; source digests and
+weight hashes are not rendered; a failed logout retains the active session
+state, while a confirmed logout scrubs the job and detections from the DOM.
+The complete Bun 1.3.14 Phase 0 gate passes 207 worker, 24 analyzer, 28 Railway
+host/migration, 5 separator, 30 discovery, 9 YAMNet, and 19/6/1 browser tests.
+In-app browser QA passes at 1280×720 and 390×844 with no overflow or console
+warnings/errors. Discovery, query isolation, and server Auto remain off; no
+provider route, database change, Railway mutation, push, pull request, or
+deployment was added.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -839,9 +857,11 @@ job.
   `percussion` plus `drum-kit`) and for production/timbre labels such as
   `sampler` and `pad`. Do not double-count or present them as equivalent kinds
   of evidence.
-- [ ] Keep detection advisory: display “possible instruments” and confidence
-  only to authorized testers. Do not change the Demucs model because a
-  long-tail instrument was detected.
+- [x] Keep detection advisory: the authenticated instructor console displays
+  “possible instruments,” confidence, state, window support, classifier and
+  vocabulary provenance for one stored Auto job. Student payloads remain
+  redacted, the panel has no isolation control, and its explicit guard preserves
+  the concrete Demucs 2/4/6 route regardless of a long-tail detection.
 - [ ] Specifically test similar-timbre confusions: electric guitar versus
   synthesizer, bass guitar versus double bass, piano versus mallet instruments,
   saxophone versus brass, solo strings versus string section, and pitched

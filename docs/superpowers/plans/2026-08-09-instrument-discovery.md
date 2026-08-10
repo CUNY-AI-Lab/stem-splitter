@@ -69,10 +69,16 @@
   mapping, dependency lock, source hashes, image ID/platform, and corpus inputs.
   Record top-k ranks, threshold sweeps, family slices, hard-negative alerts, and
   confusion margins without selecting a threshold.
-- [ ] Add authorized, teacher-reviewed single-instrument positives and
-  exhaustive negatives to the YAMNet comparison. Its current 21/40 top-five
-  result is promising, but 0/2 brass, 0/3 woodwind, 0/1 free-reed, fifteen
-  ontology gaps, failed confusions, and absent calibration block selection.
+- [x] Add authorized single-instrument positives and exhaustive candidate
+  negatives to the YAMNet comparison. ChoraleBricks supplies eight exact-hash
+  CC BY 4.0 wind controls; the results remain candidate evidence until a teacher
+  listens to every positive and alert. Missing free-reed, string, pitched-
+  percussion and traditional-instrument controls still block selection.
+- [x] Expose stored discovery evidence only through an explicit authenticated
+  teacher review. The console displays possible/uncertain state, confidence,
+  window support, and version provenance; it displays abstention and discovery
+  failure honestly, leaks no source/weight hash, and offers no routing or
+  isolation control. Confirmed logout removes the loaded evidence from the DOM.
 - [ ] Decide how parent categories, child instruments, and non-instrument
   production/timbre labels are reviewed and displayed without double-counting.
 - [ ] Implement Essentia ONNX as an offline-only comparison only after written

@@ -5,6 +5,40 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-discovery-teacher-review-v1 — advisory UI boundary — 2026-08-10
+
+- Scope: exact implementation commit
+  `671c2628178f9757afb3417b0a0ee7fad788d89b` adds a teacher-only review panel
+  over the existing authenticated stored-analysis route. It adds no discovery
+  inference, model candidate, threshold, stem, isolation request, provider
+  call, database field, flag change, or live rollout.
+- Honest states: the panel renders the concrete core route separately from
+  possible/uncertain instrument detections, confidence, window support and
+  classifier/vocabulary provenance. It calls an empty complete result an
+  abstention rather than proof of absence, and it displays discovery timeout
+  while retaining the successful core route.
+- Privacy and isolation: bounded job IDs reject path-like input before fetch;
+  all dynamic values use text nodes; source SHA-256 and model-weight SHA-256 are
+  not rendered. The page has no isolation control and states that the 2/4/6
+  contract is unchanged. A failed logout preserves the still-active console;
+  only confirmed logout clears the job ID, result, detection nodes and status.
+  Class-code and signed-out requests remain unauthorized, and student job
+  payloads remain label- and pin-redacted.
+- Evidence: the targeted instructor browser journey covers invalid input,
+  abstention, discovery timeout, possible detection, provenance, hash
+  non-disclosure, absent isolation controls, failed logout and confirmed
+  scrubbing. The complete Bun 1.3.14 Phase 0 gate passes 207 worker, 24 analyzer,
+  28 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet tests plus
+  19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+  In-app browser QA at 1280×720 and 390×844 found no horizontal overflow,
+  framework error, console warning, or console error; the load control retains
+  a 44-pixel minimum target.
+- Rollout: off. The current CLAP prompt/checkpoint remains rejected, YAMNet
+  remains comparison-only, Essentia remains license-blocked, and instrument
+  discovery remains teacher-review evidence rather than a selected service.
+  No Railway mutation, push, pull request, provider call, or deployment
+  occurred.
+
 ## audio-pipeline-acceptance-evidence-v1 — human and native gates — 2026-08-10
 
 - Miss: the promotion manifest correctly blocked provisioning on human
