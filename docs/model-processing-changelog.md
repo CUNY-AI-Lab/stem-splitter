@@ -36,8 +36,12 @@ promotion on their own.
   authoritative-Auto, and 1 isolation-shadow browser journey under Bun 1.3.14.
   Rollout remains off. Checkpoint provenance, exact live scope/ceiling,
   provider orchestration, output hydration/retention, quality/cost evaluation,
-  and Railway acceptance remain mandatory. No live migration, Railway mutation,
-  provider call, push, pull request, or deployment occurred.
+  and Railway acceptance remain mandatory. A value-free readback of the
+  explicit canonical Railway IDs reports the analyzer absent, feature posture
+  off, zero secrets printed, zero mutations, and zero provider calls. The local
+  provisioning action gate rejects advancement on exactly missing manual
+  listening and native-amd64 image evidence. No live migration, Railway
+  mutation, provider call, push, pull request, or deployment occurred.
 
 ## yamnet-candidate-capture-v1 — native report adapter — 2026-08-10
 

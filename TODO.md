@@ -284,7 +284,11 @@ the complete Bun 1.3.14 Phase 0 gate: 228 worker, 24 analyzer, 33 Railway
 host/config/migration, 5 separator, 30 discovery, 9 YAMNet, and 19/6/1 browser
 tests. No provider-start route imports the dormant adapter, and no Railway
 variable, live migration, service, prediction, deployment, push, or pull
-request changed.
+request changed. A post-commit, value-free check of the explicit canonical
+Railway IDs still reports the analyzer absent, feature posture off, zero secrets
+printed, zero mutations, and zero provider calls. The local provisioning action
+gate remains blocked on exactly `manual-listening-missing` and
+`native-amd64-image-missing`.
 
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
