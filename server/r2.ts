@@ -7,10 +7,11 @@
 // Railway is the active host until the finished product migrates to Cloudflare;
 // nothing under src/ knows this adapter exists.
 
-import { createReadStream } from 'node:fs';
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 const LIST_PAGE_SIZE = 1000;
 
@@ -28,6 +29,20 @@ function encodeKey(key: string): string {
 
 function decodeKey(name: string): string {
   return decodeURIComponent(name);
+}
+
+function nodeBodyStream(
+  body: ReadableStream | ArrayBuffer | ArrayBufferView | string | null
+): Readable {
+  if (body === null) return Readable.from([]);
+  if (typeof body === 'string') return Readable.from([body]);
+  if (body instanceof ArrayBuffer) return Readable.from([new Uint8Array(body)]);
+  if (ArrayBuffer.isView(body)) {
+    return Readable.from([
+      new Uint8Array(body.buffer, body.byteOffset, body.byteLength),
+    ]);
+  }
+  return Readable.fromWeb(body as never);
 }
 
 class FsR2Object {
@@ -61,6 +76,7 @@ export class FsR2Bucket {
   private readonly blobDir: string;
   private readonly metaDir: string;
   private ready: Promise<void>;
+  private readonly putLocks = new Map<string, Promise<void>>();
 
   constructor(root: string) {
     const blobDir = join(root, 'blobs');
@@ -89,33 +105,60 @@ export class FsR2Bucket {
     }
   }
 
+  private async serializePut<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.putLocks.get(key) ?? Promise.resolve();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const current = previous.catch(() => {}).then(() => gate);
+    this.putLocks.set(key, current);
+    await previous.catch(() => {});
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.putLocks.get(key) === current) this.putLocks.delete(key);
+    }
+  }
+
   async put(
     key: string,
     body: ReadableStream | ArrayBuffer | ArrayBufferView | string | null,
-    options?: { httpMetadata?: { contentType?: string } }
+    options?: {
+      httpMetadata?: { contentType?: string };
+      customMetadata?: Record<string, string>;
+    }
   ): Promise<FsR2Object> {
     await this.ready;
-    // 100 MB ceiling is enforced upstream in src/index.ts before we get here.
-    const bytes = Buffer.from(await new Response(body as BodyInit).arrayBuffer());
-
-    const meta: StoredMeta = {
-      key,
-      size: bytes.byteLength,
-      uploaded: new Date().toISOString(),
-      contentType: options?.httpMetadata?.contentType ?? 'application/octet-stream',
-    };
-
-    // Write blob then meta, each via a temp file, so a crash never leaves a
-    // meta entry pointing at a half-written blob.
-    const blobTmp = `${this.blobPath(key)}.tmp`;
-    await writeFile(blobTmp, bytes);
-    await rename(blobTmp, this.blobPath(key));
-
-    const metaTmp = `${this.metaPath(key)}.tmp`;
-    await writeFile(metaTmp, JSON.stringify(meta));
-    await rename(metaTmp, this.metaPath(key));
-
-    return new FsR2Object(meta);
+    return this.serializePut(key, async () => {
+      // Stream to a unique temporary file. This keeps a 100 MB browser upload
+      // or immutable Auto snapshot out of the warmed Node process's heap and
+      // leaves the previous complete object visible until the final rename.
+      const nonce = crypto.randomUUID();
+      const blobTmp = `${this.blobPath(key)}.${nonce}.tmp`;
+      const metaTmp = `${this.metaPath(key)}.${nonce}.tmp`;
+      try {
+        await pipeline(nodeBodyStream(body), createWriteStream(blobTmp, { flags: 'wx' }));
+        const blob = await stat(blobTmp);
+        const meta: StoredMeta = {
+          key,
+          size: blob.size,
+          uploaded: new Date().toISOString(),
+          contentType: options?.httpMetadata?.contentType ?? 'application/octet-stream',
+        };
+        await writeFile(metaTmp, JSON.stringify(meta), { flag: 'wx' });
+        await rename(blobTmp, this.blobPath(key));
+        await rename(metaTmp, this.metaPath(key));
+        return new FsR2Object(meta);
+      } catch (error) {
+        await Promise.allSettled([
+          rm(blobTmp, { force: true }),
+          rm(metaTmp, { force: true }),
+        ]);
+        throw error;
+      }
+    });
   }
 
   async get(key: string): Promise<FsR2ObjectBody | null> {

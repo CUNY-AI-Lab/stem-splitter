@@ -5,6 +5,37 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## authoritative-auto-upload-snapshot-v1 — immutable upload handoff — 2026-08-10
+
+- Scope: authoritative upload Auto now freezes the current stored upload into
+  an app-owned `auto-inputs/v1/<job>` object before analysis. No live flag,
+  classifier, provider model/version, core stem contract, migration, Railway
+  variable, service, or deployment changed; explicit and flags-off requests
+  keep their existing source path.
+- Contract: browser upload routes can address only `uploads/`. The analyzer and
+  separator receive separately signed URLs for the same frozen key, and the
+  analyzer's authenticated byte count must equal the snapshot's stored size
+  before its recommendation can route. The private analyzer SHA remains the
+  job digest; neither key nor digest enters student JSON.
+- Resource boundary: the Railway filesystem adapter streams writes through
+  unique temporary files and serializes writers per key, so snapshotting the
+  supported 100 MiB maximum does not first assemble an application-heap buffer.
+  Workerd wraps the bounded copy in a known-length stream before its object-store
+  put. A 60-second total copy deadline, recorded-size bound, collision check,
+  committed-size verification, and pre-job rollback fail closed.
+- Compatibility: authoritative mode freezes both current `model: auto` requests
+  and the older valid explicit-model plus `routingRequest: auto` shape. Because
+  the completed job now retains its app-owned snapshot key, the optional
+  teacher-isolation source guard accepts that exact key family without widening
+  to arbitrary internal storage paths.
+- Focused evidence: 38/38 source/routing tests and 6/6 authoritative-Auto browser
+  tests pass under Node 22.23.1 and Bun 1.3.14. The adversarial browser case
+  reuses the original PUT both before analyzer fetch and after analysis, then
+  proves the separator still downloads the initial snapshot bytes.
+- Remaining: exact committed-source Phase 0, native-amd64 CI, actual Railway
+  resource/restart acceptance, parity calibration, genre listening, and live
+  shadow/rollback evidence remain gates before authoritative promotion.
+
 ## server-auto-source-identity-v1 — imported-byte authority gate — 2026-08-10
 
 - Scope: server-owned source identity is now an authority prerequisite for
@@ -29,9 +60,10 @@ promotion on their own.
   independently calculated private digest. `git show --check` also passes for
   that implementation commit. This evidence is local only: no push, PR,
   Railway mutation, or deployment occurred.
-- Remaining: browser-upload mutability, native-amd64 CI, Railway resource and
-  restart acceptance, genre listening, and live shadow/rollback evidence remain
-  gates before authoritative promotion.
+- Remaining: native-amd64 CI, Railway resource and restart acceptance, genre
+  listening, and live shadow/rollback evidence remain gates before
+  authoritative promotion. Browser-upload mutability is closed separately by
+  `authoritative-auto-upload-snapshot-v1` above.
 
 ## query-isolation-source-guard-v1 — immutable pre-spend input — 2026-08-10
 

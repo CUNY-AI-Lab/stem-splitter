@@ -396,13 +396,23 @@ deployment or enablement.
   fingerprint field that happened to parse before the failure. Unit coverage
   exercises missing/hash/length drift and authoritative E2E proves neither
   imported source can send the mismatched recommendation to the separator.
-- [ ] Close the upload-specific post-analysis race before authoritative
-  promotion. The analyzer can fingerprint an upload while its browser PUT
-  locator is still valid, so the separator must consume either an immutable
-  verified snapshot or a storage-level create-once object—not the mutable
-  locator that was analyzed. Test replacement both before and after analysis,
-  byte-identical retry, concurrent PUTs, expiry, and rollback without buffering
-  100 MiB in the warmed app unless Railway resource evidence approves it.
+- [x] Close the upload-specific post-analysis race before authoritative
+  promotion. Authoritative upload jobs now stream the current stored object into
+  an app-owned `auto-inputs/v1/<job>` snapshot before analysis; browser upload
+  routes cannot address that prefix, and both the analyzer and separator receive
+  signed URLs for the same frozen key. The analyzer's reported byte count must
+  match the stored snapshot size before its route can apply. Railway's filesystem
+  adapter streams writes through unique temporary files under a per-key writer
+  lock instead of materializing the 100 MiB boundary in the warmed heap. Focused
+  regressions cover replacement before and after analysis, byte-identical retry,
+  concurrent PUTs, retention expiry, collision, failed-copy rollback, the full
+  100 MiB streaming boundary, and analyzer/separator URL identity. Exact
+  authoritative mode also covers the legacy valid request shape with an
+  explicit model plus `routingRequest: auto`, so it cannot bypass freezing.
+  Because the job now retains the app-owned key, the later teacher-isolation
+  boundary explicitly accepts that exact key family without accepting arbitrary
+  internal storage paths. Committed-source Phase 0 and real Railway resource
+  evidence remain separate gates below.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.
   Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome,

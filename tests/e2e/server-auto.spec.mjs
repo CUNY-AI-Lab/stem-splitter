@@ -113,7 +113,14 @@ function makeM4a(size = 2048) {
   return bytes;
 }
 
-function sourceHandlers({ network, server, analysisStatus = 200, identityOverrides = {} }) {
+function sourceHandlers({
+  network,
+  server,
+  analysisStatus = 200,
+  identityOverrides = {},
+  beforeAnalysisFetch,
+  beforeSeparatorStart,
+}) {
   const youtubeAudio = makeM4a();
   const archiveId = 'server-auto-open-audio';
   const archiveFile = 'fixture.wav';
@@ -125,6 +132,7 @@ function sourceHandlers({ network, server, analysisStatus = 200, identityOverrid
   network.use(
     http.post('https://analysis.test/v1/analyze', async ({ request }) => {
       const payload = await request.json();
+      await beforeAnalysisFetch?.(payload);
       const stored = await server.fetch(payload.sourceUrl);
       expect(stored.status).toBe(200);
       const bytes = Buffer.from(await stored.arrayBuffer());
@@ -159,6 +167,7 @@ function sourceHandlers({ network, server, analysisStatus = 200, identityOverrid
         });
       }
       expect(payload.version).toBe('e2e-model-version');
+      await beforeSeparatorStart?.(payload.input);
       separatorInputs.push(payload.input);
       predictionCounter += 1;
       return HttpResponse.json({ id: `e2e-separation-${predictionCounter}`, status: 'starting' });
@@ -247,6 +256,10 @@ test('authoritative server Auto analyzes stored upload, YouTube, and Archive aud
   expect(state.separatorInputs).toHaveLength(3);
   expect(state.separatorInputs.every((input) => input.model === 'htdemucs_6s')).toBe(true);
   expect(state.separatorInputs.some((input) => input.model === 'auto')).toBe(false);
+  const uploadAnalysisUrl = new URL(state.analysisCalls[0].sourceUrl);
+  const uploadSeparatorUrl = new URL(state.separatorInputs[0].audio);
+  expect(uploadAnalysisUrl.pathname).toMatch(/\/api\/local-sources\/auto-inputs\/v1\//);
+  expect(uploadSeparatorUrl.pathname).toBe(uploadAnalysisUrl.pathname);
 
   for (const [index, job] of jobs.entries()) {
     expect(job.model).toBe('htdemucs_6s');
@@ -270,6 +283,78 @@ test('authoritative server Auto analyzes stored upload, YouTube, and Archive aud
     expect(privateHash.status).toBe(200);
     expect(await privateHash.json()).toEqual({ sourceHash: state.analysisHashes[index] });
   }
+});
+
+test('authoritative upload Auto freezes one source across live PUT reuse', async ({
+  network,
+  server,
+}) => {
+  const uploadKey = 'uploads/server-auto-race/source.wav';
+  const beforeAnalysis = Buffer.from(sourceAudio);
+  const afterAnalysis = Buffer.from(sourceAudio);
+  beforeAnalysis[beforeAnalysis.length - 2] ^= 0x7f;
+  afterAnalysis[afterAnalysis.length - 1] ^= 0x55;
+
+  let analysisReplacement = 0;
+  let separatorReplacement = 0;
+  const replaceUpload = async (bytes) => {
+    const response = await e2eFetch(
+      server,
+      `/__e2e/audio?key=${encodeURIComponent(uploadKey)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: bytes,
+      }
+    );
+    expect(response.status).toBe(204);
+  };
+  const state = sourceHandlers({
+    network,
+    server,
+    beforeAnalysisFetch: async (payload) => {
+      if (payload.sourceType !== 'upload') return;
+      analysisReplacement += 1;
+      await replaceUpload(beforeAnalysis);
+    },
+    beforeSeparatorStart: async () => {
+      separatorReplacement += 1;
+      await replaceUpload(afterAnalysis);
+    },
+  });
+
+  await replaceUpload(sourceAudio);
+  const response = await server.fetch('/api/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-class-code': CLASS_CODE },
+    body: JSON.stringify({
+      key: uploadKey,
+      filename: 'source.wav',
+      model: 'htdemucs_ft',
+      routingRequest: 'auto',
+    }),
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json()).model).toBe('htdemucs_6s');
+  expect(analysisReplacement).toBe(1);
+  expect(separatorReplacement).toBe(1);
+  expect(state.analysisCalls).toHaveLength(1);
+  expect(state.separatorInputs).toHaveLength(1);
+
+  const analysisUrl = new URL(state.analysisCalls[0].sourceUrl);
+  const separatorUrl = new URL(state.separatorInputs[0].audio);
+  expect(analysisUrl.pathname).toMatch(/\/api\/local-sources\/auto-inputs\/v1\//);
+  expect(separatorUrl.pathname).toBe(analysisUrl.pathname);
+
+  const frozen = await server.fetch(state.separatorInputs[0].audio);
+  expect(frozen.status).toBe(200);
+  expect(Buffer.from(await frozen.arrayBuffer()).equals(sourceAudio)).toBe(true);
+  const mutable = await e2eFetch(
+    server,
+    `/__e2e/audio?key=${encodeURIComponent(uploadKey)}`
+  );
+  expect(mutable.status).toBe(200);
+  expect(Buffer.from(await mutable.arrayBuffer()).equals(afterAnalysis)).toBe(true);
 });
 
 test('authoritative Auto UI keeps auto unresolved until the server returns its decision', async ({
@@ -415,6 +500,21 @@ test('job ingestion rejects oversized JSON before fetching or storing a source',
   });
   expect(response.status).toBe(413);
   expect(await response.json()).toEqual({ error: 'Request body is too large.' });
+
+  const invalidModel = await server.fetch('/api/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-class-code': CLASS_CODE },
+    body: JSON.stringify({
+      key: 'uploads/not-ingested/source.wav',
+      filename: 'source.wav',
+      model: 'not-a-real-model',
+      routingRequest: 'auto',
+    }),
+  });
+  expect(invalidModel.status).toBe(400);
+  expect(await invalidModel.json()).toEqual({
+    error: 'Unknown model. Allowed: vocals_instrumental, htdemucs_ft, htdemucs_6s',
+  });
 });
 
 function e2eFetch(server, path, init = {}) {

@@ -1,6 +1,10 @@
 import type { Env } from '../env';
 import { readBoundedResponse } from '../http/bounded-response.ts';
-import { getRetainedAudio, presignIsolationDownload } from '../r2.ts';
+import {
+  getRetainedAudio,
+  isAuthoritativeAutoSourceKey,
+  presignIsolationDownload,
+} from '../r2.ts';
 
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 const SOURCE_READ_TIMEOUT_MS = 60_000;
@@ -55,7 +59,8 @@ function validateInput(input: {
     throw new QueryIsolationSourceError('invalid_request', 'Invalid isolation id');
   }
   if (
-    !input.sourceKey.startsWith('uploads/') ||
+    (!input.sourceKey.startsWith('uploads/') &&
+      !isAuthoritativeAutoSourceKey(input.sourceKey)) ||
     input.sourceKey.length > 512 ||
     /[\0\r\n]/.test(input.sourceKey)
   ) {
@@ -78,12 +83,14 @@ function validateInput(input: {
 /**
  * Build the only source URL a paid isolation provider may consume.
  *
- * The original object is read and fingerprinted again at this boundary. The
+ * The source object is read and fingerprinted again at this boundary. The
  * exact verified bytes are then copied to an app-owned key that browser upload
- * routes cannot address. A still-live PUT can therefore alter the original
- * either before or after this function, but it cannot substitute different
- * bytes for the provider: an earlier change fails the digest comparison, while
- * a later change is isolated from the snapshot.
+ * routes cannot address. A still-live PUT can therefore alter an ordinary
+ * upload either before or after this function, but it cannot substitute
+ * different bytes for the provider: an earlier change fails the digest
+ * comparison, while a later change is isolated from the snapshot. An
+ * authoritative Auto source is already app-owned, but still crosses this
+ * independent hash-and-copy boundary before optional spend.
  *
  * Call this immediately before `provider.start()`. Preparing a URL earlier and
  * retaining it for later spend defeats the short-lived transport boundary.

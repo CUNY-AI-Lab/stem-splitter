@@ -241,3 +241,21 @@ test('same-digest retries are safe and snapshot cleanup is narrowly scoped', asy
     assert.deepEqual(await storedBytes(bucket, SOURCE_KEY), ORIGINAL);
   });
 });
+
+test('isolation preparation accepts an app-owned authoritative Auto source', async () => {
+  await withBucket(async (bucket, env) => {
+    const autoSourceKey = 'auto-inputs/v1/auto_job_isolation_compat';
+    const expectedSourceHash = await sha256Hex(ORIGINAL);
+    await bucket.put(autoSourceKey, ORIGINAL, {
+      httpMetadata: { contentType: 'audio/wav' },
+    });
+
+    const prepared = await prepareQueryIsolationSpendSource(env, {
+      isolationId: 'isolation_from_auto_job',
+      sourceKey: autoSourceKey,
+      expectedSourceHash,
+    });
+    assert.equal(prepared.sourceHash, expectedSourceHash);
+    assert.deepEqual(await storedBytes(bucket, prepared.snapshotKey), ORIGINAL);
+  });
+});

@@ -15,7 +15,10 @@ import {
 import {
   audioAnalysisTimeoutMs,
   AUTO_ROUTING_REQUEST,
+  AuthoritativeAutoSourceError,
   configuredAudioAnalysisProvider,
+  discardAuthoritativeAutoSource,
+  prepareAuthoritativeAutoSource,
   redactInstrumentDiscovery,
   requestSourceFingerprint,
   resolveAutoRoutingWithSource,
@@ -560,9 +563,14 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     autoCapability &&
       (submittedModel === AUTO_ROUTING_REQUEST || body?.routingRequest === AUTO_ROUTING_REQUEST)
   );
-  const authoritativeRequest =
-    submittedModel === AUTO_ROUTING_REQUEST && autoCapability?.mode === 'authoritative';
-  if (!authoritativeRequest && !modelIsAllowed(c.env.SEPARATION_BACKEND, submittedModel)) {
+  const authoritativeRequest = Boolean(
+    autoRequested && autoCapability?.mode === 'authoritative'
+  );
+  const submittedConcreteModel = modelIsAllowed(c.env.SEPARATION_BACKEND, submittedModel);
+  if (
+    (submittedModel === AUTO_ROUTING_REQUEST && !authoritativeRequest) ||
+    (submittedModel !== AUTO_ROUTING_REQUEST && !submittedConcreteModel)
+  ) {
     return c.json({ error: `Unknown model. Allowed: ${options.models.map((item) => item.id).join(', ')}` }, 400);
   }
   const currentModel = authoritativeRequest ? options.defaultModel : submittedModel;
@@ -586,6 +594,9 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let sourceType: AudioSourceType;
   let sourceHash: string | null = null;
   let expectedSourceIdentity: AudioSourceIdentityV1 | undefined;
+  let expectedSourceBytes: number | undefined;
+  let autoSnapshotKey: string | null = null;
+  const id = crypto.randomUUID();
 
   if (body?.youtubeUrl) {
     sourceType = 'youtube';
@@ -696,51 +707,84 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       await c.env.AUDIO.delete(uploadKey);
       return c.json({ error: 'File too large (max 100 MB)' }, 400);
     }
-    key = uploadKey;
+    if (authoritativeRequest) {
+      try {
+        const snapshot = await prepareAuthoritativeAutoSource(c.env, {
+          jobId: id,
+          sourceKey: uploadKey,
+        });
+        key = snapshot.snapshotKey;
+        autoSnapshotKey = snapshot.snapshotKey;
+        expectedSourceBytes = snapshot.bytes;
+      } catch (error) {
+        if (!(error instanceof AuthoritativeAutoSourceError)) throw error;
+        if (error.code === 'invalid_request' || error.code === 'source_too_large') {
+          return c.json({ error: error.message, code: error.code, retryable: false }, 400);
+        }
+        if (error.code === 'source_unavailable') {
+          return c.json({ error: error.message, code: error.code, retryable: true }, 409);
+        }
+        return c.json({ error: error.message, code: error.code, retryable: true }, 503);
+      }
+    } else {
+      key = uploadKey;
+    }
   }
 
-  const audioUrl = await presignDownload(c.env, key);
+  let audioUrl: string;
   let model = currentModel;
   let autoRouting: AutoRoutingDecisionV1 | undefined;
-  if (autoRequested && autoCapability) {
-    const analysisUrl = await presignAnalysisDownload(c.env, key);
-    const flags = processingFeatureFlags(c.env);
-    const resolution = await resolveAutoRoutingWithSource({
-      sourceUrl: analysisUrl,
-      sourceType,
-      mode: autoCapability.mode,
-      currentModel,
-      fallbackModel: options.defaultModel,
-      coreModels: options.models,
-      ...(expectedSourceIdentity ? { expectedSourceIdentity } : {}),
-      ...(browserAnalysis ? { browserAnalysis } : {}),
-      provider: configuredAudioAnalysisProvider(c.env),
-      timeoutMs: audioAnalysisTimeoutMs(c.env),
-      instrumentDiscovery: flags.instrumentDiscovery,
-    });
-    autoRouting = resolution.decision;
-    if (resolution.sourceIdentity && !sourceHash) sourceHash = resolution.sourceIdentity.sha256;
-    model = autoRouting.resolvedCoreModel;
-  }
+  try {
+    audioUrl = await presignDownload(c.env, key);
+    if (autoRequested && autoCapability) {
+      const analysisUrl = await presignAnalysisDownload(c.env, key);
+      const flags = processingFeatureFlags(c.env);
+      const resolution = await resolveAutoRoutingWithSource({
+        sourceUrl: analysisUrl,
+        sourceType,
+        mode: autoCapability.mode,
+        currentModel,
+        fallbackModel: options.defaultModel,
+        coreModels: options.models,
+        ...(expectedSourceIdentity ? { expectedSourceIdentity } : {}),
+        ...(expectedSourceBytes !== undefined ? { expectedSourceBytes } : {}),
+        ...(browserAnalysis ? { browserAnalysis } : {}),
+        provider: configuredAudioAnalysisProvider(c.env),
+        timeoutMs: audioAnalysisTimeoutMs(c.env),
+        instrumentDiscovery: flags.instrumentDiscovery,
+      });
+      autoRouting = resolution.decision;
+      if (resolution.sourceIdentity && !sourceHash) sourceHash = resolution.sourceIdentity.sha256;
+      model = autoRouting.resolvedCoreModel;
+    }
 
-  const id = crypto.randomUUID();
-  await c.env.DB.prepare(
-    `INSERT INTO jobs
-      (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(
-      id,
-      filename,
-      key,
-      'pending',
-      model,
-      autoRouting ? AUTO_ROUTING_REQUEST : null,
-      sourceType,
-      sourceHash,
-      autoRouting ? JSON.stringify(autoRouting) : null
+    await c.env.DB.prepare(
+      `INSERT INTO jobs
+        (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run();
+      .bind(
+        id,
+        filename,
+        key,
+        'pending',
+        model,
+        autoRouting ? AUTO_ROUTING_REQUEST : null,
+        sourceType,
+        sourceHash,
+        autoRouting ? JSON.stringify(autoRouting) : null
+      )
+      .run();
+  } catch (error) {
+    if (autoSnapshotKey) {
+      try {
+        await discardAuthoritativeAutoSource(c.env, autoSnapshotKey);
+      } catch {
+        console.error('authoritative Auto source rollback failed');
+      }
+    }
+    throw error;
+  }
 
   const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
 

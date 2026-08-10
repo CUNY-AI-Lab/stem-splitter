@@ -524,6 +524,52 @@ test('server-fetched imports route only when analyzer identity matches exact sto
   }
 });
 
+test('immutable upload snapshots route only when analyzer byte count matches the frozen object', async () => {
+  const matching = await resolveAutoRoutingWithSource({
+    sourceUrl: 'https://audio.invalid/auto-inputs/v1/job',
+    sourceType: 'upload',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    expectedSourceBytes: sourceIdentity.bytes,
+    provider: provider({ ...validAnalysis('htdemucs_6s'), source: sourceIdentity }),
+    timeoutMs: 15_000,
+    instrumentDiscovery: false,
+  });
+  assert.equal(matching.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(matching.decision.applied, true);
+  assert.deepEqual(matching.sourceIdentity, sourceIdentity);
+
+  for (const returnedSource of [
+    undefined,
+    { ...sourceIdentity, bytes: sourceIdentity.bytes + 1 },
+  ]) {
+    const resolution = await resolveAutoRoutingWithSource({
+      sourceUrl: 'https://audio.invalid/auto-inputs/v1/job',
+      sourceType: 'upload',
+      mode: 'authoritative',
+      currentModel: 'htdemucs_ft',
+      fallbackModel: 'htdemucs_ft',
+      coreModels: models,
+      expectedSourceBytes: sourceIdentity.bytes,
+      provider: provider({
+        ...validAnalysis('htdemucs_6s'),
+        ...(returnedSource ? { source: returnedSource } : {}),
+      }),
+      timeoutMs: 15_000,
+      instrumentDiscovery: false,
+    });
+    assert.equal(resolution.sourceIdentity, null);
+    assert.equal(resolution.decision.resolvedCoreModel, 'htdemucs_ft');
+    assert.equal(resolution.decision.applied, false);
+    assert.equal(
+      resolution.decision.analysis.degraded.code,
+      'source_identity_mismatch'
+    );
+  }
+});
+
 test('persisted Auto routing is normalized before teacher or student readback', async () => {
   const route = await resolveAutoRouting({
     sourceUrl: 'https://audio.invalid/source',

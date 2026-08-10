@@ -27,6 +27,8 @@ export interface ResolveAutoRoutingInput {
   browserAnalysis?: BrowserAutoSummaryV1;
   /** Independent identity for server-fetched imports, calculated before storage. */
   expectedSourceIdentity?: AudioSourceIdentityV1;
+  /** Immutable upload snapshot size, recorded before the analyzer reads it. */
+  expectedSourceBytes?: number;
   provider: AudioAnalysisProvider | null;
   timeoutMs: number;
   instrumentDiscovery: boolean;
@@ -119,16 +121,18 @@ export async function resolveAutoRoutingWithSource(
 
   if (
     !analysis.degraded.active &&
-    input.expectedSourceIdentity &&
-    (!sourceIdentity ||
-      sourceIdentity.sha256 !== input.expectedSourceIdentity.sha256 ||
-      sourceIdentity.bytes !== input.expectedSourceIdentity.bytes)
+    ((input.expectedSourceIdentity &&
+      (!sourceIdentity ||
+        sourceIdentity.sha256 !== input.expectedSourceIdentity.sha256 ||
+        sourceIdentity.bytes !== input.expectedSourceIdentity.bytes)) ||
+      (input.expectedSourceBytes !== undefined &&
+        (!sourceIdentity || sourceIdentity.bytes !== input.expectedSourceBytes)))
   ) {
     sourceIdentity = null;
     analysis = degradedAnalysis(
       input.fallbackModel,
       'source_identity_mismatch',
-      'the analyzed source did not match the stored import — using the default split',
+      'the analyzed source did not match the stored audio — using the default split',
       Date.now() - startedAt
     );
   }

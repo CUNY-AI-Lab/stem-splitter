@@ -118,14 +118,25 @@ export async function verifyLocalSource(
 
 const ISOLATION_SOURCE_KEY_PATTERN =
   /^isolation-inputs\/v1\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/[0-9a-f]{64}$/;
+const AUTO_SOURCE_KEY_PATTERN =
+  /^auto-inputs\/v1\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+export function isAuthoritativeAutoSourceKey(key: string): boolean {
+  return AUTO_SOURCE_KEY_PATTERN.test(key);
+}
 
 /**
- * Local source GETs expose ordinary uploads and app-owned isolation snapshots.
- * The upload PUT route deliberately accepts only `uploads/`, so a browser PUT
- * can never overwrite an isolation snapshot even if its original URL is live.
+ * Local source GETs expose ordinary uploads and app-owned Auto/isolation
+ * snapshots. The upload PUT route deliberately accepts only `uploads/`, so a
+ * browser PUT can never overwrite either snapshot even if its original URL is
+ * live.
  */
 export function isLocalSourceDownloadKey(key: string): boolean {
-  return key.startsWith('uploads/') || ISOLATION_SOURCE_KEY_PATTERN.test(key);
+  return (
+    key.startsWith('uploads/') ||
+    isAuthoritativeAutoSourceKey(key) ||
+    ISOLATION_SOURCE_KEY_PATTERN.test(key)
+  );
 }
 
 function isExpiredLocalObject(object: R2Object, nowMs: number): boolean {
