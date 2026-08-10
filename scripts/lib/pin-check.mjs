@@ -104,6 +104,56 @@ export function findQueryIsolationPinViolations(surface, openapiSchema) {
   return failures;
 }
 
+/**
+ * Validate the community SAM-Audio schema for an evaluation-only bake-off.
+ * This does not approve the SAM License, gated checkpoint, community wrapper,
+ * or any application/provider route; those remain separate hard blockers.
+ */
+export function findSamAudioEvaluationPinViolations(surface, openapiSchema) {
+  const failures = [];
+  const components = openapiSchema?.components?.schemas ?? {};
+  const inputSchema = components.Input;
+  const input = resolveInputProperties(openapiSchema);
+
+  if (!Object.keys(input).length) {
+    return ['the pinned SAM-Audio evaluation version exposes no Input schema'];
+  }
+  for (const key of surface.inputKeys) {
+    if (!(key in input)) {
+      failures.push(`SAM-Audio evaluation input "${key}" no longer exists`);
+    }
+  }
+  for (const key of surface.requiredInputKeys) {
+    if (!inputSchema?.required?.includes(key)) {
+      failures.push(`SAM-Audio evaluation input "${key}" is no longer required`);
+    }
+  }
+  if (input.audio && (input.audio.type !== 'string' || input.audio.format !== 'uri')) {
+    failures.push('SAM-Audio evaluation input "audio" is no longer one URI string');
+  }
+  for (const key of ['description', 'span_anchors']) {
+    if (input[key] && input[key].type !== 'string') {
+      failures.push(`SAM-Audio evaluation input "${key}" is no longer a string`);
+    }
+  }
+  for (const key of ['predict_spans', 'output_residual', 'use_span_prompting']) {
+    if (input[key] && input[key].type !== 'boolean') {
+      failures.push(`SAM-Audio evaluation input "${key}" is no longer boolean`);
+    }
+  }
+
+  const output = components.Output;
+  if (!output) {
+    failures.push('the pinned SAM-Audio evaluation version exposes no Output schema');
+  } else if (
+    surface.output === 'uri-array' &&
+    (output.type !== 'array' || output.items?.type !== 'string' || output.items?.format !== 'uri')
+  ) {
+    failures.push('the pinned SAM-Audio evaluation output is no longer an array of URI strings');
+  }
+  return failures;
+}
+
 /** Validate the separate Replicate yt-dlp pin used by the Railway importer. */
 export function findYouTubePinViolations(openapiSchema) {
   const failures = [];

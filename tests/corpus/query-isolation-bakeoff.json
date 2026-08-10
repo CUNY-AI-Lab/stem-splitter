@@ -1,0 +1,193 @@
+{
+  "$schema": "stem-splitter.query-isolation-bakeoff.v1",
+  "version": "long-tail-query-isolation-v1",
+  "reviewStatus": "fixture-ready-provider-runs-blocked",
+  "sourceBindings": {
+    "objective": {
+      "manifestPath": "tests/corpus/instrument-control-manifest.json",
+      "version": "choralebricks-wind-controls-v1",
+      "license": "CC BY 4.0",
+      "reviewStatus": "dataset-authored-awaiting-teacher-listening"
+    },
+    "subjective": {
+      "manifestPath": "tests/corpus/corpus.json",
+      "expectationPath": "tests/corpus/autosplit-expectations.json",
+      "classifierVersion": "autosplit-role-v3",
+      "identityPolicy": "content-sha256-required"
+    }
+  },
+  "providers": [
+    {
+      "id": "audiosep",
+      "disposition": "dormant-contract-only",
+      "provider": "replicate",
+      "model": "cjwbw/audiosep",
+      "version": "f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8",
+      "contractVersion": "audiosep-replicate-v1",
+      "outputRoles": ["target"],
+      "blockers": [
+        "hosted-checkpoint-hash-unresolved",
+        "hosted-weight-license-unresolved",
+        "semester-budget-missing",
+        "provider-route-disabled"
+      ]
+    },
+    {
+      "id": "sam-audio",
+      "disposition": "evaluation-only-license-blocked",
+      "provider": "replicate",
+      "model": "geopti/sam-audio-large",
+      "version": "d8a8a4fcdcbf0bdc863f6d98cd2117ec0bc02224b576c7b98b2a009a8a1f83fa",
+      "contractVersion": "sam-audio-replicate-eval-v1",
+      "officialRepositoryCommit": "bb4c6999d2677c7402360e426afc01ddfad6dce0",
+      "officialLicenseSha256": "4dea99bfaa016e21bc860d73f344236bd1e5c4977d1a9a8fd32f822b500ae1be",
+      "huggingFaceModel": "facebook/sam-audio-large",
+      "huggingFaceRepositoryCommit": "5f2cd3a9471a08c7282c06036be6893e18de8b70",
+      "communityWrapperRepository": "geopti/cog-sam-audio",
+      "communityWrapperCommit": "52920550f9db9661aa240477b8334fe2457bc399",
+      "wrapperBinding": "not-provider-attested",
+      "outputRoles": ["target", "residual"],
+      "blockers": [
+        "institutional-sam-license-approval-missing",
+        "gated-checkpoint-sha256-unavailable",
+        "community-image-checkpoint-binding-unverified",
+        "community-wrapper-dependencies-floating",
+        "application-adapter-forbidden"
+      ]
+    }
+  ],
+  "fixturePolicy": {
+    "sampleRate": 32000,
+    "channels": 1,
+    "durationSeconds": 24,
+    "targetGain": 0.25,
+    "interfererGain": 0.25,
+    "positiveSpan": [6, 18],
+    "negativeSpans": [[0, 5], [19, 24]],
+    "codec": "pcm-f32le-wav",
+    "outputDirectory": "tests/corpus/audio/query-isolation-bakeoff-v1"
+  },
+  "objectiveCases": [
+    {
+      "id": "an1-flute",
+      "targetControlId": "flute-an1",
+      "interfererControlIds": ["trumpet-an1", "tuba-an1"],
+      "textPrompt": "flute",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "an1-trumpet",
+      "targetControlId": "trumpet-an1",
+      "interfererControlIds": ["flute-an1", "tuba-an1"],
+      "textPrompt": "trumpet",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "an1-tuba",
+      "targetControlId": "tuba-an1",
+      "interfererControlIds": ["flute-an1", "trumpet-an1"],
+      "textPrompt": "tuba",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "ba1-oboe",
+      "targetControlId": "oboe-ba1",
+      "interfererControlIds": ["trombone-ba1"],
+      "textPrompt": "oboe",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "ba1-trombone",
+      "targetControlId": "trombone-ba1",
+      "interfererControlIds": ["oboe-ba1"],
+      "textPrompt": "trombone",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "cr1-clarinet",
+      "targetControlId": "clarinet-cr1",
+      "interfererControlIds": ["horn-cr1", "saxophone-cr1"],
+      "textPrompt": "clarinet",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "cr1-horn",
+      "targetControlId": "horn-cr1",
+      "interfererControlIds": ["clarinet-cr1", "saxophone-cr1"],
+      "textPrompt": "horn",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    },
+    {
+      "id": "cr1-saxophone",
+      "targetControlId": "saxophone-cr1",
+      "interfererControlIds": ["clarinet-cr1", "horn-cr1"],
+      "textPrompt": "saxophone",
+      "modes": ["audiosep-text", "sam-audio-text", "sam-audio-span"]
+    }
+  ],
+  "subjectiveCases": [
+    {
+      "id": "folk-duet-harmony-vocals",
+      "sourceSlug": "folk-duet",
+      "textPrompt": "harmony vocals",
+      "expectedInstrument": "harmony-vocals",
+      "modes": ["audiosep-text", "sam-audio-text"]
+    },
+    {
+      "id": "orchestral-flute",
+      "sourceSlug": "orchestral",
+      "textPrompt": "flute",
+      "expectedInstrument": "flute",
+      "modes": ["audiosep-text", "sam-audio-text"]
+    },
+    {
+      "id": "jazz-sax-tenor-saxophone",
+      "sourceSlug": "jazz-sax",
+      "textPrompt": "tenor saxophone",
+      "expectedInstrument": "tenor-saxophone",
+      "modes": ["audiosep-text", "sam-audio-text"]
+    },
+    {
+      "id": "hip-hop-rap-vocals",
+      "sourceSlug": "hip-hop",
+      "textPrompt": "rap vocals",
+      "expectedInstrument": "rap-vocals",
+      "modes": ["audiosep-text", "sam-audio-text"]
+    },
+    {
+      "id": "bluegrass-fiddle",
+      "sourceSlug": "bluegrass",
+      "textPrompt": "fiddle",
+      "expectedInstrument": "fiddle",
+      "modes": ["audiosep-text", "sam-audio-text"]
+    },
+    {
+      "id": "synthwave-synthesizer",
+      "sourceSlug": "synthwave",
+      "textPrompt": "synthesizer",
+      "expectedInstrument": "synthesizer",
+      "modes": ["audiosep-text", "sam-audio-text"]
+    }
+  ],
+  "metrics": {
+    "objective": [
+      "si-sdr-improvement-db",
+      "target-interference-rejection-db",
+      "residual-si-sdr-db",
+      "reconstruction-residual-db",
+      "span-uplift-db",
+      "latency-ms",
+      "cost-usd",
+      "provider-failure-rate"
+    ],
+    "subjective": [
+      "blinded-target-recall",
+      "blinded-target-precision",
+      "blinded-residual-usefulness",
+      "latency-ms",
+      "cost-usd",
+      "provider-failure-rate"
+    ],
+    "claimStatus": "none-until-provider-runs-and-teacher-review"
+  }
+}
