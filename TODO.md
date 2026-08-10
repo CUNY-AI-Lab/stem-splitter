@@ -64,8 +64,8 @@ arm64 v1 artifacts remain immutable historical evidence and require a clean v2
 rerun; their recorded digests must not be rewritten to match later source. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
-Exact committed source `fe0a5ff` now passes the complete local Phase 0 command
-from a clean detached checkout: 181 worker, 22 analyzer, 28 Railway
+Exact committed source `86cd50b` now passes the complete local Phase 0 command
+from a clean detached checkout: 183 worker, 23 analyzer, 28 Railway
 host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
 browser, 6 authoritative-Auto browser, and 1 teacher-isolation-shadow test
 under exact Bun 1.3.14, plus all three typechecks and `git diff --check`. This
@@ -73,11 +73,14 @@ supersedes the earlier rejected moving-tree runs without rewriting their
 history. The same committed editor also passes an in-app desktop/mobile QA
 journey: versioned assets, tail-first read-only Markdown structure, true
 top-of-prompt caret navigation, distinct effective policy provenance, revision
-snapshot readback, and confirmed-logout DOM scrubbing. The fingerprint-capable
-analyzer also rebuilds and passes the constrained smoke on native arm64 as local image
-`sha256:e2ebd8c3…`, including analyze/fingerprint hash parity and a final 61.68
-MiB runtime sample. Native-amd64 CI and Railway must still reproduce the image;
-this local gate does not close either acceptance boundary.
+snapshot readback, and confirmed-logout DOM scrubbing. The earlier
+fingerprint-capable analyzer at `fe0a5ff` rebuilt and passed the constrained
+smoke on native arm64 as local image `sha256:e2ebd8c3…`, including
+analyze/fingerprint hash parity and a final 61.68 MiB runtime sample. Commit
+`86cd50b` changes the compiled source-scope pin and its smoke, so that image is
+historical rather than acceptance for the current source. Docker was installed
+but no daemon was running during the exact-commit gate; the revised image smoke,
+native-amd64 CI, and Railway reproduction remain open.
 
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
@@ -507,6 +510,13 @@ deployment or enablement.
   as an upload, while stems, isolation paths, malformed/over-deep keys, and
   source-type mismatches fail before fetch. The constrained image smoke also
   requires the readiness pin and an actual authoritative-snapshot analysis.
+  Exact executable-source commit `86cd50b` passes a frozen Bun 1.3.14 install
+  and literal `test:phase0` from a clean detached worktree: all three
+  typechecks; 183 worker, 23 analyzer, 28 Railway/migration, 5 separator, 30
+  discovery, and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto, and 1
+  isolation-shadow browser journey. The canonical read-only Railway
+  pre-provision gate also passes with the analyzer absent, all related features
+  off, zero mutations, zero provider calls, and no secrets printed.
   Native-amd64 and Railway image reproduction remain open.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.

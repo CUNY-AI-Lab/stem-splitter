@@ -23,10 +23,17 @@ promotion on their own.
   the authoritative-snapshot path. Older analyzers remain safely fail-lazy but
   cannot pass the new release gate. `SERVER_AUTO_ENABLED=false` remains the
   immediate rollback, without a schema change.
-- Evidence: all three typechecks plus the focused app/analyzer source tests pass
-  locally. Native-amd64 image, Railway resource/restart, real-source shadow,
-  and listening acceptance remain open. No service, variable, provider call,
-  migration, or deployment changed.
+- Evidence: exact executable-source commit `86cd50b` passes the frozen Bun
+  1.3.14 install and literal `test:phase0` from a clean detached worktree: all
+  three typechecks; 183 worker, 23 analyzer, 28 Railway/migration, 5 separator,
+  30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6 authoritative-Auto,
+  and 1 isolation-shadow browser journey. A value-free audit of the explicit
+  canonical Railway IDs passes the pre-provision gate with the analyzer absent,
+  feature posture off, zero mutations, zero provider calls, and no secrets
+  printed. Docker was installed locally but its daemon was not running, so the
+  revised image smoke did not run. Native-amd64 image, Railway
+  resource/restart, real-source shadow, and listening acceptance remain open.
+  No service, variable, provider call, migration, or deployment changed.
 
 ## authoritative-auto-upload-snapshot-v1 — immutable upload handoff — 2026-08-10
 
@@ -60,19 +67,21 @@ promotion on their own.
   fetch and after analysis, then proves the separator still downloads the
   initial snapshot bytes. `git show --check` also passes. This evidence is local
   only: no push, PR, Railway mutation, or deployment occurred.
-- Combined-tree evidence: the earlier prompt-history pagination tree passed a
+- Combined-tree evidence at the time of this entry: the earlier prompt-history
+  pagination tree passed a
   selected-path manifest at `1a398b27…`, but that inherited recipe was later
   found to omit executable scripts and service/config trees. The widened guard
   then rejected two otherwise-green commands because source changed during
   execution (`fccaf815…` to `5e3adcd5…`, then `f059739f…` to `45f2d503…`).
-  Current combined acceptance is instead bound to exact commit `fe0a5ff`: a
+  Combined acceptance was then bound to exact commit `fe0a5ff`: a
   clean detached checkout passes all three typechecks; 181 worker, 22 analyzer,
   28 Railway, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19/6/1 browser
   journeys. `git diff --check` passes and the checkout remains clean. Separate
   desktop/mobile in-app QA verifies the governed teacher editor, versioned
   assets, true top-of-prompt navigation, revision provenance, and logout
-  scrubbing. This remains local evidence only: no push, PR, Railway mutation,
-  provider call, or deployment occurred.
+  scrubbing. Commit `86cd50b` and the entry above supersede this combined gate
+  without rewriting it. This remains local evidence only: no push, PR, Railway
+  mutation, provider call, or deployment occurred.
 - Remaining: native-amd64 CI, actual Railway resource/restart acceptance,
   parity calibration, genre listening, and live shadow/rollback evidence remain
   gates before authoritative promotion.
