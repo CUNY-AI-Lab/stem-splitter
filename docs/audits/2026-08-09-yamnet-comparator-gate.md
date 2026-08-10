@@ -107,6 +107,24 @@ the same paths so a transitive change cannot bypass the image gate. A new
 native-amd64 corpus-v2 report and refreshed control report remain required
 before this evaluator can support any later selection decision.
 
+### V3 candidate-capture boundary
+
+Commit `5f9a8ad1bb554b085c64bef8ddd1b2f7eaec4ff4` adds a
+YAMNet-specific adapter between those future raw reports and the classifier-
+neutral v3 candidate schema. Its preparation step accepts only repository-
+contained, nonsymlinked, bounded JSON reports and binds their exact bytes. Its
+capture step revalidates both reports, requires one identical immutable native
+non-emulated `linux/amd64` execution, and cross-checks the current model,
+mapping, vocabulary, score policy, image sources, dependency lock, evaluator
+sources, source identities and ordering, AudioSet rankings, timing, and decoded
+PCM/window plans.
+
+The adapter does not infer that YAMNet has passed review. With no selected
+threshold, its content-addressed review-pending policy emits all 19 sources as
+`abstained`/`no-label-cleared-threshold` and emits no detections. Historical
+arm64 reports and the local emulated-amd64 run remain ineligible. No fresh
+native-amd64 report or candidate artifact was produced by this code slice.
+
 ## Licensed-corpus result
 
 The durable, non-promotion report is
@@ -215,6 +233,14 @@ native-amd64 GitHub workflow is defined but has not run because the branch is
 local. No test or report authorizes classifier selection, a Railway service,
 or live rollout.
 
+The later exact adapter commit `5f9a8ad1bb554b085c64bef8ddd1b2f7eaec4ff4`
+passes four TypeScript checks; 227 worker, 24 analyzer, 31 Railway
+host/migration, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19
+flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey under
+Bun 1.3.14. Four focused capture tests and all 12 combined adapter/comparator
+tests pass. The workflow parses as YAML; `actionlint` was unavailable in this
+shell and is not claimed.
+
 ## Comparator disposition
 
 The fixed AudioSet head avoids the rejected CLAP candidate's prompt-negation
@@ -235,8 +261,9 @@ blocked by:
    the offline gate.
 
 The next evidence unit is teacher listening review of the isolated controls,
-followed by native-amd64 execution and a specialized fixed-label or reviewed
-transfer-learning head against this frozen baseline. Essentia remains blocked
+followed by fresh native-amd64 corpus/control execution through the now-defined
+capture adapter and a specialized fixed-label or reviewed transfer-learning
+head against this frozen baseline. Essentia remains blocked
 until the exact weight and runtime license boundary receives written
 clarification and institutional review. Only one selected candidate may later
 proceed to a private Railway service, with flags still off and no student or

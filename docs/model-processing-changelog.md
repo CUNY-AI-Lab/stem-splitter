@@ -5,6 +5,38 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## yamnet-candidate-capture-v1 — native report adapter — 2026-08-10
+
+- Scope: exact implementation commit
+  `5f9a8ad1bb554b085c64bef8ddd1b2f7eaec4ff4` adds a model-specific
+  evidence adapter for comparison-only YAMNet. It does not select YAMNet, set a
+  threshold, add an application dependency, provision a service, change a flag,
+  route a split, or alter the frozen 2/4/6 stem contracts.
+- Input contract: an owner-only, no-overwrite preparation command binds one
+  fresh schema-v2 real-mix report and one schema-v1 isolated-control report by
+  repository path and SHA-256. Capture re-reads both and requires the same
+  immutable native non-emulated `linux/amd64` image, exact model/mapping/
+  vocabulary/scoring pins, current dependency lock and evaluator sources, exact
+  source order and hashes, internally consistent score rankings and PCM window
+  plans, and the current 19-source evaluation plan. Historical arm64 evidence,
+  emulation, symlinks, replacement, mismatch, and drift fail closed.
+- Output semantics: no teacher-cleared YAMNet threshold exists. The adapter
+  content-addresses its preprocessing, classifier, and review-pending threshold
+  policies and emits all 19 observations as
+  `abstained`/`no-label-cleared-threshold` with zero detections. It cannot turn
+  abstention into instrument absence, calibration, selection, or promotion.
+- Evidence: the exact commit passes four TypeScript checks; 227 worker, 24
+  analyzer, 31 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet
+  tests; plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
+  journey under Bun 1.3.14. Four focused adapter tests and all 12 combined
+  adapter/comparator tests pass; the workflow also parses as YAML. `actionlint`
+  was unavailable in this shell and is not claimed.
+- Remaining and rollout: off. Fresh native-amd64 corpus/control reports,
+  exhaustive listening, a reviewed threshold, candidate observations from real
+  evidence, classifier selection, a quality floor, and Railway shadow evidence
+  remain open. No Railway mutation, provider call, push, pull request, or
+  deployment occurred.
+
 ## instrument-evaluation-v3 — candidate execution provenance — 2026-08-10
 
 - Miss: candidate v2 pinned classifier/model/vocabulary identities and policy

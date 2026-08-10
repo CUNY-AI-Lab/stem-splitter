@@ -254,6 +254,23 @@ no model-specific adapter has yet converted a clean native classifier report
 into v3 observations, and no candidate artifact exists. All processing flags
 and the live Railway topology remain unchanged.
 
+Exact YAMNet capture-adapter commit `5f9a8ad` implements the first
+model-specific bridge without selecting or promoting that classifier. A
+two-step, no-overwrite CLI binds a fresh schema-v2 corpus report and schema-v1
+control report by path and SHA-256, then revalidates their exact YAMNet model,
+mapping, vocabulary, scoring policy, evaluator sources, audio/PCM plan,
+dependency lock, immutable image, and shared native non-emulated `linux/amd64`
+execution before emitting v3 observations. Because no teacher-cleared threshold
+exists, all 19 sources are deliberately emitted as
+`abstained`/`no-label-cleared-threshold` with zero detections; the adapter cannot
+manufacture negative labels or a selection decision. Historical arm64,
+emulated-amd64, mismatched-image, replaced-report, symlinked, reordered, and
+pin-drift evidence fails closed. The exact commit passes the complete Bun
+1.3.14 Phase 0 gate: 227 worker, 24 analyzer, 31 Railway host/migration, 5
+separator, 30 discovery, 9 YAMNet, and 19/6/1 browser tests. No fresh native
+reports or candidate artifact were created, and all processing flags and live
+Railway topology remain unchanged.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -915,12 +932,19 @@ job.
   native non-emulated `linux/amd64` execution. Evidence files are bounded,
   repository-contained, nonsymlinked, and rehashed before metrics are computed;
   the resulting report preserves the same provenance envelope.
-- [ ] Implement a model-specific capture adapter for the selected classifier.
-  It must consume a clean native `linux/amd64` report, verify that report's own
-  model, preprocessing, policy, image, platform, lock, source, and result pins,
-  then emit the v3 observations without accepting caller-authored execution
-  claims. Rejected historical CLAP output, arm64 runs, and emulated amd64 runs
-  cannot satisfy this step.
+- [x] Implement a comparison-only YAMNet capture adapter. It consumes paired
+  clean native corpus/control reports from one immutable `linux/amd64` image,
+  revalidates model, preprocessing, scoring-policy, evaluator, audio/PCM,
+  platform, lock, source, ordering, and result pins, and emits all 19 v3 sources
+  as explicit abstentions while no reviewed threshold exists. It rejects the
+  historical arm64 reports, emulation, caller-authored execution drift, report
+  replacement, and symbolic-link inputs. This closes the YAMNet evidence-format
+  seam only; it does not select YAMNet or create a real candidate artifact.
+- [ ] After exactly one discovery classifier is selected, implement or adapt its
+  model-specific capture path against a fresh native `linux/amd64` report and
+  its separately reviewed threshold policy. The existing YAMNet adapter may be
+  reused only if YAMNet wins selection and every bound pin still matches. Its
+  current abstention-only output cannot satisfy calibration or promotion.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
   every track into the nearest available label. The v3 candidate contract
   retains v2's distinction among classified, abstained, and degraded source
@@ -1178,8 +1202,10 @@ canary. Student access remains off.
   isolated-control reporting separate. The validator refuses source, ontology,
   policy, vocabulary, and ordering drift. The v3 candidate boundary also binds
   policy content, source-report, generator, dependency-lock, immutable-image,
-  and native-platform provenance; it still awaits a model-specific capture
-  adapter and a real candidate artifact. The evaluator exposes selective
+  and native-platform provenance. A YAMNet-specific comparison adapter now
+  validates that chain but deliberately emits only abstentions; a selected-
+  classifier adapter, fresh native reports, and a real reviewed candidate
+  artifact remain open. The evaluator exposes selective
   coverage, model abstention, false alerts, degraded sources, and coverage gaps
   without turning an outage into classifier error. It forbids promotion from
   an overlapping all-label aggregate. This establishes the evidence shape but

@@ -74,6 +74,12 @@
   CC BY 4.0 wind controls; the results remain candidate evidence until a teacher
   listens to every positive and alert. Missing free-reed, string, pitched-
   percussion and traditional-instrument controls still block selection.
+- [x] Add a YAMNet-specific bridge from paired fresh native corpus/control
+  reports into the classifier-neutral v3 candidate envelope. The two-step
+  no-overwrite capture revalidates image, platform, model, mapping, vocabulary,
+  scoring, evaluator, source, PCM-plan, lock, and ordering pins. Until teacher
+  listening selects a threshold it emits only explicit abstentions and cannot
+  create an absence, accuracy, selection, service, or rollout claim.
 - [x] Expose stored discovery evidence only through an explicit authenticated
   teacher review. The console displays possible/uncertain state, confidence,
   window support, and version provenance; it displays abstention and discovery

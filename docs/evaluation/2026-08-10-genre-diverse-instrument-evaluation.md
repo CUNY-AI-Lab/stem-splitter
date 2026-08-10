@@ -84,10 +84,39 @@ symbolic-link path component, and byte-for-byte equal to its declared digest.
 The metrics artifact carries this validated envelope forward.
 
 This envelope validates a supplied provenance chain; it does not independently
-prove that a classifier ran. A model-specific capture adapter must still bind
-the selected model's native report fields to the v3 observations. Until that
-adapter and a clean native report exist, no candidate artifact can satisfy this
-contract.
+prove that a classifier ran. A model-specific capture adapter must bind the
+selected model's native report fields to the v3 observations.
+
+The first such adapter is intentionally limited to the comparison-only YAMNet
+candidate. From the repository root, after placing fresh reports under the
+gitignored `output/` directory, run:
+
+```bash
+bun run prepare:yamnet-candidate \
+  --corpus-report output/yamnet-native-amd64-corpus-v2.json \
+  --control-report output/yamnet-native-amd64-controls-v1.json \
+  --output output/yamnet-candidate-source.json
+
+bun run capture:yamnet-candidate \
+  --source-report output/yamnet-candidate-source.json \
+  --output output/yamnet-instrument-candidate.json
+```
+
+Both commands refuse overwrite and create mode-`0600` output. The first command
+validates and binds the two raw reports by exact bytes. The second re-reads those
+bytes and verifies the current model, mapping, vocabulary, score policy,
+evaluator sources, hydrated-source identities, decoded PCM/window plans,
+dependency lock, immutable image ID, and one shared native non-emulated
+`linux/amd64` execution. Raw reports, source descriptor, and candidate output
+remain review artifacts; the repository does not contain a fresh native report.
+
+No label-cleared YAMNet threshold exists. The adapter therefore emits every one
+of the 19 sources as `abstained` with reason
+`no-label-cleared-threshold` and no detections. That output can exercise the v3
+evidence and selective-metric boundary, but it cannot establish absence,
+calibrate a threshold, select YAMNet, or authorize promotion. A different
+selected classifier still needs its own adapter; this adapter may be reused only
+if YAMNet is selected and its exact pins and reviewed policy remain current.
 
 Each source must declare exactly one outcome and a compatible bounded reason:
 
@@ -180,6 +209,18 @@ authoritative-Auto, and 1 isolation-shadow browser journey under Bun 1.3.14.
 The nine focused candidate/evaluation tests pass. This verifies the envelope,
 not musical accuracy or the truth of a future model-specific runtime report;
 the capture adapter and candidate artifact remain missing.
+
+Commit `5f9a8ad1bb554b085c64bef8ddd1b2f7eaec4ff4` adds the bounded
+YAMNet-specific adapter and its two no-overwrite commands. It rejects historical
+arm64 reports, wrong or mismatched images, emulation, dependency/evaluator/
+mapping/source/score/PCM/order drift, report replacement, symbolic links, and a
+repository-root mismatch. Its only threshold policy is content-addressed
+review-pending abstention, so it produces no detection or promotion claim. The
+exact commit passes four TypeScript checks; 227 worker, 24 analyzer, 31 Railway
+host/migration, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off,
+6 authoritative-Auto, and 1 isolation-shadow browser journey under Bun 1.3.14.
+The four focused adapter tests and 12 combined adapter/comparator tests pass. No
+fresh native reports or candidate artifact exist yet.
 
 A value-free read-only check of the canonical Railway project/environment/app
 service also passes the pre-provision topology contract with `audio-analysis`
