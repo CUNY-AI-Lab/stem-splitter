@@ -6,6 +6,7 @@ import { PINNED_ROLE_CLASSIFIER_VERSION } from '../../src/analysis/types.ts';
 import { AUDIOSEP_REVIEWED_REPLICATE_VERSION } from '../../src/isolation/options.ts';
 import { getSeparationOptions } from '../../src/separation/options.ts';
 import { SAM_AUDIO_REPLICATE_VERSION } from './query-isolation-bakeoff.mts';
+import { loadRailwayRollbackBaselineEvidence } from './railway-baseline-evidence.mts';
 
 export const AUDIO_PIPELINE_PROMOTION_SCHEMA =
   'stem-splitter.audio-pipeline-promotion.v2' as const;
@@ -589,5 +590,9 @@ export function loadAudioPipelinePromotionManifest(
   manifestPath: string = AUDIO_PIPELINE_PROMOTION_MANIFEST_PATH
 ): AudioPipelinePromotionManifest {
   const value = JSON.parse(readFileSync(resolve(repositoryRoot, manifestPath), 'utf8')) as unknown;
-  return validateAudioPipelinePromotionManifest(value);
+  const manifest = validateAudioPipelinePromotionManifest(value);
+  if (manifest.evidence.railwayBaseline) {
+    loadRailwayRollbackBaselineEvidence(repositoryRoot);
+  }
+  return manifest;
 }

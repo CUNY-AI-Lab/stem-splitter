@@ -130,7 +130,7 @@
     "browserParity": true,
     "nativeAmd64Image": false,
     "manualListening": false,
-    "railwayBaseline": false,
+    "railwayBaseline": true,
     "railwayResourceAcceptance": false,
     "railwayShadow": false,
     "teacherBeta": false,
@@ -149,7 +149,6 @@
     "native-amd64-image-missing",
     "manual-listening-missing",
     "railway-resource-acceptance-missing",
-    "railway-baseline-missing",
     "railway-rollback-missing"
   ]
 }

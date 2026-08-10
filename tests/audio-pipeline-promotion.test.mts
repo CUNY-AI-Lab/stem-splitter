@@ -261,7 +261,6 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
     'audio-analysis-service-absent',
     'manual-listening-missing',
     'native-amd64-image-missing',
-    'railway-baseline-missing',
     'railway-resource-acceptance-missing',
     'railway-rollback-missing',
   ]);
@@ -271,7 +270,6 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
   shadowReady.components[0].provisioned = true;
   shadowReady.evidence.nativeAmd64Image = true;
   shadowReady.evidence.manualListening = true;
-  shadowReady.evidence.railwayBaseline = true;
   shadowReady.evidence.railwayResourceAcceptance = true;
   shadowReady.rollback.railwayRollbackTested = true;
   assert.deepEqual(promotionBlockers(shadowReady, 'shadow'), []);
@@ -302,13 +300,11 @@ test('Railway analyzer provisioning has a separate pre-mutation evidence gate', 
   assert.deepEqual(provisionAudioAnalysisBlockers(current), [
     'manual-listening-missing',
     'native-amd64-image-missing',
-    'railway-baseline-missing',
   ]);
 
   const ready = structuredClone(current);
   ready.evidence.nativeAmd64Image = true;
   ready.evidence.manualListening = true;
-  ready.evidence.railwayBaseline = true;
   assert.deepEqual(provisionAudioAnalysisBlockers(ready), []);
 
   ready.components[0].provisioned = true;
