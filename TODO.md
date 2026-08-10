@@ -108,6 +108,14 @@ because its model or service is available.
   reads back its exact revision instead of whichever revision is newest.
   Concurrent-batch, losing-CAS, and concurrent-save regressions pass at
   `821f5e1`.
+- [x] Prevent stale guide generations from undoing prompt governance. Each
+  cached guide records the code-owned `SYSTEM_PROMPT_VERSION` and monotonic
+  amendment revision; its single-statement upsert succeeds only while that
+  revision remains current. A guide begun before a teacher edit can finish for
+  its original caller but cannot repopulate the shared cache, and guides from an
+  older fixed prompt regenerate lazily. Railway's additive migration preserves
+  legacy rows with a deliberately ineligible cache identity. Focused tests also
+  prove transaction rollback when invalidation fails.
 - [x] Pin the active Railpack host and CI to exact Node `22.23.1` instead of a
   floating `>=22.5`, declare matching Node types directly, and statically check
   `server/` plus shared `src/`. This catches Railway-adapter errors that the
@@ -175,6 +183,12 @@ because its model or service is available.
   server/migration, 5 separator, 29 discovery, 19 browser E2E, and 4
   authoritative Auto E2E tests. Native GitHub and Railway acceptance remain
   separate gates.
+- [x] Bind the prompt-aware guide-cache follow-up to exact executable-source
+  commit `e640c72` and repeat the literal Bun `1.3.14` phase-zero gate. All
+  three typechecks plus 127 worker, 21 analyzer, 13 server/migration, 5
+  separator, 29 discovery, 19 browser E2E, and 4 authoritative Auto E2E tests
+  pass. Native GitHub and Railway acceptance remain separate open gates; this
+  local commit is not present on `origin` and has no pull request.
 - [x] Record the canonical Railway project, environment, and service IDs and
   replace name-based release commands. The current local Railway link resolves
   to a same-named legacy workerd project and must never be treated as authority.

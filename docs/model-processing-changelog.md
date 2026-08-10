@@ -68,7 +68,7 @@ promotion on their own.
 - Evidence source: evaluator, mapping, diagnostic, and research-gate files are
   committed at `ccf7f53`; the raw-score report binds the committed
   `score_audit.py` and `clap_backend.py` SHA-256 values. Final executable source
-  `821f5e1` passes 127 worker tests and 21 analyzer tests, including
+  `e640c72` passes 127 worker tests and 21 analyzer tests, including
   vocabulary integrity, content pins, private-origin/redirect controls,
   bounded window transport, parent abort, malformed responses, non-mutating
   core routing, and candidate evaluation-map integrity. Native GitHub/image
@@ -182,12 +182,14 @@ promotion on their own.
   executable, so the underlying scripts ran directly through Node/npm/npx/uv.
   This superseded `d4c5781` as the local source gate, but not as constrained
   image evidence; later exact-Bun evidence supersedes it again.
-- Final executable-source evidence: exact commit `821f5e1` passes
+- Final executable-source evidence: exact commit `e640c72` passes
   `bun@1.3.14 install --frozen-lockfile` with no changes and the literal
   `test:phase0`: app, Railway-host/shared, and analyzer typechecks; 127 worker,
-  21 analyzer, 9 server/migration, 5 separator, 29 discovery, 19 browser E2E,
+  21 analyzer, 13 server/migration, 5 separator, 29 discovery, 19 browser E2E,
   and 4 authoritative Auto E2E tests. It supersedes `fe112ef` and `fce98cf` as
-  the complete committed-source gate; the native GitHub/image run remains open.
+  the complete committed-source gate. The prompt-cache follow-up changes no
+  classifier, separator, stem name, or 2/4/6 routing contract; the native
+  GitHub/image run remains open.
 - Constrained image evidence: both the existing emulated amd64 image and the
   current native arm64 build passed the reusable internal-network smoke with a
   read-only root, no analyzer mounts, 1 vCPU, 1 GiB RAM, real short and
