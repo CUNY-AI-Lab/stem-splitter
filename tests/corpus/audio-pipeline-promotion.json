@@ -1,0 +1,153 @@
+{
+  "$schema": "stem-splitter.audio-pipeline-promotion.v1",
+  "releaseId": "v3.2-autosplit-role-v4",
+  "baseCommit": "86cd50baf859214e63fb177e8c2bb8f88c612aa1",
+  "candidateCommit": "89019023c1fb8da82bf6acfbf886a31a4b30d86b",
+  "rolloutStage": "off",
+  "change": {
+    "axis": "role-classifier",
+    "roleClassifier": true,
+    "instrumentClassifier": false,
+    "vocabulary": false,
+    "thresholds": false,
+    "windowing": false,
+    "promptPolicy": false,
+    "separatorVersion": false,
+    "schemaMigration": false,
+    "defaultRouting": false,
+    "additiveSchemaOnly": false
+  },
+  "flags": {
+    "SERVER_AUTO_ENABLED": false,
+    "SERVER_AUTO_MODE": "off",
+    "INSTRUMENT_DISCOVERY_ENABLED": false,
+    "QUERY_ISOLATION_ENABLED": false,
+    "QUERY_ISOLATION_MODE": "off"
+  },
+  "coreContracts": [
+    {
+      "id": "vocals_instrumental",
+      "stems": ["vocals", "instrumental"]
+    },
+    {
+      "id": "htdemucs_ft",
+      "stems": ["vocals", "drums", "bass", "other"]
+    },
+    {
+      "id": "htdemucs_6s",
+      "stems": ["vocals", "drums", "bass", "other", "guitar", "piano"]
+    }
+  ],
+  "components": [
+    {
+      "id": "audio-analysis",
+      "order": 1,
+      "disposition": "implemented-off",
+      "dependsOn": [],
+      "artifactVersion": "autosplit-role-v4+analysis-source-scope-v2",
+      "provisioned": false,
+      "runtimeEnabled": false,
+      "externalExecution": false,
+      "accepted": false,
+      "blockers": [
+        "native-amd64-image-missing",
+        "manual-listening-missing",
+        "railway-resource-acceptance-missing"
+      ]
+    },
+    {
+      "id": "instrument-discovery",
+      "order": 2,
+      "disposition": "selection-blocked",
+      "dependsOn": ["audio-analysis"],
+      "artifactVersion": null,
+      "provisioned": false,
+      "runtimeEnabled": false,
+      "externalExecution": false,
+      "accepted": false,
+      "blockers": [
+        "clap-candidate-rejected",
+        "essentia-license-clearance-missing",
+        "yamnet-human-review-missing",
+        "replacement-classifier-unselected"
+      ]
+    },
+    {
+      "id": "audiosep",
+      "order": 3,
+      "disposition": "contract-only",
+      "dependsOn": ["instrument-discovery"],
+      "artifactVersion": "f07004438b8f3e6c5b720ba889389007cbf8dbbc9caa124afc24d9bbd2d307b8",
+      "provisioned": false,
+      "runtimeEnabled": false,
+      "externalExecution": false,
+      "accepted": false,
+      "blockers": [
+        "hosted-checkpoint-hash-unresolved",
+        "hosted-weight-license-unresolved",
+        "semester-budget-missing",
+        "provider-route-disabled"
+      ]
+    },
+    {
+      "id": "sam-audio",
+      "order": 4,
+      "disposition": "evaluation-only-license-blocked",
+      "dependsOn": ["audiosep"],
+      "artifactVersion": "d8a8a4fcdcbf0bdc863f6d98cd2117ec0bc02224b576c7b98b2a009a8a1f83fa",
+      "provisioned": false,
+      "runtimeEnabled": false,
+      "externalExecution": false,
+      "accepted": false,
+      "blockers": [
+        "institutional-license-approval-missing",
+        "gated-checkpoint-sha256-unavailable",
+        "community-image-checkpoint-binding-unverified",
+        "application-adapter-forbidden"
+      ]
+    },
+    {
+      "id": "banquet-query-bandit",
+      "order": 5,
+      "disposition": "research-only",
+      "dependsOn": ["sam-audio"],
+      "artifactVersion": null,
+      "provisioned": false,
+      "runtimeEnabled": false,
+      "externalExecution": false,
+      "accepted": false,
+      "blockers": [
+        "optional-isolation-beta-missing",
+        "simultaneous-long-tail-need-unproven",
+        "reconstruction-semantics-undefined"
+      ]
+    }
+  ],
+  "evidence": {
+    "cleanCommitPhase0": true,
+    "coreContractRegression": true,
+    "genreCorpus": true,
+    "browserParity": true,
+    "nativeAmd64Image": false,
+    "manualListening": false,
+    "railwayResourceAcceptance": false,
+    "railwayShadow": false,
+    "teacherBeta": false,
+    "studentCanary": false,
+    "audienceGuard": false
+  },
+  "rollback": {
+    "flag": "SERVER_AUTO_ENABLED",
+    "offValue": false,
+    "localFallbackTested": true,
+    "railwayRollbackTested": false,
+    "schemaRollbackRequired": false
+  },
+  "blockers": [
+    "audio-analysis-service-absent",
+    "native-amd64-image-missing",
+    "manual-listening-missing",
+    "railway-resource-acceptance-missing",
+    "railway-rollback-missing"
+  ]
+}

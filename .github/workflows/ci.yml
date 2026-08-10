@@ -44,6 +44,8 @@ jobs:
         run: bun run playwright -- install --with-deps chrome
       - name: Run unit and Python tests
         run: bun run test
+      - name: Validate ordered audio-pipeline promotion
+        run: bun run check:audio-pipeline
       - name: Run audio-analysis contract and parity tests
         run: bun run typecheck:analysis && bun run test:analysis-service
       - name: Run local browser E2E tests

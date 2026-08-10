@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": [
+    "scripts/check-audio-pipeline-promotion.mts",
+    "scripts/lib/audio-pipeline-promotion.mts",
+    "tests/audio-pipeline-promotion.test.mts"
+  ]
+}
