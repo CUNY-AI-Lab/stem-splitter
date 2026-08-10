@@ -87,7 +87,25 @@ because its model or service is available.
   and provider/model version. This is the rollback comparison point. The live
   evidence is recorded under
   `docs/acceptance/2026-08-09-v3.2-rollback-baseline/`; all four outputs had
-  valid MP3 headers and distinct hashes. Manual listening remains a release gate.
+  valid MP3 headers and distinct hashes. The complete `test:phase0` source gate
+  passes on committed source `d4c5781`: 105 worker, 21 analyzer, 5
+  server/migration, 5 separator, 24 discovery, 19 browser E2E, and 4
+  server-authoritative Auto E2E tests, including the oversized-job-body gate.
+  Manual listening remains a release gate.
+- [x] Make the repeatable baseline capture fail closed before it handles a class
+  code or audio: HTTPS-only remote origin, exact ready health/default contract,
+  bounded requests/responses and polling, no redirects, no reflected error
+  bodies, same-origin credential-free output URLs, real MPEG-frame evidence,
+  exact metadata shapes, and immutable `0600` output. Four focused regressions
+  cover the secret, transport, and false-positive audio boundaries.
+- [x] Bind the passing full-gate result above to committed source `d4c5781`
+  before opening a PR or deploying. Documentation-only follow-up commits do
+  not change that tested source identity.
+- [x] Bound inbound app JSON and outbound Archive/YouTube bodies by media type,
+  declared and streamed bytes, read time, and redirect policy. Reject malformed
+  prediction identities, non-audio provider bodies, unsupported licence URLs,
+  incomplete Archive duration/size metadata, and unapproved redirect origins;
+  cancel rejected streams and log only safe error names/codes.
 - [x] Record the canonical Railway project, environment, and service IDs and
   replace name-based release commands. The current local Railway link resolves
   to a same-named legacy workerd project and must never be treated as authority.
@@ -95,7 +113,9 @@ because its model or service is available.
   `REPLICATE_YT_MODEL_VERSION` on the canonical Railway service without
   triggering an unrelated release. Version `bcd3b512…` passed the importer
   schema guard and was staged with `--skip-deploys`; deployment
-  `7f4bc330…` remained active and unchanged.
+  `7f4bc330…` remained active and unchanged. Local runtime/config guards now
+  accept only the exact 64-hex version form; the staged value is not claimed as
+  active in the still-running old deployment.
 
 ## Service and dependency order
 
@@ -188,6 +208,15 @@ deployment or enablement.
   audio-format, and eleven-source corpus checks on pinned FFmpeg 8.0.3. The
   local emulated run produced 8 preferred choices, 3 accepted alternatives,
   and 0 rejected choices.
+- [x] Add one reusable constrained-image smoke used locally and by native CI.
+  It runs with a read-only root, dropped capabilities, no analyzer mounts, an
+  internal-only fixture network, 1 vCPU, 1 GiB RAM, 64 PIDs, and bounded `/tmp`;
+  then proves readiness/auth, real short and 15-minute audio, declared and
+  streamed oversize rejection, malformed-media rejection, source timeout,
+  overlap `503` plus `Retry-After`, temporary-file cleanup, and secret-free
+  logs. The current native arm64 image passed at a final 59.81 MiB sample; the
+  existing emulated amd64 image passed at 253.4 MiB. These snapshots are not
+  peak Railway metrics.
 - [ ] Reproduce the image on a native amd64 GitHub runner and Railway. Keep the
   CI runtime audit that permits only the six advertised demuxers, audio
   decoders, and file/pipe protocols; then exercise Railway CPU, memory, child
@@ -270,6 +299,8 @@ job.
   readiness pins, empty mount surface, dropped capabilities, bounded CPU/RAM/
   PIDs, authentication, and real synthetic-control inference. The workflow is
   local-only until a remote branch/PR run proves it on GitHub infrastructure.
+  `actionlint` passes; the earlier fresh native arm64 container run remains the
+  local evidence, while a remote branch/PR run is still required.
 - [ ] Prove the discovery container restarts cleanly after the watchdog kills a
   deliberately stuck real PyTorch inference. This requires the built model
   image plus Railway restart/readiness evidence before shadow traffic.

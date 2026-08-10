@@ -68,16 +68,19 @@
     "serviceId": "f53a2915-087c-493a-a345-7a1fa73e6588",
     "deploymentId": "7f4bc330-4c52-4257-8762-3b85a24b2d07",
     "deployedCommit": "9c3120cbdf5b56b872384f155c746930e064aa09",
-    "imageDigest": "sha256:cf04a8a3d2b369009a9a0fe79cdda166c92937d117d5559cd00ed6b8807853ca"
+    "imageDigest": "sha256:cf04a8a3d2b369009a9a0fe79cdda166c92937d117d5559cd00ed6b8807853ca",
+    "evidenceScope": "explicit-railway-readback"
   },
   "provider": {
     "separation": {
       "backend": "replicate",
-      "version": "5a7041cc9b82e5a558fea6b3d7b12dea89625e89da33f0447bd727c2d0ab9e77"
+      "version": "5a7041cc9b82e5a558fea6b3d7b12dea89625e89da33f0447bd727c2d0ab9e77",
+      "evidenceScope": "railway-config-plane"
     },
     "youtubeConfigPlane": {
       "model": "milwrite/yt-audio",
-      "stagedVersion": "bcd3b512921a6f3cec4ae01c966c78d320d2a3b512db913cdd02036ea2bff7f9"
+      "stagedVersion": "bcd3b512921a6f3cec4ae01c966c78d320d2a3b512db913cdd02036ea2bff7f9",
+      "evidenceScope": "staged-not-running"
     }
   }
 }

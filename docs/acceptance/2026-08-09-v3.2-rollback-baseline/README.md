@@ -27,14 +27,39 @@ staged on the Railway configuration plane with deploys suppressed. It was not
 part of this upload-based job and is not claimed as active in the still-running
 pre-v3.2 container.
 
+## Candidate source validation
+
+The complete source gate passed on 2026-08-09 against committed source
+`d4c5781` (`build: exercise constrained analysis image`):
+
+- root and analyzer TypeScript checks;
+- 105 worker/contract tests;
+- 21 analyzer tests;
+- 5 Railway server/migration tests;
+- 5 separator tests;
+- 24 discovery-service tests;
+- 19 local browser E2E tests; and
+- 4 server-authoritative Auto E2E tests covering stored upload, YouTube, and
+  Archive sources, analyzer-outage fallback, and oversized job JSON.
+
+The executable command was `npx -y bun@1.3.14 run test:phase0`. The first full
+run correctly exposed test fixtures that used descriptive fake YouTube version
+names; after every fixture was changed to the same exact 64-hex contract the
+entire command passed. The result is bound to `d4c5781`; subsequent
+documentation-only commits do not alter that tested source identity.
+
 ## Reproduction boundary
 
 Run `npm run baseline:railway` through `railway run` scoped to the canonical
 project, environment, and app-service IDs. Provide `SOURCE_AUDIO` from the
 authorized local corpus and use `BASELINE_OUT` for the JSON result. The command
 reads the class code from the Railway environment, never prints or stores it,
-refuses cross-origin upload/stem URLs, disables redirects on authenticated
-requests, verifies the live four-track catalogue, and stores no audio.
+requires HTTPS except on loopback, refuses credential-bearing or cross-origin
+upload/stem URLs, disables redirects, bounds every request and response, never
+reflects response bodies into errors, verifies the exact ready health/default
+four-track catalogue, requires a real MPEG audio frame beyond an optional ID3
+tag, and stores no audio. It validates the explicit Railway/provider evidence
+metadata before uploading and refuses to overwrite an existing evidence file.
 
-Automated hash/header checks do not replace listening. Manual comparison of
+Automated hash/frame checks do not replace listening. Manual comparison of
 the four tracks remains part of the release acceptance before authority changes.

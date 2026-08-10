@@ -68,8 +68,16 @@ FFmpeg and exits nonzero on routing disagreement or a reviewed rejection.
 The container must be built from the repository root:
 
 ```sh
-docker build -f audio-analysis/Dockerfile .
+docker build -f audio-analysis/Dockerfile -t stem-splitter-audio-analysis:local .
+npm run smoke:audio-analysis:image -- stem-splitter-audio-analysis:local
 ```
+
+The smoke uses an internal-only fixture network and gives the analyzer no bind
+mounts. It verifies the image/runtime allowlist and limits, readiness/auth,
+short and maximum-duration decoding, malformed media, declared and streamed
+size enforcement, source-fetch timeout, concurrency rejection, temporary-file
+cleanup, and log redaction. A passing local run is not native amd64 CI or
+Railway resource evidence.
 
 The staged private-service topology, variables, resource caps, verification,
 and rollback order are in
@@ -77,6 +85,5 @@ and rollback order are in
 
 Do not provision or enable the Railway service until the Phase 0 fixtures,
 current-image smoke, and Phase 1A parity gates in `TODO.md` are complete. The
-CI image job validates FFmpeg/classifier readiness and the authentication
-boundary; it does not replace the private Railway resource-limit or real-audio
-shadow checks.
+CI runs the same constrained-image smoke on native amd64. It does not replace
+the private Railway restart/resource/ephemeral-disk or real-audio shadow checks.

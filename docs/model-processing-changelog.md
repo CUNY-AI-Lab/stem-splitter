@@ -102,6 +102,11 @@ promotion on their own.
 - Compatibility pin: the app rejects analyzer and browser summaries whose
   role-classifier version differs from the compiled `autosplit-role-v3` pin;
   a separately deployed service cannot silently change paid routing.
+- Import-version boundary: the Railway configuration plane now holds an exact
+  schema-checked `milwrite/yt-audio` version while the old deployment remains
+  active. Local runtime and readiness code reject descriptive, floating, or
+  whitespace-padded YouTube version strings; only a 64-hex Replicate version
+  id enables the fallback. This is staged configuration, not live activation.
 - Browser memory policy: authoritative mode sends the stored source directly
   to server analysis without a redundant Web Audio decode. Browser-only and
   shadow modes preflight metadata and skip sources over 5 minutes or 24 MiB;
@@ -120,12 +125,22 @@ promotion on their own.
   passed readiness/auth, the runtime allowlist, eight audio format/codec
   variants, and the full corpus at 8 preferred, 3 accepted alternatives, and 0
   rejected.
-- Evidence: `docs/evaluation/autosplit-role-v3-candidate.md`.
+- Evidence: `docs/evaluation/autosplit-role-v3-candidate.md`. Committed source
+  `d4c5781` passes the complete source gate: 105 worker,
+  21 analyzer, 5 server/migration, 5 separator, 24 discovery, 19 browser E2E,
+  and 4 authoritative Auto E2E tests.
+- Constrained image evidence: both the existing emulated amd64 image and the
+  current native arm64 build passed the reusable internal-network smoke with a
+  read-only root, no analyzer mounts, 1 vCPU, 1 GiB RAM, real short and
+  15-minute audio, malformed/oversized/slow/overlapping requests, cleanup, and
+  log-redaction checks. Final sampled memory was 253.4 MiB under emulation and
+  59.81 MiB natively; neither value is a peak or Railway sizing result.
 - Known risks: the observed synth boundary is narrow, only one corpus source
   selects six, manual stem listening is incomplete, and native CI/Railway
   resource behavior has not run this version.
-- Image status: local emulated amd64 gates pass. Native CI, Railway sizing,
-  concurrency, timeout, listening, and rollback gates remain before shadow.
+- Image status: local emulated amd64 and native arm64 gates pass. Native amd64
+  CI, Railway sizing/restart/ephemeral-disk evidence, listening, and rollback
+  gates remain before shadow.
 - Rollout: off. No Railway variable, service, or deployment change.
 
 ## autosplit-role-v2 — superseded local candidate, rollout off — 2026-08-09
