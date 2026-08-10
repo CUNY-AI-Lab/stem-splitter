@@ -63,3 +63,16 @@ metadata before uploading and refuses to overwrite an existing evidence file.
 
 Automated hash/frame checks do not replace listening. Manual comparison of
 the four tracks remains part of the release acceptance before authority changes.
+
+## Promotion binding
+
+Commit `ba556213a10dc3b9e8347d9c90fe0a64eedb8e74` binds `baseline.json` to the
+v3.2 promotion gate by its immutable SHA-256
+`e2369d661e0e0ee11072e5d6877171ce9ec894aab6398e404beb409368dd4827`.
+The gate fails closed on artifact, schema, corpus, catalogue, source, timing,
+stem, Railway-scope, deployment, image, or provider-pin drift. CI may validate
+the authorized source from its committed corpus digest when gitignored audio
+is not hydrated; a local run additionally verifies the exact source bytes.
+This closes the automated pre-release rollback-baseline condition only. It does
+not claim that the v3.2 analyzer exists, that a later deployment still matches
+this snapshot, or that a person has accepted the stem audio.

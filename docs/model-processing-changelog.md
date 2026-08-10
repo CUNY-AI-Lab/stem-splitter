@@ -5,6 +5,41 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## railway-rollback-baseline-v1 — immutable promotion binding — 2026-08-10
+
+- Miss: the schema-v2 manifest treated the Railway baseline as absent even
+  though an authorized four-track rollback artifact already recorded a
+  successful canonical Railway job. A bare evidence boolean also did not prove
+  which artifact, source, deployment, or provider pins supported it.
+- Contract: exact implementation commit
+  `ba556213a10dc3b9e8347d9c90fe0a64eedb8e74` adds a strict loader for
+  `docs/acceptance/2026-08-09-v3.2-rollback-baseline/baseline.json` and pins its
+  SHA-256 to `e2369d661e0e0ee11072e5d6877171ce9ec894aab6398e404beb409368dd4827`.
+  The promotion manifest can carry `railwayBaseline: true` only while that
+  artifact matches its exact schema, canonical origin and Railway IDs,
+  executable `htdemucs_ft` contract, authorized CC corpus source, job timing,
+  ordered distinct stems, deployed commit/image, and exact provider evidence.
+  Hydrated local audio must additionally match its recorded byte count and
+  content SHA-256; CI remains reproducible without committing the licensed
+  audio bytes.
+- Current result: the pre-provision action gate now fails on exactly two
+  conditions—native-amd64 role-v4 image evidence and manual listening. The
+  ordinary shadow gate has five blockers: those two plus analyzer absence,
+  Railway resource acceptance, and Railway rollback reproduction. Every
+  processing flag and rollout mode remains off.
+- Evidence: clean exact commit `ba55621` passes the literal Phase 0 gate under
+  Bun 1.3.14: all three TypeScript checks; 198 worker, 24 analyzer, 28 Railway
+  host/migration, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19
+  flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser journey.
+  The exact commit remains clean and passes `git show --check`. A separate
+  value-free live Railway readback still matched deployment
+  `7f4bc330-4c52-4257-8762-3b85a24b2d07` and image digest
+  `sha256:cf04a8a3d2b369009a9a0fe79cdda166c92937d117d5559cd00ed6b8807853ca`;
+  that current-state check remains distinct from the immutable artifact.
+- Remaining: obtain current native-amd64 image evidence and human listening
+  acceptance before provisioning. No analyzer service, variable, provider
+  call, deployment, remote branch, or pull request was created.
+
 ## audio-pipeline-promotion-v2 — pre-mutation provisioning gate — 2026-08-10
 
 - Miss: promotion v1 verified exact historical commits, but CI used a
@@ -18,9 +53,10 @@ promotion on their own.
   rollout or an already-provisioned analyzer. Resource and rollback acceptance
   remain mandatory for `shadow`, but no longer create a circular provisioning
   prerequisite.
-- Current result: the action gate exits nonzero on exactly three missing
+- Result at exact implementation commit `959940b`: the action gate exited
+  nonzero on exactly three missing
   preconditions—native-amd64 image, manual listening, and Railway baseline.
-  The shadow gate remains non-promotable with six blockers: those three plus
+  The shadow gate was non-promotable with six blockers: those three plus
   analyzer absence, Railway resource acceptance, and Railway rollback.
 - Evidence: exact implementation commit `959940b` passes the schema-v2
   typecheck/CLI and literal Phase 0 gate from a clean detached checkout under
@@ -31,8 +67,9 @@ promotion on their own.
   `git show --check` pass. The value-free live Railway pre-provision audit also
   passes against the explicit canonical IDs with the analyzer absent, all
   features off, zero mutations, zero provider calls, and no secrets printed.
-- Remaining: the local Docker engine did not become responsive after a bounded
-  Docker Desktop restart attempt. No role-v4 image, native-amd64 CI, manual
+- Remaining at that commit: the local Docker engine did not become responsive
+  after a bounded Docker Desktop restart attempt. No role-v4 image,
+  native-amd64 CI, manual
   listening, Railway baseline, service, variable, provider call, deployment,
   remote branch, or pull request was claimed or created.
 

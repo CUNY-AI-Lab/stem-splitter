@@ -175,7 +175,15 @@ It requires the exact committed contracts and corpus evidence plus native-amd64
 role-v4 image, manual-listening, and frozen Railway baseline evidence. It does
 not require the analyzer's resource or rollback acceptance, because those can
 exist only after the private service is provisioned. In the current `off`
-manifest it intentionally fails on those three still-missing preconditions.
+manifest the baseline condition is satisfied by the exact-schema artifact at
+`docs/acceptance/2026-08-09-v3.2-rollback-baseline/baseline.json`, whose
+SHA-256 is pinned in code. Loading the manifest revalidates its canonical
+Railway scope, executable four-track contract, authorized corpus provenance,
+source bytes when locally hydrated, timing, stem hashes, deployed commit,
+image digest, and provider pins. The gate therefore fails only on the two
+still-missing preconditions: native-amd64 role-v4 image evidence and manual
+listening. The frozen artifact does not replace the separate live topology
+readback below.
 
 Then confirm that the live project still satisfies the value-free
 pre-provision topology gate:

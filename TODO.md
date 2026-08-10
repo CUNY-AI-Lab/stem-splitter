@@ -119,8 +119,8 @@ and separates “safe to create the private analyzer” from “safe to enter
 shadow.” The pre-mutation action gate requires native-amd64 role-v4 image,
 manual-listening, and frozen Railway baseline evidence; it intentionally does
 not require resource and rollback evidence that can exist only after the
-service is created. It currently fails on exactly those three prerequisites.
-The ordinary shadow gate now carries the baseline forward and computes six
+service is created. At exact commit `959940b` it failed on those three
+prerequisites, and the ordinary shadow gate computed six
 blockers. CI fetches full history so exact base/candidate commit verification
 can run instead of failing inside a depth-one checkout. A fresh detached
 checkout of `959940b` passes the v2 typecheck/CLI and literal Phase 0 command
@@ -131,6 +131,19 @@ features off, zero mutations, zero provider calls, and no secrets printed.
 Docker Desktop remained without a responsive engine even after a bounded
 restart attempt, so no current role-v4 image claim was added. No remote branch,
 pull request, Railway mutation, provider call, or deployment changed.
+
+Exact rollback-binding commit `ba55621` closes the automated Railway baseline
+condition without turning it into a hand-edited claim. The manifest loader
+pins the existing `baseline.json` by SHA-256 and revalidates its exact schema,
+canonical Railway scope, executable four-track contract, authorized CC corpus
+source, local source bytes when hydrated, job timing, ordered distinct stem
+hashes, deployed commit/image, and provider pins. A clean exact-commit Phase 0
+run passes 198 worker, 24 analyzer, 28 Railway host/migration, 5 separator, 30
+discovery, 9 YAMNet, and 19/6/1 browser tests. The pre-mutation action gate now
+fails only on native-amd64 role-v4 image evidence and human listening; the
+shadow gate has five blockers after carrying forward the automated baseline.
+All processing flags remain off, and no service, variable, provider call,
+deployment, remote branch, or pull request changed.
 
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
@@ -457,8 +470,9 @@ deployment or enablement.
   no public domain. Keep the existing app service and its volume unchanged.
   Follow `docs/railway-audio-analysis-provisioning.md`; Railway variable edits
   redeploy by default, so assemble the reviewed batch with `--skip-deploys`.
-  The schema-v2 action gate now refuses this mutation until native-amd64 image,
-  manual-listening, and frozen Railway baseline evidence all exist.
+  The frozen Railway baseline condition is now bound to exact committed
+  evidence. The schema-v2 action gate still refuses this mutation until the
+  native-amd64 role-v4 image and manual-listening conditions also exist.
 - [x] Give the service a least-privilege way to read one short-lived source URL;
   do not mount or share the app's persistent `/data` volume. The shared,
   versioned `analysis-source-scope-v2` contract now permits only canonical
