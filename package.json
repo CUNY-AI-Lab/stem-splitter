@@ -55,7 +55,9 @@
     "db:migrate:5": "wrangler d1 execute stem-splitter --remote --file=migrations/0005-assistant-prompt-history.sql",
     "db:migrate:5:local": "wrangler d1 execute stem-splitter --local --file=migrations/0005-assistant-prompt-history.sql",
     "db:migrate:6": "wrangler d1 execute stem-splitter --remote --file=migrations/0006-audio-routing.sql",
-    "db:migrate:6:local": "wrangler d1 execute stem-splitter --local --file=migrations/0006-audio-routing.sql"
+    "db:migrate:6:local": "wrangler d1 execute stem-splitter --local --file=migrations/0006-audio-routing.sql",
+    "db:migrate:7": "wrangler d1 execute stem-splitter --remote --file=migrations/0007-guide-prompt-cache.sql",
+    "db:migrate:7:local": "wrangler d1 execute stem-splitter --local --file=migrations/0007-guide-prompt-cache.sql"
   },
   "engines": {
     "node": "22.23.1"

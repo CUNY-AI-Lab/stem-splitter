@@ -7,26 +7,29 @@
 
 1. Make `AUTO` a dependable local-file choice without sending audio anywhere
    merely to choose a separation contract.
-2. Preserve deterministic behavior for remote imports that cannot be decoded
-   in the browser before job creation.
+2. Preserve deterministic browser fallback for remote imports while giving the
+   authoritative server path content-based analysis after import.
 3. Let instructors understand the active Listening Guide prompt while keeping
    code-owned guardrails fixed and runtime additions attributable over time.
 
 ## Autosplit
 
 The browser decodes at most 45 seconds total, sampled from the beginning,
-middle, and end. A dedicated Worker downmixes the segments, extracts bounded
-spectral features, and returns one of the existing provider-neutral contracts.
-Analysis never blocks the UI thread and never creates a new backend model id.
+middle, and end. A dedicated browser analysis worker downmixes the segments,
+extracts bounded spectral features, and returns one of the existing
+provider-neutral contracts. Analysis never blocks the UI thread and never
+creates a new backend model id.
 
 The rules prefer six parts when distinct plucked/key textures are present, two
 parts when the signal is primarily voice plus accompaniment, and four parts as
 the conservative general-purpose choice. Low-end movement contributes to the
 decision so sustained but changing bass is not discarded as mere average
-energy. Unsupported decoding, Worker failure, or timeout resolves explicitly
-to the catalogue default. YouTube and Internet Archive imports also use that
-fallback because their bytes are not locally available at selection time; the
-status text says so rather than implying content analysis occurred.
+energy. Unsupported decoding, analysis failure, or timeout resolves explicitly
+to the catalogue default. The active authoritative path stores an upload,
+YouTube import, or Internet Archive import first and then gives the private
+Railway analyzer a bounded signed source URL, so remote imports receive the same
+content-based routing as uploads. Browser-only/shadow mode remains advisory and
+reports an honest fallback when it cannot analyze a remote source.
 
 ## Prompt ownership boundary
 
@@ -38,11 +41,14 @@ edit `src/assistant/prompt.ts`, increment `SYSTEM_PROMPT_VERSION`, and record
 the behavior change in `docs/prompt-changelog.md`.
 
 Authenticated instructors edit only the dedicated appended class-instructions
-field. A changed save requires a concise human note. The same D1 batch updates
-the current amendment and appends a revision containing the actor, timestamp,
-fixed-prompt version, fixed-prompt SHA-256 fingerprint, and effective-prompt
-fingerprint. Optimistic concurrency rejects stale editors with HTTP 409. A
-no-op creates no revision and does not invalidate cached guides.
+field. A changed save requires a concise human note. The same database batch
+updates the current amendment, invalidates cached guides, and appends a revision
+containing the actor, timestamp, fixed-prompt version, fixed-prompt SHA-256
+fingerprint, and effective-prompt fingerprint. Optimistic concurrency rejects
+stale editors with HTTP 409. Guide rows carry the fixed-prompt version and
+amendment revision; a generation that began before an edit cannot re-cache
+stale output after the edit commits. A no-op creates no revision and does not
+invalidate cached guides.
 
 ## Provisioning
 
@@ -55,7 +61,8 @@ secret leaves D1 alone; a malformed or duplicate seed changes nothing.
 ## Acceptance
 
 - Autosplit unit tests cover feature decisions and multi-window sampling.
-- Browser E2E proves local AUTO resolution and the remote fallback contract.
+- Browser E2E proves local AUTO resolution, deterministic browser fallback, and
+  authoritative upload/YouTube/Archive analysis after source storage.
 - Instructor E2E proves fixed text cannot be edited, caret navigation works,
   change notes are required, revisions persist, hashes join runtime history to
   code history, and stale writes fail without overwriting.

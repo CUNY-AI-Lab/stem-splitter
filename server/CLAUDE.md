@@ -10,9 +10,16 @@ when working in `server/`, releasing to Railway, or doing local end-to-end work.
 
 ## The rule that governs everything here
 
-`server/` must never require a change to `src/`. The Worker is production; this is a host that adapts *to* it. If a shim can't express something `src/` does, fix the shim — an edit under `src/` to accommodate Node is a bug in this directory, and it silently drifts the two targets apart.
+The Railway Node service is production until the product is finished. Keep the
+shared Hono application platform-neutral: if a Node shim cannot express a
+binding surface that `src/` already uses, fix the shim. Do not edit shared
+application behavior merely to accommodate the adapter, because that silently
+drifts the future migration target from the active host.
 
-Corollary: `src/` has no import of anything in `server/`, and `tsconfig.json` scopes `tsc --noEmit` to `src` only. `server/` is type-checked by nothing; it is exercised by running it.
+Corollary: `src/` has no import of anything in `server/`. The shared
+`tsconfig.json` checks the application, while `tsconfig.server.json` checks the
+Node adapter plus the shared source against the exact Node runtime types. Keep
+both static gates; runtime tests still exercise the SQLite/filesystem shims.
 
 ## Three ways to run this app, and when each applies
 
@@ -37,6 +44,7 @@ rule. A local Railway link is not authority: inspect its IDs before every write.
 ```sh
 npm start                 # run the Node host (needs WEBHOOK_SECRET and CLASS_CODE)
 npm run dev:node          # same, with watch
+bun run typecheck:server  # static check for server/ plus shared src/
 DATA_DIR=/tmp/ss PORT=8899 WEBHOOK_SECRET=s CLASS_CODE=c npm start   # throwaway instance
 ```
 
@@ -99,14 +107,16 @@ record and use the explicit four-track fallback. Making these variables fatal
 would crash-loop the whole service over optional features. Keep this split when
 adding credentials—ask whether a missing value should take down playback.
 
-## Parity constraints with production
+## Parity constraints across environments
 
 These are properties of the app, not of the host, so the shims must not quietly break them:
 
 - **`/api/files/*` serves only `stems/`.** Uploaded originals are never served back out. Verify with a request for an `uploads/…` key; it must 404.
 - **30-day retention.** `src/r2.ts` enforces expiry on read and runs hourly cleanup whenever `isLocalHosting(env)` is true, which it is here. `list()` must keep returning accurate `uploaded` values or retention silently stops working.
 - **Uploads are fixed-length only.** `src/index.ts` rejects chunked and oversized uploads *before* reading the body. `put()` buffers fully (100 MB ceiling, enforced upstream), which is fine only because those checks come first.
-- **`WEBHOOK_SECRET` here is not production's.** It signs source URLs; a fresh random value per environment is correct. Don't copy prod's in.
+- **`WEBHOOK_SECRET` is environment-specific.** It signs source URLs; use a
+  fresh random value for local/test environments and never copy the Railway
+  production value into them.
 
 ## Railway specifics
 
@@ -116,7 +126,7 @@ the database and all audio. Confirm persistence after infrastructure changes by
 re-POSTing a key uploaded before a restart—`400 Upload not found` means the
 volume is not holding.
 
-`PUBLIC_BASE_URL` is derived from `RAILWAY_PUBLIC_DOMAIN` when unset, so the domain must exist before the container starts for webhooks to resolve. Builder is Railpack; `engines.node >= 22.5` matters because `node:sqlite` is what the D1 shim is built on.
+`PUBLIC_BASE_URL` is derived from `RAILWAY_PUBLIC_DOMAIN` when unset, so the domain must exist before the container starts for webhooks to resolve. Builder is Railpack; `engines.node` is pinned to exact `22.23.1`, matching CI and the declared Node types, because `node:sqlite` is what the D1 shim is built on.
 
 ## Verifying a deploy
 

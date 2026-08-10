@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS guides (
   job_id TEXT PRIMARY KEY,             -- jobs.id
   text TEXT NOT NULL,                  -- the generated guide prose
   model TEXT NOT NULL,                 -- ASSISTANT_MODEL slug that produced it
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  prompt_version TEXT NOT NULL DEFAULT '', -- code-owned SYSTEM_PROMPT_VERSION
+  prompt_revision INTEGER NOT NULL DEFAULT -1 -- assistant_settings.revision
 );
 -- Teacher accounts, sessions, and the editable Listening Guy prompt amendment.
 

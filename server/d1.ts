@@ -106,6 +106,22 @@ export class SqliteD1 {
       );
     }
 
+    const guideColumns = this.db
+      .prepare("PRAGMA table_info('guides')")
+      .all() as Array<{ name: string }>;
+    if (guideColumns.length) {
+      if (!guideColumns.some((column) => column.name === 'prompt_version')) {
+        this.db.exec(
+          "ALTER TABLE guides ADD COLUMN prompt_version TEXT NOT NULL DEFAULT ''"
+        );
+      }
+      if (!guideColumns.some((column) => column.name === 'prompt_revision')) {
+        this.db.exec(
+          'ALTER TABLE guides ADD COLUMN prompt_revision INTEGER NOT NULL DEFAULT -1'
+        );
+      }
+    }
+
     const jobColumns = this.db
       .prepare("PRAGMA table_info('jobs')")
       .all() as Array<{ name: string }>;

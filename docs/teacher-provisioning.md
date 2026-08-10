@@ -38,8 +38,17 @@ bun run db:migrate:5
 ```
 
 Migration 4 creates teacher accounts, sessions, and the current amendment.
-Migration 5 adds the append-only prompt revision history. A fresh database uses
-`schema.sql` and already contains both.
+Migration 5 adds the append-only prompt revision history. Migration 7 binds
+cached guides to the fixed-prompt version and amendment revision that generated
+them:
+
+```sh
+bun run db:migrate:7
+```
+
+A fresh database uses `schema.sql` and already contains all three changes.
+Migration 6 belongs to the separate Auto-routing feature and retains its own
+release gate.
 
 These commands must not be run merely to validate unfinished Railway work.
 
@@ -137,8 +146,38 @@ A valid `TEACHER_SEED` array is authoritative:
 - an absent secret leaves existing rows untouched;
 - malformed entries abort reconciliation without changing any accounts.
 
-After changing the seed, redeploy or restart the host so a fresh isolate
+After changing the seed, redeploy or restart the host so a fresh process
 reconciles it.
+
+## Rotation, deprovisioning, and rollback
+
+To rotate a password, generate a new verifier for the same normalized username,
+replace that account in the complete authoritative array, stage the sealed
+Railway variable, review the target, and restart or deploy once. Reconciliation
+revokes every session for that username when its salt, hash, or iteration count
+changes. To deprovision one teacher, omit that username from the next valid
+array; use `[]` only when the reviewed intent is to remove every teacher.
+
+Keep the last accepted seed only in an approved secret manager, never in this
+repository or an audit artifact. If a seed rotation must be rolled back, restore
+that complete prior array through the same staged Railway procedure and restart
+the canonical service. If the prior verifier is unavailable, issue a new
+password; do not print or reconstruct verifier material from the application
+database, logs, or shell history.
+
+Prompt history is append-only. To restore an earlier runtime amendment, copy
+its amendment text from the authenticated revision history into the appended
+instructions field and save it with a new change note such as “Restore revision
+3 after classroom review.” This creates a new monotonic revision; never delete
+or rewrite the intervening rows. Reverting fixed prompt behavior also moves
+forward: restore the desired source text in a reviewed branch, assign a new
+`SYSTEM_PROMPT_VERSION`, and add a new changelog entry. Do not decrement or
+reuse an old version string.
+
+A Railway code rollback does not roll back the persistent SQLite volume. Review
+the code version and current prompt revision as separate state, preserve the
+volume, and use a new governed amendment revision if the runtime content also
+needs restoration.
 
 ## Login boundary
 
@@ -164,12 +203,15 @@ logging usernames, passwords, verifier material, or session cookies.
 4. Add a small appended instruction and a changelog note, then save.
 5. Confirm a revision appears with teacher, timestamp, base prompt version,
    base fingerprint, and effective fingerprint.
-6. Reload and confirm both the amendment and history persist.
-7. Restart the canonical Railway app service, sign in again, and confirm the
+6. Generate or load a listening guide before a second prompt change, save that
+   change, and confirm the next guide is regenerated under the new revision
+   rather than reusing the prior cache.
+7. Reload and confirm both the amendment and history persist.
+8. Restart the canonical Railway app service, sign in again, and confirm the
    amendment plus revision history still persist. A successful save before the
    restart is not sufficient acceptance.
-8. Sign out and confirm `GET /api/teacher/prompt` returns 401.
-9. Confirm teacher API responses use `Cache-Control: no-store`, an oversized
+9. Sign out and confirm `GET /api/teacher/prompt` returns 401.
+10. Confirm teacher API responses use `Cache-Control: no-store`, an oversized
    login body returns 413, a stalled body returns 408, and a bounded
    failed-login burst returns 429 with `Retry-After` without revealing whether
    the username exists.
@@ -195,7 +237,16 @@ fingerprint. That joins the database history
 to the Git-controlled prompt changelog without giving the runtime console
 permission to rewrite source code.
 
-Saving a changed amendment clears cached guides because they were generated
-under an older effective prompt. Saving unchanged content creates no revision
-and clears nothing. A stale browser receives HTTP 409 instead of overwriting a
-newer teacher’s edit.
+Saving a changed amendment atomically updates the setting, appends history, and
+clears cached guides because they were generated under an older effective
+prompt. A failure in any operation rolls back all three. Every new guide cache
+row stores its fixed-prompt version and amendment revision. An old generation
+that finishes after a teacher save may finish streaming to the request that
+started it, but its revision-guarded write cannot repopulate the class-wide
+cache. A fixed code-prompt version also makes older guide rows ineligible and
+they regenerate lazily.
+
+Saving unchanged content creates no revision and clears nothing. A losing
+concurrent save cannot clear a guide regenerated after the winner commits, and
+a stale browser receives HTTP 409 instead of overwriting a newer teacher’s
+edit.
