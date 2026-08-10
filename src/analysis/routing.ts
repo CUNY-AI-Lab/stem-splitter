@@ -25,6 +25,8 @@ export interface ResolveAutoRoutingInput {
   fallbackModel: string;
   coreModels: SeparationOptionSummary[];
   browserAnalysis?: BrowserAutoSummaryV1;
+  /** Independent identity for server-fetched imports, calculated before storage. */
+  expectedSourceIdentity?: AudioSourceIdentityV1;
   provider: AudioAnalysisProvider | null;
   timeoutMs: number;
   instrumentDiscovery: boolean;
@@ -79,8 +81,9 @@ export async function resolveAutoRoutingWithSource(
         try {
           sourceIdentity = parseAudioSourceIdentity((wire as { source?: unknown }).source);
         } catch {
-          // Fingerprint metadata is failure-local: malformed/missing identity
-          // disables isolation caching but cannot invalidate a valid core route.
+          // Without an independent caller fingerprint, malformed identity only
+          // disables source caching. Server-fetched imports provide one and
+          // therefore fail closed to the default route in the check below.
           sourceIdentity = null;
         }
       }
@@ -91,6 +94,9 @@ export async function resolveAutoRoutingWithSource(
         input.instrumentDiscovery
       );
     } catch (error) {
+      // A response that fails the core contract cannot independently authorize
+      // private source identity, even when its fingerprint field parsed first.
+      sourceIdentity = null;
       const contractInvalid = error instanceof AudioAnalysisContractError || error instanceof SyntaxError;
       analysis = degradedAnalysis(
         input.fallbackModel,
@@ -109,6 +115,22 @@ export async function resolveAutoRoutingWithSource(
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  if (
+    !analysis.degraded.active &&
+    input.expectedSourceIdentity &&
+    (!sourceIdentity ||
+      sourceIdentity.sha256 !== input.expectedSourceIdentity.sha256 ||
+      sourceIdentity.bytes !== input.expectedSourceIdentity.bytes)
+  ) {
+    sourceIdentity = null;
+    analysis = degradedAnalysis(
+      input.fallbackModel,
+      'source_identity_mismatch',
+      'the analyzed source did not match the stored import — using the default split',
+      Date.now() - startedAt
+    );
   }
 
   const authoritativeModel = analysis.degraded.active

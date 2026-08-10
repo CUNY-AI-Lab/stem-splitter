@@ -456,6 +456,72 @@ test('Auto returns verified source identity out-of-band without persisting it in
   assert.equal(malformed.sourceIdentity, null);
   assert.equal(malformed.decision.resolvedCoreModel, 'htdemucs_6s');
   assert.equal(malformed.decision.analysis.degraded.active, false);
+
+  const invalidCore = await resolveAutoRoutingWithSource({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'upload',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    provider: provider({
+      ...validAnalysis('htdemucs_6s'),
+      roleClassifier: { version: 'floating-role-version' },
+      source: sourceIdentity,
+    }),
+    timeoutMs: 15_000,
+    instrumentDiscovery: false,
+  });
+  assert.equal(invalidCore.sourceIdentity, null);
+  assert.equal(invalidCore.decision.analysis.degraded.code, 'analysis_contract_invalid');
+});
+
+test('server-fetched imports route only when analyzer identity matches exact stored bytes', async () => {
+  const matching = await resolveAutoRoutingWithSource({
+    sourceUrl: 'https://audio.invalid/source',
+    sourceType: 'youtube',
+    mode: 'authoritative',
+    currentModel: 'htdemucs_ft',
+    fallbackModel: 'htdemucs_ft',
+    coreModels: models,
+    expectedSourceIdentity: sourceIdentity,
+    provider: provider({ ...validAnalysis('htdemucs_6s'), source: sourceIdentity }),
+    timeoutMs: 15_000,
+    instrumentDiscovery: false,
+  });
+  assert.equal(matching.decision.resolvedCoreModel, 'htdemucs_6s');
+  assert.equal(matching.decision.applied, true);
+  assert.deepEqual(matching.sourceIdentity, sourceIdentity);
+
+  for (const returnedSource of [
+    undefined,
+    { ...sourceIdentity, sha256: 'b'.repeat(64) },
+    { ...sourceIdentity, bytes: sourceIdentity.bytes + 1 },
+  ]) {
+    const resolution = await resolveAutoRoutingWithSource({
+      sourceUrl: 'https://audio.invalid/source',
+      sourceType: 'archive',
+      mode: 'authoritative',
+      currentModel: 'htdemucs_ft',
+      fallbackModel: 'htdemucs_ft',
+      coreModels: models,
+      expectedSourceIdentity: sourceIdentity,
+      provider: provider({
+        ...validAnalysis('htdemucs_6s'),
+        ...(returnedSource ? { source: returnedSource } : {}),
+      }),
+      timeoutMs: 15_000,
+      instrumentDiscovery: false,
+    });
+    assert.equal(resolution.sourceIdentity, null);
+    assert.equal(resolution.decision.resolvedCoreModel, 'htdemucs_ft');
+    assert.equal(resolution.decision.applied, false);
+    assert.equal(
+      resolution.decision.analysis.degraded.code,
+      'source_identity_mismatch'
+    );
+    assert.equal(resolution.decision.comparison, 'unavailable');
+  }
 });
 
 test('persisted Auto routing is normalized before teacher or student readback', async () => {

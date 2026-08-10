@@ -5,6 +5,30 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## server-auto-source-identity-v1 — imported-byte authority gate — 2026-08-10
+
+- Scope: server-owned source identity is now an authority prerequisite for
+  YouTube and Internet Archive Auto recommendations. No feature flag, Railway
+  variable, service, migration, deployment, classifier rule, core stem name, or
+  explicit 2/4/6 request changed.
+- Contract: the app calculates SHA-256 and byte count from each server-fetched
+  import before storage and passes that private expectation only to its routing
+  boundary. A successful analyzer response must report the exact same identity;
+  missing, malformed, hash-drifted, or length-drifted identity degrades to the
+  existing backend default with code `source_identity_mismatch`.
+- Failure isolation: a response whose core analysis contract fails can no
+  longer contribute a parsed fingerprint. The server-owned import digest
+  remains private and write-once, while the separator receives neither `auto`
+  nor the analyzer's mismatched recommendation.
+- Evidence: 26/26 focused analysis tests and 5/5 authoritative-Auto browser
+  tests pass under Node 22.23.1 and Bun 1.3.14. The E2E exercises both YouTube
+  and Archive drift and reads back the independently calculated private digest.
+  Full committed-source Phase 0 evidence is recorded only after the exact
+  implementation commit passes from a clean detached worktree.
+- Remaining: browser-upload mutability, native-amd64 CI, Railway resource and
+  restart acceptance, genre listening, and live shadow/rollback evidence remain
+  gates before authoritative promotion.
+
 ## query-isolation-source-guard-v1 — immutable pre-spend input — 2026-08-10
 
 - Scope: a dormant pre-spend source guard, app-owned input snapshot, fresh

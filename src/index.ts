@@ -20,6 +20,7 @@ import {
   requestSourceFingerprint,
   resolveAutoRoutingWithSource,
   serverAutoCapability,
+  type AudioSourceIdentityV1,
   type AudioSourceType,
   type AutoRoutingDecisionV1,
 } from './analysis';
@@ -584,6 +585,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let filename: string;
   let sourceType: AudioSourceType;
   let sourceHash: string | null = null;
+  let expectedSourceIdentity: AudioSourceIdentityV1 | undefined;
 
   if (body?.youtubeUrl) {
     sourceType = 'youtube';
@@ -625,6 +627,11 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     key = `uploads/${crypto.randomUUID()}/source.m4a`;
     filename = sanitizeFilename(audio.title) || 'youtube-audio';
     sourceHash = await sha256Audio(audio.data);
+    expectedSourceIdentity = {
+      schemaVersion: '1',
+      sha256: sourceHash,
+      bytes: audio.data.byteLength,
+    };
     await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
   } else if (body?.archiveId) {
     sourceType = 'archive';
@@ -667,6 +674,11 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     key = `uploads/${crypto.randomUUID()}/source${extension}`;
     filename = sanitizeFilename(audio.title) || 'archive-audio';
     sourceHash = await sha256Audio(audio.data);
+    expectedSourceIdentity = {
+      schemaVersion: '1',
+      sha256: sourceHash,
+      bytes: audio.data.byteLength,
+    };
     await c.env.AUDIO.put(key, audio.data, {
       httpMetadata: { contentType: archiveContentType(audio.fileName) },
     });
@@ -700,17 +712,14 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       currentModel,
       fallbackModel: options.defaultModel,
       coreModels: options.models,
+      ...(expectedSourceIdentity ? { expectedSourceIdentity } : {}),
       ...(browserAnalysis ? { browserAnalysis } : {}),
       provider: configuredAudioAnalysisProvider(c.env),
       timeoutMs: audioAnalysisTimeoutMs(c.env),
       instrumentDiscovery: flags.instrumentDiscovery,
     });
     autoRouting = resolution.decision;
-    if (resolution.sourceIdentity) {
-      sourceHash = sourceHash && sourceHash !== resolution.sourceIdentity.sha256
-        ? null
-        : resolution.sourceIdentity.sha256;
-    }
+    if (resolution.sourceIdentity && !sourceHash) sourceHash = resolution.sourceIdentity.sha256;
     model = autoRouting.resolvedCoreModel;
   }
 

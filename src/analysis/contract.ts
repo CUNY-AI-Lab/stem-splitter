@@ -145,6 +145,7 @@ const DEGRADED_CODES = new Set<AnalysisDegradedCode>([
   'analysis_timeout',
   'analysis_unavailable',
   'analysis_contract_invalid',
+  'source_identity_mismatch',
   'analysis_model_unsupported',
   'audio_unsupported',
 ]);

@@ -113,7 +113,7 @@ function makeM4a(size = 2048) {
   return bytes;
 }
 
-function sourceHandlers({ network, server, analysisStatus = 200 }) {
+function sourceHandlers({ network, server, analysisStatus = 200, identityOverrides = {} }) {
   const youtubeAudio = makeM4a();
   const archiveId = 'server-auto-open-audio';
   const archiveFile = 'fixture.wav';
@@ -137,10 +137,11 @@ function sourceHandlers({ network, server, analysisStatus = 200 }) {
       expect(ttl).toBeLessThanOrEqual(10 * 60 + 2);
       analysisCalls.push(payload);
       analysisHashes.push(sourceHash);
+      const reportedHash = identityOverrides[payload.sourceType] ?? sourceHash;
       return analysisStatus === 200
         ? HttpResponse.json({
             ...analysisFixture(),
-            source: { schemaVersion: '1', sha256: sourceHash, bytes: bytes.byteLength },
+            source: { schemaVersion: '1', sha256: reportedHash, bytes: bytes.byteLength },
           })
         : HttpResponse.json({ error: 'offline' }, { status: analysisStatus });
     }),
@@ -345,6 +346,59 @@ test('analyzer outage degrades every source to the frozen default without losing
   expect(explicit.status).toBe(200);
   expect((await explicit.json()).model).toBe('vocals_instrumental');
   expect(state.analysisCalls).toHaveLength(analysisCount);
+});
+
+test('authoritative Auto rejects analyzer identity drift for server-fetched imports', async ({
+  network,
+  server,
+}) => {
+  const state = sourceHandlers({
+    network,
+    server,
+    identityOverrides: {
+      youtube: 'e'.repeat(64),
+      archive: 'f'.repeat(64),
+    },
+  });
+  const requests = [
+    { youtubeUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw', model: 'auto' },
+    {
+      archiveId: 'server-auto-open-audio',
+      archiveFile: 'fixture.wav',
+      model: 'auto',
+    },
+  ];
+
+  const jobs = [];
+  for (const body of requests) {
+    const response = await server.fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-class-code': CLASS_CODE },
+      body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(200);
+    jobs.push(await response.json());
+  }
+
+  expect(state.analysisCalls.map((call) => call.sourceType)).toEqual(['youtube', 'archive']);
+  expect(state.separatorInputs).toHaveLength(2);
+  expect(state.separatorInputs.every((input) => input.model === 'htdemucs_ft')).toBe(true);
+  for (const [index, job] of jobs.entries()) {
+    expect(job.model).toBe('htdemucs_ft');
+    expect(job.autoRouting.applied).toBe(false);
+    expect(job.autoRouting.analysis.degraded).toEqual({
+      active: true,
+      code: 'source_identity_mismatch',
+    });
+    expect(JSON.stringify(job)).not.toContain(state.analysisHashes[index]);
+
+    const privateHash = await e2eFetch(
+      server,
+      `/__e2e/job-source-hash?job=${encodeURIComponent(job.id)}`
+    );
+    expect(privateHash.status).toBe(200);
+    expect(await privateHash.json()).toEqual({ sourceHash: state.analysisHashes[index] });
+  }
 });
 
 test('job ingestion rejects oversized JSON before fetching or storing a source', async ({

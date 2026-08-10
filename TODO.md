@@ -388,6 +388,21 @@ deployment or enablement.
   embedded credentials and non-root URL paths/queries/fragments, require at
   least 32 token characters, reject redirects without forwarding credentials,
   and cap streamed JSON responses at 64 KiB.
+- [x] Bind successful analyzer recommendations for server-fetched YouTube and
+  Archive imports to the exact SHA-256 and byte count calculated before storage.
+  A missing or different analyzer identity now records
+  `source_identity_mismatch`, preserves the server-owned private digest, and
+  routes only the frozen default. A core-contract failure also discards any
+  fingerprint field that happened to parse before the failure. Unit coverage
+  exercises missing/hash/length drift and authoritative E2E proves neither
+  imported source can send the mismatched recommendation to the separator.
+- [ ] Close the upload-specific post-analysis race before authoritative
+  promotion. The analyzer can fingerprint an upload while its browser PUT
+  locator is still valid, so the separator must consume either an immutable
+  verified snapshot or a storage-level create-once object—not the mutable
+  locator that was analyzed. Test replacement both before and after analysis,
+  byte-identical retry, concurrent PUTs, expiry, and rollback without buffering
+  100 MiB in the warmed app unless Railway resource evidence approves it.
 - [ ] Calibrate parity on the fixed manifest and investigate systematic
   disagreement before allowing server results to route a paid separation.
   Local role-v3 is 11/11 accepted (8 preferred, 3 alternatives), and real Chrome,
