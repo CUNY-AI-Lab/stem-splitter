@@ -5,6 +5,43 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## nsynth-family-control-review-v1 — governed listening evidence — 2026-08-10
+
+- Scope: exact implementation commit
+  `6bc35d2a4dd380875d6aa29af2726a1c965e1b57` adds separate preparation,
+  finalization, schema validation, and regression tests for the staged NSynth
+  controls. It does not complete a human review, add those controls to the
+  19-source plan, select a classifier, define a threshold, change Auto or core
+  stems, authorize an isolation, provision a service, or change a flag.
+- Input boundary: preparation revalidates the exact manifest and all 10
+  hydrated WAVs as owner-only regular files with pinned byte counts and SHA-256
+  values. It creates one no-overwrite mode-`0600` private worksheet containing
+  exact local listening paths and 510 initially unreviewed verdicts. Dataset
+  family/source metadata stays visible as provenance but cannot become exact
+  instrument truth.
+- Human and privacy boundary: finalization requires a bounded attributable
+  reviewer, canonical time, fixed full-listening attestation, every whole-source
+  check, and every 51-label verdict in exact order. It rechecks manifest/audio
+  identity, binds the precise private bytes, and strips reviewer identity and
+  local paths. Non-owner, oversized, symbolic-link, incomplete, reordered,
+  replaced, and schema-drifted inputs fail closed.
+- Promotion shield: private and public claim policies are independent copies of
+  frozen constants. Attempted exact-instrument, evaluation-plan, candidate-
+  metric, or promotion escalation fails without mutating later artifacts. The
+  public status is review evidence only and preserves explicit expanded-plan,
+  candidate, quality-floor, human-selection, and Railway-shadow blockers.
+- Evidence and rollout: the real command created a 52,202-byte mode-`0600`
+  10-by-51 template after checking the hydrated controls; a second preparation
+  and incomplete finalization both failed closed, and the template was deleted.
+  Exact Bun 1.3.14 passes four TypeScript checks; 256 worker, 24 analyzer, 42
+  Railway host/config/migration/terminal, 5 separator, 30 discovery, and 9
+  YAMNet tests; plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow
+  browser journey. No public review, Railway mutation, provider call,
+  deployment, push, or pull request occurred.
+- Remaining: an authorized teacher must perform the review. Only an approved
+  deidentified artifact and a new evaluation-plan version may make the controls
+  eligible for candidate metrics; classifier and rollout gates remain separate.
+
 ## nsynth-family-controls-v1 — family/source control tranche — 2026-08-10
 
 - Scope: exact implementation commit

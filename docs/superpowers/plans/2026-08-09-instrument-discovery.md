@@ -82,11 +82,16 @@
   acoustic/electronic/synthetic selection covers every family present in the
   test split but makes no exact-instrument, vocabulary-positive, negative,
   threshold, or promotion claim.
-- [ ] Complete exhaustive 51-label teacher listening for all 10 NSynth controls
-  and integrate only the accepted family/source evidence under a new
-  evaluation-plan version. Keep it separate from performed controls, and add
-  separately licensed exact positives for free reeds, solo strings, pitched
-  percussion, and traditional instruments.
+- [x] Implement a separate owner-only NSynth listening-review workflow. It
+  revalidates every hydrated source before preparation and finalization,
+  requires complete attributable 51-label review, strips reviewer/local-path
+  identity from the public artifact, binds the exact private bytes, and keeps
+  exact-instrument, current-plan, candidate-metric, and promotion use false.
+- [ ] Have an authorized teacher complete and approve that review, then
+  integrate only the accepted family/source evidence under a new evaluation-
+  plan version. Keep it separate from performed controls, and add separately
+  licensed exact positives for free reeds, solo strings, pitched percussion,
+  and traditional instruments.
 - [x] Add a YAMNet-specific bridge from paired fresh native corpus/control
   reports into the classifier-neutral v3 candidate envelope. The two-step
   no-overwrite capture revalidates image, platform, model, mapping, vocabulary,

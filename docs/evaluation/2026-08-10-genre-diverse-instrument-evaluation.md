@@ -57,6 +57,42 @@ directory, metadata, and WAV surface, captures only the 10 selected WAVs plus
 writes no-overwrite mode-`0600` files under the gitignored
 `tests/corpus/audio/nsynth-family-controls-v1/` directory.
 
+Prepare the separate human-review worksheet only after offline verification
+passes:
+
+```bash
+bun run prepare:nsynth-review \
+  --output output/nsynth-family-review.private.json
+```
+
+The command re-reads every selected WAV as an owner-only regular file and
+checks its exact byte count and SHA-256 before creating the worksheet. The
+private mode-`0600` file includes the repository-relative listening path for
+each control and all 51 verdicts in pinned vocabulary order. An authorized
+teacher or domain reviewer must listen to every complete four-second WAV, set
+`wholeSourceListened` to `true`, classify every label as `audible`, `absent`, or
+`uncertain`, add a canonical UTC timestamp and reviewer name, and copy the
+fixed full-listening attestation. Do not prefill verdicts from NSynth metadata.
+
+After that human work is complete, create a separate deidentified artifact:
+
+```bash
+bun run finalize:nsynth-review \
+  --input output/nsynth-family-review.private.json \
+  --output output/nsynth-family-review.public.json
+```
+
+Finalization refuses non-owner input, symbolic links, files above 512 KiB,
+overwrite, changed manifest/audio identity, incomplete listening, unreviewed or
+reordered verdicts, claim-boundary changes, and mismatched serialized bytes. It
+binds the exact private worksheet by SHA-256 while removing the reviewer and
+local audio paths. The public review remains
+`reviewed-deidentified-family-control-evidence`, not evaluation ground truth:
+it records `not-integrated`, forbids candidate-metric and promotion use, and
+names the missing expanded-plan, candidate, quality-floor, human-selection, and
+Railway-shadow evidence. Normal human approval is still required before that
+public artifact becomes canonical.
+
 This tranche deliberately asserts dataset-authored family and source labels
 only. It does not infer an exact sampled instrument from `instrument_str`, map
 a family to a classroom-vocabulary positive, treat omitted labels as negatives,
@@ -66,6 +102,10 @@ integration, an authorized teacher must listen to every clip and classify all
 must create a new evaluation-plan version that preserves an isolated
 family/source partition. Separately licensed exact positives remain necessary
 for free reeds, solo strings, pitched percussion, and traditional instruments.
+
+The tooling implementation produced only a pending private template to verify
+the command and then deleted it. No teacher verdict or public review artifact
+has been created.
 
 ## Human-review boundary
 

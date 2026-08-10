@@ -346,6 +346,26 @@ authoritative-Auto, and 1 isolation-shadow browser journey. All processing
 flags remain off; no evaluation-plan version, service, Railway mutation,
 provider call, deployment, push, or pull request changed.
 
+Exact NSynth-review commit `6bc35d2` makes the next human gate executable
+without pretending it has been completed. Preparation revalidates every one of
+the 10 hydrated owner-only WAVs against its manifest byte count and SHA-256,
+then writes a no-overwrite mode-`0600` private worksheet with the exact local
+listening path, source identity, and all 51 vocabulary verdicts for every
+control. Finalization rechecks the audio and manifest, requires an attributable
+reviewer, canonical timestamp, fixed full-listening attestation, complete source
+listening, and no unreviewed or reordered verdict. It binds the exact private
+bytes by SHA-256 while removing the reviewer and local paths. The public schema
+keeps dataset family/source truth separate from human vocabulary verdicts and
+hard-codes exact-instrument, current-plan, candidate-metric, and promotion
+claims off. The real preparation command produced a 52,202-byte private
+worksheet; overwrite and incomplete finalization both failed closed. The exact
+Bun 1.3.14 Phase 0 gate passes all four typechecks; 256 worker, 24 analyzer, 42
+Railway host/config/migration/terminal, 5 separator, 30 discovery, and 9 YAMNet
+tests; plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
+journey. No teacher verdict was fabricated, no public review artifact exists,
+and no evaluation plan, flag, service, Railway state, provider, deployment,
+push, or pull request changed.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -947,6 +967,16 @@ job.
   The tranche therefore remains separate from the current 19-source performed-
   track evaluation until a teacher completes the 51-label listening protocol
   and a new evaluation-plan version integrates the reviewed evidence.
+- [x] Implement the separate NSynth listening-review workflow without widening
+  the current promotion cohort. `prepare:nsynth-review` revalidates all hydrated
+  controls and creates an owner-only, no-overwrite 10-by-51 worksheet;
+  `finalize:nsynth-review` requires complete attributable listening, binds the
+  exact private bytes, removes reviewer identity and local paths, and emits a
+  deidentified artifact whose schema forbids exact-instrument, current-plan,
+  candidate-metric, and promotion claims.
+- [ ] Have an authorized teacher complete that private NSynth worksheet and
+  approve its deidentified finalization. No review verdict may be prefilled or
+  inferred from the dataset family, source, filename, or `instrument_str`.
 - [ ] Find separately licensed exact positives for free reeds, solo strings,
   pitched percussion, and traditional instruments. Do not convert an NSynth
   filename, family label, or source label into exact ground truth.
