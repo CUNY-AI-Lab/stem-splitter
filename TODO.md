@@ -116,6 +116,12 @@ because its model or service is available.
   older fixed prompt regenerate lazily. Railway's additive migration preserves
   legacy rows with a deliberately ineligible cache identity. Focused tests also
   prove transaction rollback when invalidation fails.
+- [x] Fail closed on prompt-history drift. A pre-existing row for the next
+  settings revision must raise an integrity error and roll back the setting,
+  cache invalidation, and attempted history write; it may never be silently
+  reused as the audit record for a different amendment. The compare-and-swap,
+  required append, and winning-request-only invalidation now form a chained
+  transaction, with a direct corruption/restore regression.
 - [x] Pin the active Railpack host and CI to exact Node `22.23.1` instead of a
   floating `>=22.5`, declare matching Node types directly, and statically check
   `server/` plus shared `src/`. This catches Railway-adapter errors that the
@@ -189,6 +195,12 @@ because its model or service is available.
   separator, 29 discovery, 19 browser E2E, and 4 authoritative Auto E2E tests
   pass. Native GitHub and Railway acceptance remain separate open gates; this
   local commit is not present on `origin` and has no pull request.
+- [x] Bind the prompt-history integrity follow-up to exact executable-source
+  commit `4a3fbf1` and repeat the literal local Bun `1.3.14` phase-zero gate.
+  All three typechecks plus 127 worker, 21 analyzer, 14 server/migration, 5
+  separator, 29 discovery, 19 browser E2E, and 4 authoritative Auto E2E tests
+  pass. Native GitHub, Railway, and authorized teacher persistence remain open;
+  no remote branch or pull request contains this commit.
 - [x] Record the canonical Railway project, environment, and service IDs and
   replace name-based release commands. The current local Railway link resolves
   to a same-named legacy workerd project and must never be treated as authority.

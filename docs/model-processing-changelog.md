@@ -182,14 +182,16 @@ promotion on their own.
   executable, so the underlying scripts ran directly through Node/npm/npx/uv.
   This superseded `d4c5781` as the local source gate, but not as constrained
   image evidence; later exact-Bun evidence supersedes it again.
-- Final executable-source evidence: exact commit `e640c72` passes
+- Final executable-source evidence: exact commit `4a3fbf1` passes
   `bun@1.3.14 install --frozen-lockfile` with no changes and the literal
   `test:phase0`: app, Railway-host/shared, and analyzer typechecks; 127 worker,
-  21 analyzer, 13 server/migration, 5 separator, 29 discovery, 19 browser E2E,
-  and 4 authoritative Auto E2E tests. It supersedes `fe112ef` and `fce98cf` as
-  the complete committed-source gate. The prompt-cache follow-up changes no
-  classifier, separator, stem name, or 2/4/6 routing contract; the native
-  GitHub/image run remains open.
+  21 analyzer, 14 server/migration, 5 separator, 29 discovery, 19 browser E2E,
+  and 4 authoritative Auto E2E tests. It supersedes `e640c72`, `fe112ef`, and
+  `fce98cf` as the complete committed-source gate. The final follow-up makes a
+  pre-existing next-revision prompt-history row abort and roll back setting,
+  history, and cache mutations instead of silently adopting unrelated audit
+  history. These prompt-integrity changes alter no classifier, separator, stem
+  name, or 2/4/6 routing contract; the native GitHub/image run remains open.
 - Constrained image evidence: both the existing emulated amd64 image and the
   current native arm64 build passed the reusable internal-network smoke with a
   read-only root, no analyzer mounts, 1 vCPU, 1 GiB RAM, real short and

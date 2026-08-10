@@ -9,12 +9,12 @@ not authorize a release.
 - Canonical checkout: `/Users/milwright/Projects/dev/stem-splitter`.
 - Branch: `codex/v3.2-audio-pipeline`.
 - Implementation base: `9c3120c` (`feat: link footer to instructor console`).
-- The reviewed executable lineage now reaches local commit `e640c72` (`fix:
-  version assistant guide caches`). Discovery evaluation is bound to
+- The reviewed executable lineage now reaches local commit `4a3fbf1` (`fix:
+  fail closed on prompt history drift`). Discovery evaluation is bound to
   `ccf7f53`, teacher seed hardening to `e372ab4`, shared import deadlines to
   `c367e23` plus `fe112ef`, Innertube transport to `fce98cf`, Railway prompt
-  transactions to `821f5e1`, and the latest complete local source gate to
-  `e640c72`.
+  transactions to `821f5e1`, prompt-aware guide caching to `e640c72`, and the
+  latest complete local source gate to `4a3fbf1`.
 - GitHub has no open pull request for this branch. PRs 1–5 are merged historical
   work and must not be cited as delivery of this implementation. The current
   branch does not exist on `origin`.
@@ -51,6 +51,7 @@ not authorize a release.
 | Stored-source import transport | Retry, redirect, prediction polling, response-body, and output-download timers were individually bounded but could reset across phases; a provider stream exception could also escape with provider-controlled text. The installed Innertube library also reads control bodies internally and requests automatic redirects. | Archive retry/redirect/header/body work shares one request deadline. Replicate start/body/poll/output-header/output-body work shares a four-minute deadline. Innertube has one 45-second budget, permits only the exact reviewed session/player/API/audio path families, manually validates at most three redirects, strips cross-origin credentials and identity headers, and caps session/player bodies at 16 MiB while outer audio remains capped at 100 MB. Bounded reads normalize arbitrary stream failures. | Six focused Innertube regressions, a live 19-second/309,288-byte control import, and the complete `fce98cf` gate pass. Live Railway journeys remain. |
 | Railway prompt transaction | The synchronous SQLite adapter awaited each already-completed statement inside `batch()`, allowing another request to issue `BEGIN` on the same connection. Guide invalidation also happened after the prompt/history transaction, and a concurrent response could read back another teacher's newest revision. | Node batches execute synchronously under `BEGIN IMMEDIATE`; prompt compare-and-swap, winning-request-only guide invalidation, and append-only history share one rollback boundary; the response selects its exact settings revision. The active host and CI pin exact Node 22.23.1, and a dedicated server typecheck covers the adapter plus shared app. | Dedicated concurrency/losing-CAS tests and the full `821f5e1` gate pass; real teacher restart persistence remains. |
 | Prompt-aware guide cache | A guide generation could begin under amendment revision N, finish after revision N+1 cleared the cache, and then repopulate it with stale output. Cached rows also had no fixed-prompt identity, so a reviewed code prompt release could continue serving an older guide. | Guide rows carry `SYSTEM_PROMPT_VERSION` and the amendment revision. One conditional upsert publishes only if its captured revision is still current; fixed-version mismatches are unreadable and regenerate lazily. The Railway boot migration retains legacy rows with an ineligible identity, and a failed cache invalidation rolls the entire prompt transaction back. | Rollback, in-flight-revision, fixed-version, Node migration, and numbered-migration regressions plus the complete local `e640c72` phase-zero gate pass. Native GitHub, Railway, and real-teacher restart gates remain. |
+| Prompt-history integrity | `ON CONFLICT DO NOTHING` could hide a pre-existing next-revision history row after a damaged restore or manual drift: the setting would advance while the response reused an unrelated audit record. | The winning compare-and-swap must append exactly one unique history row before invalidating guides. A uniqueness conflict now aborts the batch and rolls every mutation back; a losing save appends and invalidates nothing. | The corrupt-next-revision regression and complete local `4a3fbf1` phase-zero gate pass with 14 server/migration tests. Native GitHub, Railway, and authorized teacher persistence remain. |
 | Phase 1A source authority | Origin allowlisting alone allowed the analyzer token to fetch arbitrary endpoints on the app origin, and accepting the six-hour separator URL would widen analyzer authority beyond its purpose-specific URL. | The service accepts only the exact signed `/api/local-sources/uploads/…` URL shape within the ten-minute issuance window, rejects redirects, bounds declared and streamed bytes, and deletes its private temp directory. | Local service tests pass. |
 | Phase 1A decoder | Output-side seeking could decode from the start to reach later windows, consuming the timeout on long inputs. | FFmpeg uses bounded input-side accurate seeks for beginning, middle, and end; probe/decode share one phase deadline and stdout caps. | Real local fixture test passes. |
 | Phase 1A readiness | A classifier startup exception rejected the readiness promise and turned `/readyz` into a 500; liveness called the classifier too. | `/healthz` is process-only. Decoder and classifier failures settle to explicit 503 readiness reasons, and analysis stays unavailable. | Local service tests pass. |
@@ -104,6 +105,13 @@ authoritative Auto E2E journeys. This local source-bound result supersedes the
 9-test server count for prompt-cache code only; it does not supersede the
 separate image, corpus-listening, native GitHub, Railway, or authenticated
 teacher persistence gates below.
+
+The fail-closed history follow-up was then committed as exact executable source
+`4a3fbf1`. The literal Bun `1.3.14` phase-zero gate again passed with the same
+counts above except that the new integrity regression raises the Railway
+server/migration count to 14. `git diff --check` and the frozen-lock install
+also pass. No remote branch, pull request, Railway release, or live teacher
+interaction contains or accepts this commit yet.
 
 The six Innertube-specific cases cover exact URL/path rejection, approved
 cross-origin redirect credential stripping, unapproved redirect rejection, the
