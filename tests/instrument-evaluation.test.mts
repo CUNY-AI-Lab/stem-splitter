@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -10,9 +12,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
+import {
+  compareInstrumentCandidateArtifacts,
+  INSTRUMENT_CANDIDATE_COMPARISON_SCHEMA,
+} from '../scripts/lib/instrument-candidate-comparison.mts';
 import {
   evaluateInstrumentCandidate,
   INSTRUMENT_CANDIDATE_OBSERVATIONS_SCHEMA,
@@ -168,6 +174,20 @@ function perfectCandidate(
         })),
     })),
   };
+}
+
+function jsonArtifact(value: unknown): Buffer {
+  return Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+function distinctCandidate(
+  plan: InstrumentEvaluationPlanV1,
+  review: InstrumentEvaluationReviewV1
+): InstrumentCandidateObservationsV3 {
+  const candidate = perfectCandidate(plan, review);
+  candidate.candidate.classifierVersion = 'candidate-test-v2';
+  candidate.candidate.modelSha256 = '1'.repeat(64);
+  return candidate;
 }
 
 test('genre-diverse evaluation plan binds exact real mixes, isolated controls, and coverage targets', () => {
@@ -606,4 +626,196 @@ test('parent labels remain separate and uncertainty, false alerts, and outages s
   assert.ok(metrics.coverageBlockers.includes('review-uncertainty-present'));
   assert.ok(metrics.coverageBlockers.includes('candidate-service-failure-present'));
   assert.equal(metrics.promotionEligible, false);
+});
+
+test('candidate cohort compares distinct native candidates but cannot select or promote one', () => {
+  const plan = loadInstrumentEvaluationPlan(repositoryRoot);
+  const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
+  const reviewValue = completeReview(plan);
+  const comparison = compareInstrumentCandidateArtifacts(
+    plan,
+    planSha256,
+    jsonArtifact(reviewValue),
+    [
+      jsonArtifact(perfectCandidate(plan, reviewValue)),
+      jsonArtifact(distinctCandidate(plan, reviewValue)),
+    ]
+  );
+
+  assert.equal(comparison.$schema, INSTRUMENT_CANDIDATE_COMPARISON_SCHEMA);
+  assert.equal(comparison.comparisonUse, 'comparison-only-no-selection');
+  assert.equal(comparison.comparable, true);
+  assert.deepEqual(comparison.comparisonBlockers, []);
+  assert.deepEqual(
+    comparison.candidates.map(({ metrics }) => metrics.candidate.classifierVersion),
+    ['candidate-test-v1', 'candidate-test-v2']
+  );
+  assert.equal(comparison.candidates[0].identitySha256.length, 64);
+  assert.notEqual(
+    comparison.candidates[0].identitySha256,
+    comparison.candidates[1].identitySha256
+  );
+  assert.equal(comparison.selection.selectedClassifierVersion, null);
+  assert.equal(comparison.selection.qualityFloorVersion, null);
+  assert.equal(comparison.selection.eligible, false);
+  assert.deepEqual(comparison.selection.blockers, [
+    'candidate-quality-floor-not-bound',
+    'candidate-license-evidence-not-bound',
+    'candidate-calibration-evidence-not-bound',
+    'candidate-latency-memory-evidence-not-bound',
+    'human-selection-decision-missing',
+    'railway-shadow-evidence-missing',
+  ]);
+});
+
+test('candidate cohort rejects a classifier id reused after model or policy drift', () => {
+  const plan = loadInstrumentEvaluationPlan(repositoryRoot);
+  const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
+  const reviewValue = completeReview(plan);
+  const changedModel = perfectCandidate(plan, reviewValue);
+  changedModel.candidate.modelSha256 = '1'.repeat(64);
+  assert.throws(
+    () =>
+      compareInstrumentCandidateArtifacts(
+        plan,
+        planSha256,
+        jsonArtifact(reviewValue),
+        [jsonArtifact(perfectCandidate(plan, reviewValue)), jsonArtifact(changedModel)]
+      ),
+    /classifier version candidate-test-v1 was reused after its candidate identity changed/
+  );
+
+  const changedPolicy = perfectCandidate(plan, reviewValue);
+  changedPolicy.candidate.classifierPolicySha256 = '2'.repeat(64);
+  assert.throws(
+    () =>
+      compareInstrumentCandidateArtifacts(
+        plan,
+        planSha256,
+        jsonArtifact(reviewValue),
+        [jsonArtifact(perfectCandidate(plan, reviewValue)), jsonArtifact(changedPolicy)]
+      ),
+    /classifier version candidate-test-v1 was reused after its candidate identity changed/
+  );
+});
+
+test('candidate cohort rejects component-version reuse with different content', () => {
+  const plan = loadInstrumentEvaluationPlan(repositoryRoot);
+  const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
+  const reviewValue = completeReview(plan);
+  const changedPreprocessing = distinctCandidate(plan, reviewValue);
+  changedPreprocessing.candidate.preprocessingSha256 = '2'.repeat(64);
+  assert.throws(
+    () =>
+      compareInstrumentCandidateArtifacts(
+        plan,
+        planSha256,
+        jsonArtifact(reviewValue),
+        [
+          jsonArtifact(perfectCandidate(plan, reviewValue)),
+          jsonArtifact(changedPreprocessing),
+        ]
+      ),
+    /preprocessing version analysis-windows-v1 was reused with different content/
+  );
+});
+
+test('abstention-only candidates remain visible but cannot satisfy comparability', () => {
+  const plan = loadInstrumentEvaluationPlan(repositoryRoot);
+  const planSha256 = instrumentEvaluationPlanSha256(repositoryRoot);
+  const reviewValue = completeReview(plan);
+  const abstained = distinctCandidate(plan, reviewValue);
+  abstained.sources = abstained.sources.map((source) => ({
+    ...source,
+    outcome: 'abstained',
+    outcomeReason: 'no-label-cleared-threshold',
+    detections: [],
+  }));
+  const comparison = compareInstrumentCandidateArtifacts(
+    plan,
+    planSha256,
+    jsonArtifact(reviewValue),
+    [jsonArtifact(perfectCandidate(plan, reviewValue)), jsonArtifact(abstained)]
+  );
+
+  assert.equal(comparison.comparable, false);
+  assert.deepEqual(comparison.comparisonBlockers, [
+    'candidate-no-classified-decisions:candidate-test-v2',
+  ]);
+  assert.equal(
+    comparison.candidates.find(
+      ({ metrics }) => metrics.candidate.classifierVersion === 'candidate-test-v2'
+    )?.metrics.diagnosticAllLabels.abstentionRateBasisPoints,
+    10_000
+  );
+  assert.equal(comparison.selection.eligible, false);
+});
+
+test('candidate comparison command writes owner-only evidence once and enforces comparability', () => {
+  const plan = loadInstrumentEvaluationPlan(repositoryRoot);
+  const reviewValue = completeReview(plan);
+  const directory = mkdtempSync(join(repositoryRoot, '.instrument-comparison-test-'));
+  const reviewPath = join(directory, 'review.json');
+  const firstCandidatePath = join(directory, 'candidate-a.json');
+  const secondCandidatePath = join(directory, 'candidate-b.json');
+  const outputPath = join(directory, 'comparison.json');
+  const commandPath = resolve(repositoryRoot, 'scripts/compare-instrument-candidates.mts');
+  writeFileSync(reviewPath, jsonArtifact(reviewValue), { mode: 0o600 });
+  writeFileSync(firstCandidatePath, jsonArtifact(perfectCandidate(plan, reviewValue)), {
+    mode: 0o600,
+  });
+  writeFileSync(secondCandidatePath, jsonArtifact(distinctCandidate(plan, reviewValue)), {
+    mode: 0o600,
+  });
+
+  const command = [
+    '--experimental-strip-types',
+    commandPath,
+    '--review',
+    reviewPath,
+    '--candidate',
+    firstCandidatePath,
+    '--candidate',
+    secondCandidatePath,
+    '--output',
+    outputPath,
+    '--require-comparable',
+  ];
+  try {
+    const result = spawnSync(process.execPath, command, {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(lstatSync(outputPath).mode & 0o777, 0o600);
+    const comparison = JSON.parse(readFileSync(outputPath, 'utf8'));
+    assert.equal(comparison.comparable, true);
+    assert.equal(comparison.selection.eligible, false);
+
+    const noOverwrite = spawnSync(process.execPath, command, {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    });
+    assert.notEqual(noOverwrite.status, 0);
+
+    const incomplete = spawnSync(
+      process.execPath,
+      [
+        '--experimental-strip-types',
+        commandPath,
+        '--review',
+        reviewPath,
+        '--candidate',
+        firstCandidatePath,
+        '--require-comparable',
+      ],
+      { cwd: repositoryRoot, encoding: 'utf8' }
+    );
+    assert.equal(incomplete.status, 1, incomplete.stderr);
+    assert.deepEqual(JSON.parse(incomplete.stdout).comparisonBlockers, [
+      'minimum-two-candidates-missing',
+    ]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

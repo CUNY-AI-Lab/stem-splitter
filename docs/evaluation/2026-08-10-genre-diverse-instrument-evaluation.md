@@ -135,6 +135,44 @@ v1 schema. Floating labels, duplicate detections, incompatible outcome/reason
 pairs, confidence outside `0..1`, a changed source hash, or any reordered source
 also fails validation.
 
+## Candidate cohort comparison
+
+After an approved deidentified review and at least one v3 candidate artifact
+exist, the comparison-only CLI can bind their exact bytes into one report:
+
+```bash
+bun run compare:instrument-candidates \
+  --review output/instrument-review.public.json \
+  --candidate output/candidate-a.json \
+  --candidate output/candidate-b.json \
+  --output output/instrument-candidate-comparison.json
+```
+
+The output is created once with owner-only permissions. The comparison binds
+the exact review and candidate artifact SHA-256 values, revalidates every v3
+candidate and its transitive evidence, calculates the existing separated
+metrics, and sorts candidates by classifier version. One candidate is accepted
+as diagnostic input, but at least two candidates with definite classified
+decisions are required before `comparable` can become true. This means the
+current abstention-only YAMNet adapter remains visible without being presented
+as comparable calibration evidence.
+
+Within a submitted cohort, one classifier version may name only one exact
+combination of model, vocabulary, preprocessing, classifier policy, and
+threshold policy. The gate rejects reuse of that classifier version after any
+of those identities changes. It also rejects a preprocessing,
+classifier-policy, or threshold-policy version reused with different content.
+A changed model or policy must therefore receive a new classifier id instead
+of silently inheriting an earlier candidate's history.
+
+This report cannot select a classifier. Even when `comparable` is true, its
+selection field remains false and names the still-unbound quality floor,
+license, calibration, latency/memory, human selection, and Railway shadow
+evidence. It cannot change the discovery flag, provision a service, route Auto,
+rename a core stem, or authorize an isolation. Use `--require-comparable` only
+when a later evidence workflow must fail on an incomplete cohort; without
+artifacts, the command prints the current blockers without claiming results.
+
 Evaluate only after both an approved public review and a pin-complete candidate
 artifact exist:
 

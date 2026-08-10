@@ -979,6 +979,17 @@ job.
   historical arm64 reports, emulation, caller-authored execution drift, report
   replacement, and symbolic-link inputs. This closes the YAMNet evidence-format
   seam only; it does not select YAMNet or create a real candidate artifact.
+- [x] Add a classifier-neutral, comparison-only cohort gate before model
+  selection. It binds the exact deidentified review and every v3 candidate
+  artifact by SHA-256, revalidates all candidate evidence, sorts candidates by
+  classifier id, and refuses classifier-id reuse after a checkpoint,
+  preprocessing, classifier-policy, or threshold-policy change. Reusing a
+  component version with different content also fails closed. At least two
+  candidates with definite classified decisions are required for
+  comparability; the existing abstention-only YAMNet adapter therefore cannot
+  pass by itself. Even a comparable cohort remains explicitly unselectable
+  until quality-floor, license, calibration, latency/memory, human-decision,
+  and Railway-shadow evidence is separately bound.
 - [ ] After exactly one discovery classifier is selected, implement or adapt its
   model-specific capture path against a fresh native `linux/amd64` report and
   its separately reviewed threshold policy. The existing YAMNet adapter may be
@@ -1275,7 +1286,10 @@ canary. Student access remains off.
   and native-platform provenance. A YAMNet-specific comparison adapter now
   validates that chain but deliberately emits only abstentions; a selected-
   classifier adapter, fresh native reports, and a real reviewed candidate
-  artifact remain open. The evaluator exposes selective
+  artifact remain open. A comparison-only cohort gate now prevents candidate
+  or component-version reuse after content drift and prevents an
+  abstention-only artifact from masquerading as comparable evidence. The
+  evaluator exposes selective
   coverage, model abstention, false alerts, degraded sources, and coverage gaps
   without turning an outage into classifier error. It forbids promotion from
   an overlapping all-label aggregate. This establishes the evidence shape but
