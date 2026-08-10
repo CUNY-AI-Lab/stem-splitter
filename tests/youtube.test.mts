@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createInnertubeFetch,
   fetchViaReplicate,
   parseYouTubeVideoId,
   YouTubeError,
@@ -26,6 +27,206 @@ test('YouTube URL parsing accepts video routes and rejects malformed IDs', () =>
   assert.equal(parseYouTubeVideoId(`https://youtube.com.evil/watch?v=${videoId}`), null);
   assert.equal(parseYouTubeVideoId(`https://user:password@youtube.com/watch?v=${videoId}`), null);
   assert.equal(parseYouTubeVideoId(`javascript:alert('${videoId}')`), null);
+});
+
+test('Innertube fetch refuses unapproved endpoints before network access', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    throw new Error('must not fetch');
+  };
+
+  try {
+    const providerFetch = createInnertubeFetch(Date.now() + 1_000);
+    for (const url of [
+      'http://www.youtube.com/youtubei/v1/player',
+      'https://youtube.com.evil/youtubei/v1/player',
+      'https://127.0.0.1/youtubei/v1/player',
+      'https://user:password@www.youtube.com/youtubei/v1/player',
+      'https://www.youtube.com:444/youtubei/v1/player',
+      'https://www.youtube.com/account',
+      'https://storage.googleapis.com/arbitrary-object',
+      'https://i.ytimg.com/vi/example/default.jpg',
+    ]) {
+      await assert.rejects(
+        () => providerFetch(url),
+        (error: unknown) =>
+          error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+      );
+    }
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Innertube fetch validates redirects and strips credentials across origins', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Request[] = [];
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    assert.equal(init?.redirect, 'manual');
+    if (requests.length === 1) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: 'https://r1---sn.googlevideo.com/videoplayback' },
+      });
+    }
+    return new Response(makeM4a(), { headers: { 'Content-Type': 'audio/mp4' } });
+  };
+
+  try {
+    const response = await createInnertubeFetch(Date.now() + 1_000)(
+      'https://www.youtube.com/youtubei/v1/player',
+      {
+        headers: {
+          Authorization: 'Bearer must-not-cross-origins',
+          Cookie: 'session=must-not-cross-origins',
+          'Proxy-Authorization': 'Basic must-not-cross-origins',
+          'X-Goog-AuthUser': 'must-not-cross-origins',
+          'X-Goog-PageId': 'must-not-cross-origins',
+          'X-Goog-Visitor-Id': 'must-not-cross-origins',
+          'X-Origin': 'https://must-not-cross-origins.invalid',
+          'X-Youtube-Identity-Token': 'must-not-cross-origins',
+        },
+      }
+    );
+    assert.equal((await response.arrayBuffer()).byteLength, 2048);
+    assert.equal(requests.length, 2);
+    for (const header of [
+      'authorization',
+      'cookie',
+      'proxy-authorization',
+      'x-goog-authuser',
+      'x-goog-pageid',
+      'x-goog-visitor-id',
+      'x-origin',
+      'x-youtube-identity-token',
+    ]) {
+      assert.equal(requests[1].headers.get(header), null, `${header} crossed origins`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Innertube fetch rejects unapproved redirect targets', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(null, {
+      status: 302,
+      headers: { Location: 'https://example.com/not-youtube' },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        createInnertubeFetch(Date.now() + 1_000)(
+          'https://www.youtube.com/youtubei/v1/player'
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Innertube fetch follows no more than three approved redirects', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: `https://www.youtube.com/youtubei/v1/player?redirect=${calls}`,
+      },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        createInnertubeFetch(Date.now() + 1_000)(
+          'https://www.youtube.com/youtubei/v1/player'
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+    assert.equal(calls, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Innertube redirects cannot reset the shared request deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = originalNow();
+  const deadline = now + 1_000;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    now = deadline;
+    return new Response(null, {
+      status: 302,
+      headers: { Location: 'https://www.youtube.com/youtubei/v1/player?redirect=1' },
+    });
+  };
+  Date.now = () => now;
+
+  try {
+    await assert.rejects(
+      () =>
+        createInnertubeFetch(deadline)(
+          'https://www.youtube.com/youtubei/v1/player'
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_timeout'
+    );
+    assert.equal(calls, 1);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Innertube fetch bounds internal control responses before library parsing', async () => {
+  const originalFetch = globalThis.fetch;
+  let canceled = false;
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        pull() {
+          throw new Error('oversized provider body must not be read');
+        },
+        cancel() {
+          canceled = true;
+        },
+      }),
+      { headers: { 'Content-Length': String(16 * 1024 * 1024 + 1) } }
+    );
+
+  try {
+    await assert.rejects(
+      () =>
+        createInnertubeFetch(Date.now() + 1_000)(
+          'https://youtubei.googleapis.com/youtubei/v1/player'
+        ),
+      (error: unknown) =>
+        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+    );
+    assert.equal(canceled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('Replicate fallback authenticates the output download and validates M4A bytes', async () => {

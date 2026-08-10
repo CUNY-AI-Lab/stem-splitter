@@ -25,6 +25,8 @@ const REPLICATE_START_TIMEOUT_MS = 75 * 1000;
 const REPLICATE_POLL_TIMEOUT_MS = 15 * 1000;
 const AUDIO_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
 const INNERTUBE_MAX_WAIT_MS = 45 * 1000;
+const INNERTUBE_CONTROL_MAX_BYTES = 16 * 1024 * 1024;
+const INNERTUBE_MAX_REDIRECTS = 3;
 const MAX_PREDICTION_BYTES = 64 * 1024;
 const PREDICTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 const PREDICTION_STATUSES = new Set([
@@ -182,20 +184,143 @@ async function withDeadline<T>(operation: () => Promise<T>, deadline: number): P
   }
 }
 
-function deadlineFetch(deadline: number): typeof fetch {
+const INNERTUBE_CROSS_ORIGIN_PRIVATE_HEADERS = [
+  'authorization',
+  'cookie',
+  'proxy-authorization',
+  'x-goog-authuser',
+  'x-goog-pageid',
+  'x-goog-visitor-id',
+  'x-origin',
+  'x-youtube-identity-token',
+] as const;
+
+function isGoogleVideoHost(hostname: string): boolean {
+  return hostname === 'googlevideo.com' || hostname.endsWith('.googlevideo.com');
+}
+
+function isApprovedInnertubePath(url: URL): boolean {
+  if (isGoogleVideoHost(url.hostname)) return url.pathname === '/videoplayback';
+  if (url.hostname === 'youtubei.googleapis.com') {
+    return url.pathname.startsWith('/youtubei/');
+  }
+  if (url.hostname !== 'www.youtube.com') return false;
+  return (
+    url.pathname === '/iframe_api' ||
+    url.pathname.startsWith('/youtubei/') ||
+    (url.pathname.startsWith('/s/player/') && url.pathname.endsWith('/base.js'))
+  );
+}
+
+function approvedInnertubeUrl(raw: string | URL): URL | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.port ||
+    url.hash ||
+    !isApprovedInnertubePath(url)
+  ) {
+    return null;
+  }
+  return url;
+}
+
+function isInnertubeAudioHost(url: URL): boolean {
+  return isGoogleVideoHost(url.hostname);
+}
+
+async function boundedInnertubeControlResponse(
+  response: Response,
+  deadline: number
+): Promise<Response> {
+  if (!response.body) return response;
+  const bytes = await readBoundedResponse(response, {
+    maximumBytes: INNERTUBE_CONTROL_MAX_BYTES,
+    timeoutMs: remainingTimeout(deadline, INNERTUBE_MAX_WAIT_MS),
+    errors: {
+      tooLarge: providerUnavailable,
+      timedOut: youtubeTimedOut,
+      unreadable: providerUnavailable,
+    },
+  });
+  const bounded = new Response(bytes, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  Object.defineProperty(bounded, 'url', { value: response.url, configurable: true });
+  return bounded;
+}
+
+export function createInnertubeFetch(deadline: number): typeof fetch {
   return async (input, init) => {
-    const timeoutSignal = AbortSignal.timeout(
-      remainingTimeout(deadline, INNERTUBE_MAX_WAIT_MS)
+    const initialUrl = approvedInnertubeUrl(
+      input instanceof Request ? input.url : input
     );
-    const signal = init?.signal
-      ? AbortSignal.any([init.signal, timeoutSignal])
-      : timeoutSignal;
+    if (!initialUrl) throw providerUnavailable();
+    let request: Request;
     try {
-      return await fetch(input, { ...init, signal });
-    } catch (error) {
-      if (timeoutSignal.aborted) throw youtubeTimedOut();
-      throw error;
+      request = new Request(input, init);
+    } catch {
+      throw providerUnavailable();
     }
+    const callerSignal = request.signal;
+
+    for (let redirects = 0; redirects <= INNERTUBE_MAX_REDIRECTS; redirects += 1) {
+      const url = approvedInnertubeUrl(request.url);
+      if (!url) throw providerUnavailable();
+      const timeoutSignal = AbortSignal.timeout(
+        remainingTimeout(deadline, INNERTUBE_MAX_WAIT_MS)
+      );
+      const signal = AbortSignal.any([callerSignal, timeoutSignal]);
+      let response: Response;
+      try {
+        response = await fetch(request, { redirect: 'manual', signal });
+      } catch {
+        if (timeoutSignal.aborted || Date.now() >= deadline) throw youtubeTimedOut();
+        throw providerUnavailable();
+      }
+
+      if (![301, 302, 303, 307, 308].includes(response.status)) {
+        return isInnertubeAudioHost(url)
+          ? response
+          : boundedInnertubeControlResponse(response, deadline);
+      }
+
+      const location = response.headers.get('location');
+      await response.body?.cancel().catch(() => undefined);
+      if (
+        !location ||
+        redirects === INNERTUBE_MAX_REDIRECTS ||
+        !['GET', 'HEAD'].includes(request.method)
+      ) {
+        throw providerUnavailable();
+      }
+      let redirected: URL | null = null;
+      try {
+        redirected = approvedInnertubeUrl(new URL(location, url));
+      } catch {
+        // Leave null; malformed or unapproved provider redirects fail closed.
+      }
+      if (!redirected) throw providerUnavailable();
+
+      const headers = new Headers(request.headers);
+      if (redirected.origin !== url.origin) {
+        for (const header of INNERTUBE_CROSS_ORIGIN_PRIVATE_HEADERS) {
+          headers.delete(header);
+        }
+      }
+      request = new Request(redirected, { method: request.method, headers });
+    }
+
+    throw providerUnavailable();
   };
 }
 
@@ -204,7 +329,7 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
   const yt = await withDeadline(
     () => Innertube.create({
       generate_session_locally: true,
-      fetch: deadlineFetch(deadline),
+      fetch: createInnertubeFetch(deadline),
     }),
     deadline
   );
