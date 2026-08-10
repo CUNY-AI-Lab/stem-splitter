@@ -15,6 +15,7 @@ export function resolveInputProperties(openapiSchema) {
     const target = ref ? components[ref.split('/').pop()] : undefined;
     resolved[name] = {
       type: raw.type ?? target?.type,
+      format: raw.format ?? target?.format,
       enum: raw.enum ?? target?.enum,
       default: raw.default,
     };
@@ -62,6 +63,44 @@ export function findPinViolations(surface, properties) {
     }
   }
 
+  return failures;
+}
+
+/** Validate the separate, target-only AudioSep query-isolation contract. */
+export function findQueryIsolationPinViolations(surface, openapiSchema) {
+  const failures = [];
+  const components = openapiSchema?.components?.schemas ?? {};
+  const input = resolveInputProperties(openapiSchema);
+
+  if (!Object.keys(input).length) {
+    return ['the pinned isolation version exposes no Input schema — cannot verify anything'];
+  }
+  for (const key of surface.inputKeys) {
+    if (!(key in input)) {
+      failures.push(`isolation input "${key}" no longer exists on the pinned version`);
+    }
+  }
+  if (input.audio_file && input.audio_file.type !== 'string') {
+    failures.push('isolation input "audio_file" is no longer a string');
+  }
+  if (input.audio_file && input.audio_file.format !== 'uri') {
+    failures.push('isolation input "audio_file" is no longer declared as a URI');
+  }
+  if (input.text && input.text.type !== 'string') {
+    failures.push('isolation input "text" is no longer a string');
+  }
+
+  const output = components.Output;
+  if (!output) {
+    failures.push('the pinned isolation version exposes no Output schema');
+  } else if (surface.output === 'uri') {
+    if (output.type !== 'string') {
+      failures.push('the pinned isolation output is no longer one URI string');
+    }
+    if (output.format !== 'uri') {
+      failures.push('the pinned isolation output is no longer declared as a URI');
+    }
+  }
   return failures;
 }
 

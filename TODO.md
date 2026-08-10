@@ -238,7 +238,7 @@ because its model or service is available.
 | 0 | Existing `stem-splitter` app | Already active on Railway; preserve it | Yes, but only through reviewed app releases |
 | 1 | Versioned audio-analysis API | New private Railway CPU service | No; shadow/advisory first |
 | 2 | Instrument classifier | New private Railway ML service, reachable only by the analyzer after parity | No; detection metadata only at first |
-| 3 | AudioSep query separator | New pinned Replicate integration | No; explicit optional isolation only |
+| 3 | AudioSep query separator | Dormant exact-pin Replicate adapter; no route/resource yet | No; explicit optional isolation only |
 | 4 | SAM-Audio comparison | Evaluation-only pinned Replicate integration | No until selected through review |
 | 5 | Banquet/Query-Bandit | Future private Cog or GPU service | No until a separate multi-stem design is accepted |
 
@@ -575,8 +575,22 @@ license status. Overall accuracy alone is insufficient.
 
 ### 3A. AudioSep pilot
 
-- [ ] Add a separately pinned AudioSep Replicate runner and version variable.
-  Extend the Replicate contract guard so a schema or version drift fails CI.
+- [x] Add a separately pinned AudioSep Replicate runner and version variable.
+  `REPLICATE_AUDIOSEP_VERSION` accepts only the exact source-reviewed lowercase
+  64-hex id. Offline `test:worker` regressions bind that pin and schema surface;
+  the authenticated `npm run check:isolation` verifies the exact remote
+  OpenAPI contract. Both bind `audio_file`/`text` to a one-URI output and reject
+  code, version, or schema drift. The reviewed candidate is
+  community-hosted `cjwbw/audiosep` version `f0700443…`, not an official
+  Audio-AGI service. The adapter remains unimported by app routes, the feature
+  flag remains false, and no provider call, resource, or spend path exists.
+  The offline pin/schema regressions pass; authenticated remote-schema readback
+  remains a pre-release gate because no local Replicate token was read.
+- [ ] Bind the pinned community image to an exact AudioSep checkpoint hash and
+  applicable weight license. The official source repository is MIT licensed
+  and a separate Hugging Face mirror labels its checkpoint Apache-2.0, but
+  neither fact proves which exact weight bytes the community Replicate version
+  executes.
 - [ ] Create a separate `instrument_isolations` job/resource. Never append a
   query output to the core `stems` array or imply that independently queried
   outputs sum back to the original mixture.
@@ -597,6 +611,10 @@ license status. Overall accuracy alone is insufficient.
   paid implementations in the student interface.
 - [ ] Complete institutional review of the SAM license, gated checkpoint terms,
   and the operational risk of any community-hosted Replicate deployment.
+  The 2026-08-10 source review confirms a custom modifiable SAM License, gated
+  Hugging Face checkpoints, target-plus-residual semantics, and only a
+  community Replicate candidate; it does not substitute for institutional
+  approval.
 - [ ] Compare target isolation, leakage, residual usefulness, span prompting,
   latency, failure rate, and cost against AudioSep on the exact same manifest.
 - [ ] Select one default query provider through a documented decision. Keep the
@@ -667,6 +685,9 @@ canary. Student access remains off.
 - [ ] Never migrate or deploy this unfinished pipeline to Cloudflare Workers.
 
 ## Research references
+
+- [2026-08-10 provider/source review](docs/evaluation/2026-08-10-query-isolation-provider-review.md)
+  — exact reviewed revisions, contracts, licensing boundaries, and dispositions.
 
 - [AudioSep](https://github.com/Audio-AGI/AudioSep) — open-domain,
   text-queried target separation; first Replicate integration candidate.

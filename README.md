@@ -43,6 +43,8 @@ src/
     types.ts            SeparationBackend interface (the swappable seam)
     replicate.ts        Replicate-hosted Demucs implementation
     modal.ts            Stub for a self-deployed Modal backend
+  isolation/            Dormant target-isolation contracts and exact-pin AudioSep adapter;
+                        never part of the core stem catalogue
 server/                 Active Railway Node host (SQLite/filesystem binding shims)
 audio-analysis/         Private bounded Railway Auto analyzer (separate image)
 public/                 Static frontend (vanilla JS mixer + Listening Guide panel)
@@ -99,6 +101,8 @@ The repeatable pre-release rollback capture is `npm run baseline:railway`; its
 latest non-secret evidence is under
 `docs/acceptance/2026-08-09-v3.2-rollback-baseline/`. Validate both provider
 pins with `npm run check:replicate` and `npm run check:youtube` before release.
+The separate `npm run check:isolation` command vets a candidate AudioSep pin,
+but does not authorize or enable the dormant Phase 3 adapter.
 
 ## Deferred Cloudflare migration (finished product only)
 

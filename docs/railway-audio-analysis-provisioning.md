@@ -66,6 +66,15 @@ and 4 GiB RAM. Those are conservative test caps, not accepted sizing. The
 RSS must be measured before any flag changes. Use `/readyz` as its deployment
 healthcheck so a missing hash-pinned model cannot be promoted.
 
+Phase 3 does not add another Railway service at the outset. Its first candidate
+is a dormant, exact-version AudioSep adapter for the external Replicate API.
+Do not stage its version variable or enable its feature while provisioning the
+analysis/classifier services: the app still lacks the separate isolation
+resource, teacher-only route, budgets, and quality gate. SAM-Audio remains an
+evaluation-only community deployment subject to institutional license and
+checkpoint review. Banquet, if later justified, becomes its own scale-to-zero
+GPU service and never runs inside either warmed Railway CPU service.
+
 ## Variables
 
 Create one long random token of at least 32 non-control characters as a sealed
@@ -122,6 +131,7 @@ runtime.
 | `SERVER_AUTO_MODE` | `off` |
 | `INSTRUMENT_DISCOVERY_ENABLED` | `false` |
 | `QUERY_ISOLATION_ENABLED` | `false` |
+| `REPLICATE_AUDIOSEP_VERSION` | leave absent through Phases 1-2; review and stage one exact 64-hex version only with the Phase 3 isolation resource |
 
 The app and analyzer both compile the exact `autosplit-role-v3` pin. A response
 from any other role-classifier version fails the analysis contract and takes

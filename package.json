@@ -31,6 +31,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "check:replicate": "node --experimental-strip-types scripts/check-replicate-pin.mjs",
+    "check:isolation": "node --experimental-strip-types scripts/check-isolation-pin.mjs",
     "check:youtube": "node scripts/check-youtube-pin.mjs",
     "baseline:railway": "node scripts/capture-railway-baseline.mjs",
     "eval:stems": "node scripts/eval-stems.mjs",
