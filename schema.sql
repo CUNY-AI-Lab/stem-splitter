@@ -23,6 +23,30 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at);
 
+-- Once recorded, exact source identity may be repeated but never rebound to
+-- different bytes or cleared. Legacy rows can still transition NULL -> hash.
+CREATE TRIGGER IF NOT EXISTS jobs_source_hash_immutable
+BEFORE UPDATE OF source_hash ON jobs
+FOR EACH ROW
+WHEN OLD.source_hash IS NOT NULL AND NEW.source_hash IS NOT OLD.source_hash
+BEGIN
+  SELECT RAISE(ABORT, 'jobs.source_hash is immutable once set');
+END;
+
+-- A stored digest identifies the bytes at this exact source locator. Neither
+-- the object key nor its source class may be rebound underneath that digest.
+CREATE TRIGGER IF NOT EXISTS jobs_source_locator_immutable
+BEFORE UPDATE OF source_key, source_type ON jobs
+FOR EACH ROW
+WHEN OLD.source_hash IS NOT NULL
+  AND (
+    NEW.source_key IS NOT OLD.source_key
+    OR NEW.source_type IS NOT OLD.source_type
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'jobs source locator is immutable once source_hash is set');
+END;
+
 -- Independently queried long-tail targets. These rows never alter jobs.stems,
 -- and their cache identity binds the source bytes, prompt, and exact provider.
 CREATE TABLE IF NOT EXISTS instrument_isolations (

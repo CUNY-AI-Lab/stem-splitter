@@ -7,6 +7,7 @@ import { SqliteD1 } from '../server/d1.ts';
 import { cacheGuideIfPromptCurrent, getGuide } from '../src/assistant/index.ts';
 import { SYSTEM_PROMPT_VERSION } from '../src/assistant/prompt.ts';
 import { setAmendment } from '../src/teacher/auth.ts';
+import { queryIsolationCacheKeyForMaterial } from '../src/isolation/contract.ts';
 import {
   attachInstrumentIsolationExternalId,
   claimInstrumentIsolation,
@@ -414,12 +415,33 @@ test('Railway boot adds Auto routing metadata without changing legacy job models
       source_hash: null,
       analysis: null,
     });
+    await db.prepare('UPDATE jobs SET source_hash = ? WHERE id = ?')
+      .bind('a'.repeat(64), 'legacy-job')
+      .run();
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_hash = ? WHERE id = ?')
+        .bind('b'.repeat(64), 'legacy-job')
+        .run(),
+      /jobs\.source_hash is immutable once set/
+    );
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_key = ? WHERE id = ?')
+        .bind('uploads/rebound/song.wav', 'legacy-job')
+        .run(),
+      /jobs source locator is immutable once source_hash is set/
+    );
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_type = ? WHERE id = ?')
+        .bind('upload', 'legacy-job')
+        .run(),
+      /jobs source locator is immutable once source_hash is set/
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test('numbered source-hash migration preserves legacy jobs and constrains fingerprints', async () => {
+test('numbered source-hash migrations preserve legacy jobs and make fingerprints write-once', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-source-hash-migration-'));
   try {
     const db = new SqliteD1(join(directory, 'legacy.sqlite'));
@@ -443,6 +465,8 @@ test('numbered source-hash migration preserves legacy jobs and constrains finger
       VALUES ('legacy-job', 'song.wav', 'uploads/legacy/song.wav', 'done', 'htdemucs_ft');
     `);
     db.applySchema(readFileSync('migrations/0009-job-source-hash.sql', 'utf8'));
+    db.applySchema(readFileSync('migrations/0011-job-source-hash-immutable.sql', 'utf8'));
+    db.applySchema(readFileSync('migrations/0011-job-source-hash-immutable.sql', 'utf8'));
 
     const legacy = await db.prepare('SELECT source_hash FROM jobs WHERE id = ?')
       .bind('legacy-job')
@@ -457,11 +481,35 @@ test('numbered source-hash migration preserves legacy jobs and constrains finger
         .first<{ source_hash: string }>())?.source_hash,
       'a'.repeat(64)
     );
+    await db.prepare('UPDATE jobs SET source_hash = ? WHERE id = ?')
+      .bind('a'.repeat(64), 'legacy-job')
+      .run();
     await assert.rejects(
       db.prepare('UPDATE jobs SET source_hash = ? WHERE id = ?')
-        .bind('A'.repeat(64), 'legacy-job')
+        .bind('b'.repeat(64), 'legacy-job')
         .run(),
-      /CHECK constraint failed/
+      /jobs\.source_hash is immutable once set/
+    );
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_hash = NULL WHERE id = ?')
+        .bind('legacy-job')
+        .run(),
+      /jobs\.source_hash is immutable once set/
+    );
+    await db.prepare('UPDATE jobs SET source_key = source_key, source_type = source_type WHERE id = ?')
+      .bind('legacy-job')
+      .run();
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_key = ? WHERE id = ?')
+        .bind('uploads/rebound/song.wav', 'legacy-job')
+        .run(),
+      /jobs source locator is immutable once source_hash is set/
+    );
+    await assert.rejects(
+      db.prepare('UPDATE jobs SET source_type = ? WHERE id = ?')
+        .bind('archive', 'legacy-job')
+        .run(),
+      /jobs source locator is immutable once source_hash is set/
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -502,21 +550,34 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
       { name: 'other', key: 'stems/job-a/other.mp3' },
     ]);
     await db.prepare(
-      `INSERT INTO jobs (id, filename, source_key, status, stems, model, source_type)
-       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done', ?, 'htdemucs_ft', 'upload')`
-    ).bind(coreStems).run();
+      `INSERT INTO jobs
+        (id, filename, source_key, status, stems, model, source_type, source_hash)
+       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done', ?,
+         'htdemucs_ft', 'upload', ?)`
+    ).bind(coreStems, 'a'.repeat(64)).run();
     await db.batch([
       db.prepare(
-        `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
-         VALUES ('job-pending', 'pending.wav', 'uploads/pending/source.wav', 'processing', 'htdemucs_ft', 'upload')`
+        `INSERT INTO jobs
+          (id, filename, source_key, status, model, source_type, source_hash)
+         VALUES ('job-pending', 'pending.wav', 'uploads/pending/source.wav',
+           'processing', 'htdemucs_ft', 'upload', '${'a'.repeat(64)}')`
+      ),
+      db.prepare(
+        `INSERT INTO jobs
+          (id, filename, source_key, status, model, source_type, source_hash)
+         VALUES ('job-archive', 'archive.wav', 'uploads/archive/source.wav',
+           'done', 'htdemucs_ft', 'archive', '${'a'.repeat(64)}')`
+      ),
+      db.prepare(
+        `INSERT INTO jobs
+          (id, filename, source_key, status, model, source_type, source_hash)
+         VALUES ('job-shadow', 'shadow.wav', 'uploads/shadow/source.wav',
+           'done', 'htdemucs_ft', 'upload', '${'a'.repeat(64)}')`
       ),
       db.prepare(
         `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
-         VALUES ('job-archive', 'archive.wav', 'uploads/archive/source.wav', 'done', 'htdemucs_ft', 'archive')`
-      ),
-      db.prepare(
-        `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
-         VALUES ('job-shadow', 'shadow.wav', 'uploads/shadow/source.wav', 'done', 'htdemucs_ft', 'upload')`
+         VALUES ('job-unhashed', 'unhashed.wav', 'uploads/unhashed/source.wav',
+           'done', 'htdemucs_ft', 'upload')`
       ),
     ]);
     const env = { DB: db } as never;
@@ -544,6 +605,24 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
       }),
       (error: unknown) =>
         error instanceof InstrumentIsolationResourceError && error.code === 'job_not_found'
+    );
+    await assert.rejects(
+      createInstrumentIsolation(env, {
+        ...isolationInput('isolation_unhashed', 'saxophone'),
+        jobId: 'job-unhashed',
+      }),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'source_identity_mismatch'
+    );
+    await assert.rejects(
+      createInstrumentIsolation(
+        env,
+        isolationInput('isolation_wrong_hash', 'saxophone', 'b')
+      ),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'source_identity_mismatch'
     );
 
     const shadow = await createInstrumentIsolation(env, {
@@ -674,14 +753,114 @@ test('isolation lifecycle is bounded and cannot mutate a completed core split', 
   }
 });
 
+test('an idempotent isolation read fails closed on job or cache-material drift', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-isolation-legacy-mismatch-'));
+  try {
+    const db = new SqliteD1(join(directory, 'legacy-mismatch.sqlite'));
+    db.applySchema(readFileSync('schema.sql', 'utf8'));
+    await db.prepare(
+      `INSERT INTO jobs
+        (id, filename, source_key, status, model, source_type, source_hash)
+       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done',
+         'htdemucs_ft', 'upload', '${'a'.repeat(64)}')`
+    ).run();
+    const mismatched = isolationInput('legacy-mismatch', 'saxophone', 'b');
+    const cacheKey = await queryIsolationCacheKeyForMaterial(mismatched, isolationIdentity);
+    await db.prepare(
+      `INSERT INTO instrument_isolations
+        (id, job_id, requested_by, source_hash, source_type, normalized_target,
+         analysis_vocabulary_version, provider, provider_model, provider_version,
+         provider_contract_version, cache_key, rollout_stage, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      mismatched.id,
+      mismatched.jobId,
+      mismatched.requestedBy,
+      mismatched.sourceHash,
+      mismatched.sourceType,
+      mismatched.normalizedTarget,
+      mismatched.analysisVocabularyVersion,
+      isolationIdentity.provider,
+      isolationIdentity.model,
+      isolationIdentity.version,
+      isolationIdentity.contractVersion,
+      cacheKey,
+      mismatched.rolloutStage,
+      'queued'
+    ).run();
+
+    await assert.rejects(
+      createInstrumentIsolation({ DB: db } as never, mismatched),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'source_identity_mismatch'
+    );
+
+    await db.prepare(
+      `INSERT INTO jobs
+        (id, filename, source_key, status, model, source_type, source_hash)
+       VALUES ('job-b', 'source.wav', 'uploads/job-b/source.wav', 'done',
+         'htdemucs_ft', 'upload', '${'a'.repeat(64)}')`
+    ).run();
+    const expected = {
+      ...isolationInput('legacy-cache-drift', 'trumpet'),
+      jobId: 'job-b',
+    };
+    const expectedCacheKey = await queryIsolationCacheKeyForMaterial(expected, isolationIdentity);
+    await db.prepare(
+      `INSERT INTO instrument_isolations
+        (id, job_id, requested_by, source_hash, source_type, normalized_target,
+         analysis_vocabulary_version, provider, provider_model, provider_version,
+         provider_contract_version, cache_key, rollout_stage, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      expected.id,
+      expected.jobId,
+      expected.requestedBy,
+      'b'.repeat(64),
+      expected.sourceType,
+      expected.normalizedTarget,
+      expected.analysisVocabularyVersion,
+      isolationIdentity.provider,
+      isolationIdentity.model,
+      isolationIdentity.version,
+      isolationIdentity.contractVersion,
+      expectedCacheKey,
+      expected.rolloutStage,
+      'queued'
+    ).run();
+    await assert.rejects(
+      createInstrumentIsolation({ DB: db } as never, expected),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'cache_identity_mismatch'
+    );
+    await db.prepare(
+      `UPDATE instrument_isolations
+       SET source_hash = ?, rollout_stage = 'shadow'
+       WHERE id = ?`
+    ).bind(expected.sourceHash, expected.id).run();
+    await assert.rejects(
+      createInstrumentIsolation({ DB: db } as never, expected),
+      (error: unknown) =>
+        error instanceof InstrumentIsolationResourceError &&
+        error.code === 'cache_identity_mismatch'
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('concurrent isolation creation cannot exceed the per-track maximum', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-isolation-limit-'));
   try {
     const db = new SqliteD1(join(directory, 'limit.sqlite'));
     db.applySchema(readFileSync('schema.sql', 'utf8'));
     await db.prepare(
-      `INSERT INTO jobs (id, filename, source_key, status, model, source_type)
-       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done', 'htdemucs_ft', 'upload')`
+      `INSERT INTO jobs
+        (id, filename, source_key, status, model, source_type, source_hash)
+       VALUES ('job-a', 'source.wav', 'uploads/job-a/source.wav', 'done',
+         'htdemucs_ft', 'upload', '${'a'.repeat(64)}')`
     ).run();
     const env = { DB: db } as never;
     await createInstrumentIsolation(env, isolationInput('isolation_one', 'saxophone'));

@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  YAMNET_EVALUATION_SOURCE_PATHS,
   secondWindowScore,
   validateComparatorOutput,
+  yamnetEvaluationSourcePins,
 } from '../scripts/eval-yamnet-comparator.mts';
 import {
   summarizeYamnetControlObservations,
@@ -244,7 +246,17 @@ test('YAMNet long-tail control report is self-bound and cannot claim calibration
   assert.deepEqual(Object.keys(report.evaluator.sourcePins), Object.keys(expectedSourcePins));
   for (const [name, path] of Object.entries(expectedSourcePins)) {
     assert.equal(report.evaluator.sourcePins[name].path, path);
-    assert.equal(report.evaluator.sourcePins[name].sha256, digest(path));
+    if (name === 'comparatorEvaluator') {
+      // This report is immutable historical evidence. A later evaluator
+      // hardening must make it stale, not rewrite the digest it executed.
+      assert.equal(
+        report.evaluator.sourcePins[name].sha256,
+        '9c581a3f913bcce2738d943668ca7790389bb532d6ad1a4f887d50fc2de429c4'
+      );
+      assert.notEqual(report.evaluator.sourcePins[name].sha256, digest(path));
+    } else {
+      assert.equal(report.evaluator.sourcePins[name].sha256, digest(path));
+    }
   }
   assert.equal(
     report.execution.id,
@@ -305,6 +317,12 @@ test('YAMNet corpus evaluator constrains every inference container and binds ima
     assert.equal(evaluator.includes(requirement), true, `evaluator is missing ${requirement}`);
   }
   assert.match(evaluator, /source-sha256\.json/);
+  assert.match(evaluator, /stem-splitter\.yamnet-comparator-evaluation\.v2/);
+  assert.match(evaluator, /const sourceSha256 = sha256File\(approved\.path\)/);
+  assert.match(evaluator, /const analysisPcmSha256 = sha256Bytes\(pcm\)/);
+  assert.match(evaluator, /analysisWindowSamples: \[\.\.\.windowCounts\]/);
+  assert.match(evaluator, /hydrated audio changed during evaluation/);
+  assert.match(evaluator, /assertEvaluationSourcesUnchanged\(evaluationSourcePins\)/);
   assert.match(evaluator, /lockSha256 !== sha256File\(LOCK_PATH\)/);
   assert.match(evaluator, /writeFileSync\(outputPath, serialized, \{ flag: 'wx', mode: 0o600 \}\)/);
   assert.match(evaluator, /promotionEligible: false/);
@@ -316,6 +334,16 @@ test('YAMNet corpus evaluator constrains every inference container and binds ima
   assert.match(controlsEvaluator, /thresholdSelected: null/);
   assert.match(controlsEvaluator, /runComparator\(/);
   assert.match(controlsEvaluator, /manifestSha256: sha256File\(INSTRUMENT_CONTROL_MANIFEST_PATH\)/);
+
+  const sourcePins = yamnetEvaluationSourcePins();
+  assert.deepEqual(Object.keys(sourcePins), Object.keys(YAMNET_EVALUATION_SOURCE_PATHS));
+  assert.equal(sourcePins.bunLock.path, 'bun.lock');
+  for (const [name, path] of Object.entries(YAMNET_EVALUATION_SOURCE_PATHS)) {
+    assert.deepEqual(sourcePins[name as keyof typeof sourcePins], {
+      path,
+      sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),
+    });
+  }
 });
 
 test('YAMNet native image workflow is path-scoped, pinned, and runs the constrained smoke', () => {
@@ -329,6 +357,12 @@ test('YAMNet native image workflow is path-scoped, pinned, and runs the constrai
   assert.match(workflow, /YAMNET_COMPARATOR_EXPECTED_PLATFORM: linux\/amd64/);
   assert.match(workflow, /smoke-yamnet-comparator-image\.mts/);
   assert.doesNotMatch(workflow, /secrets\./);
+  for (const path of Object.values(YAMNET_EVALUATION_SOURCE_PATHS)) {
+    const covered =
+      workflow.includes(`- ${path}`) ||
+      (path.startsWith('yamnet-comparator/') && workflow.includes('- yamnet-comparator/**'));
+    assert.equal(covered, true, `native workflow does not watch ${path}`);
+  }
   for (const requirement of [
     "'--pull'",
     "'never'",

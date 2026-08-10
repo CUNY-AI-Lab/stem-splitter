@@ -4,6 +4,7 @@ import type { Env } from '../../src/env';
 import { createInstrumentIsolation } from '../../src/isolation/resource.ts';
 
 const E2E_SECRET = 'local-hosting-e2e-only';
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 export default {
   async fetch(request: Request, env: Env, executionCtx: ExecutionContext): Promise<Response> {
@@ -22,14 +23,24 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/__e2e/job-analysis') {
-      const body = (await request.json()) as { id?: unknown; analysis?: unknown };
-      if (typeof body.id !== 'string' || !body.id || !body.analysis) {
+      const body = (await request.json()) as {
+        id?: unknown;
+        analysis?: unknown;
+        sourceHash?: unknown;
+      };
+      if (
+        typeof body.id !== 'string' ||
+        !body.id ||
+        !body.analysis ||
+        (body.sourceHash !== undefined &&
+          (typeof body.sourceHash !== 'string' || !SHA256_PATTERN.test(body.sourceHash)))
+      ) {
         return new Response(null, { status: 400 });
       }
       await env.DB.prepare(
         `INSERT INTO jobs
-          (id, filename, source_key, status, model, routing_request, source_type, analysis)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
         .bind(
           body.id,
@@ -39,6 +50,7 @@ export default {
           'htdemucs_6s',
           'auto',
           'upload',
+          body.sourceHash ?? null,
           JSON.stringify(body.analysis)
         )
         .run();
@@ -46,15 +58,20 @@ export default {
     }
 
     if (request.method === 'POST' && url.pathname === '/__e2e/job-isolation') {
-      const body = (await request.json()) as { jobId?: unknown };
-      if (typeof body.jobId !== 'string' || !body.jobId) {
+      const body = (await request.json()) as { jobId?: unknown; sourceHash?: unknown };
+      if (
+        typeof body.jobId !== 'string' ||
+        !body.jobId ||
+        typeof body.sourceHash !== 'string' ||
+        !SHA256_PATTERN.test(body.sourceHash)
+      ) {
         return new Response(null, { status: 400 });
       }
       const result = await createInstrumentIsolation(env, {
         id: 'isolation_e2e_1',
         jobId: body.jobId,
         requestedBy: 'e2eteacher',
-        sourceHash: '1'.repeat(64),
+        sourceHash: body.sourceHash,
         sourceType: 'upload',
         normalizedTarget: 'saxophone',
         analysisVocabularyVersion: 'classroom-instruments-v1',

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
+import { schemaStatements } from './schema-statements.mjs';
 
 const CLASS_CODE = 'server-auto-e2e-class-code';
 const E2E_YOUTUBE_VERSION = 'b'.repeat(64);
@@ -67,11 +68,7 @@ const test = base.extend({
   },
   reset: [
     async ({ network, server }, use, testInfo) => {
-      const schema = (await readFile(SCHEMA_PATH, 'utf8'))
-        .replace(/--.*$/gm, '')
-        .split(';')
-        .map((statement) => statement.trim())
-        .filter(Boolean);
+      const schema = schemaStatements(await readFile(SCHEMA_PATH, 'utf8'));
       const setup = await e2eFetch(server, '/__e2e/schema', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

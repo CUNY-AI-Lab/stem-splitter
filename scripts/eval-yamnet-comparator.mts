@@ -12,7 +12,7 @@ import {
   type DiscoverySourceExpectation,
 } from './eval-instrument-discovery.mts';
 
-const REPORT_SCHEMA = 'stem-splitter.yamnet-comparator-evaluation.v1';
+const REPORT_SCHEMA = 'stem-splitter.yamnet-comparator-evaluation.v2';
 const OUTPUT_SCHEMA = 'stem-splitter.yamnet-comparator-output.v1';
 const MAPPING_SCHEMA = 'stem-splitter.yamnet-class-mapping.v1';
 const MAPPING_PATH = 'yamnet-comparator/mapping.json';
@@ -43,6 +43,27 @@ const SOURCE_FILES = [
   'yamnet-comparator/download_model.py',
   'yamnet-comparator/mapping.json',
 ] as const;
+
+/** Every repository file whose bytes can change corpus selection or scores. */
+export const YAMNET_EVALUATION_SOURCE_PATHS = Object.freeze({
+  evaluator: 'scripts/eval-yamnet-comparator.mts',
+  runner: 'scripts/run-yamnet-comparator-eval.sh',
+  inputLoader: 'scripts/eval-instrument-discovery.mts',
+  analysisConfig: 'audio-analysis/config.ts',
+  analysisDecoder: 'audio-analysis/decoder.ts',
+  analysisProcessBoundary: 'audio-analysis/process.ts',
+  discoveryWindowPolicy: 'audio-analysis/discovery.ts',
+  analysisContractPins: 'src/analysis/types.ts',
+  instrumentVocabularyModule: 'src/analysis/instrument-vocabulary.ts',
+  vocabulary: VOCABULARY_PATH,
+  corpus: CORPUS_PATH,
+  expectations: EXPECTATIONS_PATH,
+  mapping: MAPPING_PATH,
+  packageManifest: 'package.json',
+  bunLock: 'bun.lock',
+  typescriptConfig: 'tsconfig.json',
+  dependencyLock: LOCK_PATH,
+} as const);
 
 interface MappedClass {
   index: number;
@@ -111,6 +132,9 @@ interface Observation {
   slug: string;
   coverage: string[];
   sourceSha1: string;
+  sourceSha256: string;
+  analysisPcmSha256: string;
+  analysisWindowSamples: number[];
   sourceBytes: number;
   sourceDurationSeconds: number;
   analyzedSeconds: number;
@@ -144,6 +168,37 @@ function sha256Bytes(value: Buffer | string): string {
 
 export function sha256File(path: string): string {
   return sha256Bytes(readFileSync(path));
+}
+
+export function yamnetEvaluationSourcePins(): Record<
+  keyof typeof YAMNET_EVALUATION_SOURCE_PATHS,
+  { path: string; sha256: string }
+> {
+  return Object.fromEntries(
+    Object.entries(YAMNET_EVALUATION_SOURCE_PATHS).map(([name, path]) => [
+      name,
+      { path, sha256: sha256File(path) },
+    ])
+  ) as Record<
+    keyof typeof YAMNET_EVALUATION_SOURCE_PATHS,
+    { path: string; sha256: string }
+  >;
+}
+
+function assertEvaluationSourcesUnchanged(
+  expected: ReturnType<typeof yamnetEvaluationSourcePins>
+): void {
+  const current = yamnetEvaluationSourcePins();
+  for (const name of Object.keys(YAMNET_EVALUATION_SOURCE_PATHS) as Array<
+    keyof typeof YAMNET_EVALUATION_SOURCE_PATHS
+  >) {
+    if (
+      current[name].path !== expected[name].path ||
+      current[name].sha256 !== expected[name].sha256
+    ) {
+      throw new Error(`YAMNet evaluation source changed during execution: ${name}`);
+    }
+  }
 }
 
 function boundedNumber(value: unknown, minimum: number, maximum: number, context: string): number {
@@ -743,6 +798,9 @@ function parseArguments(args: string[]): {
 async function main(): Promise<void> {
   if (endianness() !== 'LE') throw new Error('YAMNet evaluation requires a little-endian host');
   const { image, outputPath, slugs } = parseArguments(process.argv.slice(2));
+  const evaluationSourcePins = yamnetEvaluationSourcePins();
+  const ffmpegVersion = decoderVersion('ffmpeg');
+  const ffprobeVersion = decoderVersion('ffprobe');
   const execution = inspectImage(image);
   const { corpusSources, expectations, vocabulary } = loadAndValidateEvaluationInputs();
   const vocabularyIds = vocabulary.instruments.map((item) => item.id);
@@ -769,6 +827,7 @@ async function main(): Promise<void> {
     if (source.provenance?.sha1 && sourceSha1 !== source.provenance.sha1) {
       throw new Error(`${source.slug}: hydrated audio does not match its recorded SHA-1`);
     }
+    const sourceSha256 = sha256File(approved.path);
     const decoded = await decodeAnalysisWindows(approved.path, {
       timeoutMs: DEFAULT_DECODER_TIMEOUT_MS,
       maxSourceDurationSeconds: MAX_SOURCE_DURATION_SECONDS,
@@ -779,13 +838,20 @@ async function main(): Promise<void> {
       decoded.samples.byteOffset,
       decoded.samples.byteLength
     );
+    const analysisPcmSha256 = sha256Bytes(pcm);
     const result = runComparator(execution, source.slug, pcm, windowCounts, mapping.supportedIds);
+    if (sha256File(approved.path) !== sourceSha256) {
+      throw new Error(`${source.slug}: hydrated audio changed during evaluation`);
+    }
     const scores = trackScores(result, mapping.supportedIds);
     const evaluated = evaluateObservation(expectation, scores, supportedIds, familyById);
     observations.push({
       slug: source.slug,
       coverage: source.coverage ?? [],
       sourceSha1,
+      sourceSha256,
+      analysisPcmSha256,
+      analysisWindowSamples: [...windowCounts],
       sourceBytes: approved.bytes,
       sourceDurationSeconds: Number(decoded.sourceDurationSeconds.toFixed(3)),
       analyzedSeconds: Number(decoded.analyzedSeconds.toFixed(3)),
@@ -859,6 +925,7 @@ async function main(): Promise<void> {
       ];
     }),
   }));
+  assertEvaluationSourcesUnchanged(evaluationSourcePins);
   const report = {
     $schema: REPORT_SCHEMA,
     generatedAt: new Date().toISOString(),
@@ -883,17 +950,19 @@ async function main(): Promise<void> {
     },
     execution,
     evaluationSources: {
+      nodeVersion: process.version,
       corpusPath: CORPUS_PATH,
-      corpusSha256: sha256File(CORPUS_PATH),
+      corpusSha256: evaluationSourcePins.corpus.sha256,
       groundTruthPath: EXPECTATIONS_PATH,
-      groundTruthSha256: sha256File(EXPECTATIONS_PATH),
+      groundTruthSha256: evaluationSourcePins.expectations.sha256,
       mappingPath: MAPPING_PATH,
-      mappingSha256: sha256File(MAPPING_PATH),
+      mappingSha256: evaluationSourcePins.mapping.sha256,
       evaluatorPath: 'scripts/eval-yamnet-comparator.mts',
-      evaluatorSha256: sha256File('scripts/eval-yamnet-comparator.mts'),
-      ffmpegVersion: decoderVersion('ffmpeg'),
-      ffprobeVersion: decoderVersion('ffprobe'),
+      evaluatorSha256: evaluationSourcePins.evaluator.sha256,
+      ffmpegVersion,
+      ffprobeVersion,
       analysisSampleRate: ANALYSIS_SAMPLE_RATE,
+      sourcePins: evaluationSourcePins,
     },
     summary,
     byCoverage,
@@ -902,6 +971,7 @@ async function main(): Promise<void> {
     observations,
   };
   const serialized = JSON.stringify(report, null, 2) + '\n';
+  assertEvaluationSourcesUnchanged(evaluationSourcePins);
   if (outputPath) {
     writeFileSync(outputPath, serialized, { flag: 'wx', mode: 0o600 });
   } else {

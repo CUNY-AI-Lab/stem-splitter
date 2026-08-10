@@ -6,14 +6,26 @@ on:
     branches: [main]
     paths:
       - .github/workflows/yamnet-comparator-image.yml
+      - audio-analysis/config.ts
+      - audio-analysis/decoder.ts
+      - audio-analysis/discovery.ts
+      - audio-analysis/process.ts
       - docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json
       - instrument-discovery/vocabulary.json
+      - bun.lock
       - package.json
+      - tsconfig.json
+      - scripts/eval-instrument-discovery.mts
       - scripts/hydrate-instrument-controls.mts
       - scripts/eval-yamnet-comparator.mts
       - scripts/eval-yamnet-controls.mts
       - scripts/lib/instrument-control-corpus.mts
+      - scripts/run-yamnet-comparator-eval.sh
       - scripts/smoke-yamnet-comparator-image.mts
+      - src/analysis/instrument-vocabulary.ts
+      - src/analysis/types.ts
+      - tests/corpus/corpus.json
+      - tests/corpus/instrument-discovery-expectations.json
       - tests/corpus/instrument-control-manifest.json
       - tests/instrument-control-corpus.test.mts
       - tests/yamnet-comparator-eval.test.mts
@@ -21,14 +33,26 @@ on:
   pull_request:
     paths:
       - .github/workflows/yamnet-comparator-image.yml
+      - audio-analysis/config.ts
+      - audio-analysis/decoder.ts
+      - audio-analysis/discovery.ts
+      - audio-analysis/process.ts
       - docs/acceptance/2026-08-09-yamnet-comparator/native-arm64-controls.json
       - instrument-discovery/vocabulary.json
+      - bun.lock
       - package.json
+      - tsconfig.json
+      - scripts/eval-instrument-discovery.mts
       - scripts/hydrate-instrument-controls.mts
       - scripts/eval-yamnet-comparator.mts
       - scripts/eval-yamnet-controls.mts
       - scripts/lib/instrument-control-corpus.mts
+      - scripts/run-yamnet-comparator-eval.sh
       - scripts/smoke-yamnet-comparator-image.mts
+      - src/analysis/instrument-vocabulary.ts
+      - src/analysis/types.ts
+      - tests/corpus/corpus.json
+      - tests/corpus/instrument-discovery-expectations.json
       - tests/corpus/instrument-control-manifest.json
       - tests/instrument-control-corpus.test.mts
       - tests/yamnet-comparator-eval.test.mts

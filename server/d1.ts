@@ -6,6 +6,7 @@
 // nothing under src/ knows this adapter exists.
 
 import { DatabaseSync } from 'node:sqlite';
+import { JOB_SOURCE_IDENTITY_IMMUTABILITY_SQL } from '../src/analysis/schema.ts';
 import { INSTRUMENT_ISOLATIONS_SCHEMA_SQL } from '../src/isolation/schema.ts';
 
 type Bindable = null | number | bigint | string | Uint8Array;
@@ -140,6 +141,7 @@ export class SqliteD1 {
            ))`
         );
       }
+      this.db.exec(JOB_SOURCE_IDENTITY_IMMUTABILITY_SQL);
     }
 
     // New tables cannot be recovered by ALTER-column checks alone on an old

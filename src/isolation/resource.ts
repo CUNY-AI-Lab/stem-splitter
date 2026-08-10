@@ -84,6 +84,8 @@ export type InstrumentIsolationResourceErrorCode =
   | 'job_not_found'
   | 'core_split_incomplete'
   | 'source_type_mismatch'
+  | 'source_identity_mismatch'
+  | 'cache_identity_mismatch'
   | 'maximum_reached'
   | 'isolation_not_found'
   | 'invalid_transition';
@@ -129,6 +131,7 @@ interface CoreJobRow {
   id: string;
   status: string;
   source_type: string | null;
+  source_hash: string | null;
 }
 
 const SAFE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -205,6 +208,23 @@ function recordFromRow(row: InstrumentIsolationRow): InstrumentIsolationRecordV1
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function rowMatchesCreateIdentity(
+  row: InstrumentIsolationRow,
+  input: CreateInstrumentIsolationInputV1
+): boolean {
+  return (
+    row.source_hash === input.sourceHash &&
+    row.source_type === input.sourceType &&
+    row.normalized_target === input.normalizedTarget &&
+    row.analysis_vocabulary_version === (input.analysisVocabularyVersion ?? '') &&
+    row.provider === input.identity.provider &&
+    row.provider_model === input.identity.model &&
+    row.provider_version === input.identity.version &&
+    row.provider_contract_version === input.identity.contractVersion &&
+    row.rollout_stage === (input.rolloutStage ?? 'shadow')
+  );
 }
 
 export function summarizeInstrumentIsolation(
@@ -293,7 +313,8 @@ export async function createInstrumentIsolation(
      FROM jobs
      WHERE jobs.id = ?
        AND jobs.status = 'done'
-       AND (jobs.source_type IS NULL OR jobs.source_type = ?)
+       AND jobs.source_type = ?
+       AND jobs.source_hash = ?
        AND (
          SELECT COUNT(*) FROM instrument_isolations existing
          WHERE existing.job_id = jobs.id
@@ -318,18 +339,36 @@ export async function createInstrumentIsolation(
       now,
       input.jobId,
       input.sourceType,
+      input.sourceHash,
       MAX_QUERY_ISOLATIONS_PER_JOB
     )
     .run();
 
   const existing = await env.DB.prepare(
-    'SELECT * FROM instrument_isolations WHERE job_id = ? AND cache_key = ?'
+    `SELECT instrument_isolations.*
+     FROM instrument_isolations
+     JOIN jobs ON jobs.id = instrument_isolations.job_id
+     WHERE instrument_isolations.job_id = ?
+       AND instrument_isolations.cache_key = ?
+       AND jobs.status = 'done'
+       AND jobs.source_type = ?
+       AND jobs.source_hash = ?`
   )
-    .bind(input.jobId, cacheKey)
+    .bind(input.jobId, cacheKey, input.sourceType, input.sourceHash)
     .first<InstrumentIsolationRow>();
-  if (existing) return { record: recordFromRow(existing), created: inserted.meta.changes === 1 };
+  if (existing) {
+    if (!rowMatchesCreateIdentity(existing, input)) {
+      throw new InstrumentIsolationResourceError(
+        'cache_identity_mismatch',
+        'Stored isolation cache identity does not match the request'
+      );
+    }
+    return { record: recordFromRow(existing), created: inserted.meta.changes === 1 };
+  }
 
-  const job = await env.DB.prepare('SELECT id, status, source_type FROM jobs WHERE id = ?')
+  const job = await env.DB.prepare(
+    'SELECT id, status, source_type, source_hash FROM jobs WHERE id = ?'
+  )
     .bind(input.jobId)
     .first<CoreJobRow>();
   if (!job) {
@@ -341,10 +380,16 @@ export async function createInstrumentIsolation(
       'The core split must finish before optional isolation'
     );
   }
-  if (job.source_type && job.source_type !== input.sourceType) {
+  if (job.source_type !== input.sourceType) {
     throw new InstrumentIsolationResourceError(
       'source_type_mismatch',
       'Isolation source type does not match the core job'
+    );
+  }
+  if (job.source_hash !== input.sourceHash) {
+    throw new InstrumentIsolationResourceError(
+      'source_identity_mismatch',
+      'Isolation source identity does not match the core job'
     );
   }
   throw new InstrumentIsolationResourceError(

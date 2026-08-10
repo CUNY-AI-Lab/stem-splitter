@@ -292,6 +292,7 @@ test('fingerprinting verifies stored bytes without decoder or classifier work', 
   let decoded = false;
   const logs: unknown[] = [];
   const service = createAudioAnalysisService(config(), {
+    now: () => 1_000,
     probe: async () => {
       throw new DecoderError('decoder_unavailable');
     },

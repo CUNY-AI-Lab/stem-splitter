@@ -71,7 +71,9 @@
     "db:migrate:9": "wrangler d1 execute stem-splitter --remote --file=migrations/0009-job-source-hash.sql",
     "db:migrate:9:local": "wrangler d1 execute stem-splitter --local --file=migrations/0009-job-source-hash.sql",
     "db:migrate:10": "wrangler d1 execute stem-splitter --remote --file=migrations/0010-isolation-rollout-stage.sql",
-    "db:migrate:10:local": "wrangler d1 execute stem-splitter --local --file=migrations/0010-isolation-rollout-stage.sql"
+    "db:migrate:10:local": "wrangler d1 execute stem-splitter --local --file=migrations/0010-isolation-rollout-stage.sql",
+    "db:migrate:11": "wrangler d1 execute stem-splitter --remote --file=migrations/0011-job-source-hash-immutable.sql",
+    "db:migrate:11:local": "wrangler d1 execute stem-splitter --local --file=migrations/0011-job-source-hash-immutable.sql"
   },
   "engines": {
     "node": "22.23.1"

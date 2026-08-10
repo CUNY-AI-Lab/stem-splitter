@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
+import { schemaStatements } from './schema-statements.mjs';
 
 const CLASS_CODE = 'e2e-class-code';
 const E2E_YOUTUBE_VERSION = 'b'.repeat(64);
@@ -95,11 +96,7 @@ const test = base.extend({
 
   reset: [
     async ({ network, server }, use, testInfo) => {
-      const schema = (await readFile(SCHEMA_PATH, 'utf8'))
-        .replace(/--.*$/gm, '')
-        .split(';')
-        .map((statement) => statement.trim())
-        .filter(Boolean);
+      const schema = schemaStatements(await readFile(SCHEMA_PATH, 'utf8'));
       const setupResponse = await e2eFetch(server, '/__e2e/schema', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1539,16 +1536,17 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     },
     comparison: 'unavailable',
   };
+  const sourceHash = '1'.repeat(64);
   const seededAnalysis = await e2eFetch(server, '/__e2e/job-analysis', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: analysisJobId, analysis: privateAutoRouting }),
+    body: JSON.stringify({ id: analysisJobId, analysis: privateAutoRouting, sourceHash }),
   });
   expect(seededAnalysis.status).toBe(200);
   const seededIsolation = await e2eFetch(server, '/__e2e/job-isolation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobId: analysisJobId }),
+    body: JSON.stringify({ jobId: analysisJobId, sourceHash }),
   });
   expect(seededIsolation.status).toBe(200);
   expect(await seededIsolation.json()).toEqual({ id: 'isolation_e2e_1', created: true });
@@ -1773,12 +1771,13 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect(isolationsAfterSignOut).toBe(401);
 
   expect(browserErrors).toEqual([]);
-  // Every non-2xx should be one of the auth checks this test intentionally makes.
+  // Every non-2xx should be one of the auth or disabled-feature checks this test intentionally makes.
   expect(
     failedRequests.filter(
       (entry) =>
         !entry.startsWith('401 /api/teacher/') &&
-        !entry.startsWith('409 /api/teacher/prompt')
+        !entry.startsWith('409 /api/teacher/prompt') &&
+        entry !== `404 /api/teacher/jobs/${analysisJobId}/isolations`
     )
   ).toEqual([]);
 });

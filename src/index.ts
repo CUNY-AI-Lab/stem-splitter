@@ -911,9 +911,14 @@ app.post('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
         timeoutMs: audioAnalysisTimeoutMs(c.env),
       });
       const updated = await c.env.DB.prepare(
-        'UPDATE jobs SET source_hash = ? WHERE id = ? AND source_hash IS NULL'
+        `UPDATE jobs SET source_hash = ?
+         WHERE id = ?
+           AND source_hash IS NULL
+           AND status = 'done'
+           AND source_key = ?
+           AND source_type = ?`
       )
-        .bind(identity.sha256, job.id)
+        .bind(identity.sha256, job.id, job.source_key, sourceType)
         .run();
       if (updated.meta.changes === 1) {
         sourceHash = identity.sha256;
@@ -979,6 +984,8 @@ app.post('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
       if (
         error.code === 'core_split_incomplete' ||
         error.code === 'source_type_mismatch' ||
+        error.code === 'source_identity_mismatch' ||
+        error.code === 'cache_identity_mismatch' ||
         error.code === 'maximum_reached'
       ) {
         return c.json({ error: error.message }, 409);
