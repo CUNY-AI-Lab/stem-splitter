@@ -239,6 +239,21 @@ stay separately visible. The exact commit passes the complete Bun 1.3.14 Phase
 discovery, 9 YAMNet, and 19/6/1 browser tests. This changes no processing flag,
 route, stem contract, service, or live environment.
 
+Exact candidate-provenance commit `41e66e9` advances the plan, candidate, and
+metric artifacts to v3. Candidate identity now binds SHA-256 values for
+preprocessing, classifier policy, and threshold policy. A separate evidence
+envelope binds an exact source report and schema, the repository generator,
+dependency lock, immutable image ID, and native non-emulated `linux/amd64`
+execution. Evidence paths must resolve to nonempty regular repository files,
+contain no symbolic-link component, stay at or below 16 MiB, and match their
+declared digests; the metrics report carries the same evidence forward. The
+exact commit passes the complete Bun 1.3.14 Phase 0 gate: 223 worker, 24
+analyzer, 31 Railway host/migration, 5 separator, 30 discovery, 9 YAMNet, and
+19/6/1 browser tests. This defines a validation boundary, not a candidate result:
+no model-specific adapter has yet converted a clean native classifier report
+into v3 observations, and no candidate artifact exists. All processing flags
+and the live Railway topology remain unchanged.
+
 Phase 3 now has a false-default teacher shadow seam. The analyzer and server
 derive a private SHA-256 from the exact stored bytes; normalized target demand
 is idempotently recorded against the complete cache identity, capped at two per
@@ -894,11 +909,23 @@ job.
   PCM/window sample plan; its native workflow cannot skip those paths. The
   rejected CLAP JSON and existing YAMNet v1 JSON remain historical evidence;
   this hardening applies to the required clean YAMNet/replacement reruns.
+- [x] Freeze a classifier-neutral v3 candidate envelope that requires content
+  hashes for preprocessing, classifier policy, threshold policy, source report,
+  repository generator, and dependency lock, plus an immutable image ID and
+  native non-emulated `linux/amd64` execution. Evidence files are bounded,
+  repository-contained, nonsymlinked, and rehashed before metrics are computed;
+  the resulting report preserves the same provenance envelope.
+- [ ] Implement a model-specific capture adapter for the selected classifier.
+  It must consume a clean native `linux/amd64` report, verify that report's own
+  model, preprocessing, policy, image, platform, lock, source, and result pins,
+  then emit the v3 observations without accepting caller-authored execution
+  claims. Rejected historical CLAP output, arm64 runs, and emulated amd64 runs
+  cannot satisfy this step.
 - [ ] Calibrate per-family thresholds and an `uncertain` state. Do not force
-  every track into the nearest available label. The v2 candidate contract now
-  distinguishes classified, abstained, and degraded source outcomes and reports
-  selective coverage separately, but no threshold or allowed abstention ceiling
-  has been selected.
+  every track into the nearest available label. The v3 candidate contract
+  retains v2's distinction among classified, abstained, and degraded source
+  outcomes and reports selective coverage separately, but no threshold or
+  allowed abstention ceiling has been selected.
 - [x] Measure prompt-policy bias before accepting the CLAP candidate. Twenty-nine
   labels currently take the maximum of two prompt aliases while twenty-two use
   one, and CLAP-style text encoders may not treat “without” as reliable
@@ -1149,12 +1176,15 @@ canary. Student access remains off.
   manifests and SHA-256 identities, requires seven real-mix genres, all 10
   vocabulary families, and all three ontology kinds, and keeps real-mix versus
   isolated-control reporting separate. The validator refuses source, ontology,
-  policy, vocabulary, and ordering drift; the v2 evaluator exposes selective
+  policy, vocabulary, and ordering drift. The v3 candidate boundary also binds
+  policy content, source-report, generator, dependency-lock, immutable-image,
+  and native-platform provenance; it still awaits a model-specific capture
+  adapter and a real candidate artifact. The evaluator exposes selective
   coverage, model abstention, false alerts, degraded sources, and coverage gaps
-  without turning an outage into classifier error. It forbids promotion from an
-  overlapping all-label aggregate. This establishes the evidence shape but does
-  not supply human ground truth, candidate scores, Slakh/MedleyDB data, a quality
-  floor, or a promotion decision.
+  without turning an outage into classifier error. It forbids promotion from
+  an overlapping all-label aggregate. This establishes the evidence shape but
+  does not supply human ground truth, candidate scores, Slakh/MedleyDB data, a
+  quality floor, or a promotion decision.
 - [ ] Establish an evaluation loop using authorized classroom tracks plus
   instrument-rich subsets of Slakh2100 and MedleyDB. Keep synthetic and real
   results separate in reports. The current 11-real/8-isolated contract is the

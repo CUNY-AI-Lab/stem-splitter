@@ -65,14 +65,29 @@ still requires normal human approval before it becomes canonical evidence.
 
 ## Candidate boundary
 
-A v2 candidate-observation artifact must cover the same 19 sources in the same
+A v3 candidate-observation artifact must cover the same 19 sources in the same
 order and pin:
 
-- classifier version;
-- model SHA-256;
+- classifier version and model SHA-256;
 - vocabulary version and SHA-256;
-- preprocessing version; and
-- threshold-policy version.
+- preprocessing version and SHA-256;
+- classifier-policy version and SHA-256; and
+- threshold-policy version and SHA-256.
+
+It must also carry one exact execution-evidence envelope: a repository-relative
+source-report path, schema, and SHA-256; the path and SHA-256 of the repository
+generator under `scripts/`; a recognized dependency-lock path and SHA-256; and
+an immutable image digest. The image and host must both declare
+`linux/amd64`, with emulation false. Every referenced file must be nonempty,
+regular, no larger than 16 MiB, contained inside the repository without any
+symbolic-link path component, and byte-for-byte equal to its declared digest.
+The metrics artifact carries this validated envelope forward.
+
+This envelope validates a supplied provenance chain; it does not independently
+prove that a classifier ran. A model-specific capture adapter must still bind
+the selected model's native report fields to the v3 observations. Until that
+adapter and a clean native report exist, no candidate artifact can satisfy this
+contract.
 
 Each source must declare exactly one outcome and a compatible bounded reason:
 
@@ -105,7 +120,8 @@ plan and its blockers without inventing results.
 
 ## Metric semantics
 
-The v2 report calculates true/false positives and negatives, precision, recall,
+The v3 report retains the v2 selective-outcome semantics and calculates
+true/false positives and negatives, precision, recall,
 selective coverage, candidate abstention, and service-failure rates in basis
 points. Precision and recall use only definite classified decisions. A
 source-level abstention or label-level uncertainty contributes to abstention;
@@ -152,6 +168,18 @@ and metrics to v2. The exact commit passes the same full gate with 221 worker
 tests; its 11 focused evaluation/review tests prove that classified-negative,
 model abstention, label uncertainty, and service degradation remain disjoint.
 No accepted review or candidate artifact was invalidated because none exists.
+
+Commit `41e66e9027101b9339ab7d3366030b22515019b4` advances the plan,
+candidate observations, and metrics to v3. It binds policy content and exact
+execution-evidence files, rejects report/generator/lock drift, floating images,
+wrong platforms, emulation, symbolic links, and oversized evidence, and carries
+the validated provenance into the metrics report. The exact commit passes four
+TypeScript checks; 223 worker, 24 analyzer, 31 Railway host/migration, 5
+separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off, 6
+authoritative-Auto, and 1 isolation-shadow browser journey under Bun 1.3.14.
+The nine focused candidate/evaluation tests pass. This verifies the envelope,
+not musical accuracy or the truth of a future model-specific runtime report;
+the capture adapter and candidate artifact remain missing.
 
 A value-free read-only check of the canonical Railway project/environment/app
 service also passes the pre-provision topology contract with `audio-analysis`

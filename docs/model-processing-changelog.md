@@ -5,6 +5,40 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## instrument-evaluation-v3 — candidate execution provenance — 2026-08-10
+
+- Miss: candidate v2 pinned classifier/model/vocabulary identities and policy
+  version strings, but not preprocessing or policy content. It also did not bind
+  the observations to the exact source report, conversion/generator code,
+  dependency lock, immutable image, or native execution platform that produced
+  them.
+- Contract: exact implementation commit
+  `41e66e9027101b9339ab7d3366030b22515019b4` advances the evaluation plan,
+  candidate observations, and metrics to v3. Candidate identity now requires
+  SHA-256 pins for preprocessing, classifier policy, and threshold policy. A
+  separate evidence envelope requires an exact report/schema/hash, repository
+  generator/hash, recognized dependency lock/hash, immutable image digest, and
+  native non-emulated `linux/amd64` image and host declarations. Metrics carry
+  the validated envelope unchanged.
+- File and schema safety: every evidence path must be relative, repository-
+  contained, nonempty, regular, no larger than 16 MiB, and free of symbolic-link
+  components. Current bytes must match every digest; source-report JSON's
+  `$schema` must equal its declared versioned schema ID. V1 and v2 candidate
+  artifacts fail closed. The v2 `classified`/`abstained`/`degraded` distinction
+  and selective metric semantics remain unchanged.
+- Evidence: the exact commit passes four TypeScript checks; 223 worker, 24
+  analyzer, 31 Railway host/migration, 5 separator, 30 discovery, and 9 YAMNet
+  tests; plus 19 flags-off, 6 authoritative-Auto, and 1 isolation-shadow browser
+  journey under Bun 1.3.14. The nine focused candidate/evaluation tests cover
+  policy pins, report/generator/lock drift, floating images, platform/emulation
+  mismatch, symlinks, oversized files, and provenance carry-through.
+- Remaining and rollout: off. The envelope validates supplied evidence but does
+  not yet adapt and cross-check a model-specific native classifier report. That
+  capture adapter, exhaustive listening, candidate observations, quality floor,
+  classifier selection, threshold, native report, service, and Railway shadow
+  evidence remain open. No route, stem contract, feature flag, Railway topology,
+  provider call, push, pull request, or deployment changed.
+
 ## instrument-evaluation-v2 — selective outcome semantics — 2026-08-10
 
 - Miss: candidate v1 represented sources only as `complete` or `degraded`.
