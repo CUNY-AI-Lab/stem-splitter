@@ -6,6 +6,7 @@ import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
 
 const CLASS_CODE = 'server-auto-e2e-class-code';
+const E2E_YOUTUBE_VERSION = 'b'.repeat(64);
 const E2E_SECRET = 'local-hosting-e2e-only';
 const TEST_PUBLIC_BASE_URL = 'http://stem-splitter.test';
 const CONFIG_PATH = fileURLToPath(new URL('./wrangler.jsonc', import.meta.url));
@@ -34,7 +35,7 @@ const test = base.extend({
               PUBLIC_BASE_URL: TEST_PUBLIC_BASE_URL,
               SEPARATION_BACKEND: 'replicate',
               REPLICATE_YT_MODEL: 'test/yt-audio',
-              REPLICATE_YT_MODEL_VERSION: 'e2e-youtube-version',
+              REPLICATE_YT_MODEL_VERSION: E2E_YOUTUBE_VERSION,
               YOUTUBE_FETCH_ORDER: 'replicate-first',
               SERVER_AUTO_ENABLED: 'true',
               SERVER_AUTO_MODE: 'authoritative',
@@ -141,7 +142,7 @@ function sourceHandlers({ network, server, analysisStatus = 200 }) {
     }),
     http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
       const payload = await request.json();
-      if (payload.version === 'e2e-youtube-version') {
+      if (payload.version === E2E_YOUTUBE_VERSION) {
         return HttpResponse.json({
           id: 'e2e-youtube-fetch',
           status: 'succeeded',

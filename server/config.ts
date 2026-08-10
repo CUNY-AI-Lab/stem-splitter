@@ -26,14 +26,15 @@ function enabled(value: string | undefined): boolean {
 }
 
 export function youtubeImportStatus(env: RuntimeConfig): OptionalServiceConfigurationStatus {
-  const model = env.REPLICATE_YT_MODEL?.trim() ?? '';
-  const version = env.REPLICATE_YT_MODEL_VERSION?.trim() ?? '';
-  const token = env.REPLICATE_API_TOKEN?.trim() ?? '';
+  const model = env.REPLICATE_YT_MODEL ?? '';
+  const version = env.REPLICATE_YT_MODEL_VERSION ?? '';
+  const token = env.REPLICATE_API_TOKEN ?? '';
   const count = [model, version, token].filter(Boolean).length;
   if (count === 0) return 'unconfigured';
   if (count < 3) return 'incomplete';
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(model)) return 'invalid';
-  if (version.toLowerCase() === 'latest') return 'invalid';
+  if (!/^[0-9a-f]{64}$/.test(version)) return 'invalid';
+  if (!/^[^\s\u0000-\u001f\u007f]+$/.test(token)) return 'invalid';
   return 'configured';
 }
 

@@ -8,10 +8,11 @@ import {
 } from '../src/youtube.ts';
 
 const TEST_TOKEN = 'test-replicate-token';
+const TEST_VERSION = 'a'.repeat(64);
 const TEST_ENV = {
   REPLICATE_API_TOKEN: TEST_TOKEN,
   REPLICATE_YT_MODEL: 'test/yt-audio',
-  REPLICATE_YT_MODEL_VERSION: 'yt-version-pinned',
+  REPLICATE_YT_MODEL_VERSION: TEST_VERSION,
 };
 
 test('YouTube URL parsing accepts video routes and rejects malformed IDs', () => {
@@ -39,7 +40,7 @@ test('Replicate fallback authenticates the output download and validates M4A byt
     if (url.endsWith('/predictions')) {
       assert.equal(headers.get('prefer'), 'wait=60');
       assert.equal(headers.get('cancel-after'), '4m');
-      assert.equal(JSON.parse(String(init?.body)).version, 'yt-version-pinned');
+      assert.equal(JSON.parse(String(init?.body)).version, TEST_VERSION);
       return Response.json({
         id: 'yt-prediction',
         status: 'succeeded',
@@ -141,15 +142,18 @@ test('Replicate YouTube fetch refuses an unpinned model without making a provide
     throw new Error('must not fetch');
   };
   try {
-    await assert.rejects(
-      () =>
-        fetchViaReplicate('https://www.youtube.com/watch?v=jNQXAC9IVRw', {
-          REPLICATE_API_TOKEN: TEST_TOKEN,
-          REPLICATE_YT_MODEL: 'test/yt-audio',
-        } as never),
-      (error: unknown) =>
-        error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
-    );
+    for (const version of [undefined, 'latest', 'pinned-version-id', `${TEST_VERSION} `]) {
+      await assert.rejects(
+        () =>
+          fetchViaReplicate('https://www.youtube.com/watch?v=jNQXAC9IVRw', {
+            REPLICATE_API_TOKEN: TEST_TOKEN,
+            REPLICATE_YT_MODEL: 'test/yt-audio',
+            REPLICATE_YT_MODEL_VERSION: version,
+          } as never),
+        (error: unknown) =>
+          error instanceof YouTubeError && error.code === 'youtube_fetch_unavailable'
+      );
+    }
     assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;

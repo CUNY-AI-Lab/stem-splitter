@@ -8,6 +8,7 @@ import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
 
 const CLASS_CODE = 'e2e-class-code';
+const E2E_YOUTUBE_VERSION = 'b'.repeat(64);
 // Fixture teacher, hashed the same way production credentials are. The
 // plaintext exists only here, in a test, for an account that only exists here.
 const TEACHER_PASSWORD = 'e2e-teacher-password';
@@ -64,7 +65,7 @@ const test = base.extend({
               PUBLIC_BASE_URL: TEST_PUBLIC_BASE_URL,
               SEPARATION_BACKEND: 'replicate',
               REPLICATE_YT_MODEL: 'test/yt-audio',
-              REPLICATE_YT_MODEL_VERSION: 'e2e-yt-version',
+              REPLICATE_YT_MODEL_VERSION: E2E_YOUTUBE_VERSION,
               YOUTUBE_FETCH_ORDER: 'replicate-first',
             },
             secrets: {
@@ -567,7 +568,7 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
       const payload = await request.json();
       if (payload.input.url) {
         expect(payload).toEqual({
-          version: 'e2e-yt-version',
+          version: E2E_YOUTUBE_VERSION,
           input: {
             url: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
             max_duration: 900,
@@ -767,7 +768,7 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
       const payload = await request.json();
       if (payload.input.url) {
         expect(payload).toEqual({
-          version: 'e2e-yt-version',
+          version: E2E_YOUTUBE_VERSION,
           input: {
             url: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
             max_duration: 900,

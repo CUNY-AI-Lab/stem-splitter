@@ -350,6 +350,15 @@ test('the YouTube version guard freezes the importer input and output contract',
   assert.ok(failures.some((line) => line.includes('input "max_duration"')));
   assert.ok(failures.some((line) => line.includes('output "audio"')));
   assert.ok(failures.some((line) => line.includes('input "url" is no longer required')));
+
+  const typeDrift = structuredClone(schema);
+  typeDrift.components.schemas.Input.properties.url.type = 'integer';
+  typeDrift.components.schemas.Output.properties.duration.type = 'string';
+  typeDrift.components.schemas.Output.required = ['audio', 'title'];
+  const typeFailures = findYouTubePinViolations(typeDrift);
+  assert.ok(typeFailures.some((line) => line.includes('input "url" is no longer a string')));
+  assert.ok(typeFailures.some((line) => line.includes('output "duration" is no longer required')));
+  assert.ok(typeFailures.some((line) => line.includes('output "duration" is no longer a number')));
 });
 
 test('Audio Separator result parser normalizes the two tracks', () => {

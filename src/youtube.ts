@@ -10,6 +10,8 @@ const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const MIN_AUDIO_BYTES = 1024;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MODEL_NAME_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const MODEL_VERSION_PATTERN = /^[0-9a-f]{64}$/;
+const SAFE_TOKEN_PATTERN = /^[^\s\u0000-\u001f\u007f]+$/;
 
 // YouTube bot-checks the default WEB client from datacenter IPs; the app
 // clients are usually exempt. Try them in order until one is playable.
@@ -36,6 +38,20 @@ export interface YouTubeAudio {
   data: ArrayBuffer;
   title: string;
   durationSec: number;
+}
+
+function replicateConfiguration(env: Env) {
+  const modelName = env.REPLICATE_YT_MODEL ?? '';
+  const modelVersion = env.REPLICATE_YT_MODEL_VERSION ?? '';
+  const apiToken = env.REPLICATE_API_TOKEN ?? '';
+  if (
+    !MODEL_NAME_PATTERN.test(modelName) ||
+    !MODEL_VERSION_PATTERN.test(modelVersion) ||
+    !SAFE_TOKEN_PATTERN.test(apiToken)
+  ) {
+    return null;
+  }
+  return { modelName, modelVersion, apiToken };
 }
 
 export function parseYouTubeVideoId(url: string): string | null {
@@ -74,11 +90,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
     );
   }
 
-  const replicateConfigured = Boolean(
-    env.REPLICATE_YT_MODEL?.trim() &&
-      env.REPLICATE_YT_MODEL_VERSION?.trim() &&
-      env.REPLICATE_API_TOKEN?.trim()
-  );
+  const replicateConfigured = replicateConfiguration(env) !== null;
   const replicateFirst = env.YOUTUBE_FETCH_ORDER === 'replicate-first' && replicateConfigured;
   const providers: Array<'innertube' | 'replicate'> = replicateFirst
     ? ['replicate', 'innertube']
@@ -181,15 +193,14 @@ interface YtPrediction {
 }
 
 export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeAudio> {
-  const modelName = env.REPLICATE_YT_MODEL?.trim() ?? '';
-  const modelVersion = env.REPLICATE_YT_MODEL_VERSION?.trim() ?? '';
-  const apiToken = env.REPLICATE_API_TOKEN?.trim() ?? '';
-  if (!MODEL_NAME_PATTERN.test(modelName) || !modelVersion || modelVersion.toLowerCase() === 'latest' || !apiToken) {
+  const configuration = replicateConfiguration(env);
+  if (!configuration) {
     throw new YouTubeError(
       'YouTube import is unavailable right now. Upload the audio file instead.',
       'youtube_fetch_unavailable'
     );
   }
+  const { modelVersion, apiToken } = configuration;
 
   const headers = {
     Authorization: `Bearer ${apiToken}`,

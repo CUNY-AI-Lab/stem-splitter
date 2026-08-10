@@ -4,6 +4,13 @@ import test from 'node:test';
 
 import { captureRailwayBaseline } from '../scripts/lib/railway-baseline.mjs';
 
+function fakeMp3(marker: string): Buffer {
+  const bytes = Buffer.alloc(2048, marker.charCodeAt(0));
+  bytes.set([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0], 0);
+  bytes.set([0xff, 0xfb, 0x90, 0x64], 10);
+  return bytes;
+}
+
 function listen(handler: Parameters<typeof createServer>[0]): Promise<{
   base: string;
   close: () => Promise<void>;
@@ -35,7 +42,9 @@ test('Railway baseline capture proves the frozen four-track output without leaki
       body,
     });
     response.setHeader('content-type', 'application/json');
-    if (request.url === '/healthz') return response.end('{"ok":true}');
+    if (request.url === '/healthz') {
+      return response.end(JSON.stringify({ ok: true, base, promptSchema: 'ready' }));
+    }
     if (request.url === '/api/separation-options') {
       return response.end(
         JSON.stringify({
@@ -75,7 +84,7 @@ test('Railway baseline capture proves the frozen four-track output without leaki
     const stem = request.url?.match(/^\/api\/files\/stems\/job-1\/(.+)\.mp3$/)?.[1];
     if (stem) {
       response.setHeader('content-type', 'audio/mpeg');
-      return response.end(Buffer.from(`ID3-${stem}`));
+      return response.end(fakeMp3(stem));
     }
     response.statusCode = 404;
     response.end('{"error":"not found"}');
@@ -106,4 +115,126 @@ test('Railway baseline capture proves the frozen four-track output without leaki
   } finally {
     await fixture.close();
   }
+});
+
+test('Railway baseline refuses plaintext remote origins before sending the class code', async () => {
+  let called = false;
+  await assert.rejects(
+    () =>
+      captureRailwayBaseline({
+        base: 'http://railway.example',
+        classCode: 'never-print-this',
+        sourceBytes: Buffer.from('authorized-audio'),
+        filename: 'authorized.mp3',
+        fetchImpl: async () => {
+          called = true;
+          throw new Error('must not fetch');
+        },
+      }),
+    /HTTPS origin/
+  );
+  assert.equal(called, false);
+});
+
+test('Railway baseline does not reflect an authentication secret from an error body', async () => {
+  let base = '';
+  const fixture = await listen((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/healthz') {
+      return response.end(JSON.stringify({ ok: true, base, promptSchema: 'ready' }));
+    }
+    if (request.url === '/api/separation-options') {
+      return response.end(
+        JSON.stringify({
+          backend: 'replicate',
+          defaultModel: 'htdemucs_ft',
+          models: [
+            {
+              id: 'htdemucs_ft',
+              stems: ['vocals', 'drums', 'bass', 'other'],
+              engine: 'DEMUCS',
+            },
+          ],
+        })
+      );
+    }
+    response.statusCode = 403;
+    return response.end('{"error":"never-print-this"}');
+  });
+  base = fixture.base;
+
+  try {
+    await assert.rejects(
+      () =>
+        captureRailwayBaseline({
+          base,
+          classCode: 'never-print-this',
+          sourceBytes: Buffer.from('authorized-audio'),
+          filename: 'authorized.mp3',
+        }),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === 'upload allocation failed (403)' &&
+        !error.message.includes('never-print-this')
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('Railway baseline rejects an ID3 marker with no MPEG audio frame', async () => {
+  const expectedStems = ['vocals', 'drums', 'bass', 'other'];
+  let base = '';
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/healthz') {
+      return Response.json({ ok: true, base, promptSchema: 'ready' });
+    }
+    if (url.pathname === '/api/separation-options') {
+      return Response.json({
+        backend: 'replicate',
+        defaultModel: 'htdemucs_ft',
+        models: [{ id: 'htdemucs_ft', stems: expectedStems, engine: 'DEMUCS' }],
+      });
+    }
+    if (url.pathname === '/api/uploads' && init?.method === 'POST') {
+      return Response.json({ key: 'uploads/test/source.mp3', uploadUrl: `${base}/put` });
+    }
+    if (url.pathname === '/put' && init?.method === 'PUT') return new Response(null, { status: 204 });
+    if (url.pathname === '/api/jobs' && init?.method === 'POST') {
+      return Response.json({ id: 'job-1' });
+    }
+    if (url.pathname === '/api/jobs/job-1') {
+      return Response.json({
+        id: 'job-1',
+        model: 'htdemucs_ft',
+        status: 'done',
+        expectedStems,
+        stems: expectedStems.map((name) => ({ name, url: `${base}/stems/${name}.mp3` })),
+      });
+    }
+    if (url.pathname.startsWith('/stems/')) {
+      const bytes = Buffer.alloc(2048);
+      bytes.set([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0]);
+      return new Response(bytes, { headers: { 'content-type': 'audio/mpeg' } });
+    }
+    return Response.json({ error: 'not found' }, { status: 404 });
+  };
+  const fixture = await listen((_request, response) => response.end());
+  base = fixture.base;
+  await fixture.close();
+
+  await assert.rejects(
+    () =>
+      captureRailwayBaseline({
+        base,
+        classCode: 'never-print-this',
+        sourceBytes: Buffer.from('authorized-audio'),
+        filename: 'authorized.mp3',
+        fetchImpl,
+        pollMs: 1,
+        timeoutMs: 1000,
+      }),
+    /no recognizable MPEG audio frame/
+  );
 });

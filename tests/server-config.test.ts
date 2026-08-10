@@ -37,10 +37,21 @@ test('optional runtime services distinguish absent, incomplete, invalid, and con
       ...disabled,
       REPLICATE_API_TOKEN: 'token',
       REPLICATE_YT_MODEL: 'owner/model',
-      REPLICATE_YT_MODEL_VERSION: 'pinned-version-id',
+      REPLICATE_YT_MODEL_VERSION: 'a'.repeat(64),
     }),
     'configured'
   );
+  for (const version of ['pinned-version-id', `${'a'.repeat(64)} `]) {
+    assert.equal(
+      youtubeImportStatus({
+        ...disabled,
+        REPLICATE_API_TOKEN: 'token',
+        REPLICATE_YT_MODEL: 'owner/model',
+        REPLICATE_YT_MODEL_VERSION: version,
+      }),
+      'invalid'
+    );
+  }
 
   assert.equal(audioAnalysisStatus(disabled), 'unconfigured');
   assert.equal(
