@@ -71,6 +71,19 @@ because its model or service is available.
   with a streaming decoder. Duration/byte caps sharply reduce classroom risk
   but cannot exactly bound decoded PCM for exotic high-rate or multichannel
   compressed files.
+- [x] Keep the fixed teacher system prompt code-owned and read-only in the
+  editor. Open its Markdown-formatted view at the tail, provide an interactive
+  upward caret to inspect the top, and isolate teacher-appended instructions in
+  a dedicated field. Require a change note and retain teacher, timestamp, base
+  prompt version/SHA, effective SHA, and amendment snapshot in revision history
+  so prompt changes remain traceable without letting a browser edit fixed
+  guardrails.
+- [x] Document Railway-first teacher provisioning, deprovisioning, rotation,
+  rollback, and acceptance. Generate verifier records through a hidden prompt
+  in an explicit Bash subprocess so the documented command is safe from the
+  workspace's default Zsh as well as Bash. The helper bounds/validates stdin and
+  seed identity fields before PBKDF2, with direct regressions. This documentation
+  does not replace the authorized live persistence check below.
 - [ ] Complete the remaining live teacher-console acceptance check from
   `docs/superpowers/plans/2026-08-08-autosplit-prompt-governance.md`: save one
   revision with an authorized real teacher account, restart Railway, and prove

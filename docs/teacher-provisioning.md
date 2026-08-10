@@ -53,17 +53,24 @@ history or the process table:
 STEM_SPLITTER_RECORDS_FILE="$(mktemp)"
 chmod 600 "$STEM_SPLITTER_RECORDS_FILE"
 
-read -r -s -p 'Teacher password: ' STEM_SPLITTER_TEACHER_PASSWORD; echo
-printf '%s' "$STEM_SPLITTER_TEACHER_PASSWORD" |
-  node scripts/hash-teacher-password.mjs instructor "Course Instructor" \
-  >> "$STEM_SPLITTER_RECORDS_FILE"
-unset STEM_SPLITTER_TEACHER_PASSWORD
+bash -c '
+  set -euo pipefail
+  IFS= read -r -s -p "Teacher password: " teacher_password
+  printf "\n"
+  printf "%s" "$teacher_password" |
+    node scripts/hash-teacher-password.mjs instructor "Course Instructor" >> "$1"
+  unset teacher_password
+' _ "$STEM_SPLITTER_RECORDS_FILE"
 ```
 
-The helper appends one JSON object. Repeat the hidden-prompt pipeline with a
-different username and display name for each additional teacher. The temporary
-file then contains one object per line; `jq -s '.'` turns those records into
-the authoritative array.
+The explicit Bash subshell makes the hidden prompt behave the same from the
+workspace's default Zsh and from Bash; the plaintext exists only in that
+short-lived subprocess. The helper bounds password input, validates the same
+username/display-name shape accepted by seed reconciliation, and appends one
+JSON object. Repeat the hidden-prompt pipeline with a different username and
+display name for each additional teacher. The temporary file then contains one
+object per line;
+`jq -s '.'` turns those records into the authoritative array.
 
 Treat the resulting seed as a secret even though it contains hashes rather than
 plaintext: it is still password-verifier material.
