@@ -29,6 +29,13 @@ promotion on their own.
   11/11. Full Phase 0 evidence is recorded only after all remaining gates
   complete against one stable committed tree; passing a combined dirty working
   tree is not durable release evidence.
+- Source binding: exact executable-source commit `15e782a` passes the literal
+  `test:phase0` command from a clean detached worktree under Bun 1.3.14: all
+  three typechecks, 156 worker, 22 analyzer, 22 Railway host/migration, 5
+  separator, 30 discovery, 9 YAMNet, 19 flags-off browser, 4 authoritative-Auto
+  browser, and 1 isolation-shadow test. Its commit whitespace check also passes.
+  This is commit-only local evidence, not native CI, a remote branch, a PR, a
+  Railway release, or live paid-provider approval.
 - Remaining: hosted checkpoint/license provenance, semester budgets,
   provider-start/webhook orchestration, output hydration/retention, common
   quality/cost evaluation, native-amd64 and Railway acceptance, and rollback
