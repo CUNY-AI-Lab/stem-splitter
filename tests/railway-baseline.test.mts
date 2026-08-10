@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { captureRailwayBaseline } from '../scripts/lib/railway-baseline.mjs';
+import {
+  captureRailwayBaseline,
+  downloadRailwayBaselineStems,
+} from '../scripts/lib/railway-baseline.mjs';
 
 function fakeMp3(marker: string): Buffer {
   const bytes = Buffer.alloc(2048, marker.charCodeAt(0));
   bytes.set([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0], 0);
   bytes.set([0xff, 0xfb, 0x90, 0x64], 10);
   return bytes;
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function listen(handler: Parameters<typeof createServer>[0]): Promise<{
@@ -134,6 +142,79 @@ test('Railway baseline refuses plaintext remote origins before sending the class
     /HTTPS origin/
   );
   assert.equal(called, false);
+});
+
+test('listening bundle download reuses one frozen job and rejects byte drift', async () => {
+  const expectedStems = ['vocals', 'drums', 'bass', 'other'];
+  const stemBytes = Object.fromEntries(expectedStems.map((name) => [name, fakeMp3(name)]));
+  let base = '';
+  let receivedClassCode = false;
+  const fixture = await listen((request, response) => {
+    receivedClassCode ||= request.headers['x-class-code'] !== undefined;
+    if (request.url === '/healthz') {
+      response.setHeader('content-type', 'application/json');
+      return response.end(JSON.stringify({ ok: true, base, promptSchema: 'ready' }));
+    }
+    if (request.url === '/api/separation-options') {
+      response.setHeader('content-type', 'application/json');
+      return response.end(JSON.stringify({
+        backend: 'replicate',
+        defaultModel: 'htdemucs_ft',
+        models: [{ id: 'htdemucs_ft', stems: expectedStems, engine: 'DEMUCS' }],
+      }));
+    }
+    if (request.url === '/api/jobs/frozen-job') {
+      response.setHeader('content-type', 'application/json');
+      return response.end(JSON.stringify({
+        id: 'frozen-job',
+        status: 'done',
+        model: 'htdemucs_ft',
+        expectedStems,
+        stems: expectedStems.map((name) => ({ name, url: `/stems/${name}.mp3` })),
+      }));
+    }
+    const stem = request.url?.match(/^\/stems\/(.+)\.mp3$/)?.[1];
+    if (stem && stem in stemBytes) {
+      response.setHeader('content-type', 'audio/mpeg');
+      return response.end(stemBytes[stem]);
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  base = fixture.base;
+  const baseline = {
+    base,
+    catalogue: {
+      backend: 'replicate',
+      defaultModel: 'htdemucs_ft',
+      model: { id: 'htdemucs_ft', stems: expectedStems, engine: 'DEMUCS' },
+    },
+    job: { id: 'frozen-job', model: 'htdemucs_ft', expectedStems },
+    stems: expectedStems.map((name) => ({
+      name,
+      bytes: stemBytes[name].byteLength,
+      sha256: sha256(stemBytes[name]),
+    })),
+  };
+
+  try {
+    const downloaded = await downloadRailwayBaselineStems({ baseline });
+    assert.deepEqual(downloaded.stems.map((stem) => stem.name), expectedStems);
+    assert.deepEqual(
+      downloaded.stems.map((stem) => stem.sha256),
+      baseline.stems.map((stem) => stem.sha256)
+    );
+    assert.equal(receivedClassCode, false);
+
+    const drifted = structuredClone(baseline);
+    drifted.stems[0].sha256 = '0'.repeat(64);
+    await assert.rejects(
+      () => downloadRailwayBaselineStems({ baseline: drifted }),
+      /drifted from the frozen bytes/
+    );
+  } finally {
+    await fixture.close();
+  }
 });
 
 test('Railway baseline does not reflect an authentication secret from an error body', async () => {

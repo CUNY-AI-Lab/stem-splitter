@@ -27,14 +27,20 @@ type RecordValue = Record<string, unknown>;
 export interface RailwayRollbackBaselineSummary {
   schemaVersion: '1';
   artifactSha256: string;
+  base: string;
+  capturedAt: string;
   corpusSlug: string;
+  sourceBytes: number;
   sourceSha256: string;
   sourceBytesVerified: boolean;
+  jobId: string;
+  model: string;
   deploymentId: string;
   deployedCommit: string;
   imageDigest: string;
   providerVersion: string;
   latencyMs: number;
+  stems: Array<{ name: string; bytes: number; sha256: string }>;
   stemHashes: string[];
 }
 
@@ -169,31 +175,40 @@ export function validateRailwayRollbackBaseline(
     ['id', 'model', 'status', 'expectedStems', 'startedAt', 'completedAt', 'latencyMs'],
     'baseline job'
   );
-  string(job.id, UUID, 'baseline job id');
+  const jobId = string(job.id, UUID, 'baseline job id');
   if (job.model !== expectedModel.id || job.status !== 'done') {
     throw new Error('baseline job did not complete the frozen default');
   }
   exactStringArray(job.expectedStems, expectedStems, 'baseline job stems');
   const startedAt = timestamp(job.startedAt, 'baseline job startedAt');
   const completedAt = timestamp(job.completedAt, 'baseline job completedAt');
-  const capturedAt = timestamp(baseline.capturedAt, 'baseline capturedAt');
+  const capturedAtMs = timestamp(baseline.capturedAt, 'baseline capturedAt');
   const latencyMs = positiveInteger(job.latencyMs, 'baseline job latency');
-  if (completedAt <= startedAt || completedAt - startedAt !== latencyMs || capturedAt !== completedAt) {
+  if (
+    completedAt <= startedAt ||
+    completedAt - startedAt !== latencyMs ||
+    capturedAtMs !== completedAt
+  ) {
     throw new Error('baseline job timing evidence is inconsistent');
   }
 
   if (!Array.isArray(baseline.stems) || baseline.stems.length !== expectedStems.length) {
     throw new Error('baseline stem evidence is incomplete');
   }
-  const stemHashes = baseline.stems.map((candidate, index) => {
+  const stems = baseline.stems.map((candidate, index) => {
     const stem = object(candidate, ['name', 'bytes', 'sha256'], `baseline stem ${index}`);
     if (stem.name !== expectedStems[index]) throw new Error('baseline stem order drifted');
     const bytes = positiveInteger(stem.bytes, `baseline stem ${index} bytes`);
     if (bytes < 1024 || bytes > 100 * 1024 * 1024) {
       throw new Error('baseline stem size is outside the accepted audio boundary');
     }
-    return string(stem.sha256, SHA256, `baseline stem ${index} SHA-256`);
+    return {
+      name: expectedStems[index],
+      bytes,
+      sha256: string(stem.sha256, SHA256, `baseline stem ${index} SHA-256`),
+    };
   });
+  const stemHashes = stems.map((stem) => stem.sha256);
   if (new Set(stemHashes).size !== stemHashes.length) {
     throw new Error('baseline stems do not have distinct hashes');
   }
@@ -257,14 +272,20 @@ export function validateRailwayRollbackBaseline(
   return {
     schemaVersion: '1',
     artifactSha256: RAILWAY_ROLLBACK_BASELINE_SHA256,
+    base: CANONICAL_BASE,
+    capturedAt: String(baseline.capturedAt),
     corpusSlug: corpus.slug,
+    sourceBytes: sourceSize,
     sourceSha256: corpus.sourceSha256,
     sourceBytesVerified,
+    jobId,
+    model: expectedModel.id,
     deploymentId,
     deployedCommit,
     imageDigest,
     providerVersion,
     latencyMs,
+    stems,
     stemHashes,
   };
 }

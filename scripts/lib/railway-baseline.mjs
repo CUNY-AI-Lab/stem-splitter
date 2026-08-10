@@ -412,3 +412,139 @@ export async function captureRailwayBaseline({
     stems: stemEvidence,
   };
 }
+
+export async function downloadRailwayBaselineStems({
+  baseline,
+  fetchImpl = fetch,
+}) {
+  if (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)) {
+    throw new Error('baseline evidence must be an object');
+  }
+  const normalizedBase = normalizeBase(baseline.base);
+  const expectedStems = baseline.job?.expectedStems;
+  const jobId = baseline.job?.id;
+  const model = baseline.job?.model;
+  if (
+    typeof jobId !== 'string' ||
+    !/^[A-Za-z0-9-]{1,128}$/.test(jobId) ||
+    typeof model !== 'string' ||
+    !Array.isArray(expectedStems) ||
+    expectedStems.length < 2 ||
+    expectedStems.length > 6 ||
+    expectedStems.some((name) => typeof name !== 'string') ||
+    new Set(expectedStems).size !== expectedStems.length ||
+    !Array.isArray(baseline.stems) ||
+    baseline.stems.length !== expectedStems.length
+  ) {
+    throw new Error('baseline job contract is invalid');
+  }
+
+  const health = await requestJson(
+    fetchImpl,
+    `${normalizedBase}/healthz`,
+    {},
+    'listening health check'
+  );
+  if (health.ok !== true || health.base !== normalizedBase || health.promptSchema !== 'ready') {
+    throw new Error('listening health check did not prove the canonical ready deployment');
+  }
+
+  const catalogue = await requestJson(
+    fetchImpl,
+    `${normalizedBase}/api/separation-options`,
+    {},
+    'listening separation catalogue'
+  );
+  const catalogueModel = Array.isArray(catalogue.models)
+    ? catalogue.models.find((option) => option?.id === model)
+    : undefined;
+  if (
+    catalogue.backend !== baseline.catalogue?.backend ||
+    catalogue.defaultModel !== baseline.catalogue?.defaultModel ||
+    !catalogueModel ||
+    catalogueModel.engine !== baseline.catalogue?.model?.engine ||
+    JSON.stringify(catalogueModel.stems) !== JSON.stringify(expectedStems)
+  ) {
+    throw new Error('live listening catalogue drifted from the frozen baseline');
+  }
+
+  const job = await requestJson(
+    fetchImpl,
+    `${normalizedBase}/api/jobs/${encodeURIComponent(jobId)}`,
+    {},
+    'listening job readback'
+  );
+  if (
+    job.id !== jobId ||
+    job.status !== 'done' ||
+    job.model !== model ||
+    JSON.stringify(job.expectedStems) !== JSON.stringify(expectedStems) ||
+    !Array.isArray(job.stems) ||
+    job.stems.length !== expectedStems.length
+  ) {
+    throw new Error('live listening job drifted from the frozen baseline');
+  }
+
+  const downloaded = [];
+  for (let index = 0; index < expectedStems.length; index += 1) {
+    const name = expectedStems[index];
+    const liveStem = job.stems[index];
+    const frozenStem = baseline.stems[index];
+    if (
+      !liveStem ||
+      typeof liveStem !== 'object' ||
+      liveStem.name !== name ||
+      typeof liveStem.url !== 'string' ||
+      !frozenStem ||
+      frozenStem.name !== name ||
+      !Number.isSafeInteger(frozenStem.bytes) ||
+      frozenStem.bytes < 1 ||
+      typeof frozenStem.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(frozenStem.sha256)
+    ) {
+      throw new Error(`listening stem ${name} evidence is invalid`);
+    }
+    const stemUrl = sameOriginUrl(
+      liveStem.url,
+      normalizedBase,
+      `listening stem ${name} URL`
+    );
+    const response = await boundedFetch(
+      fetchImpl,
+      stemUrl,
+      {},
+      `listening stem ${name} download`,
+      TRANSFER_TIMEOUT_MS
+    );
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`listening stem ${name} download failed (${response.status})`);
+    }
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (!contentType.startsWith('audio/')) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`listening stem ${name} did not return audio`);
+    }
+    const audio = await readBoundedBytes(
+      response,
+      MAX_AUDIO_BYTES,
+      `listening stem ${name}`
+    );
+    const digest = sha256(audio);
+    if (
+      audio.length !== frozenStem.bytes ||
+      digest !== frozenStem.sha256 ||
+      !isMp3(audio)
+    ) {
+      throw new Error(`listening stem ${name} drifted from the frozen bytes`);
+    }
+    downloaded.push({ name, bytes: audio.length, sha256: digest, audio });
+  }
+
+  return {
+    base: normalizedBase,
+    jobId,
+    model,
+    stems: downloaded,
+  };
+}

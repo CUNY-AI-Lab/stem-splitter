@@ -4,9 +4,17 @@
     "types": ["node", "@cloudflare/workers-types"]
   },
   "include": [
+    "scripts/check-audio-pipeline-listening.mts",
     "scripts/check-audio-pipeline-promotion.mts",
+    "scripts/capture-audio-analysis-image-evidence.mts",
+    "scripts/export-audio-pipeline-listening-bundle.mts",
+    "scripts/lib/audio-analysis-image-evidence.mts",
+    "scripts/lib/audio-pipeline-listening-evidence.mts",
     "scripts/lib/audio-pipeline-promotion.mts",
+    "scripts/lib/railway-baseline.d.mts",
     "scripts/lib/railway-baseline-evidence.mts",
+    "tests/audio-analysis-image-evidence.test.mts",
+    "tests/audio-pipeline-listening-evidence.test.mts",
     "tests/audio-pipeline-promotion.test.mts",
     "tests/railway-baseline-evidence.test.mts"
   ]

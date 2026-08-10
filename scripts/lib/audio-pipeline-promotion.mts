@@ -5,7 +5,9 @@ import { AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION } from '../../src/analysis/source-s
 import { PINNED_ROLE_CLASSIFIER_VERSION } from '../../src/analysis/types.ts';
 import { AUDIOSEP_REVIEWED_REPLICATE_VERSION } from '../../src/isolation/options.ts';
 import { getSeparationOptions } from '../../src/separation/options.ts';
+import { loadAudioAnalysisImageEvidence } from './audio-analysis-image-evidence.mts';
 import { SAM_AUDIO_REPLICATE_VERSION } from './query-isolation-bakeoff.mts';
+import { loadAudioPipelineListeningEvidence } from './audio-pipeline-listening-evidence.mts';
 import { loadRailwayRollbackBaselineEvidence } from './railway-baseline-evidence.mts';
 
 export const AUDIO_PIPELINE_PROMOTION_SCHEMA =
@@ -591,8 +593,21 @@ export function loadAudioPipelinePromotionManifest(
 ): AudioPipelinePromotionManifest {
   const value = JSON.parse(readFileSync(resolve(repositoryRoot, manifestPath), 'utf8')) as unknown;
   const manifest = validateAudioPipelinePromotionManifest(value);
+  validateAudioPipelinePromotionEvidence(repositoryRoot, manifest);
+  return manifest;
+}
+
+export function validateAudioPipelinePromotionEvidence(
+  repositoryRoot: string,
+  manifest: AudioPipelinePromotionManifest
+): void {
   if (manifest.evidence.railwayBaseline) {
     loadRailwayRollbackBaselineEvidence(repositoryRoot);
   }
-  return manifest;
+  if (manifest.evidence.manualListening) {
+    loadAudioPipelineListeningEvidence(repositoryRoot);
+  }
+  if (manifest.evidence.nativeAmd64Image) {
+    loadAudioAnalysisImageEvidence(repositoryRoot);
+  }
 }
