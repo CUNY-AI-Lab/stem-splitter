@@ -19,6 +19,7 @@ const promptStatus = document.getElementById('prompt-status');
 const effectivePromptMeta = document.getElementById('effective-prompt-meta');
 
 const fixedPromptMeta = document.getElementById('fixed-prompt-meta');
+const fixedPromptDetails = document.getElementById('fixed-prompt-details');
 const fixedPromptScroll = document.getElementById('fixed-prompt-scroll');
 const fixedPromptBody = document.getElementById('fixed-prompt-body');
 const fixedPromptToggle = document.getElementById('fixed-prompt-toggle');
@@ -514,7 +515,7 @@ function formatUtc(value) {
 
 function paintCounts() {
   const used = amendment.value.trim().length;
-  amendmentCount.textContent = `${used} / ${maxChars} APPENDED`;
+  amendmentCount.textContent = `${used} / ${maxChars} CHARACTERS`;
   amendmentCount.classList.toggle('error', used > maxChars);
 
   const noteUsed = changeNote.value.trim().length;
@@ -524,13 +525,12 @@ function paintCounts() {
 
 function paintMeta(record) {
   amendmentMeta.textContent = record.updatedBy
-    ? `LAST EDITED BY ${record.updatedBy.toUpperCase()} · ${formatUtc(record.updatedAt)}`
-    : 'NO RUNTIME EDITS YET';
-  fixedPromptMeta.textContent =
-    `${record.basePromptVersion} · ${shortHash(record.basePromptHash)}`;
+    ? `LAST SAVED BY ${record.updatedBy.toUpperCase()} · ${formatUtc(record.updatedAt)}`
+    : 'NO CLASS CHANGES YET';
+  fixedPromptMeta.textContent = record.basePromptVersion;
   fixedPromptMeta.title =
     `Base multi-variant policy SHA-256: ${record.basePromptHash || 'unavailable'}`;
-  effectivePromptMeta.textContent = `EFFECTIVE · ${shortHash(record.effectivePromptHash)}`;
+  effectivePromptMeta.textContent = `REVISION ${record.revision ?? 0}`;
   effectivePromptMeta.title =
     `Effective multi-variant policy SHA-256: ${record.effectivePromptHash || 'unavailable'}`;
 }
@@ -832,6 +832,11 @@ changeNote.addEventListener('input', paintCounts);
 fixedPromptToggle.addEventListener('click', () => {
   if (showingPromptTop) showPromptEnd();
   else showPromptTop();
+});
+
+fixedPromptDetails.addEventListener('toggle', () => {
+  if (!fixedPromptDetails.open) return;
+  requestAnimationFrame(showPromptEnd);
 });
 
 promptForm.addEventListener('submit', async (event) => {

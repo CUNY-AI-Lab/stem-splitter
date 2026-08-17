@@ -2,15 +2,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor</title>
-<link rel="stylesheet" href="/styles.css?v=teacher-20260810-5" />
+<link rel="stylesheet" href="/styles.css?v=teacher-20260817-1" />
 
 <div class="grain" aria-hidden="true"></div>
 
 <main class="teacher-main">
   <header class="masthead">
     <p class="kicker">// instructor console</p>
-    <h1>LISTENING<br /><span>GUY</span></h1>
-    <p class="tagline">Tune what the listening guide tells your students.</p>
+    <h1>CLASS<br /><span>GUIDANCE</span></h1>
+    <p class="tagline">Set what the listening guide should emphasize for your students.</p>
   </header>
 
   <section id="signin-panel" class="deck teacher-panel" hidden>
@@ -35,71 +35,31 @@
       <button type="button" id="signout" class="crate-page-btn">SIGN OUT</button>
     </div>
 
-    <h2 class="rack-title"><span>PROMPT EDITOR</span></h2>
-    <p class="teacher-help">
-      The Listening Guide receives two layers. The fixed system prompt is owned by code and
-      can change only through <code>src/assistant/prompt.ts</code> and code review. Your appended
-      instructions are the editable class layer. Each save records both layers&rsquo; fingerprints,
-      who made the change, and why.
-    </p>
-
-    <section class="teacher-prompt-section teacher-fixed-section" aria-labelledby="fixed-prompt-title">
-      <div class="teacher-section-head">
-        <div>
-          <p class="teacher-eyebrow mono">CODE-OWNED · READ ONLY</p>
-          <h3 id="fixed-prompt-title">Fixed system prompt</h3>
-        </div>
-        <span id="fixed-prompt-meta" class="teacher-version mono"></span>
-      </div>
-      <p class="teacher-help">
-        This view opens at the end, where the editable class layer is attached. Use the upward
-        caret to jump to the top. The text is rendered for reading but cannot be edited here.
-      </p>
-      <div
-        id="fixed-prompt-scroll"
-        class="teacher-fixed-scroll"
-        tabindex="0"
-        aria-label="Fixed system prompt, read only"
-      >
-        <article id="fixed-prompt-body" class="teacher-markdown"></article>
-      </div>
-      <button
-        type="button"
-        id="fixed-prompt-toggle"
-        class="teacher-caret-control mono"
-        aria-controls="fixed-prompt-scroll"
-        aria-expanded="false"
-      >
-        <span class="teacher-up-caret" aria-hidden="true">↑</span>
-        <span id="fixed-prompt-toggle-label">SEE THE TOP OF THE FIXED PROMPT</span>
-      </button>
-    </section>
-
     <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="amendment-title">
       <div class="teacher-section-head">
         <div>
-          <p class="teacher-eyebrow mono">RUNTIME · VERSIONED</p>
-          <h3 id="amendment-title">Appended class instructions</h3>
+          <p class="teacher-eyebrow mono">EDITABLE · VERSIONED</p>
+          <h2 id="amendment-title">Class instructions</h2>
         </div>
         <span id="effective-prompt-meta" class="teacher-version mono"></span>
       </div>
       <p class="teacher-help">
-        Add repertoire, vocabulary, or course-specific emphasis. Fixed safeguards still win:
-        this layer cannot authorize invented timestamps or turn student notes into instructions.
+        Add repertoire, vocabulary, language, or course-specific emphasis. These instructions
+        are appended to the protected system prompt.
       </p>
 
       <form id="prompt-form" class="teacher-form">
         <label class="teacher-field" for="amendment">
-          <span class="mono">APPENDED CONTENT</span>
+          <span class="mono">WHAT SHOULD THE GUIDE EMPHASIZE?</span>
           <textarea
             id="amendment"
             class="teacher-textarea"
-            rows="10"
+            rows="8"
             placeholder="e.g. This is a Latin American popular music course. Prefer examples from bachata, cumbia and reggaetón, and define any English music-theory term in Spanish too."
           ></textarea>
         </label>
         <label class="teacher-field" for="change-note">
-          <span class="mono">CHANGELOG NOTE · REQUIRED WHEN CONTENT CHANGES</span>
+          <span class="mono">WHY ARE YOU CHANGING IT? · REQUIRED</span>
           <input
             id="change-note"
             maxlength="240"
@@ -112,39 +72,84 @@
           <span id="amendment-meta" class="mono"></span>
         </div>
         <div class="teacher-actions">
-          <button type="submit" class="yt-go">SAVE NEW REVISION</button>
-          <button type="button" id="preview-btn" class="crate-page-btn">PREVIEW EFFECTIVE PROMPT</button>
+          <button type="submit" class="yt-go">SAVE CLASS GUIDANCE</button>
+          <button type="button" id="preview-btn" class="crate-page-btn">PREVIEW FULL PROMPT</button>
         </div>
         <p id="prompt-status" class="mono teacher-status" hidden></p>
       </form>
     </section>
 
     <details id="preview-wrap" class="teacher-preview" hidden>
-      <summary class="mono">EFFECTIVE SYSTEM PROMPT (fixed + appended)</summary>
+      <summary class="mono">FULL PROMPT PREVIEW · FIXED + CLASS INSTRUCTIONS</summary>
       <article id="preview-body" class="teacher-markdown teacher-effective-preview"></article>
     </details>
 
-    <section class="teacher-history" aria-labelledby="prompt-history-title">
-      <h2 id="prompt-history-title" class="rack-title"><span>PROMPT CHANGELOG</span></h2>
-      <p class="teacher-help">
-        Newest first. Each entry preserves the appended snapshot, change note, actor, timestamp,
-        fixed-prompt version, and base/effective policy fingerprints. Load earlier pages to follow
-        the complete runtime trail.
-      </p>
-      <p id="prompt-history-empty" class="teacher-help">No runtime amendment revisions yet.</p>
-      <ol id="prompt-history" class="teacher-history-list"></ol>
-      <button type="button" id="prompt-history-more" class="crate-page-btn" hidden>
-        LOAD EARLIER REVISIONS
-      </button>
-    </section>
+    <section class="teacher-more-tools" aria-labelledby="teacher-more-tools-title">
+      <div class="teacher-more-tools-head">
+        <p class="teacher-eyebrow mono">OPEN ONLY WHEN NEEDED</p>
+        <h2 id="teacher-more-tools-title">Reference &amp; review</h2>
+      </div>
 
-    <section class="teacher-analysis-review" aria-labelledby="analysis-review-title">
-      <h2 id="analysis-review-title" class="rack-title"><span>AUTO ANALYSIS REVIEW</span></h2>
-      <p class="teacher-help">
-        Review one stored Auto decision and any candidate instrument detections. These labels are
-        advisory evidence for authorized testers: they never add, rename, or select a stem and they
-        never start an optional isolation.
-      </p>
+      <details id="fixed-prompt-details" class="teacher-tool">
+        <summary id="fixed-prompt-title">
+          <span>
+            <strong>Fixed system prompt</strong>
+            <small>Read the protected, code-owned instructions</small>
+          </span>
+          <span id="fixed-prompt-meta" class="teacher-version mono"></span>
+        </summary>
+        <section class="teacher-tool-body" aria-labelledby="fixed-prompt-title">
+          <p class="teacher-help">
+            Opens at the end, where class instructions attach. Use the arrow to jump to the top.
+          </p>
+          <div
+            id="fixed-prompt-scroll"
+            class="teacher-fixed-scroll"
+            tabindex="0"
+            aria-label="Fixed system prompt, read only"
+          >
+            <article id="fixed-prompt-body" class="teacher-markdown"></article>
+          </div>
+          <button
+            type="button"
+            id="fixed-prompt-toggle"
+            class="teacher-caret-control mono"
+            aria-controls="fixed-prompt-scroll"
+            aria-expanded="false"
+          >
+            <span class="teacher-up-caret" aria-hidden="true">↑</span>
+            <span id="fixed-prompt-toggle-label">SEE THE TOP OF THE FIXED PROMPT</span>
+          </button>
+        </section>
+      </details>
+
+      <details class="teacher-tool">
+        <summary id="prompt-history-title">
+          <span>
+            <strong>Revision history</strong>
+            <small>See who changed class guidance and why</small>
+          </span>
+        </summary>
+        <section class="teacher-tool-body teacher-history" aria-labelledby="prompt-history-title">
+          <p id="prompt-history-empty" class="teacher-help">No class-instruction revisions yet.</p>
+          <ol id="prompt-history" class="teacher-history-list"></ol>
+          <button type="button" id="prompt-history-more" class="crate-page-btn" hidden>
+            LOAD EARLIER REVISIONS
+          </button>
+        </section>
+      </details>
+
+      <details class="teacher-tool">
+        <summary id="analysis-review-title">
+          <span>
+            <strong>AutoSplit analysis lab</strong>
+            <small>Review advisory instrument detections for a job</small>
+          </span>
+        </summary>
+        <section class="teacher-tool-body teacher-analysis-review" aria-labelledby="analysis-review-title">
+          <p class="teacher-help">
+            For authorized testing only. Reviews never rename a stem or start an isolation.
+          </p>
       <form id="analysis-form" class="teacher-form teacher-analysis-form">
         <label class="teacher-field" for="analysis-job-id">
           <span class="mono">AUTO ANALYSIS JOB ID</span>
@@ -258,6 +263,8 @@
           CORE 2 / 4 / 6 CONTRACT UNCHANGED · NO ISOLATION REQUESTED
         </p>
       </article>
+        </section>
+      </details>
     </section>
   </section>
 
@@ -266,4 +273,4 @@
   </footer>
 </main>
 
-<script src="/teacher.js?v=teacher-20260810-5"></script>
+<script src="/teacher.js?v=teacher-20260817-1"></script>

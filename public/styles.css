@@ -1455,8 +1455,11 @@ footer {
 }
 /* ─── instructor console (teacher.html) ───────────────────────────── */
 
-.teacher-main { max-width: 940px; }
-.teacher-panel { margin-top: 1.2rem; }
+.teacher-main { max-width: 780px; padding-top: 2.25rem; }
+.teacher-main .masthead { margin-bottom: 1.6rem; }
+.teacher-main .masthead h1 { font-size: clamp(2.5rem, 7vw, 4rem); }
+.teacher-main .tagline { font-size: 0.95rem; margin-top: 0.75rem; max-width: 38ch; }
+.teacher-panel { margin-top: 0.8rem; }
 
 .teacher-form { display: grid; gap: 0.8rem; }
 .teacher-submit {
@@ -1533,6 +1536,11 @@ footer {
   margin-top: 1rem;
   padding: 1rem;
 }
+.teacher-amendment-section {
+  border-color: color-mix(in srgb, var(--hot) 48%, var(--panel-edge));
+  margin-top: 0;
+  padding: 1.15rem;
+}
 .teacher-section-head {
   align-items: flex-start;
   display: flex;
@@ -1540,6 +1548,7 @@ footer {
   justify-content: space-between;
   margin-bottom: 0.55rem;
 }
+.teacher-section-head h2,
 .teacher-section-head h3 {
   color: var(--ink);
   font-size: 1rem;
@@ -1648,6 +1657,58 @@ footer {
 
 .teacher-main footer a { color: var(--ink-dim); text-decoration-color: var(--panel-edge); }
 .teacher-main footer a:hover { color: var(--hot); }
+
+.teacher-more-tools {
+  margin-top: 1.7rem;
+}
+.teacher-more-tools-head {
+  margin-bottom: 0.7rem;
+}
+.teacher-more-tools-head h2 {
+  color: var(--ink);
+  font-size: 1rem;
+  margin: 0.15rem 0 0;
+}
+.teacher-tool {
+  background: color-mix(in srgb, var(--panel) 56%, transparent);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  margin-top: 0.55rem;
+  overflow: clip;
+}
+.teacher-tool > summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  gap: 0.8rem;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 3.5rem;
+  padding: 0.75rem 0.85rem;
+}
+.teacher-tool > summary::-webkit-details-marker { display: none; }
+.teacher-tool > summary::after {
+  color: var(--hot);
+  content: "+";
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.teacher-tool[open] > summary::after { content: "−"; }
+.teacher-tool > summary:hover { background: var(--hot-soft); }
+.teacher-tool > summary:focus-visible { outline: 2px solid var(--hot); outline-offset: -2px; }
+.teacher-tool > summary > span:first-child { display: grid; gap: 0.16rem; min-width: 0; }
+.teacher-tool > summary strong { font-size: 0.8rem; }
+.teacher-tool > summary small { color: var(--ink-faint); font-size: 0.68rem; font-weight: 400; }
+.teacher-tool > summary .teacher-version { margin-left: auto; }
+.teacher-tool-body {
+  border-top: 1px solid var(--panel-edge);
+  padding: 0.9rem;
+}
+.teacher-tool .teacher-history,
+.teacher-tool .teacher-analysis-review { margin-top: 0; }
 
 .teacher-history { margin-top: 2rem; }
 .teacher-history-list { display: grid; gap: 0.7rem; list-style: none; margin: 0; padding: 0; }
@@ -1884,8 +1945,12 @@ footer {
 }
 
 @media (max-width: 640px) {
+  .teacher-main { padding-top: 1.5rem; }
+  .teacher-main .masthead { margin-bottom: 1.25rem; }
   .teacher-section-head,
   .teacher-history-head { display: grid; }
+  .teacher-tool > summary { align-items: flex-start; }
+  .teacher-tool > summary .teacher-version { display: none; }
   .teacher-fixed-scroll { height: 360px; }
   .teacher-actions { align-items: stretch; flex-direction: column; }
   .teacher-actions > * { width: 100%; }

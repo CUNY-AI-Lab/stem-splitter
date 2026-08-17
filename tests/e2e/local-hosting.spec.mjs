@@ -1633,7 +1633,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveText(
-    'Tune what the listening guide tells your students.'
+    'Set what the listening guide should emphasize for your students.'
   );
   expect(await page.locator('link[rel="stylesheet"]').getAttribute('href')).toMatch(/\?v=/);
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
@@ -1661,6 +1661,10 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toHaveText('SIGNED IN AS E2E TEACHER');
+  await expect(page.getByRole('heading', { name: 'Class instructions' })).toBeVisible();
+  await expect(page.getByText('Reference & review', { exact: true })).toBeVisible();
+  await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
+  await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
 
   const teacherAnalysis = await page.evaluate((jobId) =>
     fetch(`/api/teacher/jobs/${jobId}/analysis`, { credentials: 'same-origin' }).then(
@@ -1771,8 +1775,10 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     body: { error: 'Optional isolation is unavailable.' },
   });
 
-  // The code-owned prompt is visible and formatted, but never an editable
-  // control. It opens at the end and the upward caret jumps to the top.
+  // The code-owned prompt is progressively disclosed, formatted, and never an
+  // editable control. Once opened it starts at the end and the caret jumps up.
+  await page.getByText('Fixed system prompt', { exact: true }).click();
+  await expect(page.locator('#fixed-prompt-details')).toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-body')).toContainText('ACTING ON THE MIXER');
   await expect(page.locator('#fixed-prompt-body h4')).toContainText([
     "WHO YOU'RE TALKING TO",
@@ -1801,14 +1807,14 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
-  await page.getByRole('button', { name: 'SAVE NEW REVISION' }).click();
+  await page.getByRole('button', { name: 'SAVE CLASS GUIDANCE' }).click();
   await expect(page.locator('#prompt-status')).toContainText('ADD A CHANGELOG NOTE');
 
   const changeNote = 'Add bilingual vocabulary guidance for the survey course';
   await page.locator('#change-note').fill(changeNote);
-  await page.getByRole('button', { name: 'SAVE NEW REVISION' }).click();
+  await page.getByRole('button', { name: 'SAVE CLASS GUIDANCE' }).click();
   await expect(page.locator('#prompt-status')).toContainText('REVISION 1 SAVED');
-  await expect(page.locator('#amendment-meta')).toContainText('LAST EDITED BY E2ETEACHER');
+  await expect(page.locator('#amendment-meta')).toContainText('LAST SAVED BY E2ETEACHER');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
   await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-10.2');
@@ -1835,7 +1841,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'PREVIEW EFFECTIVE PROMPT' }).click();
+  await page.getByRole('button', { name: 'PREVIEW FULL PROMPT' }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
 
@@ -1894,6 +1900,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment')).toHaveValue('Pagination amendment 42');
   await expect(page.locator('.teacher-history-item')).toHaveCount(40);
   await expect(page.locator('.teacher-history-item').first()).toContainText('REVISION 42');
+  await page.getByText('Revision history', { exact: true }).click();
   const loadEarlier = page.getByRole('button', { name: 'LOAD EARLIER REVISIONS' });
   await expect(loadEarlier).toBeVisible();
   await loadEarlier.click();
@@ -1904,7 +1911,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   // Candidate instrument detections are visible only through an explicit
   // teacher review. The UI preserves their advisory status and never offers a
   // stem-routing or provider-start control.
-  await expect(page.getByRole('heading', { name: 'AUTO ANALYSIS REVIEW' })).toBeVisible();
+  await page.getByText('AutoSplit analysis lab', { exact: true }).click();
   const analysisLoadButton = page.getByRole('button', { name: 'LOAD ADVISORY ANALYSIS' });
   const analysisLoadButtonBox = await analysisLoadButton.boundingBox();
   expect(analysisLoadButtonBox).not.toBeNull();
