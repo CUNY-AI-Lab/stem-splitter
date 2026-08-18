@@ -16,7 +16,7 @@ const TEACHER_PASSWORD = 'e2e-teacher-password';
 const TEACHER_SEED = JSON.stringify([
   {
     username: 'e2eteacher',
-    name: 'E2E Teacher',
+    name: 'Instructor',
     salt: '00112233445566778899aabbccddeeff',
     hash: pbkdf2Sync(TEACHER_PASSWORD, Buffer.from('00112233445566778899aabbccddeeff', 'hex'), 210_000, 32, 'sha256').toString('hex'),
     iterations: 210_000,
@@ -247,6 +247,55 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     JSON.parse(localStorage.getItem('jobs') || '[]')
   );
   expect(storedModel).toBe('htdemucs_ft');
+
+  // A terminal SSE event must finish the UI even when an intermediary keeps
+  // the HTTP response open. This is the Railway failure mode that previously
+  // left a completed, cached guide on “READING THE CHARTS…” until reload.
+  await page.evaluate((id) => {
+    const nativeFetch = window.fetch.bind(window);
+    let intercepted = false;
+    window.__e2eGuideStreamCancelled = false;
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (!intercepted && url.endsWith(`/api/jobs/${id}/guide`)) {
+        intercepted = true;
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'done',
+                  text: 'Start with the other channel and listen for the ensemble texture.',
+                  model: 'e2e-guide',
+                  createdAt: '2026-08-18T00:00:00.000Z',
+                })}\n\n`
+              )
+            );
+          },
+          cancel() {
+            window.__e2eGuideStreamCancelled = true;
+          },
+        });
+        return Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+          })
+        );
+      }
+      return nativeFetch(input, init);
+    };
+  }, jobId);
+  await page.getByRole('button', { name: 'CUE THE LISTENING GUIDE' }).click();
+  await expect(page.locator('.coach-guide-text')).toContainText(
+    'Start with the other channel and listen for the ensemble texture.'
+  );
+  await expect(page.getByText('READING THE CHARTS…', { exact: true })).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__e2eGuideStreamCancelled))
+    .toBe(true);
+
   const storedStemResponse = await server.fetch(`/api/files/stems/${jobId}/vocals.mp3`);
   expect(storedStemResponse.status).toBe(200);
   expect(storedStemResponse.headers.get('content-length')).toBe(
@@ -1632,9 +1681,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page).toHaveURL(/\/teacher(?:\.html)?$/);
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
-  await expect(page.locator('.tagline')).toHaveText(
-    'Set what the listening guide should emphasize for your students.'
-  );
+  await expect(page.locator('.tagline')).toHaveCount(0);
   expect(await page.locator('link[rel="stylesheet"]').getAttribute('href')).toMatch(/\?v=/);
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'SIGN IN' });
@@ -1660,11 +1707,16 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByLabel('PASSWORD').fill(TEACHER_PASSWORD);
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
-  await expect(page.locator('#teacher-who')).toHaveText('SIGNED IN AS E2E TEACHER');
-  await expect(page.getByRole('heading', { name: 'Class instructions' })).toBeVisible();
-  await expect(page.getByText('Reference & review', { exact: true })).toBeVisible();
+  await expect(page.locator('#teacher-who')).toBeEmpty();
+  await expect(page.getByRole('heading', { name: 'CLASS GUIDANCE' })).toBeVisible();
+  await expect(page.getByText('More', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
+  await expect(page.getByLabel('Class guidance')).not.toHaveAttribute('placeholder');
+  const instructorSurfaceText = await page.locator('body').innerText();
+  expect(instructorSurfaceText).not.toMatch(
+    /\b(?:e2e|end-to-end|authorized testing|advisory|classifier|routing|training eligible|job id|shadow mode)\b/i
+  );
 
   const teacherAnalysis = await page.evaluate((jobId) =>
     fetch(`/api/teacher/jobs/${jobId}/analysis`, { credentials: 'same-origin' }).then(
@@ -1777,7 +1829,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
 
   // The code-owned prompt is progressively disclosed, formatted, and never an
   // editable control. Once opened it starts at the end and the caret jumps up.
-  await page.getByText('Fixed system prompt', { exact: true }).click();
+  await page.getByText('System prompt', { exact: true }).click();
   await expect(page.locator('#fixed-prompt-details')).toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-body')).toContainText('ACTING ON THE MIXER');
   await expect(page.locator('#fixed-prompt-body h4')).toContainText([
@@ -1786,9 +1838,9 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   ]);
   await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-10.2');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
-  await page.getByRole('button', { name: 'SEE THE TOP OF THE FIXED PROMPT' }).click();
+  await page.getByRole('button', { name: 'TOP' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('button', { name: 'RETURN TO THE END OF THE FIXED PROMPT' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'END' })).toBeVisible();
   await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
   await expect
     .poll(() =>
@@ -1807,14 +1859,14 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
-  await page.getByRole('button', { name: 'SAVE CLASS GUIDANCE' }).click();
-  await expect(page.locator('#prompt-status')).toContainText('ADD A CHANGELOG NOTE');
+  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
+  await expect(page.locator('#prompt-status')).toContainText('Add a change note');
 
   const changeNote = 'Add bilingual vocabulary guidance for the survey course';
   await page.locator('#change-note').fill(changeNote);
-  await page.getByRole('button', { name: 'SAVE CLASS GUIDANCE' }).click();
-  await expect(page.locator('#prompt-status')).toContainText('REVISION 1 SAVED');
-  await expect(page.locator('#amendment-meta')).toContainText('LAST SAVED BY E2ETEACHER');
+  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
+  await expect(page.locator('#prompt-status')).toHaveText('Saved.');
+  await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
   await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-10.2');
@@ -1841,7 +1893,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'PREVIEW FULL PROMPT' }).click();
+  await page.getByRole('button', { name: 'PREVIEW', exact: true }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
 
@@ -1900,7 +1952,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment')).toHaveValue('Pagination amendment 42');
   await expect(page.locator('.teacher-history-item')).toHaveCount(40);
   await expect(page.locator('.teacher-history-item').first()).toContainText('REVISION 42');
-  await page.getByText('Revision history', { exact: true }).click();
+  await page.getByText('History', { exact: true }).click();
   const loadEarlier = page.getByRole('button', { name: 'LOAD EARLIER REVISIONS' });
   await expect(loadEarlier).toBeVisible();
   await loadEarlier.click();
@@ -1908,210 +1960,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('.teacher-history-item').last()).toContainText(changeNote);
   await expect(loadEarlier).toBeHidden();
 
-  // Candidate instrument detections are visible only through an explicit
-  // teacher review. The UI preserves their advisory status and never offers a
-  // stem-routing or provider-start control.
-  await page.getByText('AutoSplit analysis lab', { exact: true }).click();
-  const analysisLoadButton = page.getByRole('button', { name: 'LOAD ADVISORY ANALYSIS' });
-  const analysisLoadButtonBox = await analysisLoadButton.boundingBox();
-  expect(analysisLoadButtonBox).not.toBeNull();
-  expect(analysisLoadButtonBox.height).toBeGreaterThanOrEqual(44);
-
-  await page.getByLabel('AUTO ANALYSIS JOB ID').fill('../private-job');
-  await analysisLoadButton.click();
-  await expect(page.locator('#analysis-status')).toHaveText('ENTER A VALID AUTO JOB ID.');
-  await expect(page.locator('#analysis-result')).toBeHidden();
-
-  await page.getByLabel('AUTO ANALYSIS JOB ID').fill(emptyAnalysisJobId);
-  await analysisLoadButton.click();
-  await expect(page.locator('#analysis-detections-empty')).toHaveText(
-    'The candidate classifier returned no possible instruments. This is an abstention, not proof that instruments are absent.'
-  );
-  await expect(page.locator('#analysis-detections-empty')).toBeVisible();
-  await expect(page.locator('.teacher-detection-item')).toHaveCount(0);
-  await expect(page.locator('#analysis-feedback-panel')).toBeVisible();
-  await expect(page.locator('#analysis-feedback-detected-fieldset')).toBeHidden();
-
-  await page.getByLabel('AUTO ANALYSIS JOB ID').fill(unavailableAnalysisJobId);
-  await analysisLoadButton.click();
-  await expect(page.locator('#analysis-discovery-meta')).toHaveText(
-    'UNAVAILABLE · DISCOVERY_TIMEOUT · 25000 MS'
-  );
-  await expect(page.locator('#analysis-detections-empty')).toHaveText(
-    'No candidate detections are available for this stored Auto decision.'
-  );
-  await expect(page.locator('#analysis-core-route')).toHaveText(
-    'AUTHORITATIVE · APPLIED · htdemucs_6s'
-  );
-  await expect(page.locator('#analysis-feedback-panel')).toBeHidden();
-
-  await page.getByLabel('AUTO ANALYSIS JOB ID').fill(analysisJobId);
-  await analysisLoadButton.click();
-  await expect(page.locator('#analysis-status')).toHaveText(
-    'ADVISORY ANALYSIS AND CANDIDATE REVIEW LOADED — NO ROUTING OR ISOLATION CHANGE.'
-  );
-  await expect(page.locator('#analysis-result')).toBeVisible();
-  await expect(page.locator('#analysis-job-meta')).toHaveText(`JOB ${analysisJobId}`);
-  await expect(page.locator('#analysis-core-route')).toHaveText(
-    'AUTHORITATIVE · APPLIED · htdemucs_6s'
-  );
-  await expect(page.locator('#analysis-role-version')).toHaveText('autosplit-role-v4');
-  await expect(page.locator('#analysis-reason')).toHaveText('reviewed core route');
-  await expect(page.locator('#analysis-discovery-meta')).toContainText(
-    'COMPLETE · 3 WINDOWS · 120 MS · classroom-instruments-v1'
-  );
-  await expect(page.locator('#analysis-discovery-meta')).toContainText(
-    'laion-larger-clap-music-pairwise-presence-rand-trunc-v1@a0b4534a14f58e20944452dff00a22a06ce629d1'
-  );
-  await expect(page.locator('.teacher-detection-item')).toHaveCount(1);
-  await expect(page.locator('.teacher-detection-item')).toContainText('Saxophone');
-  await expect(page.locator('.teacher-detection-item')).toContainText('POSSIBLE');
-  await expect(page.locator('.teacher-detection-item')).toContainText('82.0% · 2 / 3 WINDOWS');
-  await expect(page.locator('.teacher-analysis-guard')).toHaveText(
-    'CORE 2 / 4 / 6 CONTRACT UNCHANGED · NO ISOLATION REQUESTED'
-  );
-  const displayedAnalysis = await page.locator('#analysis-result').textContent();
-  expect(displayedAnalysis).not.toContain(sourceHash);
-  expect(displayedAnalysis).not.toContain(
-    '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1'
-  );
-  await expect(page.getByRole('button', { name: /ISOLAT/i })).toHaveCount(0);
-
-  // Feedback is complete and structured: every surfaced label gets a verdict,
-  // missed labels come from the pinned review vocabulary, and all rows remain
-  // unreviewed/identified/non-training evidence with no routing effect.
-  await expect(page.locator('#analysis-feedback-panel')).toBeVisible();
-  await expect(page.locator('#analysis-feedback-meta')).toContainText('REVISION 0 · TARGET');
-  await expect(page.locator('.teacher-feedback-detected-row')).toHaveCount(1);
-  await expect(page.locator('.teacher-feedback-detected-row')).toContainText('Saxophone');
-  await expect(page.locator('.teacher-feedback-detected-row')).toContainText(
-    'SPECIFIC INSTRUMENT / VOICE'
-  );
-  const feedbackSubmit = page.getByRole('button', { name: 'RECORD CANDIDATE FEEDBACK' });
-  const feedbackSubmitBox = await feedbackSubmit.boundingBox();
-  expect(feedbackSubmitBox).not.toBeNull();
-  expect(feedbackSubmitBox.height).toBeGreaterThanOrEqual(44);
-  await feedbackSubmit.click();
-  await expect(page.locator('#analysis-feedback-status')).toHaveText(
-    'MARK EVERY SURFACED LABEL CONFIRMED OR ABSENT.'
-  );
-
-  await page.getByLabel('Confirmed audible').check();
-  await page.getByLabel('REVIEWED GENRE / MUSICAL CONTEXT').selectOption('jazz');
-  await page.getByText('ADD AUDIBLE INSTRUMENTS THE CANDIDATE MISSED').click();
-  await page.getByLabel('FILTER THE REVIEW VOCABULARY').fill('trumpet');
-  await expect(page.locator('.teacher-feedback-check:visible')).toHaveCount(1);
-  await page.getByLabel('Trumpet').check();
-  await feedbackSubmit.click();
-  await expect(page.locator('#analysis-feedback-status')).toHaveText(
-    'REVISION 1 RECORDED · UNREVIEWED · NOT TRAINING ELIGIBLE.'
-  );
-  await expect(page.locator('#analysis-feedback-meta')).toContainText('REVISION 1 · TARGET');
-  await expect(page.getByLabel('Confirmed audible')).toBeChecked();
-  await expect(page.getByLabel('Trumpet')).toBeChecked();
-  await expect(page.locator('.teacher-feedback-guard')).toHaveText(
-    'UNREVIEWED · IDENTIFIED · NOT TRAINING ELIGIBLE · NO ROUTING OR ISOLATION EFFECT'
-  );
-  const feedbackPanelText = await page.locator('#analysis-feedback-panel').textContent();
-  expect(feedbackPanelText).not.toContain(sourceHash);
-  expect(feedbackPanelText).not.toContain(
-    '5c289311f4a030d768af7ffbfdecd01b008aa64824211899a4e59f4f9d154fd1'
-  );
-
-  const recordedFeedback = await page.evaluate((jobId) =>
-    fetch(`/api/teacher/jobs/${jobId}/instrument-feedback`, {
-      credentials: 'same-origin',
-    }).then(async (response) => ({ status: response.status, body: await response.json() })),
-    analysisJobId
-  );
-  expect(recordedFeedback.status).toBe(200);
-  expect(recordedFeedback.body.currentRevision).toBe(1);
-  expect(recordedFeedback.body.latest).toEqual({
-    schemaVersion: '1',
-    revision: 1,
-    genreFamily: 'jazz',
-    observations: [
-      { instrumentId: 'saxophone', verdict: 'confirmed' },
-      { instrumentId: 'trumpet', verdict: 'missed' },
-    ],
-    evidenceStatus: 'unreviewed-candidate',
-    deidentified: false,
-    trainingEligible: false,
-    createdAt: expect.any(String),
-  });
-  expect(JSON.stringify(recordedFeedback.body.latest)).not.toContain('e2eteacher');
-  expect(JSON.stringify(recordedFeedback.body.latest)).not.toContain(sourceHash);
-
-  const invalidFeedback = await page.evaluate((jobId) =>
-    fetch(`/api/teacher/jobs/${jobId}/instrument-feedback`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        expectedRevision: 1,
-        genreFamily: 'jazz',
-        observations: [{ instrumentId: 'trumpet', verdict: 'missed' }],
-      }),
-    }).then(async (response) => ({ status: response.status, body: await response.json() })),
-    analysisJobId
-  );
-  expect(invalidFeedback.status).toBe(400);
-  expect(invalidFeedback.body.error).toContain('every surfaced detection');
-
-  const injectedFeedback = await page.evaluate((jobId) =>
-    fetch(`/api/teacher/jobs/${jobId}/instrument-feedback`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        expectedRevision: 1,
-        genreFamily: 'jazz',
-        observations: [{ instrumentId: 'saxophone', verdict: 'confirmed' }],
-        sourceHash: 'caller-supplied',
-      }),
-    }).then(async (response) => ({ status: response.status, body: await response.json() })),
-    analysisJobId
-  );
-  expect(injectedFeedback).toEqual({
-    status: 400,
-    body: { error: 'Instrument feedback body is invalid.' },
-  });
-
-  const staleFeedback = await page.evaluate((jobId) =>
-    fetch(`/api/teacher/jobs/${jobId}/instrument-feedback`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        expectedRevision: 0,
-        genreFamily: 'rock',
-        observations: [{ instrumentId: 'saxophone', verdict: 'absent' }],
-      }),
-    }).then(async (response) => ({ status: response.status, body: await response.json() })),
-    analysisJobId
-  );
-  expect(staleFeedback.status).toBe(409);
-  expect(staleFeedback.body.error).toContain('changed after you opened it');
-
-  const jobAfterFeedback = await server.fetch(
-    `http://stem-splitter.test/api/jobs/${analysisJobId}`
-  );
-  expect(jobAfterFeedback.status).toBe(200);
-  const jobAfterFeedbackBody = await jobAfterFeedback.json();
-  expect(jobAfterFeedbackBody).toMatchObject({
-    model: 'htdemucs_6s',
-    status: 'done',
-  });
-  expect(jobAfterFeedbackBody.instrumentFeedback).toBeUndefined();
-  expect(JSON.stringify(jobAfterFeedbackBody)).not.toContain('confirmed');
-
-  // Durable readback repaints the exact current revision rather than keeping
-  // optimistic browser-only state.
-  await analysisLoadButton.click();
-  await expect(page.locator('#analysis-feedback-meta')).toContainText('REVISION 1 · TARGET');
-  await expect(page.getByLabel('Confirmed audible')).toBeChecked();
-  await page.getByText('ADD AUDIBLE INSTRUMENTS THE CANDIDATE MISSED').click();
-  await expect(page.getByLabel('Trumpet')).toBeChecked();
+  await expect(page.getByText('AutoSplit review', { exact: true })).toHaveCount(0);
 
   // A failed logout must not tell the teacher the active HttpOnly session is
   // gone. Keep the console visible until the server confirms invalidation.
@@ -2119,11 +1968,9 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN OUT' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#prompt-status')).toContainText(
-    'SIGN OUT FAILED — YOUR SESSION MAY STILL BE ACTIVE'
+    'Sign out failed. Your session may still be active.'
   );
-  await expect(page.locator('#analysis-result')).toBeVisible();
-  await expect(page.locator('#analysis-feedback-panel')).toBeVisible();
-  await expect(page.getByLabel('Trumpet')).toBeChecked();
+  await expect(page.getByText('AutoSplit review', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'SIGN OUT' })).toBeEnabled();
   const afterFailedSignOut = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
@@ -2136,11 +1983,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment')).toHaveValue('');
   await expect(page.locator('.teacher-history-item')).toHaveCount(0);
   await expect(page.locator('#preview-body')).toBeEmpty();
-  await expect(page.locator('#analysis-job-id')).toHaveValue('');
-  await expect(page.locator('#analysis-result')).toBeHidden();
-  await expect(page.locator('.teacher-detection-item')).toHaveCount(0);
-  await expect(page.locator('#analysis-feedback-panel')).toBeHidden();
-  await expect(page.locator('.teacher-feedback-check')).toHaveCount(0);
+  await expect(page.getByText('AutoSplit review', { exact: true })).toHaveCount(0);
   expect(await page.locator('body').textContent()).not.toContain('Pagination amendment 42');
   expect(await page.locator('body').textContent()).not.toContain(analysisJobId);
   expect(await page.locator('body').textContent()).not.toContain('Saxophone');

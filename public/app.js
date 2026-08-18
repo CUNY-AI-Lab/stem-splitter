@@ -177,6 +177,10 @@ async function streamApi(path, body, onEvent) {
         }
         if (event.type === 'error') throw new Error(event.message || 'The Listening Guide dropped out — try again.');
         onEvent(event);
+        // `done` is the application protocol's terminal event. Some proxies
+        // keep an otherwise complete SSE response open, so waiting for the
+        // transport EOF can leave the guide stuck in its loading state.
+        if (event.type === 'done') return;
       }
     }
   } finally {
@@ -379,8 +383,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
       note:
         serverAutoMode === 'shadow'
-          ? `AUTO is checking ${sourceLabel} in shadow mode — this split keeps the ${fallbackParts}-part default.`
-          : `AUTO cannot listen to ${sourceLabel} before import — using the ${fallbackParts}-part default.`,
+          ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
+          : `AUTO could not analyze ${sourceLabel}; using the ${fallbackParts}-part default.`,
     };
   }
 
@@ -391,7 +395,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
     return {
       model: AUTO_MODEL,
       routingRequest: AUTO_MODEL,
-      note: `AUTO will listen to ${sourceLabel} on the server after upload.`,
+      note: `AUTO will analyze ${sourceLabel} after upload.`,
     };
   }
 
@@ -402,8 +406,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       ...(serverAutoMode === 'off' ? {} : { routingRequest: AUTO_MODEL }),
       note:
         serverAutoMode === 'authoritative'
-          ? 'AUTO will listen on the server after upload.'
-          : `AUTO is unavailable in this browser — using the ${fallbackParts}-part default.`,
+          ? 'AUTO will analyze the track after upload.'
+          : `AUTO is unavailable — using the ${fallbackParts}-part default.`,
     };
   }
 
@@ -416,8 +420,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
         ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
         note:
           serverAutoMode === 'shadow'
-            ? `AUTO will check ${sourceLabel} on the server in shadow mode — browser analysis was skipped to protect memory, so this split keeps the ${fallbackParts}-part default.`
-            : `AUTO skipped browser analysis for this long or large file to protect memory — using the ${fallbackParts}-part default.`,
+            ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
+            : `AUTO could not analyze this long or large file — using the ${fallbackParts}-part default.`,
       };
     }
     const duration = await readAudioDuration(file);
@@ -427,8 +431,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
         ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
         note:
           serverAutoMode === 'shadow'
-            ? `AUTO will check ${sourceLabel} on the server in shadow mode — browser analysis was skipped to protect memory, so this split keeps the ${fallbackParts}-part default.`
-            : `AUTO skipped browser analysis for this long or large file to protect memory — using the ${fallbackParts}-part default.`,
+            ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
+            : `AUTO could not analyze this long or large file — using the ${fallbackParts}-part default.`,
       };
     }
     context = new AudioContextType();
@@ -453,7 +457,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
         : { routingRequest: AUTO_MODEL, browserAnalysis }),
       note:
         serverAutoMode === 'authoritative'
-          ? `AUTO heard a likely ${parts || fallbackParts}-part split in the browser and will verify it after upload.`
+          ? `AUTO heard a likely ${parts || fallbackParts}-part split and will confirm it after upload.`
           : `AUTO CHOSE ${parts || fallbackParts} PARTS — ${verdict.reason.toUpperCase()}.`,
     };
   } catch {
@@ -462,7 +466,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       ...(serverAutoMode === 'off' ? {} : { routingRequest: AUTO_MODEL }),
       note:
         serverAutoMode === 'authoritative'
-          ? 'AUTO will listen on the server after upload.'
+          ? 'AUTO will analyze the track after upload.'
           : `AUTO could not read this file — using the ${fallbackParts}-part default.`,
     };
   } finally {
@@ -2219,19 +2223,13 @@ function renderJobs() {
             )}</p>`
           : `<p class="job-note">Creating ${esc(
               stemDescription(state.expectedStems || job.expectedStems)
-            )}…${autoRoutingNote(state.autoRouting || job.autoRouting)}</p>`
+            )}…</p>`
       }
     `;
     jobList.appendChild(li);
   }
 
   runElapsedClock();
-}
-
-function autoRoutingNote(route) {
-  if (route?.mode !== 'authoritative') return '';
-  const reason = route.analysis?.decision?.reason;
-  return reason ? ` <span class="mono">AUTO: ${esc(reason)}</span>` : '';
 }
 
 // One clock for every separating card, started only while there is one to tick.
