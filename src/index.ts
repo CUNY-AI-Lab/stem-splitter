@@ -392,8 +392,12 @@ app.post('/api/teacher/logout', async (c) => {
 app.get('/api/teacher/me', async (c) => {
   c.header('Cache-Control', 'no-store');
   const teacher = await currentTeacher(c);
-  if (!teacher) return c.json({ error: 'Not signed in.' }, 401);
-  return c.json({ username: teacher.username, displayName: teacher.displayName });
+  // 200 either way: the student page probes this on every load to decide
+  // whether to reveal instructor controls, and a 401 would put a red console
+  // error in front of every signed-out visitor.
+  return c.json({
+    teacher: teacher ? { username: teacher.username, displayName: teacher.displayName } : null,
+  });
 });
 
 app.get('/api/teacher/prompt', requireTeacher, async (c) => {
@@ -516,6 +520,147 @@ app.put('/api/teacher/prompt', requireTeacher, async (c) => {
 app.get('/api/teacher/prompt/preview', requireTeacher, async (c) => {
   const { amendment } = await getAmendment(c.env);
   return c.json({ prompt: buildSystemPromptPreview(amendment) });
+});
+
+// --- teacher folders ----------------------------------------------------
+//
+// Named sets of finished splits an instructor keeps for teaching. Server-side
+// (not localStorage) so they survive browsers and devices; teacher-gated
+// because the class code is a shared student secret and cannot own curation.
+// Items snapshot filename/model: the 30-day cleanup may remove the job row,
+// and the folder should say what was lost rather than silently shrink.
+
+const MAX_FOLDER_NAME_CHARS = 80;
+
+interface FolderRow {
+  id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+  item_count?: number;
+}
+
+function normalizeFolderName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= MAX_FOLDER_NAME_CHARS ? trimmed : null;
+}
+
+app.get('/api/teacher/folders', requireTeacher, async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT f.id, f.name, f.created_by, f.created_at,
+            (SELECT COUNT(*) FROM folder_items i WHERE i.folder_id = f.id) AS item_count
+     FROM folders f
+     ORDER BY f.created_at DESC, f.id DESC`
+  ).all<FolderRow>();
+  return c.json({
+    folders: (results ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      itemCount: row.item_count ?? 0,
+    })),
+  });
+});
+
+app.post('/api/teacher/folders', requireTeacher, async (c) => {
+  const teacher = (await currentTeacher(c))!;
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if (parsed.response) return parsed.response;
+  const name = normalizeFolderName((parsed.value as { name?: unknown } | null)?.name);
+  if (!name) {
+    return c.json({ error: `A folder needs a name (up to ${MAX_FOLDER_NAME_CHARS} characters).` }, 400);
+  }
+  const id = crypto.randomUUID();
+  await c.env.DB.prepare('INSERT INTO folders (id, name, created_by) VALUES (?, ?, ?)')
+    .bind(id, name, teacher.username)
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM folders WHERE id = ?').bind(id).first<FolderRow>();
+  return c.json({
+    folder: { id, name, createdBy: teacher.username, createdAt: row?.created_at ?? null, itemCount: 0 },
+  });
+});
+
+app.get('/api/teacher/folders/:id', requireTeacher, async (c) => {
+  const id = c.req.param('id');
+  const folder = await c.env.DB.prepare('SELECT * FROM folders WHERE id = ?').bind(id).first<FolderRow>();
+  if (!folder) return c.json({ error: 'Folder not found' }, 404);
+  const { results } = await c.env.DB.prepare(
+    `SELECT i.job_id, i.filename, i.model, i.added_by, i.added_at,
+            (j.id IS NOT NULL AND j.status = 'done') AS available
+     FROM folder_items i
+     LEFT JOIN jobs j ON j.id = i.job_id
+     WHERE i.folder_id = ?
+     ORDER BY i.added_at DESC, i.job_id DESC`
+  )
+    .bind(id)
+    .all<{ job_id: string; filename: string; model: string; added_by: string; added_at: string; available: number }>();
+  return c.json({
+    folder: {
+      id: folder.id,
+      name: folder.name,
+      createdBy: folder.created_by,
+      createdAt: folder.created_at,
+    },
+    items: (results ?? []).map((row) => ({
+      jobId: row.job_id,
+      filename: row.filename,
+      model: row.model,
+      addedBy: row.added_by,
+      addedAt: row.added_at,
+      available: !!row.available,
+    })),
+  });
+});
+
+app.delete('/api/teacher/folders/:id', requireTeacher, async (c) => {
+  const id = c.req.param('id');
+  // No FK cascade on purpose: delete items explicitly so the shim never
+  // depends on a PRAGMA foreign_keys setting.
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM folder_items WHERE folder_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM folders WHERE id = ?').bind(id),
+  ]);
+  return c.json({ ok: true });
+});
+
+app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
+  const teacher = (await currentTeacher(c))!;
+  const folderId = c.req.param('id');
+  const folder = await c.env.DB.prepare('SELECT id FROM folders WHERE id = ?')
+    .bind(folderId)
+    .first<{ id: string }>();
+  if (!folder) return c.json({ error: 'Folder not found' }, 404);
+
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if (parsed.response) return parsed.response;
+  const jobId = (parsed.value as { jobId?: unknown } | null)?.jobId;
+  if (typeof jobId !== 'string' || !jobId) return c.json({ error: 'A jobId is required.' }, 400);
+
+  const job = await c.env.DB.prepare('SELECT id, filename, status, model FROM jobs WHERE id = ?')
+    .bind(jobId)
+    .first<Pick<JobRow, 'id' | 'filename' | 'status' | 'model'>>();
+  if (!job) return c.json({ error: 'Job not found' }, 404);
+  if (job.status !== 'done') {
+    return c.json({ error: 'Only finished splits can be saved to a folder.' }, 409);
+  }
+
+  const insert = await c.env.DB.prepare(
+    `INSERT INTO folder_items (folder_id, job_id, filename, model, added_by)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(folder_id, job_id) DO NOTHING`
+  )
+    .bind(folderId, jobId, job.filename, job.model ?? DEFAULT_DEMUCS_MODEL, teacher.username)
+    .run();
+  return c.json({ ok: true, already: (insert.meta?.changes ?? 0) === 0 });
+});
+
+app.delete('/api/teacher/folders/:id/items/:jobId', requireTeacher, async (c) => {
+  await c.env.DB.prepare('DELETE FROM folder_items WHERE folder_id = ? AND job_id = ?')
+    .bind(c.req.param('id'), c.req.param('jobId'))
+    .run();
+  return c.json({ ok: true });
 });
 
 // --- internet archive browse ------------------------------------------

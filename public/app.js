@@ -1152,6 +1152,8 @@ class Mixer {
         <span class="console-title">${esc(this.job.filename)}</span>
         <span class="badge ready">READY</span>
         <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
+        <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
+        <button class="head-btn delete-btn" title="Remove this split from your rack — the class copy stays, and a shared link can bring it back">DELETE</button>
         <button class="head-btn collapse-btn" aria-expanded="true" title="Collapse this session">▾</button>
       </div>
       <div class="console-sub mono">
@@ -1196,6 +1198,7 @@ class Mixer {
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
             <button type="submit">ASK</button>
+            <button type="button" class="coach-reset" title="Clear this conversation and start fresh — the opening guide stays">RESET</button>
           </form>
         </div>
       </div>
@@ -1219,6 +1222,12 @@ class Mixer {
     });
     this.exportBtn = li.querySelector('.export-btn');
     this.exportBtn.addEventListener('click', () => this.exportZip());
+    this.folderBtn = li.querySelector('.folder-btn');
+    this.folderBtn.addEventListener('click', () => toggleFolderMenu(this));
+    this.deleteBtn = li.querySelector('.delete-btn');
+    this.deleteBtn.addEventListener('click', () =>
+      armThenRun(this.deleteBtn, 'SURE?', () => deleteJob(this.job.id))
+    );
 
     this.splitMetaEl = li.querySelector('.split-meta');
     this.shareBtn = li.querySelector('.share-btn');
@@ -1263,6 +1272,11 @@ class Mixer {
       e.preventDefault();
       const text = this.coachInput.value.trim();
       if (text) this.sendChat(text);
+    });
+    this.coachResetBtn = this.coachForm.querySelector('.coach-reset');
+    this.coachResetBtn.addEventListener('click', () => {
+      if (this.coachBusy) return; // never yank a reply mid-stream
+      armThenRun(this.coachResetBtn, 'SURE?', () => this.resetCoachConversation());
     });
     // One delegated handler covers timecode buttons in the guide and every chat row.
     this.coachBody.addEventListener('click', (e) => {
@@ -2063,6 +2077,24 @@ class Mixer {
     }
   }
 
+  // A fresh start for the conversation only: the model's context (chatHistory),
+  // the live log, and the reload archive all clear together, while the cached
+  // opening guide stays — it is class-shared and cost money to generate.
+  resetCoachConversation() {
+    this.chatHistory = [];
+    this.coachLog.innerHTML = '';
+    try {
+      localStorage.removeItem(this.archiveKey());
+    } catch {
+      // Storage blocked — the in-memory reset above still holds for this page.
+    }
+    this.coachArchive.hidden = true;
+    this.archiveLog.hidden = true;
+    this.archiveLog.innerHTML = '';
+    this.archiveToggle.setAttribute('aria-expanded', 'false');
+    this.coachInput.focus();
+  }
+
   addChatRow(kind, html) {
     const row = document.createElement('div');
     row.className = `coach-row ${kind}`;
@@ -2238,12 +2270,305 @@ class Mixer {
   }
 }
 
+// --- destructive-action confirm --------------------------------------------
+
+// Two-step confirm without a blocking dialog: the first press arms the button
+// for a few seconds, a second press within that window runs the action.
+function armThenRun(button, armedLabel, action) {
+  if (button.dataset.armedTimer) {
+    clearTimeout(Number(button.dataset.armedTimer));
+    delete button.dataset.armedTimer;
+    button.textContent = button.dataset.restLabel;
+    button.classList.remove('armed');
+    action();
+    return;
+  }
+  button.dataset.restLabel = button.textContent;
+  button.textContent = armedLabel;
+  button.classList.add('armed');
+  button.dataset.armedTimer = String(
+    setTimeout(() => {
+      button.textContent = button.dataset.restLabel;
+      button.classList.remove('armed');
+      delete button.dataset.armedTimer;
+    }, 3000)
+  );
+}
+
+// --- instructor session & class folders ------------------------------------
+//
+// Folders are server-side and teacher-gated: an instructor saves finished
+// splits into named sets, then repopulates any rack from them later (new
+// semester, new machine, projector laptop). Students never see this section;
+// their delete/reset controls work without any sign-in.
+
+let instructor = null; // { username, displayName } once /api/teacher/me says so
+let folders = []; // [{ id, name, itemCount, ... }]
+const folderList = document.getElementById('folder-list');
+const foldersSection = document.getElementById('folders');
+const foldersEmpty = document.getElementById('folders-empty');
+
+async function detectInstructor() {
+  try {
+    const res = await fetch('/api/teacher/me');
+    if (!res.ok) return;
+    const { teacher } = await res.json();
+    if (!teacher) return; // a student — the folder UI stays hidden
+    instructor = teacher;
+    document.body.classList.add('instructor');
+    foldersSection.hidden = false;
+    await refreshFolders();
+  } catch {
+    // Network blip at load: stay in student mode rather than half-reveal UI.
+  }
+}
+
+async function refreshFolders() {
+  try {
+    const res = await fetch('/api/teacher/folders');
+    if (!res.ok) return;
+    folders = (await res.json()).folders || [];
+    renderFolders();
+  } catch {
+    // Keep the last known list on a network blip.
+  }
+}
+
+function renderFolders() {
+  foldersEmpty.hidden = folders.length > 0;
+  folderList.innerHTML = '';
+  for (const folder of folders) {
+    const li = document.createElement('li');
+    li.className = 'folder';
+    li.innerHTML = `
+      <div class="folder-head">
+        <button class="folder-open" aria-expanded="false">
+          <span class="crate-toggle-caret" aria-hidden="true">▶</span>
+          <span class="folder-name">${esc(folder.name)}</span>
+          <span class="mono folder-count">· ${folder.itemCount}</span>
+        </button>
+        <button class="head-btn folder-load-all" title="Load every split in this folder into the rack">LOAD ALL</button>
+        <button class="head-btn folder-del" title="Delete this folder (the splits themselves are untouched)">✕</button>
+      </div>
+      <ul class="folder-items" hidden></ul>
+    `;
+    const openBtn = li.querySelector('.folder-open');
+    const items = li.querySelector('.folder-items');
+    openBtn.addEventListener('click', () => {
+      const open = items.hidden;
+      items.hidden = !open;
+      openBtn.setAttribute('aria-expanded', String(open));
+      openBtn.classList.toggle('open', open);
+      if (open) void loadFolderItems(folder, items);
+    });
+    li.querySelector('.folder-load-all').addEventListener('click', (e) => {
+      void loadWholeFolder(folder, e.currentTarget);
+    });
+    const delBtn = li.querySelector('.folder-del');
+    delBtn.addEventListener('click', () =>
+      armThenRun(delBtn, 'SURE?', async () => {
+        try {
+          await fetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
+        } catch {
+          // The refresh below shows whichever state the server really holds.
+        }
+        await refreshFolders();
+      })
+    );
+    folderList.appendChild(li);
+  }
+}
+
+async function fetchFolderDetail(folderId) {
+  const res = await fetch(`/api/teacher/folders/${folderId}`);
+  if (!res.ok) throw new Error('Could not load that folder.');
+  return res.json();
+}
+
+async function loadFolderItems(folder, container) {
+  container.innerHTML = '<li class="mono folder-items-note">LOADING…</li>';
+  let detail;
+  try {
+    detail = await fetchFolderDetail(folder.id);
+  } catch (err) {
+    container.innerHTML = `<li class="mono folder-items-note">${esc(err.message)}</li>`;
+    return;
+  }
+  container.innerHTML = '';
+  if (!detail.items.length) {
+    container.innerHTML =
+      '<li class="mono folder-items-note">Empty — save a split here with “+ FOLDER” on any finished session.</li>';
+    return;
+  }
+  for (const item of detail.items) {
+    const li = document.createElement('li');
+    li.className = 'folder-item';
+    li.innerHTML = `
+      <span class="folder-item-name">${esc(item.filename)}</span>
+      ${
+        item.available
+          ? '<button class="head-btn folder-item-load">LOAD</button>'
+          : '<span class="mono folder-item-expired" title="Splits are wiped after 30 days — run this song again to restore it">EXPIRED</span>'
+      }
+      <button class="head-btn folder-item-remove" title="Remove from this folder">✕</button>
+    `;
+    li.querySelector('.folder-item-load')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const outcome = await adoptJobById(item.jobId);
+        btn.textContent = outcome === 'missing' ? 'GONE' : 'IN RACK';
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'RETRY';
+      }
+    });
+    const removeBtn = li.querySelector('.folder-item-remove');
+    removeBtn.addEventListener('click', () =>
+      armThenRun(removeBtn, 'SURE?', async () => {
+        try {
+          await fetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
+          li.remove();
+        } catch {
+          // Row stays; the next open re-reads the folder from the server.
+        }
+        await refreshFolders();
+      })
+    );
+    container.appendChild(li);
+  }
+}
+
+async function loadWholeFolder(folder, button) {
+  button.disabled = true;
+  const restLabel = button.textContent;
+  button.textContent = 'LOADING…';
+  try {
+    const detail = await fetchFolderDetail(folder.id);
+    let added = 0;
+    let expired = 0;
+    for (const item of detail.items) {
+      if (!item.available) {
+        expired += 1;
+        continue;
+      }
+      if ((await adoptJobById(item.jobId)) === 'added') added += 1;
+    }
+    const expiredNote = expired
+      ? ` ${expired} entr${expired === 1 ? 'y has' : 'ies have'} expired (30-day wipe).`
+      : '';
+    showUploadMessage(`Loaded ${added} split${added === 1 ? '' : 's'} from “${folder.name}”.${expiredNote}`);
+    document.getElementById('jobs').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  } catch (err) {
+    showUploadMessage(err.message, true);
+  }
+  button.disabled = false;
+  button.textContent = restLabel;
+}
+
+// The "+ FOLDER" popover on a finished console: pick an existing folder or
+// name a new one; either way the split is saved server-side for the teacher.
+function toggleFolderMenu(mixer) {
+  const existing = mixer.el.querySelector('.folder-menu');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+  if (!instructor) {
+    // The button is CSS-hidden for students; this guards direct DOM pokes.
+    return;
+  }
+  const menu = document.createElement('div');
+  menu.className = 'folder-menu';
+  const rows = folders
+    .map(
+      (folder) =>
+        `<button type="button" class="folder-menu-row" data-id="${esc(folder.id)}">${esc(folder.name)}</button>`
+    )
+    .join('');
+  menu.innerHTML = `
+    <p class="folder-menu-title mono">SAVE TO FOLDER</p>
+    <div class="folder-menu-rows">${rows || '<p class="mono folder-menu-none">no folders yet</p>'}</div>
+    <form class="folder-menu-new">
+      <input maxlength="80" placeholder="new folder name" aria-label="New folder name" />
+      <button type="submit">ADD</button>
+    </form>
+  `;
+
+  const saveTo = async (folderId, row) => {
+    row.disabled = true;
+    try {
+      const res = await fetch(`/api/teacher/folders/${folderId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: mixer.job.id }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      const body = await res.json();
+      row.textContent = body.already ? 'ALREADY SAVED ✓' : 'SAVED ✓';
+      await refreshFolders();
+      setTimeout(() => menu.remove(), 900);
+    } catch {
+      row.disabled = false;
+      row.textContent = 'FAILED — TRY AGAIN';
+    }
+  };
+
+  for (const row of menu.querySelectorAll('.folder-menu-row')) {
+    row.addEventListener('click', () => void saveTo(row.dataset.id, row));
+  }
+  const newInput = menu.querySelector('.folder-menu-new input');
+  // A stale custom validity would block the retry submit outright.
+  newInput.addEventListener('input', () => newInput.setCustomValidity(''));
+  menu.querySelector('.folder-menu-new').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = newInput.value.trim();
+    if (!name) return;
+    const submit = menu.querySelector('.folder-menu-new button');
+    submit.disabled = true;
+    let folder;
+    try {
+      const res = await fetch('/api/teacher/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error('create failed');
+      folder = (await res.json()).folder;
+    } catch {
+      submit.disabled = false;
+      newInput.setCustomValidity('Could not create that folder.');
+      newInput.reportValidity();
+      return;
+    }
+    await saveTo(folder.id, submit);
+  });
+
+  mixer.el.querySelector('.console-head').after(menu);
+}
+
 // --- job rendering & polling ----------------------------------------------
 
 const jobList = document.getElementById('job-list');
 const emptyState = document.getElementById('empty-state');
 const jobStates = new Map(); // id -> latest server response
 const mixers = new Map(); // id -> Mixer (persists across re-renders)
+
+// Removing a split is local: the class copy (stems, names, notes, guide) stays
+// on the server, so a shared link — or a teacher folder — can bring it back.
+function deleteJob(id) {
+  const mixer = mixers.get(id);
+  if (mixer?.playing) mixer.pause();
+  mixers.delete(id);
+  jobStates.delete(id);
+  saveJobs(getJobs().filter((j) => j.id !== id));
+  try {
+    localStorage.removeItem(`coachChat:${id}`);
+  } catch {
+    // Storage blocked — the rack entry is gone either way.
+  }
+  renderJobs();
+}
 
 function renderJobs() {
   const jobs = getJobs();
@@ -2286,6 +2611,7 @@ function renderJobs() {
                 (Date.now() - since) / 1000
               )}</span>`
         }</span>
+        ${failed ? '<button class="head-btn delete-btn" title="Remove this failed split from your rack">DELETE</button>' : ''}
       </div>
       ${
         failed
@@ -2297,6 +2623,12 @@ function renderJobs() {
             )}…</p>`
       }
     `;
+    const deleteBtn = li.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () =>
+        armThenRun(deleteBtn, 'SURE?', () => deleteJob(job.id))
+      );
+    }
     jobList.appendChild(li);
   }
 
@@ -2327,6 +2659,28 @@ function runElapsedClock() {
   elapsedTimer = setInterval(paint, 1000);
 }
 
+// Pull a job this browser doesn't hold into the rack from its server state.
+// Shared by the ?job= link and the instructor folder loaders. Returns
+// 'present' | 'added' | 'missing'; network failures propagate to the caller,
+// which owns the user-facing message for its own context.
+async function adoptJobById(id) {
+  if (getJobs().some((existing) => existing.id === id)) return 'present';
+  const res = await fetch(`/api/jobs/${id}`);
+  if (!res.ok) return 'missing';
+  const state = await res.json();
+  jobStates.set(id, state);
+  addJob({
+    id,
+    filename: state.filename,
+    model: state.model,
+    expectedStems: state.expectedStems || [],
+    autoRouting: state.autoRouting,
+  });
+  renderJobs();
+  if (state.status !== 'done' && state.status !== 'failed') pollSoon();
+  return 'added';
+}
+
 // A job id is the only thing a student needs to open someone else's console —
 // reads are unauthenticated by design, and names and notes are class-wide. The
 // link is the piece that was missing.
@@ -2335,31 +2689,17 @@ async function adoptSharedJob() {
   if (!id) return;
   history.replaceState(null, '', location.pathname);
 
-  if (!getJobs().some((existing) => existing.id === id)) {
-    try {
-      const res = await fetch(`/api/jobs/${id}`);
-      if (!res.ok) {
-        showUploadMessage(
-          'That link points at a track that is no longer here. Splits are wiped after 30 days.',
-          true
-        );
-        return;
-      }
-      const state = await res.json();
-      jobStates.set(id, state);
-      addJob({
-        id,
-        filename: state.filename,
-        model: state.model,
-        expectedStems: state.expectedStems || [],
-        autoRouting: state.autoRouting,
-      });
-      renderJobs();
-      if (state.status !== 'done' && state.status !== 'failed') pollSoon();
-    } catch {
-      showUploadMessage('Could not open that link — check your connection and try again.', true);
+  try {
+    if ((await adoptJobById(id)) === 'missing') {
+      showUploadMessage(
+        'That link points at a track that is no longer here. Splits are wiped after 30 days.',
+        true
+      );
       return;
     }
+  } catch {
+    showUploadMessage('Could not open that link — check your connection and try again.', true);
+    return;
   }
 
   const position = getJobs().findIndex((existing) => existing.id === id);
@@ -2527,6 +2867,7 @@ function fmt(sec) {
 
 separationOptionsReady = loadSeparationOptions();
 void ensureClassCode();
+void detectInstructor();
 renderJobs();
 // Adopt after the first poll so the shared console is rendered from real state
 // and its notice isn't cleared by the poll's own tidy-up.

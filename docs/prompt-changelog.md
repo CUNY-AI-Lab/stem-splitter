@@ -7,6 +7,15 @@ so a text change in any current conditional prompt arm remains traceable even
 if a version bump is accidentally omitted. The readable instructor preview is
 deliberately separate from that audit material.
 
+## 2026-08-19.1
+
+- De-determinized the mixer-move pedagogy. The guide's opening beat (b) and
+  teaching-approach rule 2 both effectively mandated "mute everything but one
+  channel" every time; both now present isolation as one tool among several
+  (mute one part to hear what disappears, play two channels together, listen
+  for one part inside the full mix) and tell the model to pick the move that
+  fits the song rather than follow a formula.
+
 ## 2026-08-10.2
 
 - Encoded provider titles plus student-authored labels and notes before placing

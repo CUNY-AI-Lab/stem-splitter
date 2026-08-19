@@ -296,6 +296,20 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     .poll(() => page.evaluate(() => window.__e2eGuideStreamCancelled))
     .toBe(true);
 
+  // Resetting the Listening Guy conversation takes a two-step confirm and
+  // clears the stored per-song archive while the cached guide stays rendered.
+  await page.evaluate(
+    (id) => localStorage.setItem(`coachChat:${id}`, JSON.stringify([{ kind: 'you', text: 'hello' }])),
+    jobId
+  );
+  const resetBtn = page.locator('.coach-reset');
+  await resetBtn.click();
+  await expect(resetBtn).toHaveText('SURE?');
+  await resetBtn.click();
+  await expect(resetBtn).toHaveText('RESET');
+  expect(await page.evaluate((id) => localStorage.getItem(`coachChat:${id}`), jobId)).toBeNull();
+  await expect(page.locator('.coach-guide-text')).toBeVisible();
+
   const storedStemResponse = await server.fetch(`/api/files/stems/${jobId}/vocals.mp3`);
   expect(storedStemResponse.status).toBe(200);
   expect(storedStemResponse.headers.get('content-length')).toBe(
@@ -327,6 +341,21 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(unavailableChannel.locator('.ch-name')).toHaveText('vocals');
   await expect(unavailableChannel.locator('.mute-btn')).toHaveText('NO AUDIO');
   await expect(page.getByRole('button', { name: 'Play all stems' })).toBeDisabled();
+
+  // Students never see the instructor save-to-folder control.
+  await expect(page.locator('.folder-btn')).toBeHidden();
+
+  // Deleting a split is local and two-step: the rack entry and its stored chat
+  // go, while the server copy stays fetchable for the rest of the class.
+  const deleteBtn = page.locator('.console .delete-btn');
+  await deleteBtn.click();
+  await expect(deleteBtn).toHaveText('SURE?');
+  await deleteBtn.click();
+  await expect(page.locator('.console')).toHaveCount(0);
+  await expect(page.locator('#empty-state')).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'))).toEqual([]);
+  const stillOnServer = await server.fetch(`/api/jobs/${jobId}`);
+  expect(stillOnServer.status).toBe(200);
 });
 
 test('flags off preserve the catalogue shape and reject auto as a server model', async ({ server }) => {
@@ -1827,6 +1856,65 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     body: { error: 'Optional isolation is unavailable.' },
   });
 
+  // Teacher folders: the class code must not reach them, and the full
+  // save/list/detail/remove/delete loop works against a finished job.
+  const foldersWithClassCode = await server.fetch('http://stem-splitter.test/api/teacher/folders', {
+    headers: { 'x-class-code': CLASS_CODE },
+  });
+  expect(foldersWithClassCode.status).toBe(401);
+
+  const folderFlow = await page.evaluate(async (jobId) => {
+    const post = (url, body) =>
+      fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const created = await post('/api/teacher/folders', { name: 'Week 3 — texture' }).then((r) => r.json());
+    const badName = (await post('/api/teacher/folders', { name: '   ' })).status;
+    const folderId = created.folder.id;
+    const saved = await post(`/api/teacher/folders/${folderId}/items`, { jobId }).then((r) => r.json());
+    const savedAgain = await post(`/api/teacher/folders/${folderId}/items`, { jobId }).then((r) => r.json());
+    const missingJob = (await post(`/api/teacher/folders/${folderId}/items`, { jobId: 'no-such-job' })).status;
+    const list = await fetch('/api/teacher/folders', { credentials: 'same-origin' }).then((r) => r.json());
+    const detail = await fetch(`/api/teacher/folders/${folderId}`, { credentials: 'same-origin' }).then((r) =>
+      r.json()
+    );
+    const removed = (
+      await fetch(`/api/teacher/folders/${folderId}/items/${jobId}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+    ).status;
+    const deleted = (
+      await fetch(`/api/teacher/folders/${folderId}`, { method: 'DELETE', credentials: 'same-origin' })
+    ).status;
+    const afterDelete = (await fetch(`/api/teacher/folders/${folderId}`, { credentials: 'same-origin' })).status;
+    return { created, badName, saved, savedAgain, missingJob, list, detail, removed, deleted, afterDelete };
+  }, analysisJobId);
+  expect(folderFlow.created.folder).toMatchObject({ name: 'Week 3 — texture', itemCount: 0 });
+  expect(folderFlow.badName).toBe(400);
+  expect(folderFlow.saved).toEqual({ ok: true, already: false });
+  expect(folderFlow.savedAgain).toEqual({ ok: true, already: true });
+  expect(folderFlow.missingJob).toBe(404);
+  expect(folderFlow.list.folders).toHaveLength(1);
+  expect(folderFlow.list.folders[0]).toMatchObject({
+    name: 'Week 3 — texture',
+    itemCount: 1,
+    createdBy: 'e2eteacher',
+  });
+  expect(folderFlow.detail.items).toHaveLength(1);
+  expect(folderFlow.detail.items[0]).toMatchObject({
+    jobId: analysisJobId,
+    filename: 'discovery-e2e.wav',
+    model: 'htdemucs_6s',
+    available: true,
+  });
+  expect(folderFlow.removed).toBe(200);
+  expect(folderFlow.deleted).toBe(200);
+  expect(folderFlow.afterDelete).toBe(404);
+
   // The code-owned prompt is progressively disclosed, formatted, and never an
   // editable control. Once opened it starts at the end and the caret jumps up.
   await page.getByText('System prompt', { exact: true }).click();
@@ -1836,7 +1924,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     "WHO YOU'RE TALKING TO",
     'HOW YOU TALK (every message, both modes)',
   ]);
-  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-10.2');
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-19.1');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'TOP' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
@@ -1869,7 +1957,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-10.2');
+  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-19.1');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -1886,7 +1974,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     settingsRevision: 1,
     amendment,
     changeNote,
-    basePromptVersion: '2026-08-10.2',
+    basePromptVersion: '2026-08-19.1',
     basePromptHash: trace.basePromptHash,
     effectivePromptHash: trace.effectivePromptHash,
     updatedBy: 'e2eteacher',
@@ -2023,7 +2111,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
         !entry.startsWith('409 /api/teacher/prompt') &&
         entry !== `400 /api/teacher/jobs/${analysisJobId}/instrument-feedback` &&
         entry !== `409 /api/teacher/jobs/${analysisJobId}/instrument-feedback` &&
-        entry !== `404 /api/teacher/jobs/${analysisJobId}/isolations`
+        entry !== `404 /api/teacher/jobs/${analysisJobId}/isolations` &&
+        // The folder flow intentionally provokes a blank name, a missing job,
+        // and reads of an already-deleted folder.
+        entry !== '400 /api/teacher/folders' &&
+        !/^404 \/api\/teacher\/folders\//.test(entry)
     )
   ).toEqual([]);
 });

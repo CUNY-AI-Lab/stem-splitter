@@ -1968,3 +1968,152 @@ footer {
   .teacher-feedback-check-grid { grid-template-columns: 1fr; }
   .teacher-feedback-submit { width: 100%; }
 }
+
+/* ─── head controls: delete, save-to-folder, armed confirms ─────────── */
+
+/* The two-step confirm: an armed button goes hot so the second press is
+   an informed one, and it disarms itself after a few seconds. */
+.head-btn.armed,
+.head-btn.armed:hover:not(:disabled),
+.coach-form .coach-reset.armed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Save-to-folder is instructor-only; students never see the button. */
+.folder-btn { display: none; }
+body.instructor .folder-btn { display: inline-block; }
+
+.folder-menu {
+  margin-top: 0.6rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-raise);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.folder-menu-title {
+  margin: 0;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+.folder-menu-rows { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.folder-menu-none { margin: 0; font-size: 0.68rem; color: var(--ink-faint); }
+.folder-menu-row {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--panel-edge);
+  background: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.folder-menu-row:hover:not(:disabled) { color: var(--hot); border-color: var(--hot); }
+.folder-menu-row:disabled { color: var(--ok); border-color: var(--ok); cursor: default; }
+.folder-menu-new { display: flex; gap: 0.4rem; }
+.folder-menu-new input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.35rem 0.55rem;
+}
+.folder-menu-new input:focus { outline: none; border-color: var(--hot); }
+.folder-menu-new button {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--panel-edge);
+  background: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.folder-menu-new button:hover:not(:disabled) { color: var(--hot); border-color: var(--hot); }
+
+/* ─── class folders rack (instructor only) ──────────────────────────── */
+
+.folders { margin-top: 2.2rem; }
+.folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.folder {
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 0.55rem 0.75rem;
+}
+.folder-head { display: flex; align-items: center; gap: 0.5rem; }
+.folder-open {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.25rem 0;
+  text-align: left;
+}
+.folder-open.open .crate-toggle-caret { transform: rotate(90deg); }
+.folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-count { color: var(--ink-faint); font-size: 0.7rem; flex-shrink: 0; }
+.folder-items {
+  list-style: none;
+  margin: 0.5rem 0 0.15rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-top: 1px dashed var(--panel-edge);
+  padding-top: 0.35rem;
+  font-size: 0.8rem;
+}
+.folder-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-item-expired {
+  color: var(--ink-faint);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  flex-shrink: 0;
+}
+.folder-items-note { color: var(--ink-faint); font-size: 0.7rem; padding: 0.35rem 0 0.15rem; }
+
+/* ─── listening guy conversation reset ──────────────────────────────── */
+
+.coach-form .coach-reset {
+  background: none;
+  border-color: var(--panel-edge);
+  color: var(--ink-faint);
+}
+.coach-form .coach-reset:hover { background: none; color: var(--danger); border-color: var(--danger); }

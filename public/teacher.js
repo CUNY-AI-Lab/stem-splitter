@@ -423,7 +423,11 @@ historyMoreBtn.addEventListener('click', async () => {
 
 (async function init() {
   try {
-    const teacher = await api('/api/teacher/me');
+    const { teacher } = await api('/api/teacher/me');
+    if (!teacher) {
+      showPanel(false);
+      return;
+    }
     await loadPrompt();
     showPanel(true, teacher);
   } catch {
