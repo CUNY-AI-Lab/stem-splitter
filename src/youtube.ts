@@ -27,7 +27,11 @@ const AUDIO_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
 const INNERTUBE_MAX_WAIT_MS = 45 * 1000;
 const INNERTUBE_CONTROL_MAX_BYTES = 16 * 1024 * 1024;
 const INNERTUBE_MAX_REDIRECTS = 3;
-const MAX_PREDICTION_BYTES = 64 * 1024;
+// Replicate inlines this model's output file as a base64 data URI instead of
+// rehosting it at replicate.delivery, so a completed prediction's JSON carries
+// the whole audio payload. The bound therefore matches the audio ceiling that
+// downloadPredictionFile() already accepts for data URIs, plus JSON overhead.
+const MAX_PREDICTION_BYTES = Math.ceil((MAX_AUDIO_BYTES * 4) / 3) + 256 * 1024;
 const PREDICTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 const PREDICTION_STATUSES = new Set([
   'starting',
