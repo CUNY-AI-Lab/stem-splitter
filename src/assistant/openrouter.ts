@@ -120,17 +120,25 @@ async function openRouterFetch(env: Env, params: OpenRouterParams, stream: boole
     throw new AssistantError(503, COACH_UNCONFIGURED);
   }
 
-  let res: Response;
-  try {
-    res = await requestOnce(env, params, stream);
-    if (res.status === 429 && params.retry429) {
-      const waitSec = Math.min(Number(res.headers.get('retry-after')) || 2, 10);
-      await new Promise((r) => setTimeout(r, waitSec * 1000));
+  // One quiet retry absorbs transient provider flakes (dropped connections,
+  // 5xx blips, and — on the guide path — burst 429s). This runs before any
+  // stream bytes reach the student, so a retry can never double-speak.
+  let res!: Response;
+  for (let attempt = 0; ; attempt++) {
+    try {
       res = await requestOnce(env, params, stream);
+    } catch (err) {
+      console.error('openrouter network error', err);
+      if (attempt > 0) throw new AssistantError(502, COACH_DOWN);
+      await new Promise((r) => setTimeout(r, 1_500));
+      continue;
     }
-  } catch (err) {
-    console.error('openrouter network error', err);
-    throw new AssistantError(502, COACH_DOWN);
+    const transient = res.status >= 500 || (res.status === 429 && params.retry429);
+    if (!transient || attempt > 0) break;
+    console.error('openrouter transient status, retrying', res.status);
+    if (res.body) void res.body.cancel().catch(() => {});
+    const waitSec = Math.min(Number(res.headers.get('retry-after')) || 2, 10);
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
   }
 
   if (!res.ok) {

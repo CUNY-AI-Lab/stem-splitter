@@ -508,7 +508,7 @@ test('AUTO listens to a local upload and resolves to a real split', async ({ pag
   await expect(auto).toBeVisible();
   await auto.check();
   await expect(page.locator('#split-legend')).toHaveText(
-    'listens to local audio, then picks 2, 4, or 6 parts'
+    'Processes local audio, then splits into either 2, 4, or 6 parts'
   );
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);

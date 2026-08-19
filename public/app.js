@@ -384,7 +384,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       note:
         serverAutoMode === 'shadow'
           ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
-          : `AUTO could not analyze ${sourceLabel}; using the ${fallbackParts}-part default.`,
+          : `AUTO can only listen to files on this device, so ${sourceLabel} gets the ${fallbackParts}-part default — pick 2, 4, or 6 parts yourself for a different split.`,
     };
   }
 
@@ -965,6 +965,10 @@ async function handleFile(file) {
     showUploadMessage('File too large (max 100 MB).', true);
     return;
   }
+  if (!(await fileIsReadable(file))) {
+    showUploadMessage(UNREADABLE_FILE_MESSAGE, true);
+    return;
+  }
 
   uploadStatus.hidden = false;
   progressBar.style.width = '0%';
@@ -1002,6 +1006,28 @@ async function handleFile(file) {
     pollSoon();
   } catch (err) {
     showUploadMessage(err.message, true);
+  }
+}
+
+// A file picked from a cloud-synced folder (iCloud "Optimize Mac Storage",
+// OneDrive "free up space") can be a placeholder whose bytes are not on this
+// device. Chrome refuses to pull those down during an upload and reports only
+// a bare network error, so force a real read here, where we can name the cause.
+const UNREADABLE_FILE_MESSAGE =
+  'This file is stored in the cloud, not on this device. Download it first (in Finder: right-click → Download Now), then choose it again.';
+
+async function fileIsReadable(file) {
+  try {
+    // One byte from each end: placeholders and files that changed on disk
+    // since they were picked both fail this read, without pulling the whole
+    // file into memory for the normal case.
+    await Promise.all([
+      file.slice(0, 1).arrayBuffer(),
+      file.slice(Math.max(0, file.size - 1), file.size).arrayBuffer(),
+    ]);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -1045,13 +1071,17 @@ async function putWithProgress(url, file, onProgress) {
     return await putOnce(url, file, onProgress);
   } catch (err) {
     if (!err.retryable) throw err;
-    throw new Error(await diagnoseUploadFailure());
+    throw new Error(await diagnoseUploadFailure(file));
   }
 }
 
-// A bare "network error" hides which side failed. A cheap authenticated GET
-// tells the student whether to fix their code, their connection, or just retry.
-async function diagnoseUploadFailure() {
+// A bare "network error" hides which side failed. A local read plus a cheap
+// authenticated GET tell the student whether to fix their file, their code,
+// their connection, or just retry.
+async function diagnoseUploadFailure(file) {
+  if (!(await fileIsReadable(file))) {
+    return `Upload failed — ${UNREADABLE_FILE_MESSAGE}`;
+  }
   try {
     const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
     if (res.status === 401) {

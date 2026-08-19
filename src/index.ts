@@ -1404,11 +1404,25 @@ app.post('/api/webhooks/separation', async (c) => {
   if (row.status === 'done' || row.status === 'failed') return c.json({ ok: true }); // already ingested
 
   const parsed = await boundedJson(c, MAX_WEBHOOK_JSON_BYTES);
-  if ('response' in parsed) return parsed.response;
-  const payload = parsed.value;
-  if (!payload) return c.text('Bad payload', 400);
-
-  const result = getBackend(c.env).parseResult(payload);
+  let result: SeparationResult;
+  if (parsed.response) {
+    if (parsed.response.status !== 413 || !row.external_id) return parsed.response;
+    // Replicate webhook bodies routinely exceed any sane JSON bound (they
+    // carry the model's full progress logs, and new cog builds inline file
+    // outputs as data URIs). The webhook is only a completion signal, so for
+    // an oversized body ask the provider for the authoritative prediction
+    // instead of 413ing and stranding the job until a browser poll.
+    try {
+      result = await getBackend(c.env).fetchStatus(row.external_id);
+    } catch (err) {
+      // 500 so the provider retries the webhook.
+      const message = err instanceof Error ? err.message : String(err);
+      return c.text(`Status fetch failed: ${message}`, 500);
+    }
+  } else {
+    if (!parsed.value) return c.text('Bad payload', 400);
+    result = getBackend(c.env).parseResult(parsed.value);
+  }
   try {
     await ingestResult(c.env, jobId, result);
   } catch (err) {
