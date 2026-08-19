@@ -43,23 +43,45 @@ class Predictor(BasePredictor):
             raise ValueError(f"Video is longer than {minutes} minutes — pick a shorter one.")
 
         tmp = tempfile.mkdtemp()
+        # %(ext)s keeps a video-container download from colliding with the
+        # extracted M4A; -x --audio-format m4a makes the final name stable.
+        template = os.path.join(tmp, "audio.%(ext)s")
         out = os.path.join(tmp, "audio.m4a")
-        self._run(
-            [
-                "yt-dlp",
-                "--no-playlist",
-                "-f",
-                "bestaudio[ext=m4a]/bestaudio",
-                "-x",
-                "--audio-format",
-                "m4a",
-                "-o",
-                out,
-                "--",
-                url,
-            ]
-        )
+        # YouTube requires PO tokens for web-client format URLs from datacenter
+        # IPs (media downloads 403 even when metadata succeeds). These app
+        # clients are exempt from that requirement to varying degrees, so try
+        # them in order until one delivers audio. Some expose no audio-only
+        # formats, hence the /best fallback — extraction transcodes to M4A.
+        last_error = None
+        for client in ("android", "android_vr", "tv", "ios", "default"):
+            try:
+                self._run(
+                    [
+                        "yt-dlp",
+                        "--no-playlist",
+                        "--extractor-args",
+                        f"youtube:player_client={client}",
+                        "-f",
+                        "bestaudio[ext=m4a]/bestaudio/best",
+                        "-x",
+                        "--audio-format",
+                        "m4a",
+                        "-o",
+                        template,
+                        "--",
+                        url,
+                    ]
+                )
+            except ValueError as err:
+                last_error = err
+                print(f"[yt-audio] client {client} failed: {err}", flush=True)
+                continue
+            if os.path.exists(out):
+                print(f"[yt-audio] client {client} delivered audio", flush=True)
+                break
         if not os.path.exists(out):
+            if last_error is not None:
+                raise last_error
             raise ValueError("YouTube returned no audio track for this video.")
 
         return Output(

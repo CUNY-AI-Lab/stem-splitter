@@ -615,7 +615,7 @@ function renderSplitLegend(models) {
     item.textContent =
       serverAutoMode === 'authoritative'
         ? 'listens after import, then picks 2, 4, or 6 parts'
-        : 'listens to local audio, then picks 2, 4, or 6 parts';
+        : 'Processes local audio, then splits into either 2, 4, or 6 parts';
     splitLegend.appendChild(item);
     return;
   }
@@ -1005,7 +1005,7 @@ async function handleFile(file) {
   }
 }
 
-function putWithProgress(url, file, onProgress) {
+function putOnce(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
@@ -1019,9 +1019,50 @@ function putWithProgress(url, file, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`Upload failed (${xhr.status})`));
     });
-    xhr.addEventListener('error', () => reject(new Error('Upload failed — network error')));
+    xhr.addEventListener('error', () => {
+      // A server that answers before the body finishes resets the HTTP/2
+      // stream, and the browser reports that reset here — so this event
+      // covers real network drops AND masked server rejections.
+      const err = new Error('Upload failed — network error');
+      err.retryable = true;
+      reject(err);
+    });
     xhr.send(file);
   });
+}
+
+async function putWithProgress(url, file, onProgress) {
+  try {
+    return await putOnce(url, file, onProgress);
+  } catch (err) {
+    if (!err.retryable) throw err;
+  }
+  // The PUT is idempotent (fixed key, fixed length), so one quiet retry
+  // absorbs transient edge resets and deploy restarts.
+  showUploadMessage('CONNECTION HICCUP — RETRYING UPLOAD…');
+  await new Promise((r) => setTimeout(r, 1500));
+  try {
+    return await putOnce(url, file, onProgress);
+  } catch (err) {
+    if (!err.retryable) throw err;
+    throw new Error(await diagnoseUploadFailure());
+  }
+}
+
+// A bare "network error" hides which side failed. A cheap authenticated GET
+// tells the student whether to fix their code, their connection, or just retry.
+async function diagnoseUploadFailure() {
+  try {
+    const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
+    if (res.status === 401) {
+      localStorage.removeItem('classCode');
+      void ensureClassCode();
+      return 'Upload failed — the class code was not accepted. Re-enter it and try again.';
+    }
+    return 'Upload failed — the connection dropped mid-upload. Try again in a moment.';
+  } catch {
+    return 'Upload failed — the server is unreachable. Check your connection and try again.';
+  }
 }
 
 function showUploadMessage(message, isError = false) {

@@ -157,7 +157,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
   );
   if (timedOut) throw youtubeTimedOut();
   throw new YouTubeError(
-    'YouTube blocked this import. Try a different video or upload the audio file.',
+    'YouTube blocked this import. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
     'youtube_fetch_blocked',
     true
   );
@@ -690,7 +690,28 @@ async function replicateResponseError(
   response: Response,
   operation: string
 ): Promise<YouTubeError> {
-  await response.body?.cancel().catch(() => undefined);
+  // Read a bounded, sanitized slice of the provider's error body for the log:
+  // a 422 "version does not exist" and a 402 "insufficient credit" need very
+  // different operator responses, and the status alone cannot tell them apart.
+  let detail = '';
+  try {
+    const bytes = await readBoundedResponse(response, {
+      maximumBytes: 4 * 1024,
+      timeoutMs: 5_000,
+      errors: {
+        tooLarge: providerUnavailable,
+        timedOut: youtubeTimedOut,
+        unreadable: providerUnavailable,
+      },
+    });
+    detail = new TextDecoder()
+      .decode(bytes)
+      .replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .trim()
+      .slice(0, 300);
+  } catch {
+    // Diagnostics only — the status still identifies the failure class.
+  }
   if (response.status === 429) {
     return new YouTubeError(
       'YouTube import is busy. Wait a minute and try again.',
@@ -698,7 +719,7 @@ async function replicateResponseError(
       true
     );
   }
-  console.error(`replicate YouTube ${operation} failed`, { status: response.status });
+  console.error(`replicate YouTube ${operation} failed`, { status: response.status, detail });
   return new YouTubeError(
     'YouTube import is unavailable right now. Upload the audio file instead.',
     'youtube_fetch_unavailable',
@@ -745,7 +766,7 @@ function normalizePredictionError(raw: string): YouTubeError {
     );
   }
   return new YouTubeError(
-    'YouTube blocked this import. Try a different video or upload the audio file.',
+    'YouTube blocked this import. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
     'youtube_fetch_blocked',
     true
   );

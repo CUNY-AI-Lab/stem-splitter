@@ -46,6 +46,17 @@
       <ul id="split-legend" class="split-legend mono"></ul>
     </section>
 
+    <div id="upload-status" class="upload-status" hidden>
+      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+      <p id="upload-message" class="mono"></p>
+    </div>
+
+    <section id="jobs" class="rack">
+      <h2 class="rack-title"><span>SESSION RACK</span></h2>
+      <p id="empty-state" class="empty mono">— no tracks loaded —</p>
+      <ul id="job-list" class="job-list"></ul>
+    </section>
+
     <section id="crate" class="crate">
       <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">
         <span class="crate-toggle-caret" aria-hidden="true">▶</span>
@@ -76,17 +87,6 @@
           <button type="button" id="crate-next" class="crate-page-btn">NEXT ▶</button>
         </div>
       </div>
-    </section>
-
-    <div id="upload-status" class="upload-status" hidden>
-      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
-      <p id="upload-message" class="mono"></p>
-    </div>
-
-    <section id="jobs" class="rack">
-      <h2 class="rack-title"><span>SESSION RACK</span></h2>
-      <p id="empty-state" class="empty mono">— no tracks loaded —</p>
-      <ul id="job-list" class="job-list"></ul>
     </section>
 
     <footer>
