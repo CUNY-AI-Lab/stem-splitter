@@ -228,6 +228,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   }
   expect(zipText).toContain('# source.wav');
   expect(zipText).toContain('listening session export');
+  // The handoff to the browser is confirmed on the button itself — a fast
+  // export otherwise flashes PACKING… too briefly to read as anything.
+  await expect(page.locator('.export-btn')).toHaveText('SAVED ✓');
+  await expect(page.locator('.export-btn')).toHaveText('EXPORT');
 
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.console')).toHaveClass(/collapsed/);
@@ -236,6 +240,30 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(collapsed).toBe(true);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.transport')).toBeVisible();
+
+  // Opening the + FOLDER popover on a collapsed console must expand it first:
+  // a collapsed console hides every child below its head, so without the
+  // expand the menu would render invisibly and the click would look dead.
+  await page.evaluate(() => {
+    instructor = { username: 'e2e', displayName: 'E2E' };
+    document.body.classList.add('instructor');
+  });
+  await page.locator('.collapse-btn').click();
+  await expect(page.locator('.console')).toHaveClass(/collapsed/);
+  await page.locator('.folder-btn').click();
+  await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
+  await expect(page.locator('.folder-menu')).toBeVisible();
+  await expect(page.locator('.folder-menu')).toContainText('SAVE TO FOLDER');
+  const [{ collapsed: collapsedAfterMenu }] = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('jobs') || '[]')
+  );
+  expect(collapsedAfterMenu).toBe(false);
+  await page.locator('.folder-btn').click();
+  await expect(page.locator('.folder-menu')).toHaveCount(0);
+  await page.evaluate(() => {
+    instructor = null;
+    document.body.classList.remove('instructor');
+  });
 
   expect(signedSourceUrl).toMatch(/^http:\/\/stem-splitter\.test\/api\/local-sources\//);
   const signedSourceResponse = await server.fetch(signedSourceUrl);

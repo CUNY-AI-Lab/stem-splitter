@@ -1512,6 +1512,7 @@ class Mixer {
     if (this.exportBtn.disabled) return;
     this.exportBtn.disabled = true;
     this.exportBtn.textContent = 'PACKING…';
+    let saved = false;
     try {
       const entries = [];
       const used = new Set();
@@ -1531,13 +1532,26 @@ class Mixer {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(makeZip(entries));
       a.download = `${fileSafe(this.job.filename) || 'session'}-export.zip`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
+      a.remove();
+      // Safari resolves blob downloads asynchronously; a synchronous revoke
+      // right after click() silently cancels the save. Chromium is merely
+      // indifferent. Give the browser a full minute before reclaiming it.
+      setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+      saved = true;
     } catch (err) {
       showUploadMessage(err.message, true);
     }
     this.exportBtn.disabled = false;
-    this.exportBtn.textContent = 'EXPORT';
+    // Visible receipt: a fast export otherwise flashes PACKING… too briefly
+    // to notice, which reads as a dead button.
+    this.exportBtn.textContent = saved ? 'SAVED ✓' : 'EXPORT';
+    if (saved) {
+      setTimeout(() => {
+        this.exportBtn.textContent = 'EXPORT';
+      }, 2000);
+    }
   }
 
   markAudioUnavailable(stemName) {
@@ -2480,6 +2494,12 @@ function toggleFolderMenu(mixer) {
   if (existing) {
     existing.remove();
     return;
+  }
+  // A collapsed console hides every child below its head — the popover
+  // included — so the click would look like a no-op. Expand first.
+  if (mixer.el.classList.contains('collapsed')) {
+    mixer.setCollapsed(false);
+    setJobCollapsed(mixer.job.id, false);
   }
   if (!instructor) {
     // The button is CSS-hidden for students, so landing here usually means an
