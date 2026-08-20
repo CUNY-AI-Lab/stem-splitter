@@ -7,6 +7,22 @@ so a text change in any current conditional prompt arm remains traceable even
 if a version bump is accidentally omitted. The readable instructor preview is
 deliberately separate from that audit material.
 
+## 2026-08-20.1
+
+Synthesized from instructor prompt-amendment revisions 2–4 (2026-08-19), which
+kept overwriting one another at runtime; the class-specific blues syllabus
+(revision 1) intentionally stays in the amendment layer.
+
+- Opening message now contextualizes the genre before any minutia: name it,
+  what makes it tick, and the telltale signs that let an untrained listener
+  tell it apart. Word cap raised ~80 → ~110 to make room.
+- Knowledge first, action second — in both the opening's mixer move and the
+  tool-narration rule: the Listening Guide must say what to listen FOR and
+  why before naming the move, never a bare "solo the guitar".
+- The opening engages with mixer work the class did before the cue (renamed
+  channels, timeline notes), and teaching rule 2 now turns a student's
+  mistakes and virtues alike into the next listening exercise.
+
 ## 2026-08-19.1
 
 - De-determinized the mixer-move pedagogy. The guide's opening beat (b) and
