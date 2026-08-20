@@ -2323,6 +2323,13 @@ async function detectInstructor() {
   }
 }
 
+// Signing in happens on /teacher.html, usually in another tab. Re-probe when
+// this page regains focus so the instructor controls appear without a manual
+// reload.
+window.addEventListener('focus', () => {
+  if (!instructor) void detectInstructor();
+});
+
 async function refreshFolders() {
   try {
     const res = await fetch('/api/teacher/folders');
@@ -2475,7 +2482,17 @@ function toggleFolderMenu(mixer) {
     return;
   }
   if (!instructor) {
-    // The button is CSS-hidden for students; this guards direct DOM pokes.
+    // The button is CSS-hidden for students, so landing here usually means an
+    // expired teacher session or a stale cached stylesheet. Say so instead of
+    // doing nothing.
+    const hint = document.createElement('div');
+    hint.className = 'folder-menu';
+    hint.innerHTML = `
+      <p class="folder-menu-title mono">INSTRUCTOR TOOL</p>
+      <p class="folder-menu-none">Folders need an instructor sign-in. Open the INSTRUCTOR link in the footer, sign in, then come back to this tab.</p>
+    `;
+    mixer.el.querySelector('.console-head').after(hint);
+    setTimeout(() => hint.remove(), 8000);
     return;
   }
   const menu = document.createElement('div');

@@ -138,6 +138,15 @@ host.get('/healthz', async (c) => {
     configuration: runtimeConfigurationSummary(env),
   });
 });
+// Static responses must revalidate on every load. With no Cache-Control the
+// browser caches /app.js and /styles.css heuristically off Last-Modified and
+// keeps serving pre-deploy UI — teacher.html grew ?v= pins for exactly this.
+// no-cache keeps the 304 path cheap while ending that bug class for the
+// student page too. /api/* and /healthz matched above and stay untouched.
+host.use('/*', async (c, next) => {
+  await next();
+  c.res.headers.set('Cache-Control', 'no-cache');
+});
 host.use('/*', serveStatic({ root: './public' }));
 
 serve({ fetch: host.fetch, port: PORT, hostname: '0.0.0.0' }, (info) => {
