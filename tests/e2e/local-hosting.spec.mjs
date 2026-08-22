@@ -262,8 +262,48 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     JSON.parse(localStorage.getItem('jobs') || '[]')
   );
   expect(collapsedAfterMenu).toBe(false);
-  await page.locator('.folder-btn').click();
+  // Collapsing owns the whole session state: an open folder chooser must be
+  // removed, not merely hidden inside the collapsed console. Otherwise the
+  // first + FOLDER press after reopening only closes that stale menu.
+  await page.locator('.collapse-btn').click();
+  await expect(page.locator('.console')).toHaveClass(/collapsed/);
   await expect(page.locator('.folder-menu')).toHaveCount(0);
+  await page.locator('.collapse-btn').click();
+  await expect(page.locator('.folder-menu')).toHaveCount(0);
+
+  // Class-folder rows use the same explicit open/closed contract. Keep the
+  // item list genuinely hidden until its folder heading is expanded, then
+  // hide it again on the next press.
+  await page.route('**/api/teacher/folders/folder-collapse-e2e', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        folder: { id: 'folder-collapse-e2e', name: 'Week 3', itemCount: 1 },
+        items: [
+          {
+            jobId: 'folder-job-e2e',
+            filename: 'folder-track.wav',
+            available: true,
+          },
+        ],
+      }),
+    })
+  );
+  await page.evaluate(() => {
+    folders = [{ id: 'folder-collapse-e2e', name: 'Week 3', itemCount: 1 }];
+    foldersSection.hidden = false;
+    renderFolders();
+  });
+  const folderOpen = page.locator('.folder-open');
+  const folderItems = page.locator('.folder-items');
+  await expect(folderItems).toBeHidden();
+  await folderOpen.click();
+  await expect(folderOpen).toHaveAttribute('aria-expanded', 'true');
+  await expect(folderItems).toBeVisible();
+  await expect(folderItems).toContainText('folder-track.wav');
+  await folderOpen.click();
+  await expect(folderOpen).toHaveAttribute('aria-expanded', 'false');
+  await expect(folderItems).toBeHidden();
   await page.evaluate(() => {
     instructor = null;
     document.body.classList.remove('instructor');

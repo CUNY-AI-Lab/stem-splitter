@@ -1475,6 +1475,10 @@ class Mixer {
   }
 
   setCollapsed(collapsed) {
+    // A folder chooser belongs to the expanded session. Leaving it mounted
+    // while the console is collapsed makes the next + FOLDER press close an
+    // invisible stale menu instead of opening a fresh one.
+    if (collapsed) this.el.querySelector('.folder-menu')?.remove();
     if (this.el.classList.contains('collapsed') === collapsed) return;
     if (collapsed && this.playing) this.pause();
     this.el.classList.toggle('collapsed', collapsed);
