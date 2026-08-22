@@ -172,6 +172,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
+  const labLink = page.getByRole('link', { name: 'CUNY AI Lab' });
+  await expect(labLink).toBeVisible();
+  await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
+  await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
   await expect(page.locator('#split-summary')).toHaveText('// 2, 4, or 6 parts per song');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -1736,6 +1740,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(instructorLink).toBeVisible();
   await instructorLink.click();
   await expect(page).toHaveURL(/\/teacher(?:\.html)?$/);
+  await expect(page.getByRole('link', { name: 'CUNY AI Lab' })).toBeVisible();
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);

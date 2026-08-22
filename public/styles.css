@@ -64,6 +64,19 @@ main {
 
 .masthead { margin-bottom: 3rem; }
 
+.lab-brand {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-bottom: 1.15rem;
+  transition: opacity 0.15s;
+  animation: rise 0.6s ease both;
+}
+
+.lab-brand:hover { opacity: 0.82; }
+.lab-brand:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.lab-logo { display: block; width: auto; height: 26px; }
+
 .kicker {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -521,6 +534,7 @@ h1 span {
 /* Forced colours flatten the amber fill and the mark's gradient, so selection
    needs a border-drawn cue there. */
 @media (forced-colors: active) {
+  .lab-brand, .lab-logo { forced-color-adjust: none; }
   .split-option:has(input:checked) { outline: 2px solid Highlight; }
 }
 
@@ -924,6 +938,8 @@ footer {
 /* ─── small screens ───────────────────────────────────────────────── */
 
 @media (max-width: 540px) {
+  .lab-brand { margin-bottom: 1rem; }
+  .lab-logo { height: 22px; }
   .split-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .split-option { padding: 0.55rem 0.5rem 0.5rem; }
   .split-line { gap: 0.3rem; }
