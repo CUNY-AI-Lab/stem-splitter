@@ -12,6 +12,7 @@ REPLICATE_MODEL_VERSION=paste-latest-version-hash-here
 WEBHOOK_SECRET=any-long-random-string
 CLASS_CODE=your-class-code
 OPENROUTER_API_KEY=sk-or-your-openrouter-key
+ASSISTANT_FALLBACK_MODELS=anthropic/claude-haiku-4.5,google/gemini-3-flash-preview
 
 # Optional instructor console provisioning. Generate only hashed records using
 # docs/teacher-provisioning.md; never put a real seed in this example file.

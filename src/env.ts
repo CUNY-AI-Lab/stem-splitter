@@ -22,6 +22,8 @@ export type Env = {
   YOUTUBE_FETCH_ORDER?: string;
   /** OpenRouter model slug for the Listening Guy; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
+  /** Comma-separated OpenRouter model slugs used after the primary model fails. */
+  ASSISTANT_FALLBACK_MODELS?: string;
   /** Master kill switch for server-side Auto. Only literal "true" enables it. */
   SERVER_AUTO_ENABLED?: string;
   /** Rollout posture when server Auto is enabled: shadow (default) or authoritative. */

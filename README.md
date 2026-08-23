@@ -206,6 +206,9 @@ In `wrangler.jsonc`, set:
   deploy, then update and deploy again)
 - `ASSISTANT_MODEL` — OpenRouter slug for the Listening Guy (default
   `z-ai/glm-5.2`; remove it to disable the Listening Guide entirely)
+- `ASSISTANT_FALLBACK_MODELS` — comma-separated independent model routes. The
+  default Claude Haiku and Gemini Flash routes are tried after provider errors
+  and an empty pre-content stream; set this to an empty value to disable them.
 - `REPLICATE_YT_MODEL` — owner/name of a deployed `replicate-yt-audio/` model;
   unset it if you don't need the YouTube-fetch fallback (the free in-Worker
   fetch is usually bot-blocked from Cloudflare egress IPs, so without this
@@ -429,9 +432,11 @@ Nothing else in the app changes.
 
 ## Swapping the Listening Guide model
 
-`ASSISTANT_MODEL` in `wrangler.jsonc` is an OpenRouter slug; any cheap model
-with function calling works. Change the var and `bun run deploy` — the system
-prompt and mixer tool schemas in `src/assistant/` are model-agnostic.
+`ASSISTANT_MODEL` in `wrangler.jsonc` is the primary OpenRouter slug, and
+`ASSISTANT_FALLBACK_MODELS` is its ordered, comma-separated fallback list. All
+configured models must support function calling. The guide retries one empty
+pre-content stream with a fallback first, but never replays a partial response.
+The system prompt and mixer tool schemas in `src/assistant/` are model-agnostic.
 
 ## Operational notes
 

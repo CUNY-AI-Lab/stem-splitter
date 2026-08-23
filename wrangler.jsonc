@@ -41,7 +41,9 @@
     "YOUTUBE_FETCH_ORDER": "replicate-first",
     // OpenRouter model slug for the Listening Guy; swap to any cheap
     // tool-calling model without code changes. Unset disables the assistant.
-    "ASSISTANT_MODEL": "z-ai/glm-5.2"
+    "ASSISTANT_MODEL": "z-ai/glm-5.2",
+    // Independent tool-capable models tried when the primary route fails.
+    "ASSISTANT_FALLBACK_MODELS": "anthropic/claude-haiku-4.5,google/gemini-3-flash-preview"
   }
 
   // Secrets (set with `wrangler secret put <NAME>`):

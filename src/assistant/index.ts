@@ -202,7 +202,7 @@ export async function streamGuide(
   const guide = {
     jobId: row.id,
     text: reply.content,
-    model: env.ASSISTANT_MODEL ?? 'unknown',
+    model: reply.model,
     createdAt: new Date().toISOString(),
   };
   // A response already streamed to this caller remains usable, but only a

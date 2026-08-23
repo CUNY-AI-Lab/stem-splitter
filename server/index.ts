@@ -82,6 +82,7 @@ const env = {
   REPLICATE_YT_MODEL_VERSION: process.env.REPLICATE_YT_MODEL_VERSION,
   YOUTUBE_FETCH_ORDER: process.env.YOUTUBE_FETCH_ORDER ?? 'replicate-first',
   ASSISTANT_MODEL: process.env.ASSISTANT_MODEL,
+  ASSISTANT_FALLBACK_MODELS: process.env.ASSISTANT_FALLBACK_MODELS,
   // Absent means no instructor accounts, which is a valid configuration: the
   // seed is upserted on boot, so leaving it unset just leaves the console shut.
   TEACHER_SEED: process.env.TEACHER_SEED,

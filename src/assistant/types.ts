@@ -40,6 +40,8 @@ export interface WireToolCall {
 }
 
 export interface WireCompletion {
+  model?: string;
+  error?: { code?: string | number; message?: string };
   choices?: {
     message?: { content?: string | null; tool_calls?: WireToolCall[] };
     finish_reason?: string;
@@ -48,6 +50,8 @@ export interface WireCompletion {
 
 /** One `data:` chunk of an OpenAI-compatible streaming completion. */
 export interface WireStreamChunk {
+  model?: string;
+  error?: { code?: string | number; message?: string };
   choices?: {
     delta?: {
       content?: string | null;
