@@ -1142,6 +1142,7 @@ class Mixer {
     const stems = [...this.job.stems].sort(
       (a, b) => idx(STEM_ORDER, a.name) - idx(STEM_ORDER, b.name)
     );
+    const actionsId = `session-actions-${String(this.job.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
     const li = document.createElement('li');
     li.className = 'console';
@@ -1150,11 +1151,16 @@ class Mixer {
     li.innerHTML = `
       <div class="console-head">
         <span class="console-title">${esc(this.job.filename)}</span>
-        <span class="badge ready">READY</span>
-        <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
-        <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
-        <button class="head-btn delete-btn" title="Remove this split from your rack — the class copy stays, and a shared link can bring it back">DELETE</button>
-        <button class="head-btn collapse-btn" aria-expanded="true" title="Collapse this session">▾</button>
+        <div class="console-actions-wrap">
+          <button type="button" class="head-btn actions-toggle" aria-expanded="false" aria-controls="${actionsId}" aria-label="Session actions" title="Show session actions"><span aria-hidden="true">▾</span></button>
+          <div class="console-actions" id="${actionsId}">
+            <span class="badge ready">READY</span>
+            <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
+            <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
+            <button class="head-btn delete-btn" title="Remove this split from your rack — the class copy stays, and a shared link can bring it back">DELETE</button>
+            <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
+          </div>
+        </div>
       </div>
       <div class="console-sub mono">
         <span class="split-meta"></span>
@@ -1214,16 +1220,41 @@ class Mixer {
     this.noteBtn = li.querySelector('.note-btn');
     this.noteBtn.addEventListener('click', () => this.addNote());
 
+    this.actionsWrap = li.querySelector('.console-actions-wrap');
+    this.actionsToggle = li.querySelector('.actions-toggle');
+    this.actionsToggle.addEventListener('click', () => {
+      this.setActionsOpen(!this.el.classList.contains('actions-open'));
+    });
+    this.actionsWrap.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !this.el.classList.contains('actions-open')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.setActionsOpen(false);
+      this.actionsToggle.focus();
+    });
+
     this.collapseBtn = li.querySelector('.collapse-btn');
+    this.collapseLabel = li.querySelector('.collapse-label');
+    this.collapseGlyph = li.querySelector('.collapse-glyph');
     this.collapseBtn.addEventListener('click', () => {
+      const actionsWereOpen = this.el.classList.contains('actions-open');
       const collapsed = !this.el.classList.contains('collapsed');
       this.setCollapsed(collapsed);
       setJobCollapsed(this.job.id, collapsed);
+      if (actionsWereOpen) this.actionsToggle.focus();
     });
     this.exportBtn = li.querySelector('.export-btn');
     this.exportBtn.addEventListener('click', () => this.exportZip());
     this.folderBtn = li.querySelector('.folder-btn');
-    this.folderBtn.addEventListener('click', () => toggleFolderMenu(this));
+    this.folderBtn.addEventListener('click', () => {
+      const actionsWereOpen = this.el.classList.contains('actions-open');
+      toggleFolderMenu(this);
+      this.setActionsOpen(false);
+      if (actionsWereOpen) {
+        const folderTarget = this.el.querySelector('.folder-menu input, .folder-menu button');
+        (folderTarget || this.actionsToggle).focus();
+      }
+    });
     this.deleteBtn = li.querySelector('.delete-btn');
     this.deleteBtn.addEventListener('click', () =>
       armThenRun(this.deleteBtn, 'SURE?', () => deleteJob(this.job.id))
@@ -1474,6 +1505,13 @@ class Mixer {
     }
   }
 
+  setActionsOpen(open) {
+    this.el.classList.toggle('actions-open', open);
+    this.actionsToggle.setAttribute('aria-expanded', String(open));
+    const label = open ? 'Hide session actions' : 'Show session actions';
+    this.actionsToggle.title = label;
+  }
+
   setCollapsed(collapsed) {
     // A folder chooser belongs to the expanded session. Leaving it mounted
     // while the console is collapsed makes the next + FOLDER press close an
@@ -1481,9 +1519,13 @@ class Mixer {
     if (collapsed) this.el.querySelector('.folder-menu')?.remove();
     if (this.el.classList.contains('collapsed') === collapsed) return;
     if (collapsed && this.playing) this.pause();
+    this.setActionsOpen(false);
     this.el.classList.toggle('collapsed', collapsed);
-    this.collapseBtn.textContent = collapsed ? '▸' : '▾';
-    this.collapseBtn.title = collapsed ? 'Expand this session' : 'Collapse this session';
+    const label = collapsed ? 'Expand this session' : 'Collapse this session';
+    this.collapseLabel.textContent = collapsed ? 'EXPAND' : 'COLLAPSE';
+    this.collapseGlyph.textContent = collapsed ? '▸' : '▾';
+    this.collapseBtn.title = label;
+    this.collapseBtn.setAttribute('aria-label', label);
     this.collapseBtn.setAttribute('aria-expanded', String(!collapsed));
   }
 
@@ -2594,6 +2636,20 @@ const jobList = document.getElementById('job-list');
 const emptyState = document.getElementById('empty-state');
 const jobStates = new Map(); // id -> latest server response
 const mixers = new Map(); // id -> Mixer (persists across re-renders)
+
+// Pointer taps do not reliably focus buttons on mobile browsers. Dismiss open
+// action menus from the pointer target instead of depending on focusout, which
+// can otherwise close a freshly opened menu during the same tap.
+document.addEventListener('pointerdown', (event) => {
+  for (const mixer of mixers.values()) {
+    if (
+      mixer.el.classList.contains('actions-open') &&
+      !mixer.actionsWrap.contains(event.target)
+    ) {
+      mixer.setActionsOpen(false);
+    }
+  }
+});
 
 // Removing a split is local: the class copy (stems, names, notes, guide) stays
 // on the server, so a shared link — or a teacher folder — can bring it back.

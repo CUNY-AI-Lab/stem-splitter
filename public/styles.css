@@ -620,6 +620,15 @@ h1 span {
   justify-content: space-between;
   gap: 1rem;
 }
+.console-actions-wrap,
+.console-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+.console-actions-wrap { flex-shrink: 0; }
+.actions-toggle,
+.collapse-label { display: none; }
 .console-title {
   font-weight: 700;
   font-size: 1rem;
@@ -940,6 +949,56 @@ footer {
 @media (max-width: 540px) {
   .lab-brand { margin-bottom: 1rem; }
   .lab-logo { height: 22px; }
+  .console.actions-open { position: relative; z-index: 2; }
+  .console-head {
+    align-items: flex-start;
+    gap: 0.65rem;
+  }
+  .console-title {
+    line-height: 1.3;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    padding-top: 0.35rem;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .console-actions-wrap { position: relative; }
+  .actions-toggle {
+    align-items: center;
+    display: inline-flex;
+    font-size: 0.9rem;
+    justify-content: center;
+    line-height: 1;
+    min-height: 2.25rem;
+    min-width: 2.25rem;
+    padding: 0.3rem 0.65rem;
+  }
+  .console-actions {
+    align-items: stretch;
+    background: var(--bg-raise);
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    display: none;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-width: calc(100vw - 3rem);
+    min-width: 10.5rem;
+    padding: 0.65rem;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 3;
+  }
+  .console.actions-open .console-actions { display: flex; }
+  .console-actions .badge,
+  .console-actions .head-btn {
+    box-sizing: border-box;
+    justify-content: center;
+    width: 100%;
+  }
+  .console-actions .collapse-label { display: inline; }
+  .console-actions .collapse-glyph { display: none; }
   .split-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .split-option { padding: 0.55rem 0.5rem 0.5rem; }
   .split-line { gap: 0.3rem; }

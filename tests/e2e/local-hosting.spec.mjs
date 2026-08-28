@@ -188,6 +188,44 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.locator('#upload-status')).toBeHidden();
   await expect(page.locator('.console-title')).toHaveText('source.wav');
   await expect(page.locator('.channel')).toHaveCount(4);
+
+  // On phones the song name owns the header. Status and destructive/export
+  // controls stay behind the downward caret instead of squeezing the title
+  // down to a one-letter ellipsis.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
+    element.getBoundingClientRect().width
+  );
+  expect(mobileTitleWidth).toBeGreaterThan(200);
+  const actionsToggle = page.getByRole('button', { name: 'Session actions' });
+  await expect(actionsToggle).toBeVisible();
+  await expect(page.locator('.badge.ready')).toBeHidden();
+  await expect(page.locator('.export-btn')).toBeHidden();
+  await expect(page.locator('.delete-btn')).toBeHidden();
+
+  await actionsToggle.click();
+  await expect(actionsToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.badge.ready')).toBeVisible();
+  await expect(page.locator('.export-btn')).toBeVisible();
+  await expect(page.locator('.delete-btn')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse this session' })).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('mobile-session-actions.png'),
+    fullPage: false,
+  });
+
+  await page.getByRole('button', { name: 'Collapse this session' }).click();
+  await expect(page.locator('.console')).toHaveClass(/collapsed/);
+  await expect(actionsToggle).toHaveAttribute('aria-expanded', 'false');
+  await actionsToggle.click();
+  await page.getByRole('button', { name: 'Expand this session' }).click();
+  await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(actionsToggle).toBeHidden();
+  await expect(page.locator('.badge.ready')).toBeVisible();
+  await expect(page.locator('.export-btn')).toBeVisible();
+  await expect(page.locator('.delete-btn')).toBeVisible();
   await page.waitForFunction(
     () =>
       window.__e2eAudioElements.length === 4 &&
