@@ -169,6 +169,7 @@ test('component order and acceptance prevent services from running out of sequen
   );
 
   const enabledBeforeProvisioning = cloneManifest();
+  enabledBeforeProvisioning.components[0].provisioned = false;
   enabledBeforeProvisioning.components[0].runtimeEnabled = true;
   assert.throws(
     () => validateAudioPipelinePromotionManifest(enabledBeforeProvisioning),
@@ -247,7 +248,7 @@ test('rollback remains flag-only and declared blockers must match the computed g
   );
 
   const hiddenBlocker = cloneManifest();
-  hiddenBlocker.blockers.pop();
+  hiddenBlocker.blockers.push('railway-shadow-missing');
   assert.throws(
     () => validateAudioPipelinePromotionManifest(hiddenBlocker),
     /blockers do not match the shadow promotion gate/
@@ -257,7 +258,12 @@ test('rollback remains flag-only and declared blockers must match the computed g
 test('the rollout ladder exposes each missing proof without skipping stages', () => {
   const current = loadAudioPipelinePromotionManifest(REPOSITORY_ROOT);
   assert.deepEqual(promotionBlockers(current, 'off'), []);
-  assert.deepEqual(promotionBlockers(current, 'shadow'), [
+  assert.deepEqual(promotionBlockers(current, 'shadow'), []);
+  const preProvision = structuredClone(current);
+  preProvision.components[0].provisioned = false;
+  preProvision.evidence.railwayResourceAcceptance = false;
+  preProvision.rollback.railwayRollbackTested = false;
+  assert.deepEqual(promotionBlockers(preProvision, 'shadow'), [
     'audio-analysis-service-absent',
     'railway-resource-acceptance-missing',
     'railway-rollback-missing',
@@ -295,9 +301,12 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
 
 test('Railway analyzer provisioning has a separate pre-mutation evidence gate', () => {
   const current = loadAudioPipelinePromotionManifest(REPOSITORY_ROOT);
-  assert.deepEqual(provisionAudioAnalysisBlockers(current), []);
+  assert.deepEqual(provisionAudioAnalysisBlockers(current), [
+    'audio-analysis-already-provisioned',
+  ]);
 
   const ready = structuredClone(current);
+  ready.components[0].provisioned = false;
   ready.evidence.nativeAmd64Image = true;
   ready.evidence.manualListening = true;
   assert.deepEqual(provisionAudioAnalysisBlockers(ready), []);
@@ -318,27 +327,38 @@ test('the CLI reports blockers and fails only when a blocked stage is required',
     encoding: 'utf8',
   });
   assert.equal(report.status, 0, report.stderr);
-  assert.equal(JSON.parse(report.stdout).promotable, false);
+  assert.equal(JSON.parse(report.stdout).promotable, true);
 
   const required = spawnSync(process.execPath, [...command, '--require-stage', 'shadow'], {
     cwd: REPOSITORY_ROOT,
     encoding: 'utf8',
   });
-  assert.equal(required.status, 1, required.stderr);
+  assert.equal(required.status, 0, required.stderr);
   const summary = JSON.parse(required.stdout);
   assert.equal(summary.requestedStage, 'shadow');
   assert.deepEqual(summary.blockers, promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'shadow'));
+
+  const skipped = spawnSync(process.execPath, [...command, '--require-stage', 'teacher-beta'], {
+    cwd: REPOSITORY_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(skipped.status, 1, skipped.stderr);
+  const skippedSummary = JSON.parse(skipped.stdout);
+  assert.deepEqual(
+    skippedSummary.blockers,
+    promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'teacher-beta')
+  );
 
   const action = spawnSync(
     process.execPath,
     [...command, '--require-action', 'provision-audio-analysis'],
     { cwd: REPOSITORY_ROOT, encoding: 'utf8' }
   );
-  assert.equal(action.status, 0, action.stderr);
+  assert.equal(action.status, 1, action.stderr);
   const actionSummary = JSON.parse(action.stdout);
   assert.equal(actionSummary.requestedStage, null);
   assert.equal(actionSummary.requestedAction, 'provision-audio-analysis');
-  assert.equal(actionSummary.promotable, true);
+  assert.equal(actionSummary.promotable, false);
   assert.deepEqual(
     actionSummary.blockers,
     provisionAudioAnalysisBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT))

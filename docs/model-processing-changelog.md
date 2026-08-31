@@ -5,6 +5,33 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## v3.2-role-v4-railway-private — provisioned, accepted, off — 2026-08-31
+
+- Exact source commit `d6a5fc6eec0190db2448fc66a6035a2776a2c9ac`
+  passed CI run `33442090951`. Railway service
+  `f8e3b4a6-f370-4877-a6fb-64655e43ce25` runs the reviewed
+  `audio-analysis/Dockerfile` privately in `us-west2` with one replica, one
+  vCPU, 1,000,000,000 bytes of memory, `/readyz`, and `ON_FAILURE` with three
+  retries. It has no public domain or persistent volume.
+- Private-network readiness reports FFmpeg 8.0.3, `autosplit-role-v4`, and
+  `analysis-source-scope-v2`. An unauthenticated analysis returned 401, an
+  authenticated malformed request returned 400, and an authenticated same-
+  origin but out-of-scope path failed before fetch with
+  `source_url_not_scoped`.
+- The exact 3,421,199-byte source from the frozen rollback baseline produced a
+  non-degraded four-part decision over 45 analyzed seconds. After Railway
+  restart deployment `d2734626-d06a-41ba-a90e-9f7d57b09418`, readiness and the
+  same real-audio decision passed again. Observed memory peaked at 0.1105 GB
+  and CPU at 0.0156 within the configured caps.
+- The kill-switch drill deployed shadow at
+  `2f52dc83-1a25-446a-af28-609aea3caccb`, observed the advertised shadow mode,
+  then deployed off at `8ae0e06a-1106-4892-810b-f01e5e4d6c14`. The off
+  endpoint removed the routing field and retained the exact explicit 2/4/6
+  catalogue. The drill made zero provider calls and printed no secrets.
+- Rollout remains off while the strict evidence is committed. Instrument
+  discovery stayed unconfigured/disabled; the rejected CLAP candidate receives
+  no acceptance from this release.
+
 ## v3.2-role-v4-listening — frozen baseline accepted — 2026-08-31
 
 - Zach, acting as teacher, listened to the complete authorized source and every

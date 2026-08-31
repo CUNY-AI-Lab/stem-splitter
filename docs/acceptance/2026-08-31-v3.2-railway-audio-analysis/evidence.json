@@ -1,0 +1,91 @@
+{
+  "$schema": "stem-splitter.railway-audio-analysis-acceptance.v1",
+  "status": "passed",
+  "capturedAt": "2026-08-31T21:51:25.000Z",
+  "source": {
+    "commit": "d6a5fc6eec0190db2448fc66a6035a2776a2c9ac",
+    "ci": {
+      "runId": "33442090951",
+      "conclusion": "success"
+    },
+    "testAudio": {
+      "baselineArtifact": "docs/acceptance/2026-08-09-v3.2-rollback-baseline/baseline.json",
+      "bytes": 3421199,
+      "sha256": "a929ec6515ecc915111d2de59acb9ff81d53a6194f2a551775859b0d291cd658"
+    }
+  },
+  "railway": {
+    "projectId": "f070742b-3375-4cba-9a86-335f39273c88",
+    "environmentId": "b3381640-1e2f-4765-8e15-15baec599ec2",
+    "appServiceId": "f53a2915-087c-493a-a345-7a1fa73e6588",
+    "analyzerServiceId": "f8e3b4a6-f370-4877-a6fb-64655e43ce25",
+    "analyzerServiceName": "audio-analysis",
+    "initialDeploymentId": "d8f557d0-84a4-4dd2-a498-99545eb24fd8",
+    "initialDeploymentStatus": "SUCCESS",
+    "restartDeploymentId": "d2734626-d06a-41ba-a90e-9f7d57b09418",
+    "restartDeploymentStatus": "SUCCESS",
+    "privateHostname": "audio-analysis.railway.internal",
+    "publicDomain": null,
+    "volumeCount": 0,
+    "region": "us-west2",
+    "replicas": 1,
+    "dockerfilePath": "audio-analysis/Dockerfile",
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeoutSeconds": 120,
+    "restartPolicy": "ON_FAILURE",
+    "restartRetries": 3,
+    "limits": {
+      "vcpus": 1,
+      "memoryBytes": 1000000000
+    }
+  },
+  "runtime": {
+    "readiness": {
+      "status": 200,
+      "ffmpegVersion": "8.0.3",
+      "classifierVersion": "autosplit-role-v4",
+      "sourceScopeVersion": "analysis-source-scope-v2",
+      "instrumentDiscovery": "unconfigured"
+    },
+    "authorization": {
+      "unauthenticatedStatus": 401,
+      "authenticatedMalformedStatus": 400
+    },
+    "sourceScope": {
+      "rejectedPathStatus": 400,
+      "error": "source_url_not_scoped"
+    },
+    "realAudio": {
+      "status": 200,
+      "choice": "four",
+      "resolvedCoreModel": "htdemucs_ft",
+      "degraded": false,
+      "analyzedSeconds": 45,
+      "sourceBytes": 3421199,
+      "sourceSha256Verified": true,
+      "restartRetestPassed": true
+    },
+    "metrics": {
+      "sampleRateSeconds": 30,
+      "cpuMax": 0.0156,
+      "memoryMaxGb": 0.1105,
+      "withinConfiguredLimits": true
+    }
+  },
+  "rollback": {
+    "shadowDeploymentId": "2f52dc83-1a25-446a-af28-609aea3caccb",
+    "shadowTerminalStatus": "SUCCESS",
+    "shadowMode": "shadow",
+    "shadowRoutingAdvertised": true,
+    "offDeploymentId": "8ae0e06a-1106-4892-810b-f01e5e4d6c14",
+    "offTerminalStatus": "SUCCESS",
+    "offMode": "off",
+    "offRoutingAdvertised": false,
+    "providerCalls": 0
+  },
+  "safety": {
+    "publicDomainCreated": false,
+    "persistentVolumeCreated": false,
+    "secretsPrinted": 0
+  }
+}

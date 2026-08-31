@@ -42,15 +42,15 @@
     {
       "id": "audio-analysis",
       "order": 1,
-      "disposition": "implemented-off",
+      "disposition": "provisioned-off",
       "dependsOn": [],
       "artifactVersion": "autosplit-role-v4+analysis-source-scope-v2",
-      "provisioned": false,
+      "provisioned": true,
       "runtimeEnabled": false,
       "externalExecution": false,
       "accepted": false,
       "blockers": [
-        "railway-resource-acceptance-missing"
+        "railway-shadow-acceptance-missing"
       ]
     },
     {
@@ -129,7 +129,7 @@
     "nativeAmd64Image": true,
     "manualListening": true,
     "railwayBaseline": true,
-    "railwayResourceAcceptance": false,
+    "railwayResourceAcceptance": true,
     "railwayShadow": false,
     "teacherBeta": false,
     "studentCanary": false,
@@ -139,12 +139,8 @@
     "flag": "SERVER_AUTO_ENABLED",
     "offValue": false,
     "localFallbackTested": true,
-    "railwayRollbackTested": false,
+    "railwayRollbackTested": true,
     "schemaRollbackRequired": false
   },
-  "blockers": [
-    "audio-analysis-service-absent",
-    "railway-resource-acceptance-missing",
-    "railway-rollback-missing"
-  ]
+  "blockers": []
 }

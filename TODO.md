@@ -1,6 +1,6 @@
 # STEM Splitter: next implementation sequence
 
-**Updated:** 2026-08-30
+**Updated:** 2026-08-31
 
 **Active release target:** Railway
 
@@ -8,11 +8,13 @@
 
 **v3.2 implementation branch:** `codex/v3.2-audio-pipeline`
 
-**Current promotion gate:** Native Linux amd64 image evidence is bound to
-GitHub Actions run `33353695281` at commit `431e21f`, and Zach's attributable
-teacher review accepts the complete frozen source and all four exact stems. The
-pre-provision action gate is clear. The rejected CLAP discovery candidate
-remains separately blocked from provisioning.
+**Current promotion gate:** The private `audio-analysis` service is provisioned
+on Railway from the accepted role-v4 source, has passed exact resource,
+readiness, authorization, real-audio, restart, and flag-only rollback checks,
+and is back in the explicit off posture. The versioned promotion gate is clear
+to begin server-Auto shadow evaluation. The rejected CLAP discovery candidate
+remains separately blocked from provisioning; no discovery service may be
+created until a replacement classifier clears its independent evidence gates.
 
 ## Next product slice — SPLIT / REMIX workspaces
 
@@ -40,16 +42,16 @@ role-v3 image previously built as `linux/amd64` under local emulation and passed
 runtime allowlist, non-root, health, readiness, authentication, eight-format
 decode, and eleven-source corpus gates on FFmpeg 8.0.3. The final image contains
 one bundled application artifact plus `ffmpeg` and `ffprobe`, rather than the
-root project's unused runtime dependencies. Server Auto remains off live and no
-additional Railway service has been provisioned. A new role-v4 candidate closes
-a short-source AAC boundary-peak discrepancy while preserving all eleven
+root project's unused runtime dependencies. Server Auto remains off live and a
+private Railway analyzer is provisioned and validated. A new role-v4 candidate
+closes a short-source AAC boundary-peak discrepancy while preserving all eleven
 authorized local corpus decisions (8 preferred, 3 accepted alternatives). A
 real app-plus-analyzer composition test now fetches stored upload, YouTube, and
 Archive bytes through the signed source boundary before sending only concrete
 models to the separator. Headless Chrome 151 and local FFmpeg 8.1.2 now agree on
 all eleven v4 corpus choices. The earlier role-v3 image remains historical
-evidence; role v4 still requires its own pinned-image, native CI, manual
-listening, resource-limit, and live Railway acceptance gates before authority.
+evidence; role v4 still requires shadow-job, audience, and fallback acceptance
+gates before authority.
 See the
 [adversarial hardening audit](docs/audits/2026-08-09-audio-pipeline-phase0.md)
 and [model-processing changelog](docs/model-processing-changelog.md).

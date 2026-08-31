@@ -9,6 +9,7 @@ import { loadAudioAnalysisImageEvidence } from './audio-analysis-image-evidence.
 import { SAM_AUDIO_REPLICATE_VERSION } from './query-isolation-bakeoff.mts';
 import { loadAudioPipelineListeningEvidence } from './audio-pipeline-listening-evidence.mts';
 import { loadRailwayRollbackBaselineEvidence } from './railway-baseline-evidence.mts';
+import { loadRailwayAudioAnalysisAcceptance } from './railway-audio-analysis-acceptance.mts';
 
 export const AUDIO_PIPELINE_PROMOTION_SCHEMA =
   'stem-splitter.audio-pipeline-promotion.v2' as const;
@@ -64,6 +65,7 @@ export interface AudioPipelineComponent {
   order: number;
   disposition:
     | 'implemented-off'
+    | 'provisioned-off'
     | 'selection-blocked'
     | 'contract-only'
     | 'evaluation-only-license-blocked'
@@ -311,6 +313,7 @@ function parseComponents(value: unknown): AudioPipelineComponent[] {
     }
     const dispositions = [
       'implemented-off',
+      'provisioned-off',
       'selection-blocked',
       'contract-only',
       'evaluation-only-license-blocked',
@@ -609,5 +612,17 @@ export function validateAudioPipelinePromotionEvidence(
   }
   if (manifest.evidence.nativeAmd64Image) {
     loadAudioAnalysisImageEvidence(repositoryRoot);
+  }
+  if (
+    manifest.evidence.railwayResourceAcceptance ||
+    manifest.rollback.railwayRollbackTested
+  ) {
+    if (
+      !manifest.evidence.railwayResourceAcceptance ||
+      !manifest.rollback.railwayRollbackTested
+    ) {
+      throw new Error('Railway resource and rollback acceptance must advance together');
+    }
+    loadRailwayAudioAnalysisAcceptance(repositoryRoot);
   }
 }
