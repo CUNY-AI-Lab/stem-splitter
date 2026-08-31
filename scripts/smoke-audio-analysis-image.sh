@@ -216,7 +216,7 @@ function assert(condition, message) {
 
 function sourceUrl(name) {
   const expires = Math.floor(Date.now() / 1000) + 600;
-  return `${fixtureBase}/api/local-sources/uploads/${name}?expires=${expires}&signature=${'a'.repeat(43)}`;
+  return `${fixtureBase}/api/local-sources/uploads/smoke/${name}?expires=${expires}&signature=${'a'.repeat(43)}`;
 }
 
 function authoritativeSourceUrl() {

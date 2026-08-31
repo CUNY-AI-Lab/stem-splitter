@@ -12,6 +12,7 @@
     "scripts/hydrate-nsynth-family-controls.mts",
     "scripts/hydrate-tinysol-exact-controls.mts",
     "scripts/hydrate-vcsl-exact-controls.mts",
+    "scripts/inspect-local-instruments.mts",
     "scripts/prepare-nsynth-family-control-review.mts",
     "scripts/prepare-tinysol-exact-control-review.mts",
     "scripts/prepare-instrument-evaluation-review.mts",

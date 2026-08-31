@@ -1,12 +1,31 @@
 # STEM Splitter: next implementation sequence
 
-**Updated:** 2026-08-10
+**Updated:** 2026-08-30
 
 **Active release target:** Railway
 
 **Migration boundary:** Do not deploy to Cloudflare Workers until the user declares the product finished.
 
 **v3.2 implementation branch:** `codex/v3.2-audio-pipeline`
+
+## Next product slice — SPLIT / REMIX workspaces
+
+- [x] Define the complementary one-word workspace labels and keep the product
+  hierarchy explicit: `SPLIT` remains the default, primary decomposition
+  workflow; `REMIX` becomes the secondary recomposition workspace and owns the
+  Crate. The planning-only design is recorded in
+  `docs/superpowers/specs/2026-08-30-split-remix-workspaces.md`; no public UI,
+  route, production data, or service changes in this release.
+- [ ] Implement Phase 0 behind a false-default flag: accessible workspace tabs,
+  direct-link state that preserves `?job=`, flags-off visual equivalence, and
+  desktop/mobile/keyboard regression tests.
+- [ ] Move the existing Crate controller and DOM into REMIX without duplicating
+  it. Preserve Archive license enforcement, search cancellation, pagination,
+  and the deliberate `SPLIT` action.
+- [ ] Add browser-local preview and layering only after the Archive delivery,
+  versioned project, provenance, performance, and license-compatibility
+  contracts in the design have been reviewed. Do not add a service or imply
+  that independently remixable licenses are necessarily compatible.
 
 **Current posture:** Phase 0 contracts, fixed corpus metadata, deterministic
 browser/server PCM parity, the flag-gated Phase 1B application path, and the
@@ -1014,6 +1033,20 @@ job.
   threshold was selected and no precision claim is available. See
   `docs/audits/2026-08-09-yamnet-comparator-gate.md` and the bound report under
   `docs/acceptance/2026-08-09-yamnet-comparator/`.
+- [x] Add a comparison-only local post-separation inspection path without
+  promoting YAMNet or writing detections into a job. `npm run dev:auto --
+  --with-separator` now starts the Railway-shaped app, authoritative analyzer,
+  pinned CLAP transport candidate, and local separator with ephemeral tokens
+  and cloud-provider credentials disabled; `smoke:auto:local` verifies the
+  signed-source route and resulting stems. `inspect:instruments:local` then
+  runs the pinned YAMNet image networkless against the completed `other` or
+  `instrumental` stem. On a 20-second licensed jazz/saxophone excerpt, the core
+  route selected `htdemucs_ft` and produced four readable stems; CLAP still
+  abstained, while post-separation YAMNet ranked saxophone first with window
+  scores `0.24951706` and `0.41175544` in 621 ms. The result remains explicitly
+  threshold-free and promotion-ineligible; the same run also ranked brass,
+  voice, and double bass behind saxophone, so corpus-wide stem-conditioned
+  evaluation and human review remain required before classifier selection.
 - [x] Extend the YAMNet comparison with authorized, exact-hash isolated-
   instrument controls and exhaustive **candidate** negatives. ChoraleBricks v1
   supplies flute, oboe, clarinet, trumpet, horn, trombone, saxophone, and tuba

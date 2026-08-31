@@ -62,6 +62,42 @@ digest, source URL, token, audio, or raw PCM.
 
 ## Local verification
 
+Start the Railway-shaped Node app, the host analyzer, and the pinned candidate
+discovery service together on loopback:
+
+```sh
+npm run dev:auto
+```
+
+Add `-- --with-separator` to complete local stem jobs through Audio Separator,
+or `-- --without-discovery` to exercise only core Auto without Docker. The
+runner generates ephemeral service tokens, disables cloud-provider credentials,
+publishes the offline discovery image to loopback only, and runs it as a
+foreground `--rm` child so terminal shutdown removes the container. The image
+proves the private PCM transport and response contract only: its CLAP
+prompt/checkpoint pairing is still rejected for musical usefulness and must not
+be presented as calibrated instrument detection.
+
+With the stack running, exercise the real app upload and signed-source path.
+Add `--wait-for-stems` only when the stack was started with the local separator:
+
+```sh
+npm run smoke:auto:local -- tests/fixtures/audio/source.wav
+npm run smoke:auto:local -- tests/fixtures/audio/source.wav --wait-for-stems
+```
+
+For a completed local job, rank long-tail instrument candidates from its
+separated `other` (or two-track `instrumental`) stem with the pinned, offline
+YAMNet comparison image:
+
+```sh
+npm run inspect:instruments:local -- <completed-job-id>
+```
+
+This post-separation view reduces masking from vocals and drums, but it remains
+explicitly threshold-free comparison evidence. It does not write detections to
+the job, alter Auto, rename a stem, or promote YAMNet.
+
 ```sh
 npm run typecheck:analysis
 npm run test:analysis-service

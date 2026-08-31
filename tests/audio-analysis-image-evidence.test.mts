@@ -109,6 +109,12 @@ test('the native workflow proves the host and uploads commit-bound evidence afte
   assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
   assert.match(workflow, /if-no-files-found: error/);
   assert.match(workflow, /AUDIO_ANALYSIS_SOURCE_COMMIT: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  const ffmpegInstallIndex = workflow.indexOf('name: Install FFmpeg test dependency');
+  const analysisContractIndex = workflow.indexOf('name: Run audio-analysis contract and parity tests');
+  assert.ok(
+    ffmpegInstallIndex >= 0 && ffmpegInstallIndex < analysisContractIndex,
+    'the source gate must install FFmpeg before the host analyzer tests'
+  );
   const smokeIndex = workflow.indexOf('./scripts/smoke-audio-analysis-image.sh');
   const captureIndex = workflow.indexOf('scripts/capture-audio-analysis-image-evidence.mts');
   const uploadIndex = workflow.indexOf('actions/upload-artifact@');

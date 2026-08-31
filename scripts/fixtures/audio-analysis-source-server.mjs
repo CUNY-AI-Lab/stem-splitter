@@ -57,7 +57,12 @@ const server = createServer((request, response) => {
   }
   let fixture;
   if (url.pathname.startsWith('/api/local-sources/uploads/')) {
-    fixture = url.pathname.slice('/api/local-sources/uploads/'.length);
+    const segments = url.pathname.slice('/api/local-sources/uploads/'.length).split('/');
+    if (segments.length !== 2 || segments[0] !== 'smoke') {
+      response.statusCode = 404;
+      return response.end();
+    }
+    fixture = segments[1];
   } else if (url.pathname === '/api/local-sources/auto-inputs/v1/smoke_auto_upload') {
     fixture = 'valid.wav';
   } else {
