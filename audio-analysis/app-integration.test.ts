@@ -12,7 +12,7 @@ import type { AudioAnalysisRequestV1 } from '../src/analysis/types.ts';
 import { AUDIO_ANALYSIS_SOURCE_SCOPE_VERSION } from '../src/analysis/source-scope.ts';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 import { createAudioAnalysisService, type SafeLogger } from './app.ts';
-import { audioAnalysisConfigFromEnv } from './config.ts';
+import { audioAnalysisConfigFromEnv, PINNED_FFMPEG_VERSION } from './config.ts';
 import { fetchSourceToTemp } from './source.ts';
 
 const CLASS_CODE = 'real-analyzer-integration-class-code';
@@ -29,13 +29,6 @@ const quietLogger: SafeLogger = {
   info() {},
   warn() {},
 };
-
-function localFfmpegVersion(): string {
-  const firstLine = execFileSync('ffmpeg', ['-version'], { encoding: 'utf8' }).split(/\r?\n/, 1)[0];
-  const version = firstLine.match(/^ffmpeg version ([^ ]+)/)?.[1];
-  assert.ok(version, 'local FFmpeg version could not be resolved');
-  return version;
-}
 
 function transcodeSourceToM4a(): Buffer {
   return execFileSync(
@@ -112,13 +105,11 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
       },
     ],
   });
-  await harness.listen();
-
   const config = audioAnalysisConfigFromEnv({
     AUDIO_ANALYSIS_TOKEN: ANALYSIS_TOKEN,
     AUDIO_ANALYSIS_SOURCE_ORIGINS: APP_ORIGIN,
     AUDIO_ANALYSIS_ALLOW_HTTP: 'true',
-    AUDIO_ANALYSIS_EXPECTED_FFMPEG_VERSION: localFfmpegVersion(),
+    AUDIO_ANALYSIS_EXPECTED_FFMPEG_VERSION: PINNED_FFMPEG_VERSION,
     AUDIO_ANALYSIS_FETCH_TIMEOUT_MS: '5000',
     AUDIO_ANALYSIS_DECODER_TIMEOUT_MS: '10000',
     AUDIO_ANALYSIS_MAX_CONCURRENCY: '1',
@@ -142,6 +133,13 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
     });
   };
   const analysisService = createAudioAnalysisService(config, {
+    // CI distribution packages can append a suffix to the host FFmpeg token.
+    // Decoder pinning is covered independently; this composed test exercises
+    // the real host decoder without weakening the production version contract.
+    probe: async (expectedVersion) => ({
+      ffmpegVersion: expectedVersion,
+      ffprobeVersion: expectedVersion,
+    }),
     fetchSource: (sourceUrl, serviceConfig, sourceType, signal) =>
       fetchSourceToTemp(
         sourceUrl,
@@ -258,9 +256,10 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
       HttpResponse.json({ status: 'processing' })
     )
   );
-  network.listen({ onUnhandledRequest: 'error' });
-
   try {
+    await harness.listen();
+    network.listen({ onUnhandledRequest: 'error' });
+
     const schema = schemaStatements(await readFile(SCHEMA_PATH, 'utf8'));
     const schemaResponse = await appRequest(harness, '/__e2e/schema', {
       method: 'POST',
