@@ -1,8 +1,9 @@
 # v3.2 native-amd64 analysis-image acceptance
 
 This directory records native Linux amd64 evidence for the exact role-v4,
-source-scope-v2 analysis image. No `evidence.json` is committed yet because the
-local v3.2 branch has not run on GitHub infrastructure.
+source-scope-v2 analysis image. `evidence.json` was captured by the successful
+native `analysis-image` job in GitHub Actions run `33353695281` for commit
+`431e21ffd627b1242abec640c09e3e383657ff6f`.
 
 The `analysis-image` CI job:
 
@@ -17,13 +18,10 @@ The `analysis-image` CI job:
 7. uploads `audio-analysis-native-amd64-<commit>` for 30 days using the
    digest-pinned official upload action.
 
-After publication is separately authorized and the native job passes, download
-the artifact from that exact workflow run. Inspect its run, commit, platform,
-image ID and source hashes, then add only the JSON as
-`docs/acceptance/2026-08-10-v3.2-native-amd64-image/evidence.json`. Do not add
-the image, runtime logs, credentials, or audio.
+The committed JSON is the downloaded commit-named artifact only. The image,
+runtime logs, credentials, and audio remain outside Git.
 
-In the same reviewed change, set `nativeAmd64Image` to `true`, remove
+The same reviewed change sets `nativeAmd64Image` to `true`, removes
 `native-amd64-image-missing`, and run:
 
 ```sh

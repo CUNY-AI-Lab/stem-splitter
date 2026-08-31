@@ -135,15 +135,10 @@ test('image evidence covers every repository input copied by the Dockerfile', ()
   }
 });
 
-test('the current promotion cannot claim native amd64 before canonical CI evidence exists', () => {
+test('the current promotion validates its canonical native-amd64 CI evidence', () => {
   const raw = JSON.parse(
     readFileSync(resolve(REPOSITORY_ROOT, AUDIO_PIPELINE_PROMOTION_MANIFEST_PATH), 'utf8')
   );
-  raw.evidence.nativeAmd64Image = true;
-  raw.blockers = raw.blockers.filter((blocker: string) => blocker !== 'native-amd64-image-missing');
   const manifest = validateAudioPipelinePromotionManifest(raw);
-  assert.throws(
-    () => validateAudioPipelinePromotionEvidence(REPOSITORY_ROOT, manifest),
-    /ENOENT/
-  );
+  assert.doesNotThrow(() => validateAudioPipelinePromotionEvidence(REPOSITORY_ROOT, manifest));
 });

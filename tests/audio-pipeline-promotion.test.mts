@@ -260,7 +260,6 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
   assert.deepEqual(promotionBlockers(current, 'shadow'), [
     'audio-analysis-service-absent',
     'manual-listening-missing',
-    'native-amd64-image-missing',
     'railway-resource-acceptance-missing',
     'railway-rollback-missing',
   ]);
@@ -299,7 +298,6 @@ test('Railway analyzer provisioning has a separate pre-mutation evidence gate', 
   const current = loadAudioPipelinePromotionManifest(REPOSITORY_ROOT);
   assert.deepEqual(provisionAudioAnalysisBlockers(current), [
     'manual-listening-missing',
-    'native-amd64-image-missing',
   ]);
 
   const ready = structuredClone(current);

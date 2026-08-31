@@ -1,0 +1,77 @@
+{
+  "$schema": "stem-splitter.audio-analysis-native-amd64.v1",
+  "status": "passed",
+  "commit": "431e21ffd627b1242abec640c09e3e383657ff6f",
+  "capturedAt": "2026-08-31T03:25:08.923Z",
+  "github": {
+    "repository": "CUNY-AI-Lab/stem-splitter",
+    "workflow": "CI",
+    "job": "analysis-image",
+    "eventName": "push",
+    "runId": "33353695281",
+    "runAttempt": 1,
+    "sourceCommit": "431e21ffd627b1242abec640c09e3e383657ff6f"
+  },
+  "runner": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "dockerPlatform": "linux/x86_64"
+  },
+  "image": {
+    "id": "sha256:7cb1dc3c9c45dda3144984b4d9484a8023f9f4fda8811ac81c14e34afa05988a",
+    "platform": "linux/amd64",
+    "sizeBytes": 231074728,
+    "maximumBytes": 251658240,
+    "user": "node",
+    "command": ["node", "--max-old-space-size=256", "dist/server.mjs"]
+  },
+  "pins": {
+    "node": "22.23.1",
+    "bun": "1.3.14",
+    "ffmpeg": "8.0.3",
+    "classifier": "autosplit-role-v4",
+    "sourceScope": "analysis-source-scope-v2"
+  },
+  "smoke": {
+    "constrainedRuntime": true,
+    "sourceFingerprint": true,
+    "authoritativeSnapshot": true,
+    "maximumDuration": true,
+    "failureBoundaries": true,
+    "temporarySourcesClean": true,
+    "secretRedaction": true
+  },
+  "sources": [
+    { "path": ".dockerignore", "sha256": "4c36ee307d361da684858f431794234efcbda39dd5307dc8f15e180356fd2015" },
+    { "path": ".github/workflows/ci.yml", "sha256": "afb28856c180cd4fe7ff5f8c06ec352faf2d8b43c7994774a7a476e742474f34" },
+    { "path": "audio-analysis/Dockerfile", "sha256": "840640b59e22c4e84e100594a72a86b5eb2f6624ebe249e034394008ef6d0fc1" },
+    { "path": "audio-analysis/app.ts", "sha256": "f261bfa465ac77d4ee2d7ee33b4a955075a91186acd9fae6c17cb7d72d448560" },
+    { "path": "audio-analysis/classifier.ts", "sha256": "97bbe0e1813dfb6ed40a20c05503c0adf07be472551ef30fc3746a03b1951a98" },
+    { "path": "audio-analysis/config.ts", "sha256": "cae402eab305539fb08a16ab048a0e56b1bb755b1ab5d9a1db01b20bc5733344" },
+    { "path": "audio-analysis/decoder.ts", "sha256": "9f582859b7219bf43b7d84923814b26ceb36f04c514154c8c1dc1e0709736b29" },
+    { "path": "audio-analysis/discovery.ts", "sha256": "c85db5f3ad0cec25ad5d4f17ae077a276b15a4c90192619a463a8ac4faa11f05" },
+    { "path": "audio-analysis/process.ts", "sha256": "2a41d39afdfdbd922b4a943e020ef7965ab8c8449d9e4679c61895be776a0084" },
+    { "path": "audio-analysis/request.ts", "sha256": "294f154a139a545176802541b013a1f716b2869c43980f9fd7c2ce88f32f24fa" },
+    { "path": "audio-analysis/server.ts", "sha256": "85e721a50becc289c332832d335a05128151f6a470ac2a8ddfa294c7c763819f" },
+    { "path": "audio-analysis/source.ts", "sha256": "21b952c509450c2aac9789be6002699759273f97800d6374d6db0975bef17a27" },
+    { "path": "bun.lock", "sha256": "9f847ce879c211b0f5986aed5977a868ad8aa75d2af13830a033a08c9dbda571" },
+    { "path": "instrument-discovery/vocabulary.json", "sha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140" },
+    { "path": "package.json", "sha256": "f4d1698b7e3424129b9f9686dabaf4ee63e7a31ffc9a48b4f93875457453d109" },
+    { "path": "public/autosplit.js", "sha256": "6f0eac2c37185337d3dca9b01d82db764e3ef5b7d95b6ca571c171c09df9aeeb" },
+    { "path": "scripts/capture-audio-analysis-image-evidence.mts", "sha256": "3aaf8082a24e5e5891bec1caae692dbfbdfbc26f6669713da4df3a75859c1c6a" },
+    { "path": "scripts/fixtures/audio-analysis-source-server.mjs", "sha256": "01061f43897171402e28c5d90f2d07a9602e535c2a0ca040e1527fb16142fb9f" },
+    { "path": "scripts/lib/audio-analysis-image-evidence.mts", "sha256": "7b277d2394538d26587a5d900251936a01319ed1f30856818ffbc435248f7e00" },
+    { "path": "scripts/smoke-audio-analysis-image.sh", "sha256": "079af5ed21fa57d44de8d98491d38d6642cf604802b03755738b112b07dcc331" },
+    { "path": "src/analysis/instrument-vocabulary.ts", "sha256": "724f81a25a84cda0a84d10bd1dc7c320e38aeaee198fc28fcf6a053e80c7794f" },
+    { "path": "src/analysis/source-scope.ts", "sha256": "a7a83e71d972bbbf15e9085f55d192bbd6642b23ef72ed5ba065f43f52d1e9ed" },
+    { "path": "src/analysis/types.ts", "sha256": "42b155382a12cd4ebf19b7583d844a9d346187494b47f1674d89e5bae3a3fbd6" },
+    { "path": "tests/fixtures/audio/README.md", "sha256": "319c5751d26b7676f2c6292167e54253268373b38020bb37c011b56fed52fdb6" },
+    { "path": "tests/fixtures/audio/bass.mp3", "sha256": "79e686dfe31a03bfd50ad503deff37b34cae47df29d34659062e98603c785666" },
+    { "path": "tests/fixtures/audio/drums.mp3", "sha256": "09a8e758a920d6a6454b2b8fd169293f01648651155f082bc155b7c497dc212d" },
+    { "path": "tests/fixtures/audio/other.mp3", "sha256": "6a1b1a73b21a07f7a170cbebc11272f43a9426bf09bd9162663bc23af750277f" },
+    { "path": "tests/fixtures/audio/quiet.mp3", "sha256": "8e1128a44b4a1a512378f5fecafe5ab445d15a3c1f43c077d2c6a0e931b38b9a" },
+    { "path": "tests/fixtures/audio/source.wav", "sha256": "903840d21ae265fc543c86541039efa39cf45f622a757b5204647e2549664f57" },
+    { "path": "tests/fixtures/audio/vocals.mp3", "sha256": "651a765ef10bf8834053a94c436c666b40bbbfb9cbb8ee294ca4dbade7cdeec8" },
+    { "path": "tsconfig.audio-pipeline.json", "sha256": "65b10d9be9e2c7276792dc4772a1d041937eec2cb944d46eddc5c69a0be087b4" }
+  ]
+}

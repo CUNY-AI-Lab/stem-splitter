@@ -5,6 +5,22 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## v3.2-role-v4-native-amd64 — native analyzer image accepted — 2026-08-31
+
+- GitHub Actions run `33353695281` built and exercised the exact
+  `linux/amd64` analyzer image from commit
+  `431e21ffd627b1242abec640c09e3e383657ff6f` on Linux x86_64.
+- The strict artifact binds image ID
+  `sha256:7cb1dc3c9c45dda3144984b4d9484a8023f9f4fda8811ac81c14e34afa05988a`,
+  231,074,728-byte size, FFmpeg 8.0.3, `autosplit-role-v4`,
+  `analysis-source-scope-v2`, every Docker input, and all constrained smoke
+  claims. Repository validation accepts the downloaded JSON without trusting a
+  hand-edited boolean.
+- Rollout remains off. The attributable whole-source and whole-stem listening
+  review is still pending, so the private Railway analyzer must not yet be
+  provisioned. The rejected CLAP discovery candidate remains a separate blocked
+  component and is not promoted by this evidence.
+
 ## vcsl-c1ea7bc-exact-controls-v1 — exact harmonica and pitched-percussion controls — 2026-08-10
 
 - Scope: exact implementation commit
