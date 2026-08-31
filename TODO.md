@@ -76,13 +76,13 @@ builds and matches the current source hashes. The eleven-source evaluation and
 networkless raw-logit audit reject the current prompt/checkpoint pairing, so it
 must not be calibrated or provisioned under the existing classifier ID. A
 separate pinned, networkless YAMNet TFLite comparator now covers 36/51
-classroom labels and completed the same licensed corpus. It ranked 21/40
-eligible reviewed groups in the top five, but placed no reviewed brass,
-woodwind, or free-reed group there and retains 15 explicit ontology gaps.
-Treat it as a promising comparison baseline, not a selected classifier: no
-threshold, feature flag, application dependency, or service was added. Native
-amd64 startup/inference, Railway sizing, human-reviewed calibration, and
-service provisioning remain open.
+classroom labels and completed the same licensed corpus. The current native
+Linux amd64 run ranked 24/40 eligible reviewed groups in the top five, but
+placed no reviewed brass or free-reed group there, placed only 1/3 woodwind
+groups there, and retains 15 explicit ontology gaps. Treat it as a promising
+comparison baseline, not a selected classifier: no threshold, feature flag,
+application dependency, or service was added. Railway sizing, human-reviewed
+calibration, and service provisioning remain open.
 A separately versioned ChoraleBricks control corpus now pins eight CC BY 4.0
 isolated performances across four woodwinds and four brass instruments. Its
 same-origin, one-redirect hydrator verified every declared byte count and
@@ -92,9 +92,9 @@ oboe and tuba remain explicit unsupported gaps. The 278 non-positive labels are
 candidate negatives only: no teacher has listened to them, so the report makes
 no precision claim and selects no threshold. This is a stronger controlled
 comparison, not promotion evidence.
-A path-scoped, secret-free native-amd64 image workflow is defined locally but
-has not yet completed its new full-corpus GitHub run, and no detection has been
-promoted. Its path filter now covers every transitive host-side evaluator
+A path-scoped, secret-free native-amd64 image workflow has now completed its
+full-corpus GitHub run, and no detection has been promoted. Its path filter
+covers every transitive host-side evaluator
 source plus the strict Internet Archive hydration manifest and hydrator;
 otherwise downloader, decoder, windowing, corpus, or contract changes could
 bypass the native image gate. The job retrieves all eleven exact licensed
@@ -103,9 +103,14 @@ abstention-only candidate, uploads JSON evidence only, and never uploads audio.
 Future corpus reports use schema v2, bind those source digests, the Node
 runtime, TypeScript configuration, and dependency locks, and add both a
 before/after-verified SHA-256 for every hydrated audio input and a digest of the
-exact decoded PCM/window sample plan passed to the comparator. The existing
-arm64 v1 artifacts remain immutable historical evidence and require a clean v2
-rerun; their recorded digests must not be rewritten to match later source. See the
+exact decoded PCM/window sample plan passed to the comparator. Run
+`33450445790` passed natively on Linux amd64 for exact source `76ea7c0`; its
+four-file, no-audio artifact and disposition are bound in
+`docs/acceptance/2026-08-31-yamnet-native-amd64/`. The current corpus result is
+16/40 top-three, 24/40 top-five, 30/40 top-ten, with a 3,365-basis-point MRR;
+all 19 candidate sources abstain because no reviewed threshold exists. The
+existing arm64 v1 artifacts remain immutable historical evidence; their
+recorded digests must not be rewritten to match later source. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
 Exact committed source `86cd50b` now passes the complete local Phase 0 command
@@ -306,8 +311,10 @@ emulated-amd64, mismatched-image, replaced-report, symlinked, reordered, and
 pin-drift evidence fails closed. The exact commit passes the complete Bun
 1.3.14 Phase 0 gate: 227 worker, 24 analyzer, 31 Railway host/migration, 5
 separator, 30 discovery, 9 YAMNet, and 19/6/1 browser tests. No fresh native
-reports or candidate artifact were created, and all processing flags and live
-Railway topology remain unchanged.
+reports or candidate artifact were created by that commit. A later exact
+native Linux amd64 run at `76ea7c0` produced the four-report abstention-only
+artifact recorded in `docs/acceptance/2026-08-31-yamnet-native-amd64/`; all
+processing flags and live Railway topology remain unchanged.
 
 Exact query-isolation budget commit `d207d4b` closes the remaining local spend-
 ceiling seam without making AudioSep executable. A versioned, fail-closed
@@ -1019,9 +1026,10 @@ job.
   now hydrates all eleven licensed mixes from exact Archive object and content
   pins, hydrates all eight isolated controls, runs both report generators
   against one native image identity, captures the review-pending candidate,
-  and uploads only four bounded JSON files. `actionlint` passed the earlier
-  image-only definition; the earlier native arm64 container run remains local
-  evidence, while this expanded remote run is still required.
+  and uploads only four bounded JSON files. Exact run `33450445790` passed on
+  native Linux amd64 at source `76ea7c0`; the artifact has no audio, all 19
+  candidate sources abstain, and the durable identity/disposition record is
+  `docs/acceptance/2026-08-31-yamnet-native-amd64/`.
 - [ ] After a replacement classifier passes local musical-usefulness and human
   review, prove that selected discovery container restarts cleanly after the
   watchdog kills a deliberately stuck real inference. Do not spend Railway
@@ -1085,8 +1093,9 @@ job.
   then recalculate family precision/recall, calibration, abstention, latency,
   and memory on native amd64. The mixed-corpus brass/woodwind failures, high
   oboe-to-trumpet/brass and horn-to-trombone confusions, fifteen ontology gaps,
-  missing free-reed controls, failed confusion directions, and absent native
-  runner result still block classifier selection and threshold calibration.
+  missing free-reed controls, and failed confusion directions still block
+  classifier selection and threshold calibration. Native execution is now
+  reproduced; it does not substitute for the missing listening judgment.
 - [x] Add a second rights-reviewed control tranche after fixing the listening
   protocol. [NSynth](https://magenta.tensorflow.org/datasets/nsynth) is CC BY
   4.0 and offers 305,979 four-second monophonic notes across 1,006 sampled
@@ -1516,8 +1525,10 @@ canary. Student access remains off.
   policy content, source-report, generator, dependency-lock, immutable-image,
   and native-platform provenance. A YAMNet-specific comparison adapter now
   validates that chain but deliberately emits only abstentions; a selected-
-  classifier adapter, fresh native reports, and a real reviewed candidate
-  artifact remain open. A comparison-only cohort gate now prevents candidate
+  classifier adapter and a real reviewed candidate with classified decisions
+  remain open. The current native reports and abstention-only YAMNet artifact
+  are recorded separately and cannot satisfy that gate. A comparison-only
+  cohort gate now prevents candidate
   or component-version reuse after content drift and prevents an
   abstention-only artifact from masquerading as comparable evidence. The
   evaluator exposes selective

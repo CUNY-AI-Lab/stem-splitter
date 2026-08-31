@@ -132,8 +132,9 @@ PCM/window plans.
 The adapter does not infer that YAMNet has passed review. With no selected
 threshold, its content-addressed review-pending policy emits all 19 sources as
 `abstained`/`no-label-cleared-threshold` and emits no detections. Historical
-arm64 reports and the local emulated-amd64 run remain ineligible. No fresh
-native-amd64 report or candidate artifact was produced by this code slice.
+arm64 reports and the local emulated-amd64 run remain ineligible. The later
+native Linux amd64 run and artifact are recorded below; they do not change this
+threshold-free disposition.
 
 ## Licensed-corpus result
 
@@ -238,10 +239,20 @@ shell had no global Bun on `PATH`:
 
 The YAMNet image separately passed a real eleven-source native arm64 run, the
 eight-control native-arm64 run, a current-source amd64-on-arm64 jazz-sax run,
-and both native-arm64 and emulated-amd64 constrained image smokes. The new
-native-amd64 GitHub workflow is defined but has not run because the branch is
-local. No test or report authorizes classifier selection, a Railway service,
-or live rollout.
+and both native-arm64 and emulated-amd64 constrained image smokes. The expanded
+workflow then passed natively on GitHub's Linux amd64 runner in run
+`33450445790` at exact source
+`76ea7c004d70cffa8aadcfcc177301ee74d2fe2b`. It built immutable image
+`sha256:f493edc1516c131b95208ea7d4835a69fffc5a1e0375192efaedf8983fd371b9`,
+hydrated all 19 exact sources, and uploaded four JSON reports with no audio.
+The current corpus ranks 16/40 eligible groups top-three, 24/40 top-five, and
+30/40 top-ten for a 3,365-basis-point MRR. The controls rank all six supported
+positives top-three, four top-one, for an 8,056-basis-point MRR. The candidate
+envelope contains 19 abstentions and zero detections. Exact artifact identity,
+file hashes, runtime pins, and the non-promotion boundary are recorded in
+[`2026-08-31-yamnet-native-amd64`](../acceptance/2026-08-31-yamnet-native-amd64/README.md).
+No test or report authorizes classifier selection, a Railway service, or live
+rollout.
 
 The later exact adapter commit `5f9a8ad1bb554b085c64bef8ddd1b2f7eaec4ff4`
 passes four TypeScript checks; 227 worker, 24 analyzer, 31 Railway
@@ -266,14 +277,14 @@ blocked by:
 4. fifteen explicit ontology gaps, including several requested orchestral and
    traditional instruments;
 5. no calibrated family thresholds or abstention policy;
-6. no native-amd64 runner evidence; and
+6. no second license-cleared classifier with definite reviewed decisions; and
 7. no reason yet to provision a service for a candidate that has not cleared
    the offline gate.
 
-The next evidence unit is teacher listening review of the isolated controls,
-followed by fresh native-amd64 corpus/control execution through the now-defined
-capture adapter and a specialized fixed-label or reviewed transfer-learning
-head against this frozen baseline. Essentia remains blocked
+The next evidence unit is teacher listening review of the 19-source plan and
+isolated controls, followed by a specialized fixed-label or reviewed
+transfer-learning head against this frozen native baseline. Essentia remains
+blocked
 until the exact weight and runtime license boundary receives written
 clarification and institutional review. Only one selected candidate may later
 proceed to a private Railway service, with flags still off and no student or

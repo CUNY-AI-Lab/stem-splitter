@@ -203,7 +203,10 @@ bytes and verifies the current model, mapping, vocabulary, score policy,
 evaluator sources, hydrated-source identities, decoded PCM/window plans,
 dependency lock, immutable image ID, and one shared native non-emulated
 `linux/amd64` execution. Raw reports, source descriptor, and candidate output
-remain review artifacts; the repository does not contain a fresh native report.
+remain gitignored review artifacts. Exact GitHub run `33450445790` produced all
+four for source `76ea7c0`; the repository preserves their hashes, schemas,
+metrics, execution identity, and disposition under
+`docs/acceptance/2026-08-31-yamnet-native-amd64/` without committing audio.
 
 No label-cleared YAMNet threshold exists. The adapter therefore emits every one
 of the 19 sources as `abstained` with reason
@@ -352,8 +355,11 @@ review-pending abstention, so it produces no detection or promotion claim. The
 exact commit passes four TypeScript checks; 227 worker, 24 analyzer, 31 Railway
 host/migration, 5 separator, 30 discovery, and 9 YAMNet tests; plus 19 flags-off,
 6 authoritative-Auto, and 1 isolation-shadow browser journey under Bun 1.3.14.
-The four focused adapter tests and 12 combined adapter/comparator tests pass. No
-fresh native reports or candidate artifact exist yet.
+The four focused adapter tests and 12 combined adapter/comparator tests pass.
+Later GitHub run `33450445790` completed the fresh native Linux amd64 corpus,
+control, source, and candidate reports. The candidate contains 19 abstentions
+and zero detections; it is real execution evidence but remains ineligible for
+comparison or promotion without reviewed labels and a selected threshold.
 
 A value-free read-only check of the canonical Railway project/environment/app
 service also passes the pre-provision topology contract with `audio-analysis`

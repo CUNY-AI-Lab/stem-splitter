@@ -24,7 +24,14 @@ promotion on their own.
   pinned `linux/amd64` image, hydrates eleven mixes and eight isolated controls,
   records both native reports, binds them into one source report, emits an
   explicitly abstention-only 19-source candidate, and uploads four JSON files
-  only. A successful GitHub run is still required for evidence acceptance.
+  only. Exact run `33450445790` passed at source `76ea7c0`; its artifact and
+  four file hashes are recorded in
+  `docs/acceptance/2026-08-31-yamnet-native-amd64/`.
+- Result: the native corpus ranks 16/40 eligible groups top-three, 24/40
+  top-five, and 30/40 top-ten (3,365-basis-point MRR). The isolated controls
+  rank all six supported positives top-three and four top-one
+  (8,056-basis-point MRR). No threshold is selected. The candidate contains 19
+  abstentions and zero detections.
 - Human boundary: Zach's separate teacher attestation at
   `2026-08-31T21:28:00.000Z` accepts the complete frozen source and four core
   stems for the v3.2 pre-provision gate. It does not approve the 19-source
@@ -339,8 +346,8 @@ promotion on their own.
   and 1 isolation-shadow browser journey. Workflow YAML parsing and
   `git show --check` pass. Rollout remains off. No Railway mutation, provider
   call, deployment, push, or pull request occurred.
-- Remaining: a completed deidentified listening review, fresh native-amd64
-  candidate reports, at least two candidates with reviewed thresholds, a
+- Remaining: a completed deidentified listening review, at least two
+  candidates with reviewed thresholds and definite decisions, a
   predeclared quality floor, license/calibration/resource evidence, human
   selection, and Railway shadow acceptance still block classifier selection.
 

@@ -1,0 +1,149 @@
+{
+  "$schema": "stem-splitter.yamnet-native-amd64-acceptance.v1",
+  "status": "passed-comparison-only",
+  "capturedAt": "2026-08-31T23:25:15.000Z",
+  "source": {
+    "commit": "76ea7c004d70cffa8aadcfcc177301ee74d2fe2b",
+    "branch": "main",
+    "workflow": "YAMNet comparator image",
+    "workflowPath": ".github/workflows/yamnet-comparator-image.yml",
+    "workflowSha256": "de1f54252c9512046268d63f97fd59ba42b16059e059b14d27a5477e1eaa6e8e",
+    "runId": "33450445790",
+    "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/33450445790",
+    "jobId": "99678920223",
+    "job": "Pinned YAMNet comparator (native amd64)",
+    "conclusion": "success",
+    "sourceGateRunId": "33450445793",
+    "sourceGateConclusion": "success"
+  },
+  "artifact": {
+    "id": "9779606875",
+    "name": "yamnet-native-amd64-76ea7c004d70cffa8aadcfcc177301ee74d2fe2b",
+    "compressedBytes": 28587,
+    "uncompressedBytes": 198231,
+    "expiresAt": "2026-09-30T23:25:14.000Z",
+    "containsAudio": false,
+    "files": [
+      {
+        "name": "yamnet-native-amd64-corpus.json",
+        "schema": "stem-splitter.yamnet-comparator-evaluation.v2",
+        "bytes": 136845,
+        "sha256": "6254494f4fcc4b397b3d95713f361229132288c4502bdd2332756b3b85d8a4be"
+      },
+      {
+        "name": "yamnet-native-amd64-controls.json",
+        "schema": "stem-splitter.yamnet-control-evaluation.v1",
+        "bytes": 53255,
+        "sha256": "c897a4a024978d51eee5ac82741b9bb13354f00a26c05fecb43f90962c77bf82"
+      },
+      {
+        "name": "yamnet-native-amd64-source-report.json",
+        "schema": "stem-splitter.yamnet-candidate-source-report.v1",
+        "bytes": 558,
+        "sha256": "d7cb8655db354b2fe1595f0fa9c9db31814c27e3b5c3ab448d1dff157dfa3af9"
+      },
+      {
+        "name": "yamnet-native-amd64-candidate.json",
+        "schema": "stem-splitter.instrument-candidate-observations.v3",
+        "bytes": 7573,
+        "sha256": "8111a5c6b65c90cf08e234e8635baef10ac8f832f5056bf31472ceb194e6d7fc"
+      }
+    ]
+  },
+  "execution": {
+    "imageId": "sha256:f493edc1516c131b95208ea7d4835a69fffc5a1e0375192efaedf8983fd371b9",
+    "imagePlatform": "linux/amd64",
+    "hostPlatform": "linux/amd64",
+    "emulated": false,
+    "imageBytes": 739878508,
+    "dependencyLockSha256": "b4cb15c5bf6fc4e68b9e3a7d617fc6ad81302ce35c3466cd70ba8f5626de4e3e",
+    "node": "v22.23.1",
+    "ffmpeg": "6.1.1-3ubuntu5",
+    "ffprobe": "6.1.1-3ubuntu5"
+  },
+  "candidate": {
+    "classifierVersion": "google-yamnet-tflite-v1-max-class-top3-patch-mean-second-window-v1@kaggle-version-763",
+    "officialLicense": "Apache 2.0",
+    "modelSha256": "141fba1cdaae842c816f28edc4937e8b4f0af4c8df21862ccc6b52dc567993c3",
+    "classMapSha256": "cdf24d193e196d9e95912a2667051ae203e92a2ba09449218ccb40ef787c6df2",
+    "mappingSha256": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318",
+    "vocabularyVersion": "classroom-instruments-v1",
+    "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+    "thresholdSelected": null,
+    "precisionClaim": "none-review-pending",
+    "promotionEligible": false
+  },
+  "corpus": {
+    "sources": 11,
+    "eligibleExpectedGroups": 40,
+    "unsupportedExpectedGroups": 2,
+    "top3ExpectedGroups": 16,
+    "top5ExpectedGroups": 24,
+    "top10ExpectedGroups": 30,
+    "meanReciprocalRankBasisPoints": 3365,
+    "diagnosticThreshold": 0.15,
+    "diagnosticExpectedHits": 4,
+    "diagnosticHardNegativeAlerts": 0,
+    "totalLoadMs": 9853,
+    "totalInferenceMs": 2263,
+    "totalComparatorMs": 12358,
+    "thresholdSelected": null,
+    "promotionEligible": false
+  },
+  "controls": {
+    "sources": 8,
+    "eligibleSpecificPositives": 6,
+    "unsupportedSpecificPositives": 2,
+    "top1SpecificPositives": 4,
+    "top3SpecificPositives": 6,
+    "top5SpecificPositives": 6,
+    "top10SpecificPositives": 6,
+    "meanReciprocalRankBasisPoints": 8056,
+    "candidateNegativeAnnotations": 278,
+    "totalLoadMs": 7142,
+    "totalInferenceMs": 1643,
+    "totalComparatorMs": 8963,
+    "thresholdSelected": null,
+    "precisionClaim": "none-review-pending",
+    "promotionEligible": false
+  },
+  "candidateEnvelope": {
+    "schema": "stem-splitter.instrument-candidate-observations.v3",
+    "planVersion": "v3.2-genre-diverse-evaluation-v3",
+    "planSha256": "73d8cd005c6856f53ebea92690171131dc943009ae0fb3b96c9829735fdfb83a",
+    "sources": 19,
+    "classified": 0,
+    "abstained": 19,
+    "degraded": 0,
+    "detections": 0,
+    "abstentionReason": "no-label-cleared-threshold",
+    "promotionEligible": false
+  },
+  "humanReview": {
+    "coreListeningArtifact": "docs/acceptance/2026-08-10-v3.2-manual-listening/review.json",
+    "coreListeningArtifactSha256": "f96a81c9186ac6d3f27b99bac2cbf2bc3d73a12359b49d24c9398f46b9405ca7",
+    "coreListeningAccepted": true,
+    "coreReviewedAt": "2026-08-31T21:28:00.000Z",
+    "instrumentReviewAccepted": false,
+    "instrumentReviewCompletedSources": 0,
+    "instrumentReviewTotalSources": 19,
+    "isolatedControlReviewAccepted": false
+  },
+  "safety": {
+    "audioCommitted": false,
+    "railwayServiceCreated": false,
+    "featureFlagChanged": false,
+    "thresholdSelected": false,
+    "precisionClaimMade": false,
+    "promotionAuthorized": false
+  },
+  "remainingBlockers": [
+    "exhaustive-instrument-label-review-missing",
+    "isolated-control-review-missing",
+    "second-license-cleared-classifier-missing",
+    "reviewed-threshold-policy-missing",
+    "candidate-comparison-missing",
+    "classifier-selection-missing",
+    "railway-discovery-shadow-missing"
+  ]
+}
