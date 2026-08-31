@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Instrument review</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <main class="review-shell">
+    <header class="review-header">
+      <div>
+        <h1>Instrument review</h1>
+        <p id="overall-progress">Loading…</p>
+      </div>
+      <p id="save-state" role="status" aria-live="polite">Loading</p>
+    </header>
+
+    <nav class="source-nav" aria-label="Recording navigation">
+      <button id="previous-source" class="icon-button" type="button" aria-label="Previous recording">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 5 8 12l7 7" />
+        </svg>
+      </button>
+      <label class="source-picker">
+        <span class="sr-only">Recording</span>
+        <select id="source-picker"></select>
+      </label>
+      <button id="next-source" class="icon-button" type="button" aria-label="Next recording">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m9 5 7 7-7 7" />
+        </svg>
+      </button>
+    </nav>
+
+    <section id="review-panel" aria-labelledby="source-title" hidden>
+      <header class="source-header">
+        <p id="source-kind"></p>
+        <h2 id="source-title"></h2>
+      </header>
+
+      <audio id="source-audio" controls preload="metadata"></audio>
+
+      <div class="question-header">
+        <div>
+          <h3>What do you hear?</h3>
+          <p id="source-progress"></p>
+        </div>
+        <button id="mark-remaining-absent" class="quiet-button" type="button">
+          Set remaining to not heard
+        </button>
+      </div>
+
+      <div id="instrument-groups" class="instrument-groups"></div>
+
+      <label class="listened-check">
+        <input id="whole-source-listened" type="checkbox" />
+        <span>I listened to the whole recording.</span>
+      </label>
+
+      <div class="bottom-nav">
+        <button id="previous-source-bottom" class="quiet-button" type="button">Previous</button>
+        <button id="next-source-bottom" class="primary-button" type="button">Save and continue</button>
+      </div>
+    </section>
+
+    <section id="finish-panel" class="finish-panel" aria-labelledby="finish-title" hidden>
+      <h2 id="finish-title">Finish</h2>
+      <label class="finish-field">
+        <span>Your name</span>
+        <input id="reviewer-name" maxlength="120" autocomplete="name" />
+      </label>
+      <label class="attestation-check">
+        <input id="attestation-check" type="checkbox" />
+        <span id="attestation-text"></span>
+      </label>
+      <button id="complete-review" class="primary-button" type="button">Complete worksheet</button>
+      <p id="finish-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <p id="load-error" class="error" role="alert" hidden></p>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

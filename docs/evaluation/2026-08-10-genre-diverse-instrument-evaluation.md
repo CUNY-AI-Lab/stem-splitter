@@ -103,9 +103,10 @@ must create a new evaluation-plan version that preserves an isolated
 family/source partition. Separately licensed exact positives remain necessary
 for free reeds, solo strings, pitched percussion, and traditional instruments.
 
-The tooling implementation produced only a pending private template to verify
-the command and then deleted it. No teacher verdict or public review artifact
-has been created.
+The owner-only review workspace now exists locally, but no instrument verdict
+or public review artifact has been accepted. The current private worksheet is
+still at 0 of 19 completed recordings. The separate v3.2 source-and-stem
+listening acceptance does not populate or approve this instrument-label review.
 
 ## Human-review boundary
 
@@ -114,6 +115,20 @@ Prepare an owner-only worksheet under the gitignored `output/` directory:
 ```bash
 bun run prepare:instrument-review --output output/instrument-review.private.json
 ```
+
+Review that worksheet in the localhost-only listening workspace:
+
+```bash
+node --experimental-strip-types scripts/serve-instrument-evaluation-review.mts \
+  --input output/instrument-review.private.json
+```
+
+The workspace binds to `127.0.0.1`, checks every hydrated recording against
+the frozen plan before serving it, autosaves partial progress to the same
+owner-only worksheet, and supports reload/resume. It does not add a public
+route, prefill a verdict, infer a label from metadata, or finalize evidence.
+The reviewer still must make every listening judgment and complete the fixed
+attestation below.
 
 For every source, the authorized teacher or domain reviewer must:
 

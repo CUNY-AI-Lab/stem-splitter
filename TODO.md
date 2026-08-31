@@ -1254,9 +1254,12 @@ job.
   and hard-negative annotation before using it to calculate precision/recall.
   Corpus metadata and rationale are testable provenance, not ground truth by
   themselves. The fixed listening protocol now has a private mode-`0600`,
-  no-overwrite worksheet and a strict deidentifying finalizer. This remains
+  no-overwrite worksheet, a localhost-only one-recording-at-a-time listening
+  workspace with guarded autosave/reload, and a strict deidentifying finalizer.
+  The current worksheet remains at 0 of 19 completed sources. This stays
   unchecked because no authorized reviewer has completed all 19 sources × 51
-  labels and no public review artifact has been accepted.
+  labels and no public review artifact has been accepted; the separate v3.2
+  source-and-stem acceptance does not approve these labels.
 - [x] Add teacher feedback controls for confirmed, absent, and missed
   instruments without treating those reports as training labels until they are
   reviewed and de-identified. The append-only schema records exact analysis,
@@ -1513,7 +1516,10 @@ canary. Student access remains off.
   without turning an outage into classifier error. It forbids promotion from
   an overlapping all-label aggregate. This establishes the evidence shape but
   does not supply human ground truth, candidate scores, Slakh/MedleyDB data, a
-  quality floor, or a promotion decision.
+  quality floor, or a promotion decision. A private localhost listening
+  workspace now makes the frozen 19-source × 51-label review resumable without
+  exposing it in the teacher UI; completing and accepting that review remains
+  the next human evidence step.
 - [ ] Establish an evaluation loop using authorized classroom tracks plus
   instrument-rich subsets of Slakh2100 and MedleyDB. Keep synthetic and real
   results separate in reports. The current 11-real/8-isolated contract is the

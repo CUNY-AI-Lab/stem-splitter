@@ -101,6 +101,150 @@ export function createPrivateInstrumentEvaluationReviewTemplate(
   };
 }
 
+/**
+ * Validate an in-progress private worksheet without weakening the finalizer.
+ * Drafts may contain unreviewed labels and partially completed sources, but
+ * their plan identity, ordering, source hashes, and verdict vocabulary remain
+ * frozen. A source cannot claim complete listening while any label is still
+ * unreviewed.
+ */
+export function validatePrivateInstrumentEvaluationReviewDraft(
+  value: unknown,
+  plan: InstrumentEvaluationPlanV1,
+  planSha256: string
+): PrivateInstrumentEvaluationReviewV1 {
+  if (!record(value)) throw new Error('private instrument evaluation review draft is invalid');
+  exactKeys(
+    value,
+    [
+      '$schema',
+      'planPath',
+      'planVersion',
+      'planSha256',
+      'status',
+      'reviewProtocolVersion',
+      'reviewer',
+      'reviewedAt',
+      'attestation',
+      'sources',
+    ],
+    'private instrument evaluation review draft'
+  );
+  if (
+    value.$schema !== PRIVATE_INSTRUMENT_EVALUATION_REVIEW_SCHEMA ||
+    value.planPath !== INSTRUMENT_EVALUATION_PLAN_PATH ||
+    value.planVersion !== plan.version ||
+    value.planSha256 !== planSha256 ||
+    value.status !== PRIVATE_REVIEW_STATUS ||
+    value.reviewProtocolVersion !== REVIEW_PROTOCOL ||
+    typeof value.reviewer !== 'string' ||
+    (value.reviewer !== '' && !SAFE_REVIEWER.test(value.reviewer)) ||
+    typeof value.reviewedAt !== 'string' ||
+    (value.reviewedAt !== '' && !canonicalIso(value.reviewedAt)) ||
+    typeof value.attestation !== 'string' ||
+    (value.attestation !== '' && value.attestation !== INSTRUMENT_EVALUATION_REVIEW_ATTESTATION) ||
+    !Array.isArray(value.sources)
+  ) {
+    throw new Error('private instrument evaluation review draft is incomplete or drifted');
+  }
+  const expectedSources = planSources(plan);
+  if (value.sources.length !== expectedSources.length) {
+    throw new Error('private instrument evaluation review draft source coverage is incomplete');
+  }
+  const completionMetadata = [
+    value.reviewer !== '',
+    value.reviewedAt !== '',
+    value.attestation !== '',
+  ];
+  if (completionMetadata.some(Boolean) && !completionMetadata.every(Boolean)) {
+    throw new Error('private instrument evaluation review draft completion is partial');
+  }
+  const optionIds = INSTRUMENT_REVIEW_OPTIONS.map(({ id }) => id);
+  const sources = value.sources.map((rawSource, sourceIndex) => {
+    const context = `private instrument review draft source ${sourceIndex + 1}`;
+    if (!record(rawSource)) throw new Error(`${context} is invalid`);
+    exactKeys(
+      rawSource,
+      [
+        'partitionId',
+        'id',
+        'corpusKind',
+        'sourceSha256',
+        'genreFamily',
+        'wholeSourceListened',
+        'verdicts',
+      ],
+      context
+    );
+    const expected = expectedSources[sourceIndex];
+    if (
+      rawSource.partitionId !== expected.partitionId ||
+      rawSource.id !== expected.id ||
+      rawSource.corpusKind !== expected.corpusKind ||
+      rawSource.sourceSha256 !== expected.sourceSha256 ||
+      rawSource.genreFamily !== expected.genreFamily ||
+      typeof rawSource.wholeSourceListened !== 'boolean' ||
+      !Array.isArray(rawSource.verdicts) ||
+      rawSource.verdicts.length !== optionIds.length
+    ) {
+      throw new Error(`${context} does not match the pinned source`);
+    }
+    const verdicts = rawSource.verdicts.map((rawVerdict, verdictIndex) => {
+      if (!record(rawVerdict)) throw new Error(`${context} verdict is invalid`);
+      exactKeys(rawVerdict, ['instrumentId', 'verdict'], `${context} verdict`);
+      if (
+        rawVerdict.instrumentId !== optionIds[verdictIndex] ||
+        typeof rawVerdict.verdict !== 'string' ||
+        rawVerdict.verdict !== 'unreviewed' &&
+          !(VERDICTS as readonly string[]).includes(rawVerdict.verdict)
+      ) {
+        throw new Error(`${context} contains an invalid or reordered verdict`);
+      }
+      return {
+        instrumentId: rawVerdict.instrumentId,
+        verdict: rawVerdict.verdict as PrivateVerdict,
+      };
+    });
+    if (
+      rawSource.wholeSourceListened &&
+      verdicts.some(({ verdict }) => verdict === 'unreviewed')
+    ) {
+      throw new Error(`${context} cannot be complete while labels remain unreviewed`);
+    }
+    return {
+      partitionId: expected.partitionId,
+      id: expected.id,
+      corpusKind: expected.corpusKind,
+      sourceSha256: expected.sourceSha256,
+      genreFamily: expected.genreFamily,
+      wholeSourceListened: rawSource.wholeSourceListened,
+      verdicts,
+    };
+  });
+  if (
+    completionMetadata.every(Boolean) &&
+    sources.some(
+      (source) =>
+        !source.wholeSourceListened ||
+        source.verdicts.some(({ verdict }) => verdict === 'unreviewed')
+    )
+  ) {
+    throw new Error('private instrument evaluation review draft is attested before completion');
+  }
+  return {
+    $schema: PRIVATE_INSTRUMENT_EVALUATION_REVIEW_SCHEMA,
+    planPath: INSTRUMENT_EVALUATION_PLAN_PATH,
+    planVersion: plan.version,
+    planSha256,
+    status: PRIVATE_REVIEW_STATUS,
+    reviewProtocolVersion: REVIEW_PROTOCOL,
+    reviewer: value.reviewer,
+    reviewedAt: value.reviewedAt,
+    attestation: value.attestation,
+    sources,
+  };
+}
+
 export function finalizePrivateInstrumentEvaluationReview(
   value: unknown,
   serializedPrivateReview: string,
