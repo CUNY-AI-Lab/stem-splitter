@@ -352,7 +352,9 @@ test('YAMNet native image workflow is path-scoped, pinned, and runs the constrai
   assert.match(workflow, /runs-on: ubuntu-24\.04/);
   assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(workflow, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+  assert.match(workflow, /oven-sh\/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6/);
   assert.match(workflow, /node-version: "22\.23\.1"/);
+  assert.match(workflow, /bun install --frozen-lockfile/);
   assert.match(workflow, /docker build --pull --platform linux\/amd64/);
   assert.match(workflow, /YAMNET_COMPARATOR_EXPECTED_PLATFORM: linux\/amd64/);
   assert.match(workflow, /smoke-yamnet-comparator-image\.mts/);
@@ -361,6 +363,8 @@ test('YAMNet native image workflow is path-scoped, pinned, and runs the constrai
   assert.match(workflow, /hydrate-instrument-controls\.mts/);
   assert.match(workflow, /eval-yamnet-comparator\.mts/);
   assert.match(workflow, /eval-yamnet-controls\.mts/);
+  assert.match(workflow, /node --import tsx scripts\/eval-yamnet-comparator\.mts/);
+  assert.match(workflow, /node --import tsx scripts\/eval-yamnet-controls\.mts/);
   assert.match(workflow, /prepare-yamnet-candidate-source\.mts/);
   assert.match(workflow, /capture-yamnet-instrument-candidate\.mts/);
   assert.match(
