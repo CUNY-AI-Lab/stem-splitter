@@ -66,15 +66,10 @@ test('pending, partial, anonymous, and drifted listening claims fail closed', ()
   }
 });
 
-test('the current promotion cannot claim manual listening before a canonical review exists', () => {
+test('the current promotion validates the canonical listening review', () => {
   const raw = JSON.parse(
     readFileSync(resolve(REPOSITORY_ROOT, AUDIO_PIPELINE_PROMOTION_MANIFEST_PATH), 'utf8')
   );
-  raw.evidence.manualListening = true;
-  raw.blockers = raw.blockers.filter((blocker: string) => blocker !== 'manual-listening-missing');
   const manifest = validateAudioPipelinePromotionManifest(raw);
-  assert.throws(
-    () => validateAudioPipelinePromotionEvidence(REPOSITORY_ROOT, manifest),
-    /ENOENT/
-  );
+  assert.doesNotThrow(() => validateAudioPipelinePromotionEvidence(REPOSITORY_ROOT, manifest));
 });

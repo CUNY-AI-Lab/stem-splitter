@@ -50,7 +50,6 @@
       "externalExecution": false,
       "accepted": false,
       "blockers": [
-        "manual-listening-missing",
         "railway-resource-acceptance-missing"
       ]
     },
@@ -128,7 +127,7 @@
     "genreCorpus": true,
     "browserParity": true,
     "nativeAmd64Image": true,
-    "manualListening": false,
+    "manualListening": true,
     "railwayBaseline": true,
     "railwayResourceAcceptance": false,
     "railwayShadow": false,
@@ -145,7 +144,6 @@
   },
   "blockers": [
     "audio-analysis-service-absent",
-    "manual-listening-missing",
     "railway-resource-acceptance-missing",
     "railway-rollback-missing"
   ]

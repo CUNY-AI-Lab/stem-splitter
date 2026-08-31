@@ -1,0 +1,54 @@
+{
+  "$schema": "stem-splitter.audio-pipeline-listening.v1",
+  "releaseId": "v3.2-autosplit-role-v4",
+  "baselineArtifactSha256": "e2369d661e0e0ee11072e5d6877171ce9ec894aab6398e404beb409368dd4827",
+  "jobId": "d0c038cd-6f75-49ad-a055-2d22377dbb6a",
+  "sourceSha256": "a929ec6515ecc915111d2de59acb9ff81d53a6194f2a551775859b0d291cd658",
+  "model": "htdemucs_ft",
+  "reviewedAt": "2026-08-31T21:28:00.000Z",
+  "reviewedBy": "Zach",
+  "reviewerRole": "teacher",
+  "decision": "accepted",
+  "checks": {
+    "sourceReviewedInFull": true,
+    "eachStemReviewedInFull": true,
+    "noCorruptionOrTruncation": true,
+    "vocalsUsable": true,
+    "drumsUsable": true,
+    "bassUsable": true,
+    "otherUsable": true,
+    "classroomUseAccepted": true
+  },
+  "stems": [
+    {
+      "name": "vocals",
+      "bytes": 4068832,
+      "sha256": "49501e6cdb0cda3ca05364d4e07995a215f3fbf41a0be8994d8188a2e0242001",
+      "verdict": "accepted",
+      "notes": ""
+    },
+    {
+      "name": "drums",
+      "bytes": 4068832,
+      "sha256": "a44f5fb24b90a6816c5001806441ff37317f5ec648723ac2796d9c0cbccf7af0",
+      "verdict": "accepted",
+      "notes": ""
+    },
+    {
+      "name": "bass",
+      "bytes": 4068832,
+      "sha256": "3eb24962a76c0af21a0145c45afb08a2761e64999ccb015779ac82c0e22607ca",
+      "verdict": "accepted",
+      "notes": ""
+    },
+    {
+      "name": "other",
+      "bytes": 4068832,
+      "sha256": "8a6e89b0e06db477102a5373f069203ddccfaa9ceb6be14b914cbd667a7f85f4",
+      "verdict": "accepted",
+      "notes": ""
+    }
+  ],
+  "notes": "",
+  "attestation": "I listened to the complete authorized source and every frozen stem, and I accept this result for the v3.2 pre-provision gate."
+}

@@ -5,6 +5,18 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## v3.2-role-v4-listening — frozen baseline accepted — 2026-08-31
+
+- Zach, acting as teacher, listened to the complete authorized source and every
+  frozen `htdemucs_ft` stem and accepted the result for the v3.2 pre-provision
+  gate at `2026-08-31T21:28:00.000Z`.
+- The canonical review is bound to the exact rollback artifact, job, source
+  hash, ordered stem names, byte counts, SHA-256 values, and fixed attestation.
+  The validator rejects anonymous, partial, reordered, or drifted claims.
+- This clears the human listening prerequisite for the role-v4 analyzer only.
+  It does not accept a Railway resource profile, enable server Auto, or promote
+  the separately rejected CLAP instrument-discovery candidate.
+
 ## v3.2-role-v4-native-amd64 — native analyzer image accepted — 2026-08-31
 
 - GitHub Actions run `33353695281` built and exercised the exact

@@ -259,7 +259,6 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
   assert.deepEqual(promotionBlockers(current, 'off'), []);
   assert.deepEqual(promotionBlockers(current, 'shadow'), [
     'audio-analysis-service-absent',
-    'manual-listening-missing',
     'railway-resource-acceptance-missing',
     'railway-rollback-missing',
   ]);
@@ -296,9 +295,7 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
 
 test('Railway analyzer provisioning has a separate pre-mutation evidence gate', () => {
   const current = loadAudioPipelinePromotionManifest(REPOSITORY_ROOT);
-  assert.deepEqual(provisionAudioAnalysisBlockers(current), [
-    'manual-listening-missing',
-  ]);
+  assert.deepEqual(provisionAudioAnalysisBlockers(current), []);
 
   const ready = structuredClone(current);
   ready.evidence.nativeAmd64Image = true;
@@ -337,10 +334,11 @@ test('the CLI reports blockers and fails only when a blocked stage is required',
     [...command, '--require-action', 'provision-audio-analysis'],
     { cwd: REPOSITORY_ROOT, encoding: 'utf8' }
   );
-  assert.equal(action.status, 1, action.stderr);
+  assert.equal(action.status, 0, action.stderr);
   const actionSummary = JSON.parse(action.stdout);
   assert.equal(actionSummary.requestedStage, null);
   assert.equal(actionSummary.requestedAction, 'provision-audio-analysis');
+  assert.equal(actionSummary.promotable, true);
   assert.deepEqual(
     actionSummary.blockers,
     provisionAudioAnalysisBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT))

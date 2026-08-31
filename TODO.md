@@ -8,11 +8,11 @@
 
 **v3.2 implementation branch:** `codex/v3.2-audio-pipeline`
 
-**Current promotion gate:** Native Linux amd64 image evidence is now bound to
-GitHub Actions run `33353695281` at commit `431e21f`. The remaining
-pre-provision blocker is the attributable whole-source and whole-stem listening
-review; its private draft remains pending and has not been fabricated. The
-rejected CLAP discovery candidate remains separately blocked from provisioning.
+**Current promotion gate:** Native Linux amd64 image evidence is bound to
+GitHub Actions run `33353695281` at commit `431e21f`, and Zach's attributable
+teacher review accepts the complete frozen source and all four exact stems. The
+pre-provision action gate is clear. The rejected CLAP discovery candidate
+remains separately blocked from provisioning.
 
 ## Next product slice — SPLIT / REMIX workspaces
 
