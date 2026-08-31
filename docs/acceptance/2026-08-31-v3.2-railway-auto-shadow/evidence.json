@@ -1,0 +1,172 @@
+{
+  "$schema": "stem-splitter.railway-auto-shadow-acceptance.v1",
+  "status": "passed",
+  "capturedAt": "2026-08-31T22:17:02.000Z",
+  "source": {
+    "commit": "4c00b32fab96c8f9405095742ce3ca7170ace75b",
+    "ci": {
+      "runId": "33444030802",
+      "headSha": "4c00b32fab96c8f9405095742ce3ca7170ace75b",
+      "conclusion": "success",
+      "jobs": [
+        "Source gate",
+        "Pinned analysis image (native amd64)"
+      ]
+    }
+  },
+  "railway": {
+    "projectId": "f070742b-3375-4cba-9a86-335f39273c88",
+    "environmentId": "b3381640-1e2f-4765-8e15-15baec599ec2",
+    "appServiceId": "f53a2915-087c-493a-a345-7a1fa73e6588",
+    "analyzerServiceId": "f8e3b4a6-f370-4877-a6fb-64655e43ce25",
+    "analyzerDeploymentId": "d2734626-d06a-41ba-a90e-9f7d57b09418",
+    "analyzerDeploymentStatus": "SUCCESS",
+    "shadowDeploymentId": "ddf4fcb1-e186-4224-b8dd-e5300c036079",
+    "shadowTerminalStatus": "SUCCESS",
+    "shadowSuperseded": true,
+    "outageDeploymentId": "f55a886d-08af-4b21-ab8a-8c3b52b0d9fd",
+    "outageTerminalStatus": "SUCCESS",
+    "outageSuperseded": true,
+    "restoreDeploymentId": "41237f5b-88e6-4356-832b-d002c58a6575",
+    "restoreDeploymentStatus": "SUCCESS",
+    "privateHostname": "audio-analysis.railway.internal"
+  },
+  "configuration": {
+    "productionBase": "https://stem-splitter-production-78b9.up.railway.app",
+    "audioAnalysis": "configured",
+    "serverAutoEnabled": true,
+    "serverAutoMode": "shadow",
+    "instrumentDiscovery": "disabled",
+    "instrumentDiscoveryUrlPresent": false,
+    "queryIsolationMode": "off",
+    "analyzerPrivateUrlRestored": true,
+    "catalogue": [
+      "vocals_instrumental",
+      "htdemucs_ft",
+      "htdemucs_6s"
+    ]
+  },
+  "journeys": [
+    {
+      "sourceType": "upload",
+      "jobId": "99e780fe-1a16-4a8e-b908-4955571f52b5",
+      "filename": "v32-analyzer-restored.mp3",
+      "status": "done",
+      "separationModel": "htdemucs_ft",
+      "expectedStems": ["vocals", "drums", "bass", "other"],
+      "actualStems": ["vocals", "drums", "bass", "other"],
+      "analysis": {
+        "roleClassifier": "autosplit-role-v4",
+        "choice": "four",
+        "recommendedCoreModel": "htdemucs_ft",
+        "shadowApplied": false,
+        "degraded": false,
+        "degradedCode": null,
+        "totalMs": 607,
+        "analyzedSeconds": 45
+      }
+    },
+    {
+      "sourceType": "archive",
+      "jobId": "a770fd04-694e-45f4-8aa3-125bff7d3403",
+      "filename": "selene XIV - Stiff Hand",
+      "status": "done",
+      "separationModel": "htdemucs_ft",
+      "expectedStems": ["vocals", "drums", "bass", "other"],
+      "actualStems": ["vocals", "drums", "bass", "other"],
+      "analysis": {
+        "roleClassifier": "autosplit-role-v4",
+        "choice": "four",
+        "recommendedCoreModel": "htdemucs_ft",
+        "shadowApplied": false,
+        "degraded": false,
+        "degradedCode": null,
+        "totalMs": 591,
+        "analyzedSeconds": 45
+      }
+    },
+    {
+      "sourceType": "youtube",
+      "jobId": "b09fac45-6f8f-4f48-96e3-a5da12d2931c",
+      "filename": "Me at the zoo",
+      "status": "done",
+      "separationModel": "htdemucs_ft",
+      "expectedStems": ["vocals", "drums", "bass", "other"],
+      "actualStems": ["vocals", "drums", "bass", "other"],
+      "analysis": {
+        "roleClassifier": "autosplit-role-v4",
+        "choice": "two",
+        "recommendedCoreModel": "vocals_instrumental",
+        "shadowApplied": false,
+        "degraded": false,
+        "degradedCode": null,
+        "totalMs": 306,
+        "analyzedSeconds": 18.94748299319728
+      }
+    }
+  ],
+  "fallback": {
+    "jobId": "3f106bad-f416-4372-9195-a374d673cfdd",
+    "filename": "v32-analyzer-outage-fallback.mp3",
+    "status": "done",
+    "separationModel": "htdemucs_ft",
+    "actualStems": ["vocals", "drums", "bass", "other"],
+    "analysisChoice": "fallback",
+    "roleClassifier": "not-run",
+    "degraded": true,
+    "degradedCode": "analysis_unavailable",
+    "shadowApplied": false,
+    "restoreRetestJobId": "99e780fe-1a16-4a8e-b908-4955571f52b5",
+    "restoreRetestPassed": true
+  },
+  "audienceGuard": {
+    "studentJobsChecked": 5,
+    "sourceKeyPresent": false,
+    "sourceHashPresent": false,
+    "isolationsPresent": false,
+    "vocabularyClassifierPresent": false,
+    "instrumentDiscoveryPresent": false,
+    "browserVisibleInternalAnalysis": false,
+    "publicUiCopyChanged": false
+  },
+  "screenshots": [
+    {
+      "sourceType": "upload",
+      "jobId": "99e780fe-1a16-4a8e-b908-4955571f52b5",
+      "path": "docs/acceptance/2026-08-31-v3.2-railway-auto-shadow/01-upload-restored-mixer.jpg",
+      "sha256": "8c648ffeba720dec9bdba176fe0b4ec7537585d04652375c42e717476a1e7713"
+    },
+    {
+      "sourceType": "archive",
+      "jobId": "a770fd04-694e-45f4-8aa3-125bff7d3403",
+      "path": "docs/acceptance/2026-08-31-v3.2-railway-auto-shadow/02-archive-shadow.jpg",
+      "sha256": "7cf72f403aaab21d1c135ad147b84310caa1476063eb33a8326b48aae632ffbc"
+    },
+    {
+      "sourceType": "youtube",
+      "jobId": "b09fac45-6f8f-4f48-96e3-a5da12d2931c",
+      "path": "docs/acceptance/2026-08-31-v3.2-railway-auto-shadow/03-youtube-shadow-receipt.jpg",
+      "sha256": "45a5aa15ce1983d321a2d9563272fcfd3a7f66f79bcba79b0fae23fac14101e6"
+    },
+    {
+      "sourceType": "outage-fallback",
+      "jobId": "3f106bad-f416-4372-9195-a374d673cfdd",
+      "path": "docs/acceptance/2026-08-31-v3.2-railway-auto-shadow/04-analysis-outage-fallback.jpg",
+      "sha256": "a8b26ddfb4eb91b62956df298bdf21afb0556df77a19248321fced6b3f8abad5"
+    }
+  ],
+  "metrics": {
+    "windowHours": 1,
+    "sampleRateSeconds": 30,
+    "analyzerCpuMax": 0.0267,
+    "analyzerMemoryMaxGb": 0.1105,
+    "withinConfiguredLimits": true,
+    "appHttpRequestsSampled": 141,
+    "appHttpErrors": 0
+  },
+  "safety": {
+    "secretsPrinted": 0,
+    "instrumentDiscoveryProviderCalls": 0,
+    "schemaMigrationRequired": false
+  }
+}

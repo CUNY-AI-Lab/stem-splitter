@@ -10,6 +10,7 @@ import { SAM_AUDIO_REPLICATE_VERSION } from './query-isolation-bakeoff.mts';
 import { loadAudioPipelineListeningEvidence } from './audio-pipeline-listening-evidence.mts';
 import { loadRailwayRollbackBaselineEvidence } from './railway-baseline-evidence.mts';
 import { loadRailwayAudioAnalysisAcceptance } from './railway-audio-analysis-acceptance.mts';
+import { loadRailwayAutoShadowAcceptance } from './railway-auto-shadow-acceptance.mts';
 
 export const AUDIO_PIPELINE_PROMOTION_SCHEMA =
   'stem-splitter.audio-pipeline-promotion.v2' as const;
@@ -624,5 +625,11 @@ export function validateAudioPipelinePromotionEvidence(
       throw new Error('Railway resource and rollback acceptance must advance together');
     }
     loadRailwayAudioAnalysisAcceptance(repositoryRoot);
+  }
+  if (manifest.evidence.railwayShadow || manifest.evidence.audienceGuard) {
+    if (!manifest.evidence.railwayShadow || !manifest.evidence.audienceGuard) {
+      throw new Error('Railway shadow and audience-guard acceptance must advance together');
+    }
+    loadRailwayAutoShadowAcceptance(repositoryRoot);
   }
 }

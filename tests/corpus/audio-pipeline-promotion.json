@@ -3,7 +3,7 @@
   "releaseId": "v3.2-autosplit-role-v4",
   "baseCommit": "86cd50baf859214e63fb177e8c2bb8f88c612aa1",
   "candidateCommit": "89019023c1fb8da82bf6acfbf886a31a4b30d86b",
-  "rolloutStage": "off",
+  "rolloutStage": "shadow",
   "change": {
     "axis": "role-classifier",
     "roleClassifier": true,
@@ -18,8 +18,8 @@
     "additiveSchemaOnly": false
   },
   "flags": {
-    "SERVER_AUTO_ENABLED": false,
-    "SERVER_AUTO_MODE": "off",
+    "SERVER_AUTO_ENABLED": true,
+    "SERVER_AUTO_MODE": "shadow",
     "INSTRUMENT_DISCOVERY_ENABLED": false,
     "QUERY_ISOLATION_ENABLED": false,
     "QUERY_ISOLATION_MODE": "off"
@@ -42,15 +42,15 @@
     {
       "id": "audio-analysis",
       "order": 1,
-      "disposition": "provisioned-off",
+      "disposition": "shadow",
       "dependsOn": [],
       "artifactVersion": "autosplit-role-v4+analysis-source-scope-v2",
       "provisioned": true,
-      "runtimeEnabled": false,
-      "externalExecution": false,
+      "runtimeEnabled": true,
+      "externalExecution": true,
       "accepted": false,
       "blockers": [
-        "railway-shadow-acceptance-missing"
+        "teacher-beta-acceptance-missing"
       ]
     },
     {
@@ -130,10 +130,10 @@
     "manualListening": true,
     "railwayBaseline": true,
     "railwayResourceAcceptance": true,
-    "railwayShadow": false,
+    "railwayShadow": true,
     "teacherBeta": false,
     "studentCanary": false,
-    "audienceGuard": false
+    "audienceGuard": true
   },
   "rollback": {
     "flag": "SERVER_AUTO_ENABLED",

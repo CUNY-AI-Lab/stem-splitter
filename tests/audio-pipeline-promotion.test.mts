@@ -57,7 +57,7 @@ test('the v3.2 manifest binds real commits, executable core contracts, and order
   assert.equal(manifest.components[2].artifactVersion, AUDIOSEP_REVIEWED_REPLICATE_VERSION);
   assert.deepEqual(
     [...manifest.blockers].sort(),
-    promotionBlockers(manifest, 'shadow')
+    promotionBlockers(manifest, 'teacher-beta')
   );
   const workflow = readFileSync(resolve(REPOSITORY_ROOT, '.github/workflows/ci.yml'), 'utf8');
   assert.match(workflow, /fetch-depth:\s*0/);
@@ -177,6 +177,7 @@ test('component order and acceptance prevent services from running out of sequen
   );
 
   const executedBeforeEnablement = cloneManifest();
+  executedBeforeEnablement.components[0].runtimeEnabled = false;
   executedBeforeEnablement.components[0].externalExecution = true;
   assert.throws(
     () => validateAudioPipelinePromotionManifest(executedBeforeEnablement),
@@ -200,6 +201,7 @@ test('component order and acceptance prevent services from running out of sequen
   paperAcceptance.components[0].accepted = true;
   paperAcceptance.components[0].disposition = 'accepted';
   paperAcceptance.components[0].blockers = [];
+  paperAcceptance.components[0].externalExecution = false;
   assert.throws(
     () => validateAudioPipelinePromotionManifest(paperAcceptance),
     /must execute successfully before acceptance/
@@ -208,7 +210,9 @@ test('component order and acceptance prevent services from running out of sequen
 
 test('false-default feature flags cannot be bypassed by a mode', () => {
   const offWithFeature = cloneManifest();
+  offWithFeature.rolloutStage = 'off';
   offWithFeature.flags.SERVER_AUTO_ENABLED = true;
+  offWithFeature.flags.SERVER_AUTO_MODE = 'shadow';
   assert.throws(
     () => validateAudioPipelinePromotionManifest(offWithFeature),
     /off rollout must keep every processing feature disabled/
@@ -216,16 +220,17 @@ test('false-default feature flags cannot be bypassed by a mode', () => {
 
   const bypass = cloneManifest();
   bypass.rolloutStage = 'shadow';
+  bypass.flags.SERVER_AUTO_ENABLED = false;
   bypass.flags.SERVER_AUTO_MODE = 'shadow';
+  bypass.components[0].runtimeEnabled = false;
+  bypass.components[0].externalExecution = false;
   assert.throws(
     () => validateAudioPipelinePromotionManifest(bypass),
     /server Auto mode cannot bypass its master switch/
   );
 
   const hiddenRuntime = cloneManifest();
-  hiddenRuntime.rolloutStage = 'shadow';
-  hiddenRuntime.components[0].provisioned = true;
-  hiddenRuntime.components[0].runtimeEnabled = true;
+  hiddenRuntime.flags.SERVER_AUTO_ENABLED = false;
   assert.throws(
     () => validateAudioPipelinePromotionManifest(hiddenRuntime),
     /server Auto flag must match the audio-analysis runtime state/
@@ -251,7 +256,7 @@ test('rollback remains flag-only and declared blockers must match the computed g
   hiddenBlocker.blockers.push('railway-shadow-missing');
   assert.throws(
     () => validateAudioPipelinePromotionManifest(hiddenBlocker),
-    /blockers do not match the shadow promotion gate/
+    /blockers do not match the teacher-beta promotion gate/
   );
 });
 
@@ -280,6 +285,8 @@ test('the rollout ladder exposes each missing proof without skipping stages', ()
 
   const teacherCandidate = structuredClone(shadowReady);
   teacherCandidate.rolloutStage = 'shadow';
+  teacherCandidate.evidence.audienceGuard = false;
+  teacherCandidate.evidence.railwayShadow = false;
   assert.deepEqual(promotionBlockers(teacherCandidate, 'teacher-beta'), [
     'audience-guard-missing',
     'railway-shadow-missing',
@@ -303,9 +310,11 @@ test('Railway analyzer provisioning has a separate pre-mutation evidence gate', 
   const current = loadAudioPipelinePromotionManifest(REPOSITORY_ROOT);
   assert.deepEqual(provisionAudioAnalysisBlockers(current), [
     'audio-analysis-already-provisioned',
+    'rollout-must-remain-off',
   ]);
 
   const ready = structuredClone(current);
+  ready.rolloutStage = 'off';
   ready.components[0].provisioned = false;
   ready.evidence.nativeAmd64Image = true;
   ready.evidence.manualListening = true;
@@ -338,7 +347,18 @@ test('the CLI reports blockers and fails only when a blocked stage is required',
   assert.equal(summary.requestedStage, 'shadow');
   assert.deepEqual(summary.blockers, promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'shadow'));
 
-  const skipped = spawnSync(process.execPath, [...command, '--require-stage', 'teacher-beta'], {
+  const teacherBeta = spawnSync(process.execPath, [...command, '--require-stage', 'teacher-beta'], {
+    cwd: REPOSITORY_ROOT,
+    encoding: 'utf8',
+  });
+  assert.equal(teacherBeta.status, 0, teacherBeta.stderr);
+  const teacherBetaSummary = JSON.parse(teacherBeta.stdout);
+  assert.deepEqual(
+    teacherBetaSummary.blockers,
+    promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'teacher-beta')
+  );
+
+  const skipped = spawnSync(process.execPath, [...command, '--require-stage', 'student-canary'], {
     cwd: REPOSITORY_ROOT,
     encoding: 'utf8',
   });
@@ -346,7 +366,7 @@ test('the CLI reports blockers and fails only when a blocked stage is required',
   const skippedSummary = JSON.parse(skipped.stdout);
   assert.deepEqual(
     skippedSummary.blockers,
-    promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'teacher-beta')
+    promotionBlockers(loadAudioPipelinePromotionManifest(REPOSITORY_ROOT), 'student-canary')
   );
 
   const action = spawnSync(

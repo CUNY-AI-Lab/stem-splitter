@@ -5,6 +5,35 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## v3.2-role-v4-railway-shadow — live shadow accepted — 2026-08-31
+
+- Exact source commit `4c00b32fab96c8f9405095742ce3ca7170ace75b`
+  passed CI run `33444030802`, including the source gate and native-amd64
+  analyzer image. Production is bound to the private analyzer at
+  `audio-analysis.railway.internal`; `SERVER_AUTO_ENABLED=true` and
+  `SERVER_AUTO_MODE=shadow`, while instrument discovery and query isolation
+  remain disabled.
+- Real upload, Internet Archive, and YouTube jobs completed with persisted
+  `autosplit-role-v4` decisions and the frozen concrete separation model. The
+  YouTube source produced a genuine two-part recommendation, demonstrating
+  that imported audio is analyzed rather than silently assigned the four-part
+  default; shadow correctly did not apply that recommendation.
+- A controlled analyzer outage produced `analysis_unavailable` and still
+  completed the concrete four-part separation. Restore deployment
+  `41237f5b-88e6-4356-832b-d002c58a6575` reached terminal `SUCCESS`, and a
+  fresh 45-second upload then completed with a non-degraded decision in 607 ms.
+- Five student job readbacks contained no source key, source hash, isolation,
+  vocabulary-classifier, or instrument-discovery field. Four real production
+  screenshots cover restored upload, Archive, YouTube, and outage-fallback
+  mixers; their JPEG bytes are SHA-256-bound by the strict acceptance validator.
+- Observed analyzer CPU peaked at 0.0267 and memory at 0.1105 GB within the
+  one-vCPU/one-billion-byte caps. A 141-request app HTTP sample contained zero
+  4xx/5xx responses. Instrument discovery made zero provider calls.
+- This release accepts shadow and its audience guard only. It does not make
+  Auto authoritative, accept a teacher beta, select an instrument classifier,
+  or authorize Remixer implementation ahead of the separately ordered
+  discovery gate.
+
 ## v3.2-role-v4-railway-private — provisioned, accepted, off — 2026-08-31
 
 - Exact source commit `d6a5fc6eec0190db2448fc66a6035a2776a2c9ac`
@@ -28,9 +57,10 @@ promotion on their own.
   then deployed off at `8ae0e06a-1106-4892-810b-f01e5e4d6c14`. The off
   endpoint removed the routing field and retained the exact explicit 2/4/6
   catalogue. The drill made zero provider calls and printed no secrets.
-- Rollout remains off while the strict evidence is committed. Instrument
-  discovery stayed unconfigured/disabled; the rejected CLAP candidate receives
-  no acceptance from this release.
+- This historical acceptance ended with rollout off. The later shadow entry
+  above supersedes that runtime posture without changing the accepted private
+  topology. Instrument discovery remained unconfigured/disabled; the rejected
+  CLAP candidate received no acceptance from this release.
 
 ## v3.2-role-v4-listening — frozen baseline accepted — 2026-08-31
 

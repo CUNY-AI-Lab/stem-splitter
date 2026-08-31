@@ -10,11 +10,15 @@
 
 **Current promotion gate:** The private `audio-analysis` service is provisioned
 on Railway from the accepted role-v4 source, has passed exact resource,
-readiness, authorization, real-audio, restart, and flag-only rollback checks,
-and is back in the explicit off posture. The versioned promotion gate is clear
-to begin server-Auto shadow evaluation. The rejected CLAP discovery candidate
-remains separately blocked from provisioning; no discovery service may be
-created until a replacement classifier clears its independent evidence gates.
+readiness, authorization, real-audio, restart, and flag-only rollback checks.
+Server Auto is now live in non-authoritative `shadow` mode. Upload, Internet
+Archive, and YouTube jobs completed with persisted role-v4 decisions; a forced
+analyzer outage completed through the frozen four-part fallback; the private
+URL restore and a fresh non-degraded job passed. Four real production-browser
+screenshots and student-response redaction are SHA-bound in the acceptance
+bundle. The rejected CLAP discovery candidate remains separately blocked from
+provisioning; no discovery service may be created until a replacement
+classifier clears its independent evidence gates.
 
 ## Next product slice — SPLIT / REMIX workspaces
 
@@ -42,16 +46,19 @@ role-v3 image previously built as `linux/amd64` under local emulation and passed
 runtime allowlist, non-root, health, readiness, authentication, eight-format
 decode, and eleven-source corpus gates on FFmpeg 8.0.3. The final image contains
 one bundled application artifact plus `ffmpeg` and `ffprobe`, rather than the
-root project's unused runtime dependencies. Server Auto remains off live and a
-private Railway analyzer is provisioned and validated. A new role-v4 candidate
+root project's unused runtime dependencies. Server Auto is live only in
+non-authoritative Railway shadow mode, while instrument discovery and query
+isolation remain disabled. A new role-v4 candidate
 closes a short-source AAC boundary-peak discrepancy while preserving all eleven
 authorized local corpus decisions (8 preferred, 3 accepted alternatives). A
 real app-plus-analyzer composition test now fetches stored upload, YouTube, and
 Archive bytes through the signed source boundary before sending only concrete
 models to the separator. Headless Chrome 151 and local FFmpeg 8.1.2 now agree on
 all eleven v4 corpus choices. The earlier role-v3 image remains historical
-evidence; role v4 still requires shadow-job, audience, and fallback acceptance
-gates before authority.
+evidence. Role v4 has now cleared shadow-job, audience-redaction, outage
+fallback, restore, and real-browser acceptance; teacher-beta targeting and
+audience acceptance remain separate prerequisites before any authoritative
+audience.
 See the
 [adversarial hardening audit](docs/audits/2026-08-09-audio-pipeline-phase0.md)
 and [model-processing changelog](docs/model-processing-changelog.md).
@@ -1533,7 +1540,11 @@ canary. Student access remains off.
   ladder, refuses stage skips and paper acceptance, computes the next-stage
   blockers, and runs explicitly in CI. Schema v2 separately guards analyzer
   provisioning so post-provision checks do not form a circular precondition.
-  It correctly leaves role v4 at `off`; no rollout stage has been promoted.
+  Role v4 is now accepted at `shadow`: the live Railway service completed
+  upload, Archive, and YouTube analysis without overriding concrete separation,
+  survived a forced analyzer outage through the frozen fallback, restored the
+  private endpoint, and passed student-redaction plus four real-browser
+  screenshots. Teacher beta, student canary, and default remain unclaimed.
 - [ ] Automatically request at most one or two high-confidence additional
   isolations only after manual-query evidence supports it. Until then,
   discovery may suggest but must not spend.
