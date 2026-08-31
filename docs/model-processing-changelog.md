@@ -5,6 +5,34 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## yamnet-native-amd64-capture-v1 — reproducible observation workflow — 2026-08-31
+
+- Scope: evidence generation only. This does not select YAMNet, define a
+  threshold, enable instrument discovery, create a Railway service, change
+  Auto's 2/4/6 routing, or alter any stem label.
+- Corpus provenance: a strict manifest now binds all eleven licensed mixes to
+  their exact Internet Archive object, Creative Commons URL, byte length, MD5,
+  Archive SHA-1, and SHA-256. The already accepted core corpus manifest remains
+  byte-for-byte unchanged so this discovery-only work cannot invalidate the
+  role-v4 analyzer evidence. Audio remains gitignored.
+- Retrieval boundary: the hydrator permits one pinned metadata request and one
+  exact Archive object redirect, bounds metadata and media, requires identity
+  encoding and exact media headers, streams three content hashes, uses
+  owner-only no-clobber writes, and fails closed on symlinks or existing-byte
+  drift.
+- Native workflow: the secret-free Ubuntu 24.04 job builds and smokes one
+  pinned `linux/amd64` image, hydrates eleven mixes and eight isolated controls,
+  records both native reports, binds them into one source report, emits an
+  explicitly abstention-only 19-source candidate, and uploads four JSON files
+  only. A successful GitHub run is still required for evidence acceptance.
+- Human boundary: Zach's separate teacher attestation at
+  `2026-08-31T21:28:00.000Z` accepts the complete frozen source and four core
+  stems for the v3.2 pre-provision gate. It does not approve the 19-source
+  instrument labels or any YAMNet threshold.
+- Rollout: off. Exhaustive instrument-label review, a second license-cleared
+  candidate, candidate comparison, and native/Railway shadow acceptance remain
+  required before provisioning or promotion.
+
 ## v3.2-role-v4-railway-shadow — live shadow accepted — 2026-08-31
 
 - Exact source commit `4c00b32fab96c8f9405095742ce3ca7170ace75b`

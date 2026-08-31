@@ -93,9 +93,13 @@ candidate negatives only: no teacher has listened to them, so the report makes
 no precision claim and selects no threshold. This is a stronger controlled
 comparison, not promotion evidence.
 A path-scoped, secret-free native-amd64 image workflow is defined locally but
-has not yet run on GitHub, and no detection has been promoted. Its path filter
-now covers every transitive host-side evaluator source; otherwise decoder,
-windowing, corpus, or contract changes could bypass the native image gate.
+has not yet completed its new full-corpus GitHub run, and no detection has been
+promoted. Its path filter now covers every transitive host-side evaluator
+source plus the strict Internet Archive hydration manifest and hydrator;
+otherwise downloader, decoder, windowing, corpus, or contract changes could
+bypass the native image gate. The job retrieves all eleven exact licensed
+mixes and eight exact controls, records native reports and an explicitly
+abstention-only candidate, uploads JSON evidence only, and never uploads audio.
 Future corpus reports use schema v2, bind those source digests, the Node
 runtime, TypeScript configuration, and dependency locks, and add both a
 before/after-verified SHA-256 for every hydrated audio input and a digest of the
@@ -946,11 +950,13 @@ deployment or enablement.
   authorized source and all ordered stem bytes before writing the original,
   four MP3 stems, pending review, and guide under the gitignored `output/`
   directory.
-- [ ] Obtain an attributable full-source and full-stem acceptance from a
-  teacher or domain reviewer. Validate it against
+- [x] Obtain an attributable full-source and full-stem acceptance from a
+  teacher or domain reviewer. Zach's teacher attestation at
+  `2026-08-31T21:28:00.000Z` validates against
   `docs/acceptance/2026-08-10-v3.2-manual-listening/review.json`; do not commit
-  licensed audio or set `manualListening: true` before the strict review loader
-  passes.
+  licensed audio. The strict review loader passes against the frozen source,
+  job, model, and four stem hashes. This accepts the core split and does not
+  approve any instrument-discovery label.
 - [ ] Make the server decision authoritative for all source types only after the
   parity gate passes. Keep the old catalogue default as an explicit fallback,
   never an implicit claim that remote audio was analyzed.
@@ -1009,10 +1015,13 @@ job.
 - [x] Define a path-scoped native-amd64 CI image gate that verifies the pinned
   image platform, non-root command, size ceiling, runtime surface, offline
   readiness pins, empty mount surface, dropped capabilities, bounded CPU/RAM/
-  PIDs, authentication, and real synthetic-control inference. The workflow is
-  local-only until a remote branch/PR run proves it on GitHub infrastructure.
-  `actionlint` passes; the earlier fresh native arm64 container run remains the
-  local evidence, while a remote branch/PR run is still required.
+  PIDs, authentication, and real synthetic-control inference. The expanded job
+  now hydrates all eleven licensed mixes from exact Archive object and content
+  pins, hydrates all eight isolated controls, runs both report generators
+  against one native image identity, captures the review-pending candidate,
+  and uploads only four bounded JSON files. `actionlint` passed the earlier
+  image-only definition; the earlier native arm64 container run remains local
+  evidence, while this expanded remote run is still required.
 - [ ] After a replacement classifier passes local musical-usefulness and human
   review, prove that selected discovery container restarts cleanly after the
   watchdog kills a deliberately stuck real inference. Do not spend Railway

@@ -1,0 +1,165 @@
+{
+  "$schema": "stem-splitter.instrument-evaluation-corpus-hydration.v1",
+  "version": "internet-archive-classroom-mixes-v1",
+  "corpusPath": "tests/corpus/corpus.json",
+  "downloadPolicy": {
+    "metadataOrigin": "https://archive.org",
+    "downloadOrigin": "https://archive.org",
+    "metadataPathPrefix": "/metadata/",
+    "downloadPathPrefix": "/download/",
+    "redirectStatus": 302,
+    "redirectHostSuffix": ".archive.org",
+    "maximumRedirects": 1,
+    "maximumMetadataBytes": 8388608,
+    "maximumBytesPerFile": 25165824,
+    "maximumTotalBytes": 100663296,
+    "requestTimeoutMs": 60000,
+    "contentType": "audio/mpeg",
+    "outputDirectory": "tests/corpus/audio"
+  },
+  "sources": [
+    {
+      "slug": "folk-duet",
+      "archiveIdentifier": "HopeAndJesseSingTogether",
+      "archiveFile": "01-Shine.mp3",
+      "localFile": "folk-duet-shine.mp3",
+      "licenseUrl": "http://creativecommons.org/licenses/by/3.0/us/",
+      "media": {
+        "bytes": 6042822,
+        "md5": "f95f4612fbacbda5b0d2206a47cc8df4",
+        "sha1": "66522de337c871f96b6d01aa886052a79ccaa7f6",
+        "sha256": "318e51a0e54f14c1f4c6fa39d944a2f1b7e373a432128fd10eff39ffd9f7d5dd"
+      }
+    },
+    {
+      "slug": "orchestral",
+      "archiveIdentifier": "mozart-symphony-41-in-c-k-551-jupiter",
+      "archiveFile": "09 Mozart- Symphony #41 In C, K 551, 'Jupiter' - 1. Allegro Vivace.mp3",
+      "localFile": "orchestral-mozart-jupiter.mp3",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "media": {
+        "bytes": 20025268,
+        "md5": "36179c67a320340394871f16a10d32c8",
+        "sha1": "6f7ba42746688742d8d690797389628e4b4cf545",
+        "sha256": "89e73db8d34c9a1b876427f5f8a38bc7311b3c5b18e1b86a878f2fbd1e0f07f2"
+      }
+    },
+    {
+      "slug": "shoegaze",
+      "archiveIdentifier": "sharticlesep",
+      "archiveFile": "EUPHORIA.mp3",
+      "localFile": "shoegaze-euphoria.mp3",
+      "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+      "media": {
+        "bytes": 2793984,
+        "md5": "ece417db9990d0cf514a5dece61705c2",
+        "sha1": "cdd5b8e19c623f90a7b03540d7da3024acbb4d46",
+        "sha256": "cb3bdf6c8cad47a4b37efe0a459b76dc8f3e22d74206a8d480f4f9aa4be397cf"
+      }
+    },
+    {
+      "slug": "piano-strings",
+      "archiveIdentifier": "FinnAndersonMusic",
+      "archiveFile": "Finn Anderson - Uncharted Lands EP - 01 Uncharted Lands.mp3",
+      "localFile": "piano-uncharted-lands.mp3",
+      "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+      "media": {
+        "bytes": 6992020,
+        "md5": "177c0a49339abcd97cd886c9b553eab1",
+        "sha1": "428c10d640bb62c1a0e3319aa073a60fb01a825c",
+        "sha256": "f2e6a2d69946c6172348c8cea4f9b2f8c64c57b27e415e9ef1f7c4cc2997c5f6"
+      }
+    },
+    {
+      "slug": "jazz-sax",
+      "archiveIdentifier": "JeffSolonJazzQuartet07-30-2010PrideOfTheWestSilvertonCo",
+      "archiveFile": "jsjq2010-07-30s1t02.mp3",
+      "localFile": "jazz-sax-quartet.mp3",
+      "licenseUrl": "http://creativecommons.org/licenses/by/3.0/",
+      "media": {
+        "bytes": 15185948,
+        "md5": "c3424ec7518023b9d6201a600dfd1ca1",
+        "sha1": "2e581faec89ef9bd257c1d5a85868c07d34c7f26",
+        "sha256": "9d3b219fc9ef34b50cfd1310dcb1733bf4d7068b84dad7b4186f9a471f0cbff4"
+      }
+    },
+    {
+      "slug": "hip-hop",
+      "archiveIdentifier": "drip-drop",
+      "archiveFile": "Drip Drop.mp3",
+      "localFile": "hiphop-drip-drop.mp3",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "media": {
+        "bytes": 5116800,
+        "md5": "a8ac9b32ef3a63989a338cfbb4acbdf4",
+        "sha1": "bc2ad7edff1e653d87faf4deb8f96770d33124bb",
+        "sha256": "f75ccb681c2ae8be44cd7675bfa004204dcd68d7fa50b27d747ac5aaa6df651e"
+      }
+    },
+    {
+      "slug": "bluegrass",
+      "archiveIdentifier": "southbound_202201",
+      "archiveFile": "High On a Mountain a.mp3",
+      "localFile": "bluegrass-high-on-mountain.mp3",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "media": {
+        "bytes": 3851824,
+        "md5": "371b485952a8771a3b131f209c8ff9e2",
+        "sha1": "68e3100486cddf5b551ef5ef4151f1665c786e8a",
+        "sha256": "0095913c8e485d6bb110068b061fddf20025ba015aa5b19d30680d1f40dd15cc"
+      }
+    },
+    {
+      "slug": "synthwave",
+      "archiveIdentifier": "catboi-album",
+      "archiveFile": "catboi-album1.mp3",
+      "localFile": "synthwave-backed-off.mp3",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "media": {
+        "bytes": 3812262,
+        "md5": "302305a422cb39f7e8b7f8d0fef5c902",
+        "sha1": "e40a9a47715df9a858295296b473b98134927684",
+        "sha256": "68172c4e2018c6bfa627bab2ba5131343a5032fd5772354e7b90588c7404278f"
+      }
+    },
+    {
+      "slug": "electronic-stiff-hand",
+      "archiveIdentifier": "catboi-album",
+      "archiveFile": "catboi-album2.mp3",
+      "localFile": "electronic-stiff-hand.mp3",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "media": {
+        "bytes": 3421199,
+        "md5": "be2c5324d6084e3477c7b77997f37d5b",
+        "sha1": "48f351a799155e15906694fc063dd43f6a5bc85c",
+        "sha256": "a929ec6515ecc915111d2de59acb9ff81d53a6194f2a551775859b0d291cd658"
+      }
+    },
+    {
+      "slug": "electronic-back-counting",
+      "archiveIdentifier": "catboi-album",
+      "archiveFile": "catboi-album3.mp3",
+      "localFile": "electronic-back-counting.mp3",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "media": {
+        "bytes": 4856750,
+        "md5": "ac24430199d242c25f9d1356b3bec53c",
+        "sha1": "cb50750aad311990db9a42a1fa76359285c7fbe8",
+        "sha256": "03499848f06938da5f51978efce91d8f7db7f1b7f898a1c2a44f46efa7c0383b"
+      }
+    },
+    {
+      "slug": "electronic-house",
+      "archiveIdentifier": "clockin-cats-das-dope-ding-dong",
+      "archiveFile": "Clockin' Cats - Das Dope (Ding Dong).mp3",
+      "localFile": "electronic-das-dope.mp3",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "media": {
+        "bytes": 4461797,
+        "md5": "2159dcb884322667188831fb94553de8",
+        "sha1": "1b88a2f615742dd06ca36a4220e21c782727c948",
+        "sha256": "29fa53ba7debe2dc1505ff1cc8ea6d69903d4b9b40f9135e866b1e1ca443865f"
+      }
+    }
+  ]
+}

@@ -357,6 +357,27 @@ test('YAMNet native image workflow is path-scoped, pinned, and runs the constrai
   assert.match(workflow, /YAMNET_COMPARATOR_EXPECTED_PLATFORM: linux\/amd64/);
   assert.match(workflow, /smoke-yamnet-comparator-image\.mts/);
   assert.match(workflow, /tests\/yamnet-candidate-capture\.test\.mts/);
+  assert.match(workflow, /hydrate-instrument-evaluation-corpus\.mts/);
+  assert.match(workflow, /hydrate-instrument-controls\.mts/);
+  assert.match(workflow, /eval-yamnet-comparator\.mts/);
+  assert.match(workflow, /eval-yamnet-controls\.mts/);
+  assert.match(workflow, /prepare-yamnet-candidate-source\.mts/);
+  assert.match(workflow, /capture-yamnet-instrument-candidate\.mts/);
+  assert.match(
+    workflow,
+    /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/
+  );
+  assert.match(workflow, /if-no-files-found: error/);
+  const uploadStep = workflow.slice(workflow.indexOf('- name: Upload native observation evidence'));
+  for (const report of [
+    'yamnet-native-amd64-corpus.json',
+    'yamnet-native-amd64-controls.json',
+    'yamnet-native-amd64-source-report.json',
+    'yamnet-native-amd64-candidate.json',
+  ]) {
+    assert.equal(uploadStep.includes(report), true, `native workflow does not upload ${report}`);
+  }
+  assert.doesNotMatch(uploadStep, /tests\/corpus\/audio/);
   assert.doesNotMatch(workflow, /secrets\./);
   for (const path of Object.values(YAMNET_EVALUATION_SOURCE_PATHS)) {
     const covered =
@@ -366,10 +387,13 @@ test('YAMNet native image workflow is path-scoped, pinned, and runs the constrai
   }
   for (const path of [
     'scripts/capture-yamnet-instrument-candidate.mts',
+    'scripts/hydrate-instrument-evaluation-corpus.mts',
     'scripts/prepare-yamnet-candidate-source.mts',
     'scripts/lib/yamnet-candidate-capture.mts',
     'scripts/lib/instrument-evaluation.mts',
     'tests/corpus/instrument-evaluation-plan.json',
+    'tests/corpus/instrument-evaluation-corpus-hydration.json',
+    'tests/instrument-evaluation-corpus-hydration.test.mts',
     'tests/yamnet-candidate-capture.test.mts',
   ]) {
     assert.equal(workflow.includes(`- ${path}`), true, `native workflow does not watch ${path}`);

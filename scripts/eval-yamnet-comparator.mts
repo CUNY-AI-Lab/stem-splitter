@@ -58,6 +58,8 @@ export const YAMNET_EVALUATION_SOURCE_PATHS = Object.freeze({
   instrumentVocabularyModule: 'src/analysis/instrument-vocabulary.ts',
   vocabulary: VOCABULARY_PATH,
   corpus: CORPUS_PATH,
+  corpusHydrator: 'scripts/hydrate-instrument-evaluation-corpus.mts',
+  corpusHydrationManifest: 'tests/corpus/instrument-evaluation-corpus-hydration.json',
   expectations: EXPECTATIONS_PATH,
   mapping: MAPPING_PATH,
   packageManifest: 'package.json',

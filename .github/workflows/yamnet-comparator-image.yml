@@ -16,6 +16,7 @@ on:
       - package.json
       - tsconfig.json
       - scripts/eval-instrument-discovery.mts
+      - scripts/hydrate-instrument-evaluation-corpus.mts
       - scripts/hydrate-instrument-controls.mts
       - scripts/eval-yamnet-comparator.mts
       - scripts/eval-yamnet-controls.mts
@@ -29,10 +30,12 @@ on:
       - src/analysis/instrument-vocabulary.ts
       - src/analysis/types.ts
       - tests/corpus/corpus.json
+      - tests/corpus/instrument-evaluation-corpus-hydration.json
       - tests/corpus/instrument-discovery-expectations.json
       - tests/corpus/instrument-control-manifest.json
       - tests/corpus/instrument-evaluation-plan.json
       - tests/instrument-control-corpus.test.mts
+      - tests/instrument-evaluation-corpus-hydration.test.mts
       - tests/yamnet-candidate-capture.test.mts
       - tests/yamnet-comparator-eval.test.mts
       - tsconfig.instrument-evaluation.json
@@ -50,6 +53,7 @@ on:
       - package.json
       - tsconfig.json
       - scripts/eval-instrument-discovery.mts
+      - scripts/hydrate-instrument-evaluation-corpus.mts
       - scripts/hydrate-instrument-controls.mts
       - scripts/eval-yamnet-comparator.mts
       - scripts/eval-yamnet-controls.mts
@@ -63,10 +67,12 @@ on:
       - src/analysis/instrument-vocabulary.ts
       - src/analysis/types.ts
       - tests/corpus/corpus.json
+      - tests/corpus/instrument-evaluation-corpus-hydration.json
       - tests/corpus/instrument-discovery-expectations.json
       - tests/corpus/instrument-control-manifest.json
       - tests/corpus/instrument-evaluation-plan.json
       - tests/instrument-control-corpus.test.mts
+      - tests/instrument-evaluation-corpus-hydration.test.mts
       - tests/yamnet-candidate-capture.test.mts
       - tests/yamnet-comparator-eval.test.mts
       - tsconfig.instrument-evaluation.json
@@ -83,12 +89,13 @@ jobs:
   native-amd64-image:
     name: Pinned YAMNet comparator (native amd64)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.23.1"
@@ -109,9 +116,13 @@ jobs:
       - name: Run manifest, evaluator, and image-smoke contracts
         run: >-
           node --experimental-strip-types --test
+          tests/corpus-manifest.test.mts
           tests/instrument-control-corpus.test.mts
+          tests/instrument-evaluation-corpus-hydration.test.mts
           tests/yamnet-candidate-capture.test.mts
           tests/yamnet-comparator-eval.test.mts
+      - name: Install the audio decoder
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
       - name: Build the exact comparator source for linux/amd64
         env:
           DOCKER_BUILDKIT: "1"
@@ -128,3 +139,36 @@ jobs:
           node --experimental-strip-types
           scripts/smoke-yamnet-comparator-image.mts
           stem-splitter-yamnet-comparator:ci
+      - name: Hydrate the exact licensed evaluation audio
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/hydrate-instrument-evaluation-corpus.mts
+          node --experimental-strip-types scripts/hydrate-instrument-controls.mts
+      - name: Capture the full native observation set
+        run: |
+          set -euo pipefail
+          install -d -m 700 output
+          node --experimental-strip-types scripts/eval-yamnet-comparator.mts \
+            --image stem-splitter-yamnet-comparator:ci \
+            --output output/yamnet-native-amd64-corpus.json
+          node --experimental-strip-types scripts/eval-yamnet-controls.mts \
+            --image stem-splitter-yamnet-comparator:ci \
+            --output output/yamnet-native-amd64-controls.json
+          node --experimental-strip-types scripts/prepare-yamnet-candidate-source.mts \
+            --corpus-report output/yamnet-native-amd64-corpus.json \
+            --control-report output/yamnet-native-amd64-controls.json \
+            --output output/yamnet-native-amd64-source-report.json
+          node --experimental-strip-types scripts/capture-yamnet-instrument-candidate.mts \
+            --source-report output/yamnet-native-amd64-source-report.json \
+            --output output/yamnet-native-amd64-candidate.json
+      - name: Upload native observation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: yamnet-native-amd64-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            output/yamnet-native-amd64-corpus.json
+            output/yamnet-native-amd64-controls.json
+            output/yamnet-native-amd64-source-report.json
+            output/yamnet-native-amd64-candidate.json
+          if-no-files-found: error
+          retention-days: 30

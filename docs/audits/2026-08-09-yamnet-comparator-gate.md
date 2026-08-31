@@ -103,9 +103,19 @@ corpus, expectations, mapping, and package manifest, plus a SHA-256 checked
 before and after scoring for each hydrated audio input and a digest of the exact
 decoded PCM/window sample plan sent to the comparator. The evaluator also
 rejects any source-file drift during the run. The native-amd64 workflow watches
-the same paths so a transitive change cannot bypass the image gate. A new
-native-amd64 corpus-v2 report and refreshed control report remain required
-before this evaluator can support any later selection decision.
+the same paths so a transitive change cannot bypass the image gate.
+
+The current follow-up also makes real-mix retrieval reproducible without
+committing audio. A separate manifest cross-binds all eleven corpus entries to
+their exact Internet Archive identifier, filename, Creative Commons URL, byte
+length, MD5, Archive SHA-1, and SHA-256. Its bounded hydrator accepts only the
+pinned Archive metadata route and one exact `*.archive.org` object redirect,
+writes owner-only no-clobber files, and rejects metadata, license, URL, header,
+body, or existing-file drift. The native workflow hydrates those mixes and the
+eight existing controls, executes both reports against one native image, then
+captures an abstention-only v3 candidate. Its artifact contains four JSON
+reports and no audio. A successful run from this source revision remains
+required before the evaluator can support any later selection decision.
 
 ### V3 candidate-capture boundary
 
