@@ -113,7 +113,7 @@ jobs:
           test "$(docker info --format '{{.OSType}}/{{.Architecture}}')" = linux/x86_64
           test "$(node --version)" = v22.23.1
           test "$(python --version)" = "Python 3.12.13"
-          test "$(uv --version)" = "uv 0.11.32"
+          uv --version | grep -Eq '^uv 0\.11\.32( |$)'
       - name: Verify the dependency lock and comparator contracts
         run: |
           uv lock --check --project efficientat-comparator
