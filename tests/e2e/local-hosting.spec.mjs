@@ -1136,7 +1136,8 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
     name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
   }).check();
 
-  // Opening the crate runs the default search.
+  // The crate lives at the Remixer station; opening it runs the default search.
+  await page.getByRole('tab', { name: /REMIXER/ }).click();
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await expect(page.locator('.crate-item')).toHaveCount(1);
   await expect(page.locator('.crate-license')).toHaveText('CC BY-NC-SA 4.0');
@@ -1216,6 +1217,7 @@ test('refuses a NoDerivatives Internet Archive item', async ({ page, network }) 
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('tab', { name: /REMIXER/ }).click();
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await page.locator('.crate-item-head').click();
 
