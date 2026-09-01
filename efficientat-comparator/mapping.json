@@ -1,0 +1,481 @@
+{
+  "$schema": "stem-splitter.efficientat-class-mapping.v1",
+  "classifierVersion": "efficientat-mn10-audioset-527-pcm22050-sinc32k-upstream-mel-single-clip-sigmoid-second-window-v1@github-release-v0.0.1",
+  "modelSha256": "0bd7dc2443af498c289a2e739f02ebb515d6aa3fd3ab9db539c86123ae368a4e",
+  "classMapSha256": "cdd1049833c4b86127c2773ac0d14a2754b6a6d0d1798002ed5c66e699708429",
+  "vocabularyVersion": "classroom-instruments-v1",
+  "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+  "reviewStatus": "offline-comparator-uncalibrated",
+  "scoringPolicy": {
+    "classAggregation": "maximum",
+    "clipAggregation": "single-sigmoid",
+    "trackAggregation": "second-highest-window",
+    "singleWindowException": true,
+    "thresholdSelection": "none"
+  },
+  "mapped": [
+    {
+      "instrumentId": "voice",
+      "classes": [
+        {
+          "index": 27,
+          "mid": "/m/015lz1",
+          "displayName": "Singing"
+        },
+        {
+          "index": 28,
+          "mid": "/m/0l14jd",
+          "displayName": "Choir"
+        },
+        {
+          "index": 34,
+          "mid": "/t/dd00005",
+          "displayName": "Child singing"
+        }
+      ]
+    },
+    {
+      "instrumentId": "strings",
+      "classes": [
+        {
+          "index": 189,
+          "mid": "/m/0l14_3",
+          "displayName": "Bowed string instrument"
+        },
+        {
+          "index": 190,
+          "mid": "/m/02qmj0d",
+          "displayName": "String section"
+        }
+      ]
+    },
+    {
+      "instrumentId": "violin",
+      "classes": [
+        {
+          "index": 191,
+          "mid": "/m/07y_7",
+          "displayName": "Violin, fiddle"
+        }
+      ]
+    },
+    {
+      "instrumentId": "cello",
+      "classes": [
+        {
+          "index": 193,
+          "mid": "/m/01xqw",
+          "displayName": "Cello"
+        }
+      ]
+    },
+    {
+      "instrumentId": "double-bass",
+      "classes": [
+        {
+          "index": 194,
+          "mid": "/m/02fsn",
+          "displayName": "Double bass"
+        }
+      ]
+    },
+    {
+      "instrumentId": "acoustic-guitar",
+      "classes": [
+        {
+          "index": 143,
+          "mid": "/m/042v_gx",
+          "displayName": "Acoustic guitar"
+        }
+      ]
+    },
+    {
+      "instrumentId": "electric-guitar",
+      "classes": [
+        {
+          "index": 141,
+          "mid": "/m/02sgy",
+          "displayName": "Electric guitar"
+        }
+      ]
+    },
+    {
+      "instrumentId": "bass-guitar",
+      "classes": [
+        {
+          "index": 142,
+          "mid": "/m/018vs",
+          "displayName": "Bass guitar"
+        }
+      ]
+    },
+    {
+      "instrumentId": "harp",
+      "classes": [
+        {
+          "index": 199,
+          "mid": "/m/03m5k",
+          "displayName": "Harp"
+        }
+      ]
+    },
+    {
+      "instrumentId": "banjo",
+      "classes": [
+        {
+          "index": 147,
+          "mid": "/m/018j2",
+          "displayName": "Banjo"
+        }
+      ]
+    },
+    {
+      "instrumentId": "mandolin",
+      "classes": [
+        {
+          "index": 149,
+          "mid": "/m/04rzd",
+          "displayName": "Mandolin"
+        }
+      ]
+    },
+    {
+      "instrumentId": "ukulele",
+      "classes": [
+        {
+          "index": 151,
+          "mid": "/m/07xzm",
+          "displayName": "Ukulele"
+        }
+      ]
+    },
+    {
+      "instrumentId": "brass",
+      "classes": [
+        {
+          "index": 185,
+          "mid": "/m/01kcd",
+          "displayName": "Brass instrument"
+        }
+      ]
+    },
+    {
+      "instrumentId": "trumpet",
+      "classes": [
+        {
+          "index": 187,
+          "mid": "/m/07gql",
+          "displayName": "Trumpet"
+        }
+      ]
+    },
+    {
+      "instrumentId": "trombone",
+      "classes": [
+        {
+          "index": 188,
+          "mid": "/m/07c6l",
+          "displayName": "Trombone"
+        }
+      ]
+    },
+    {
+      "instrumentId": "horn",
+      "classes": [
+        {
+          "index": 186,
+          "mid": "/m/0319l",
+          "displayName": "French horn"
+        }
+      ]
+    },
+    {
+      "instrumentId": "saxophone",
+      "classes": [
+        {
+          "index": 197,
+          "mid": "/m/06ncr",
+          "displayName": "Saxophone"
+        }
+      ]
+    },
+    {
+      "instrumentId": "clarinet",
+      "classes": [
+        {
+          "index": 198,
+          "mid": "/m/01wy6",
+          "displayName": "Clarinet"
+        }
+      ]
+    },
+    {
+      "instrumentId": "flute",
+      "classes": [
+        {
+          "index": 196,
+          "mid": "/m/0l14j_",
+          "displayName": "Flute"
+        }
+      ]
+    },
+    {
+      "instrumentId": "piano",
+      "classes": [
+        {
+          "index": 153,
+          "mid": "/m/05r5c",
+          "displayName": "Piano"
+        }
+      ]
+    },
+    {
+      "instrumentId": "electric-piano",
+      "classes": [
+        {
+          "index": 154,
+          "mid": "/m/01s0ps",
+          "displayName": "Electric piano"
+        }
+      ]
+    },
+    {
+      "instrumentId": "organ",
+      "classes": [
+        {
+          "index": 155,
+          "mid": "/m/013y1f",
+          "displayName": "Organ"
+        },
+        {
+          "index": 156,
+          "mid": "/m/03xq_f",
+          "displayName": "Electronic organ"
+        },
+        {
+          "index": 157,
+          "mid": "/m/03gvt",
+          "displayName": "Hammond organ"
+        }
+      ]
+    },
+    {
+      "instrumentId": "harpsichord",
+      "classes": [
+        {
+          "index": 160,
+          "mid": "/m/03q5t",
+          "displayName": "Harpsichord"
+        }
+      ]
+    },
+    {
+      "instrumentId": "synthesizer",
+      "classes": [
+        {
+          "index": 158,
+          "mid": "/m/0l14qv",
+          "displayName": "Synthesizer"
+        }
+      ]
+    },
+    {
+      "instrumentId": "sampler",
+      "classes": [
+        {
+          "index": 159,
+          "mid": "/m/01v1d8",
+          "displayName": "Sampler"
+        }
+      ]
+    },
+    {
+      "instrumentId": "drum-machine",
+      "classes": [
+        {
+          "index": 163,
+          "mid": "/m/0cfdd",
+          "displayName": "Drum machine"
+        }
+      ]
+    },
+    {
+      "instrumentId": "drum-kit",
+      "classes": [
+        {
+          "index": 162,
+          "mid": "/m/02hnl",
+          "displayName": "Drum kit"
+        }
+      ]
+    },
+    {
+      "instrumentId": "percussion",
+      "classes": [
+        {
+          "index": 161,
+          "mid": "/m/0l14md",
+          "displayName": "Percussion"
+        }
+      ]
+    },
+    {
+      "instrumentId": "timpani",
+      "classes": [
+        {
+          "index": 169,
+          "mid": "/m/011k_j",
+          "displayName": "Timpani"
+        }
+      ]
+    },
+    {
+      "instrumentId": "mallet-percussion",
+      "classes": [
+        {
+          "index": 179,
+          "mid": "/m/0j45pbj",
+          "displayName": "Mallet percussion"
+        },
+        {
+          "index": 180,
+          "mid": "/m/0dwsp",
+          "displayName": "Marimba, xylophone"
+        },
+        {
+          "index": 181,
+          "mid": "/m/0dwtp",
+          "displayName": "Glockenspiel"
+        }
+      ]
+    },
+    {
+      "instrumentId": "vibraphone",
+      "classes": [
+        {
+          "index": 182,
+          "mid": "/m/0dwt5",
+          "displayName": "Vibraphone"
+        }
+      ]
+    },
+    {
+      "instrumentId": "bell",
+      "classes": [
+        {
+          "index": 200,
+          "mid": "/m/0395lw",
+          "displayName": "Bell"
+        }
+      ]
+    },
+    {
+      "instrumentId": "accordion",
+      "classes": [
+        {
+          "index": 209,
+          "mid": "/m/0mkg",
+          "displayName": "Accordion"
+        }
+      ]
+    },
+    {
+      "instrumentId": "harmonica",
+      "classes": [
+        {
+          "index": 208,
+          "mid": "/m/03qjg",
+          "displayName": "Harmonica"
+        }
+      ]
+    },
+    {
+      "instrumentId": "sitar",
+      "classes": [
+        {
+          "index": 148,
+          "mid": "/m/0jtg0",
+          "displayName": "Sitar"
+        }
+      ]
+    },
+    {
+      "instrumentId": "tabla",
+      "classes": [
+        {
+          "index": 170,
+          "mid": "/m/01p970",
+          "displayName": "Tabla"
+        }
+      ]
+    },
+    {
+      "instrumentId": "steelpan",
+      "classes": [
+        {
+          "index": 183,
+          "mid": "/m/0l156b",
+          "displayName": "Steelpan"
+        }
+      ]
+    }
+  ],
+  "unsupported": [
+    {
+      "instrumentId": "viola",
+      "reason": "EfficientAT's 527-class AudioSet head has no viola class distinct from violin or bowed strings."
+    },
+    {
+      "instrumentId": "classical-guitar",
+      "reason": "EfficientAT's 527-class AudioSet head has no classical-guitar class distinct from acoustic guitar."
+    },
+    {
+      "instrumentId": "tuba",
+      "reason": "EfficientAT's 527-class AudioSet head has no tuba class."
+    },
+    {
+      "instrumentId": "oboe",
+      "reason": "EfficientAT's 527-class AudioSet head has no oboe class."
+    },
+    {
+      "instrumentId": "bassoon",
+      "reason": "EfficientAT's 527-class AudioSet head has no bassoon class."
+    },
+    {
+      "instrumentId": "pipe-organ",
+      "reason": "EfficientAT's 527-class AudioSet head has no pipe-organ class distinct from generic organ."
+    },
+    {
+      "instrumentId": "pad",
+      "reason": "EfficientAT's 527-class AudioSet head has no synthesizer-pad class distinct from synthesizer."
+    },
+    {
+      "instrumentId": "marimba",
+      "reason": "EfficientAT's 527-class AudioSet head combines marimba and xylophone; the shared class maps only to mallet percussion."
+    },
+    {
+      "instrumentId": "bongos",
+      "reason": "EfficientAT's 527-class AudioSet head has no bongo class."
+    },
+    {
+      "instrumentId": "oud",
+      "reason": "EfficientAT's 527-class AudioSet head has no oud class."
+    },
+    {
+      "instrumentId": "erhu",
+      "reason": "EfficientAT's 527-class AudioSet head has no erhu class."
+    },
+    {
+      "instrumentId": "koto",
+      "reason": "EfficientAT's 527-class AudioSet head has no koto class."
+    },
+    {
+      "instrumentId": "shamisen",
+      "reason": "EfficientAT's 527-class AudioSet head has no shamisen class."
+    },
+    {
+      "instrumentId": "gamelan",
+      "reason": "EfficientAT's 527-class AudioSet head has no gamelan class."
+    }
+  ]
+}

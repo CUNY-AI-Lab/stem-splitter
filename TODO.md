@@ -17,8 +17,10 @@ analyzer outage completed through the frozen four-part fallback; the private
 URL restore and a fresh non-degraded job passed. Four real production-browser
 screenshots and student-response redaction are SHA-bound in the acceptance
 bundle. The rejected CLAP discovery candidate remains separately blocked from
-provisioning; no discovery service may be created until a replacement
-classifier clears its independent evidence gates.
+provisioning. An independent EfficientAT comparator now passes local native-
+arm64 corpus and control runs, but it has no threshold or selected status; its
+native-amd64 workflow and the outstanding human instrument reviews must pass
+before any discovery service may be created.
 
 ## Next product slice — SPLIT / REMIX workspaces
 
@@ -113,6 +115,17 @@ existing arm64 v1 artifacts remain immutable historical evidence; their
 recorded digests must not be rewritten to match later source. See the
 [discovery design](docs/superpowers/specs/2026-08-09-instrument-discovery-design.md)
 and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery.md).
+The second classifier is now implemented as an offline EfficientAT `mn10_as`
+comparator. Its exact MIT release, checkpoint, class map, deterministic
+safetensors conversion, dependency lock, and direct AudioSet mapping are
+pinned; it covers 37/51 labels, adding `ukulele`. A constrained local native-
+arm64 image completed all 11 mixes and eight controls: 20/40 eligible corpus
+groups ranked top-three, 27/40 top-five, and 30/40 top-ten (3,753-basis-point
+MRR); all six supported isolated positives ranked top-three, four ranked first
+(8,056-basis-point MRR). These are diagnostic rankings only. The local reports
+remain gitignored, the comparison gate refuses arm64 as native-amd64 evidence,
+and it selects neither classifier nor threshold while the 19-source label and
+isolated-control reviews remain incomplete.
 Exact committed source `86cd50b` now passes the complete local Phase 0 command
 from a clean detached checkout: 183 worker, 23 analyzer, 28 Railway
 host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
@@ -1065,6 +1078,19 @@ job.
   threshold was selected and no precision claim is available. See
   `docs/audits/2026-08-09-yamnet-comparator-gate.md` and the bound report under
   `docs/acceptance/2026-08-09-yamnet-comparator/`.
+- [x] Implement an independent EfficientAT comparison candidate without adding
+  an application dependency or service. The offline image pins the upstream
+  MIT `mn10_as` v0.0.1 release and revision, verifies the original checkpoint,
+  converts all 312 tensors to deterministic safetensors, deletes the pickle,
+  reproduces the official preprocessing, and maps direct AudioSet classes to
+  37/51 vocabulary labels with 14 explicit gaps. A constrained native-arm64
+  image passed its rejection smoke and completed the 11-mix/eight-control
+  cohort. Its diagnostic corpus ranks were 20/40 top-three, 27/40 top-five,
+  and 30/40 top-ten; the isolated-control ranks matched YAMNet at six supported
+  positives top-three and four top-one. A secret-free native-amd64 workflow
+  will rerun both cohorts and emit a source-bound cross-classifier comparison
+  that must abstain until the human reviews and threshold policy are complete.
+  No production flag, route, classifier, threshold, or Railway service changed.
 - [x] Add a comparison-only local post-separation inspection path without
   promoting YAMNet or writing detections into a job. `npm run dev:auto --
   --with-separator` now starts the Railway-shaped app, authoritative analyzer,
@@ -1144,8 +1170,9 @@ job.
   instrument under separately reviewed rights and immutable source pins. Keep
   every new corpus partition separate until teacher listening and a new
   evaluation-plan version explicitly integrate it.
-- [ ] Choose exactly one replacement discovery classifier after the CLAP,
-  YAMNet, and any license-cleared Essentia evidence is comparable. Give every
+- [ ] Choose exactly one replacement discovery classifier after the rejected
+  CLAP result, YAMNet baseline, EfficientAT candidate, and any future license-
+  cleared evidence are comparable. Give every
   prompt policy, checkpoint, label map, or preprocessing change a new
   classifier ID; never inherit `instrument-discovery-v1` thresholds. Only the
   selected candidate may proceed to a new private Railway service, and it stays
@@ -1523,19 +1550,22 @@ canary. Student access remains off.
   isolated-control reporting separate. The validator refuses source, ontology,
   policy, vocabulary, and ordering drift. The v3 candidate boundary also binds
   policy content, source-report, generator, dependency-lock, immutable-image,
-  and native-platform provenance. A YAMNet-specific comparison adapter now
-  validates that chain but deliberately emits only abstentions; a selected-
-  classifier adapter and a real reviewed candidate with classified decisions
-  remain open. The current native reports and abstention-only YAMNet artifact
-  are recorded separately and cannot satisfy that gate. A comparison-only
-  cohort gate now prevents candidate
+  and native-platform provenance. A YAMNet-specific adapter validates its
+  abstention-only evidence, and a second EfficientAT comparator now produces
+  real, threshold-free candidate scores across the same 11 mixes and eight
+  controls. The cross-classifier adapter requires exact model, mapping,
+  license, upstream-revision, scoring, corpus, control, and native-amd64 pins,
+  then deliberately selects neither candidate while human review is incomplete.
+  The current EfficientAT run is native arm64 diagnostic evidence only; the
+  native-amd64 workflow and reviewed candidate decisions remain open. A
+  comparison-only cohort gate now prevents candidate
   or component-version reuse after content drift and prevents an
   abstention-only artifact from masquerading as comparable evidence. The
   evaluator exposes selective
   coverage, model abstention, false alerts, degraded sources, and coverage gaps
   without turning an outage into classifier error. It forbids promotion from
   an overlapping all-label aggregate. This establishes the evidence shape but
-  does not supply human ground truth, candidate scores, Slakh/MedleyDB data, a
+  does not supply human ground truth, Slakh/MedleyDB data, a
   quality floor, or a promotion decision. A private localhost listening
   workspace now makes the frozen 19-source × 51-label review resumable without
   exposing it in the teacher UI; completing and accepting that review remains

@@ -1,0 +1,23 @@
+[project]
+name = "stem-splitter-efficientat-comparator"
+version = "0.1.0"
+description = "Offline-only EfficientAT comparison evaluator for STEM Splitter"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy==2.5.2",
+  "safetensors==0.5.3",
+  "torch==2.11.0",
+  "torchaudio==2.11.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

@@ -5,7 +5,10 @@
   },
   "include": [
     "scripts/check-instrument-evaluation.mts",
+    "scripts/compare-instrument-classifiers.mts",
     "scripts/compare-instrument-candidates.mts",
+    "scripts/eval-efficientat-comparator.mts",
+    "scripts/eval-efficientat-controls.mts",
     "scripts/finalize-nsynth-family-control-review.mts",
     "scripts/finalize-tinysol-exact-control-review.mts",
     "scripts/finalize-instrument-evaluation-review.mts",
@@ -33,6 +36,7 @@
     "tests/instrument-evaluation-review-server.test.mts",
     "tests/instrument-evaluation.test.mts",
     "tests/instrument-evaluation-corpus-hydration.test.mts",
+    "tests/efficientat-comparator-eval.test.mts",
     "tests/nsynth-family-control-corpus.test.mts",
     "tests/nsynth-family-control-review.test.mts",
     "tests/tinysol-exact-control-corpus.test.mts",

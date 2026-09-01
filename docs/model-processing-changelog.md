@@ -5,6 +5,49 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
+## efficientat-comparator-v1 — local candidate, native-amd64 pending — 2026-08-31
+
+- Scope: independent offline comparison only. This adds no app dependency,
+  endpoint, feature flag, threshold, Railway service, stem label, or Auto
+  routing change.
+- Classifier provenance: EfficientAT `mn10_as` from the exact upstream v0.0.1
+  release and revision `7e30f2bbe85439c15feedd9ba5ad8bff0a600fee`.
+  The build verifies the original 19,708,753-byte checkpoint at SHA-256
+  `0bd7dc2443af498c289a2e739f02ebb515d6aa3fd3ab9db539c86123ae368a4e`,
+  the 527-row class map, and the exact MIT license. It weights-only loads all
+  312 tensors, verifies names/shapes/dtypes/values after conversion to a
+  deterministic 19,636,060-byte safetensors artifact at SHA-256
+  `6082249d637adb6880ff8ecbe7bc917e515ee0fabe1268581f614dc56e5c71a9`,
+  and excludes the original pickle from the runtime image.
+- Runtime and scoring: the dependency lock pins Python 3.12, CPU Torch and
+  torchaudio 2.11.0, NumPy 2.5.2, and safetensors 0.5.3. The local implementation
+  reproduces the upstream mel preprocessing, applies one sigmoid per analysis
+  window, takes the maximum across directly mapped classes, and uses the
+  second-highest window with a one-window exception. No threshold exists.
+- Ontology: direct AudioSet classes cover 37/51 classroom labels, adding
+  `ukulele` to the YAMNet coverage; 14 labels remain explicit unsupported gaps.
+- Local constrained evidence: native-arm64 image
+  `sha256:6f3241056f4b8c1dcffb11dd47ae90b1cddebe0083faea77533771ebc2363344`
+  is 952,536,632 bytes and passed non-root, read-only, networkless, bounded-
+  resource inference plus malformed-input rejection. The 11-source corpus
+  report (SHA-256 `d5828592b65e9577f9d98d92a1c45a7737416d677e8595ad46dd37440b1f3acc`)
+  ranks 20/40 eligible groups top-three, 27/40 top-five, and 30/40 top-ten
+  (3,753-basis-point MRR). The eight-control report (SHA-256
+  `dd4d92e724e67b87497aebb1673168353bcff73468307a80deb147b908d232d0`)
+  ranks all six supported positives top-three and four top-one
+  (8,056-basis-point MRR). The local JSON remains gitignored.
+- Comparison gate: a secret-free Ubuntu 24.04 workflow builds and tests the
+  exact native `linux/amd64` source, rehydrates the pinned licensed cohort, and
+  emits JSON-only evidence. Its comparison validates the accepted YAMNet run
+  and every EfficientAT identity above, recognizes that the scoring policies
+  differ, and must return `selectedClassifier: null` and
+  `thresholdSelected: null` while review is incomplete.
+- Disposition: diagnostic candidate, not selected. Native-amd64 execution,
+  exhaustive review of all 19 instrument observation sets, isolated positive
+  and candidate-negative review, a reviewed threshold policy, and explicit
+  promotion authorization remain required. Instrument discovery stays off and
+  no Railway discovery service may be provisioned.
+
 ## yamnet-native-amd64-capture-v1 — reproducible observation workflow — 2026-08-31
 
 - Scope: evidence generation only. This does not select YAMNet, define a

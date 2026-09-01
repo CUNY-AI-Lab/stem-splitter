@@ -1,0 +1,10 @@
+**
+!efficientat-comparator/
+!efficientat-comparator/*.py
+!efficientat-comparator/pyproject.toml
+!efficientat-comparator/uv.lock
+!efficientat-comparator/mapping.json
+!efficientat-comparator/LICENSE.EfficientAT
+!efficientat-comparator/Dockerfile
+!instrument-discovery/
+!instrument-discovery/vocabulary.json
