@@ -5,7 +5,7 @@ teacher system-prompt changelog. A release entry records exact pins, evaluation
 evidence, rollout stage, and known regressions. Entries do not authorize live
 promotion on their own.
 
-## efficientat-comparator-v1 — local candidate, native-amd64 pending — 2026-08-31
+## efficientat-comparator-v1 — native-amd64 comparison passed, unselected — 2026-08-31
 
 - Scope: independent offline comparison only. This adds no app dependency,
   endpoint, feature flag, threshold, Railway service, stem label, or Auto
@@ -36,17 +36,25 @@ promotion on their own.
   `dd4d92e724e67b87497aebb1673168353bcff73468307a80deb147b908d232d0`)
   ranks all six supported positives top-three and four top-one
   (8,056-basis-point MRR). The local JSON remains gitignored.
-- Comparison gate: a secret-free Ubuntu 24.04 workflow builds and tests the
-  exact native `linux/amd64` source, rehydrates the pinned licensed cohort, and
-  emits JSON-only evidence. Its comparison validates the accepted YAMNet run
-  and every EfficientAT identity above, recognizes that the scoring policies
-  differ, and must return `selectedClassifier: null` and
-  `thresholdSelected: null` while review is incomplete.
-- Disposition: diagnostic candidate, not selected. Native-amd64 execution,
-  exhaustive review of all 19 instrument observation sets, isolated positive
-  and candidate-negative review, a reviewed threshold policy, and explicit
-  promotion authorization remain required. Instrument discovery stays off and
-  no Railway discovery service may be provisioned.
+- Native evidence: secret-free Ubuntu 24.04 run `33453966641` passed at exact
+  source `4e6c6bc61d1c3f8195a8c0f277bf0df9331a6e7d`; source gate
+  `33453966663` also passed. The 1,066,431,830-byte native `linux/amd64` image
+  completed the exact cohort. Its corpus ranks 20/40 top-three, 28/40 top-five,
+  and 30/40 top-ten (3,643-basis-point MRR); controls remain six supported
+  positives top-three and four top-one (8,056-basis-point MRR). The JSON-only,
+  no-audio artifact and hashes are bound under
+  `docs/acceptance/2026-08-31-efficientat-native-amd64/`.
+- Comparison gate: the report validates the accepted YAMNet run and every
+  EfficientAT identity above. EfficientAT adds one direct label (`ukulele`) and
+  improves diagnostic corpus coverage by four top-three groups, four top-five
+  groups, and 278 MRR basis points. Because scoring policies differ and human
+  review is incomplete, it correctly returns `selectedClassifier: null` and
+  `thresholdSelected: null`.
+- Disposition: native comparison candidate, not selected. Exhaustive review of
+  all 19 instrument observation sets, isolated positive and candidate-negative
+  review, a reviewed threshold policy, and explicit promotion authorization
+  remain required. Instrument discovery stays off and no Railway discovery
+  service may be provisioned.
 
 ## yamnet-native-amd64-capture-v1 — reproducible observation workflow — 2026-08-31
 

@@ -1,0 +1,156 @@
+{
+  "$schema": "stem-splitter.efficientat-native-amd64-acceptance.v1",
+  "status": "passed-comparison-only",
+  "capturedAt": "2026-09-01T00:17:50.000Z",
+  "source": {
+    "commit": "4e6c6bc61d1c3f8195a8c0f277bf0df9331a6e7d",
+    "branch": "main",
+    "workflow": "EfficientAT comparator image",
+    "workflowPath": ".github/workflows/efficientat-comparator-image.yml",
+    "workflowSha256": "56bfc08905faf1a0e27fa2ce1c6434129fded2a410a4328c88c9dee17f1f3d03",
+    "runId": "33453966641",
+    "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/33453966641",
+    "jobId": "99689833333",
+    "job": "Pinned EfficientAT comparator (native amd64)",
+    "conclusion": "success",
+    "sourceGateRunId": "33453966663",
+    "sourceGateConclusion": "success"
+  },
+  "artifact": {
+    "id": "9780824293",
+    "name": "efficientat-native-amd64-4e6c6bc61d1c3f8195a8c0f277bf0df9331a6e7d",
+    "compressedBytes": 26933,
+    "uncompressedBytes": 195884,
+    "expiresAt": "2026-10-01T00:17:44.000Z",
+    "containsAudio": false,
+    "files": [
+      {
+        "name": "efficientat-native-amd64-corpus.json",
+        "schema": "stem-splitter.efficientat-comparator-evaluation.v2",
+        "bytes": 137909,
+        "sha256": "2ed33dddddff80804f0dd0eb06d84a921181ff571dad2c1ae587463518c1454c"
+      },
+      {
+        "name": "efficientat-native-amd64-controls.json",
+        "schema": "stem-splitter.efficientat-control-evaluation.v1",
+        "bytes": 54300,
+        "sha256": "97094a86dd42b65dc6e80cbfa89c7bfeb4e9c36ae1bdf0993bba1a4a55c251dc"
+      },
+      {
+        "name": "instrument-classifier-comparison.json",
+        "schema": "stem-splitter.instrument-classifier-comparison.v1",
+        "bytes": 3675,
+        "sha256": "0157b888f53acd644e79a5cc6af1c549bc6eb3f7c857a1cdd1c636516a8ea418"
+      }
+    ]
+  },
+  "execution": {
+    "imageId": "sha256:f392155f2553ea8da35c24b7c096eda1c0a00c428c6d124d9bee55438c2748f9",
+    "imagePlatform": "linux/amd64",
+    "hostPlatform": "linux/amd64",
+    "emulated": false,
+    "imageBytes": 1066431830,
+    "dependencyLockSha256": "f643d38b73c995fead2836f71867603657e3ff5de2459f07d114105384398112",
+    "node": "v22.23.1",
+    "python": "3.12.13",
+    "ffmpeg": "6.1.1-3ubuntu5",
+    "ffprobe": "6.1.1-3ubuntu5"
+  },
+  "candidate": {
+    "classifierVersion": "efficientat-mn10-audioset-527-pcm22050-sinc32k-upstream-mel-single-clip-sigmoid-second-window-v1@github-release-v0.0.1",
+    "officialLicense": "MIT",
+    "upstreamRepository": "fschmid56/EfficientAT",
+    "upstreamReleaseTag": "v0.0.1",
+    "upstreamRevision": "7e30f2bbe85439c15feedd9ba5ad8bff0a600fee",
+    "modelSha256": "0bd7dc2443af498c289a2e739f02ebb515d6aa3fd3ab9db539c86123ae368a4e",
+    "safeWeightsSha256": "6082249d637adb6880ff8ecbe7bc917e515ee0fabe1268581f614dc56e5c71a9",
+    "classMapSha256": "cdd1049833c4b86127c2773ac0d14a2754b6a6d0d1798002ed5c66e699708429",
+    "mappingSha256": "b8aa419a47b612144655b2f3409fbb6eb27aabed79b49717a20f96a0f15ad50d",
+    "vocabularyVersion": "classroom-instruments-v1",
+    "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+    "supportedLabels": 37,
+    "unsupportedLabels": 14,
+    "thresholdSelected": null,
+    "precisionClaim": "none-review-pending",
+    "promotionEligible": false
+  },
+  "corpus": {
+    "sources": 11,
+    "eligibleExpectedGroups": 40,
+    "unsupportedExpectedGroups": 2,
+    "top3ExpectedGroups": 20,
+    "top5ExpectedGroups": 28,
+    "top10ExpectedGroups": 30,
+    "meanReciprocalRankBasisPoints": 3643,
+    "totalLoadMs": 1214,
+    "totalInferenceMs": 2144,
+    "totalComparatorMs": 4751,
+    "thresholdSelected": null,
+    "promotionEligible": false
+  },
+  "controls": {
+    "sources": 8,
+    "eligibleSpecificPositives": 6,
+    "unsupportedSpecificPositives": 2,
+    "top1SpecificPositives": 4,
+    "top3SpecificPositives": 6,
+    "top5SpecificPositives": 6,
+    "top10SpecificPositives": 6,
+    "meanReciprocalRankBasisPoints": 8056,
+    "candidateNegativeAnnotations": 286,
+    "totalLoadMs": 881,
+    "totalInferenceMs": 1545,
+    "totalComparatorMs": 3431,
+    "thresholdSelected": null,
+    "precisionClaim": "none-review-pending",
+    "promotionEligible": false
+  },
+  "comparison": {
+    "baselineClassifier": "google-yamnet-tflite-v1-max-class-top3-patch-mean-second-window-v1@kaggle-version-763",
+    "baselineAcceptanceRunId": "33450445790",
+    "nativeAmd64": true,
+    "sameCorpusManifest": true,
+    "sameControlManifest": true,
+    "sameVocabulary": true,
+    "scoringPoliciesDiffer": true,
+    "scoresDirectlyInterchangeable": false,
+    "supportedLabelDelta": 1,
+    "addedDirectLabels": ["ukulele"],
+    "corpusTop3Delta": 4,
+    "corpusTop5Delta": 4,
+    "corpusMeanReciprocalRankBasisPointsDelta": 278,
+    "controlTop3Delta": 0,
+    "controlMeanReciprocalRankBasisPointsDelta": 0,
+    "selectedClassifier": null,
+    "thresholdSelected": null,
+    "result": "abstain",
+    "reason": "exhaustive-label-and-isolated-control-review-incomplete",
+    "promotionEligible": false
+  },
+  "humanReview": {
+    "coreListeningArtifact": "docs/acceptance/2026-08-10-v3.2-manual-listening/review.json",
+    "coreListeningArtifactSha256": "f96a81c9186ac6d3f27b99bac2cbf2bc3d73a12359b49d24c9398f46b9405ca7",
+    "coreListeningAccepted": true,
+    "coreReviewedAt": "2026-08-31T21:28:00.000Z",
+    "instrumentReviewAccepted": false,
+    "instrumentReviewCompletedSources": 0,
+    "instrumentReviewTotalSources": 19,
+    "isolatedControlReviewAccepted": false
+  },
+  "safety": {
+    "audioCommitted": false,
+    "railwayServiceCreated": false,
+    "featureFlagChanged": false,
+    "thresholdSelected": false,
+    "precisionClaimMade": false,
+    "classifierSelected": false,
+    "promotionAuthorized": false
+  },
+  "remainingBlockers": [
+    "exhaustive-instrument-label-review-missing",
+    "isolated-control-review-missing",
+    "reviewed-threshold-policy-missing",
+    "classifier-selection-missing",
+    "railway-discovery-shadow-missing"
+  ]
+}

@@ -17,10 +17,10 @@ analyzer outage completed through the frozen four-part fallback; the private
 URL restore and a fresh non-degraded job passed. Four real production-browser
 screenshots and student-response redaction are SHA-bound in the acceptance
 bundle. The rejected CLAP discovery candidate remains separately blocked from
-provisioning. An independent EfficientAT comparator now passes local native-
-arm64 corpus and control runs, but it has no threshold or selected status; its
-native-amd64 workflow and the outstanding human instrument reviews must pass
-before any discovery service may be created.
+provisioning. An independent EfficientAT comparator now passes local arm64 and
+native Linux amd64 corpus/control runs, but it has no threshold or selected
+status. The outstanding human instrument reviews and selection policy must
+pass before any discovery service may be created.
 
 ## Next product slice — SPLIT / REMIX workspaces
 
@@ -118,14 +118,16 @@ and [implementation plan](docs/superpowers/plans/2026-08-09-instrument-discovery
 The second classifier is now implemented as an offline EfficientAT `mn10_as`
 comparator. Its exact MIT release, checkpoint, class map, deterministic
 safetensors conversion, dependency lock, and direct AudioSet mapping are
-pinned; it covers 37/51 labels, adding `ukulele`. A constrained local native-
-arm64 image completed all 11 mixes and eight controls: 20/40 eligible corpus
-groups ranked top-three, 27/40 top-five, and 30/40 top-ten (3,753-basis-point
+pinned; it covers 37/51 labels, adding `ukulele`. Native Linux amd64 run
+`33453966641` completed all 11 mixes and eight controls: 20/40 eligible corpus
+groups ranked top-three, 28/40 top-five, and 30/40 top-ten (3,643-basis-point
 MRR); all six supported isolated positives ranked top-three, four ranked first
-(8,056-basis-point MRR). These are diagnostic rankings only. The local reports
-remain gitignored, the comparison gate refuses arm64 as native-amd64 evidence,
-and it selects neither classifier nor threshold while the 19-source label and
-isolated-control reviews remain incomplete.
+(8,056-basis-point MRR). The cross-classifier report improves on the accepted
+YAMNet baseline by four top-three groups, four top-five groups, and 278 MRR
+basis points, but correctly treats the different scoring policies as non-
+interchangeable and abstains. No classifier or threshold is selected while the
+19-source label and isolated-control reviews remain incomplete. Exact evidence
+is bound under `docs/acceptance/2026-08-31-efficientat-native-amd64/`.
 Exact committed source `86cd50b` now passes the complete local Phase 0 command
 from a clean detached checkout: 183 worker, 23 analyzer, 28 Railway
 host/migration, 5 separator, 30 discovery, 9 YAMNet contract, 19 flags-off
@@ -1087,9 +1089,12 @@ job.
   image passed its rejection smoke and completed the 11-mix/eight-control
   cohort. Its diagnostic corpus ranks were 20/40 top-three, 27/40 top-five,
   and 30/40 top-ten; the isolated-control ranks matched YAMNet at six supported
-  positives top-three and four top-one. A secret-free native-amd64 workflow
-  will rerun both cohorts and emit a source-bound cross-classifier comparison
-  that must abstain until the human reviews and threshold policy are complete.
+  positives top-three and four top-one. Secret-free native-amd64 run
+  `33453966641` then passed both cohorts at source `4e6c6bc`, yielding 20/40
+  top-three, 28/40 top-five, 30/40 top-ten, and a 3,643-basis-point corpus MRR.
+  Its source-bound cross-classifier comparison abstains until the human reviews
+  and threshold policy are complete. Evidence is bound under
+  `docs/acceptance/2026-08-31-efficientat-native-amd64/`.
   No production flag, route, classifier, threshold, or Railway service changed.
 - [x] Add a comparison-only local post-separation inspection path without
   promoting YAMNet or writing detections into a job. `npm run dev:auto --
@@ -1556,10 +1561,10 @@ canary. Student access remains off.
   controls. The cross-classifier adapter requires exact model, mapping,
   license, upstream-revision, scoring, corpus, control, and native-amd64 pins,
   then deliberately selects neither candidate while human review is incomplete.
-  The current EfficientAT run is native arm64 diagnostic evidence only; the
-  native-amd64 workflow and reviewed candidate decisions remain open. A
-  comparison-only cohort gate now prevents candidate
-  or component-version reuse after content drift and prevents an
+  Native Linux amd64 run `33453966641` now passes that evidence boundary; the
+  reviewed candidate decisions remain open. A comparison-only cohort gate now
+  prevents candidate or component-version reuse after content drift and
+  prevents an
   abstention-only artifact from masquerading as comparable evidence. The
   evaluator exposes selective
   coverage, model abstention, false alerts, degraded sources, and coverage gaps
