@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "stem-splitter-local",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "set -a; source .dev.vars; set +a; export PUBLIC_BASE_URL=http://127.0.0.1:8080; exec npx tsx server/index.ts"],
+      "port": 8080
+    }
+  ]
+}
