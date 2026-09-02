@@ -52,6 +52,26 @@ and a small-viewport block. No existing rules edited.
   `live-archive-crate.spec.mjs`: click the REMIXER tab before BROWSE THE
   CRATE; the live spec returns to SPLITTER before the `.dl` download click.
 
+## Task 5 — Server-side remix register (same-day follow-up)
+
+Promote the devil's advocate from client-side framing to a Listening Guy
+variant tailored to the task:
+
+- `src/assistant/types.ts`: mode `'remix'` + optional `deck` on the context.
+- `src/assistant/prompt.ts`: remix deck data fence, "ACTING ON THE DECK"
+  tool rules (solo/set_mute only, ≤2 calls), devil's-advocate task block;
+  bump `SYSTEM_PROMPT_VERSION` → 2026-09-01.1; fourth fingerprint variant.
+- `src/assistant/tools.ts`: `buildMixerTools(names, 'deck')` surface +
+  `sanitizeToolCalls` allowed-name filter.
+- `src/assistant/index.ts`: `streamChat` options `{ mode, deck }`,
+  `MAX_DECK_CHARS` (1000), deck-aware narration follow-up.
+- `src/index.ts`: chat route validates `mode` ('chat' default | 'remix') and
+  `deck` (string, trimmed, capped).
+- `public/app.js`: DA sends `mode: 'remix'` + `deck`; history holds only the
+  student's typed text.
+- `docs/prompt-changelog.md` entry; governance test covers the new arm;
+  `tests/assistant-remix-tools.test.mts` pins the tool narrowing.
+
 ## Verify
 
 - `node --check public/app.js`; CSS brace balance.

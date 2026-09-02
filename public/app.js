@@ -3587,10 +3587,11 @@ function initRemixDeck() {
 //
 // Same voice, opposite job. On the Splitter he opens the song up; here he
 // pushes back on what the student built. It rides the per-job chat endpoint —
-// the source split whose layers dominate the deck — and each user turn carries
-// a fenced snapshot of the deck so the critique is about the actual stack.
-// Replies can carry mixer tool calls; solo/set_mute translate to deck layers,
-// the rest are narrated as Splitter-side suggestions rather than executed.
+// the source split whose layers dominate the deck — with `mode: 'remix'`,
+// the server-side register tailored to this task: the request's `deck`
+// snapshot is fenced into the prompt as data, and the server narrows the
+// toolset to solo/set_mute (the deck has no song timeline to seek or note).
+// Returned calls translate onto matching deck layers.
 
 const daToggle = document.getElementById('da-toggle');
 const daLed = document.getElementById('da-led');
@@ -3603,10 +3604,10 @@ const daChallengeBtn = document.getElementById('da-challenge');
 
 const da = { history: [], busy: false, spoke: false };
 
+// The devil's-advocate register lives server-side (mode: 'remix'); this is
+// just the canned opener behind the CHALLENGE ME button.
 const DA_CHALLENGE_TEXT =
-  "Play devil's advocate about what I have on the Remixer deck right now. " +
-  'Name the weakest choice in this stack, make the case against it, and give me one ' +
-  'concrete experiment that would push this somewhere riskier. Be blunt but useful.';
+  "What's the weakest choice on my deck right now, and what should I try instead?";
 
 function daSourceJob() {
   const counts = new Map();
@@ -3708,12 +3709,10 @@ async function daSend(text, { showAs } = {}) {
   }
   da.busy = true;
   daPaintStanding();
-  // The deck snapshot rides in the user turn as fenced data (the server-side
-  // prompt treats student text as data, not instructions), so the advocate
-  // argues with what is actually stacked — capped well under the 2000-char
-  // turn limit.
-  const content = `[Remixer deck right now: ${remixStateSummary() || 'empty'}]\n${text}`.slice(0, 1990);
-  da.history.push({ role: 'user', content });
+  // History carries only what the student typed; the deck snapshot travels in
+  // the request's `deck` field, which the remix register fences into the
+  // prompt as data — so the advocate argues with what is actually stacked.
+  da.history.push({ role: 'user', content: text.slice(0, 1990) });
   da.history = da.history.slice(-12);
   daAddRow('you', esc(showAs || text));
   const typing = daAddRow('typing', '···');
@@ -3728,7 +3727,12 @@ async function daSend(text, { showAs } = {}) {
   try {
     await streamApi(
       `/api/jobs/${source.id}/chat`,
-      { messages: da.history, durationSec: daSourceDuration(source.id) },
+      {
+        messages: da.history,
+        durationSec: daSourceDuration(source.id),
+        mode: 'remix',
+        deck: remixStateSummary(),
+      },
       (ev) => {
         if (ev.type === 'delta') {
           if (!row) {

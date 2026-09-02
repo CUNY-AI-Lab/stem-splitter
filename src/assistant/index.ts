@@ -18,6 +18,7 @@ export { AssistantError, COACH_DOWN, COACH_UNCONFIGURED };
 
 const MAX_TURNS = 12;
 const MAX_TURN_CHARS = 2000;
+export const MAX_DECK_CHARS = 1000; // remix mode: cap on the client deck snapshot
 
 /** The slice of a JobRow the assistant needs (avoids importing route types). */
 export interface AssistantJob {
@@ -48,8 +49,9 @@ export function contextFromJob(
   row: AssistantJob,
   annotations: AssistantAnnotation[],
   durationSec: number | undefined,
-  mode: 'guide' | 'chat',
-  amendment = ''
+  mode: AssistantContext['mode'],
+  amendment = '',
+  deck = ''
 ): AssistantContext {
   const labels = row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {};
   const stems = (row.stems ? (JSON.parse(row.stems) as { name: string }[]) : []).map((s) => ({
@@ -64,6 +66,7 @@ export function contextFromJob(
     durationSec,
     amendment,
     mode,
+    ...(mode === 'remix' ? { deck: deck.slice(0, MAX_DECK_CHARS) } : {}),
   };
 }
 
@@ -234,6 +237,13 @@ export function validateTurns(value: unknown): ChatTurn[] | null {
   return turns;
 }
 
+export interface ChatOptions {
+  /** 'remix' switches Listening Guy to the Remixer's devil's-advocate register. */
+  mode?: 'chat' | 'remix';
+  /** Remix mode only: the client's deck snapshot, fenced into the prompt as data. */
+  deck?: string;
+}
+
 /**
  * Stream a chat reply through `onDelta`; tool calls are only known once the
  * stream ends, so the caller emits them after the prose. A tools-only reply
@@ -245,22 +255,33 @@ export async function streamChat(
   annotations: AssistantAnnotation[],
   turns: ChatTurn[],
   durationSec: number | undefined,
-  onDelta: (text: string) => void | Promise<void>
+  onDelta: (text: string) => void | Promise<void>,
+  options: ChatOptions = {}
 ): Promise<ChatResult> {
-  const ctx = contextFromJob(row, annotations, durationSec, 'chat', await loadAmendment(env));
+  const mode = options.mode ?? 'chat';
+  const ctx = contextFromJob(
+    row, annotations, durationSec, mode, await loadAmendment(env), options.deck ?? ''
+  );
   const stemNames = ctx.stems.map((s) => s.name);
   const messages: WireMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...turns];
   const reply = await openRouterChatStream(
     env,
     {
       messages,
-      tools: buildMixerTools(stemNames),
+      tools: buildMixerTools(stemNames, mode === 'remix' ? 'deck' : 'mixer'),
       maxTokens: 600, // reasoning models spend part of the budget before the reply
       temperature: 0.7,
     },
     onDelta
   );
-  const toolCalls = sanitizeToolCalls(reply.toolCalls, stemNames, durationSec);
+  // The narrower deck offer is re-enforced on the way back in: a model can
+  // call tools it was never given.
+  const toolCalls = sanitizeToolCalls(
+    reply.toolCalls,
+    stemNames,
+    durationSec,
+    mode === 'remix' ? ['solo', 'set_mute'] : undefined
+  );
   if (!reply.content && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
 
   // Tool-calling models often act without narrating, but the narration IS the
@@ -274,7 +295,7 @@ export async function streamChat(
         {
           messages: [
             ...messages,
-            { role: 'assistant', content: `[console] I just did this on the mixer: ${toolCalls.map(describeCall).join('; ')}.` },
+            { role: 'assistant', content: `[console] I just did this on the ${mode === 'remix' ? 'deck' : 'mixer'}: ${toolCalls.map(describeCall).join('; ')}.` },
             { role: 'user', content: 'In one or two short sentences, tell me what you just did and what I should listen for.' },
           ],
           maxTokens: 300,
