@@ -8,96 +8,161 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=app-20260828-2" />
+  <link rel="stylesheet" href="/styles.css?v=app-20260901-1" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
 
   <main>
+    <nav class="bench-tabs mono" role="tablist" aria-label="Workshop stations">
+      <button type="button" id="tab-splitter" class="bench-tab current" role="tab" aria-selected="true" aria-controls="view-splitter">01 · SPLITTER</button>
+      <button type="button" id="tab-remixer" class="bench-tab" role="tab" aria-selected="false" aria-controls="view-remixer" tabindex="-1">02 · REMIXER</button>
+    </nav>
+
     <header class="masthead">
       <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab">
         <img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" />
       </a>
       <p id="split-summary" class="kicker">// loading split options</p>
-      <h1>STEM<br /><span>SPLITTER</span></h1>
-      <p class="tagline">Split a song apart. Listen one layer at a time. Annotate as you go.</p>
+      <h1>STEM<br /><span id="station-word">SPLITTER</span></h1>
+      <p id="station-tagline" class="tagline">Split a song apart. Listen one layer at a time. Annotate as you go.</p>
     </header>
 
-    <section id="dropzone" class="deck" tabindex="0" role="button" aria-label="Upload a song">
-      <div class="deck-slot">
-        <span class="deck-arrow" aria-hidden="true">▼</span>
-        <p class="deck-label">INSERT TRACK</p>
-        <p class="deck-sub">drop an audio file or click to browse</p>
+    <div id="view-splitter" role="tabpanel" aria-labelledby="tab-splitter">
+      <section id="dropzone" class="deck" tabindex="0" role="button" aria-label="Upload a song">
+        <div class="deck-slot">
+          <span class="deck-arrow" aria-hidden="true">▼</span>
+          <p class="deck-label">INSERT TRACK</p>
+          <p class="deck-sub">drop an audio file or click to browse</p>
+        </div>
+        <p class="deck-meta">MP3 · WAV · FLAC · M4A · OGG · AIFF&ensp;/&ensp;100&nbsp;MB max</p>
+        <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
+      </section>
+
+      <details id="yt-disclosure" class="yt-disclosure">
+        <summary class="yt-summary mono">Or paste a YouTube link</summary>
+        <form id="yt-form" class="yt-form">
+          <input id="yt-url" type="url" placeholder="https://youtube.com/watch?v=…" aria-label="YouTube link" />
+          <button type="submit" class="yt-go">FETCH</button>
+        </form>
+      </details>
+
+      <section class="split-picker">
+        <p id="split-picker-label" class="split-picker-label mono">Split into</p>
+        <div id="stem-choice" class="split-options" role="radiogroup" aria-labelledby="split-picker-label">
+          <span class="stem-choice-status mono">Loading split options…</span>
+        </div>
+        <ul id="split-legend" class="split-legend mono"></ul>
+      </section>
+
+      <div id="upload-status" class="upload-status" hidden>
+        <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+        <p id="upload-message" class="mono"></p>
       </div>
-      <p class="deck-meta">MP3 · WAV · FLAC · M4A · OGG · AIFF&ensp;/&ensp;100&nbsp;MB max</p>
-      <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
-    </section>
 
-    <details id="yt-disclosure" class="yt-disclosure">
-      <summary class="yt-summary mono">Or paste a YouTube link</summary>
-      <form id="yt-form" class="yt-form">
-        <input id="yt-url" type="url" placeholder="https://youtube.com/watch?v=…" aria-label="YouTube link" />
-        <button type="submit" class="yt-go">FETCH</button>
-      </form>
-    </details>
+      <section id="jobs" class="rack">
+        <h2 class="rack-title"><span>SESSION RACK</span></h2>
+        <p id="empty-state" class="empty mono">— no tracks loaded —</p>
+        <ul id="job-list" class="job-list"></ul>
+      </section>
 
-    <section class="split-picker">
-      <p id="split-picker-label" class="split-picker-label mono">Split into</p>
-      <div id="stem-choice" class="split-options" role="radiogroup" aria-labelledby="split-picker-label">
-        <span class="stem-choice-status mono">Loading split options…</span>
-      </div>
-      <ul id="split-legend" class="split-legend mono"></ul>
-    </section>
+      <!-- Instructor-only: revealed when a teacher session cookie is present. -->
+      <section id="folders" class="rack folders" hidden>
+        <h2 class="rack-title"><span>CLASS FOLDERS</span></h2>
+        <p id="folders-empty" class="empty mono" hidden>— no folders yet — save a split with “+ folder” —</p>
+        <ul id="folder-list" class="folder-list"></ul>
+      </section>
 
-    <div id="upload-status" class="upload-status" hidden>
-      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
-      <p id="upload-message" class="mono"></p>
+      <aside class="station-next">
+        <p class="station-next-kicker mono">// next station</p>
+        <p class="station-next-copy">
+          Splitting is listening. The Remixer is where you answer back — stack the
+          layers up again, bend them, and build something the original never was.
+        </p>
+        <button type="button" id="goto-remixer" class="yt-go">HEAD TO THE REMIXER →</button>
+      </aside>
     </div>
 
-    <section id="jobs" class="rack">
-      <h2 class="rack-title"><span>SESSION RACK</span></h2>
-      <p id="empty-state" class="empty mono">— no tracks loaded —</p>
-      <ul id="job-list" class="job-list"></ul>
-    </section>
+    <div id="view-remixer" role="tabpanel" aria-labelledby="tab-remixer" hidden>
+      <section id="shelf" class="rack shelf">
+        <h2 class="rack-title"><span>THE SHELF</span><span class="rack-step mono">01 · pull layers</span></h2>
+        <p id="shelf-empty" class="empty mono">— nothing split yet — feed the Splitter, or dig the crate at the bottom —</p>
+        <ul id="shelf-list" class="shelf-list"></ul>
+      </section>
 
-    <!-- Instructor-only: revealed when a teacher session cookie is present. -->
-    <section id="folders" class="rack folders" hidden>
-      <h2 class="rack-title"><span>CLASS FOLDERS</span></h2>
-      <p id="folders-empty" class="empty mono" hidden>— no folders yet — save a split with “+ folder” —</p>
-      <ul id="folder-list" class="folder-list"></ul>
-    </section>
-
-    <section id="crate" class="crate">
-      <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">
-        <span class="crate-toggle-caret" aria-hidden="true">▶</span>
-        <span>BROWSE THE CRATE</span>
-        <span class="crate-toggle-sub mono">openly licensed music from the Internet Archive and more</span>
-      </button>
-
-      <div id="crate-body" class="crate-body" hidden>
-        <form id="crate-form" class="crate-form">
-          <input
-            id="crate-query"
-            type="search"
-            placeholder="search artist, album, or genre"
-            aria-label="Search the Internet Archive"
-          />
-          <select id="crate-scope" aria-label="Collection scope">
-            <option value="music">Music</option>
-            <option value="all">All open audio</option>
-          </select>
-          <button type="submit" class="yt-go">SEARCH</button>
-        </form>
-
-        <p id="crate-status" class="mono crate-status" hidden></p>
-        <ul id="crate-results" class="crate-results"></ul>
-        <div id="crate-pager" class="crate-pager" hidden>
-          <button type="button" id="crate-prev" class="crate-page-btn">◀ PREV</button>
-          <span id="crate-page-label" class="mono"></span>
-          <button type="button" id="crate-next" class="crate-page-btn">NEXT ▶</button>
+      <section id="remix-deck" class="remix-deck">
+        <h2 class="rack-title"><span>REMIX DECK</span><span class="rack-step mono">02 · stack &amp; bend</span></h2>
+        <p id="deck-empty" class="empty mono">— the deck is bare — pull a layer off the shelf —</p>
+        <div id="deck-body" hidden>
+          <div class="remix-transport mono">
+            <button type="button" id="remix-play" class="rplay" aria-label="Play the remix">▶</button>
+            <span id="remix-tc" class="timecode">0:00</span>
+            <button type="button" id="remix-stop" class="rt-btn" title="Stop and rewind to the top">STOP</button>
+            <button type="button" id="remix-capture" class="rt-btn rt-capture" title="Play from the top and record what comes out as a file" hidden>● CAPTURE</button>
+            <label class="rt-master">MASTER <input id="remix-master" type="range" min="0" max="120" value="100" aria-label="Master volume" /></label>
+            <button type="button" id="remix-clear" class="rt-btn rt-danger" title="Clear every layer off the deck">CLEAR</button>
+          </div>
+          <div id="remix-layers" class="rlayers"></div>
+          <p class="rlayer-keys mono" aria-hidden="true">VOL / PAN slide · IN sets when a layer enters · REV plays it backwards · TAPE lets pitch follow speed</p>
+          <div id="takes" class="takes" hidden>
+            <p class="takes-title mono">TAKES</p>
+            <ul id="takes-list" class="takes-list mono"></ul>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section class="coach da-panel">
+        <button type="button" id="da-toggle" class="da-toggle" aria-expanded="false">
+          <span id="da-led" class="da-led"></span>LISTENING GUY · DEVIL&rsquo;S ADVOCATE<span class="da-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="da-body" class="da-body" hidden>
+          <p id="da-standing" class="da-standing mono"></p>
+          <div id="da-log" class="da-log" role="log" aria-live="polite"></div>
+          <form id="da-form" class="da-form">
+            <input id="da-input" maxlength="500" placeholder="defend your mix…" aria-label="Defend your mix to the devil's advocate" />
+            <button type="submit">ARGUE</button>
+            <button type="button" id="da-challenge" title="Ask for a blunt critique of what's on the deck right now">CHALLENGE&nbsp;ME</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="crate" class="crate">
+        <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">
+          <span class="crate-toggle-caret" aria-hidden="true">▶</span>
+          <span>BROWSE THE CRATE</span>
+          <span class="crate-toggle-sub mono">openly licensed songs &amp; sounds — musical and not — from the Internet Archive</span>
+        </button>
+
+        <div id="crate-body" class="crate-body" hidden>
+          <p class="crate-note mono">
+            Everything here is cleared for remixing. An import runs through the
+            Splitter first — it lands on the shelf above once its layers are ready.
+          </p>
+          <form id="crate-form" class="crate-form">
+            <input
+              id="crate-query"
+              type="search"
+              placeholder="search artist, album, or genre"
+              aria-label="Search the Internet Archive"
+            />
+            <select id="crate-scope" aria-label="Collection scope">
+              <option value="music">Music</option>
+              <option value="all">All open audio</option>
+            </select>
+            <button type="submit" class="yt-go">SEARCH</button>
+          </form>
+
+          <p id="crate-import-status" class="crate-status crate-import-status mono" hidden></p>
+          <p id="crate-status" class="mono crate-status" hidden></p>
+          <ul id="crate-results" class="crate-results"></ul>
+          <div id="crate-pager" class="crate-pager" hidden>
+            <button type="button" id="crate-prev" class="crate-page-btn">◀ PREV</button>
+            <span id="crate-page-label" class="mono"></span>
+            <button type="button" id="crate-next" class="crate-page-btn">NEXT ▶</button>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <footer>
       <p>
@@ -124,6 +189,6 @@
   </dialog>
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
-  <script src="/app.js?v=app-20260828-2"></script>
+  <script src="/app.js?v=app-20260901-2"></script>
 </body>
 </html>

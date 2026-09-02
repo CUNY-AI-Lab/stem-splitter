@@ -520,7 +520,7 @@ async function loadSeparationOptions() {
     stemChoice.innerHTML =
       '<span class="stem-choice-status mono">Split options unavailable. Reload to try again.</span>';
     splitLegend.replaceChildren();
-    splitSummary.textContent = '// split options unavailable';
+    setSplitterKicker('// split options unavailable');
     engineSummary.textContent = 'SEPARATION MODELS: UNAVAILABLE';
     return false;
   }
@@ -630,7 +630,7 @@ function renderSplitLegend(models) {
 function renderSeparationSummary(models) {
   const partCounts = [...new Set(models.map((model) => model.stems.length))].sort((a, b) => a - b);
   const engines = [...new Set(models.map((model) => model.engine.trim()))];
-  splitSummary.textContent = `// ${formatList(partCounts)} parts per song`;
+  setSplitterKicker(`// ${formatList(partCounts)} parts per song`);
   engineSummary.textContent = `SEPARATION MODEL${engines.length === 1 ? '' : 'S'}: ${engines.join(
     ' / '
   )}`;
@@ -716,6 +716,7 @@ const crateForm = document.getElementById('crate-form');
 const crateQuery = document.getElementById('crate-query');
 const crateScope = document.getElementById('crate-scope');
 const crateStatus = document.getElementById('crate-status');
+const crateImportStatus = document.getElementById('crate-import-status');
 const crateResults = document.getElementById('crate-results');
 const cratePager = document.getElementById('crate-pager');
 const cratePrev = document.getElementById('crate-prev');
@@ -925,18 +926,29 @@ function renderCrateTracks(item, container) {
   container.replaceChildren(list, credit);
 }
 
+// The crate lives at the Remixer station, so its status has to speak there —
+// the splitter's upload strip is on a hidden panel while this runs. Mirror to
+// both: the crate line is what the importer sees, the strip is what greets
+// them if they walk back to the Splitter.
+function showCrateImportMessage(message, isError = false) {
+  crateImportStatus.hidden = false;
+  crateImportStatus.textContent = message;
+  crateImportStatus.classList.toggle('error', isError);
+  showUploadMessage(message, isError);
+}
+
 async function importArchiveTrack(item, track, button) {
   button.disabled = true;
   button.textContent = 'FETCHING…';
   uploadStatus.hidden = false;
   progressBar.style.width = '0%';
-  showUploadMessage(`IMPORTING "${track.title}" FROM THE INTERNET ARCHIVE…`);
+  showCrateImportMessage(`IMPORTING "${track.title}" FROM THE INTERNET ARCHIVE…`);
 
   try {
     const chosen = await requireSelectedModel();
     const resolved = await resolveModel(chosen, null, 'Internet Archive audio');
     const { model, note } = resolved;
-    if (note) showUploadMessage(note);
+    if (note) showCrateImportMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
@@ -949,12 +961,12 @@ async function importArchiveTrack(item, track, button) {
     });
 
     addJob(job);
-    showUploadMessage(processingMessage(job, 'stems'));
+    showCrateImportMessage(`${processingMessage(job, 'stems')} It lands on the shelf above when ready.`);
     renderJobs();
     pollSoon();
     button.textContent = 'QUEUED';
   } catch (err) {
-    showUploadMessage(err.message, true);
+    showCrateImportMessage(err.message, true);
     button.disabled = false;
     button.textContent = 'SPLIT';
   }
@@ -1164,6 +1176,7 @@ class Mixer {
       </div>
       <div class="console-sub mono">
         <span class="split-meta"></span>
+        <button class="share-btn to-remix-btn" title="Stack this split's layers on the Remixer deck">SEND TO REMIXER ⤳</button>
         <button class="share-btn" title="Copy a link to this console">COPY LINK</button>
       </div>
       <div class="transport">
@@ -1261,7 +1274,9 @@ class Mixer {
     );
 
     this.splitMetaEl = li.querySelector('.split-meta');
-    this.shareBtn = li.querySelector('.share-btn');
+    this.toRemixBtn = li.querySelector('.to-remix-btn');
+    this.toRemixBtn.addEventListener('click', () => sendJobToRemixer(this.job));
+    this.shareBtn = li.querySelector('.share-btn:not(.to-remix-btn)');
     this.shareBtn.addEventListener('click', () => this.copyLink());
     this.rateGroup = li.querySelector('.rate');
     this.loopRegion = li.querySelector('.loop-region');
@@ -2730,6 +2745,7 @@ function renderJobs() {
   }
 
   runElapsedClock();
+  renderShelf();
 }
 
 // One clock for every separating card, started only while there is one to tick.
@@ -2849,6 +2865,935 @@ function pollSoon() {
   pollTimer = setTimeout(pollActiveJobs, POLL_INTERVAL_MS);
 }
 
+// --- workshop stations: 01 Splitter | 02 Remixer ---------------------------
+//
+// Two benches, one shop. The Splitter takes a song apart; the Remixer puts
+// the layers back together wrong — on purpose. Panels stay in the DOM (the
+// crate keeps its search state, mixers keep playing) and only visibility
+// flips, so switching stations never tears anything down.
+
+const STATIONS = {
+  splitter: {
+    word: 'SPLITTER',
+    tagline: 'Split a song apart. Listen one layer at a time. Annotate as you go.',
+  },
+  remixer: {
+    word: 'REMIXER',
+    tagline: 'Put the layers back together wrong. Borrow from the crate. Defend the result.',
+    kicker: '// station 02 · reassembly',
+  },
+};
+
+const stationTabs = {
+  splitter: document.getElementById('tab-splitter'),
+  remixer: document.getElementById('tab-remixer'),
+};
+const stationViews = {
+  splitter: document.getElementById('view-splitter'),
+  remixer: document.getElementById('view-remixer'),
+};
+const stationWord = document.getElementById('station-word');
+const stationTagline = document.getElementById('station-tagline');
+
+let currentStation = 'splitter';
+let splitterKicker = '// loading split options';
+
+// The kicker doubles as the split-options summary on the Splitter bench, so
+// async option loads route through here instead of writing the DOM directly —
+// otherwise a slow load could stamp splitter copy onto the Remixer masthead.
+function setSplitterKicker(text) {
+  splitterKicker = text;
+  if (currentStation === 'splitter') splitSummary.textContent = text;
+}
+
+function switchStation(name) {
+  if (!STATIONS[name]) return;
+  currentStation = name;
+  for (const key of Object.keys(STATIONS)) {
+    const active = key === name;
+    stationViews[key].hidden = !active;
+    stationTabs[key].classList.toggle('current', active);
+    stationTabs[key].setAttribute('aria-selected', String(active));
+    stationTabs[key].tabIndex = active ? 0 : -1;
+  }
+  stationWord.textContent = STATIONS[name].word;
+  stationTagline.textContent = STATIONS[name].tagline;
+  splitSummary.textContent = name === 'splitter' ? splitterKicker : STATIONS.remixer.kicker;
+  try {
+    localStorage.setItem('benchTab', name);
+  } catch {
+    // Storage blocked — the tab still switches, it just won't be remembered.
+  }
+  if (name === 'remixer') {
+    renderShelf();
+    daPaintStanding();
+  }
+}
+
+function initStations() {
+  for (const [name, tab] of Object.entries(stationTabs)) {
+    tab.addEventListener('click', () => switchStation(name));
+  }
+  // Roving arrows, per the tabs pattern: focus moves with selection.
+  const order = ['splitter', 'remixer'];
+  document.querySelector('.bench-tabs').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const at = order.indexOf(currentStation);
+    const next = order[(at + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length];
+    switchStation(next);
+    stationTabs[next].focus();
+  });
+  document.getElementById('goto-remixer').addEventListener('click', () => {
+    switchStation('remixer');
+    window.scrollTo({ top: 0 });
+  });
+
+  // A shared ?job= link is a Splitter errand whatever bench was left open;
+  // otherwise reopen the bench the student was last working at.
+  let saved = null;
+  try {
+    saved = localStorage.getItem('benchTab');
+  } catch {
+    // Storage blocked — default bench below.
+  }
+  if (location.hash === '#remixer') saved = 'remixer';
+  if (new URLSearchParams(location.search).has('job')) saved = 'splitter';
+  switchStation(saved === 'remixer' ? 'remixer' : 'splitter');
+}
+
+// --- the shelf: finished splits as remix material ---------------------------
+
+const shelfList = document.getElementById('shelf-list');
+const shelfEmpty = document.getElementById('shelf-empty');
+
+function stemLabelFor(state, name) {
+  return (state.labels && state.labels[name]) || name;
+}
+
+function renderShelf() {
+  const jobs = getJobs();
+  shelfEmpty.hidden = jobs.length > 0;
+  shelfList.innerHTML = '';
+
+  for (const job of jobs) {
+    const state = jobStates.get(job.id);
+    const li = document.createElement('li');
+    li.className = 'shelf-item';
+
+    if (state?.status === 'done' && state.stems?.length) {
+      const stems = [...state.stems].sort((a, b) => idx(STEM_ORDER, a.name) - idx(STEM_ORDER, b.name));
+      li.innerHTML = `
+        <div class="shelf-head">
+          <span class="shelf-title">${esc(job.filename)}</span>
+          <span class="shelf-chip ready">${stems.length} LAYERS</span>
+          <button type="button" class="shelf-add-all" title="Stack every layer of this split on the deck">STACK ALL</button>
+        </div>
+        <div class="shelf-stems"></div>
+      `;
+      const stemsWrap = li.querySelector('.shelf-stems');
+      const shelfJob = { ...state, id: job.id, filename: job.filename };
+      for (const stem of stems) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'shelf-stem';
+        btn.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
+        btn.textContent = `＋ ${stemLabelFor(state, stem.name)}`;
+        btn.title = `Pull ${stemLabelFor(state, stem.name)} onto the deck`;
+        btn.addEventListener('click', () => {
+          addRemixLayer(shelfJob, stem);
+        });
+        stemsWrap.appendChild(btn);
+      }
+      li.querySelector('.shelf-add-all').addEventListener('click', () => {
+        for (const stem of stems) addRemixLayer(shelfJob, stem);
+      });
+    } else {
+      const failed = state?.status === 'failed' || (state?.status === 'done' && !state.stems?.length);
+      li.className = 'shelf-item pending';
+      li.innerHTML = `
+        <div class="shelf-head">
+          <span class="shelf-title">${esc(job.filename)}</span>
+          <span class="shelf-chip ${failed ? 'failed' : ''}">${failed ? 'FAILED' : 'SPLITTING…'}</span>
+        </div>
+      `;
+    }
+    shelfList.appendChild(li);
+  }
+}
+
+// --- the remix deck: layers rebuilt into new forms --------------------------
+//
+// Reverse of the Splitter's flow: instead of one song fanning out into synced
+// stems, independent layers fan back in. Each layer is an HTMLAudio routed
+// through gain → pan → master (Web Audio), with its own entry point, speed,
+// loop, and — via a decoded, sample-reversed buffer — backwards playback.
+// There is deliberately no master seek bar: with per-layer rates and loops the
+// remix timeline is not the song timeline, so transport is play / stop, like
+// a tape machine.
+
+const deckEmpty = document.getElementById('deck-empty');
+const deckBody = document.getElementById('deck-body');
+const remixLayersEl = document.getElementById('remix-layers');
+const remixPlayBtn = document.getElementById('remix-play');
+const remixStopBtn = document.getElementById('remix-stop');
+const remixCaptureBtn = document.getElementById('remix-capture');
+const remixClearBtn = document.getElementById('remix-clear');
+const remixMasterInput = document.getElementById('remix-master');
+const remixTcEl = document.getElementById('remix-tc');
+const takesEl = document.getElementById('takes');
+const takesList = document.getElementById('takes-list');
+
+const REMIX_RATES = [0.5, 0.75, 1, 1.25, 1.5];
+const REVERSE_CAP_SECONDS = 600; // decoded PCM is ~10 MB per stereo minute
+
+const remix = {
+  layers: [],
+  seq: 0,
+  playing: false,
+  baseTime: 0, // remix-timeline seconds at the moment the clock last stopped
+  startedWall: 0,
+  masterLevel: 1,
+  masterGain: null,
+  recDest: null,
+  recorder: null,
+  recChunks: [],
+  takeCount: 0,
+  driftTimer: null,
+  uiTimer: null,
+  reversedCache: new Map(), // stem url -> Promise<AudioBuffer>
+};
+
+function remixCtx() {
+  const ctx = sharedAudioContext();
+  if (ctx && !remix.masterGain) {
+    remix.masterGain = ctx.createGain();
+    remix.masterGain.gain.value = remix.masterLevel;
+    remix.masterGain.connect(ctx.destination);
+  }
+  return ctx;
+}
+
+function remixNow() {
+  return remix.playing ? remix.baseTime + (performance.now() - remix.startedWall) / 1000 : remix.baseTime;
+}
+
+function layerDuration(layer) {
+  return isFinite(layer.duration) && layer.duration > 0 ? layer.duration : NaN;
+}
+
+// Content position inside the layer for timeline second t (rate-adjusted).
+function layerLocal(layer, t) {
+  return (t - layer.offset) * layer.rate;
+}
+
+function addRemixLayer(job, stem) {
+  const layer = {
+    id: ++remix.seq,
+    jobId: job.id,
+    songTitle: job.filename,
+    stemName: stem.name,
+    label: stemLabelFor(job, stem.name),
+    url: stem.url,
+    gain: 1,
+    pan: 0,
+    rate: 1,
+    tape: false,
+    loop: false,
+    reverse: false,
+    offset: 0,
+    muted: false,
+    duration: NaN,
+    audio: null,
+    srcNode: null,
+    gainNode: null,
+    panNode: null,
+    revBuffer: null,
+    revNode: null,
+    decoding: false,
+    entryTimer: null,
+    row: null,
+  };
+
+  const audio = new Audio(stem.url);
+  audio.preload = 'auto';
+  layer.audio = audio;
+  audio.addEventListener('loadedmetadata', () => {
+    layer.duration = audio.duration;
+  });
+
+  const ctx = remixCtx();
+  if (ctx) {
+    layer.gainNode = ctx.createGain();
+    layer.srcNode = ctx.createMediaElementSource(audio);
+    layer.srcNode.connect(layer.gainNode);
+    let tail = layer.gainNode;
+    if (typeof ctx.createStereoPanner === 'function') {
+      layer.panNode = ctx.createStereoPanner();
+      layer.gainNode.connect(layer.panNode);
+      tail = layer.panNode;
+    }
+    tail.connect(remix.masterGain);
+  }
+
+  remix.layers.push(layer);
+  buildLayerRow(layer);
+  applyLayerParams(layer);
+  renderDeck();
+  if (remix.playing) syncLayer(layer); // late layers join the running remix
+  return layer;
+}
+
+function sendJobToRemixer(job) {
+  const stems = [...(job.stems || [])].sort((a, b) => idx(STEM_ORDER, a.name) - idx(STEM_ORDER, b.name));
+  for (const stem of stems) addRemixLayer(job, stem);
+  switchStation('remixer');
+  document.getElementById('remix-deck').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function applyLayerParams(layer) {
+  const { audio } = layer;
+  audio.playbackRate = layer.rate;
+  // TAPE mode: let the pitch ride the speed, varispeed-style. Reversed layers
+  // play from a raw buffer, which is tape all the way down.
+  const preserve = !layer.tape;
+  try {
+    audio.preservesPitch = preserve;
+    audio.webkitPreservesPitch = preserve;
+  } catch {
+    // Older engines expose neither — speed still works, pitch just follows.
+  }
+  audio.loop = layer.loop;
+  const level = layer.muted ? 0 : layer.gain;
+  if (layer.gainNode) {
+    layer.gainNode.gain.value = level;
+    if (layer.panNode) layer.panNode.pan.value = layer.pan;
+  } else {
+    audio.volume = Math.min(1, level * remix.masterLevel);
+  }
+  if (layer.revNode) {
+    try {
+      layer.revNode.playbackRate.value = layer.rate;
+      layer.revNode.loop = layer.loop;
+    } catch {
+      // Node already stopped — the next sync rebuilds it.
+    }
+  }
+  if (layer.row) paintLayerRow(layer);
+}
+
+function stopLayerPlayback(layer) {
+  if (layer.entryTimer) {
+    clearTimeout(layer.entryTimer);
+    layer.entryTimer = null;
+  }
+  if (layer.revNode) {
+    try {
+      layer.revNode.stop();
+    } catch {
+      // Already stopped.
+    }
+    try {
+      layer.revNode.disconnect();
+    } catch {
+      // Never connected.
+    }
+    layer.revNode = null;
+  }
+  layer.audio.pause();
+}
+
+function startLayerAt(layer, local) {
+  const dur = layerDuration(layer);
+  if (layer.reverse && layer.revBuffer) {
+    const bufDur = layer.revBuffer.duration;
+    if (!layer.loop && local >= bufDur) return;
+    const ctx = remixCtx();
+    if (!ctx) return;
+    const node = ctx.createBufferSource();
+    node.buffer = layer.revBuffer;
+    node.playbackRate.value = layer.rate;
+    if (layer.loop) {
+      node.loop = true;
+      node.loopStart = 0;
+      node.loopEnd = bufDur;
+    }
+    node.connect(layer.gainNode);
+    node.start(0, layer.loop ? local % bufDur : local);
+    layer.revNode = node;
+    return;
+  }
+  if (!layer.loop && isFinite(dur) && local >= dur) return;
+  layer.audio.currentTime = layer.loop && isFinite(dur) ? local % dur : local;
+  layer.audio.play().catch(() => {
+    // Autoplay refusals surface on the transport, not per layer.
+  });
+}
+
+// Put one layer wherever the master clock says it should be right now.
+function syncLayer(layer) {
+  stopLayerPlayback(layer);
+  if (!remix.playing) return;
+  const t = remixNow();
+  const local = layerLocal(layer, t);
+  if (local < 0) {
+    // Not due yet — wall-clock the entry (the timeline runs at wall speed).
+    layer.entryTimer = setTimeout(() => {
+      layer.entryTimer = null;
+      if (remix.playing) startLayerAt(layer, 0);
+    }, (layer.offset - t) * 1000);
+    return;
+  }
+  startLayerAt(layer, local);
+}
+
+function remixPlay() {
+  if (remix.playing) return;
+  const ctx = remixCtx();
+  if (ctx && ctx.state === 'suspended') void ctx.resume();
+  remix.playing = true;
+  remix.startedWall = performance.now();
+  for (const layer of remix.layers) syncLayer(layer);
+  remixPlayBtn.textContent = '⏸';
+  remixPlayBtn.classList.add('playing');
+  remixPlayBtn.setAttribute('aria-label', 'Pause the remix');
+  if (!remix.driftTimer) remix.driftTimer = setInterval(remixDriftTick, 600);
+  if (!remix.uiTimer) remix.uiTimer = setInterval(remixUiTick, 250);
+}
+
+function remixPause() {
+  if (!remix.playing) return;
+  remix.baseTime = remixNow();
+  remix.playing = false;
+  for (const layer of remix.layers) stopLayerPlayback(layer);
+  clearInterval(remix.driftTimer);
+  clearInterval(remix.uiTimer);
+  remix.driftTimer = null;
+  remix.uiTimer = null;
+  remixPlayBtn.textContent = '▶';
+  remixPlayBtn.classList.remove('playing');
+  remixPlayBtn.setAttribute('aria-label', 'Play the remix');
+  remixUiTick();
+}
+
+function remixStop() {
+  if (remix.recorder) stopCapture();
+  remixPause();
+  remix.baseTime = 0;
+  remixTcEl.textContent = fmt(0);
+}
+
+// HTMLAudio clocks wander; the buffer layers don't. Herd the wanderers.
+function remixDriftTick() {
+  if (!remix.playing) return;
+  const t = remixNow();
+  for (const layer of remix.layers) {
+    if (layer.reverse || layer.audio.paused) continue;
+    const dur = layerDuration(layer);
+    const local = layerLocal(layer, t);
+    if (local < 0) continue;
+    const want = layer.loop && isFinite(dur) ? local % dur : local;
+    // Near a loop seam "want" and the element disagree by design; let it ride.
+    if (layer.loop && isFinite(dur) && (want < 0.5 || dur - want < 0.5)) continue;
+    if (Math.abs(layer.audio.currentTime - want) > 0.25) layer.audio.currentTime = want;
+  }
+}
+
+function remixUiTick() {
+  remixTcEl.textContent = fmt(remixNow());
+  if (!remix.playing || !remix.layers.length) return;
+  // A remix with no loops ends on its own; a loop plays until stopped.
+  const t = remixNow();
+  let allDone = true;
+  for (const layer of remix.layers) {
+    if (layer.loop) return;
+    const dur = layer.reverse && layer.revBuffer ? layer.revBuffer.duration : layerDuration(layer);
+    if (!isFinite(dur) || layerLocal(layer, t) < dur + 0.3) {
+      allDone = false;
+      break;
+    }
+  }
+  if (allDone) remixStop();
+}
+
+function removeRemixLayer(layer) {
+  stopLayerPlayback(layer);
+  try {
+    layer.srcNode?.disconnect();
+    layer.gainNode?.disconnect();
+    layer.panNode?.disconnect();
+  } catch {
+    // Nodes may never have been created without a context.
+  }
+  layer.audio.removeAttribute('src');
+  layer.audio.load();
+  remix.layers = remix.layers.filter((l) => l !== layer);
+  layer.row?.remove();
+  renderDeck();
+  daPaintStanding();
+}
+
+function clearRemixDeck() {
+  remixStop();
+  for (const layer of [...remix.layers]) removeRemixLayer(layer);
+}
+
+function renderDeck() {
+  const has = remix.layers.length > 0;
+  deckEmpty.hidden = has;
+  deckBody.hidden = !has;
+  if (!has && remix.playing) remixStop();
+  daPaintStanding();
+}
+
+function flashLayerNote(layer, message) {
+  if (!layer.row) return;
+  let note = layer.row.querySelector('.rlayer-note');
+  if (!note) {
+    note = document.createElement('p');
+    note.className = 'rlayer-note';
+    layer.row.appendChild(note);
+  }
+  note.textContent = message;
+  setTimeout(() => note.remove(), 5000);
+}
+
+async function setLayerReverse(layer, on) {
+  if (layer.decoding) return;
+  if (!on) {
+    layer.reverse = false;
+    applyLayerParams(layer);
+    syncLayer(layer);
+    return;
+  }
+  const ctx = remixCtx();
+  if (!ctx) {
+    flashLayerNote(layer, 'This browser blocked Web Audio — no reverse here.');
+    return;
+  }
+  if (isFinite(layer.duration) && layer.duration > REVERSE_CAP_SECONDS) {
+    flashLayerNote(layer, 'Too long to reverse in the browser (10 minute cap).');
+    return;
+  }
+  layer.decoding = true;
+  paintLayerRow(layer);
+  try {
+    layer.revBuffer = await reversedBufferFor(layer.url, ctx);
+    layer.reverse = true;
+  } catch {
+    flashLayerNote(layer, 'Could not decode this layer for reverse playback.');
+  }
+  layer.decoding = false;
+  applyLayerParams(layer);
+  syncLayer(layer);
+}
+
+// Decode once per stem URL and flip the samples; layers sharing a stem share
+// the result. The forward copy is not kept — HTMLAudio already has that.
+function reversedBufferFor(url, ctx) {
+  if (!remix.reversedCache.has(url)) {
+    const promise = (async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`fetch ${res.status}`);
+      const decoded = await ctx.decodeAudioData(await res.arrayBuffer());
+      const rev = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+      for (let c = 0; c < decoded.numberOfChannels; c += 1) {
+        const src = decoded.getChannelData(c);
+        const dst = rev.getChannelData(c);
+        for (let i = 0, n = src.length; i < n; i += 1) dst[i] = src[n - 1 - i];
+      }
+      return rev;
+    })().catch((err) => {
+      remix.reversedCache.delete(url);
+      throw err;
+    });
+    remix.reversedCache.set(url, promise);
+  }
+  return remix.reversedCache.get(url);
+}
+
+function buildLayerRow(layer) {
+  const row = document.createElement('div');
+  row.className = 'rlayer';
+  row.style.setProperty('--ch', `var(--c-${cssName(layer.stemName)}, var(--ink-dim))`);
+  row.innerHTML = `
+    <span class="rlayer-id">
+      <span class="rlayer-dot"></span>
+      <span class="rlayer-name">${esc(layer.label)}</span>
+      <span class="rlayer-src" title="${esc(layer.songTitle)}">${esc(layer.songTitle)}</span>
+    </span>
+    <span class="rlayer-ctls">
+      <label>VOL <input type="range" class="rl-gain" min="0" max="120" value="100" aria-label="Layer volume"></label>
+      <label>PAN <input type="range" class="rl-pan" min="-100" max="100" value="0" aria-label="Layer pan"></label>
+      <label>IN <input type="number" class="rl-offset" min="0" max="600" step="0.5" value="0" aria-label="Entry time in seconds">s</label>
+      <label>SPEED <select class="rl-rate" aria-label="Layer speed"></select></label>
+      <button type="button" class="rl-flag rl-tape" aria-pressed="false" title="Tape mode: pitch follows speed">TAPE</button>
+      <button type="button" class="rl-flag rl-rev" aria-pressed="false" title="Play this layer backwards">REV</button>
+      <button type="button" class="rl-flag rl-loop" aria-pressed="false" title="Loop this layer">LOOP</button>
+    </span>
+    <button type="button" class="rl-flag rl-mute" aria-pressed="false" title="Mute this layer">MUTE</button>
+    <button type="button" class="rl-remove" title="Take this layer off the deck" aria-label="Remove layer">✕</button>
+  `;
+
+  const rateSel = row.querySelector('.rl-rate');
+  for (const rate of REMIX_RATES) {
+    const opt = document.createElement('option');
+    opt.value = String(rate);
+    opt.textContent = `${rate}×`;
+    if (rate === 1) opt.selected = true;
+    rateSel.appendChild(opt);
+  }
+
+  row.querySelector('.rl-gain').addEventListener('input', (e) => {
+    layer.gain = Number(e.target.value) / 100;
+    applyLayerParams(layer);
+  });
+  row.querySelector('.rl-pan').addEventListener('input', (e) => {
+    layer.pan = Number(e.target.value) / 100;
+    applyLayerParams(layer);
+  });
+  row.querySelector('.rl-offset').addEventListener('change', (e) => {
+    const v = Math.max(0, Math.min(600, Number(e.target.value) || 0));
+    e.target.value = String(v);
+    layer.offset = v;
+    syncLayer(layer);
+  });
+  rateSel.addEventListener('change', () => {
+    layer.rate = Number(rateSel.value) || 1;
+    applyLayerParams(layer);
+    syncLayer(layer);
+  });
+  row.querySelector('.rl-tape').addEventListener('click', () => {
+    layer.tape = !layer.tape;
+    applyLayerParams(layer);
+  });
+  row.querySelector('.rl-rev').addEventListener('click', () => {
+    void setLayerReverse(layer, !layer.reverse);
+  });
+  row.querySelector('.rl-loop').addEventListener('click', () => {
+    layer.loop = !layer.loop;
+    applyLayerParams(layer);
+    syncLayer(layer);
+  });
+  row.querySelector('.rl-mute').addEventListener('click', () => {
+    layer.muted = !layer.muted;
+    applyLayerParams(layer);
+  });
+  row.querySelector('.rl-remove').addEventListener('click', () => removeRemixLayer(layer));
+
+  layer.row = row;
+  remixLayersEl.appendChild(row);
+  paintLayerRow(layer);
+}
+
+function paintLayerRow(layer) {
+  const row = layer.row;
+  if (!row) return;
+  row.classList.toggle('muted', layer.muted);
+  row.querySelector('.rl-mute').setAttribute('aria-pressed', String(layer.muted));
+  const rev = row.querySelector('.rl-rev');
+  rev.setAttribute('aria-pressed', String(layer.reverse));
+  rev.textContent = layer.decoding ? 'REV…' : 'REV';
+  rev.disabled = layer.decoding;
+  const tape = row.querySelector('.rl-tape');
+  // A reversed layer plays from raw samples: pitch already follows speed.
+  tape.setAttribute('aria-pressed', String(layer.tape || layer.reverse));
+  tape.disabled = layer.reverse;
+  row.querySelector('.rl-loop').setAttribute('aria-pressed', String(layer.loop));
+}
+
+// --- capture: bounce the deck to a take -------------------------------------
+
+function captureMime() {
+  if (typeof MediaRecorder === 'undefined') return null;
+  for (const mime of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
+    if (MediaRecorder.isTypeSupported(mime)) return mime;
+  }
+  return '';
+}
+
+function startCapture() {
+  const ctx = remixCtx();
+  if (!ctx) return;
+  if (!remix.recDest) {
+    remix.recDest = ctx.createMediaStreamDestination();
+    remix.masterGain.connect(remix.recDest);
+  }
+  remixPause();
+  remix.baseTime = 0; // takes always roll from the top
+  remix.recChunks = [];
+  const mime = captureMime();
+  remix.recorder = new MediaRecorder(remix.recDest.stream, mime ? { mimeType: mime } : undefined);
+  remix.recorder.addEventListener('dataavailable', (e) => {
+    if (e.data && e.data.size) remix.recChunks.push(e.data);
+  });
+  remix.recorder.addEventListener('stop', addTake);
+  remix.recorder.start();
+  remixCaptureBtn.textContent = '■ END TAKE';
+  remixCaptureBtn.classList.add('rec');
+  remixPlay();
+}
+
+function stopCapture() {
+  const recorder = remix.recorder;
+  remix.recorder = null;
+  remixCaptureBtn.textContent = '● CAPTURE';
+  remixCaptureBtn.classList.remove('rec');
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+}
+
+function addTake() {
+  if (!remix.recChunks.length) return;
+  const type = remix.recChunks[0].type || 'audio/webm';
+  const blob = new Blob(remix.recChunks, { type });
+  remix.recChunks = [];
+  remix.takeCount += 1;
+  const ext = type.includes('mp4') ? 'm4a' : 'webm';
+  const name = `remix-take-${String(remix.takeCount).padStart(2, '0')}.${ext}`;
+  const url = URL.createObjectURL(blob);
+  const li = document.createElement('li');
+  li.innerHTML = `
+    <span>TAKE ${String(remix.takeCount).padStart(2, '0')}</span>
+    <audio controls src="${url}"></audio>
+    <a href="${url}" download="${name}">SAVE ↓</a>
+  `;
+  takesList.appendChild(li);
+  takesEl.hidden = false;
+}
+
+function initRemixDeck() {
+  remixPlayBtn.addEventListener('click', () => (remix.playing ? remixPause() : remixPlay()));
+  remixStopBtn.addEventListener('click', remixStop);
+  remixClearBtn.addEventListener('click', () =>
+    armThenRun(remixClearBtn, 'SURE?', clearRemixDeck)
+  );
+  remixMasterInput.addEventListener('input', () => {
+    remix.masterLevel = Number(remixMasterInput.value) / 100;
+    if (remix.masterGain) {
+      remix.masterGain.gain.value = remix.masterLevel;
+    } else {
+      for (const layer of remix.layers) applyLayerParams(layer);
+    }
+  });
+  const canCapture =
+    typeof MediaRecorder !== 'undefined' && ('AudioContext' in window || 'webkitAudioContext' in window);
+  remixCaptureBtn.hidden = !canCapture;
+  remixCaptureBtn.addEventListener('click', () =>
+    remix.recorder ? stopCapture() : startCapture()
+  );
+}
+
+// --- Listening Guy, devil's advocate mode -----------------------------------
+//
+// Same voice, opposite job. On the Splitter he opens the song up; here he
+// pushes back on what the student built. It rides the per-job chat endpoint —
+// the source split whose layers dominate the deck — with `mode: 'remix'`,
+// the server-side register tailored to this task: the request's `deck`
+// snapshot is fenced into the prompt as data, and the server narrows the
+// toolset to solo/set_mute (the deck has no song timeline to seek or note).
+// Returned calls translate onto matching deck layers.
+
+const daToggle = document.getElementById('da-toggle');
+const daLed = document.getElementById('da-led');
+const daBody = document.getElementById('da-body');
+const daStanding = document.getElementById('da-standing');
+const daLog = document.getElementById('da-log');
+const daForm = document.getElementById('da-form');
+const daInput = document.getElementById('da-input');
+const daChallengeBtn = document.getElementById('da-challenge');
+
+const da = { history: [], busy: false, spoke: false };
+
+// The devil's-advocate register lives server-side (mode: 'remix'); this is
+// just the canned opener behind the CHALLENGE ME button.
+const DA_CHALLENGE_TEXT =
+  "What's the weakest choice on my deck right now, and what should I try instead?";
+
+function daSourceJob() {
+  const counts = new Map();
+  for (const layer of remix.layers) {
+    counts.set(layer.jobId, (counts.get(layer.jobId) || 0) + 1);
+  }
+  let best = null;
+  for (const layer of remix.layers) {
+    if (!best || counts.get(layer.jobId) > counts.get(best.jobId)) best = layer;
+  }
+  return best ? { id: best.jobId, filename: best.songTitle } : null;
+}
+
+function daSourceDuration(jobId) {
+  for (const layer of remix.layers) {
+    if (layer.jobId === jobId && isFinite(layer.duration)) return layer.duration;
+  }
+  return undefined;
+}
+
+function remixStateSummary() {
+  const parts = remix.layers.map((layer) => {
+    const bits = [`${layer.label} (from "${layer.songTitle}")`];
+    if (layer.reverse) bits.push('reversed');
+    if (layer.rate !== 1) bits.push(`${layer.rate}x speed${layer.tape ? ', tape-pitched' : ''}`);
+    if (layer.loop) bits.push('looping');
+    if (layer.offset) bits.push(`enters at ${fmt(layer.offset)}`);
+    if (layer.pan) bits.push(`panned ${layer.pan < 0 ? 'left' : 'right'}`);
+    if (layer.muted) bits.push('muted');
+    return bits.join(', ');
+  });
+  return parts.join('; ').slice(0, 900);
+}
+
+function daPaintStanding() {
+  const source = daSourceJob();
+  if (!source) {
+    daStanding.textContent = 'the deck is bare — stack a layer or two, then come argue';
+    daInput.disabled = true;
+    daChallengeBtn.disabled = true;
+    return;
+  }
+  daInput.disabled = da.busy;
+  daChallengeBtn.disabled = da.busy;
+  daStanding.textContent = `arguing about: ${source.filename} · ${remix.layers.length} layer${
+    remix.layers.length === 1 ? '' : 's'
+  } on the deck`;
+}
+
+function daSetLed(state) {
+  daLed.classList.toggle('ready', state === 'ready');
+  daLed.classList.toggle('busy', state === 'busy');
+}
+
+function daAddRow(kind, html) {
+  const row = document.createElement('div');
+  row.className = `da-row ${kind}`;
+  row.innerHTML = html;
+  daLog.appendChild(row);
+  daLog.scrollTop = daLog.scrollHeight;
+  return row;
+}
+
+function daHandleToolCalls(calls, jobId) {
+  for (const { name, args } of calls || []) {
+    if ((name === 'set_mute' || name === 'solo') && args?.stem) {
+      const matches = remix.layers.filter(
+        (layer) => layer.jobId === jobId && layer.stemName === args.stem
+      );
+      if (!matches.length) continue;
+      if (name === 'solo') {
+        for (const layer of remix.layers) {
+          layer.muted = !(layer.jobId === jobId && layer.stemName === args.stem);
+          applyLayerParams(layer);
+        }
+        daAddRow('action', `→ soloed ${esc(args.stem)} on the deck`);
+      } else {
+        for (const layer of matches) {
+          layer.muted = Boolean(args.muted);
+          applyLayerParams(layer);
+        }
+        daAddRow('action', `→ ${args.muted ? 'muted' : 'unmuted'} ${esc(args.stem)} on the deck`);
+      }
+    } else if (name === 'seek' || name === 'add_note') {
+      daAddRow(
+        'action',
+        `→ suggested a ${esc(name === 'seek' ? 'seek' : 'note')} on the source split — that move lives back at the Splitter`
+      );
+    }
+  }
+}
+
+async function daSend(text, { showAs } = {}) {
+  if (da.busy) return;
+  const source = daSourceJob();
+  if (!source) {
+    daPaintStanding();
+    return;
+  }
+  da.busy = true;
+  daPaintStanding();
+  // History carries only what the student typed; the deck snapshot travels in
+  // the request's `deck` field, which the remix register fences into the
+  // prompt as data — so the advocate argues with what is actually stacked.
+  da.history.push({ role: 'user', content: text.slice(0, 1990) });
+  da.history = da.history.slice(-12);
+  daAddRow('you', esc(showAs || text));
+  const typing = daAddRow('typing', '···');
+  daInput.value = '';
+  daSetLed('busy');
+
+  let row = null;
+  let acc = '';
+  let calls = [];
+  let finalText = '';
+  let finishReason = 'stop';
+  try {
+    await streamApi(
+      `/api/jobs/${source.id}/chat`,
+      {
+        messages: da.history,
+        durationSec: daSourceDuration(source.id),
+        mode: 'remix',
+        deck: remixStateSummary(),
+      },
+      (ev) => {
+        if (ev.type === 'delta') {
+          if (!row) {
+            typing.remove();
+            row = daAddRow('coach streaming', '');
+          }
+          acc += ev.text;
+          row.textContent = acc;
+          daLog.scrollTop = daLog.scrollHeight;
+        } else if (ev.type === 'tool_calls') {
+          calls = ev.calls || [];
+        } else if (ev.type === 'done') {
+          finalText = ev.text || acc;
+          finishReason = ev.finishReason || 'stop';
+        }
+      }
+    );
+    typing.remove();
+    if (finalText) {
+      da.history.push({ role: 'assistant', content: finalText });
+      da.history = da.history.slice(-12);
+      if (!row) row = daAddRow('coach', '');
+      row.classList.remove('streaming');
+      let html = coachHtml(finalText);
+      if (finishReason === 'length') html += ' <span class="coach-trim">…(trimmed)</span>';
+      row.innerHTML = html;
+      da.spoke = true;
+    } else if (row) {
+      row.remove();
+    }
+    daHandleToolCalls(calls, source.id);
+  } catch (err) {
+    typing.remove();
+    if (row && !acc) row.remove();
+    if (row) row.classList.remove('streaming');
+    daAddRow('error', esc(err.message));
+  }
+  da.busy = false;
+  daSetLed(da.spoke ? 'ready' : 'idle');
+  daPaintStanding();
+  daInput.focus();
+}
+
+function initDevilsAdvocate() {
+  daToggle.addEventListener('click', () => {
+    const open = daBody.hidden;
+    daBody.hidden = !open;
+    daToggle.setAttribute('aria-expanded', String(open));
+    if (open) daPaintStanding();
+  });
+  daForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = daInput.value.trim();
+    if (text) void daSend(text);
+  });
+  daChallengeBtn.addEventListener('click', () => {
+    void daSend(DA_CHALLENGE_TEXT, { showAs: '⚡ challenge me' });
+  });
+  daPaintStanding();
+}
+
 // --- helpers ----------------------------------------------------------
 
 function esc(s) {
@@ -2965,6 +3910,9 @@ function fmt(sec) {
 separationOptionsReady = loadSeparationOptions();
 void ensureClassCode();
 void detectInstructor();
+initStations();
+initRemixDeck();
+initDevilsAdvocate();
 renderJobs();
 // Adopt after the first poll so the shared console is rendered from real state
 // and its notice isn't cleared by the poll's own tidy-up.

@@ -7,6 +7,27 @@ so a text change in any current conditional prompt arm remains traceable even
 if a version bump is accidentally omitted. The readable instructor preview is
 deliberately separate from that audit material.
 
+## 2026-09-01.1
+
+Adds the Remixer's devil's-advocate register — a third prompt mode, `remix`,
+selected by `mode: 'remix'` on `POST /api/jobs/:id/chat`. Guide and chat mode
+text is unchanged; the bump exists because the fixed prompt gained a new
+conditional arm (and the fingerprint bundle a fourth variant covering it).
+
+- Same persona, opposite job: instead of opening the song up, Listening Guy
+  argues against the student's remix — one weakest/safest choice per reply,
+  the case against it in plain words, then one riskier experiment or one
+  question that makes the student defend the choice. Concedes well-defended
+  choices and moves on.
+- New data fence: the request's `deck` snapshot (layers, sources, speed /
+  reverse / loop / entry / pan / mute) renders as an escaped one-line data
+  block, explicitly not instructions; the register forbids inventing layers
+  or settings not in it.
+- Tool rules swap to "ACTING ON THE DECK": solo and set_mute only, acting on
+  this song's layers on the deck, at most 2 calls per turn. No seek, no
+  add_note — the remix has its own timeline, not the song's. The server also
+  narrows the offered toolset and drops off-register calls on return.
+
 ## 2026-08-20.1
 
 Synthesized from instructor prompt-amendment revisions 2–4 (2026-08-19), which
