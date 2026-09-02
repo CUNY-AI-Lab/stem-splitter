@@ -3576,7 +3576,7 @@ function initRemixDeck() {
     }
   });
   const canCapture =
-    typeof MediaRecorder !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+    typeof MediaRecorder !== 'undefined' && ('AudioContext' in window || 'webkitAudioContext' in window);
   remixCaptureBtn.hidden = !canCapture;
   remixCaptureBtn.addEventListener('click', () =>
     remix.recorder ? stopCapture() : startCapture()
