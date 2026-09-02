@@ -2037,7 +2037,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     "WHO YOU'RE TALKING TO",
     'HOW YOU TALK (every message, both modes)',
   ]);
-  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-20.1');
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-09-01.1');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'TOP' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
@@ -2070,7 +2070,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-20.1');
+  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-09-01.1');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -2087,7 +2087,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     settingsRevision: 1,
     amendment,
     changeNote,
-    basePromptVersion: '2026-08-20.1',
+    basePromptVersion: '2026-09-01.1',
     basePromptHash: trace.basePromptHash,
     effectivePromptHash: trace.effectivePromptHash,
     updatedBy: 'e2eteacher',

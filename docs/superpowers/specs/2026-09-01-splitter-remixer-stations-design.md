@@ -72,17 +72,24 @@ Order mirrors a work progression:
 
 ## Devil's advocate
 
-Same voice, opposite job — no new server surface. The panel rides the existing
-`POST /api/jobs/:id/chat` endpoint against the source split whose layers
-dominate the deck (most layers wins). Each user turn carries a bracketed deck
-snapshot (layers, sources, reverse/speed/loop/entry/pan/mute states, ≤900
-chars) as fenced student data, so the critique is about the actual stack;
-CHALLENGE ME sends a canned turn asking for the weakest choice, the case
-against it, and one riskier experiment. History is client-held (≤12 turns,
-2000-char cap respected), streaming and rendering mirror the coach. Replies
-may carry mixer tool calls: `solo`/`set_mute` translate onto matching deck
-layers; `seek`/`add_note` are narrated as Splitter-side suggestions, never
-executed — the deck has no song timeline to seek.
+Same voice, opposite job — a server-side variant of Listening Guy tailored to
+the task (added 2026-09-01, prompt v2026-09-01.1). The panel rides the
+existing `POST /api/jobs/:id/chat` endpoint against the source split whose
+layers dominate the deck (most layers wins), passing `mode: 'remix'` and a
+`deck` snapshot (layers, sources, reverse/speed/loop/entry/pan/mute states;
+client caps at 900 chars, server at `MAX_DECK_CHARS` 1000). The remix
+register in `src/assistant/prompt.ts` keeps the persona and every fixed
+guardrail (markdown ban, one idea per message, no fabrication, instructor
+amendment) but flips the job: each reply argues against the weakest or safest
+choice in the fenced deck snapshot and ends with one riskier experiment or a
+question that makes the student defend the choice. The toolset narrows twice:
+`buildMixerTools(names, 'deck')` offers only `solo`/`set_mute` in deck
+language, and `sanitizeToolCalls` drops anything else a model calls anyway —
+`seek`/`add_note` never reach the browser because the deck has no song
+timeline. History is client-held (≤12 turns of plain typed text), streaming
+and rendering mirror the coach; returned calls translate onto matching deck
+layers. The new conditional arm is covered by a fourth prompt-fingerprint
+variant and `docs/prompt-changelog.md`.
 
 ## Non-goals
 
