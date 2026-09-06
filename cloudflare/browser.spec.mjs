@@ -64,6 +64,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
     await expect(page.locator('#account-admin')).toBeVisible();
+    expect((await page.getByRole('button', { name: 'SAVE', exact: true }).boundingBox()).height).toBeGreaterThanOrEqual(44);
     await page.locator('#access-role').selectOption('instructor');
     await page.locator('#access-expiry').fill('2026-12-01T12:00');
     await page.getByRole('button', { name: 'SAVE', exact: true }).click();
