@@ -32,6 +32,24 @@ fallback defaults; only an explicitly empty value disables them. `/healthz`
 reports configuration presence without revealing keys or making paid calls.
 Provider-stream checks are separate from authenticated end-to-end acceptance.
 
+Verified transfer (2026-09-06, implementation commit `f4d9810`): candidate
+version `b4e2cdc8-82db-4174-a8c1-6e791985ef15`, established-address version
+`aa0cb403-6f74-4a3e-93ee-dd4739a1c3d0`, each deployed at 100%. All eleven
+public assets at the established address match that release byte-for-byte.
+Health confirms Listening Guide and fallback configuration; the approved
+OpenRouter key returned streamed text separately from GLM 5.2, Claude Haiku
+4.5 and Gemini 3 Flash Preview. These are provider checks, not signed-in live
+guide acceptance. The latter still requires the CUNY Doorway mount.
+
+Local gates: 318 shared tests, 12 adapter/security tests, 19 browser regression
+tests and the candidate student/instructor/admin/Remixer browser journey passed.
+Live Chrome checks at 1280×900 and 390×844 confirm the enlarged logo, no
+horizontal overflow, and navigation to `https://ailab.gc.cuny.edu/`. The only
+console errors were expected anonymous 401s on account/instructor endpoints.
+The previous established-address version is
+`2fcbbbef-fdf2-48cb-9449-71ccc5b90b4f`; previous candidate code version is
+`91f6db43-30e3-4d4a-8022-fdec6986904c`. No storage was deleted or migrated.
+
 ## Development and verification
 
 From the repository root, run `bun install --frozen-lockfile`. Then:
