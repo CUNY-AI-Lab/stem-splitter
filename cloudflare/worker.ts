@@ -1,8 +1,10 @@
 import app from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
+import { assistantModelOrder } from '../src/assistant/openrouter.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
-  Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'>;
+  Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
+  Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>>;
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -26,12 +28,20 @@ async function serveApi(request: Request, env: Env, ctx: ExecutionContext): Prom
 export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    // The explicit alias shares this runtime through a service binding. Keep
+    // browser writes and signed provider URLs on its origin without trusting
+    // arbitrary Host/Forwarded headers or widening the CSRF allowlist.
+    if (env.CANONICAL_BASE_URL && url.origin === env.CANONICAL_BASE_URL) {
+      env = { ...env, PUBLIC_BASE_URL: env.CANONICAL_BASE_URL };
+    }
     let response: Response;
     try {
       if (url.pathname === '/healthz') {
         const db = await env.DB.prepare('SELECT 1 AS ready').first();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
-          remixer: env.REMIXER_ENABLED === 'true', production: false });
+          remixer: env.REMIXER_ENABLED === 'true', production: false,
+          listeningGuide: { configured: Boolean(env.OPENROUTER_API_KEY?.trim() && env.ASSISTANT_MODEL?.trim()),
+            fallbackConfigured: assistantModelOrder(env).length > 1 } });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
       } else if (url.pathname.startsWith('/api/')) {

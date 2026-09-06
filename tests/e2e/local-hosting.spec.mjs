@@ -176,6 +176,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
+  await expect(labLink.locator('img')).toHaveCSS('height', '44px');
   await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -193,6 +194,8 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // controls stay behind the downward caret instead of squeezing the title
   // down to a one-letter ellipsis.
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(labLink.locator('img')).toHaveCSS('height', '36px');
+  expect((await labLink.boundingBox()).height).toBeGreaterThanOrEqual(44);
   const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
     element.getBoundingClientRect().width
   );

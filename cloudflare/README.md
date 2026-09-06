@@ -4,6 +4,34 @@ Railway is still production. This directory targets only
 `cail-stem-splitter-preview` in CUNY AI Lab account
 `452c33847cf5cb1e46f391fca32fd1b5`; never use the root legacy deploy command.
 
+## Established Worker address
+
+The user authorized replacing the stale app at
+`https://stem-splitter.ailab-452.workers.dev` with this candidate on September 6.
+`wrangler.alias.jsonc` deploys a streaming service-binding front door to the
+same candidate runtime. It does not duplicate its code, database, audio,
+provider secrets or authentication. The browser stays on the requested address.
+`CANONICAL_BASE_URL` explicitly selects that origin for same-origin writes and
+provider callbacks; arbitrary caller origins remain rejected. Preview remains
+available, and Railway remains unchanged. This is not a readiness/SSO sign-off.
+
+From a verified committed release tree, deploy the candidate first, then:
+
+```sh
+bunx --no-install wrangler deploy --config wrangler.alias.jsonc --dry-run
+bunx --no-install wrangler deploy --config wrangler.alias.jsonc
+```
+
+The former `stem-splitter` deployment is retained for rollback; its legacy
+database and bucket are not deleted or imported. Do not run root `bun run deploy`,
+which would replace this front door with the obsolete application again.
+
+Listening Guy uses the candidate's `OPENROUTER_API_KEY` and `ASSISTANT_MODEL`.
+Absent `ASSISTANT_FALLBACK_MODELS`, the shared client enables its reviewed
+fallback defaults; only an explicitly empty value disables them. `/healthz`
+reports configuration presence without revealing keys or making paid calls.
+Provider-stream checks are separate from authenticated end-to-end acceptance.
+
 ## Development and verification
 
 From the repository root, run `bun install --frozen-lockfile`. Then:

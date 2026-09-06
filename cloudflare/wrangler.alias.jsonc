@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "stem-splitter",
+  "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
+  "main": "alias.ts",
+  "compatibility_date": "2026-09-06",
+  "workers_dev": true,
+  "preview_urls": false,
+  "services": [{ "binding": "STEM_APP", "service": "cail-stem-splitter-preview" }],
+  "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } }
+}

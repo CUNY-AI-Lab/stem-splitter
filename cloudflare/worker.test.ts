@@ -32,7 +32,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
   );
   network.listen({ onUnhandledRequest: 'error' });
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
-    vars: { TEST_JWKS: issuer.jwksJson, TEST_ADMIN: subjects[2] },
+    vars: { TEST_JWKS: issuer.jwksJson, TEST_ADMIN: subjects[2], CANONICAL_BASE_URL: 'https://stem-splitter.ailab-452.workers.dev' },
     secrets: { REPLICATE_API_TOKEN: 'contract-fixture', REPLICATE_MODEL_VERSION: 'contract-pin', WEBHOOK_SECRET: 'contract-webhook' },
   }] });
   try {
@@ -52,6 +52,18 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call('/api/admin/users')).status, 403);
     assert.equal((await call('/api/teacher/login', 0, { method: 'POST', body: '{}' })).status, 403);
     assert.equal((await call('/api/uploads', 0, { method: 'POST', headers: { Origin: 'https://attacker.test' }, body: '{"filename":"source.wav"}' })).status, 403);
+    const native = server.getWorker('stem-preview-contract-test');
+    const canonicalGrant = await native.fetch('https://stem-splitter.ailab-452.workers.dev/api/uploads', {
+      method: 'POST', headers: { 'x-cail-identity-jwt': tokens[0], Origin: 'https://stem-splitter.ailab-452.workers.dev', 'Content-Type': 'application/json' },
+      body: '{"filename":"alias.wav"}',
+    });
+    assert.equal(canonicalGrant.status, 200, await canonicalGrant.clone().text());
+    assert.match((await canonicalGrant.json()).uploadUrl, /^\/api\/local-uploads\//);
+    const spoofedOrigin = await native.fetch('https://attacker.test/api/uploads', {
+      method: 'POST', headers: { 'x-cail-identity-jwt': tokens[0], Origin: 'https://attacker.test', 'Content-Type': 'application/json' },
+      body: '{"filename":"blocked.wav"}',
+    });
+    assert.equal(spoofedOrigin.status, 403);
     const grantResponse = await call('/api/uploads', 0, { method: 'POST', body: '{"filename":"source.wav"}' });
     assert.equal(grantResponse.status, 200, await grantResponse.clone().text());
     const grant = await grantResponse.json();

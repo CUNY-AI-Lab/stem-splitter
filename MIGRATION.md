@@ -6,6 +6,13 @@
 is `cloudflare/wrangler.jsonc` on `codex/cloudflare-migration`. This does not
 authorize a Railway cutover or a change to the shared CAIL Doorway deployment.
 
+The user subsequently authorized serving this current candidate at
+`https://stem-splitter.ailab-452.workers.dev`. The explicit configuration in
+`cloudflare/wrangler.alias.jsonc` replaces the obsolete Worker with a private
+service-binding front door to the candidate. Both addresses share the same
+runtime, data, keys, and remaining acceptance gates; this is not a production
+cutover or permission to bypass CUNY sign-in. See `cloudflare/README.md`.
+
 **Active production target:** Railway remains running and unchanged until the
 Cloudflare candidate passes the acceptance, security, load, and rollback gates.
 

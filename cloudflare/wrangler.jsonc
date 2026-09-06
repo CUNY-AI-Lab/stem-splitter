@@ -17,6 +17,7 @@
     "AUTH_MODE": "cail",
     "CAIL_BROWSER_ORIGIN": "https://tools.ailab.gc.cuny.edu",
     "PUBLIC_BASE_URL": "https://cail-stem-splitter-preview.ailab-452.workers.dev",
+    "CANONICAL_BASE_URL": "https://stem-splitter.ailab-452.workers.dev",
     "ROUTED_AUDIO": "true",
     "CF_ACCOUNT_ID": "452c33847cf5cb1e46f391fca32fd1b5",
     "R2_BUCKET_NAME": "cail-stem-splitter-preview-audio",
