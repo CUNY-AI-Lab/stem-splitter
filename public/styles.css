@@ -2684,3 +2684,6 @@ body.instructor .folder-btn { display: inline-block; }
   .rlayer-id { flex-basis: 100%; }
   .rl-remove { margin-left: 0; }
 }
+/* Feature visibility is authoritative even where component rules set display. */
+[hidden] { display: none !important; }
+body:not(.remixer-enabled) .to-remix-btn { display: none; }

@@ -5,6 +5,7 @@ import type { Env } from './env';
 import {
   getRetainedAudio,
   isLocalHosting,
+  usesRoutedAudio,
   isLocalSourceDownloadKey,
   maintainLocalAudioRetention,
   presignAnalysisDownload,
@@ -115,6 +116,8 @@ import {
   QueryIsolationContractError,
 } from './isolation/contract.ts';
 import { audioSepReplicateIdentity } from './isolation/options.ts';
+import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal } from './identity.ts';
+import { readBoundedResponse } from './http/bounded-response.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -162,14 +165,77 @@ async function sha256Text(value: string): Promise<string> {
   return sha256Audio(new TextEncoder().encode(value).slice().buffer as ArrayBuffer);
 }
 
-const app = new Hono<{ Bindings: Env }>();
+type AppContext = { Bindings: Env; Variables: { principal?: AppPrincipal } };
+const app = new Hono<AppContext>();
+
+app.use('/api/*', async (c, next) => {
+  if (c.env.AUTH_MODE === 'cail') {
+    const denied = await authorizeCailRequest(c.req.raw, c.env, (principal) => c.set('principal', principal));
+    if (denied) return denied;
+    c.header('Cache-Control', 'private, no-store');
+    const principal = c.get('principal');
+    const scope = c.req.method !== 'POST' ? null : c.req.path === '/api/jobs' ? 'split'
+      : /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(c.req.path) ? 'guide' : null;
+    if (scope && principal) {
+      // An atomic database reservation, not a per-isolate counter. Reserve
+      // before imports or provider calls; failure never refunds an uncertain call.
+      const day = new Date().toISOString().slice(0, 10);
+      const reservation = await c.env.DB.prepare(`INSERT INTO app_request_reservations (id, subject, scope, day)
+        SELECT ?, ?, ?, ? WHERE
+        (SELECT COUNT(*) FROM app_request_reservations WHERE scope = ? AND day = ? AND subject = ?) < ? AND
+        (SELECT COUNT(*) FROM app_request_reservations WHERE scope = ? AND day = ?) < ?`)
+        .bind(crypto.randomUUID(), principal.subject, scope, day, scope, day, principal.subject,
+          scope === 'split' ? 5 : 100, scope, day, scope === 'split' ? 20 : 500).run();
+      if (!reservation.meta.changes) return c.json({ error: 'The daily allowance has been reached. Please try again tomorrow.' }, 429);
+    }
+  } else if (c.req.path.startsWith('/api/teacher/') && !['GET', 'HEAD'].includes(c.req.method)) {
+    if (c.req.header('origin') && !validWriteOrigin(c.req.raw, c.env)) return c.json({ error: 'Request origin not allowed' }, 403);
+  }
+  await next();
+});
+
+app.get('/api/runtime', (c) => c.json({
+  authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
+  loginUrl: c.env.CAIL_LOGIN_URL || null,
+  remixer: c.env.REMIXER_ENABLED === 'true',
+}));
+
+app.get('/api/account', (c) => {
+  const principal = c.get('principal');
+  return principal ? c.json({ account: principal }) : c.json({ account: null }, 401);
+});
+
+app.get('/api/admin/users', async (c) => {
+  if (c.get('principal')?.role !== 'admin') return c.json({ error: 'Not found' }, 404);
+  const { results } = await c.env.DB.prepare('SELECT subject, role, disabled, role_expires_at, revision FROM app_users ORDER BY created_at DESC, subject LIMIT 200').all();
+  return c.json({ users: results });
+});
+
+app.put('/api/admin/users/:subject', async (c) => {
+  const actor = c.get('principal');
+  if (actor?.role !== 'admin') return c.json({ error: 'Not found' }, 404);
+  const subject = c.req.param('subject');
+  if (!/^cail-[0-9a-f]{32}$/.test(subject) || subject === actor.subject) return c.json({ error: 'Choose another workspace member.' }, 400);
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if (parsed.response) return parsed.response;
+  const body = parsed.value as { role?: unknown; disabled?: unknown; expiresAt?: unknown; revision?: unknown } | null;
+  if (!body || !['student', 'instructor'].includes(String(body.role)) || typeof body.disabled !== 'boolean' ||
+      !Number.isSafeInteger(body.revision) || Number(body.revision) < 0 ||
+      (body.role === 'instructor' && (typeof body.expiresAt !== 'string' || !Number.isFinite(Date.parse(body.expiresAt)) || Date.parse(body.expiresAt) <= Date.now()))) {
+    return c.json({ error: 'Choose a role and a future expiry for instructor access.' }, 400);
+  }
+  const result = await c.env.DB.prepare('UPDATE app_users SET role = ?, disabled = ?, role_expires_at = ?, updated_by = ?, revision = revision + 1 WHERE subject = ? AND revision = ?')
+    .bind(body.role, body.disabled ? 1 : 0, body.role === 'instructor' ? new Date(String(body.expiresAt)).toISOString() : null, actor.subject, subject, body.revision).run();
+  if (!result.meta.changes) return c.json({ error: 'This account changed. Reload and try again.' }, 409);
+  return c.json({ ok: true });
+});
 
 type BoundedJsonResult =
   | { value: unknown; response?: never }
   | { value?: never; response: Response };
 
 async function boundedJson(
-  c: Context<{ Bindings: Env }>,
+  c: Context<AppContext>,
   maximumBytes: number
 ): Promise<BoundedJsonResult> {
   try {
@@ -198,7 +264,8 @@ app.use('/api/*', async (c, next) => {
 
 // --- auth -------------------------------------------------------------
 
-const requireClassCode = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+const requireClassCode = createMiddleware<AppContext>(async (c, next) => {
+  if (c.env.AUTH_MODE === 'cail' && c.get('principal')) { await next(); return; }
   const code = c.req.header('x-class-code');
   if (!c.env.CLASS_CODE || code !== c.env.CLASS_CODE) {
     return c.json({ error: 'Invalid class code' }, 401);
@@ -237,15 +304,21 @@ app.post('/api/uploads', requireClassCode, async (c) => {
 
   const key = `uploads/${crypto.randomUUID()}/${filename}`;
   const uploadUrl = await presignUpload(c.env, key);
+  const principal = c.get('principal');
+  if (principal) await c.env.DB.prepare('INSERT INTO upload_owners (object_key, subject, expires_at) VALUES (?, ?, ?)')
+    .bind(key, principal.subject, new Date(Date.now() + 3600000).toISOString()).run();
   return c.json({ key, uploadUrl });
 });
 
 // Local Miniflare R2 cannot issue S3 presigned URLs. When explicitly running
 // behind Tailscale Funnel, accept same-origin uploads into the simulated bucket.
 app.put('/api/local-uploads/*', requireClassCode, async (c) => {
-  if (!isLocalHosting(c.env)) return c.text('Not found', 404);
+  if (!usesRoutedAudio(c.env)) return c.text('Not found', 404);
   const key = localObjectKey(c.req.url, '/api/local-uploads/');
   if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
+  const principal = c.get('principal');
+  if (principal && !(await c.env.DB.prepare('SELECT object_key FROM upload_owners WHERE object_key = ? AND subject = ? AND expires_at > ?')
+    .bind(key, principal.subject, new Date().toISOString()).first())) return c.text('Not found', 404);
 
   const contentLength = c.req.header('content-length');
   if (!contentLength) {
@@ -263,6 +336,12 @@ app.put('/api/local-uploads/*', requireClassCode, async (c) => {
   }
   if (!c.req.raw.body) return c.json({ error: 'Upload body is required' }, 400);
 
+  if (principal) {
+    const claim = await c.env.DB.prepare("UPDATE upload_owners SET state = 'uploading' WHERE object_key = ? AND subject = ? AND state = 'issued' AND expires_at > ?")
+      .bind(key, principal.subject, new Date().toISOString()).run();
+    if (!claim.meta.changes) return c.json({ error: 'This upload has already been used. Choose the file again.' }, 409);
+  }
+
   await c.env.AUDIO.put(key, c.req.raw.body, {
     httpMetadata: { contentType: c.req.header('content-type') || 'application/octet-stream' },
   });
@@ -271,13 +350,15 @@ app.put('/api/local-uploads/*', requireClassCode, async (c) => {
     await c.env.AUDIO.delete(key);
     return c.json({ error: 'Upload size did not match Content-Length' }, 400);
   }
+  if (principal) await c.env.DB.prepare("UPDATE upload_owners SET state = 'ready' WHERE object_key = ? AND subject = ? AND state = 'uploading'")
+    .bind(key, principal.subject).run();
   return c.body(null, 204);
 });
 
 // Replicate needs a public URL for locally stored source audio. The URL is
 // short-lived and HMAC-signed so uploaded originals are not generally exposed.
 app.get('/api/local-sources/*', async (c) => {
-  if (!isLocalHosting(c.env)) return c.text('Not found', 404);
+  if (!usesRoutedAudio(c.env)) return c.text('Not found', 404);
   const key = localObjectKey(c.req.url, '/api/local-sources/');
   if (!key || !isLocalSourceDownloadKey(key)) return c.text('Not found', 404);
   if (!(await verifyLocalSource(c.env, key, c.req.query('expires'), c.req.query('signature')))) {
@@ -303,7 +384,7 @@ let teacherSeedPromise: Promise<void> | null = null;
 const teacherLoginThrottle = new TeacherLoginThrottle();
 let activeTeacherPasswordChecks = 0;
 const MAX_TEACHER_PASSWORD_CHECKS = 2;
-function ensureTeachersSeeded(c: Context<{ Bindings: Env }>): Promise<void> {
+function ensureTeachersSeeded(c: Context<AppContext>): Promise<void> {
   teacherSeedPromise ??= syncTeachersFromSeed(c.env).catch((err) => {
     console.error('teacher seed failed', err);
     teacherSeedPromise = null; // let the next request retry
@@ -311,12 +392,16 @@ function ensureTeachersSeeded(c: Context<{ Bindings: Env }>): Promise<void> {
   return teacherSeedPromise;
 }
 
-async function currentTeacher(c: Context<{ Bindings: Env }>) {
+async function currentTeacher(c: Context<AppContext>) {
+  if (c.env.AUTH_MODE === 'cail') {
+    const principal = c.get('principal');
+    return principal && principal.role !== 'student' ? { username: principal.subject, displayName: 'Instructor' } : null;
+  }
   await ensureTeachersSeeded(c);
   return resolveSession(c.env, readSessionCookie(c.req.header('Cookie')));
 }
 
-const requireTeacher = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+const requireTeacher = createMiddleware<AppContext>(async (c, next) => {
   c.header('Cache-Control', 'no-store');
   const teacher = await currentTeacher(c);
   if (!teacher) return c.json({ error: 'Sign in to continue.' }, 401);
@@ -324,7 +409,7 @@ const requireTeacher = createMiddleware<{ Bindings: Env }>(async (c, next) => {
   await next();
 });
 
-function isSecureRequest(c: Context<{ Bindings: Env }>): boolean {
+function isSecureRequest(c: Context<AppContext>): boolean {
   return cookiesShouldBeSecure(c.env.PUBLIC_BASE_URL, c.req.url);
 }
 
@@ -548,12 +633,14 @@ function normalizeFolderName(value: unknown): string | null {
 }
 
 app.get('/api/teacher/folders', requireTeacher, async (c) => {
+  const principal = c.get('principal');
   const { results } = await c.env.DB.prepare(
     `SELECT f.id, f.name, f.created_by, f.created_at,
             (SELECT COUNT(*) FROM folder_items i WHERE i.folder_id = f.id) AS item_count
      FROM folders f
+     WHERE (? IS NULL OR f.created_by = ?)
      ORDER BY f.created_at DESC, f.id DESC`
-  ).all<FolderRow>();
+  ).bind(principal && principal.role !== 'admin' ? principal.subject : null, principal?.subject ?? null).all<FolderRow>();
   return c.json({
     folders: (results ?? []).map((row) => ({
       id: row.id,
@@ -638,6 +725,9 @@ app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
   if (parsed.response) return parsed.response;
   const jobId = (parsed.value as { jobId?: unknown } | null)?.jobId;
   if (typeof jobId !== 'string' || !jobId) return c.json({ error: 'A jobId is required.' }, 400);
+  const principal = c.get('principal');
+  if (principal && principal.role !== 'admin' && !(await c.env.DB.prepare('SELECT job_id FROM job_owners WHERE job_id = ? AND subject = ?')
+    .bind(jobId, principal.subject).first())) return c.json({ error: 'Job not found' }, 404);
 
   const job = await c.env.DB.prepare('SELECT id, filename, status, model FROM jobs WHERE id = ?')
     .bind(jobId)
@@ -702,7 +792,7 @@ app.get('/api/archive/items/:identifier', requireClassCode, async (c) => {
   }
 });
 
-function archiveErrorResponse(c: Context<{ Bindings: Env }>, err: unknown, fallback: string) {
+function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: string) {
   console.error('archive request failed', err);
   if (err instanceof ArchiveError) {
     // Bad identifiers and licence rejections are caller errors, not upstream faults.
@@ -775,6 +865,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let expectedSourceIdentity: AudioSourceIdentityV1 | undefined;
   let expectedSourceBytes: number | undefined;
   let autoSnapshotKey: string | null = null;
+  let attribution: unknown = null;
   const id = crypto.randomUUID();
 
   if (body?.youtubeUrl) {
@@ -841,6 +932,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     let audio;
     try {
       audio = await fetchArchiveAudio(identifier, body.archiveFile, c.env);
+      attribution = audio.attribution;
     } catch (err) {
       const message =
         err instanceof ArchiveError
@@ -881,6 +973,9 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     }
 
     const head = await c.env.AUDIO.head(uploadKey);
+    const principal = c.get('principal');
+    if (principal && !(await c.env.DB.prepare("SELECT object_key FROM upload_owners WHERE object_key = ? AND subject = ? AND expires_at > ? AND state = 'ready'")
+      .bind(uploadKey, principal.subject, new Date().toISOString()).first())) return c.json({ error: 'Upload not found' }, 404);
     if (!head) return c.json({ error: 'Upload not found — did the file finish uploading?' }, 400);
     if (head.size > MAX_SOURCE_BYTES) {
       await c.env.AUDIO.delete(uploadKey);
@@ -937,7 +1032,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       model = autoRouting.resolvedCoreModel;
     }
 
-    await c.env.DB.prepare(
+    const insertJob = c.env.DB.prepare(
       `INSERT INTO jobs
         (id, filename, source_key, status, model, routing_request, source_type, source_hash, analysis)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -952,8 +1047,12 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         sourceType,
         sourceHash,
         autoRouting ? JSON.stringify(autoRouting) : null
-      )
-      .run();
+      );
+    const statements = [insertJob];
+    const principal = c.get('principal');
+    if (principal) statements.push(c.env.DB.prepare('INSERT INTO job_owners (job_id, subject) VALUES (?, ?)').bind(id, principal.subject));
+    if (attribution) statements.push(c.env.DB.prepare('INSERT INTO job_attributions (job_id, attribution) VALUES (?, ?)').bind(id, JSON.stringify(attribution)));
+    await c.env.DB.batch(statements);
   } catch (error) {
     if (autoSnapshotKey) {
       try {
@@ -1034,7 +1133,8 @@ app.get('/api/jobs/:id', async (c) => {
   // The cached listening guide only exists for finished jobs; skip the extra
   // SELECT on the frequent still-processing polls.
   const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
-  return c.json(jobResponse(row, results ?? [], guide));
+  const attribution = await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id = ?').bind(id).first<{ attribution: string }>();
+  return c.json({ ...jobResponse(row, results ?? [], guide), attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
 
 app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
@@ -1065,7 +1165,7 @@ interface InstrumentFeedbackJobRow {
 }
 
 async function loadInstrumentFeedbackTarget(
-  c: Context<{ Bindings: Env }>,
+  c: Context<AppContext>,
   reviewer: string
 ): Promise<{ target: InstrumentDiscoveryFeedbackTargetV1 } | { response: Response }> {
   const row = await c.env.DB.prepare(
@@ -1530,6 +1630,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
       ? 'remix'
       : null;
   if (!mode) return c.json({ error: "mode must be 'chat' or 'remix'" }, 400);
+  if (mode === 'remix' && c.env.REMIXER_ENABLED !== 'true') return c.json({ error: 'Remixer is unavailable.' }, 404);
   if (body?.deck !== undefined && typeof body.deck !== 'string') {
     return c.json({ error: 'deck must be a string' }, 400);
   }
@@ -1556,17 +1657,25 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
 app.post('/api/webhooks/separation', async (c) => {
   const token = c.req.query('token');
   const jobId = c.req.query('job');
-  if (!token || token !== c.env.WEBHOOK_SECRET) return c.text('Forbidden', 403);
+  if (!(await equalSecret(token, c.env.WEBHOOK_SECRET))) return c.text('Forbidden', 403);
   if (!jobId) return c.text('Missing job', 400);
 
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(jobId).first<JobRow>();
   if (!row) return c.text('Unknown job', 404);
   if (row.status === 'done' || row.status === 'failed') return c.json({ ok: true }); // already ingested
 
-  const parsed = await boundedJson(c, MAX_WEBHOOK_JSON_BYTES);
   let result: SeparationResult;
-  if (parsed.response) {
-    if (parsed.response.status !== 413 || !row.external_id) return parsed.response;
+  if (c.env.AUTH_MODE === 'cail') {
+    // The payload is only a notification. Retrieve this job's stored prediction
+    // so even an authenticated mismatched/replayed payload cannot choose audio.
+    await c.req.raw.body?.cancel().catch(() => undefined);
+    if (!row.external_id) return c.text('Prediction is not registered yet', 409);
+    try { result = await getBackend(c.env).fetchStatus(row.external_id); }
+    catch { return c.text('Status is temporarily unavailable', 503); }
+  } else {
+    const parsed = await boundedJson(c, MAX_WEBHOOK_JSON_BYTES);
+    if (parsed.response) {
+      if (parsed.response.status !== 413 || !row.external_id) return parsed.response;
     // Replicate webhook bodies routinely exceed any sane JSON bound (they
     // carry the model's full progress logs, and new cog builds inline file
     // outputs as data URIs). The webhook is only a completion signal, so for
@@ -1579,16 +1688,16 @@ app.post('/api/webhooks/separation', async (c) => {
       const message = err instanceof Error ? err.message : String(err);
       return c.text(`Status fetch failed: ${message}`, 500);
     }
-  } else {
-    if (!parsed.value) return c.text('Bad payload', 400);
-    result = getBackend(c.env).parseResult(parsed.value);
+    } else {
+      if (!parsed.value) return c.text('Bad payload', 400);
+      result = getBackend(c.env).parseResult(parsed.value);
+    }
   }
   try {
     await ingestResult(c.env, jobId, result);
   } catch (err) {
     // 500 so the provider retries the webhook.
-    const message = err instanceof Error ? err.message : String(err);
-    return c.text(`Ingest failed: ${message}`, 500);
+    return c.text('Audio processing is temporarily unavailable', 503);
   }
   return c.json({ ok: true });
 });
@@ -1606,7 +1715,7 @@ app.get('/api/files/*', async (c) => {
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
   headers.set('Content-Length', String(obj.size));
-  headers.set('Cache-Control', 'private, max-age=3600');
+  headers.set('Cache-Control', c.env.AUTH_MODE === 'cail' ? 'private, no-store' : 'private, max-age=3600');
   if (c.req.query('download') !== undefined) {
     headers.set('Content-Disposition', `attachment; filename="${key.split('/').pop()}"`);
   }
@@ -1614,6 +1723,11 @@ app.get('/api/files/*', async (c) => {
 });
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
+
+app.onError((_error, c) => {
+  console.error(JSON.stringify({ event: 'request_failed', method: c.req.method }));
+  return c.json({ error: 'The service is temporarily unavailable. Please try again.' }, 503);
+});
 
 export default app;
 
@@ -1668,6 +1782,13 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
     }
 
     for (const stem of stems) {
+      if (env.AUTH_MODE === 'cail' && env.SEPARATION_BACKEND === 'replicate') {
+        const url = new URL(stem.url);
+        if (url.protocol !== 'https:' || url.username || url.password || url.port ||
+          !(url.hostname === 'replicate.delivery' || url.hostname.endsWith('.replicate.delivery'))) {
+          throw new InvalidStemAudioError('The separator returned an unsupported audio address');
+        }
+      }
       const audio = await downloadStem(stem.name, stem.url);
       const key = `stems/${jobId}/${stem.name}.mp3`;
       await env.AUDIO.put(key, audio, {
@@ -1712,7 +1833,7 @@ async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     let response: Response;
     try {
-      response = await fetch(url);
+      response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
     } catch (error) {
       lastError =
         error instanceof Error
@@ -1726,7 +1847,15 @@ async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
 
     if (response.ok) {
       try {
-        const audio = await response.arrayBuffer();
+        const audio = await readBoundedResponse(response, {
+          maximumBytes: 32 * 1024 * 1024,
+          timeoutMs: 30000,
+          errors: {
+            tooLarge: () => new InvalidStemAudioError('The separator returned an oversized track'),
+            timedOut: () => new Error('Audio download timed out'),
+            unreadable: () => new Error('Audio download could not be read'),
+          },
+        });
         if (!looksLikeMp3(audio)) {
           lastError = new InvalidStemAudioError(
             `The "${name}" track was empty or was not a playable MP3`
@@ -1851,7 +1980,7 @@ function parseDuration(value: unknown): number | undefined {
 // waitUntil keeps the pump alive past the returned Response. Failures inside
 // the stream become a terminal error event with a student-safe message.
 function sseResponse(
-  c: Context<{ Bindings: Env }>,
+  c: Context<AppContext>,
   run: (emit: (event: Record<string, unknown>) => Promise<void>) => Promise<void>
 ): Response {
   const { readable, writable } = new TransformStream();

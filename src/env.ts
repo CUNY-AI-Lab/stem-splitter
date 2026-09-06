@@ -2,6 +2,18 @@ export type Env = {
   // Bindings
   AUDIO: R2Bucket;
   DB: D1Database;
+  ASSETS?: Fetcher;
+  AUTH_MODE?: string;
+  CAIL_IDENTITY_JWKS?: string;
+  /** Set by the Worker adapter, never by browser input or environment JSON. */
+  verifyCailIdentity?: (token: string, jwks: string | undefined) => Promise<{ subject: string } | null | 'unavailable'>;
+  CAIL_BROWSER_ORIGIN?: string;
+  CAIL_LOGIN_URL?: string;
+  ADMISSION_RESOLVER?: import('./identity.ts').AdmissionResolver;
+  REMIXER_ENABLED?: string;
+  APP_BASE_PATH?: string;
+  RELEASE?: string;
+  REQUEST_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
 
   // Vars (wrangler.jsonc)
   R2_BUCKET_NAME: string;
@@ -14,6 +26,8 @@ export type Env = {
   LOCAL_DEV?: string;
   /** "true" when running locally behind Tailscale Funnel with simulated R2/D1. */
   LOCAL_HOSTING?: string;
+  /** Same-origin streaming uploads and HMAC source delivery backed by native R2. */
+  ROUTED_AUDIO?: string;
   /** owner/name of the yt-dlp fetch model (replicate-yt-audio/); unset disables the fallback. */
   REPLICATE_YT_MODEL?: string;
   /** Exact deployed version of REPLICATE_YT_MODEL; floating latest is forbidden. */

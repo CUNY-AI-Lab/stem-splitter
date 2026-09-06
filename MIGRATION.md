@@ -1,10 +1,13 @@
 # Stem Splitter: Railway-to-Cloudflare migration plan
 
-**Updated:** 2026-08-11
+**Updated:** 2026-09-06
 
-**Status:** Planning authority only. This file does not authorize a deployment.
+**Status:** Parallel migration authorized on 2026-09-06. The isolated candidate
+is `cloudflare/wrangler.jsonc` on `codex/cloudflare-migration`. This does not
+authorize a Railway cutover or a change to the shared CAIL Doorway deployment.
 
-**Active release target:** Railway until the user declares the product finished.
+**Active production target:** Railway remains running and unchanged until the
+Cloudflare candidate passes the acceptance, security, load, and rollback gates.
 
 **Cloudflare target:** The verified CUNY AI Lab Enterprise account, not an
 unverified account or the legacy identifiers currently committed in
@@ -15,6 +18,72 @@ passes the predeclared gates in this document. Direct OpenRouter is the
 rollback path, not the preferred final architecture.
 
 ## Decision summary
+
+### September implementation and release boundary
+
+The migration branch reconciles `origin/main` (`205e597`) with the current
+Splitter/Remixer feature branch (`5e4d24a`, PR #6). The original checkout and
+its permission-only changes are preserved. Do not merge the old `agent/autosplit`
+branch wholesale or silently promote classifier candidates.
+
+The native Worker adapter now has dedicated D1 and R2 resources, write-once
+same-origin uploads, signed provider source delivery, strict CAIL identity
+verification, current Admission checks, private job/stem ownership, and bounded
+application roles. Its dependency package is separate so the accepted analyzer
+image's `package.json` and `bun.lock` evidence stays unchanged.
+
+Student and instructor access is private by default. An instructor role does
+not confer access to another person's recordings. CAIL Admission administrators
+can grant expiring instructor access and suspend application access; optimistic
+revisions and immutable events record each change. This is **workspace access**,
+not a completed course roster or student-submission workflow.
+
+Remixer is false by default. When enabled, it owns the single Crate. The browser
+checks a conservative CC compatibility matrix before recording, then exports a
+ZIP containing audio, source credits, license, and a versioned layer manifest.
+Unknown, NoDerivatives, ported/unsupported, and conflicting BY-SA/NC combinations
+are blocked. Permission for unlicensed local uploads is not inferred.
+
+The prototype uses the existing Replicate credentials and exact model pins;
+GPU work is not moved into Workers. AI Gateway remains preferred **only after
+comparative tests pass**. No gateway, model, analyzer, or classifier is silently
+substituted during this migration.
+
+Read `cloudflare/README.md` for installation and candidate operations, and
+`docs/review-2026-09-06.md` for evidence and the unresolved release blockers.
+
+### Required order before cutover
+
+1. Complete the authenticated mount: a reviewed Doorway service binding and
+   unlisted `/stem-splitter/` page/API routes, exact `cail:stem-splitter` audience,
+   and prefix-safe browser assets/API/audio URLs. Keep the public Worker closed
+   to forged headers. Do not copy CUNY tokens, signing keys, or user passwords.
+2. Prove real CUNY sign-in, instructor grant/expiry, Admission revocation,
+   logout, cross-student denial, and shared-device cleanup in a browser. The
+   local signed-fixture tests are necessary but are not this proof.
+3. Finish course enrollment, instructor-course ownership, explicit submissions,
+   and class-specific prompt settings. Admission owns enrollment; no second
+   invite/password store. Until then, ordinary instructors see only their jobs
+   and folders, and guidance belongs to the single workspace.
+4. Run paid canaries with the existing pinned Replicate models: uploads,
+   authorized YouTube, and openly licensed Archive; every supported split;
+   asynchronous callback and polling fallback; Listening Guide stream and tools.
+5. Prove source/import memory bounds, byte-range playback, durable ingestion,
+   deletion/retention, stale leases, upstream failures, retries, and bounded
+   concurrent load in the Worker runtime. Current short fixture/load checks
+   are not a stress qualification of 100 MB audio or a semester workload.
+6. Bridge the separately hosted analyzer through a reviewed authenticated
+   boundary: a Railway private hostname cannot be used directly from a Worker.
+   Re-run shadow/authoritative Auto equivalence before changing flags. Leave
+   discovery and isolation off until their independent human/evaluation gates pass.
+7. Compare direct OpenRouter with authenticated AI Gateway under the same
+   prompt/model and streaming/tool/error contracts. Promote only with measured
+   quality, reliability, latency, privacy/logging, and cost evidence.
+8. Rehearse data export/import with ownership mapping, prompts/history, counts
+   and hashes, audio retention, backup restore, and a reversible traffic switch.
+   Unknown legacy ownership must remain closed. No automatic identity matching.
+9. Obtain final acceptance; switch traffic with Railway retained for rollback.
+   Decommission Railway only in a separately approved later step.
 
 The finished application should move from the Railway Node host to a
 Cloudflare Worker with static assets, D1, and R2. Replicate or another reviewed

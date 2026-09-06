@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>STEM Splitter · My account</title>
+<link rel="stylesheet" href="/styles.css?v=20260906">
+<main class="teacher-main">
+  <header class="masthead">
+    <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
+    <h1>MY<br><span>ACCOUNT</span></h1>
+  </header>
+  <p id="account-status" role="status">Loading…</p>
+  <section id="account-details" hidden>
+    <p id="account-role"></p>
+    <details><summary>Workspace ID</summary><p>Share this ID with a workspace administrator when requesting instructor access.</p><code id="account-id"></code></details>
+    <p><a href="https://tools.ailab.gc.cuny.edu/">Manage CUNY sign-in and membership</a></p>
+  </section>
+  <section id="account-admin" class="teacher-panel" hidden>
+    <h2>Workspace access</h2>
+    <form id="access-form" class="teacher-form">
+      <label class="teacher-field">Member<select id="access-member" required></select></label>
+      <label class="teacher-field">Role<select id="access-role"><option value="student">Student</option><option value="instructor">Instructor</option></select></label>
+      <label class="teacher-field">Instructor access expires<input id="access-expiry" type="datetime-local"></label>
+      <label><input id="access-disabled" type="checkbox"> Suspend workspace access</label>
+      <button type="submit" class="yt-go">SAVE</button>
+      <p id="access-status" role="status"></p>
+    </form>
+  </section>
+  <footer><p><a href="/">← back to the mixer</a></p></footer>
+</main>
+<script src="/account.js?v=20260906"></script>
+</html>

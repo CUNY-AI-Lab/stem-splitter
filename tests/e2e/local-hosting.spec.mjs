@@ -176,7 +176,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  await expect(page.locator('#split-summary')).toHaveText('// 2, 4, or 6 parts per song');
+  await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
     page.getByRole('radio', { name: '4 parts: voice, percussion, low end, the rest' })
@@ -397,6 +397,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
       return nativeFetch(input, init);
     };
   }, jobId);
+  await page.getByRole('button', { name: /LISTENING GUY/ }).click();
   await page.getByRole('button', { name: 'CUE THE LISTENING GUIDE' }).click();
   await expect(page.locator('.coach-guide-text')).toContainText(
     'Start with the other channel and listen for the ensemble texture.'
@@ -1136,8 +1137,8 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
     name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
   }).check();
 
-  // The crate lives at the Remixer station; opening it runs the default search.
-  await page.getByRole('tab', { name: /REMIXER/ }).click();
+  // The optional station is off by default; the single Crate stays in Splitter.
+  await expect(page.getByRole('tab', { name: /REMIXER/ })).toBeHidden();
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await expect(page.locator('.crate-item')).toHaveCount(1);
   await expect(page.locator('.crate-license')).toHaveText('CC BY-NC-SA 4.0');
@@ -1217,7 +1218,7 @@ test('refuses a NoDerivatives Internet Archive item', async ({ page, network }) 
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('tab', { name: /REMIXER/ }).click();
+  await expect(page.getByRole('tab', { name: /REMIXER/ })).toBeHidden();
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await page.locator('.crate-item-head').click();
 

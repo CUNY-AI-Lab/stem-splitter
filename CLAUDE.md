@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs splits it into 2, 4, or 6 tracks → students play stems back in a synchronized in-browser mixer with per-stem mute. **Current release rule:** use the Node host under `server/` on Railway for integration, live acceptance, and releases until the user declares the product finished. Cloudflare Workers is the deferred finished-product migration target; do not deploy unfinished work there. The old Worker URL may remain reachable but is not proof of current delivery. The class code is the `CLASS_CODE` secret — never write its value into this file or any committed file.
+Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs separates it into tracks → students play stems in a synchronized mixer. **Current release rule (2026-09-06):** Railway remains production. The user authorized an isolated Cloudflare migration candidate, configured only in `cloudflare/wrangler.jsonc`, with CAIL identity and separate storage. No cutover until live SSO, provider, stress, data migration and rollback gates pass. The old root Worker is not this candidate. Never commit class codes, credentials or session material.
 
 ## Commands
 
@@ -45,8 +45,8 @@ bun run wrangler -- deploy --dry-run --outdir dist   # validate config/bundle wi
 
 One shared Hono application (TypeScript) plus static assets and an external GPU
 provider for separation. The active adapter is Railway Node with SQLite and a
-filesystem volume; the retained Cloudflare adapter uses Workers, D1, and R2
-only after the finished-product migration.
+filesystem volume; the parallel adapter under `cloudflare/` uses Workers, D1,
+R2 and CAIL Admission. Its dependency package does not modify the frozen analyzer lock.
 
 **Request flow:**
 1. Browser asks `POST /api/uploads`. Railway returns a same-origin fixed-length upload route backed by its volume; the deferred Worker adapter returns a presigned R2 PUT URL (`src/r2.ts`, aws4fetch).
@@ -72,7 +72,7 @@ only after the finished-product migration.
 
 ## Configuration
 
-- `wrangler.jsonc` is the source of truth: account id (ailab — `452c33847…`, not the Veritas account), D1 id, R2 bucket, vars. Wrangler must be logged in as `ailab@gc.cuny.edu` — a personal Cloudflare login isn't a member of the ailab account, and every write (deploy, `secret put`) fails with `Authentication error [code: 10000]`. Check with `bun run wrangler -- whoami`; fix with `bun run wrangler -- logout` then `login` as ailab. `R2_BUCKET_NAME` and `CF_ACCOUNT_ID` vars must match the actual bucket/account because presigned URLs are built from them.
+- `cloudflare/wrangler.jsonc` is the candidate source of truth. Verify account membership with `wrangler whoami`; membership in CUNY AI Lab `452c33847cf5cb1e46f391fca32fd1b5`, not a particular login email, is the requirement. Do not log out or switch accounts unnecessarily. The root `wrangler.jsonc` targets the legacy Worker and must not be used for this candidate.
 - Secrets (set via `wrangler secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`, `OPENROUTER_API_KEY`, `TEACHER_SEED`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`); generate and rotate the teacher seed only through `docs/teacher-provisioning.md`.
 - `REPLICATE_MODEL_VERSION` is a pinned version hash of `ryan5453/demucs`. **Never bump it blind to `latest_version`.** Upstream (`Ryan5453/demucs-next`) has already changed shape at source: its HEAD serves only `htdemucs` (no `htdemucs_ft`, no `htdemucs_6s`) and renamed `output_format` → `format`. That build is not published yet, so the current pin is fine — but the moment it is, a blind bump silently breaks the 4- **and** 6-track splits. To bump: get the candidate hash (`curl -s https://api.replicate.com/v1/models/ryan5453/demucs -H "Authorization: Bearer $TOKEN" | jq -r .latest_version.id`), then **vet it before deploying** with `REPLICATE_MODEL_VERSION=<candidate> bun run check:replicate`, which verifies the candidate still accepts every model id and input key the catalogue sends. Only then `wrangler secret put` and deploy.
 - After changing `PUBLIC_BASE_URL` or webhook logic, redeploy — Replicate posts webhooks to the deployed URL.
@@ -83,18 +83,18 @@ only after the finished-product migration.
 
 `scripts/run-real-audio-e2e.sh` is the *live* browser harness: same Playwright flow, real separation, no mocks. `BACKEND=audio-separator` (default) runs the local Python separator for free; `BACKEND=replicate` runs the paid provider and is the only way to exercise a real YouTube import in the browser. Provider webhooks cannot reach localhost, so a Replicate run there completes through the reconciliation fallback — that is the point, not a workaround. Supply exactly one of `SOURCE_AUDIO` or `YOUTUBE_URL`; no default song ships in the repo.
 
-## Where this runs now: Railway until the product is finished
+## Where this runs now: Railway production, isolated Worker candidate
 
 Two hosts can run the same Hono app, but they are not currently peers.
 **Railway's Node host is the active integration, acceptance, and release
-target.** Cloudflare Workers is the deferred finished-product migration; do not
-deploy unfinished work there.
+target.** Cloudflare migration is now explicitly authorized in a separate
+candidate, without changing Railway configuration, data or traffic.
 
 | | **Railway** (`server/`) | **Cloudflare Workers** (`src/`) |
 |---|---|---|
-| Role | active integration and releases | deferred finished-product target |
-| Storage | `node:sqlite` + a volume at `/data` | D1 `stem-splitter` + R2 `stem-splitter-audio` |
-| Deploy | `railway up --detach` | `bun run deploy` |
+| Role | current production | isolated migration candidate |
+| Storage | `node:sqlite` + a volume at `/data` | D1 `cail-stem-splitter-preview` + dedicated R2 |
+| Deploy | explicit Railway service IDs | from `cloudflare/`: `wrangler deploy` |
 | Retention | in-app hourly cleanup | R2 bucket lifecycle rule |
 | Audience | current testers and instructors | future class release |
 
@@ -105,9 +105,8 @@ back at `/api/webhooks/separation`. On localhost both are unreachable, so jobs
 finish only through reconciliation. Railway exercises the real webhook and
 signed-source round trip end to end.
 
-Migrate to Cloudflare only after the user declares the complete product
-finished. Its managed bindings and platform lifecycle policy remain the final
-hosting goal, not the current release path.
+Promote the candidate only after the ordered gates in `MIGRATION.md` pass.
+Railway must remain available for rollback; no automatic data import or shutdown.
 
 **The trap: nothing on Railway promotes itself.** It has its own SQLite
 database, audio volume, and secrets. Jobs, stems, labels, notes, prompt history,

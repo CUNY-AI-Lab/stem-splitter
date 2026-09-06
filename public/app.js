@@ -3,6 +3,8 @@
 
 const POLL_INTERVAL_MS = 5000;
 const STEM_ORDER = ['vocals', 'instrumental', 'drums', 'bass', 'other', 'guitar', 'piano'];
+let runtime = { authMode: 'class-code', remixer: false, loginUrl: null };
+let jobsStorageKey = 'jobs';
 
 // Solo has two stages on purpose, and this is the quiet one: the rest of the
 // band drops back instead of disappearing, so you hear a part in its place
@@ -100,6 +102,7 @@ function requestClassCode(message) {
 // In-page verify loop at page load: keeps asking until the server accepts
 // the code, so a typo fails here instead of on the student's first upload.
 async function ensureClassCode() {
+  if (runtime.authMode === 'cail') return;
   let message = 'Enter your class code to upload and split tracks.';
   for (;;) {
     let code = getClassCode();
@@ -129,12 +132,13 @@ async function api(path, options = {}) {
     },
   });
   if (res.status === 401) {
+    if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
     localStorage.removeItem('classCode');
     void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(body.error?.message || body.error || `Request failed (${res.status})`);
   return body;
 }
 
@@ -148,13 +152,14 @@ async function streamApi(path, body, onEvent) {
     body: JSON.stringify(body),
   });
   if (res.status === 401) {
+    if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
     localStorage.removeItem('classCode');
     void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
   }
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed (${res.status})`);
+    throw new Error(err.error?.message || err.error || `Request failed (${res.status})`);
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -192,14 +197,14 @@ async function streamApi(path, body, onEvent) {
 
 function getJobs() {
   try {
-    return JSON.parse(localStorage.getItem('jobs') || '[]');
+    return jobsStorageKey ? JSON.parse(localStorage.getItem(jobsStorageKey) || '[]') : [];
   } catch {
     return [];
   }
 }
 
 function saveJobs(jobs) {
-  localStorage.setItem('jobs', JSON.stringify(jobs));
+  if (jobsStorageKey) localStorage.setItem(jobsStorageKey, JSON.stringify(jobs));
 }
 
 // A new song takes the spotlight: previous sessions collapse (nothing is
@@ -628,9 +633,8 @@ function renderSplitLegend(models) {
 }
 
 function renderSeparationSummary(models) {
-  const partCounts = [...new Set(models.map((model) => model.stems.length))].sort((a, b) => a - b);
   const engines = [...new Set(models.map((model) => model.engine.trim()))];
-  setSplitterKicker(`// ${formatList(partCounts)} parts per song`);
+  setSplitterKicker('// a closer listen');
   engineSummary.textContent = `SEPARATION MODEL${engines.length === 1 ? '' : 'S'}: ${engines.join(
     ' / '
   )}`;
@@ -2875,11 +2879,11 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'SPLITTER',
-    tagline: 'Split a song apart. Listen one layer at a time. Annotate as you go.',
+    tagline: 'Separate a song. Explore its layers.',
   },
   remixer: {
     word: 'REMIXER',
-    tagline: 'Put the layers back together wrong. Borrow from the crate. Defend the result.',
+    tagline: 'Layer sounds. Make something new.',
     kicker: '// station 02 · reassembly',
   },
 };
@@ -2896,7 +2900,7 @@ const stationWord = document.getElementById('station-word');
 const stationTagline = document.getElementById('station-tagline');
 
 let currentStation = 'splitter';
-let splitterKicker = '// loading split options';
+let splitterKicker = '// a closer listen';
 
 // The kicker doubles as the split-options summary on the Splitter bench, so
 // async option loads route through here instead of writing the DOM directly —
@@ -2907,6 +2911,7 @@ function setSplitterKicker(text) {
 }
 
 function switchStation(name) {
+  if (name === 'remixer' && !runtime.remixer) return;
   if (!STATIONS[name]) return;
   currentStation = name;
   for (const key of Object.keys(STATIONS)) {
@@ -2931,6 +2936,10 @@ function switchStation(name) {
 }
 
 function initStations() {
+  document.querySelector('.bench-tabs').hidden = !runtime.remixer;
+  document.querySelector('.station-next').hidden = !runtime.remixer;
+  document.body.classList.toggle('remixer-enabled', runtime.remixer);
+  if (!runtime.remixer) document.getElementById('view-splitter').insertBefore(document.getElementById('crate'), document.getElementById('jobs'));
   for (const [name, tab] of Object.entries(stationTabs)) {
     tab.addEventListener('click', () => switchStation(name));
   }
@@ -3057,7 +3066,6 @@ const remix = {
   masterGain: null,
   recDest: null,
   recorder: null,
-  recChunks: [],
   takeCount: 0,
   driftTimer: null,
   uiTimer: null,
@@ -3088,10 +3096,13 @@ function layerLocal(layer, t) {
 }
 
 function addRemixLayer(job, stem) {
+  if (!runtime.remixer) return;
+  if (remix.recorder) return;
   const layer = {
     id: ++remix.seq,
     jobId: job.id,
     songTitle: job.filename,
+    attribution: job.attribution || null,
     stemName: stem.name,
     label: stemLabelFor(job, stem.name),
     url: stem.url,
@@ -3317,6 +3328,7 @@ function remixUiTick() {
 }
 
 function removeRemixLayer(layer) {
+  if (remix.recorder) return;
   stopLayerPlayback(layer);
   try {
     layer.srcNode?.disconnect();
@@ -3513,6 +3525,17 @@ function captureMime() {
 }
 
 function startCapture() {
+  if (!runtime.remixer || remix.recorder || remix.layers.some((layer) => layer.decoding)) return;
+  const sources = [...new Map(remix.layers.map((layer) => [layer.jobId, layer.attribution])).values()];
+  const license = window.StemRemixLicense.resolve(sources);
+  if (!license.allowed) { document.getElementById('remix-export-status').textContent = license.reason; return; }
+  const manifest = {
+    schemaVersion: 1, createdAt: new Date().toISOString(), licenseUrl: license.licenseUrl,
+    nonCommercial: license.nonCommercial, sources, masterLevel: remix.masterLevel,
+    changes: 'Stem separation and recomposition with the layer settings in this manifest.',
+    layers: remix.layers.map(({ jobId, stemName, gain, pan, rate, offset, tape, loop, reverse, muted }) => ({ jobId, stemName, gain, pan, rate, offset, tape, loop, reverse, muted })),
+  };
+  document.getElementById('remix-export-status').textContent = license.nonCommercial ? 'This remix is for noncommercial use. Credits are included with the download.' : 'Credits are included with the download.';
   const ctx = remixCtx();
   if (!ctx) return;
   if (!remix.recDest) {
@@ -3521,41 +3544,58 @@ function startCapture() {
   }
   remixPause();
   remix.baseTime = 0; // takes always roll from the top
-  remix.recChunks = [];
   const mime = captureMime();
   remix.recorder = new MediaRecorder(remix.recDest.stream, mime ? { mimeType: mime } : undefined);
-  remix.recorder.addEventListener('dataavailable', (e) => {
-    if (e.data && e.data.size) remix.recChunks.push(e.data);
-  });
-  remix.recorder.addEventListener('stop', addTake);
-  remix.recorder.start();
+  const chunks = [];
+  remix.recorder.addEventListener('dataavailable', (event) => { if (event.data.size) chunks.push(event.data); });
+  remix.recorder.addEventListener('stop', () => { void addTake(chunks, manifest); });
+  remix.recorder.start(1000);
+  setCaptureControls(true);
+  remix.captureTimer = setTimeout(stopCapture, 10 * 60 * 1000);
   remixCaptureBtn.textContent = '■ END TAKE';
   remixCaptureBtn.classList.add('rec');
   remixPlay();
 }
 
 function stopCapture() {
+  clearTimeout(remix.captureTimer);
   const recorder = remix.recorder;
   remix.recorder = null;
   remixCaptureBtn.textContent = '● CAPTURE';
   remixCaptureBtn.classList.remove('rec');
   if (recorder && recorder.state !== 'inactive') recorder.stop();
+  setCaptureControls(false);
 }
 
-function addTake() {
-  if (!remix.recChunks.length) return;
-  const type = remix.recChunks[0].type || 'audio/webm';
-  const blob = new Blob(remix.recChunks, { type });
-  remix.recChunks = [];
+function setCaptureControls(recording) {
+  for (const layer of remix.layers) {
+    layer.row.inert = recording;
+  }
+  remixMasterInput.disabled = recording;
+  remixClearBtn.disabled = recording;
+  remixPlayBtn.disabled = recording;
+}
+
+async function addTake(chunks, manifest) {
+  if (!chunks.length) return;
+  const type = chunks[0].type || 'audio/webm';
+  const blob = new Blob(chunks, { type });
   remix.takeCount += 1;
   const ext = type.includes('mp4') ? 'm4a' : 'webm';
   const name = `remix-take-${String(remix.takeCount).padStart(2, '0')}.${ext}`;
   const url = URL.createObjectURL(blob);
+  const credits = `STEM Splitter remix\n\nLicense: ${manifest.licenseUrl}\n${manifest.nonCommercial ? 'Noncommercial use only.\n' : ''}\n${manifest.sources.map((s) => `${s.title}\n${s.creator}\n${s.sourceUrl}\n${s.licenseUrl}\nFile: ${s.fileName}\n`).join('\n')}\n${manifest.changes}\n`;
+  const bundle = makeZip([
+    { name, data: new Uint8Array(await blob.arrayBuffer()) },
+    { name: 'ATTRIBUTION.txt', data: new TextEncoder().encode(credits) },
+    { name: 'remix.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) },
+  ]);
+  const bundleUrl = URL.createObjectURL(bundle);
   const li = document.createElement('li');
   li.innerHTML = `
     <span>TAKE ${String(remix.takeCount).padStart(2, '0')}</span>
     <audio controls src="${url}"></audio>
-    <a href="${url}" download="${name}">SAVE ↓</a>
+    <a href="${bundleUrl}" download="${name.replace(/\.[^.]+$/, '')}.zip">SAVE WITH CREDITS ↓</a>
   `;
   takesList.appendChild(li);
   takesEl.hidden = false;
@@ -3672,6 +3712,7 @@ function daAddRow(kind, html) {
 }
 
 function daHandleToolCalls(calls, jobId) {
+  if (remix.recorder) return;
   for (const { name, args } of calls || []) {
     if ((name === 'set_mute' || name === 'solo') && args?.stem) {
       const matches = remix.layers.filter(
@@ -3907,13 +3948,41 @@ function fmt(sec) {
 
 // --- init -------------------------------------------------------------
 
-separationOptionsReady = loadSeparationOptions();
-void ensureClassCode();
-void detectInstructor();
-initStations();
-initRemixDeck();
-initDevilsAdvocate();
-renderJobs();
-// Adopt after the first poll so the shared console is rendered from real state
-// and its notice isn't cleared by the poll's own tidy-up.
-void pollActiveJobs().then(adoptSharedJob);
+async function initialize() {
+  try {
+    const response = await fetch('/api/runtime');
+    if (response.ok) runtime = await response.json();
+  } catch { /* Server still enforces access; optional stations stay hidden. */ }
+  if (runtime.authMode === 'cail') {
+    jobsStorageKey = null;
+    const account = document.createElement('p');
+    account.className = 'mono';
+    let principal = null;
+    try {
+      const response = await fetch('/api/account');
+      if (response.ok) principal = (await response.json()).account;
+    } catch { /* A failed sign-in check must not expose another user's saved rack. */ }
+    if (principal && /^cail-[0-9a-f]{32}$/.test(principal.subject)) {
+      jobsStorageKey = `jobs:${principal.subject}`;
+      const link = document.createElement('a');
+      link.href = '/account.html';
+      link.textContent = 'My account';
+      account.append(link);
+    } else if (runtime.loginUrl) {
+      const link = document.createElement('a');
+      link.href = runtime.loginUrl;
+      link.textContent = 'CUNY Login';
+      account.append(link);
+    } else account.textContent = 'CUNY Login will be available here soon.';
+    document.querySelector('.masthead').append(account);
+  }
+  separationOptionsReady = loadSeparationOptions();
+  void ensureClassCode();
+  void detectInstructor();
+  initStations();
+  initRemixDeck();
+  initDevilsAdvocate();
+  renderJobs();
+  void pollActiveJobs().then(adoptSharedJob);
+}
+void initialize();

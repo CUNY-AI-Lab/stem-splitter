@@ -1,10 +1,28 @@
 # STEM Splitter: next implementation sequence
 
-**Updated:** 2026-08-31
+**Updated:** 2026-09-06
 
 **Active release target:** Railway
 
-**Migration boundary:** Do not deploy to Cloudflare Workers until the user declares the product finished.
+**Migration boundary:** The user authorized an isolated Cloudflare candidate;
+Railway production stays unchanged until the candidate is accepted and stress tested.
+
+## Current priority — parallel Cloudflare candidate
+
+- [x] Reconcile main and PR #6 in `codex/cloudflare-migration`, preserving the original checkout.
+- [x] Replace the numerical subtitle with “Separate a song. Explore its layers.”
+- [x] Separate the Worker adapter and dependency lock from the frozen analyzer package.
+- [x] Add signed CAIL identity verification, current Admission checks, ownership,
+  expiring instructor grants, suspension, and immutable access history.
+- [x] Restore false-default Remixer; keep one Crate; gate capture on license
+  compatibility and include source credits and a layer manifest in exports.
+- [ ] Finish the Doorway mount and prove real CUNY SSO, logout, and shared-device behavior.
+- [ ] Finish Admission-backed course membership and class-specific guidance/submissions.
+- [ ] Run real provider canaries and Worker memory/concurrency/retention/rollback qualification.
+- [ ] Evaluate AI Gateway against the unchanged direct Listening Guide route.
+- [ ] Rehearse ownership-aware data import, then approve cutover. **Do not retire Railway.**
+
+See `MIGRATION.md` for dependency order and `docs/review-2026-09-06.md` for findings.
 
 **v3.2 implementation branch:** `codex/v3.2-audio-pipeline`
 

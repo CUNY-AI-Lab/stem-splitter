@@ -117,6 +117,7 @@ export interface ArchiveAudio {
   data: ArrayBuffer;
   title: string;
   durationSec: number;
+  attribution: { title: string; creator: string; sourceUrl: string; licenseUrl: string; fileName: string };
 }
 
 export interface ArchiveSearchResult {
@@ -725,6 +726,7 @@ export async function fetchArchiveAudio(
     title: `${item.creator ? `${item.creator} - ` : ''}${track.title}`,
     durationSec: track.durationSec,
     fileName: track.name,
+    attribution: { title: track.title, creator: item.creator, sourceUrl: item.detailsUrl, licenseUrl: item.licenseUrl, fileName: track.name },
   };
 }
 

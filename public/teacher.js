@@ -49,7 +49,7 @@ async function api(path, options = {}) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw Object.assign(new Error(body.error || `Request failed (${res.status})`), {
+    throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`), {
       status: res.status,
     });
   }
@@ -422,10 +422,27 @@ historyMoreBtn.addEventListener('click', async () => {
 });
 
 (async function init() {
+  let cail = false;
   try {
+    const runtime = await api('/api/runtime');
+    cail = runtime.authMode === 'cail';
+    if (cail) {
+      signinForm.hidden = true;
+      signoutBtn.hidden = true;
+      const message = document.createElement('p');
+      message.textContent = 'Sign in with your CUNY account to open class guidance.';
+      signinPanel.append(message);
+      if (runtime.loginUrl) {
+        const link = document.createElement('a');
+        link.href = runtime.loginUrl;
+        link.textContent = 'CUNY Login';
+        signinPanel.append(link);
+      }
+    }
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
       showPanel(false);
+      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit class guidance.';
       return;
     }
     await loadPrompt();

@@ -1,0 +1,32 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "cail-stem-splitter-preview",
+  "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": { "directory": "../public", "binding": "ASSETS", "run_worker_first": true },
+  "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
+  "d1_databases": [{ "binding": "DB", "database_name": "cail-stem-splitter-preview", "database_id": "ae01c5db-c19e-48c8-91bd-132876276f22" }],
+  "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "cail-stem-splitter-preview-audio" }],
+  "services": [{ "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" }],
+  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } }],
+  "vars": {
+    "AUTH_MODE": "cail",
+    "CAIL_BROWSER_ORIGIN": "https://tools.ailab.gc.cuny.edu",
+    "PUBLIC_BASE_URL": "https://cail-stem-splitter-preview.ailab-452.workers.dev",
+    "ROUTED_AUDIO": "true",
+    "CF_ACCOUNT_ID": "452c33847cf5cb1e46f391fca32fd1b5",
+    "R2_BUCKET_NAME": "cail-stem-splitter-preview-audio",
+    "SEPARATION_BACKEND": "replicate",
+    "SERVER_AUTO_ENABLED": "false",
+    "SERVER_AUTO_MODE": "off",
+    "INSTRUMENT_DISCOVERY_ENABLED": "false",
+    "QUERY_ISOLATION_ENABLED": "false",
+    "QUERY_ISOLATION_MODE": "off",
+    "REMIXER_ENABLED": "false",
+    "RELEASE": "cloudflare-preview-20260906"
+  }
+}

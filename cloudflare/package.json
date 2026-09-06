@@ -1,0 +1,15 @@
+{
+  "name": "stem-splitter-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "../node_modules/.bin/tsc -p tsconfig.json --noEmit",
+    "test": "node --import ../node_modules/tsx/dist/loader.mjs --test *.test.ts"
+  },
+  "dependencies": {
+    "@cuny-ai-lab/cail-identity": "file:../vendor/cuny-ai-lab-cail-identity-5.2.5.tgz"
+  },
+  "devDependencies": {
+    "wrangler": "4.129.0"
+  }
+}

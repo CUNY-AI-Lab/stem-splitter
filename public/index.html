@@ -14,7 +14,7 @@
   <div class="grain" aria-hidden="true"></div>
 
   <main>
-    <nav class="bench-tabs mono" role="tablist" aria-label="Workshop stations">
+    <nav class="bench-tabs mono" role="tablist" aria-label="Workshop stations" hidden>
       <button type="button" id="tab-splitter" class="bench-tab current" role="tab" aria-selected="true" aria-controls="view-splitter">01 · SPLITTER</button>
       <button type="button" id="tab-remixer" class="bench-tab" role="tab" aria-selected="false" aria-controls="view-remixer" tabindex="-1">02 · REMIXER</button>
     </nav>
@@ -23,9 +23,9 @@
       <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab">
         <img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" />
       </a>
-      <p id="split-summary" class="kicker">// loading split options</p>
+      <p id="split-summary" class="kicker">// a closer listen</p>
       <h1>STEM<br /><span id="station-word">SPLITTER</span></h1>
-      <p id="station-tagline" class="tagline">Split a song apart. Listen one layer at a time. Annotate as you go.</p>
+      <p id="station-tagline" class="tagline">Separate a song. Explore its layers.</p>
     </header>
 
     <div id="view-splitter" role="tabpanel" aria-labelledby="tab-splitter">
@@ -73,7 +73,7 @@
         <ul id="folder-list" class="folder-list"></ul>
       </section>
 
-      <aside class="station-next">
+      <aside class="station-next" hidden>
         <p class="station-next-kicker mono">// next station</p>
         <p class="station-next-copy">
           Splitting is listening. The Remixer is where you answer back — stack the
@@ -103,6 +103,7 @@
             <button type="button" id="remix-clear" class="rt-btn rt-danger" title="Clear every layer off the deck">CLEAR</button>
           </div>
           <div id="remix-layers" class="rlayers"></div>
+          <p id="remix-export-status" class="mono" role="status"></p>
           <p class="rlayer-keys mono" aria-hidden="true">VOL / PAN slide · IN sets when a layer enters · REV plays it backwards · TAPE lets pitch follow speed</p>
           <div id="takes" class="takes" hidden>
             <p class="takes-title mono">TAKES</p>
@@ -135,8 +136,8 @@
 
         <div id="crate-body" class="crate-body" hidden>
           <p class="crate-note mono">
-            Everything here is cleared for remixing. An import runs through the
-            Splitter first — it lands on the shelf above once its layers are ready.
+            Browse openly licensed recordings. Check each source’s terms before
+            sharing a remix. Imported tracks appear here when their stems are ready.
           </p>
           <form id="crate-form" class="crate-form">
             <input
@@ -189,6 +190,7 @@
   </dialog>
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
-  <script src="/app.js?v=app-20260901-2"></script>
+  <script src="/remix-license.js?v=20260906"></script>
+  <script src="/app.js?v=app-20260906-1"></script>
 </body>
 </html>

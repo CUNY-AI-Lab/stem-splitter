@@ -1,13 +1,41 @@
 # Teacher provisioning and prompt governance
 
-The instructor console at `/teacher.html` is protected by teacher accounts, not
+On current Railway production, the instructor console at `/teacher.html` is protected by teacher accounts, not
 by the shared class code. Accounts are provisioned from the `TEACHER_SEED`
 secret as pre-hashed records; plaintext passwords must never enter Git, D1,
 shell history, command arguments, logs, or screenshots.
 
+## Cloudflare candidate: CUNY accounts
+
+The migration authorized on 2026-09-06 uses CAIL Doorway sign-in and Admission,
+not `TEACHER_SEED`. Railway credentials remain in Railway; do not copy them to
+the candidate. The live Doorway route/sign-in acceptance is still outstanding.
+
+Once the reviewed Doorway mount is available:
+
+1. The person signs in through CUNY Login and has active Admission membership.
+   Their first protected request creates a student workspace record; no password
+   or role from browser input is accepted.
+2. They open **My account → Workspace ID** and give that pseudonymous ID to an
+   existing CAIL Admission administrator. Do not use email guesses to link data.
+3. The administrator opens **My account → Workspace access**, chooses the exact
+   ID, selects Instructor, sets an expiry, and saves. A revision conflict requires
+   reloading; do not overwrite a newer change. Admin status itself comes only
+   from current Admission membership, never from this form.
+4. The instructor opens `/teacher.html` to edit guidance. The protected system
+   prompt remains code-owned; amendment saves retain the existing revision/hash
+   history. Instructor access does not grant another person's audio or folders.
+5. To revoke, suspend workspace access or remove Admission membership. Every
+   protected request rechecks both; expired instructor grants revert to student.
+   Use the CAIL portal for actual sign-out/session management.
+
+This currently governs one workspace. Admission-backed course rosters, explicit
+student submissions, per-course instructor authority and per-class guidance are
+required before multi-course production rollout. See `MIGRATION.md` for gates.
+
 ## Active Railway storage and provisioning
 
-Railway is the active host until the product is finished. Its Node service
+Railway remains the production host during the parallel migration. Its Node service
 opens the SQLite database on the existing persistent app volume, applies the
 fresh schema plus additive Node migrations at boot, and retains teacher
 accounts, sessions, the current amendment, and prompt revision history across
@@ -28,11 +56,12 @@ are reviewed so boot-time reconciliation runs. Do not pass the seed as a CLI
 argument: even pre-hashed password-verifier material does not belong in shell
 history or process output.
 
-## Deferred Cloudflare migrations
+## Legacy Cloudflare password schema (not the new candidate login)
 
-Cloudflare is not an active release target. When the finished product is later
-migrated, an existing D1 deployment will need the applicable numbered
-migrations before the corresponding code is deployed:
+The historical Worker schema included password accounts. Do not use these
+commands to provision the CAIL candidate, which starts from the current
+`schema.sql` and adds application access in migration 18. An existing legacy
+D1 installation would need its applicable numbered migrations:
 
 ```sh
 bun run db:migrate:4

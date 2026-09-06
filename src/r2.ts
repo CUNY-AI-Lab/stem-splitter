@@ -18,6 +18,7 @@ let localCleanupInFlight: Promise<number> | null = null;
 export function isLocalHosting(env: Env): boolean {
   return env.LOCAL_HOSTING === 'true' || env.LOCAL_DEV === '1';
 }
+export function usesRoutedAudio(env: Env): boolean { return isLocalHosting(env) || env.ROUTED_AUDIO === 'true'; }
 
 function client(env: Env): AwsClient {
   return new AwsClient({
@@ -182,7 +183,7 @@ export async function maintainLocalAudioRetention(env: Env, nowMs = Date.now()):
 /** Fetch audio while enforcing the local 30-day retention boundary on access. */
 export async function getRetainedAudio(env: Env, key: string, nowMs = Date.now()): Promise<R2ObjectBody | null> {
   const object = await env.AUDIO.get(key);
-  if (!object || !isLocalHosting(env) || !isExpiredLocalObject(object, nowMs)) return object;
+  if (!object || !usesRoutedAudio(env) || !isExpiredLocalObject(object, nowMs)) return object;
 
   await env.AUDIO.delete(key);
   return null;
@@ -190,7 +191,7 @@ export async function getRetainedAudio(env: Env, key: string, nowMs = Date.now()
 
 /** Presigned PUT for browser uploads (15 min). */
 export function presignUpload(env: Env, key: string): Promise<string> {
-  if (isLocalHosting(env)) {
+  if (usesRoutedAudio(env)) {
     return Promise.resolve(localObjectPath('/api/local-uploads/', key));
   }
   return presign(env, 'PUT', key, 15 * 60);
@@ -198,7 +199,7 @@ export function presignUpload(env: Env, key: string): Promise<string> {
 
 /** Presigned GET so the separation backend can fetch the source (6 h). */
 export async function presignDownload(env: Env, key: string): Promise<string> {
-  if (isLocalHosting(env)) {
+  if (usesRoutedAudio(env)) {
     const expiresAt = Math.floor(Date.now() / 1000) + SOURCE_URL_TTL_SECONDS;
     const url = localObjectUrl(env, '/api/local-sources/', key);
     url.searchParams.set('expires', String(expiresAt));
@@ -213,7 +214,7 @@ export async function presignAnalysisDownload(env: Env, key: string): Promise<st
   if (!audioAnalysisSourceScopeForKey(key)) {
     throw new Error('Invalid analysis source key');
   }
-  if (isLocalHosting(env)) {
+  if (usesRoutedAudio(env)) {
     const expiresAt = Math.floor(Date.now() / 1000) + ANALYSIS_URL_TTL_SECONDS;
     const url = localObjectUrl(env, '/api/local-sources/', key);
     url.searchParams.set('expires', String(expiresAt));
@@ -228,7 +229,7 @@ export async function presignIsolationDownload(env: Env, key: string): Promise<s
   if (!ISOLATION_SOURCE_KEY_PATTERN.test(key)) {
     throw new Error('Invalid isolation source key');
   }
-  if (isLocalHosting(env)) {
+  if (usesRoutedAudio(env)) {
     const expiresAt = Math.floor(Date.now() / 1000) + ISOLATION_URL_TTL_SECONDS;
     const url = localObjectUrl(env, '/api/local-sources/', key);
     url.searchParams.set('expires', String(expiresAt));
