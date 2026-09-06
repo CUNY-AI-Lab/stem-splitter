@@ -79,6 +79,10 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(stem.status, 200);
     assert.deepEqual(Buffer.from(await stem.arrayBuffer()), mp3);
     assert.match(stem.headers.get('cache-control')!, /no-store/);
+    const attempts = await Promise.all(Array.from({ length: 20 }, () => call('/api/jobs', 0, { method: 'POST', body: '{}' })));
+    assert.equal(attempts.filter((response) => response.status === 400).length, 4);
+    assert.equal(attempts.filter((response) => response.status === 429).length, 16);
+    assert.equal(providerStarts, 1); // Concurrent invalid/replayed requests cannot overspend the daily reservation.
     const users = await (await call('/api/admin/users', 2)).json();
     const alice = users.users.find((user: { subject: string }) => user.subject === subjects[0]);
     const grantRole = { method: 'PUT', body: JSON.stringify({ role: 'instructor', expiresAt: new Date(Date.now() + 60000).toISOString(), disabled: false, revision: alice.revision }) };
