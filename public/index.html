@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=app-20260901-1" />
+  <link rel="stylesheet" href="/styles.css?v=app-20260907-1" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -92,6 +92,7 @@
 
       <section id="remix-deck" class="remix-deck">
         <h2 class="rack-title"><span>REMIX DECK</span><span class="rack-step mono">02 · stack &amp; bend</span></h2>
+        <p id="remix-status" class="rlayer-note" role="status" hidden></p>
         <p id="deck-empty" class="empty mono">— the deck is bare — pull a layer off the shelf —</p>
         <div id="deck-body" hidden>
           <div class="remix-transport mono">
@@ -104,15 +105,15 @@
           </div>
           <div id="remix-layers" class="rlayers"></div>
           <p class="rlayer-keys mono" aria-hidden="true">VOL / PAN slide · IN sets when a layer enters · REV plays it backwards · TAPE lets pitch follow speed</p>
-          <div id="takes" class="takes" hidden>
-            <p class="takes-title mono">TAKES</p>
-            <ul id="takes-list" class="takes-list mono"></ul>
-          </div>
+        </div>
+        <div id="takes" class="takes" hidden>
+          <p class="takes-title mono">TAKES</p>
+          <ul id="takes-list" class="takes-list mono"></ul>
         </div>
       </section>
 
       <section class="coach da-panel">
-        <button type="button" id="da-toggle" class="da-toggle" aria-expanded="false">
+        <button type="button" id="da-toggle" class="da-toggle" aria-expanded="false" aria-controls="da-body">
           <span id="da-led" class="da-led"></span>LISTENING GUY · DEVIL&rsquo;S ADVOCATE<span class="da-caret" aria-hidden="true">▾</span>
         </button>
         <div id="da-body" class="da-body" hidden>
@@ -135,7 +136,7 @@
 
         <div id="crate-body" class="crate-body" hidden>
           <p class="crate-note mono">
-            Everything here is cleared for remixing. An import runs through the
+            Check each track's license and credit requirements before sharing a remix. An import runs through the
             Splitter first — it lands on the shelf above once its layers are ready.
           </p>
           <form id="crate-form" class="crate-form">
@@ -189,6 +190,6 @@
   </dialog>
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
-  <script src="/app.js?v=app-20260901-2"></script>
+  <script src="/app.js?v=app-20260907-1"></script>
 </body>
 </html>

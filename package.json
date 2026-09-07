@@ -27,6 +27,7 @@
     "smoke:local": "./scripts/smoke-local-bs.sh",
     "deploy": "wrangler deploy",
     "test:e2e": "playwright test --config playwright.config.mjs",
+    "test:workshop": "playwright test --config playwright.workshop.config.mjs",
     "test:e2e:auto": "playwright test --config playwright.server-auto.config.mjs",
     "test:e2e:isolation-shadow": "playwright test --config playwright.isolation-shadow.config.mjs",
     "test:e2e:real": "playwright test --config playwright.real-audio.config.mjs",

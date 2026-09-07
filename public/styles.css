@@ -2640,6 +2640,7 @@ body.instructor .folder-btn { display: inline-block; }
 .da-form { display: flex; gap: 0.5rem; }
 .da-form input {
   flex: 1;
+  min-width: 0;
   background: var(--bg-raise);
   border: 1px solid var(--panel-edge);
   border-radius: 6px;
@@ -2680,6 +2681,8 @@ body.instructor .folder-btn { display: inline-block; }
 
 @media (max-width: 560px) {
   .bench-tab { padding: 0.45rem 0.7rem 0.38rem; font-size: 0.64rem; }
+  .da-form { flex-wrap: wrap; }
+  .da-form input { flex-basis: 100%; }
   .rt-master { margin-left: 0; }
   .rlayer-id { flex-basis: 100%; }
   .rl-remove { margin-left: 0; }

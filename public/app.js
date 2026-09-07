@@ -3041,6 +3041,7 @@ const remixCaptureBtn = document.getElementById('remix-capture');
 const remixClearBtn = document.getElementById('remix-clear');
 const remixMasterInput = document.getElementById('remix-master');
 const remixTcEl = document.getElementById('remix-tc');
+const remixStatusEl = document.getElementById('remix-status');
 const takesEl = document.getElementById('takes');
 const takesList = document.getElementById('takes-list');
 
@@ -3057,7 +3058,6 @@ const remix = {
   masterGain: null,
   recDest: null,
   recorder: null,
-  recChunks: [],
   takeCount: 0,
   driftTimer: null,
   uiTimer: null,
@@ -3080,6 +3080,11 @@ function remixNow() {
 
 function layerDuration(layer) {
   return isFinite(layer.duration) && layer.duration > 0 ? layer.duration : NaN;
+}
+
+function showRemixMessage(message) {
+  remixStatusEl.textContent = message;
+  remixStatusEl.hidden = !message;
 }
 
 // Content position inside the layer for timeline second t (rate-adjusted).
@@ -3120,6 +3125,12 @@ function addRemixLayer(job, stem) {
   layer.audio = audio;
   audio.addEventListener('loadedmetadata', () => {
     layer.duration = audio.duration;
+    paintLayerRow(layer);
+  });
+  audio.addEventListener('error', () => {
+    if (!remix.layers.includes(layer)) return;
+    showRemixMessage(`Could not load ${layer.label}. Remove this layer or retry the split.`);
+    remixStop();
   });
 
   const ctx = remixCtx();
@@ -3225,22 +3236,25 @@ function startLayerAt(layer, local) {
   }
   if (!layer.loop && isFinite(dur) && local >= dur) return;
   layer.audio.currentTime = layer.loop && isFinite(dur) ? local % dur : local;
-  layer.audio.play().catch(() => {
-    // Autoplay refusals surface on the transport, not per layer.
+  layer.audio.play().catch((error) => {
+    // A deliberate pause/removal can abort a pending play; it is not a failure.
+    if (error.name === 'AbortError' || !remix.layers.includes(layer)) return;
+    showRemixMessage(`Could not play ${layer.label}. Remove this layer or retry playback.`);
+    remixStop();
   });
 }
 
 // Put one layer wherever the master clock says it should be right now.
 function syncLayer(layer) {
   stopLayerPlayback(layer);
-  if (!remix.playing) return;
+  if (!remix.playing || !remix.layers.includes(layer)) return;
   const t = remixNow();
   const local = layerLocal(layer, t);
   if (local < 0) {
     // Not due yet — wall-clock the entry (the timeline runs at wall speed).
     layer.entryTimer = setTimeout(() => {
       layer.entryTimer = null;
-      if (remix.playing) startLayerAt(layer, 0);
+      if (remix.playing) startLayerAt(layer, Math.max(0, layerLocal(layer, remixNow())));
     }, (layer.offset - t) * 1000);
     return;
   }
@@ -3249,6 +3263,7 @@ function syncLayer(layer) {
 
 function remixPlay() {
   if (remix.playing) return;
+  showRemixMessage('');
   const ctx = remixCtx();
   if (ctx && ctx.state === 'suspended') void ctx.resume();
   remix.playing = true;
@@ -3328,6 +3343,8 @@ function removeRemixLayer(layer) {
   layer.audio.removeAttribute('src');
   layer.audio.load();
   remix.layers = remix.layers.filter((l) => l !== layer);
+  layer.revBuffer = null;
+  if (!remix.layers.some((other) => other.url === layer.url)) remix.reversedCache.delete(layer.url);
   layer.row?.remove();
   renderDeck();
   daPaintStanding();
@@ -3371,6 +3388,7 @@ async function setLayerReverse(layer, on) {
     flashLayerNote(layer, 'This browser blocked Web Audio — no reverse here.');
     return;
   }
+  if (!isFinite(layerDuration(layer))) return;
   if (isFinite(layer.duration) && layer.duration > REVERSE_CAP_SECONDS) {
     flashLayerNote(layer, 'Too long to reverse in the browser (10 minute cap).');
     return;
@@ -3378,7 +3396,9 @@ async function setLayerReverse(layer, on) {
   layer.decoding = true;
   paintLayerRow(layer);
   try {
-    layer.revBuffer = await reversedBufferFor(layer.url, ctx);
+    const buffer = await reversedBufferFor(layer.url, ctx);
+    if (!remix.layers.includes(layer)) return;
+    layer.revBuffer = buffer;
     layer.reverse = true;
   } catch {
     flashLayerNote(layer, 'Could not decode this layer for reverse playback.');
@@ -3396,15 +3416,16 @@ function reversedBufferFor(url, ctx) {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`fetch ${res.status}`);
       const decoded = await ctx.decodeAudioData(await res.arrayBuffer());
-      const rev = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+      if (decoded.duration > REVERSE_CAP_SECONDS) throw new Error('Reverse duration cap exceeded');
+      // Reverse the decoded samples in place; a second full PCM copy doubles
+      // peak memory for no benefit because forward playback uses HTMLAudio.
       for (let c = 0; c < decoded.numberOfChannels; c += 1) {
         const src = decoded.getChannelData(c);
-        const dst = rev.getChannelData(c);
-        for (let i = 0, n = src.length; i < n; i += 1) dst[i] = src[n - 1 - i];
+        src.reverse();
       }
-      return rev;
+      return decoded;
     })().catch((err) => {
-      remix.reversedCache.delete(url);
+      if (remix.reversedCache.get(url) === promise) remix.reversedCache.delete(url);
       throw err;
     });
     remix.reversedCache.set(url, promise);
@@ -3494,7 +3515,7 @@ function paintLayerRow(layer) {
   const rev = row.querySelector('.rl-rev');
   rev.setAttribute('aria-pressed', String(layer.reverse));
   rev.textContent = layer.decoding ? 'REV…' : 'REV';
-  rev.disabled = layer.decoding;
+  rev.disabled = layer.decoding || !isFinite(layerDuration(layer));
   const tape = row.querySelector('.rl-tape');
   // A reversed layer plays from raw samples: pitch already follows speed.
   tape.setAttribute('aria-pressed', String(layer.tape || layer.reverse));
@@ -3514,20 +3535,28 @@ function captureMime() {
 
 function startCapture() {
   const ctx = remixCtx();
-  if (!ctx) return;
+  if (!ctx) {
+    showRemixMessage('Recording needs Web Audio. Try another browser.');
+    return;
+  }
   if (!remix.recDest) {
     remix.recDest = ctx.createMediaStreamDestination();
     remix.masterGain.connect(remix.recDest);
   }
   remixPause();
   remix.baseTime = 0; // takes always roll from the top
-  remix.recChunks = [];
+  const chunks = [];
   const mime = captureMime();
-  remix.recorder = new MediaRecorder(remix.recDest.stream, mime ? { mimeType: mime } : undefined);
+  try {
+    remix.recorder = new MediaRecorder(remix.recDest.stream, mime ? { mimeType: mime } : undefined);
+  } catch {
+    showRemixMessage('This browser could not start recording. Playback is still available.');
+    return;
+  }
   remix.recorder.addEventListener('dataavailable', (e) => {
-    if (e.data && e.data.size) remix.recChunks.push(e.data);
+    if (e.data && e.data.size) chunks.push(e.data);
   });
-  remix.recorder.addEventListener('stop', addTake);
+  remix.recorder.addEventListener('stop', () => addTake(chunks));
   remix.recorder.start();
   remixCaptureBtn.textContent = '■ END TAKE';
   remixCaptureBtn.classList.add('rec');
@@ -3542,11 +3571,10 @@ function stopCapture() {
   if (recorder && recorder.state !== 'inactive') recorder.stop();
 }
 
-function addTake() {
-  if (!remix.recChunks.length) return;
-  const type = remix.recChunks[0].type || 'audio/webm';
-  const blob = new Blob(remix.recChunks, { type });
-  remix.recChunks = [];
+function addTake(chunks) {
+  if (!chunks.length) return;
+  const type = chunks[0].type || 'audio/webm';
+  const blob = new Blob(chunks, { type });
   remix.takeCount += 1;
   const ext = type.includes('mp4') ? 'm4a' : 'webm';
   const name = `remix-take-${String(remix.takeCount).padStart(2, '0')}.${ext}`;
@@ -3636,10 +3664,19 @@ function remixStateSummary() {
     if (layer.loop) bits.push('looping');
     if (layer.offset) bits.push(`enters at ${fmt(layer.offset)}`);
     if (layer.pan) bits.push(`panned ${layer.pan < 0 ? 'left' : 'right'}`);
+    if (layer.gain !== 1) bits.push(`${Math.round(layer.gain * 100)}% volume`);
     if (layer.muted) bits.push('muted');
     return bits.join(', ');
   });
   return parts.join('; ').slice(0, 900);
+}
+
+// A reply may arrive after the student has removed, added, or adjusted layers.
+// Its proposed moves belong to the exact arrangement that prompted it.
+function remixArrangement() {
+  return JSON.stringify(remix.layers.map(({ id, gain, pan, rate, tape, loop, reverse, offset, muted }) =>
+    ({ id, gain, pan, rate, tape, loop, reverse, offset, muted })
+  ));
 }
 
 function daPaintStanding() {
@@ -3708,6 +3745,7 @@ async function daSend(text, { showAs } = {}) {
     return;
   }
   da.busy = true;
+  const arrangement = remixArrangement();
   daPaintStanding();
   // History carries only what the student typed; the deck snapshot travels in
   // the request's `deck` field, which the remix register fences into the
@@ -3763,7 +3801,11 @@ async function daSend(text, { showAs } = {}) {
     } else if (row) {
       row.remove();
     }
-    daHandleToolCalls(calls, source.id);
+    if (calls.length && arrangement !== remixArrangement()) {
+      daAddRow('action', '→ the deck changed while I replied; no layer settings were changed');
+    } else {
+      daHandleToolCalls(calls, source.id);
+    }
   } catch (err) {
     typing.remove();
     if (row && !acc) row.remove();

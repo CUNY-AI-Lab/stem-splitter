@@ -94,9 +94,11 @@ variant and `docs/prompt-changelog.md`.
 ## Non-goals
 
 - No persistence of the deck or takes (localStorage or server). A remix is a
-  session object; EXPORT-style durability can come later if teaching wants it.
-- No server changes of any kind: no new routes, no schema change, no prompt
-  version bump. The devil's advocate framing lives entirely in the user turn.
+  session object; students save takes with the download link. Clearing layers
+  keeps existing takes available until the page is closed or reloaded.
+- No new routes, schema changes, or secrets. The existing chat route adds the
+  bounded `mode` and `deck` fields described above; the fixed prompt version
+  advances to 2026-09-01.1.
 - No offline rendering (`OfflineAudioContext`) bounce; CAPTURE records the
   live transport instead.
 
@@ -108,3 +110,34 @@ finished console (count/text assertions pass on hidden panels; clicks do not).
 New UI classes (`shelf-*`, `rlayer/rl-*`, `da-*`, `bench-tab`) deliberately do
 not reuse `badge`, `channel`, `coach-*`, or `play-btn`, which live specs match
 with strict-mode locators.
+
+## September 7 reconciliation acceptance
+
+Owner: workshop-stations reconciliation. The affected action is reopening a
+finished class split, sending its layers to the deck, recording and saving a
+take, and asking the advocate to adjust the arrangement.
+
+The browser calls the existing Node host for stored stems and remix chat. The
+host reads SQLite/filesystem state and sends the bounded prompt to OpenRouter.
+`bun run test:workshop` runs the actual browser, `server/index.ts`, shared Hono
+routes, SQLite and filesystem adapter with isolated existing-job fixtures.
+Only OpenRouter is substituted; no new separation or paid provider call is
+claimed. Native Web Audio and MediaRecorder create a downloaded recording,
+which FFmpeg decodes and checks for audible samples. Labels, annotations and
+stem records are compared before and after. A delayed reply cannot apply
+mixer actions after the student changes the arrangement.
+
+Observed locally on September 7: 3 workshop browser tests, 316 worker tests,
+42 Node tests, 19 existing browser tests, 6 Auto browser tests, and the
+teacher-isolation shadow browser test pass. Both application and Node-host
+typechecks pass. The workshop test also verifies no horizontal page overflow
+at 390 pixels. These results cover local integration, with the provider
+substitutions described above; CI and future live rollout are separate gates.
+
+Release the reviewed server and static assets together on the active Node
+service; there are no migrations or new configuration requirements. The
+prompt version invalidates old guide cache identities through the existing
+governance path. A future authorized rollout still needs live acceptance of
+an existing split, remix playback/save, and the real assistant route. No
+merge, deployment, model-quality claim, or production-state mutation is part
+of this reconciliation.

@@ -3,8 +3,9 @@
 **Design:** `docs/superpowers/specs/2026-09-01-splitter-remixer-stations-design.md`
 **Date:** 2026-09-01
 
-Frontend-only: `public/index.html`, `public/styles.css`, `public/app.js`, plus
-the two crate specs. No server code, no migrations, no new secrets.
+The station UI and crate move use `public/index.html`, `public/styles.css`,
+and `public/app.js`. Task 5 extends the existing chat route and governed prompt.
+There are no migrations or new secrets.
 
 ## Task 1 — `public/index.html`
 
@@ -80,3 +81,17 @@ variant tailored to the task:
 - Manual pass in the browser: tab switch, shelf pull, layered playback with
   REV/TAPE/LOOP/IN, capture take, devil's-advocate stream against a real key
   or the documented 503 when unconfigured.
+
+## September 7 reconciliation
+
+- Preserve the original feature above current main and its current README.
+- Keep takes reachable after clearing the deck and keep each recording's
+  chunks local to that recorder, including when another take starts promptly.
+- Release cached reverse buffers when their final layer leaves the deck;
+  ignore decode completion for removed layers. Require loaded duration before
+  reverse and verify the decoded duration cap, reversing samples in place.
+- Surface load/playback failures and preserve the student's current layer
+  settings when an assistant reply arrives after an arrangement edit.
+- Add `test:workshop` to CI: actual Node host/browser/storage integration,
+  native recording/save, existing data readback, and deterministic chat
+  protocol acceptance with an explicitly substituted model response.
