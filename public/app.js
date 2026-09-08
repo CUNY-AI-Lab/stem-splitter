@@ -984,7 +984,7 @@ async function importArchiveTrack(item, track, button) {
     });
 
     addJob(job);
-    showCrateImportMessage(`${processingMessage(job, 'stems')} It lands on the shelf above when ready.`);
+    showCrateImportMessage(`${processingMessage(job, 'stems')} It lands on the shelf below when ready.`);
     renderJobs();
     pollSoon();
     button.textContent = 'QUEUED';
