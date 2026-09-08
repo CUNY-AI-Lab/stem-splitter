@@ -4,17 +4,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>STEM Splitter · My account</title>
-<link rel="stylesheet" href="/styles.css?v=20260906">
+<link rel="stylesheet" href="/styles.css?v=20260908-sso">
 <main class="teacher-main">
   <header class="masthead">
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
     <h1>MY<br><span>ACCOUNT</span></h1>
   </header>
   <p id="account-status" role="status">Loading…</p>
+  <p id="account-login" hidden><a href="/auth/login?next=/account.html">CUNY Login</a></p>
   <section id="account-details" hidden>
     <p id="account-role"></p>
     <details><summary>Workspace ID</summary><p>Share this ID with a workspace administrator when requesting instructor access.</p><code id="account-id"></code></details>
     <p><a href="https://tools.ailab.gc.cuny.edu/">Manage CUNY sign-in and membership</a></p>
+    <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
   </section>
   <section id="account-admin" class="teacher-panel" hidden>
     <h2>Workspace access</h2>
@@ -29,5 +31,5 @@
   </section>
   <footer><p><a href="/">← back to the mixer</a></p></footer>
 </main>
-<script src="/account.js?v=20260906"></script>
+<script src="/account.js?v=20260908-sso"></script>
 </html>

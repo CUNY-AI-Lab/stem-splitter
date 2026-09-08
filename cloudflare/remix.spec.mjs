@@ -26,9 +26,9 @@ test('Crate audio -> multi-source arrangement -> recorded song with credits, wit
   try {
     const { url } = await server.listen();
     await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'))) });
-    expect((await server.fetch('/api/remix/archive-audio', { method: 'POST', body: '{}' })).status).toBe(401);
+    expect((await server.fetch('/api/remix/archive-audio', { method: 'POST', headers: { Origin: url.origin }, body: '{}' })).status).toBe(401);
     expect(downloads).toBe(0);
-    await context.setExtraHTTPHeaders({ 'x-cail-identity-jwt': token });
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': token });
     await page.goto(url.href);
     await expect(page).toHaveTitle('Stem Splitter');
     await page.getByRole('tab', { name: /REMIXER/ }).click();

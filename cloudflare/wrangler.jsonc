@@ -11,7 +11,11 @@
   "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
   "d1_databases": [{ "binding": "DB", "database_name": "cail-stem-splitter-preview", "database_id": "ae01c5db-c19e-48c8-91bd-132876276f22" }],
   "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "cail-stem-splitter-preview-audio" }],
-  "services": [{ "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" }],
+  "services": [
+    { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
+    { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter", "workspace": false } },
+    { "binding": "PREVIEW_IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "cail-stem-splitter-preview", "workspace": false } }
+  ],
   "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } }],
   "vars": {
     "AUTH_MODE": "cail",
@@ -28,6 +32,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-crate-first-20260908"
+    "RELEASE": "cloudflare-cuny-sso-20260908"
   }
 }

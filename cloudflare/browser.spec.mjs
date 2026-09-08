@@ -28,8 +28,13 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.goto(new URL('/teacher.html', url).href);
     await expect(page.locator('#signin-panel')).toBeVisible();
     await expect(page.getByLabel('PASSWORD')).toBeHidden();
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/login?next=/teacher.html');
+    await page.goto(new URL('/account.html', url).href);
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
+    await expect(page.locator('#account-details')).toBeHidden();
+    await page.goto(new URL('/teacher.html', url).href);
     if (receipts) await page.screenshot({ path: `${receipts}/01-instructor-signed-out.png`, fullPage: true, animations: 'disabled' });
-    await context.setExtraHTTPHeaders({ 'x-cail-identity-jwt': alice });
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice });
     await page.addInitScript((subject) => localStorage.setItem(`jobs:${subject}`, JSON.stringify([{ id: 'remix-fixture', filename: 'Licensed fixture', model: 'htdemucs_ft' }])), TEST_SUBJECTS.alice);
     await page.goto(url.href);
     await expect(page.locator('.badge.ready')).toBeVisible();
@@ -60,7 +65,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.mouse.move(0, 0);
     if (receipts) await page.screenshot({ path: `${receipts}/03-student-mobile-fixture.png`, fullPage: true, animations: 'disabled' });
-    await context.setExtraHTTPHeaders({ 'x-cail-identity-jwt': admin });
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': admin });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
     await expect(page.locator('#account-admin')).toBeVisible();
@@ -70,7 +75,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.getByRole('button', { name: 'SAVE', exact: true }).click();
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
     if (receipts) await page.screenshot({ path: `${receipts}/04-admin-access-fixture.png`, fullPage: true, animations: 'disabled' });
-    await context.setExtraHTTPHeaders({ 'x-cail-identity-jwt': alice });
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice });
     await page.goto(new URL('/teacher.html', url).href);
     await expect(page.locator('#console-panel')).toBeVisible();
     await page.locator('#amendment').fill('Ask students to compare two layers.');

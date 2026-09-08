@@ -1,4 +1,5 @@
 const el = (id) => document.getElementById(id);
+window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
 let users = [];
 let subject = '';
 async function request(path, options = {}) {
@@ -60,5 +61,8 @@ el('access-form').addEventListener('submit', async (event) => {
       await loadMembers();
       el('account-admin').hidden = false;
     }
-  } catch (error) { el('account-status').textContent = error.message; }
+  } catch (error) {
+    el('account-status').textContent = error.message;
+    el('account-login').hidden = false;
+  }
 })();

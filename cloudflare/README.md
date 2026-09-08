@@ -1,5 +1,41 @@
 # Isolated Cloudflare candidate
 
+## September 8 integration
+
+Current work is Cloudflare-only. `codex/cloudflare-migration` contains the
+Crate-to-song implementation (`d7f25b5`) and the deployed Crate-first removal
+merged at `b473fea`. Do not merge this branch into Railway's release path.
+Remixer stays false-default pending signed-in live audio acceptance.
+
+CUNY sign-in uses Doorway's existing `WorkerIdentity` private RPC entrypoint,
+not a new Tools mount or a second CUNY OIDC client. The two deployed service
+bindings pin `cail:stem-splitter` to the canonical and preview callback hosts
+separately. Each host keeps its own Secure, HttpOnly, SameSite=Lax `__Host-`
+cookie. `/auth/login` generates state and S256 PKCE; `/auth/callback` validates
+the initiating cookie and redeems Doorway's one-use code. No identity JWT or
+CUNY token is exposed to browser JavaScript. POST `/auth/logout` revokes the
+app session; it does not sign the user out of other CUNY applications.
+
+Protected requests discard browser identity/authorization headers, resolve the
+opaque session through Doorway, then retain the existing exact JWT verifier,
+fresh Admission check, expiring instructor grants and recording ownership.
+Writes require the exact app origin. Provider webhooks and signed source reads
+remain independent capability routes. No provider settings or data are migrated.
+
+Reference: CUNY AI Lab knowledge base `9143fb9ee14c6438318613b82493743c10b74cc9`,
+[Tool Integration Contract](https://github.com/CUNY-AI-Lab/cail-knowledge-base/blob/9143fb9ee14c6438318613b82493743c10b74cc9/05%20Infrastructure/CAIL%20Tool%20Integration%20Contract.md)
+and [Doorway](https://github.com/CUNY-AI-Lab/cail-knowledge-base/blob/9143fb9ee14c6438318613b82493743c10b74cc9/05%20Infrastructure/CAIL%20Doorway.md).
+The actual protocol is owned by `cail-tools-admission/apps/doorway/docs/WORKER-SIGN-IN.md`.
+Doorway's current source `f71a918` and serving version
+`74dfb950-341b-4102-87cc-dc1a0516253c` were read back before enabling this caller.
+Shared Doorway, Admission and Railway are not deployed by this change.
+
+Local sign-in tests use a synthetic RPC receiver; browser tests use synthetic
+identities/Admission and provider fixtures. They do not establish a real CUNY
+callback. Deployment and actual sign-in/reload/logout must be verified separately.
+This integration retains the approved Replicate and Listening Guide transports;
+the separate Gateway proposal is not silently merged with authentication work.
+
 Railway is still production. This directory targets only
 `cail-stem-splitter-preview` in CUNY AI Lab account
 `452c33847cf5cb1e46f391fca32fd1b5`; never use the root legacy deploy command.
@@ -39,7 +75,7 @@ public assets at the established address match that release byte-for-byte.
 Health confirms Listening Guide and fallback configuration; the approved
 OpenRouter key returned streamed text separately from GLM 5.2, Claude Haiku
 4.5 and Gemini 3 Flash Preview. These are provider checks, not signed-in live
-guide acceptance. The latter still requires the CUNY Doorway mount.
+guide acceptance. The Worker-origin handoff above supersedes the proposed mount.
 
 Local gates: 318 shared tests, 12 adapter/security tests, 19 browser regression
 tests and the candidate student/instructor/admin/Remixer browser journey passed.
@@ -89,7 +125,7 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
   only owned recordings and folders. An Admission admin can manage workspace
   roles in `/account.html`; grants need an expiry and changes are revision-checked.
 - Admission owns enrollment and CUNY sign-in. Do not seed legacy passwords or
-  infer roles from JWT display/entitlement claims. The live Doorway mount is still a release gate.
+  infer roles from JWT display/entitlement claims. Real CUNY handoff remains a release gate.
 - Application reservations currently cap split attempts at 5/person/day and
   20/workspace/day, and guide/chat attempts at 100/person/day and 500/workspace/day
   (UTC). Failed/uncertain requests consume a reservation. YouTube may use two

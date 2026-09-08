@@ -434,7 +434,7 @@ historyMoreBtn.addEventListener('click', async () => {
       signinPanel.append(message);
       if (runtime.loginUrl) {
         const link = document.createElement('a');
-        link.href = runtime.loginUrl;
+        link.href = `${runtime.loginUrl}?next=/teacher.html`;
         link.textContent = 'CUNY Login';
         signinPanel.append(link);
       }

@@ -3022,6 +3022,7 @@ function initStations() {
   document.querySelector('.bench-tabs').hidden = !runtime.remixer;
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
+  if (!runtime.remixer) document.querySelector('.crate-note').textContent = 'Browse openly licensed recordings and choose a track to split.';
   if (!runtime.remixer) stationViews.splitter.prepend(document.getElementById('crate'));
   else {
     stationViews.remixer.prepend(document.getElementById('crate'));
@@ -3847,6 +3848,7 @@ function fmt(sec) {
 }
 
 // --- init -------------------------------------------------------------
+window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail') location.reload(); });
 
 async function initialize() {
   try {

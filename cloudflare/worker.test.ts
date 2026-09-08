@@ -40,9 +40,14 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const schema = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
     const setup = await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });
     assert.equal(setup.status, 200);
-    const call = (path: string, who = 0, init: RequestInit = {}) => server.fetch(path, {
-      ...init, headers: { 'x-cail-identity-jwt': tokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...init.headers },
-    });
+    const call = async (path: string, who = 0, init: RequestInit = {}) => {
+      const response = await server.fetch(path, {
+        ...init, headers: { 'x-fixture-identity': tokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...init.headers },
+      });
+      const body = await response.arrayBuffer();
+      assert.notEqual(response.status, 500, new TextDecoder().decode(body));
+      return new Response([204, 205, 304].includes(response.status) ? null : body, { status: response.status, headers: response.headers });
+    };
     const anonymous = await server.fetch('/api/account');
     assert.equal(anonymous.status, 401);
     assert.match(anonymous.headers.get('content-security-policy')!, /frame-ancestors 'none'/);
@@ -55,13 +60,13 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call('/api/uploads', 0, { method: 'POST', headers: { Origin: 'https://attacker.test' }, body: '{"filename":"source.wav"}' })).status, 403);
     const native = server.getWorker('stem-preview-contract-test');
     const canonicalGrant = await native.fetch('https://stem-splitter.ailab-452.workers.dev/api/uploads', {
-      method: 'POST', headers: { 'x-cail-identity-jwt': tokens[0], Origin: 'https://stem-splitter.ailab-452.workers.dev', 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'x-fixture-identity': tokens[0], Origin: 'https://stem-splitter.ailab-452.workers.dev', 'Content-Type': 'application/json' },
       body: '{"filename":"alias.wav"}',
     });
     assert.equal(canonicalGrant.status, 200, await canonicalGrant.clone().text());
     assert.match((await canonicalGrant.json()).uploadUrl, /^\/api\/local-uploads\//);
     const spoofedOrigin = await native.fetch('https://attacker.test/api/uploads', {
-      method: 'POST', headers: { 'x-cail-identity-jwt': tokens[0], Origin: 'https://attacker.test', 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'x-fixture-identity': tokens[0], Origin: 'https://attacker.test', 'Content-Type': 'application/json' },
       body: '{"filename":"blocked.wav"}',
     });
     assert.equal(spoofedOrigin.status, 403);

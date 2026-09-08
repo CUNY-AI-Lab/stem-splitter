@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Current branch authority (September 8)
+
+The user requires Cloudflare-only work. `codex/cloudflare-migration` merges the
+Crate-first hotfix and the gated raw-audio Remixer workflow. Only the isolated
+candidate configuration under `cloudflare/` and its existing alias are release
+targets for this branch. Do not deploy, merge into main, reconfigure or retire
+Railway. Older Railway instructions below document the retained host, not
+authority to release this branch there. CUNY login now uses Doorway's private
+WorkerIdentity handoff; see `cloudflare/README.md`. No shared Doorway deployment,
+new CUNY client, legacy-password import or model-provider migration is required.
+
 ## What this is
 
 Stem-separation web app for music students (~20 students × 100 songs/semester). Upload a song → Demucs separates it into tracks → students play stems in a synchronized mixer. **Current release rule (2026-09-06):** Railway remains production. The user authorized an isolated Cloudflare migration candidate, configured only in `cloudflare/wrangler.jsonc`, with CAIL identity and separate storage. No cutover until live SSO, provider, stress, data migration and rollback gates pass. The old root Worker is not this candidate. Never commit class codes, credentials or session material.

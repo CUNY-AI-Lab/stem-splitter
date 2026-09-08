@@ -2,9 +2,11 @@ import app from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
 import { assistantModelOrder } from '../src/assistant/openrouter.ts';
+import { authenticatedRequest, handleAuth, type WorkerIdentity } from './sso.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
-  Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>>;
+  Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> &
+  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -44,10 +46,13 @@ export default {
             fallbackConfigured: assistantModelOrder(env).length > 1 } });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
+      } else if (url.pathname.startsWith('/auth/')) {
+        response = await handleAuth(request, env);
       } else if (url.pathname.startsWith('/api/')) {
         // Admission and ownership run in the shared application. Limit expensive
         // ingress before provider work; signed provider callbacks are independent.
-        response = await serveApi(request, env, ctx);
+        const internal = await authenticatedRequest(request, env);
+        response = internal instanceof Response ? internal : await serveApi(internal, { ...env, CAIL_LOGIN_URL: '/auth/login' }, ctx);
       } else {
         response = env.ASSETS ? await env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
       }
@@ -57,7 +62,7 @@ export default {
     }
     const headers = new Headers(response.headers);
     for (const [key, value] of Object.entries(HEADERS)) headers.set(key, value);
-    if (url.pathname.startsWith('/api/') || url.pathname === '/healthz') headers.set('Cache-Control', 'private, no-store');
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname === '/healthz') headers.set('Cache-Control', 'private, no-store');
     return new Response(response.body, { status: response.status, headers });
   },
 } satisfies ExportedHandler<WorkerEnv>;

@@ -25,7 +25,7 @@ for (const remixer of [false, true]) test(`Crate first, no adversarial panel; Re
     await expect(page.locator('#crate')).toHaveCount(1);
     await expect(page.locator('[id^="da-"], .da-panel')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(/devil|defend your mix|challenge me/i);
-    await page.locator('#crate-toggle').click();
+    if (!remixer) await page.locator('#crate-toggle').click();
     await expect(page.locator('#crate-body')).toBeVisible();
     await page.locator('#crate-toggle').click();
     await expect(page.locator('#crate-body')).toBeHidden();
