@@ -1,16 +1,16 @@
 {
   "$schema": "stem-splitter.audio-analysis-native-amd64.v1",
   "status": "passed",
-  "commit": "f61b464ebdfb6e4f8ebe69b5a5b097e3c93f94a6",
-  "capturedAt": "2026-09-08T02:46:39.371Z",
+  "commit": "6756ff251f60ed8a435c7db1f3e745fef02474cc",
+  "capturedAt": "2026-09-08T03:02:54.828Z",
   "github": {
     "repository": "CUNY-AI-Lab/stem-splitter",
     "workflow": "CI",
     "job": "analysis-image",
     "eventName": "pull_request",
-    "runId": "34181131777",
+    "runId": "34182060935",
     "runAttempt": 1,
-    "sourceCommit": "f61b464ebdfb6e4f8ebe69b5a5b097e3c93f94a6"
+    "sourceCommit": "6756ff251f60ed8a435c7db1f3e745fef02474cc"
   },
   "runner": {
     "os": "Linux",
@@ -18,7 +18,7 @@
     "dockerPlatform": "linux/x86_64"
   },
   "image": {
-    "id": "sha256:b5a5716bb1e6a362519e77cdc5f686753c95cb63cf04aa04e337969dafd3765b",
+    "id": "sha256:4ef3a787f6d41c8368093d755bc08b27abccd8658f4ea63b151728ffc6e82eb2",
     "platform": "linux/amd64",
     "sizeBytes": 231074728,
     "maximumBytes": 251658240,
@@ -52,7 +52,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "cd3bc34d065b700e3fb6ef1206a498fa988a08d2142bedb246aec54a0f552dfa"
+      "sha256": "5c18fc987eaed533b29a1132277d9589acbdab0452d5ab4c2dd35c9678544041"
     },
     {
       "path": "audio-analysis/Dockerfile",
