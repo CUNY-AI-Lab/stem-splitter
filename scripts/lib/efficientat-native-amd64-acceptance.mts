@@ -92,9 +92,7 @@ function fixedSummary(
   return parsed;
 }
 
-// Temporary bootstrap: only explicit pending-record checks opt in; acceptance stays fail-closed.
-// Remove the option after the import commit receives its successful source gate.
-export function validateEfficientatNativeAmd64Acceptance(value: unknown, allowPendingSourceGate = false): JsonRecord {
+export function validateEfficientatNativeAmd64Acceptance(value: unknown): JsonRecord {
   const root = record(value, 'EfficientAT native acceptance');
   exactKeys(
     root,
@@ -106,14 +104,14 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown, allowPe
   );
   if (
     root.$schema !== EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_SCHEMA ||
-    (root.status !== 'passed-comparison-only' && !(allowPendingSourceGate && root.status === 'pending-source-gate'))
+    (root.status !== 'passed-comparison-only')
   ) {
     throw new Error('EfficientAT native acceptance identity drifted');
   }
   const capturedAt = canonicalIso(root.capturedAt, 'capturedAt');
 
   const source = record(root.source, 'source');
-  if (source.sourceGateCommit !== 'a64d5dfb98e9f6b1031ac95f631498b7b139d0d6') throw new Error('source gate commit drifted');
+  if (source.sourceGateCommit !== '9e4b17c5fee49276569a55abdb0b8dd5d84d35d5') throw new Error('source gate commit drifted');
   exactKeys(
     source,
     [
@@ -134,8 +132,8 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown, allowPe
     source.jobId !== '101923681986' ||
     source.job !== 'Pinned EfficientAT comparator (native amd64)' ||
     source.conclusion !== 'success' ||
-    source.sourceGateRunId !== '34182311139' ||
-    source.sourceGateConclusion !== (root.status === 'pending-source-gate' ? 'failure' : 'success')
+    source.sourceGateRunId !== '34182876507' ||
+    source.sourceGateConclusion !== 'success'
   ) {
     throw new Error('source run identity is not accepted');
   }
@@ -387,10 +385,10 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown, allowPe
 }
 
 export function loadEfficientatNativeAmd64Acceptance(
-  repositoryRoot = process.cwd(), allowPendingSourceGate = false
+  repositoryRoot = process.cwd()
 ): JsonRecord {
   const bytes = readFileSync(resolve(repositoryRoot, EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_PATH));
-  const validated = validateEfficientatNativeAmd64Acceptance(JSON.parse(bytes.toString('utf8')), allowPendingSourceGate);
+  const validated = validateEfficientatNativeAmd64Acceptance(JSON.parse(bytes.toString('utf8')));
   const files = [
     ['.github/workflows/efficientat-comparator-image.yml', WORKFLOW_SHA256],
     ['docs/acceptance/2026-08-10-v3.2-manual-listening/review.json', CORE_REVIEW_SHA256],

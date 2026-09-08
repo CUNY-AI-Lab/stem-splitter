@@ -17,18 +17,18 @@ file hashes, summaries, comparison disposition, teacher-review boundary, and
 remaining blockers. The report files are retained in the expiring GitHub
 artifact named there; their exact hashes remain durable in this directory.
 
-This import is `pending-source-gate`, not accepted comparison evidence. Both
-comparators succeeded on branch `codex/stem-splitter-fleet-integration-20260908`,
-but source CI run `34182311139` at the recorded `sourceGateCommit` failed on
-pre-import comparator workflow evidence drift. The temporary explicit validation
-option checks pending record integrity only; default acceptance rejects it.
-After this import passes source CI, record that actual successful run and commit,
-change status to `passed-comparison-only`, and remove the temporary pending path.
-The comparator source commit and source-gate commit are recorded separately.
+The comparator ran on branch `codex/stem-splitter-fleet-integration-20260908`.
+Its exact source CI run `34182311139` failed on pre-import comparator workflow
+evidence drift. The evidence import commit `9e4b17c5fee49276569a55abdb0b8dd5d84d35d5`
+subsequently passed full CI run `34182876507`, including source-gate job
+`101925325268`. `sourceGateCommit` records that later integration commit
+separately from the unchanged comparator source commit. This is accepted
+comparison-only evidence; all teacher-review, threshold and promotion blockers
+remain enforced.
 
 The uploaded comparison report used historical YAMNet acceptance run
 `33450445790`, SHA-256
 `a6bbe96d629934f2d950ecde6f21ba259980fcac2c488eb6b7ecfaa495dcfbf9`.
 That historical input is preserved; the report does not claim to compare against
 the concurrently refreshed YAMNet evidence. Future comparisons require the
-refreshed canonical baseline to clear its source gate.
+refreshed canonical baseline and its successful source gate.

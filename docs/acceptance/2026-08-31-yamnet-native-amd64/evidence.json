@@ -1,6 +1,6 @@
 {
   "$schema": "stem-splitter.yamnet-native-amd64-acceptance.v1",
-  "status": "pending-source-gate",
+  "status": "passed-comparison-only",
   "capturedAt": "2026-09-08T03:08:02.000Z",
   "source": {
     "commit": "a64d5dfb98e9f6b1031ac95f631498b7b139d0d6",
@@ -13,9 +13,9 @@
     "jobId": "101923682202",
     "job": "Pinned YAMNet comparator (native amd64)",
     "conclusion": "success",
-    "sourceGateRunId": "34182311139",
-    "sourceGateConclusion": "failure",
-    "sourceGateCommit": "a64d5dfb98e9f6b1031ac95f631498b7b139d0d6"
+    "sourceGateRunId": "34182876507",
+    "sourceGateConclusion": "success",
+    "sourceGateCommit": "9e4b17c5fee49276569a55abdb0b8dd5d84d35d5"
   },
   "artifact": {
     "id": "10039356431",

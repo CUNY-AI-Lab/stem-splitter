@@ -65,23 +65,21 @@ function requireFalse(value: unknown, context: string): void {
   if (value !== false) throw new Error(`${context} must remain false`);
 }
 
-// Temporary bootstrap: only explicit pending-record checks opt in; acceptance stays fail-closed.
-// Remove the option after the import commit receives its successful source gate.
-export function validateYamnetNativeAmd64Acceptance(value: unknown, allowPendingSourceGate = false): JsonRecord {
+export function validateYamnetNativeAmd64Acceptance(value: unknown): JsonRecord {
   const root = record(value, 'YAMNet native acceptance');
   exactKeys(root, [
     '$schema', 'status', 'capturedAt', 'source', 'artifact', 'execution', 'candidate',
     'corpus', 'controls', 'candidateEnvelope', 'humanReview', 'safety', 'remainingBlockers',
   ], 'YAMNet native acceptance');
   if (root.$schema !== YAMNET_NATIVE_AMD64_ACCEPTANCE_SCHEMA) throw new Error('YAMNet native acceptance schema drifted');
-  if (root.status !== 'passed-comparison-only' && !(allowPendingSourceGate && root.status === 'pending-source-gate')) throw new Error('YAMNet native acceptance status drifted');
+  if (root.status !== 'passed-comparison-only') throw new Error('YAMNet native acceptance status drifted');
   const capturedAt = canonicalIso(root.capturedAt, 'capturedAt');
 
   const source = record(root.source, 'source');
-  if (source.sourceGateCommit !== 'a64d5dfb98e9f6b1031ac95f631498b7b139d0d6') throw new Error('source gate commit drifted');
+  if (source.sourceGateCommit !== '9e4b17c5fee49276569a55abdb0b8dd5d84d35d5') throw new Error('source gate commit drifted');
   exactKeys(source, ['commit', 'branch', 'workflow', 'workflowPath', 'workflowSha256', 'runId', 'runUrl', 'jobId', 'job', 'conclusion', 'sourceGateRunId', 'sourceGateConclusion', 'sourceGateCommit'], 'source');
   const commit = string(source.commit, 'source commit');
-  if (!COMMIT.test(commit) || source.branch !== 'codex/stem-splitter-fleet-integration-20260908' || source.conclusion !== 'success' || source.sourceGateConclusion !== (root.status === 'pending-source-gate' ? 'failure' : 'success') || source.sourceGateRunId !== '34182311139') {
+  if (!COMMIT.test(commit) || source.branch !== 'codex/stem-splitter-fleet-integration-20260908' || source.conclusion !== 'success' || source.sourceGateConclusion !== 'success' || source.sourceGateRunId !== '34182876507') {
     throw new Error('source run identity is not accepted');
   }
   const runId = string(source.runId, 'run id');
@@ -172,10 +170,10 @@ export function validateYamnetNativeAmd64Acceptance(value: unknown, allowPending
   return root;
 }
 
-export function loadYamnetNativeAmd64Acceptance(repositoryRoot = process.cwd(), allowPendingSourceGate = false): JsonRecord {
+export function loadYamnetNativeAmd64Acceptance(repositoryRoot = process.cwd()): JsonRecord {
   const bytes = readFileSync(resolve(repositoryRoot, YAMNET_NATIVE_AMD64_ACCEPTANCE_PATH));
   const value = JSON.parse(bytes.toString('utf8')) as unknown;
-  const validated = validateYamnetNativeAmd64Acceptance(value, allowPendingSourceGate);
+  const validated = validateYamnetNativeAmd64Acceptance(value);
 
   const source = record(validated.source, 'source');
   const review = record(validated.humanReview, 'human review');
