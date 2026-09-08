@@ -1,3 +1,4 @@
+import { createCailAuthError } from '@cuny-ai-lab/cail-identity';
 import { assistantRequestEnv, fleetConfiguration } from './fleet';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -206,7 +207,7 @@ app.use('/api/*', async (c, next) => {
 const requireClassCode = createMiddleware<{ Bindings: Env }>(async (c, next) => {
   const code = c.req.header('x-class-code');
   if (!c.env.CLASS_CODE || code !== c.env.CLASS_CODE) {
-    return c.json({ error: 'Invalid class code' }, 401);
+    return c.json({ error: 'Invalid class code', code: 'invalid_class_code' }, 401);
   }
   await next();
 });
@@ -1477,7 +1478,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   // streaming starts, errors can only arrive as in-stream events.
   const modelEnv = await assistantRequestEnv(c.env, c.req.raw, c.req.param('id'));
   if (modelEnv === 503) return c.json({ error: COACH_UNCONFIGURED }, 503);
-  if (modelEnv === 401) return c.json({ error: 'Sign in through CAIL to use the Listening Guide.' }, 401);
+  if (modelEnv === 401) return c.json(createCailAuthError('authentication_required', 'Sign in through CAIL to use the Listening Guide.'), 401);
   const id = c.req.param('id');
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
@@ -1510,7 +1511,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
 app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   const modelEnv = await assistantRequestEnv(c.env, c.req.raw, c.req.param('id'));
   if (modelEnv === 503) return c.json({ error: COACH_UNCONFIGURED }, 503);
-  if (modelEnv === 401) return c.json({ error: 'Sign in through CAIL to use the Listening Guide.' }, 401);
+  if (modelEnv === 401) return c.json(createCailAuthError('authentication_required', 'Sign in through CAIL to use the Listening Guide.'), 401);
   const id = c.req.param('id');
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);

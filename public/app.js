@@ -153,14 +153,19 @@ async function streamApi(path, body, onEvent) {
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode() },
     body: JSON.stringify(body),
   });
-  if (res.status === 401) {
-    localStorage.removeItem('classCode');
-    void ensureClassCode();
-    throw new Error('Invalid class code — enter it and retry.');
-  }
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed (${res.status})`);
+    // The class code and CAIL session are separate credentials. Only the
+    // explicit class-code rejection should discard the remembered class code.
+    if (res.status === 401 && err.code === 'invalid_class_code') {
+      localStorage.removeItem('classCode');
+      void ensureClassCode();
+      throw new Error('Invalid class code — enter it and retry.');
+    }
+    if (res.status === 401 && err.error?.code === 'authentication_required') {
+      throw new Error('Sign in through CAIL to use the Listening Guide.');
+    }
+    throw new Error(typeof err.error === 'string' ? err.error : `Request failed (${res.status})`);
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
