@@ -257,7 +257,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
 
   const downloadPromise = page.waitForEvent('download');
   await page.locator('.export-btn').click();
-  const download = await downloadPromise;
+  const [download] = await Promise.all([
+    downloadPromise,
+    expect(page.locator('.export-btn')).toHaveText('SAVED ✓'),
+  ]);
   expect(download.suggestedFilename()).toBe('source-export.zip');
   const zipBytes = await readFile(await download.path());
   expect(zipBytes.subarray(0, 4).toString('latin1')).toBe('PK\x03\x04');
@@ -275,7 +278,6 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(zipText).toContain('listening session export');
   // The handoff to the browser is confirmed on the button itself — a fast
   // export otherwise flashes PACKING… too briefly to read as anything.
-  await expect(page.locator('.export-btn')).toHaveText('SAVED ✓');
   await expect(page.locator('.export-btn')).toHaveText('EXPORT');
 
   await page.locator('.collapse-btn').click();
@@ -2041,7 +2043,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     "WHO YOU'RE TALKING TO",
     'HOW YOU TALK (every message, both modes)',
   ]);
-  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-09-01.1');
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-09-07.1');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'TOP' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
@@ -2074,7 +2076,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-09-01.1');
+  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-09-07.1');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -2091,7 +2093,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     settingsRevision: 1,
     amendment,
     changeNote,
-    basePromptVersion: '2026-09-01.1',
+    basePromptVersion: '2026-09-07.1',
     basePromptHash: trace.basePromptHash,
     effectivePromptHash: trace.effectivePromptHash,
     updatedBy: 'e2eteacher',

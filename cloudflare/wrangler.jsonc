@@ -28,6 +28,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-preview-20260906"
+    "RELEASE": "cloudflare-crate-first-20260908"
   }
 }

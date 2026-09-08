@@ -965,7 +965,7 @@ async function importArchiveTrack(item, track, button) {
     });
 
     addJob(job);
-    showCrateImportMessage(`${processingMessage(job, 'stems')} It lands on the shelf above when ready.`);
+    showCrateImportMessage(`${processingMessage(job, 'stems')} It lands on the shelf below when ready.`);
     renderJobs();
     pollSoon();
     button.textContent = 'QUEUED';
@@ -2931,7 +2931,6 @@ function switchStation(name) {
   }
   if (name === 'remixer') {
     renderShelf();
-    daPaintStanding();
   }
 }
 
@@ -2939,7 +2938,7 @@ function initStations() {
   document.querySelector('.bench-tabs').hidden = !runtime.remixer;
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
-  if (!runtime.remixer) document.getElementById('view-splitter').insertBefore(document.getElementById('crate'), document.getElementById('jobs'));
+  if (!runtime.remixer) stationViews.splitter.prepend(document.getElementById('crate'));
   for (const [name, tab] of Object.entries(stationTabs)) {
     tab.addEventListener('click', () => switchStation(name));
   }
@@ -3342,7 +3341,6 @@ function removeRemixLayer(layer) {
   remix.layers = remix.layers.filter((l) => l !== layer);
   layer.row?.remove();
   renderDeck();
-  daPaintStanding();
 }
 
 function clearRemixDeck() {
@@ -3355,7 +3353,6 @@ function renderDeck() {
   deckEmpty.hidden = has;
   deckBody.hidden = !has;
   if (!has && remix.playing) remixStop();
-  daPaintStanding();
 }
 
 function flashLayerNote(layer, message) {
@@ -3623,218 +3620,6 @@ function initRemixDeck() {
   );
 }
 
-// --- Listening Guy, devil's advocate mode -----------------------------------
-//
-// Same voice, opposite job. On the Splitter he opens the song up; here he
-// pushes back on what the student built. It rides the per-job chat endpoint —
-// the source split whose layers dominate the deck — with `mode: 'remix'`,
-// the server-side register tailored to this task: the request's `deck`
-// snapshot is fenced into the prompt as data, and the server narrows the
-// toolset to solo/set_mute (the deck has no song timeline to seek or note).
-// Returned calls translate onto matching deck layers.
-
-const daToggle = document.getElementById('da-toggle');
-const daLed = document.getElementById('da-led');
-const daBody = document.getElementById('da-body');
-const daStanding = document.getElementById('da-standing');
-const daLog = document.getElementById('da-log');
-const daForm = document.getElementById('da-form');
-const daInput = document.getElementById('da-input');
-const daChallengeBtn = document.getElementById('da-challenge');
-
-const da = { history: [], busy: false, spoke: false };
-
-// The devil's-advocate register lives server-side (mode: 'remix'); this is
-// just the canned opener behind the CHALLENGE ME button.
-const DA_CHALLENGE_TEXT =
-  "What's the weakest choice on my deck right now, and what should I try instead?";
-
-function daSourceJob() {
-  const counts = new Map();
-  for (const layer of remix.layers) {
-    counts.set(layer.jobId, (counts.get(layer.jobId) || 0) + 1);
-  }
-  let best = null;
-  for (const layer of remix.layers) {
-    if (!best || counts.get(layer.jobId) > counts.get(best.jobId)) best = layer;
-  }
-  return best ? { id: best.jobId, filename: best.songTitle } : null;
-}
-
-function daSourceDuration(jobId) {
-  for (const layer of remix.layers) {
-    if (layer.jobId === jobId && isFinite(layer.duration)) return layer.duration;
-  }
-  return undefined;
-}
-
-function remixStateSummary() {
-  const parts = remix.layers.map((layer) => {
-    const bits = [`${layer.label} (from "${layer.songTitle}")`];
-    if (layer.reverse) bits.push('reversed');
-    if (layer.rate !== 1) bits.push(`${layer.rate}x speed${layer.tape ? ', tape-pitched' : ''}`);
-    if (layer.loop) bits.push('looping');
-    if (layer.offset) bits.push(`enters at ${fmt(layer.offset)}`);
-    if (layer.pan) bits.push(`panned ${layer.pan < 0 ? 'left' : 'right'}`);
-    if (layer.muted) bits.push('muted');
-    return bits.join(', ');
-  });
-  return parts.join('; ').slice(0, 900);
-}
-
-function daPaintStanding() {
-  const source = daSourceJob();
-  if (!source) {
-    daStanding.textContent = 'the deck is bare — stack a layer or two, then come argue';
-    daInput.disabled = true;
-    daChallengeBtn.disabled = true;
-    return;
-  }
-  daInput.disabled = da.busy;
-  daChallengeBtn.disabled = da.busy;
-  daStanding.textContent = `arguing about: ${source.filename} · ${remix.layers.length} layer${
-    remix.layers.length === 1 ? '' : 's'
-  } on the deck`;
-}
-
-function daSetLed(state) {
-  daLed.classList.toggle('ready', state === 'ready');
-  daLed.classList.toggle('busy', state === 'busy');
-}
-
-function daAddRow(kind, html) {
-  const row = document.createElement('div');
-  row.className = `da-row ${kind}`;
-  row.innerHTML = html;
-  daLog.appendChild(row);
-  daLog.scrollTop = daLog.scrollHeight;
-  return row;
-}
-
-function daHandleToolCalls(calls, jobId) {
-  if (remix.recorder) return;
-  for (const { name, args } of calls || []) {
-    if ((name === 'set_mute' || name === 'solo') && args?.stem) {
-      const matches = remix.layers.filter(
-        (layer) => layer.jobId === jobId && layer.stemName === args.stem
-      );
-      if (!matches.length) continue;
-      if (name === 'solo') {
-        for (const layer of remix.layers) {
-          layer.muted = !(layer.jobId === jobId && layer.stemName === args.stem);
-          applyLayerParams(layer);
-        }
-        daAddRow('action', `→ soloed ${esc(args.stem)} on the deck`);
-      } else {
-        for (const layer of matches) {
-          layer.muted = Boolean(args.muted);
-          applyLayerParams(layer);
-        }
-        daAddRow('action', `→ ${args.muted ? 'muted' : 'unmuted'} ${esc(args.stem)} on the deck`);
-      }
-    } else if (name === 'seek' || name === 'add_note') {
-      daAddRow(
-        'action',
-        `→ suggested a ${esc(name === 'seek' ? 'seek' : 'note')} on the source split — that move lives back at the Splitter`
-      );
-    }
-  }
-}
-
-async function daSend(text, { showAs } = {}) {
-  if (da.busy) return;
-  const source = daSourceJob();
-  if (!source) {
-    daPaintStanding();
-    return;
-  }
-  da.busy = true;
-  daPaintStanding();
-  // History carries only what the student typed; the deck snapshot travels in
-  // the request's `deck` field, which the remix register fences into the
-  // prompt as data — so the advocate argues with what is actually stacked.
-  da.history.push({ role: 'user', content: text.slice(0, 1990) });
-  da.history = da.history.slice(-12);
-  daAddRow('you', esc(showAs || text));
-  const typing = daAddRow('typing', '···');
-  daInput.value = '';
-  daSetLed('busy');
-
-  let row = null;
-  let acc = '';
-  let calls = [];
-  let finalText = '';
-  let finishReason = 'stop';
-  try {
-    await streamApi(
-      `/api/jobs/${source.id}/chat`,
-      {
-        messages: da.history,
-        durationSec: daSourceDuration(source.id),
-        mode: 'remix',
-        deck: remixStateSummary(),
-      },
-      (ev) => {
-        if (ev.type === 'delta') {
-          if (!row) {
-            typing.remove();
-            row = daAddRow('coach streaming', '');
-          }
-          acc += ev.text;
-          row.textContent = acc;
-          daLog.scrollTop = daLog.scrollHeight;
-        } else if (ev.type === 'tool_calls') {
-          calls = ev.calls || [];
-        } else if (ev.type === 'done') {
-          finalText = ev.text || acc;
-          finishReason = ev.finishReason || 'stop';
-        }
-      }
-    );
-    typing.remove();
-    if (finalText) {
-      da.history.push({ role: 'assistant', content: finalText });
-      da.history = da.history.slice(-12);
-      if (!row) row = daAddRow('coach', '');
-      row.classList.remove('streaming');
-      let html = coachHtml(finalText);
-      if (finishReason === 'length') html += ' <span class="coach-trim">…(trimmed)</span>';
-      row.innerHTML = html;
-      da.spoke = true;
-    } else if (row) {
-      row.remove();
-    }
-    daHandleToolCalls(calls, source.id);
-  } catch (err) {
-    typing.remove();
-    if (row && !acc) row.remove();
-    if (row) row.classList.remove('streaming');
-    daAddRow('error', esc(err.message));
-  }
-  da.busy = false;
-  daSetLed(da.spoke ? 'ready' : 'idle');
-  daPaintStanding();
-  daInput.focus();
-}
-
-function initDevilsAdvocate() {
-  daToggle.addEventListener('click', () => {
-    const open = daBody.hidden;
-    daBody.hidden = !open;
-    daToggle.setAttribute('aria-expanded', String(open));
-    if (open) daPaintStanding();
-  });
-  daForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const text = daInput.value.trim();
-    if (text) void daSend(text);
-  });
-  daChallengeBtn.addEventListener('click', () => {
-    void daSend(DA_CHALLENGE_TEXT, { showAs: '⚡ challenge me' });
-  });
-  daPaintStanding();
-}
-
 // --- helpers ----------------------------------------------------------
 
 function esc(s) {
@@ -3981,7 +3766,6 @@ async function initialize() {
   void detectInstructor();
   initStations();
   initRemixDeck();
-  initDevilsAdvocate();
   renderJobs();
   void pollActiveJobs().then(adoptSharedJob);
 }

@@ -6,26 +6,18 @@ import type { AssistantToolCall, WireTool, WireToolCall } from './types';
 const MAX_TOOL_CALLS = 6; // prompt asks for ≤3; this is the hard backstop
 const MAX_NOTE_CHARS = 200; // matches the annotations route's own cap
 
-/**
- * `mixer` is the Splitter's full console; `deck` is the Remixer's layer stack,
- * where seek and add_note make no sense (the remix has its own timeline, not
- * the song's) and are therefore not even offered to the model.
- */
-export function buildMixerTools(stemNames: string[], surface: 'mixer' | 'deck' = 'mixer'): WireTool[] {
+export function buildMixerTools(stemNames: string[]): WireTool[] {
   const stem = {
     type: 'string',
     enum: stemNames,
     description: 'Canonical stem name (not the display label).',
   };
-  const onDeck = surface === 'deck';
-  const soloAndMute: WireTool[] = [
+  return [
     {
       type: 'function',
       function: {
         name: 'solo',
-        description: onDeck
-          ? "Solo this song's layer on the remix deck: every other layer is muted so only it is heard."
-          : 'Solo one stem: every other channel is muted so only this one is heard.',
+        description: 'Solo one stem: every other channel is muted so only this one is heard.',
         parameters: { type: 'object', properties: { stem }, required: ['stem'] },
       },
     },
@@ -33,9 +25,7 @@ export function buildMixerTools(stemNames: string[], surface: 'mixer' | 'deck' =
       type: 'function',
       function: {
         name: 'set_mute',
-        description: onDeck
-          ? "Mute (true) or unmute (false) this song's layer on the remix deck."
-          : 'Mute (true) or unmute (false) one stem.',
+        description: 'Mute (true) or unmute (false) one stem.',
         parameters: {
           type: 'object',
           properties: { stem, muted: { type: 'boolean' } },
@@ -43,10 +33,6 @@ export function buildMixerTools(stemNames: string[], surface: 'mixer' | 'deck' =
         },
       },
     },
-  ];
-  if (onDeck) return soloAndMute;
-  return [
-    ...soloAndMute,
     {
       type: 'function',
       function: {
@@ -78,22 +64,15 @@ export function buildMixerTools(stemNames: string[], surface: 'mixer' | 'deck' =
   ];
 }
 
-/**
- * Parse and validate raw provider tool calls into safe mixer commands; drop
- * anything off-schema. `allowed` narrows the accepted names (the remix deck
- * takes only solo/set_mute) — a belt on top of the narrower tool offer,
- * because a model can call tools it was never given.
- */
+/** Parse and validate raw provider tool calls into safe mixer commands; drop anything off-schema. */
 export function sanitizeToolCalls(
   raw: WireToolCall[],
   stemNames: string[],
-  durationSec?: number,
-  allowed?: readonly AssistantToolCall['name'][]
+  durationSec?: number
 ): AssistantToolCall[] {
   const out: AssistantToolCall[] = [];
   for (const call of raw.slice(0, MAX_TOOL_CALLS)) {
     const name = call.function?.name;
-    if (allowed && !allowed.includes(name as AssistantToolCall['name'])) continue;
     let args: unknown;
     try {
       args = JSON.parse(call.function?.arguments || '{}');

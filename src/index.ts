@@ -74,7 +74,6 @@ import {
   COACH_UNCONFIGURED,
   getGuide,
   streamGuide,
-  MAX_DECK_CHARS,
   streamChat,
   validateTurns,
   type GuideRecord,
@@ -1601,9 +1600,6 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
 // client-side and is resent each call; the reply prose streams as delta
 // events, then validated mixer tool calls (solo / set_mute / seek / add_note)
 // arrive in one tool_calls event for the browser to execute, then done.
-// `mode: 'remix'` selects the Remixer's devil's-advocate register: the body's
-// `deck` snapshot is fenced into the prompt as data and the toolset narrows to
-// solo / set_mute (the deck has no song timeline to seek or note).
 app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
     return c.json({ error: COACH_UNCONFIGURED }, 503);
@@ -1624,17 +1620,9 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   if (!turns) {
     return c.json({ error: 'messages must be 1-12 turns (each ≤2000 chars) ending with a user message' }, 400);
   }
-  const mode = body?.mode === undefined || body?.mode === 'chat'
-    ? 'chat'
-    : body?.mode === 'remix'
-      ? 'remix'
-      : null;
-  if (!mode) return c.json({ error: "mode must be 'chat' or 'remix'" }, 400);
-  if (mode === 'remix' && c.env.REMIXER_ENABLED !== 'true') return c.json({ error: 'Remixer is unavailable.' }, 404);
-  if (body?.deck !== undefined && typeof body.deck !== 'string') {
-    return c.json({ error: 'deck must be a string' }, 400);
+  if (body?.mode !== undefined && body.mode !== 'chat') {
+    return c.json({ error: 'Listening Guy is available in the Splitter.' }, 400);
   }
-  const deck = mode === 'remix' ? (body?.deck ?? '').trim().slice(0, MAX_DECK_CHARS) : '';
 
   const { results } = await c.env.DB
     .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
@@ -1644,8 +1632,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   return sseResponse(c, async (emit) => {
     const result = await streamChat(
       c.env, row, results ?? [], turns, parseDuration(body?.durationSec),
-      (text) => emit({ type: 'delta', text }),
-      { mode, deck }
+      (text) => emit({ type: 'delta', text })
     );
     if (result.toolCalls.length) await emit({ type: 'tool_calls', calls: result.toolCalls });
     await emit({ type: 'done', text: result.reply, finishReason: result.finishReason });

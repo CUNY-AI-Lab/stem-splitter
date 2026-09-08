@@ -84,49 +84,6 @@
     </div>
 
     <div id="view-remixer" role="tabpanel" aria-labelledby="tab-remixer" hidden>
-      <section id="shelf" class="rack shelf">
-        <h2 class="rack-title"><span>THE SHELF</span><span class="rack-step mono">01 · pull layers</span></h2>
-        <p id="shelf-empty" class="empty mono">— nothing split yet — feed the Splitter, or dig the crate at the bottom —</p>
-        <ul id="shelf-list" class="shelf-list"></ul>
-      </section>
-
-      <section id="remix-deck" class="remix-deck">
-        <h2 class="rack-title"><span>REMIX DECK</span><span class="rack-step mono">02 · stack &amp; bend</span></h2>
-        <p id="deck-empty" class="empty mono">— the deck is bare — pull a layer off the shelf —</p>
-        <div id="deck-body" hidden>
-          <div class="remix-transport mono">
-            <button type="button" id="remix-play" class="rplay" aria-label="Play the remix">▶</button>
-            <span id="remix-tc" class="timecode">0:00</span>
-            <button type="button" id="remix-stop" class="rt-btn" title="Stop and rewind to the top">STOP</button>
-            <button type="button" id="remix-capture" class="rt-btn rt-capture" title="Play from the top and record what comes out as a file" hidden>● CAPTURE</button>
-            <label class="rt-master">MASTER <input id="remix-master" type="range" min="0" max="120" value="100" aria-label="Master volume" /></label>
-            <button type="button" id="remix-clear" class="rt-btn rt-danger" title="Clear every layer off the deck">CLEAR</button>
-          </div>
-          <div id="remix-layers" class="rlayers"></div>
-          <p id="remix-export-status" class="mono" role="status"></p>
-          <p class="rlayer-keys mono" aria-hidden="true">VOL / PAN slide · IN sets when a layer enters · REV plays it backwards · TAPE lets pitch follow speed</p>
-          <div id="takes" class="takes" hidden>
-            <p class="takes-title mono">TAKES</p>
-            <ul id="takes-list" class="takes-list mono"></ul>
-          </div>
-        </div>
-      </section>
-
-      <section class="coach da-panel">
-        <button type="button" id="da-toggle" class="da-toggle" aria-expanded="false">
-          <span id="da-led" class="da-led"></span>LISTENING GUY · DEVIL&rsquo;S ADVOCATE<span class="da-caret" aria-hidden="true">▾</span>
-        </button>
-        <div id="da-body" class="da-body" hidden>
-          <p id="da-standing" class="da-standing mono"></p>
-          <div id="da-log" class="da-log" role="log" aria-live="polite"></div>
-          <form id="da-form" class="da-form">
-            <input id="da-input" maxlength="500" placeholder="defend your mix…" aria-label="Defend your mix to the devil's advocate" />
-            <button type="submit">ARGUE</button>
-            <button type="button" id="da-challenge" title="Ask for a blunt critique of what's on the deck right now">CHALLENGE&nbsp;ME</button>
-          </form>
-        </div>
-      </section>
-
       <section id="crate" class="crate">
         <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">
           <span class="crate-toggle-caret" aria-hidden="true">▶</span>
@@ -163,6 +120,35 @@
           </div>
         </div>
       </section>
+
+      <section id="shelf" class="rack shelf">
+        <h2 class="rack-title"><span>THE SHELF</span><span class="rack-step mono">01 · pull layers</span></h2>
+        <p id="shelf-empty" class="empty mono">Choose a recording from the Crate above, or send stems from the Splitter.</p>
+        <ul id="shelf-list" class="shelf-list"></ul>
+      </section>
+
+      <section id="remix-deck" class="remix-deck">
+        <h2 class="rack-title"><span>REMIX DECK</span><span class="rack-step mono">02 · stack &amp; bend</span></h2>
+        <p id="deck-empty" class="empty mono">— the deck is bare — pull a layer off the shelf —</p>
+        <div id="deck-body" hidden>
+          <div class="remix-transport mono">
+            <button type="button" id="remix-play" class="rplay" aria-label="Play the remix">▶</button>
+            <span id="remix-tc" class="timecode">0:00</span>
+            <button type="button" id="remix-stop" class="rt-btn" title="Stop and rewind to the top">STOP</button>
+            <button type="button" id="remix-capture" class="rt-btn rt-capture" title="Play from the top and record what comes out as a file" hidden>● CAPTURE</button>
+            <label class="rt-master">MASTER <input id="remix-master" type="range" min="0" max="120" value="100" aria-label="Master volume" /></label>
+            <button type="button" id="remix-clear" class="rt-btn rt-danger" title="Clear every layer off the deck">CLEAR</button>
+          </div>
+          <div id="remix-layers" class="rlayers"></div>
+          <p id="remix-export-status" class="mono" role="status"></p>
+          <p class="rlayer-keys mono" aria-hidden="true">VOL / PAN slide · IN sets when a layer enters · REV plays it backwards · TAPE lets pitch follow speed</p>
+          <div id="takes" class="takes" hidden>
+            <p class="takes-title mono">TAKES</p>
+            <ul id="takes-list" class="takes-list mono"></ul>
+          </div>
+        </div>
+      </section>
+
     </div>
 
     <footer>
@@ -191,6 +177,6 @@
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
-  <script src="/app.js?v=app-20260906-1"></script>
+  <script src="/app.js?v=app-20260908-crate-first"></script>
 </body>
 </html>
