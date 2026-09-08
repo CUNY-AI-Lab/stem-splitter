@@ -7,7 +7,16 @@ so a text change in any current conditional prompt arm remains traceable even
 if a version bump is accidentally omitted. The readable instructor preview is
 deliberately separate from that audit material.
 
-## 2026-09-01.1
+## 2026-09-07.1
+
+- Restores the original Listening Guy guide/chat prompt and mixer tools. Removes
+  the Remixer's separate persona, chat panel, challenge shortcut, and deck mode.
+- The original Splitter listening support remains unchanged. Remixer is an
+  audio-making workspace, not a critique exercise.
+- Removes the remix fingerprint variant and advances the fixed-prompt version
+  so instructor history and cached guide identities track this restoration.
+
+## 2026-09-01.1 (superseded by 2026-09-07.1)
 
 Adds the Remixer's devil's-advocate register — a third prompt mode, `remix`,
 selected by `mode: 'remix'` on `POST /api/jobs/:id/chat`. Guide and chat mode

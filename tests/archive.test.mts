@@ -13,6 +13,34 @@ const IDENTIFIER = 'open-audio-test';
 const FILE_NAME = 'track.mp3';
 const OPEN_LICENSE = 'https://creativecommons.org/licenses/by/4.0/';
 
+test('raw remix audio rechecks reviewed terms, byte limits and metadata identity', async () => {
+  const original = globalThis.fetch;
+  let license = OPEN_LICENSE;
+  let size = 2048;
+  let downloads = 0;
+  globalThis.fetch = async input => {
+    if (String(input).includes('/metadata/')) return metadataResponse({ licenseurl: license }, [{ name: FILE_NAME, size: String(size), length: '20' }]);
+    downloads++;
+    return new Response(makeMp3(), { headers: { 'Content-Type': 'audio/mpeg' } });
+  };
+  const load = () => fetchArchiveAudio(IDENTIFIER, FILE_NAME, {} as never, { maximumBytes: 4096, remix: true });
+  try {
+    const audio = await load();
+    assert.equal(audio.data.byteLength, 2048);
+    assert.equal(audio.attribution.licenseUrl, OPEN_LICENSE);
+    size = 9000;
+    await assert.rejects(load, /larger than/);
+    assert.equal(downloads, 1);
+    size = 2049;
+    await assert.rejects(load, /changed while loading/);
+    for (const term of ['https://creativecommons.org/licenses/by/1.0/', 'https://creativecommons.org/licenses/by/3.0/us/', 'https://creativecommons.org/licenses/by-nd/4.0/']) {
+      license = term;
+      await assert.rejects(load, /reviewed|NoDerivatives/);
+    }
+    assert.equal(downloads, 2);
+  } finally { globalThis.fetch = original; }
+});
+
 function metadataResponse(
   overrides: Record<string, unknown> = {},
   files: Array<Record<string, unknown>> = [

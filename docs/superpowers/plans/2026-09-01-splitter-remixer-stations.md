@@ -3,6 +3,9 @@
 **Design:** `docs/superpowers/specs/2026-09-01-splitter-remixer-stations-design.md`
 **Date:** 2026-09-01
 
+**Superseded:** Do not implement the assistant persona or critique panel below.
+Use `2026-09-07-cloudflare-crate-remixer.md`; this plan is historical context.
+
 Frontend-only: `public/index.html`, `public/styles.css`, `public/app.js`, plus
 the two crate specs. No server code, no migrations, no new secrets.
 

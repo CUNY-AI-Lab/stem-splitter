@@ -909,7 +909,26 @@ function renderCrateTracks(item, container) {
     split.textContent = 'SPLIT';
     split.addEventListener('click', () => void importArchiveTrack(item, track, split));
 
-    li.append(name, length, split);
+    li.append(name, length);
+    if (runtime.remixer) {
+      const preview = document.createElement('button');
+      preview.type = 'button';
+      preview.className = 'crate-preview';
+      preview.textContent = 'PREVIEW';
+      preview.addEventListener('click', () => void useCrateAudio(item, track, preview, true));
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'crate-add';
+      add.textContent = 'ADD TO MIX';
+      add.disabled = track.bytes > 10 * 1024 * 1024;
+      preview.disabled = add.disabled;
+      add.dataset.unavailable = preview.dataset.unavailable = String(add.disabled);
+      if (add.disabled) add.title = preview.title = 'Choose a track under 10 MB for browser mixing.';
+      add.addEventListener('click', () => void useCrateAudio(item, track, add));
+      li.append(preview, add);
+      split.title = 'Optional: separate this track into instrument stems first';
+    }
+    li.append(split);
     list.append(li);
   }
 
@@ -974,6 +993,71 @@ async function importArchiveTrack(item, track, button) {
     button.disabled = false;
     button.textContent = 'SPLIT';
   }
+}
+
+// Raw Crate material stays in this browser session. The server rechecks rights,
+// metadata, size, redirects and audio bytes; no paid separator is involved.
+const crateAudio = new Map();
+let cratePreview = null;
+async function useCrateAudio(item, track, button, previewOnly = false) {
+  if (!runtime.remixer || remix.recorder) return;
+  const key = JSON.stringify([item.identifier, track.name]);
+  const label = previewOnly ? 'PREVIEW' : 'ADD TO MIX';
+  button.disabled = true;
+  button.textContent = 'LOADING…';
+  try {
+    if (!crateAudio.has(key)) {
+      if (crateAudio.size >= 8) throw new Error('This session already has eight Crate tracks. Download your work before starting a new session.');
+      const work = (async () => {
+        const response = await fetch('/api/remix/archive-audio', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ archiveId: item.identifier, archiveFile: track.name }),
+          signal: AbortSignal.timeout(180000),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(response.status === 401 ? 'Sign in with CUNY Login to use the Crate.' : body.error?.message || body.error || 'Could not load this track. Try again.');
+        }
+        const source = JSON.parse(decodeURIComponent(response.headers.get('X-Remix-Source') || ''));
+        const blob = await response.blob();
+        if (!blob.size || blob.size > 10 * 1024 * 1024 || !source.attribution) throw new Error('This track could not be loaded safely.');
+        return { ...source, url: URL.createObjectURL(blob), id: `archive:${key}` };
+      })();
+      crateAudio.set(key, work);
+      work.catch(() => crateAudio.delete(key));
+    }
+    const source = await crateAudio.get(key);
+    if (remix.recorder) throw new Error('Finish recording before previewing or adding a track.');
+    if (previewOnly) {
+      cratePreview?.pause();
+      let player = button.closest('.crate-track').querySelector('audio');
+      if (!player) {
+        player = document.createElement('audio');
+        player.controls = true;
+        player.preload = 'metadata';
+        player.setAttribute('aria-label', `Preview ${track.title}`);
+        button.closest('.crate-track').append(player);
+      }
+      player.src = source.url;
+      cratePreview = player;
+      await player.play();
+    } else {
+      const license = window.StemRemixLicense.resolve([...remix.layers.map(layer => layer.attribution), source.attribution]);
+      if (!license.allowed) throw new Error(license.reason);
+      cratePreview?.pause();
+      const layer = addRemixLayer({ id: source.id, filename: source.attribution.title, attribution: source.attribution, labels: { source: source.attribution.title } }, { name: 'source', url: source.url });
+      if (!layer) throw new Error('Finish recording or remove a layer before adding another.');
+      layer.duration = source.durationSec;
+      document.getElementById('remix-deck').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      crateImportStatus.textContent = `Added “${source.attribution.title}” to your mix.`;
+      crateImportStatus.hidden = false;
+      crateImportStatus.classList.remove('error');
+    }
+  } catch (error) {
+    crateImportStatus.textContent = error.message;
+    crateImportStatus.hidden = false;
+    crateImportStatus.classList.add('error');
+  } finally { button.disabled = false; button.textContent = label; }
 }
 
 async function handleFile(file) {
@@ -2931,7 +3015,6 @@ function switchStation(name) {
   }
   if (name === 'remixer') {
     renderShelf();
-    daPaintStanding();
   }
 }
 
@@ -2939,7 +3022,13 @@ function initStations() {
   document.querySelector('.bench-tabs').hidden = !runtime.remixer;
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
-  if (!runtime.remixer) document.getElementById('view-splitter').insertBefore(document.getElementById('crate'), document.getElementById('jobs'));
+  if (!runtime.remixer) stationViews.splitter.prepend(document.getElementById('crate'));
+  else {
+    stationViews.remixer.prepend(document.getElementById('crate'));
+    document.getElementById('crate-toggle').setAttribute('aria-expanded', 'true');
+    crateToggle.classList.add('open');
+    document.getElementById('crate-body').hidden = false;
+  }
   for (const [name, tab] of Object.entries(stationTabs)) {
     tab.addEventListener('click', () => switchStation(name));
   }
@@ -2982,6 +3071,7 @@ function stemLabelFor(state, name) {
 
 function renderShelf() {
   const jobs = getJobs();
+  document.getElementById('shelf').hidden = jobs.length === 0;
   shelfEmpty.hidden = jobs.length > 0;
   shelfList.innerHTML = '';
 
@@ -3098,6 +3188,10 @@ function layerLocal(layer, t) {
 function addRemixLayer(job, stem) {
   if (!runtime.remixer) return;
   if (remix.recorder) return;
+  if (remix.layers.length >= 8) {
+    document.getElementById('remix-export-status').textContent = 'Eight layers is the limit for this mix. Remove one before adding another.';
+    return;
+  }
   const layer = {
     id: ++remix.seq,
     jobId: job.id,
@@ -3237,7 +3331,9 @@ function startLayerAt(layer, local) {
   if (!layer.loop && isFinite(dur) && local >= dur) return;
   layer.audio.currentTime = layer.loop && isFinite(dur) ? local % dur : local;
   layer.audio.play().catch(() => {
-    // Autoplay refusals surface on the transport, not per layer.
+    if (!remix.playing || !remix.layers.includes(layer)) return;
+    remixStop();
+    document.getElementById('remix-export-status').textContent = 'A layer could not play. Check its preview, then press Play to retry.';
   });
 }
 
@@ -3259,7 +3355,8 @@ function syncLayer(layer) {
 }
 
 function remixPlay() {
-  if (remix.playing) return;
+  if (remix.playing || !remix.layers.length) return;
+  cratePreview?.pause();
   const ctx = remixCtx();
   if (ctx && ctx.state === 'suspended') void ctx.resume();
   remix.playing = true;
@@ -3315,6 +3412,7 @@ function remixUiTick() {
   if (!remix.playing || !remix.layers.length) return;
   // A remix with no loops ends on its own; a loop plays until stopped.
   const t = remixNow();
+  if (t >= remixLength()) { remixStop(); return; }
   let allDone = true;
   for (const layer of remix.layers) {
     if (layer.loop) return;
@@ -3342,7 +3440,6 @@ function removeRemixLayer(layer) {
   remix.layers = remix.layers.filter((l) => l !== layer);
   layer.row?.remove();
   renderDeck();
-  daPaintStanding();
 }
 
 function clearRemixDeck() {
@@ -3355,7 +3452,6 @@ function renderDeck() {
   deckEmpty.hidden = has;
   deckBody.hidden = !has;
   if (!has && remix.playing) remixStop();
-  daPaintStanding();
 }
 
 function flashLayerNote(layer, message) {
@@ -3390,7 +3486,9 @@ async function setLayerReverse(layer, on) {
   layer.decoding = true;
   paintLayerRow(layer);
   try {
-    layer.revBuffer = await reversedBufferFor(layer.url, ctx);
+    const buffer = await reversedBufferFor(layer.url, ctx);
+    if (!remix.layers.includes(layer)) return;
+    layer.revBuffer = buffer;
     layer.reverse = true;
   } catch {
     flashLayerNote(layer, 'Could not decode this layer for reverse playback.');
@@ -3432,7 +3530,7 @@ function buildLayerRow(layer) {
     <span class="rlayer-id">
       <span class="rlayer-dot"></span>
       <span class="rlayer-name">${esc(layer.label)}</span>
-      <span class="rlayer-src" title="${esc(layer.songTitle)}">${esc(layer.songTitle)}</span>
+      <span class="rlayer-src" title="${esc(layer.songTitle)}" ${layer.label === layer.songTitle ? 'hidden' : ''}>${esc(layer.songTitle)}</span>
     </span>
     <span class="rlayer-ctls">
       <label>VOL <input type="range" class="rl-gain" min="0" max="120" value="100" aria-label="Layer volume"></label>
@@ -3530,9 +3628,9 @@ function startCapture() {
   const license = window.StemRemixLicense.resolve(sources);
   if (!license.allowed) { document.getElementById('remix-export-status').textContent = license.reason; return; }
   const manifest = {
-    schemaVersion: 1, createdAt: new Date().toISOString(), licenseUrl: license.licenseUrl,
+    schemaVersion: 1, title: document.getElementById('remix-title').value.trim() || 'Untitled remix', durationSec: remixLength(), createdAt: new Date().toISOString(), licenseUrl: license.licenseUrl,
     nonCommercial: license.nonCommercial, sources, masterLevel: remix.masterLevel,
-    changes: 'Stem separation and recomposition with the layer settings in this manifest.',
+    changes: 'Recomposition of the credited recordings or separated stems using the layer settings in this manifest.',
     layers: remix.layers.map(({ jobId, stemName, gain, pan, rate, offset, tape, loop, reverse, muted }) => ({ jobId, stemName, gain, pan, rate, offset, tape, loop, reverse, muted })),
   };
   document.getElementById('remix-export-status').textContent = license.nonCommercial ? 'This remix is for noncommercial use. Credits are included with the download.' : 'Credits are included with the download.';
@@ -3551,7 +3649,7 @@ function startCapture() {
   remix.recorder.addEventListener('stop', () => { void addTake(chunks, manifest); });
   remix.recorder.start(1000);
   setCaptureControls(true);
-  remix.captureTimer = setTimeout(stopCapture, 10 * 60 * 1000);
+  remix.captureTimer = setTimeout(remixStop, remixLength() * 1000);
   remixCaptureBtn.textContent = '■ END TAKE';
   remixCaptureBtn.classList.add('rec');
   remixPlay();
@@ -3565,6 +3663,11 @@ function stopCapture() {
   remixCaptureBtn.classList.remove('rec');
   if (recorder && recorder.state !== 'inactive') recorder.stop();
   setCaptureControls(false);
+  if (recorder) remixPause();
+}
+
+function remixLength() {
+  return Math.max(1, Math.min(600, Number(document.getElementById('remix-length').value) || 60));
 }
 
 function setCaptureControls(recording) {
@@ -3574,15 +3677,18 @@ function setCaptureControls(recording) {
   remixMasterInput.disabled = recording;
   remixClearBtn.disabled = recording;
   remixPlayBtn.disabled = recording;
+  document.getElementById('remix-title').disabled = recording;
+  document.getElementById('remix-length').disabled = recording;
+  document.querySelectorAll('.crate-add, .crate-preview, .shelf-stem, .shelf-add-all, .to-remix-btn').forEach(button => { button.disabled = recording || button.dataset.unavailable === 'true'; });
 }
 
 async function addTake(chunks, manifest) {
   if (!chunks.length) return;
   const type = chunks[0].type || 'audio/webm';
   const blob = new Blob(chunks, { type });
-  remix.takeCount += 1;
+  const takeNumber = ++remix.takeCount;
   const ext = type.includes('mp4') ? 'm4a' : 'webm';
-  const name = `remix-take-${String(remix.takeCount).padStart(2, '0')}.${ext}`;
+  const name = `${fileSafe(manifest.title) || 'remix'}-take-${String(takeNumber).padStart(2, '0')}.${ext}`;
   const url = URL.createObjectURL(blob);
   const credits = `STEM Splitter remix\n\nLicense: ${manifest.licenseUrl}\n${manifest.nonCommercial ? 'Noncommercial use only.\n' : ''}\n${manifest.sources.map((s) => `${s.title}\n${s.creator}\n${s.sourceUrl}\n${s.licenseUrl}\nFile: ${s.fileName}\n`).join('\n')}\n${manifest.changes}\n`;
   const bundle = makeZip([
@@ -3593,7 +3699,7 @@ async function addTake(chunks, manifest) {
   const bundleUrl = URL.createObjectURL(bundle);
   const li = document.createElement('li');
   li.innerHTML = `
-    <span>TAKE ${String(remix.takeCount).padStart(2, '0')}</span>
+    <span>${esc(manifest.title)} · TAKE ${String(takeNumber).padStart(2, '0')}</span>
     <audio controls src="${url}"></audio>
     <a href="${bundleUrl}" download="${name.replace(/\.[^.]+$/, '')}.zip">SAVE WITH CREDITS ↓</a>
   `;
@@ -3618,221 +3724,15 @@ function initRemixDeck() {
   const canCapture =
     typeof MediaRecorder !== 'undefined' && ('AudioContext' in window || 'webkitAudioContext' in window);
   remixCaptureBtn.hidden = !canCapture;
-  remixCaptureBtn.addEventListener('click', () =>
-    remix.recorder ? stopCapture() : startCapture()
-  );
-}
-
-// --- Listening Guy, devil's advocate mode -----------------------------------
-//
-// Same voice, opposite job. On the Splitter he opens the song up; here he
-// pushes back on what the student built. It rides the per-job chat endpoint —
-// the source split whose layers dominate the deck — with `mode: 'remix'`,
-// the server-side register tailored to this task: the request's `deck`
-// snapshot is fenced into the prompt as data, and the server narrows the
-// toolset to solo/set_mute (the deck has no song timeline to seek or note).
-// Returned calls translate onto matching deck layers.
-
-const daToggle = document.getElementById('da-toggle');
-const daLed = document.getElementById('da-led');
-const daBody = document.getElementById('da-body');
-const daStanding = document.getElementById('da-standing');
-const daLog = document.getElementById('da-log');
-const daForm = document.getElementById('da-form');
-const daInput = document.getElementById('da-input');
-const daChallengeBtn = document.getElementById('da-challenge');
-
-const da = { history: [], busy: false, spoke: false };
-
-// The devil's-advocate register lives server-side (mode: 'remix'); this is
-// just the canned opener behind the CHALLENGE ME button.
-const DA_CHALLENGE_TEXT =
-  "What's the weakest choice on my deck right now, and what should I try instead?";
-
-function daSourceJob() {
-  const counts = new Map();
-  for (const layer of remix.layers) {
-    counts.set(layer.jobId, (counts.get(layer.jobId) || 0) + 1);
-  }
-  let best = null;
-  for (const layer of remix.layers) {
-    if (!best || counts.get(layer.jobId) > counts.get(best.jobId)) best = layer;
-  }
-  return best ? { id: best.jobId, filename: best.songTitle } : null;
-}
-
-function daSourceDuration(jobId) {
-  for (const layer of remix.layers) {
-    if (layer.jobId === jobId && isFinite(layer.duration)) return layer.duration;
-  }
-  return undefined;
-}
-
-function remixStateSummary() {
-  const parts = remix.layers.map((layer) => {
-    const bits = [`${layer.label} (from "${layer.songTitle}")`];
-    if (layer.reverse) bits.push('reversed');
-    if (layer.rate !== 1) bits.push(`${layer.rate}x speed${layer.tape ? ', tape-pitched' : ''}`);
-    if (layer.loop) bits.push('looping');
-    if (layer.offset) bits.push(`enters at ${fmt(layer.offset)}`);
-    if (layer.pan) bits.push(`panned ${layer.pan < 0 ? 'left' : 'right'}`);
-    if (layer.muted) bits.push('muted');
-    return bits.join(', ');
-  });
-  return parts.join('; ').slice(0, 900);
-}
-
-function daPaintStanding() {
-  const source = daSourceJob();
-  if (!source) {
-    daStanding.textContent = 'the deck is bare — stack a layer or two, then come argue';
-    daInput.disabled = true;
-    daChallengeBtn.disabled = true;
-    return;
-  }
-  daInput.disabled = da.busy;
-  daChallengeBtn.disabled = da.busy;
-  daStanding.textContent = `arguing about: ${source.filename} · ${remix.layers.length} layer${
-    remix.layers.length === 1 ? '' : 's'
-  } on the deck`;
-}
-
-function daSetLed(state) {
-  daLed.classList.toggle('ready', state === 'ready');
-  daLed.classList.toggle('busy', state === 'busy');
-}
-
-function daAddRow(kind, html) {
-  const row = document.createElement('div');
-  row.className = `da-row ${kind}`;
-  row.innerHTML = html;
-  daLog.appendChild(row);
-  daLog.scrollTop = daLog.scrollHeight;
-  return row;
-}
-
-function daHandleToolCalls(calls, jobId) {
-  if (remix.recorder) return;
-  for (const { name, args } of calls || []) {
-    if ((name === 'set_mute' || name === 'solo') && args?.stem) {
-      const matches = remix.layers.filter(
-        (layer) => layer.jobId === jobId && layer.stemName === args.stem
-      );
-      if (!matches.length) continue;
-      if (name === 'solo') {
-        for (const layer of remix.layers) {
-          layer.muted = !(layer.jobId === jobId && layer.stemName === args.stem);
-          applyLayerParams(layer);
-        }
-        daAddRow('action', `→ soloed ${esc(args.stem)} on the deck`);
-      } else {
-        for (const layer of matches) {
-          layer.muted = Boolean(args.muted);
-          applyLayerParams(layer);
-        }
-        daAddRow('action', `→ ${args.muted ? 'muted' : 'unmuted'} ${esc(args.stem)} on the deck`);
-      }
-    } else if (name === 'seek' || name === 'add_note') {
-      daAddRow(
-        'action',
-        `→ suggested a ${esc(name === 'seek' ? 'seek' : 'note')} on the source split — that move lives back at the Splitter`
-      );
+  remixCaptureBtn.addEventListener('click', () => {
+    try { remix.recorder ? stopCapture() : startCapture(); }
+    catch {
+      if (remix.recorder?.state === 'recording') stopCapture();
+      remix.recorder = null;
+      setCaptureControls(false);
+      document.getElementById('remix-export-status').textContent = 'Recording could not start. Try again in a browser with audio recording support.';
     }
-  }
-}
-
-async function daSend(text, { showAs } = {}) {
-  if (da.busy) return;
-  const source = daSourceJob();
-  if (!source) {
-    daPaintStanding();
-    return;
-  }
-  da.busy = true;
-  daPaintStanding();
-  // History carries only what the student typed; the deck snapshot travels in
-  // the request's `deck` field, which the remix register fences into the
-  // prompt as data — so the advocate argues with what is actually stacked.
-  da.history.push({ role: 'user', content: text.slice(0, 1990) });
-  da.history = da.history.slice(-12);
-  daAddRow('you', esc(showAs || text));
-  const typing = daAddRow('typing', '···');
-  daInput.value = '';
-  daSetLed('busy');
-
-  let row = null;
-  let acc = '';
-  let calls = [];
-  let finalText = '';
-  let finishReason = 'stop';
-  try {
-    await streamApi(
-      `/api/jobs/${source.id}/chat`,
-      {
-        messages: da.history,
-        durationSec: daSourceDuration(source.id),
-        mode: 'remix',
-        deck: remixStateSummary(),
-      },
-      (ev) => {
-        if (ev.type === 'delta') {
-          if (!row) {
-            typing.remove();
-            row = daAddRow('coach streaming', '');
-          }
-          acc += ev.text;
-          row.textContent = acc;
-          daLog.scrollTop = daLog.scrollHeight;
-        } else if (ev.type === 'tool_calls') {
-          calls = ev.calls || [];
-        } else if (ev.type === 'done') {
-          finalText = ev.text || acc;
-          finishReason = ev.finishReason || 'stop';
-        }
-      }
-    );
-    typing.remove();
-    if (finalText) {
-      da.history.push({ role: 'assistant', content: finalText });
-      da.history = da.history.slice(-12);
-      if (!row) row = daAddRow('coach', '');
-      row.classList.remove('streaming');
-      let html = coachHtml(finalText);
-      if (finishReason === 'length') html += ' <span class="coach-trim">…(trimmed)</span>';
-      row.innerHTML = html;
-      da.spoke = true;
-    } else if (row) {
-      row.remove();
-    }
-    daHandleToolCalls(calls, source.id);
-  } catch (err) {
-    typing.remove();
-    if (row && !acc) row.remove();
-    if (row) row.classList.remove('streaming');
-    daAddRow('error', esc(err.message));
-  }
-  da.busy = false;
-  daSetLed(da.spoke ? 'ready' : 'idle');
-  daPaintStanding();
-  daInput.focus();
-}
-
-function initDevilsAdvocate() {
-  daToggle.addEventListener('click', () => {
-    const open = daBody.hidden;
-    daBody.hidden = !open;
-    daToggle.setAttribute('aria-expanded', String(open));
-    if (open) daPaintStanding();
   });
-  daForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const text = daInput.value.trim();
-    if (text) void daSend(text);
-  });
-  daChallengeBtn.addEventListener('click', () => {
-    void daSend(DA_CHALLENGE_TEXT, { showAs: '⚡ challenge me' });
-  });
-  daPaintStanding();
 }
 
 // --- helpers ----------------------------------------------------------
@@ -3981,7 +3881,6 @@ async function initialize() {
   void detectInstructor();
   initStations();
   initRemixDeck();
-  initDevilsAdvocate();
   renderJobs();
   void pollActiveJobs().then(adoptSharedJob);
 }

@@ -1,39 +1,27 @@
-// The Remixer's devil's-advocate register narrows the assistant toolset to
-// solo/set_mute twice over: the deck surface offers only those tools, and the
-// sanitizer drops anything else a model calls anyway.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildMixerTools, sanitizeToolCalls } from '../src/assistant/tools.ts';
+import { readFileSync } from 'node:fs';
+import { buildMixerTools } from '../src/assistant/tools.ts';
+import { buildSystemPromptFingerprintMaterial, SYSTEM_PROMPT_VERSION } from '../src/assistant/prompt.ts';
 
-const STEMS = ['vocals', 'drums', 'bass', 'other'];
-
-test('the deck surface offers only solo and set_mute, in deck language', () => {
-  const tools = buildMixerTools(STEMS, 'deck');
-  assert.deepEqual(tools.map((t) => t.function.name), ['solo', 'set_mute']);
-  for (const tool of tools) {
-    assert.match(tool.function.description, /remix deck/);
-  }
-
-  // The mixer surface is unchanged: full console, mixer language.
-  const mixer = buildMixerTools(STEMS);
-  assert.deepEqual(mixer.map((t) => t.function.name), ['solo', 'set_mute', 'seek', 'add_note']);
-  assert.doesNotMatch(mixer[0].function.description, /remix deck/);
+test('Listening Guy keeps its original Splitter tools and prompt modes', () => {
+  assert.deepEqual(buildMixerTools(['vocals', 'drums']).map(t => t.function.name), ['solo', 'set_mute', 'seek', 'add_note']);
+  const bundle = JSON.parse(buildSystemPromptFingerprintMaterial());
+  assert.equal(SYSTEM_PROMPT_VERSION, '2026-09-07.1');
+  assert.equal(bundle.variants.length, 3);
+  assert.doesNotMatch(JSON.stringify(bundle), /devil|weakest choice|ACTING ON THE DECK|defend the choice/i);
 });
 
-test('sanitizeToolCalls drops calls outside the allowed set', () => {
-  const raw = [
-    { function: { name: 'solo', arguments: '{"stem":"vocals"}' } },
-    { function: { name: 'seek', arguments: '{"seconds":30}' } },
-    { function: { name: 'add_note', arguments: '{"seconds":10,"text":"hi"}' } },
-    { function: { name: 'set_mute', arguments: '{"stem":"drums","muted":true}' } },
-  ];
+test('Remixer has no adversarial chat surface or scripted challenge shortcut', () => {
+  for (const file of ['../public/index.html', '../public/app.js']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /devil|defend your mix|challenge.me|da-panel|daSend|da-challenge/i);
+  }
+});
 
-  const deckCalls = sanitizeToolCalls(raw, STEMS, 210, ['solo', 'set_mute']);
-  assert.deepEqual(deckCalls, [
-    { name: 'solo', args: { stem: 'vocals' } },
-    { name: 'set_mute', args: { stem: 'drums', muted: true } },
-  ]);
-
-  // Without the filter the full set still validates as before.
-  assert.equal(sanitizeToolCalls(raw, STEMS, 210).length, 4);
+test('the single Crate precedes the shelf and remix deck in the HTML itself', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.equal((html.match(/id="crate"/g) || []).length, 1);
+  assert.ok(html.indexOf('id="crate"') < html.indexOf('id="shelf"'));
+  assert.ok(html.indexOf('id="crate"') < html.indexOf('id="remix-deck"'));
 });

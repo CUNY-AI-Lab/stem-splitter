@@ -642,9 +642,17 @@ export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem>
 export async function fetchArchiveAudio(
   identifier: string,
   fileName: string | undefined,
-  _env: Env
+  _env: Env,
+  options: { maximumBytes?: number; remix?: boolean } = {}
 ): Promise<ArchiveAudio & { fileName: string }> {
   const item = await fetchArchiveItem(identifier);
+  const maximumBytes = Math.min(options.maximumBytes ?? MAX_AUDIO_BYTES, MAX_AUDIO_BYTES);
+  if (options.remix) {
+    const license = new URL(item.licenseUrl);
+    if (license.port || license.search || license.hash || !/^\/(?:licenses\/(?:by|by-sa|by-nc|by-nc-sa)\/(?:2\.0|2\.5|3\.0|4\.0)|publicdomain\/(?:zero|mark)\/1\.0)\/?$/.test(license.pathname)) {
+      throw new ArchiveError('This source needs reviewed reuse terms before remixing.', 'license_not_open');
+    }
+  }
 
   const track = fileName
     ? item.tracks.find((candidate) => candidate.name === fileName)
@@ -667,8 +675,8 @@ export async function fetchArchiveAudio(
   if (track.durationSec > MAX_DURATION_SECONDS) {
     throw new ArchiveError('That track is longer than 5 minutes.', 'track_too_long');
   }
-  if (track.bytes > MAX_AUDIO_BYTES) {
-    throw new ArchiveError('That track is larger than 100 MB.', 'track_too_large');
+  if (track.bytes > maximumBytes) {
+    throw new ArchiveError(`That track is larger than ${Math.floor(maximumBytes / 1024 / 1024)} MB.`, 'track_too_large');
   }
 
   const url = `${DOWNLOAD_BASE}/${encodeURIComponent(identifier)}/${encodeURIComponent(track.name)}`;
@@ -695,10 +703,10 @@ export async function fetchArchiveAudio(
   const timedOut = () =>
     new ArchiveError('The Internet Archive download timed out.', 'archive_busy', true);
   const data = await readBoundedResponse(res, {
-    maximumBytes: MAX_AUDIO_BYTES,
+    maximumBytes,
     timeoutMs: await remainingArchiveBodyBudget(res, deadline, timedOut),
     errors: {
-      tooLarge: () => new ArchiveError('That track is larger than 100 MB.', 'track_too_large'),
+      tooLarge: () => new ArchiveError(`That track is larger than ${Math.floor(maximumBytes / 1024 / 1024)} MB.`, 'track_too_large'),
       timedOut,
       unreadable: () =>
         new ArchiveError(
@@ -710,6 +718,9 @@ export async function fetchArchiveAudio(
   });
   if (data.byteLength < MIN_AUDIO_BYTES) {
     throw new ArchiveError('That track came back empty from the Internet Archive.');
+  }
+  if (options.remix && data.byteLength !== track.bytes) {
+    throw new ArchiveError('This track changed while loading. Reload the Crate and try again.', 'archive_source_changed', true);
   }
   if (!matchesAudioSignature(track.name, new Uint8Array(data))) {
     throw new ArchiveError(

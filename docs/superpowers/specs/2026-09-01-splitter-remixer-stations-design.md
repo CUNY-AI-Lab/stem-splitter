@@ -1,7 +1,9 @@
 # Design: Workshop stations — Splitter | Remixer
 
 **Date:** 2026-09-01
-**Status:** Approved
+**Status:** Superseded. The adversarial assistant was explicitly rejected on
+2026-09-07 and must not be restored. Current Cloudflare-only direction:
+`2026-09-07-cloudflare-crate-remixer.md`. The text below is historical context.
 
 ## Goal
 
