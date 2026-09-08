@@ -62,6 +62,23 @@ test('Crate audio -> multi-source arrangement -> recorded song with credits, wit
     const text = new TextDecoder().decode(bytes);
     for (const value of ['ATTRIBUTION.txt', 'remix.json', 'one.mp3', 'two.mp3', 'Fixture ensemble', 'https://creativecommons.org/licenses/by/4.0/', 'My first song']) expect(text).toContain(value);
     expect(bytes.length).toBeGreaterThan(1500);
+    // Inspect the audio inside the actual download, not just its ZIP wrapper.
+    expect(bytes.readUInt16LE(8)).toBe(0); // The app writes stored ZIP entries.
+    const audioStart = 30 + bytes.readUInt16LE(26) + bytes.readUInt16LE(28);
+    const recorded = bytes.subarray(audioStart, audioStart + bytes.readUInt32LE(18));
+    const signal = await page.evaluate(async data => {
+      const audio = new AudioContext();
+      try {
+        const buffer = await audio.decodeAudioData(new Uint8Array(data).buffer);
+        const samples = buffer.getChannelData(0);
+        return { duration: buffer.duration, channels: buffer.numberOfChannels,
+          rms: Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length) };
+      } finally { await audio.close(); }
+    }, [...recorded]);
+    expect(signal.duration).toBeGreaterThan(1.5);
+    expect(signal.duration).toBeLessThan(2.5);
+    expect(signal.channels).toBe(2);
+    expect(signal.rms).toBeGreaterThan(0.001);
     const receipts = process.env.STEM_SCREENSHOT_DIR;
     if (receipts) { await mkdir(receipts, { recursive: true }); await page.screenshot({ path: `${receipts}/07-crate-remix-download-desktop.png`, fullPage: true }); }
     await page.getByRole('button', { name: 'CLEAR', exact: true }).click();

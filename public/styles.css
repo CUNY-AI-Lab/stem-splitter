@@ -1538,6 +1538,26 @@ footer {
 /* ─── instructor console (teacher.html) ───────────────────────────── */
 
 .teacher-main { max-width: 780px; padding-top: 2.25rem; }
+.account-main { max-width: 680px; }
+main.account-main .masthead h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.04em; }
+.account-main .masthead h1, .account-main .lab-brand { animation: none; }
+.account-main .crate-page-btn { min-height: 44px; }
+.account-main a { color: var(--hot); text-underline-offset: .2em; }
+.account-main #account-status:empty, .account-main #access-status:empty { display: none; }
+.account-overview { display: grid; gap: 1.25rem; margin-bottom: 2rem; }
+.account-overview > p { margin: 0; color: var(--ink-dim); }
+.account-links { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; }
+.account-links a { display: inline-flex; align-items: center; min-height: 44px; }
+.account-disclosure { border-top: 1px solid var(--panel-edge); padding: .25rem 0; }
+.account-disclosure > summary { cursor: pointer; padding: 1rem 0; color: var(--ink-dim); }
+.account-disclosure > summary:hover { color: var(--ink); }
+.account-help { color: var(--ink-dim); font-size: .85rem; line-height: 1.55; margin: 0 0 1rem; }
+.account-main code { display: block; overflow-wrap: anywhere; margin-bottom: 1rem; font-size: .8rem; }
+.account-main fieldset { display: grid; gap: 1rem; border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
+.account-main .teacher-field { min-width: 0; font-size: .85rem; }
+.account-main .teacher-field select, .account-main .teacher-field input { min-width: 0; width: 100%; box-sizing: border-box; }
+.account-checkbox { display: flex; align-items: center; gap: .6rem; min-height: 44px; font-size: .85rem; }
+.account-main .teacher-submit { justify-self: start; }
 .sr-only {
   position: absolute;
   width: 1px;

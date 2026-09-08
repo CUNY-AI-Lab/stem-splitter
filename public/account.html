@@ -3,33 +3,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>STEM Splitter · My account</title>
-<link rel="stylesheet" href="/styles.css?v=20260908-sso">
-<main class="teacher-main">
+<title>STEM Splitter · Account</title>
+<link rel="stylesheet" href="/styles.css?v=20260908-account">
+<main class="teacher-main account-main">
   <header class="masthead">
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
-    <h1>MY<br><span>ACCOUNT</span></h1>
+    <h1>Account</h1>
   </header>
   <p id="account-status" role="status">Loading…</p>
   <p id="account-login" hidden><a href="/auth/login?next=/account.html">CUNY Login</a></p>
-  <section id="account-details" hidden>
+  <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
-    <details><summary>Workspace ID</summary><p>Share this ID with a workspace administrator when requesting instructor access.</p><code id="account-id"></code></details>
-    <p><a href="https://tools.ailab.gc.cuny.edu/">Manage CUNY sign-in and membership</a></p>
+    <nav class="account-links" aria-label="STEM Splitter">
+      <a href="/">← Back to Splitter</a>
+      <a id="account-guidance" href="/teacher.html" hidden>Class guidance</a>
+    </nav>
     <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
   </section>
-  <section id="account-admin" class="teacher-panel" hidden>
-    <h2>Workspace access</h2>
-    <form id="access-form" class="teacher-form">
-      <label class="teacher-field">Member<select id="access-member" required></select></label>
-      <label class="teacher-field">Role<select id="access-role"><option value="student">Student</option><option value="instructor">Instructor</option></select></label>
-      <label class="teacher-field">Instructor access expires<input id="access-expiry" type="datetime-local"></label>
-      <label><input id="access-disabled" type="checkbox"> Suspend workspace access</label>
-      <button type="submit" class="yt-go teacher-submit">SAVE</button>
-      <p id="access-status" role="status"></p>
+  <details id="account-admin" class="account-disclosure" hidden>
+    <summary>Manage access</summary>
+    <p id="access-empty" class="account-help" hidden>No other accounts yet. People appear here after their first CUNY sign-in.</p>
+    <form id="access-form" class="teacher-form" hidden>
+      <label class="teacher-field">Account<select id="access-member" required aria-describedby="access-help"></select></label>
+      <p id="access-help" class="account-help">Choose the account ID shared with you. These changes apply only to STEM Splitter.</p>
+      <fieldset id="access-editor" disabled hidden>
+        <label class="teacher-field">Access level<select id="access-role"><option value="student">Student</option><option value="instructor">Instructor</option></select></label>
+        <label id="access-expiry-field" class="teacher-field" hidden>Instructor access ends<input id="access-expiry" type="datetime-local" disabled></label>
+        <label class="account-checkbox"><input id="access-enabled" type="checkbox"> Allow access to STEM Splitter</label>
+        <button type="submit" class="yt-go teacher-submit">Save changes</button>
+      </fieldset>
     </form>
-  </section>
-  <footer><p><a href="/">← back to the mixer</a></p></footer>
+    <p id="access-status" role="status"></p>
+    <button id="access-retry" type="button" class="crate-page-btn" hidden>Try again</button>
+  </details>
+  <details id="account-reference" class="account-disclosure" hidden>
+    <summary>Account ID</summary>
+    <p class="account-help">Share this with a STEM Splitter administrator if you need instructor access.</p>
+    <code id="account-id"></code>
+  </details>
+  <p id="account-back" hidden><a href="/">← Back to Splitter</a></p>
 </main>
-<script src="/account.js?v=20260908-sso"></script>
+<script src="/account.js?v=20260908-account"></script>
 </html>
