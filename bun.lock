@@ -5,6 +5,9 @@
     "": {
       "name": "stem-splitter",
       "dependencies": {
+        "@cuny-ai-lab/cail-client": "6.2.2",
+        "@cuny-ai-lab/cail-identity": "5.2.6",
+        "@cuny-ai-lab/cail-log": "0.6.4",
         "@hono/node-server": "^2.1.0",
         "aws4fetch": "^1.0.20",
         "hono": "^4.12.34",
@@ -41,6 +44,12 @@
     "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260728.1", "", {}, "sha512-rZqmesLEH40Xt67PpQSj+iJqwkYBzVr7U/UOa5twkToMsxO5pYsPw2QAaTKDdiCSiki9fWAgsWTj9OmFnbwLRQ=="],
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
+
+    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "https://npm.pkg.github.com/download/@cuny-ai-lab/cail-client/6.2.2/6efb4d2e477e255737f44899d98c606099c61ac1", { "dependencies": { "zod": "4.4.3" } }, "sha512-5Pcdu++6cHKjlBRVC/JtRPORzd6qE3LbR/0qnhbzTmLrZASUibFOQZ3Xbh7p1JQNMqF1H5DSkKXwhMGd324BWw=="],
+
+    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "https://npm.pkg.github.com/download/@cuny-ai-lab/cail-identity/5.2.6/9744f7c35813cda8e6f07804a5d99fc1250e42f6", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-eaSX7lfSzZLqceTwiqkfz0I9EwFXHch3dNlpoHy+EzbHHRKwBz45mJGBpaK6znp7BAUJiJDffTw7t10JR+pslQ=="],
+
+    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "https://npm.pkg.github.com/download/@cuny-ai-lab/cail-log/0.6.4/7d30c2cf3e0b915eef23a2348cc5d3685cb208cc", { "dependencies": { "zod": "4.4.3" } }, "sha512-HnHbutsDhZyBD/SD8YFSITycujuX1Lhc1xHaELEemk2dYKPA5IF5fFlwyfkIqsZiCpaJdWo7H2QPQnD2uHXmYQ=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 
@@ -244,6 +253,8 @@
 
     "is-node-process": ["is-node-process@1.2.0", "", {}, "sha512-Vg4o6/fqPxIjtxgUH5QLJhwZ7gW5diGCVlXpuUfELC62CuxM1iHcRe51f2W1FDy04Ai4KJkagKjx3XaqyfRKXw=="],
 
+    "jose": ["jose@6.2.3", "", {}, "sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw=="],
+
     "kleur": ["kleur@4.1.5", "", {}, "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="],
 
     "meriyah": ["meriyah@6.1.4", "", {}, "sha512-Sz8FzjzI0kN13GK/6MVEsVzMZEPvOhnmmI1lU5+/1cGOiK3QUahntrNNtdVeihrO7t9JpoH75iMNXg6R6uWflQ=="],
@@ -331,6 +342,8 @@
     "youch-core": ["youch-core@0.3.3", "", { "dependencies": { "@poppinss/exception": "^1.2.2", "error-stack-parser-es": "^1.0.5" } }, "sha512-ho7XuGjLaJ2hWHoK8yFnsUGy2Y5uDpqSTq1FkHLK4/oqKtyUU1AFbOOxY4IpC9f0fTLjwYbslUz0Po5BpD1wrA=="],
 
     "youtubei.js": ["youtubei.js@17.2.0", "", { "dependencies": { "@bufbuild/protobuf": "^2.0.0", "fflate": "^0.8.2", "meriyah": "^6.1.4" } }, "sha512-XLNsgRKO1h7t4i9tIMWSQSeWdD7Ujkk5v1m5YCaumaHMhu/xuLqtO3M0Hq7CXNup9HlJ1NGrT1Y+HLIHnL6Ujg=="],
+
+    "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@mswjs/interceptors/@open-draft/deferred-promise": ["@open-draft/deferred-promise@2.2.0", "", {}, "sha512-CecwLWx3rhxVQF6V4bAgPS5t+So2sTbPgAzafKkVizyi7tlwpcFpdFqq+wqF2OwNBmqFuu6tOyouTuxgpMfzmA=="],
 

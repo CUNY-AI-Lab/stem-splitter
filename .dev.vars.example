@@ -11,8 +11,6 @@ REPLICATE_MODEL_VERSION=paste-latest-version-hash-here
 # REPLICATE_YT_MODEL_VERSION=paste-exact-version-id-here
 WEBHOOK_SECRET=any-long-random-string
 CLASS_CODE=your-class-code
-OPENROUTER_API_KEY=sk-or-your-openrouter-key
-ASSISTANT_FALLBACK_MODELS=anthropic/claude-haiku-4.5,google/gemini-3-flash-preview
 
 # Optional instructor console provisioning. Generate only hashed records using
 # docs/teacher-provisioning.md; never put a real seed in this example file.
@@ -44,3 +42,10 @@ ASSISTANT_FALLBACK_MODELS=anthropic/claude-haiku-4.5,google/gemini-3-flash-previ
 # --var flags so they cannot be enabled accidentally:
 # LOCAL_HOSTING=true
 # PUBLIC_BASE_URL=https://your-funnel-host.example
+
+# Listening Guide fleet integration (requires both CAIL identity headers).
+# CAIL_IDENTITY_JWKS={"keys": [...]}
+# CAIL_IDENTITY_ISSUER=https://tools.ailab.gc.cuny.edu/cail-sso
+# CAIL_GATEWAY_URL=https://tools.ailab.gc.cuny.edu/v1
+# CAIL_SOURCE_VERSION=<exact-40-character-commit>
+# CAIL_READINESS_TOKEN=<private-readiness-token>

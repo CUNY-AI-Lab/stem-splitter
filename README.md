@@ -1,5 +1,7 @@
 # Stem Splitter
 
+Fleet integration source proposal: see [identity, Gateway and CI-only release boundaries](docs/fleet-integration.md). The Listening Guide now requires CAIL SSO in addition to the class code and uses CAIL Gateway. Historical OpenRouter setup below is superseded by that configuration; separation providers remain separate.
+
 A stem-separation web app for music students. Upload a song — or paste a
 YouTube link, or pull an openly licensed track from the Internet Archive —
 and get back isolated stems as MP3s (2-stem vocals / instrumental, 4-stem

@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Fleet integration changes: [docs/fleet-integration.md](docs/fleet-integration.md) owns the new SSO/Gateway configuration and CI-only release proposal. Its model transport and release rules supersede historical OpenRouter/manual-deploy instructions below. Do not deploy or activate a mount from this source-only task.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
