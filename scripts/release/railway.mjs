@@ -7,6 +7,10 @@ import { config, verifyCurrentRelease } from './verify-source.mjs';
 
 export const target = Object.freeze({ project: 'f070742b-3375-4cba-9a86-335f39273c88', environment: 'b3381640-1e2f-4765-8e15-15baec599ec2', service: 'f53a2915-087c-493a-a345-7a1fa73e6588' });
 const scope = ['--project', target.project, '--environment', target.environment, '--service', target.service];
+export function parseRailwayJson(text) {
+  try { return JSON.parse(text); }
+  catch { throw new Error('Railway returned an unreadable response. Raw output is withheld because it may contain private configuration.'); }
+}
 export function validateConfiguration(vars) {
   for (const key of ['NODE_AUTH_TOKEN', 'CAIL_IDENTITY_JWKS', 'CAIL_READINESS_TOKEN', 'WEBHOOK_SECRET', 'CLASS_CODE']) {
     if (typeof vars[key] !== 'string' || !vars[key].trim()) throw new Error(`Railway configuration is missing ${key}.`);
@@ -35,7 +39,7 @@ async function main() {
   if (!process.env.RAILWAY_TOKEN) throw new Error('A project-scoped Railway deployment token is required.');
   const sha = await verifyCurrentRelease(config);
   // Inspect in memory only. Never print Railway variable values or retain them.
-  const vars = JSON.parse(run('railway', ['variable', 'list', '--json', ...scope]));
+  const vars = parseRailwayJson(run('railway', ['variable', 'list', '--json', ...scope]));
   const readinessUrl = validateConfiguration(vars);
   const stage = mkdtempSync(join(tmpdir(), 'stem-release-'));
   try {
@@ -49,13 +53,13 @@ async function main() {
     writeFileSync(join(source, '.npmrc'), '@cuny-ai-lab:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n', { mode: 0o600 });
     await verifyCurrentRelease(config); // Reject a queued SHA superseded while preparing.
     run('railway', ['variable', 'set', `CAIL_SOURCE_VERSION=${sha}`, '--skip-deploys', ...scope]);
-    const uploaded = JSON.parse(run('railway', ['up', source, '--path-as-root', '--no-gitignore', '--detach', '--json', '--message', `CI fleet release ${sha}`, ...scope]));
+    const uploaded = parseRailwayJson(run('railway', ['up', source, '--path-as-root', '--no-gitignore', '--detach', '--json', '--message', `CI fleet release ${sha}`, ...scope]));
     const id = uploaded.deploymentId;
     if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) throw new Error('Upload outcome is uncertain; inspect Railway before retrying.');
     console.log(`Submitted Railway deployment ${id} from ${sha}.`);
     const until = Date.now() + 20 * 60 * 1000;
     for (;;) {
-      const deployments = JSON.parse(run('railway', ['deployment', 'list', '--limit', '20', '--json', ...scope]));
+      const deployments = parseRailwayJson(run('railway', ['deployment', 'list', '--limit', '20', '--json', ...scope]));
       if (deploymentState(deployments, id) === 'success') break;
       if (Date.now() > until) throw new Error(`Deployment ${id} is still pending; inspect it before retrying.`);
       await new Promise(resolve => setTimeout(resolve, 15000));
