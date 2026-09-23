@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 import { authenticatedRequest, handleAuth, LOGIN_COOKIE, SESSION_COOKIE, safeNext, type WorkerIdentity, type SsoEnv } from './sso.ts';
 
 const origin = 'https://stem-splitter.ailab-452.workers.dev';
 const preview = 'https://cail-stem-splitter-preview.ailab-452.workers.dev';
 const code = 'a0000000-0000-4000-8000-000000000001';
 const token = code + '.' + 's'.repeat(43);
+const issuer = await createTestIdentityIssuer();
 function fixture() {
   let challenge = '', state = '', used = false, revoked = false, calls = 0;
   const client: WorkerIdentity = {
@@ -19,7 +21,7 @@ function fixture() {
     async identities(t) { calls++; return t === token && used && !revoked ? { ok: true, appJwt: 'server-app-jwt', gatewayJwt: 'never-forward', workspaceJwt: null } : { ok: false, status: 401 }; },
     async revoke() { revoked = true; return {}; },
   };
-  const env: SsoEnv = { PUBLIC_BASE_URL: origin, CANONICAL_BASE_URL: origin, IDENTITY: client, REQUEST_LIMIT: { limit: async () => ({ success: true }) } };
+  const env: SsoEnv = { PUBLIC_BASE_URL: origin, CANONICAL_BASE_URL: origin, IDENTITY: client, REQUEST_LIMIT: { limit: async () => ({ success: true }) }, CAIL_IDENTITY_JWKS: issuer.jwksJson };
   const request = (path: string, init?: RequestInit) => new Request(origin + path, init);
   return { env, client, request, state: () => state, calls: () => calls };
 }
@@ -103,4 +105,25 @@ test('revoked membership, receiver errors, missing bindings and malformed grants
   const badStart = await handleAuth(f.request('/auth/login'), { ...f.env, IDENTITY: { ...f.client, begin: async () => ({ url: 'https://attacker.test/worker-login' }) } });
   assert.equal(badStart.status, 503);
   assert.equal(badStart.headers.has('set-cookie'), false);
+});
+
+test('model actions require exact same-subject app and Gateway legs before forwarding', async () => {
+  const f = fixture();
+  const appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+  let gatewayJwt = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
+  const env = { ...f.env, IDENTITY: { ...f.client, identities: async () => ({ ok: true as const, appJwt, gatewayJwt, workspaceJwt: null }) } };
+  const requestId = '01900000-0000-7000-8000-000000000001';
+  const request = f.request('/api/jobs/owned/guide', { method: 'POST', headers: { Origin: origin, Cookie: `${SESSION_COOKIE}=${token}`, 'x-cail-request-id': requestId, 'x-cail-metadata': '{"private":"untrusted"}' } });
+  const accepted = await authenticatedRequest(request, env);
+  assert.ok(accepted instanceof Request);
+  assert.equal(accepted.headers.get('x-cail-gateway-identity-jwt'), gatewayJwt);
+  assert.equal(accepted.headers.get('x-cail-request-id'), requestId);
+  assert.equal(accepted.headers.get('x-cail-metadata'), null);
+  for (const next of [await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.bob }), await issuer.mintIdentityJwt({ audience: ['cail:gateway'], subject: TEST_SUBJECTS.alice }), 'forged']) {
+    gatewayJwt = next;
+    assert.equal((await authenticatedRequest(request, env) as Response).status, 401);
+  }
+  const misconfigured = await authenticatedRequest(f.request('/api/account'), { ...env, CAIL_IDENTITY_JWKS: '{}' }) as Response;
+  assert.equal(misconfigured.status, 503);
+  assert.equal((await misconfigured.json()).error.code, 'identity_unavailable');
 });

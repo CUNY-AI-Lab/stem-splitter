@@ -7,6 +7,10 @@ export type Env = {
   CAIL_IDENTITY_JWKS?: string;
   /** Set by the Worker adapter, never by browser input or environment JSON. */
   verifyCailIdentity?: (token: string, jwks: string | undefined) => Promise<{ subject: string } | null | 'unavailable'>;
+  /** Private adapter dependencies; never accepted from a request body. */
+  assistantTransport?: typeof import('./assistant/openrouter.ts').openRouterChatStream;
+  assistantQuota?: () => Promise<unknown>;
+  ASSISTANT_ABORT_SIGNAL?: AbortSignal;
   CAIL_BROWSER_ORIGIN?: string;
   CAIL_LOGIN_URL?: string;
   ADMISSION_RESOLVER?: import('./identity.ts').AdmissionResolver;

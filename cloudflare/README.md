@@ -1,5 +1,38 @@
 # Isolated Cloudflare candidate
 
+## September 23 Gateway handoff
+
+The candidate now sends Listening Guide and chat requests through the private
+`GATEWAY` binding to `cail-model-api`, using exact `cail-client` 6.2.2,
+`cail-identity` 5.2.6 and `cail-log` 0.6.4 packages. `GATEWAY_MODEL=glm-5.2`
+is a prefix-free Gateway catalog ID. Check the current Gateway catalog before
+release; the model was active when this handoff was prepared.
+
+Doorway supplies separate app and Gateway JWTs. Model actions verify both exact
+audiences and matching subjects before the shared app checks current Admission
+and recording ownership. Only the Gateway leg leaves on the private binding.
+Invalid verifier configuration returns 503 before cookie/token evaluation.
+
+Each action makes one model attempt. It consumes trailing usage or failure
+events through EOF, bounds response bodies and waiting, and propagates browser
+cancellation. Tools-only replies get local narration. Safe refusal codes,
+retry advice and support IDs remain available; provider text is never shown.
+The Account page displays aggregate model quota when available. Gateway owns
+model-spend enforcement; local Replicate split reservations remain separate.
+Missing Gateway configuration fails closed, even if an old OpenRouter key
+remains on the Worker. The adapter does not use that key or provider fallbacks.
+
+This applies Steve's shared transport contract to the later Cloudflare product.
+It preserves the Crate-first design, disabled Remixer default, owned recordings,
+folders, expiring instructor access, and existing independent D1/R2 storage.
+It does not import Railway's class-shared data or revive the Remixer assistant.
+
+`cloudflare-candidate.yml` installs exact packages with the workflow's temporary
+read-only package credential, tests the actual Worker/Hono/client boundary and
+Chrome UI, and dry-builds only this candidate. It does not deploy. Root analyzer
+dependency and existing native-image workflow inputs remain unchanged.
+See `../docs/superpowers/plans/2026-09-23-cloudflare-gateway.md` for acceptance.
+
 ## September 8 integration
 
 Current work is Cloudflare-only. `codex/cloudflare-migration` contains the
@@ -33,8 +66,8 @@ Shared Doorway, Admission and Railway are not deployed by this change.
 Local sign-in tests use a synthetic RPC receiver; browser tests use synthetic
 identities/Admission and provider fixtures. They do not establish a real CUNY
 callback. Deployment and actual sign-in/reload/logout must be verified separately.
-This integration retains the approved Replicate and Listening Guide transports;
-the separate Gateway proposal is not silently merged with authentication work.
+That sign-in release retained the approved Replicate and Listening Guide
+transports. The September 23 source change above replaces only model transport.
 
 Railway is still production. This directory targets only
 `cail-stem-splitter-preview` in CUNY AI Lab account
@@ -62,11 +95,10 @@ The former `stem-splitter` deployment is retained for rollback; its legacy
 database and bucket are not deleted or imported. Do not run root `bun run deploy`,
 which would replace this front door with the obsolete application again.
 
-Listening Guy uses the candidate's `OPENROUTER_API_KEY` and `ASSISTANT_MODEL`.
-Absent `ASSISTANT_FALLBACK_MODELS`, the shared client enables its reviewed
-fallback defaults; only an explicitly empty value disables them. `/healthz`
-reports configuration presence without revealing keys or making paid calls.
-Provider-stream checks are separate from authenticated end-to-end acceptance.
+`/healthz` reports the candidate's private Gateway/model configuration without
+revealing keys or making paid calls. Configuration presence is distinct from
+authenticated end-to-end acceptance. The following September 6 receipt records
+the older direct-provider deployment; it does not attest to this new source.
 
 Verified transfer (2026-09-06, implementation commit `f4d9810`): candidate
 version `b4e2cdc8-82db-4174-a8c1-6e791985ef15`, established-address version
@@ -88,7 +120,8 @@ The previous established-address version is
 
 ## Development and verification
 
-From the repository root, run `bun install --frozen-lockfile`. Then:
+Use Bun 1.4.0 for this adapter's version-2 lockfile. From the repository root,
+run `bun install --frozen-lockfile`. Then:
 
 ```sh
 cd cloudflare
@@ -103,7 +136,9 @@ Run root `test:worker`, `test:server`, `test:analysis-service`, `test:e2e`,
 `test:e2e:auto`, and `test:e2e:isolation-shadow` as separate regression gates.
 The adapter pins Wrangler 4.129.0 to test the September compatibility date;
 root package/lock files are deliberately unchanged because they are inputs
-to the accepted analyzer image evidence. See `vendor/README.md` for SDK provenance.
+to the accepted analyzer image evidence. Adapter CAIL packages now come from
+GitHub Packages; use a temporary scoped `.npmrc` with a read-only package token,
+then remove it. `vendor/README.md` records the historical 5.2.5 SDK artifact.
 
 `test-worker.ts` and `test-wrangler.jsonc` are local fixture entrypoints only.
 The deployment entrypoint is `worker.ts`; never deploy the test configuration.
@@ -126,9 +161,10 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
   roles in `/account.html`; grants need an expiry and changes are revision-checked.
 - Admission owns enrollment and CUNY sign-in. Do not seed legacy passwords or
   infer roles from JWT display/entitlement claims. Real CUNY handoff remains a release gate.
-- Application reservations currently cap split attempts at 5/person/day and
-  20/workspace/day, and guide/chat attempts at 100/person/day and 500/workspace/day
-  (UTC). Failed/uncertain requests consume a reservation. YouTube may use two
+- Application reservations cap split attempts at 5/person/day and
+  20/workspace/day (UTC). Gateway owns model quotas; this adapter does not reserve
+  guide/chat attempts locally. Failed/uncertain split requests consume a
+  reservation. YouTube may use two
   provider predictions per split; these are job caps, not an exact dollar budget.
 - The edge IP rate limiter is supplemental and approximate, not spend authority.
 
@@ -136,7 +172,8 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
 
 Check `wrangler whoami`, the exact account and config, then dry-run. Put secrets
 through Wrangler stdin, never arguments, Git, logs or screenshots. Reuse only
-the existing approved Replicate key/pins and Listening Guide settings. Generate
+the existing approved Replicate key/pins. Keep the verified Gateway service
+binding and canonical model configuration. Generate
 a distinct candidate webhook secret. Copy no teacher seed, CUNY signing key,
 session cookie, class code, existing user rows or audio.
 

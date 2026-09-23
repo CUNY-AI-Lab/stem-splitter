@@ -1,12 +1,12 @@
 import app from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
-import { assistantModelOrder } from '../src/assistant/openrouter.ts';
+import { gatewayForRequest, canonicalModel } from './gateway.ts';
 import { authenticatedRequest, handleAuth, type WorkerIdentity } from './sso.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> &
-  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity };
+  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -16,7 +16,7 @@ const HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 };
 
-async function serveApi(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
   const path = new URL(request.url).pathname;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !path.startsWith('/api/webhooks/')) {
     if (!env.REQUEST_LIMIT) return Response.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
@@ -24,7 +24,9 @@ async function serveApi(request: Request, env: Env, ctx: ExecutionContext): Prom
     const limited = await env.REQUEST_LIMIT.limit({ key: `stem-preview:${key}` });
     if (!limited.success) return Response.json({ error: 'Please wait a moment and try again.' }, { status: 429, headers: { 'Retry-After': '60' } });
   }
-  return app.fetch(request, { ...env, verifyCailIdentity }, ctx);
+  const gateway = gatewayForRequest(env.GATEWAY, request.headers.get('x-cail-gateway-identity-jwt'), request, env.RELEASE || 'candidate');
+  return app.fetch(request, { ...env, ASSISTANT_MODEL: env.GATEWAY_MODEL,
+    assistantTransport: gateway.stream, assistantQuota: gateway.quota, verifyCailIdentity }, ctx);
 }
 
 export default {
@@ -42,8 +44,8 @@ export default {
         const db = await env.DB.prepare('SELECT 1 AS ready').first();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
           remixer: env.REMIXER_ENABLED === 'true', production: false,
-          listeningGuide: { configured: Boolean(env.OPENROUTER_API_KEY?.trim() && env.ASSISTANT_MODEL?.trim()),
-            fallbackConfigured: assistantModelOrder(env).length > 1 } });
+          listeningGuide: { configured: Boolean(env.GATEWAY && canonicalModel(env.GATEWAY_MODEL)),
+            transport: 'cail-gateway', fallbackConfigured: false } });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
       } else if (url.pathname.startsWith('/auth/')) {
