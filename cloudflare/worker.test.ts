@@ -12,6 +12,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
   const issuer = await createTestIdentityIssuer();
   const subjects = [TEST_SUBJECTS.alice, TEST_SUBJECTS.bob, TEST_SUBJECTS.carol];
   const tokens = await Promise.all(subjects.map((subject) => issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject })));
+  const gatewayTokens = await Promise.all(subjects.map((subject) => issuer.mintIdentityJwt({ audience: 'cail:gateway', subject })));
   const wav = await readFile(new URL('../tests/fixtures/audio/source.wav', import.meta.url));
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
   let providerStarts = 0;
@@ -42,7 +43,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(setup.status, 200);
     const call = async (path: string, who = 0, init: RequestInit = {}) => {
       const response = await server.fetch(path, {
-        ...init, headers: { 'x-fixture-identity': tokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...init.headers },
+        ...init, headers: { 'x-fixture-identity': tokens[who], 'x-fixture-gateway-identity': gatewayTokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...init.headers },
       });
       const body = await response.arrayBuffer();
       assert.notEqual(response.status, 500, new TextDecoder().decode(body));
@@ -97,6 +98,21 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(stem.status, 200);
     assert.deepEqual(Buffer.from(await stem.arrayBuffer()), mp3);
     assert.match(stem.headers.get('cache-control')!, /no-store/);
+    const stats = async () => (await (await server.fetch('/__fixture/gateway-stats', { headers: { 'x-fixture': 'local-only' } })).json()).gatewayCalls;
+    const guide = await call(`/api/jobs/${created.id}/guide`, 0, { method: 'POST', body: '{}' });
+    assert.match(await guide.text(), /"type":"done"/); assert.equal(await stats(), 1);
+    const cached = await call(`/api/jobs/${created.id}/guide`, 0, { method: 'POST', body: '{}' });
+    assert.match(await cached.text(), /"cached":true/); assert.equal(await stats(), 1);
+    for (const mode of ['quota', 'trailing-error']) {
+      const response = await call(`/api/jobs/${created.id}/chat`, 0, { method: 'POST', headers: { 'x-fixture-gateway-mode': mode }, body: JSON.stringify({ messages: [{ role: 'user', content: 'Synthetic listening question' }] }) });
+      const text = await response.text();
+      assert.match(text, /"type":"error"/); assert.doesNotMatch(text, /"type":"done"/);
+      assert.match(text, /quota_exceeded/); assert.match(text, /01900000-0000-7000-8000-000000000001/); assert.doesNotMatch(text, /private fixture/);
+    }
+    assert.equal(await stats(), 3);
+    const quota = await (await call('/api/model-quota')).json();
+    assert.equal(quota.quota.remaining_percent, 90);
+    assert.equal(await stats(), 3);
     const attempts = await Promise.all(Array.from({ length: 20 }, () => call('/api/jobs', 0, { method: 'POST', body: '{}' })));
     assert.equal(attempts.filter((response) => response.status === 400).length, 4);
     assert.equal(attempts.filter((response) => response.status === 429).length, 16);

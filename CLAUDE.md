@@ -83,6 +83,12 @@ R2 and CAIL Admission. Its dependency package does not modify the frozen analyze
 
 ## Configuration
 
+- The September 23 Cloudflare handoff uses private `GATEWAY` and `GATEWAY_MODEL`,
+  with same-subject app/Gateway identities and one model attempt. It does not use
+  `OPENROUTER_API_KEY`, `ASSISTANT_MODEL`, provider fallbacks or local model-spend
+  reservations. Replicate split limits remain in place. The shared legacy Node
+  host retains its existing transport until its separate integration is released.
+
 - `cloudflare/wrangler.jsonc` is the candidate source of truth. The user also authorized `cloudflare/wrangler.alias.jsonc` to serve that same runtime at `stem-splitter.ailab-452.workers.dev`; deploy the candidate before its service-binding front door. Railway and shared Doorway remain unchanged. Verify account membership with `wrangler whoami`; membership in CUNY AI Lab `452c33847cf5cb1e46f391fca32fd1b5`, not a particular login email, is the requirement. Do not log out or switch accounts unnecessarily. Never deploy the root legacy `wrangler.jsonc`, which would regress the established address.
 - Secrets (set via `wrangler secret put`): `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, `WEBHOOK_SECRET`, `CLASS_CODE`, `OPENROUTER_API_KEY`, `TEACHER_SEED`. Local equivalents go in `.dev.vars` (see `.dev.vars.example`); generate and rotate the teacher seed only through `docs/teacher-provisioning.md`.
 - `REPLICATE_MODEL_VERSION` is a pinned version hash of `ryan5453/demucs`. **Never bump it blind to `latest_version`.** Upstream (`Ryan5453/demucs-next`) has already changed shape at source: its HEAD serves only `htdemucs` (no `htdemucs_ft`, no `htdemucs_6s`) and renamed `output_format` → `format`. That build is not published yet, so the current pin is fine — but the moment it is, a blind bump silently breaks the 4- **and** 6-track splits. To bump: get the candidate hash (`curl -s https://api.replicate.com/v1/models/ryan5453/demucs -H "Authorization: Bearer $TOKEN" | jq -r .latest_version.id`), then **vet it before deploying** with `REPLICATE_MODEL_VERSION=<candidate> bun run check:replicate`, which verifies the candidate still accepts every model id and input key the catalogue sends. Only then `wrangler secret put` and deploy.

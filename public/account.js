@@ -99,6 +99,10 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-reference').hidden = false;
     el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
     el('account-admin').hidden = account.role !== 'admin';
+    try {
+      const { quota } = await request('/api/model-quota');
+      if (quota && typeof quota.remaining_percent === 'number') el('account-quota').textContent = `Estimated model usage remaining: ${quota.remaining_percent}%. Audio playback is always available.`;
+    } catch { /* Informational only. Gateway authorizes each model request. */ }
   } catch (error) {
     el('account-status').textContent = error.message;
     el('account-login').hidden = false;

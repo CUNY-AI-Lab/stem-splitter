@@ -12,12 +12,14 @@
   "d1_databases": [{ "binding": "DB", "database_name": "cail-stem-splitter-preview", "database_id": "ae01c5db-c19e-48c8-91bd-132876276f22" }],
   "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "cail-stem-splitter-preview-audio" }],
   "services": [
+    { "binding": "GATEWAY", "service": "cail-model-api" },
     { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter", "workspace": false } },
     { "binding": "PREVIEW_IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "cail-stem-splitter-preview", "workspace": false } }
   ],
   "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } }],
   "vars": {
+    "GATEWAY_MODEL": "glm-5.2",
     "AUTH_MODE": "cail",
     "CAIL_BROWSER_ORIGIN": "https://tools.ailab.gc.cuny.edu",
     "PUBLIC_BASE_URL": "https://cail-stem-splitter-preview.ailab-452.workers.dev",
