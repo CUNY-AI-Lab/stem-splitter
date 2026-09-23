@@ -120,7 +120,8 @@ The previous established-address version is
 
 ## Development and verification
 
-From the repository root, run `bun install --frozen-lockfile`. Then:
+Use Bun 1.4.0 for this adapter's version-2 lockfile. From the repository root,
+run `bun install --frozen-lockfile`. Then:
 
 ```sh
 cd cloudflare

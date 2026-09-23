@@ -2,6 +2,7 @@
   "name": "stem-splitter-cloudflare",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.4.0",
   "scripts": {
     "typecheck": "../node_modules/.bin/tsc -p tsconfig.json --noEmit",
     "test": "node --import ../node_modules/tsx/dist/loader.mjs --test *.test.ts"
