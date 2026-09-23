@@ -1,5 +1,5 @@
 # Build from the repository root:
-#   docker build -f audio-analysis/Dockerfile .
+#   docker build --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN -f audio-analysis/Dockerfile .
 
 # Multi-architecture OCI index digests were resolved for these exact tags on
 # 2026-08-09. The FFmpeg tarball checksum below was captured only after its
@@ -65,7 +65,11 @@ FROM oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97086da773f
 
 WORKDIR /app
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN --mount=type=secret,id=github_packages_token,required=true \
+    --mount=type=tmpfs,target=/root/.bun/install/cache \
+    printf '%s\n' '@cuny-ai-lab:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > .npmrc \
+    && NODE_AUTH_TOKEN="$(cat /run/secrets/github_packages_token)" bun install --frozen-lockfile --production \
+    && rm .npmrc
 COPY audio-analysis/app.ts audio-analysis/classifier.ts audio-analysis/config.ts ./audio-analysis/
 COPY audio-analysis/decoder.ts audio-analysis/discovery.ts audio-analysis/process.ts audio-analysis/request.ts ./audio-analysis/
 COPY audio-analysis/server.ts audio-analysis/source.ts ./audio-analysis/

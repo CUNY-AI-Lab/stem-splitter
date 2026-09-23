@@ -1,3 +1,9 @@
+// Resolve app-owned requests beside this script for root and mounted deployments.
+const appBasePath = new URL('.', document.currentScript.src).pathname.replace(/\/$/, '');
+function appFetch(path, options) {
+  return fetch(`${appBasePath}${path}`, options);
+}
+
 // Stem Splitter frontend: presigned upload to R2 → create job → poll status →
 // synchronized stem mixer (all stems play together; per-stem mute).
 
@@ -109,7 +115,7 @@ async function ensureClassCode() {
       localStorage.setItem('classCode', code);
     }
     try {
-      const res = await fetch('/api/auth-check', { headers: { 'x-class-code': code } });
+      const res = await appFetch('/api/auth-check', { headers: { 'x-class-code': code } });
       if (res.status !== 401) return;
     } catch {
       return; // network hiccup — don't lock anyone out; the first write re-checks anyway
@@ -120,7 +126,7 @@ async function ensureClassCode() {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
+  const res = await appFetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -142,19 +148,24 @@ async function api(path, options = {}) {
 // each `data:` JSON event. Setup failures are plain JSON with a real status;
 // mid-stream failures arrive as {type:'error'} events, which throw here.
 async function streamApi(path, body, onEvent) {
-  const res = await fetch(path, {
+  const res = await appFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode() },
     body: JSON.stringify(body),
   });
-  if (res.status === 401) {
-    localStorage.removeItem('classCode');
-    void ensureClassCode();
-    throw new Error('Invalid class code — enter it and retry.');
-  }
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed (${res.status})`);
+    // The class code and CAIL session are separate credentials. Only the
+    // explicit class-code rejection should discard the remembered class code.
+    if (res.status === 401 && err.code === 'invalid_class_code') {
+      localStorage.removeItem('classCode');
+      void ensureClassCode();
+      throw new Error('Invalid class code — enter it and retry.');
+    }
+    if (res.status === 401 && err.error?.code === 'authentication_required') {
+      throw new Error('Sign in through CAIL to use the Listening Guide.');
+    }
+    throw new Error(typeof err.error === 'string' ? err.error : `Request failed (${res.status})`);
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -175,7 +186,11 @@ async function streamApi(path, body, onEvent) {
         } catch {
           continue;
         }
-        if (event.type === 'error') throw new Error(event.message || 'The Listening Guide dropped out — try again.');
+        if (event.type === 'error') {
+          const supportId = typeof event.requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(event.requestId)
+            ? ` Support ID: ${event.requestId}.` : '';
+          throw new Error((event.message || 'The Listening Guide could not complete this request.') + supportId);
+        }
         onEvent(event);
         // `done` is the application protocol's terminal event. Some proxies
         // keep an otherwise complete SSE response open, so waiting for the
@@ -476,7 +491,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
 
 async function loadSeparationOptions() {
   try {
-    const res = await fetch('/api/separation-options');
+    const res = await appFetch('/api/separation-options');
     if (!res.ok) throw new Error('Split choices request failed');
     const options = await res.json();
     if (
@@ -1095,7 +1110,7 @@ async function diagnoseUploadFailure(file) {
     return `Upload failed — ${UNREADABLE_FILE_MESSAGE}`;
   }
   try {
-    const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
+    const res = await appFetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
     if (res.status === 401) {
       localStorage.removeItem('classCode');
       void ensureClassCode();
@@ -2006,7 +2021,7 @@ class Mixer {
   // students have added since the page loaded. Read-only, so no class code.
   async refresh() {
     try {
-      const res = await fetch(`/api/jobs/${this.job.id}`);
+      const res = await appFetch(`/api/jobs/${this.job.id}`);
       if (!res.ok) return;
       const state = await res.json();
       jobStates.set(this.job.id, state);
@@ -2385,7 +2400,7 @@ const foldersEmpty = document.getElementById('folders-empty');
 
 async function detectInstructor() {
   try {
-    const res = await fetch('/api/teacher/me');
+    const res = await appFetch('/api/teacher/me');
     if (!res.ok) return;
     const { teacher } = await res.json();
     if (!teacher) return; // a student — the folder UI stays hidden
@@ -2407,7 +2422,7 @@ window.addEventListener('focus', () => {
 
 async function refreshFolders() {
   try {
-    const res = await fetch('/api/teacher/folders');
+    const res = await appFetch('/api/teacher/folders');
     if (!res.ok) return;
     folders = (await res.json()).folders || [];
     renderFolders();
@@ -2450,7 +2465,7 @@ function renderFolders() {
     delBtn.addEventListener('click', () =>
       armThenRun(delBtn, 'SURE?', async () => {
         try {
-          await fetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
+          await appFetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
         } catch {
           // The refresh below shows whichever state the server really holds.
         }
@@ -2462,7 +2477,7 @@ function renderFolders() {
 }
 
 async function fetchFolderDetail(folderId) {
-  const res = await fetch(`/api/teacher/folders/${folderId}`);
+  const res = await appFetch(`/api/teacher/folders/${folderId}`);
   if (!res.ok) throw new Error('Could not load that folder.');
   return res.json();
 }
@@ -2509,7 +2524,7 @@ async function loadFolderItems(folder, container) {
     removeBtn.addEventListener('click', () =>
       armThenRun(removeBtn, 'SURE?', async () => {
         try {
-          await fetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
+          await appFetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
           li.remove();
         } catch {
           // Row stays; the next open re-reads the folder from the server.
@@ -2596,7 +2611,7 @@ function toggleFolderMenu(mixer) {
   const saveTo = async (folderId, row) => {
     row.disabled = true;
     try {
-      const res = await fetch(`/api/teacher/folders/${folderId}/items`, {
+      const res = await appFetch(`/api/teacher/folders/${folderId}/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: mixer.job.id }),
@@ -2626,7 +2641,7 @@ function toggleFolderMenu(mixer) {
     submit.disabled = true;
     let folder;
     try {
-      const res = await fetch('/api/teacher/folders', {
+      const res = await appFetch('/api/teacher/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -2778,7 +2793,7 @@ function runElapsedClock() {
 // which owns the user-facing message for its own context.
 async function adoptJobById(id) {
   if (getJobs().some((existing) => existing.id === id)) return 'present';
-  const res = await fetch(`/api/jobs/${id}`);
+  const res = await appFetch(`/api/jobs/${id}`);
   if (!res.ok) return 'missing';
   const state = await res.json();
   jobStates.set(id, state);
@@ -2835,7 +2850,7 @@ async function pollActiveJobs() {
     if (cached && (cached.status === 'done' || cached.status === 'failed')) continue;
 
     try {
-      const res = await fetch(`/api/jobs/${job.id}`);
+      const res = await appFetch(`/api/jobs/${job.id}`);
       if (res.status === 404) {
         // Job expired (30-day cleanup) or unknown — drop it.
         saveJobs(getJobs().filter((j) => j.id !== job.id));

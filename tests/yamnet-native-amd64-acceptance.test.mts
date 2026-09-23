@@ -40,3 +40,9 @@ test('the separate instrument review cannot be accepted with zero completed sour
   (value.humanReview as Record<string, unknown>).instrumentReviewAccepted = true;
   assert.throws(() => validateYamnetNativeAmd64Acceptance(value), /human-review boundaries/);
 });
+
+test('failed source gate cannot satisfy Yamnet acceptance', () => {
+  const value = fixture();
+  (value.source as Record<string, unknown>).sourceGateConclusion = 'failure';
+  assert.throws(() => validateYamnetNativeAmd64Acceptance(value), /source run identity/);
+});

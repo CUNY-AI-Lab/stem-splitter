@@ -7,8 +7,8 @@ export const EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_PATH =
 export const EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_SCHEMA =
   'stem-splitter.efficientat-native-amd64-acceptance.v1' as const;
 
-const SOURCE_COMMIT = '4e6c6bc61d1c3f8195a8c0f277bf0df9331a6e7d';
-const WORKFLOW_SHA256 = '56bfc08905faf1a0e27fa2ce1c6434129fded2a410a4328c88c9dee17f1f3d03';
+const SOURCE_COMMIT = 'a64d5dfb98e9f6b1031ac95f631498b7b139d0d6';
+const WORKFLOW_SHA256 = '60ae9f5310999cc6aa020d5dcc0ec930d558ea1324733fbcb69948c6ee259446';
 const CORE_REVIEW_SHA256 = 'f96a81c9186ac6d3f27b99bac2cbf2bc3d73a12359b49d24c9398f46b9405ca7';
 const SHA256 = /^[a-f0-9]{64}$/;
 const IMAGE_SHA256 = /^sha256:[a-f0-9]{64}$/;
@@ -17,16 +17,16 @@ const EXPECTED_FILES = new Map([
     'efficientat-native-amd64-corpus.json',
     {
       schema: 'stem-splitter.efficientat-comparator-evaluation.v2',
-      bytes: 137_909,
-      sha256: '2ed33dddddff80804f0dd0eb06d84a921181ff571dad2c1ae587463518c1454c',
+      bytes: 137_894,
+      sha256: 'a0fd91ddeda91f4ccaa14439604e36cd654f3fcaa0c53e7540df27507603e807',
     },
   ],
   [
     'efficientat-native-amd64-controls.json',
     {
       schema: 'stem-splitter.efficientat-control-evaluation.v1',
-      bytes: 54_300,
-      sha256: '97094a86dd42b65dc6e80cbfa89c7bfeb4e9c36ae1bdf0993bba1a4a55c251dc',
+      bytes: 54_308,
+      sha256: '8047e39739a6594cc09df9f5d11b0e05ba377f590dad03fe7b24960566c760f0',
     },
   ],
   [
@@ -34,7 +34,7 @@ const EXPECTED_FILES = new Map([
     {
       schema: 'stem-splitter.instrument-classifier-comparison.v1',
       bytes: 3_675,
-      sha256: '0157b888f53acd644e79a5cc6af1c549bc6eb3f7c857a1cdd1c636516a8ea418',
+      sha256: '396e9a9abe19171af040d753a119ad9471ec4a84ce9fdafb87575272fb76bcda',
     },
   ],
 ]);
@@ -104,34 +104,35 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown): JsonRe
   );
   if (
     root.$schema !== EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_SCHEMA ||
-    root.status !== 'passed-comparison-only'
+    (root.status !== 'passed-comparison-only')
   ) {
     throw new Error('EfficientAT native acceptance identity drifted');
   }
   const capturedAt = canonicalIso(root.capturedAt, 'capturedAt');
 
   const source = record(root.source, 'source');
+  if (source.sourceGateCommit !== '9e4b17c5fee49276569a55abdb0b8dd5d84d35d5') throw new Error('source gate commit drifted');
   exactKeys(
     source,
     [
       'commit', 'branch', 'workflow', 'workflowPath', 'workflowSha256', 'runId', 'runUrl',
-      'jobId', 'job', 'conclusion', 'sourceGateRunId', 'sourceGateConclusion',
+      'jobId', 'job', 'conclusion', 'sourceGateRunId', 'sourceGateConclusion', 'sourceGateCommit',
     ],
     'source'
   );
   if (
     source.commit !== SOURCE_COMMIT ||
-    source.branch !== 'main' ||
+    source.branch !== 'codex/stem-splitter-fleet-integration-20260908' ||
     source.workflow !== 'EfficientAT comparator image' ||
     source.workflowPath !== '.github/workflows/efficientat-comparator-image.yml' ||
     source.workflowSha256 !== WORKFLOW_SHA256 ||
-    source.runId !== '33453966641' ||
+    source.runId !== '34182311130' ||
     source.runUrl !==
-      'https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/33453966641' ||
-    source.jobId !== '99689833333' ||
+      'https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/34182311130' ||
+    source.jobId !== '101923681986' ||
     source.job !== 'Pinned EfficientAT comparator (native amd64)' ||
     source.conclusion !== 'success' ||
-    source.sourceGateRunId !== '33453966663' ||
+    source.sourceGateRunId !== '34182876507' ||
     source.sourceGateConclusion !== 'success'
   ) {
     throw new Error('source run identity is not accepted');
@@ -144,9 +145,9 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown): JsonRe
     'artifact'
   );
   if (
-    artifact.id !== '9780824293' ||
+    artifact.id !== '10039361429' ||
     artifact.name !== `efficientat-native-amd64-${SOURCE_COMMIT}` ||
-    integer(artifact.compressedBytes, 'artifact compressed bytes') !== 26_933 ||
+    integer(artifact.compressedBytes, 'artifact compressed bytes') !== 26_924 ||
     artifact.containsAudio !== false
   ) {
     throw new Error('artifact identity or safety boundary drifted');
@@ -190,7 +191,7 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown): JsonRe
   );
   if (
     execution.imageId !==
-      'sha256:f392155f2553ea8da35c24b7c096eda1c0a00c428c6d124d9bee55438c2748f9' ||
+      'sha256:844c788272a0e283f9bacc2d98cc6fdd1f5e19225eaf7e920079c6f9b5f716cc' ||
     !IMAGE_SHA256.test(execution.imageId as string) ||
     execution.imagePlatform !== 'linux/amd64' ||
     execution.hostPlatform !== 'linux/amd64' ||
@@ -252,9 +253,9 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown): JsonRe
     top5ExpectedGroups: 28,
     top10ExpectedGroups: 30,
     meanReciprocalRankBasisPoints: 3_643,
-    totalLoadMs: 1_214,
-    totalInferenceMs: 2_144,
-    totalComparatorMs: 4_751,
+    totalLoadMs: 1_128,
+    totalInferenceMs: 2_506,
+    totalComparatorMs: 5_031,
   }, 'corpus');
   exactKeys(
     corpus,
@@ -276,9 +277,9 @@ export function validateEfficientatNativeAmd64Acceptance(value: unknown): JsonRe
     top10SpecificPositives: 6,
     meanReciprocalRankBasisPoints: 8_056,
     candidateNegativeAnnotations: 286,
-    totalLoadMs: 881,
-    totalInferenceMs: 1_545,
-    totalComparatorMs: 3_431,
+    totalLoadMs: 826,
+    totalInferenceMs: 1_859,
+    totalComparatorMs: 3_690,
   }, 'controls');
   exactKeys(
     controls,

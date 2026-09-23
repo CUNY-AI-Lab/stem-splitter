@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   source-gate:
@@ -27,6 +28,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.23.1"
+          registry-url: https://npm.pkg.github.com
+          scope: "@cuny-ai-lab"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
@@ -37,7 +40,17 @@ jobs:
         with:
           bun-version: 1.3.14
       - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f .npmrc' EXIT
+          cat > .npmrc <<'EOF'
+          @cuny-ai-lab:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          EOF
+          bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
       - name: Install Python dependencies
         run: uv sync --project local-separator --locked
       - name: Install FFmpeg test dependency
@@ -61,6 +74,8 @@ jobs:
         run: bun run test:e2e
       - name: Run workshop browser tests against the Node host
         run: bun run test:workshop
+      - name: Verify institutional identity behavior at root and mounted paths
+        run: bun run test:fleet:mount
       - name: Run server-authoritative Auto E2E tests
         run: bun run test:e2e:auto
       - name: Run teacher-isolation shadow E2E tests
@@ -81,6 +96,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.23.1"
+          registry-url: https://npm.pkg.github.com
+          scope: "@cuny-ai-lab"
       - name: Verify the native runner contract
         shell: bash
         run: |
@@ -92,8 +109,10 @@ jobs:
       - name: Build current audio-analysis source
         env:
           DOCKER_BUILDKIT: "1"
+          GITHUB_PACKAGES_TOKEN: ${{ github.token }}
         run: >-
           docker build --pull --platform linux/amd64
+          --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN
           --file audio-analysis/Dockerfile
           --tag stem-splitter-audio-analysis:ci .
       - name: Exercise the constrained analysis image

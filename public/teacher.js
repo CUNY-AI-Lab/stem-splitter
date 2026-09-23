@@ -1,3 +1,5 @@
+const appBasePath = new URL('.', document.currentScript.src).pathname.replace(/\/$/, '');
+
 // Instructor console: authenticate, inspect the code-owned prompt, and edit
 // only the versioned class amendment. The session lives in an HttpOnly cookie;
 // no credential or session token is stored in browser storage.
@@ -42,7 +44,7 @@ let historyNextBeforeId = null;
 let historyLoading = false;
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(`${appBasePath}${path}`, {
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,

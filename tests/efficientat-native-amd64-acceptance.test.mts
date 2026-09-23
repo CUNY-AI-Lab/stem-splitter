@@ -42,3 +42,9 @@ test('instrument review cannot be inferred from the accepted core listening revi
   (value.humanReview as Record<string, unknown>).instrumentReviewAccepted = true;
   assert.throws(() => validateEfficientatNativeAmd64Acceptance(value), /human-review boundaries/);
 });
+
+test('failed source gate cannot satisfy Efficientat acceptance', () => {
+  const value = fixture();
+  (value.source as Record<string, unknown>).sourceGateConclusion = 'failure';
+  assert.throws(() => validateEfficientatNativeAmd64Acceptance(value), /source run identity/);
+});

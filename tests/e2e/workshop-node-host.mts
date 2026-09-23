@@ -1,5 +1,6 @@
 // Real Node host + SQLite/filesystem, seeded with existing classroom work.
-// Only OpenRouter is substituted; no model call or separation is performed.
+// Gateway responses and institutional identity are fixtures; no live model
+// call or separation is performed. The application verifies signed JWTs.
 import { readFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -31,9 +32,17 @@ for (const id of ['workshop-source', 'workshop-second']) {
 
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
-  if (String(input) !== 'https://openrouter.ai/api/v1/chat/completions') return nativeFetch(input, init);
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  if (url.origin !== 'https://tools.ailab.gc.cuny.edu') return nativeFetch(input, init);
+  if (url.pathname !== '/v1/chat/completions' || url.search) {
+    throw new Error('Unexpected Gateway fixture route');
+  }
   const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
   await appendFile(join(dataDir, 'provider-requests.jsonl'), `${JSON.stringify(body)}\n`);
+  if (body.messages.at(-1)?.content === 'Quota fixture') return Response.json({ error: {
+    code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'PRIVATE PROVIDER DETAIL',
+    cail: { request_id: '018f1f50-7c21-7abc-9def-0123456789ab' },
+  } }, { status: 429, headers: { 'x-should-retry': 'false' } });
   if (body.messages.at(-1)?.content.includes('Wait while')) await setTimeout(1500);
   const events = [
     { choices: [{ delta: { content: 'Try the vocals alone.' }, finish_reason: null }] },

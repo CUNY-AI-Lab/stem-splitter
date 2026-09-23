@@ -1,16 +1,16 @@
 {
   "$schema": "stem-splitter.audio-analysis-native-amd64.v1",
   "status": "passed",
-  "commit": "5bf31da8a77bd1d70315190086c0ebbece28fcdd",
-  "capturedAt": "2026-09-07T22:29:20.759Z",
+  "commit": "6756ff251f60ed8a435c7db1f3e745fef02474cc",
+  "capturedAt": "2026-09-08T03:02:54.828Z",
   "github": {
     "repository": "CUNY-AI-Lab/stem-splitter",
     "workflow": "CI",
     "job": "analysis-image",
     "eventName": "pull_request",
-    "runId": "34166759086",
+    "runId": "34182060935",
     "runAttempt": 1,
-    "sourceCommit": "5bf31da8a77bd1d70315190086c0ebbece28fcdd"
+    "sourceCommit": "6756ff251f60ed8a435c7db1f3e745fef02474cc"
   },
   "runner": {
     "os": "Linux",
@@ -18,7 +18,7 @@
     "dockerPlatform": "linux/x86_64"
   },
   "image": {
-    "id": "sha256:f4afdd3a63e954d4a8d013a734fdacf8059767941f31df395d720871c56e4872",
+    "id": "sha256:4ef3a787f6d41c8368093d755bc08b27abccd8658f4ea63b151728ffc6e82eb2",
     "platform": "linux/amd64",
     "sizeBytes": 231074728,
     "maximumBytes": 251658240,
@@ -52,11 +52,11 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "b067185ae2f7c0b5dd78fd9c15d671d0db5194cce7590e129d9bd548b4d202e2"
+      "sha256": "5c18fc987eaed533b29a1132277d9589acbdab0452d5ab4c2dd35c9678544041"
     },
     {
       "path": "audio-analysis/Dockerfile",
-      "sha256": "840640b59e22c4e84e100594a72a86b5eb2f6624ebe249e034394008ef6d0fc1"
+      "sha256": "ab2bf0b5c1eb6a0816263b5c540ba74c5045c4c2d178717f6487732dfc97e768"
     },
     {
       "path": "audio-analysis/app.ts",
@@ -96,7 +96,7 @@
     },
     {
       "path": "bun.lock",
-      "sha256": "9f847ce879c211b0f5986aed5977a868ad8aa75d2af13830a033a08c9dbda571"
+      "sha256": "212b944ba3dc8b84af07dbcf160efd3ea398b936673c55369464a3e311486c29"
     },
     {
       "path": "instrument-discovery/vocabulary.json",
@@ -104,7 +104,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "6337e9f10d06c2991fdd1f55b006cf1bf69b7e83aa11b4dfc8261a5c77e3445e"
+      "sha256": "3cbf281870218674b2ed76545f20393fed29ffc270d30a5f9a61c15689573537"
     },
     {
       "path": "public/autosplit.js",

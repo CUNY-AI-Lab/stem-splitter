@@ -3,15 +3,15 @@
 // caller owns the transport (SSE). Routes stay thin; everything
 // provider-shaped lives here.
 import type { Env } from '../env';
-import { AssistantError, COACH_DOWN, COACH_UNCONFIGURED, openRouterChatStream } from './openrouter';
+import { AssistantError, COACH_DOWN, COACH_UNCONFIGURED, gatewayChatStream } from './gateway.ts';
 import {
   buildGuideInstruction,
   buildSystemPrompt,
   fmtTime,
   hashSystemPromptFingerprint,
   SYSTEM_PROMPT_VERSION,
-} from './prompt';
-import { buildMixerTools, sanitizeToolCalls } from './tools';
+} from './prompt.ts';
+import { buildMixerTools, sanitizeToolCalls } from './tools.ts';
 import type { AssistantContext, AssistantToolCall, ChatTurn, WireMessage } from './types';
 
 export { AssistantError, COACH_DOWN, COACH_UNCONFIGURED };
@@ -82,7 +82,7 @@ async function loadAmendmentState(env: Env): Promise<AmendmentState> {
       'SELECT amendment, revision FROM assistant_settings WHERE id = 1'
     ).first<{ amendment: string; revision: number }>();
     return { amendment: row?.amendment ?? '', revision: row?.revision ?? 0 };
-  } catch (err) {
+  } catch {
     // A deployment still on migration 0004 has the amendment but not its
     // revision. Preserve the old fail-lazy behavior there; the active Railway
     // host applies the additive revision migration before serving requests.
@@ -92,7 +92,6 @@ async function loadAmendmentState(env: Env): Promise<AmendmentState> {
       ).first<{ amendment: string }>();
       return { amendment: row?.amendment ?? '', revision: null };
     } catch {
-      console.error('assistant amendment lookup failed', err);
       return { amendment: '', revision: null };
     }
   }
@@ -180,14 +179,14 @@ export async function streamGuide(
   annotations: AssistantAnnotation[],
   durationSec: number | undefined,
   onDelta: (text: string) => void | Promise<void>
-): Promise<{ guide: GuideRecord; cached: boolean }> {
+): Promise<{ guide: GuideRecord; cached: boolean; usage?: Record<string, number>; requestId?: string }> {
   const existing = await getGuide(env, row.id);
   if (existing) return { guide: existing, cached: true };
 
   const promptState = await loadAmendmentState(env);
   const promptHash = await hashSystemPromptFingerprint(promptState.amendment);
   const ctx = contextFromJob(row, annotations, durationSec, 'guide', promptState.amendment);
-  const reply = await openRouterChatStream(
+  const reply = await gatewayChatStream(
     env,
     {
       messages: [
@@ -196,7 +195,6 @@ export async function streamGuide(
       ],
       maxTokens: 500, // the opener is ~110 words; the rest is reasoning headroom
       temperature: 0.6,
-      retry429: true,
     },
     onDelta
   );
@@ -213,10 +211,12 @@ export async function streamGuide(
   // Returning this generation also keeps the final SSE event consistent with
   // the deltas this caller received when two generations race.
   await cacheGuideIfPromptCurrent(env, guide, promptState.revision, promptHash);
-  return { guide, cached: false };
+  return { guide, cached: false, usage: reply.usage, requestId: reply.requestId };
 }
 
 export interface ChatResult {
+  usage?: Record<string, number>;
+  requestId?: string;
   reply: string;
   toolCalls: AssistantToolCall[];
   finishReason: string;
@@ -247,7 +247,7 @@ export interface ChatOptions {
 /**
  * Stream a chat reply through `onDelta`; tool calls are only known once the
  * stream ends, so the caller emits them after the prose. A tools-only reply
- * gets its narration follow-up streamed through the same sink.
+ * gets a local action summary streamed through the same sink.
  */
 export async function streamChat(
   env: Env,
@@ -264,7 +264,7 @@ export async function streamChat(
   );
   const stemNames = ctx.stems.map((s) => s.name);
   const messages: WireMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...turns];
-  const reply = await openRouterChatStream(
+  const reply = await gatewayChatStream(
     env,
     {
       messages,
@@ -284,36 +284,14 @@ export async function streamChat(
   );
   if (!reply.content && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
 
-  // Tool-calling models often act without narrating, but the narration IS the
-  // guiding. One cheap tool-free follow-up turns the console moves into prose;
-  // if it fails, degrade to action-chips-only rather than failing the request.
-  let content = reply.content;
-  if (!content && toolCalls.length > 0) {
-    try {
-      const followUp = await openRouterChatStream(
-        env,
-        {
-          messages: [
-            ...messages,
-            { role: 'assistant', content: `[console] I just did this on the ${mode === 'remix' ? 'deck' : 'mixer'}: ${toolCalls.map(describeCall).join('; ')}.` },
-            { role: 'user', content: 'In one or two short sentences, tell me what you just did and what I should listen for.' },
-          ],
-          maxTokens: 300,
-          temperature: 0.7,
-        },
-        onDelta
-      );
-      content = followUp.content;
-    } catch (err) {
-      console.error('narration follow-up failed', err);
-    }
-  }
-  return { reply: content, toolCalls, finishReason: reply.finishReason };
+  const content = reply.content || toolCalls.map(describeCall).join(' ');
+  if (!reply.content) await onDelta(content);
+  return { reply: content, toolCalls, finishReason: reply.finishReason, usage: reply.usage, requestId: reply.requestId };
 }
 
 function describeCall({ name, args }: AssistantToolCall): string {
-  if (name === 'solo') return `soloed the "${String(args.stem)}" channel`;
-  if (name === 'set_mute') return `${args.muted ? 'muted' : 'unmuted'} the "${String(args.stem)}" channel`;
-  if (name === 'seek') return `jumped playback to ${fmtTime(Number(args.seconds))}`;
-  return `pinned a class note at ${fmtTime(Number(args.seconds))}`;
+  if (name === 'solo') return `Soloed the "${String(args.stem)}" channel.`;
+  if (name === 'set_mute') return `${args.muted ? 'Muted' : 'Unmuted'} the "${String(args.stem)}" channel.`;
+  if (name === 'seek') return `Moved playback to ${fmtTime(Number(args.seconds))}.`;
+  return `Added a class note at ${fmtTime(Number(args.seconds))}.`;
 }

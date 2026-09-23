@@ -1,3 +1,5 @@
+import { createCailAuthError } from '@cuny-ai-lab/cail-identity';
+import { assistantRequestEnv, fleetConfiguration } from './fleet';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -163,6 +165,11 @@ async function sha256Text(value: string): Promise<string> {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+app.get('/api/fleet/readyz', async (c) => {
+  if (!c.env.CAIL_READINESS_TOKEN || c.req.header('authorization') !== `Bearer ${c.env.CAIL_READINESS_TOKEN}`) return c.json({ error: 'Unauthorized' }, 401);
+  const ready = !!await fleetConfiguration(c.env);
+  return c.json({ ready, sourceVersion: c.env.CAIL_SOURCE_VERSION ?? null, audience: 'cail:stem-splitter' }, ready ? 200 : 503);
+});
 
 type BoundedJsonResult =
   | { value: unknown; response?: never }
@@ -201,7 +208,7 @@ app.use('/api/*', async (c, next) => {
 const requireClassCode = createMiddleware<{ Bindings: Env }>(async (c, next) => {
   const code = c.req.header('x-class-code');
   if (!c.env.CLASS_CODE || code !== c.env.CLASS_CODE) {
-    return c.json({ error: 'Invalid class code' }, 401);
+    return c.json({ error: 'Invalid class code', code: 'invalid_class_code' }, 401);
   }
   await next();
 });
@@ -1470,9 +1477,9 @@ app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c
 app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   // Keep the documented pre-stream 503 for unconfigured deployments — once
   // streaming starts, errors can only arrive as in-stream events.
-  if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
-    return c.json({ error: COACH_UNCONFIGURED }, 503);
-  }
+  const modelEnv = await assistantRequestEnv(c.env, c.req.raw, c.req.param('id'));
+  if (modelEnv === 503) return c.json({ error: COACH_UNCONFIGURED }, 503);
+  if (modelEnv === 401) return c.json(createCailAuthError('authentication_required', 'Sign in through CAIL to use the Listening Guide.'), 401);
   const id = c.req.param('id');
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
@@ -1488,12 +1495,13 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
-  return sseResponse(c, async (emit) => {
-    const { guide, cached } = await streamGuide(
-      c.env, row, results ?? [], parseDuration(body?.durationSec),
+  return sseResponse(c, async (emit, signal) => {
+    modelEnv.CAIL_ABORT_SIGNAL = signal;
+    const { guide, cached, usage, requestId } = await streamGuide(
+      modelEnv, row, results ?? [], parseDuration(body?.durationSec),
       (text) => emit({ type: 'delta', text })
     );
-    await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
+    await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop', ...(usage ? { usage } : {}), ...(requestId ? { requestId } : {}) });
   });
 });
 
@@ -1505,9 +1513,9 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
 // `deck` snapshot is fenced into the prompt as data and the toolset narrows to
 // solo / set_mute (the deck has no song timeline to seek or note).
 app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
-  if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
-    return c.json({ error: COACH_UNCONFIGURED }, 503);
-  }
+  const modelEnv = await assistantRequestEnv(c.env, c.req.raw, c.req.param('id'));
+  if (modelEnv === 503) return c.json({ error: COACH_UNCONFIGURED }, 503);
+  if (modelEnv === 401) return c.json(createCailAuthError('authentication_required', 'Sign in through CAIL to use the Listening Guide.'), 401);
   const id = c.req.param('id');
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
@@ -1540,14 +1548,15 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
-  return sseResponse(c, async (emit) => {
+  return sseResponse(c, async (emit, signal) => {
+    modelEnv.CAIL_ABORT_SIGNAL = signal;
     const result = await streamChat(
-      c.env, row, results ?? [], turns, parseDuration(body?.durationSec),
+      modelEnv, row, results ?? [], turns, parseDuration(body?.durationSec),
       (text) => emit({ type: 'delta', text }),
       { mode, deck }
     );
     if (result.toolCalls.length) await emit({ type: 'tool_calls', calls: result.toolCalls });
-    await emit({ type: 'done', text: result.reply, finishReason: result.finishReason });
+    await emit({ type: 'done', text: result.reply, finishReason: result.finishReason, ...(result.usage ? { usage: result.usage } : {}), ...(result.requestId ? { requestId: result.requestId } : {}) });
   });
 });
 
@@ -1852,20 +1861,27 @@ function parseDuration(value: unknown): number | undefined {
 // the stream become a terminal error event with a student-safe message.
 function sseResponse(
   c: Context<{ Bindings: Env }>,
-  run: (emit: (event: Record<string, unknown>) => Promise<void>) => Promise<void>
+  run: (emit: (event: Record<string, unknown>) => Promise<void>, signal: AbortSignal) => Promise<void>
 ): Response {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
+  const abort = new AbortController();
+  const signal = AbortSignal.any([c.req.raw.signal, abort.signal]);
+  void writer.closed.catch(() => abort.abort());
   const encoder = new TextEncoder();
   const emit = (event: Record<string, unknown>) =>
     writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   const pump = (async () => {
     try {
-      await run(emit);
+      await run(emit, signal);
     } catch (err) {
-      if (!(err instanceof AssistantError)) console.error('assistant error', err);
+      // Exception text can contain provider bodies; never log it here.
       const message = err instanceof AssistantError ? err.studentMessage : COACH_DOWN;
-      await emit({ type: 'error', message }).catch(() => {});
+      await emit({ type: 'error', message, ...(err instanceof AssistantError ? {
+        code: err.code,
+        ...(err.requestId ? { requestId: err.requestId } : {}),
+        ...(err.shouldRetry !== undefined ? { shouldRetry: err.shouldRetry } : {}),
+      } : {}) }).catch(() => {});
     } finally {
       await writer.close().catch(() => {});
     }

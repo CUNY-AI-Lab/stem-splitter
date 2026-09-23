@@ -5,10 +5,16 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createTestIdentityIssuer } from '@cuny-ai-lab/cail-identity/testing';
 
 const CLASS_CODE = 'workshop-test-class';
 const test = base.extend({
   host: async ({}, use) => {
+    const issuer = await createTestIdentityIssuer();
+    const identityHeaders = {
+      'x-cail-identity-jwt': await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter' }),
+      'x-cail-gateway-identity-jwt': await issuer.mintIdentityJwt({ audience: 'cail:gateway' }),
+    };
     const dataDir = await mkdtemp(join(tmpdir(), 'stem-workshop-'));
     const socket = createServer();
     socket.listen(0, '127.0.0.1');
@@ -20,7 +26,9 @@ const test = base.extend({
       env: {
         PATH: process.env.PATH, DATA_DIR: dataDir, PORT: String(port), PUBLIC_BASE_URL: url,
         CLASS_CODE, WEBHOOK_SECRET: 'workshop-test-only-secret',
-        ASSISTANT_MODEL: 'test/model', OPENROUTER_API_KEY: 'test-only-key',
+        ASSISTANT_MODEL: 'gpt-oss-120b', CAIL_GATEWAY_URL: 'https://tools.ailab.gc.cuny.edu',
+        CAIL_IDENTITY_JWKS: issuer.jwksJson, CAIL_IDENTITY_ISSUER: issuer.issuer,
+        CAIL_SOURCE_VERSION: 'a'.repeat(40),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -32,7 +40,7 @@ const test = base.extend({
         if (child.exitCode !== null) throw new Error(output);
         try { return (await fetch(`${url}/healthz`)).status; } catch { return 0; }
       }).toBe(200);
-      await use({ url, dataDir });
+      await use({ url, dataDir, identityHeaders });
     } finally {
       if (child.exitCode === null) {
         child.kill('SIGTERM');
@@ -42,6 +50,8 @@ const test = base.extend({
     }
   },
   baseURL: async ({ host }, use) => use(host.url),
+  // A controlled edge fixture supplies the signed legs, outside page scripts.
+  extraHTTPHeaders: async ({ host }, use) => use(host.identityHeaders),
 });
 
 async function openExistingJob(page) {
@@ -117,7 +127,9 @@ test('remix chat crosses the Node route, narrows returned tools, and preserves s
   const job = await (await request.get('/api/jobs/workshop-source')).json();
   expect(job.annotations).toHaveLength(1);
   expect(job.annotations[0].text).toBe('Keep the class note.');
-  const [provider] = (await readFile(join(host.dataDir, 'provider-requests.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  const requests = (await readFile(join(host.dataDir, 'provider-requests.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  expect(requests).toHaveLength(1);
+  const [provider] = requests;
   expect(provider.tools.map((tool) => tool.function.name)).toEqual(['solo', 'set_mute']);
   expect(provider.messages[0].content).toContain('WHAT THE SYSTEM KNOWS ABOUT THE REMIX DECK');
   expect(provider.messages[0].content).toContain('Class lead voice');
@@ -126,6 +138,21 @@ test('remix chat crosses the Node route, narrows returned tools, and preserves s
   expect((await request.post(endpoint, { data })).status()).toBe(401);
   expect((await request.post(endpoint, { data: { ...data, mode: 'invalid' }, headers: { 'x-class-code': CLASS_CODE } })).status()).toBe(400);
   expect((await request.post(endpoint, { data: { ...data, deck: [] }, headers: { 'x-class-code': CLASS_CODE } })).status()).toBe(400);
+});
+
+test('Gateway quota refusal displays safe support information and makes no second request', async ({ page, host }) => {
+  await openExistingJob(page);
+  await page.getByRole('button', { name: /SEND TO REMIXER/ }).click();
+  await page.getByRole('button', { name: /DEVIL’S ADVOCATE/ }).click();
+  await page.getByRole('textbox', { name: /Defend your mix/ }).fill('Quota fixture');
+  await page.getByRole('button', { name: 'ARGUE', exact: true }).click();
+  await expect(page.getByRole('log')).toContainText('The CAIL model usage limit has been reached.');
+  await expect(page.getByRole('log')).toContainText('Support ID: 018f1f50-7c21-7abc-9def-0123456789ab');
+  await expect(page.getByRole('log')).not.toContainText('PRIVATE');
+  await expect(page.getByRole('log')).not.toContainText('Try again');
+  const requests = (await readFile(join(host.dataDir, 'provider-requests.jsonl'), 'utf8')).trim().split('\n');
+  expect(requests).toHaveLength(1);
+  await expect(page.locator('.rlayer')).toHaveCount(4);
 });
 
 test('a delayed critique cannot overwrite changes made while it is replying', async ({ page }) => {

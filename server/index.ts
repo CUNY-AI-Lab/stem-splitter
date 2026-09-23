@@ -82,7 +82,6 @@ const env = {
   REPLICATE_YT_MODEL_VERSION: process.env.REPLICATE_YT_MODEL_VERSION,
   YOUTUBE_FETCH_ORDER: process.env.YOUTUBE_FETCH_ORDER ?? 'replicate-first',
   ASSISTANT_MODEL: process.env.ASSISTANT_MODEL,
-  ASSISTANT_FALLBACK_MODELS: process.env.ASSISTANT_FALLBACK_MODELS,
   // Absent means no instructor accounts, which is a valid configuration: the
   // seed is upserted on boot, so leaving it unset just leaves the console shut.
   TEACHER_SEED: process.env.TEACHER_SEED,
@@ -112,7 +111,12 @@ const env = {
 
   REPLICATE_API_TOKEN: optionalEnv('REPLICATE_API_TOKEN'),
   REPLICATE_MODEL_VERSION: optionalEnv('REPLICATE_MODEL_VERSION'),
-  OPENROUTER_API_KEY: optionalEnv('OPENROUTER_API_KEY'),
+  CAIL_IDENTITY_JWKS: optionalEnv('CAIL_IDENTITY_JWKS'),
+  CAIL_IDENTITY_ISSUER: optionalEnv('CAIL_IDENTITY_ISSUER'),
+  CAIL_GATEWAY_URL: optionalEnv('CAIL_GATEWAY_URL'),
+  CAIL_SOURCE_VERSION: optionalEnv('CAIL_SOURCE_VERSION'),
+  CAIL_READINESS_TOKEN: optionalEnv('CAIL_READINESS_TOKEN'),
+
 } as unknown as Env;
 
 for (const warning of runtimeConfigurationWarnings(env)) {
@@ -121,6 +125,13 @@ for (const warning of runtimeConfigurationWarnings(env)) {
 
 const host = new Hono();
 
+// Optional fleet mount preserves the direct root origin and legacy public links.
+host.get('/stem-splitter', (c) => c.redirect('/stem-splitter/' + new URL(c.req.url).search, 308));
+host.all('/stem-splitter/*', (c) => {
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.slice('/stem-splitter'.length);
+  return host.fetch(new Request(url, c.req.raw));
+});
 // Every app route lives under /api/*; everything else is a static asset.
 host.all('/api/*', (c) => app.fetch(c.req.raw, env));
 host.get('/healthz', async (c) => {
