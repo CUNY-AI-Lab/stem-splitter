@@ -30,9 +30,12 @@ The isolated Worker bundle dry-builds successfully.
 Cancellation testing exposed a dependent Request signal losing propagation
 while an intentionally non-cooperative fetch was pending in Node. The adapter
 now retains and races the caller's original signal. Error fixtures now follow
-the published Gateway envelope, including its `cail` metadata. Two intermediate
-local Workerd runs reported a harness connection loss; the isolated Workerd run
-and subsequent complete adapter/browser run passed. Hosted CI remains a separate
+the published Gateway envelope, including its `cail` metadata. A hosted run and
+intermediate local runs exposed a connection loss inside Wrangler's development
+reload proxy. The contract test now dispatches directly to the production Worker
+in Workerd, retaining real private bindings, D1/R2 and all concurrency checks.
+Five consecutive contract runs, the complete 22-test adapter suite and all six
+HTTP browser journeys passed after that fix. Hosted CI remains a separate
 required check before release.
 
 These checks use synthetic identity, Admission, Replicate and Gateway responses.

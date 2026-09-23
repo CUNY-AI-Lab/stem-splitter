@@ -38,18 +38,21 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
   }] });
   try {
     await server.listen();
+    // Direct Worker dispatch avoids the development reload proxy; the actual
+    // production entrypoint, private bindings, D1 and R2 still run in Workerd.
+    const worker = server.getWorker('stem-preview-contract-test');
     const schema = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
-    const setup = await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });
+    const setup = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });
     assert.equal(setup.status, 200);
     const call = async (path: string, who = 0, init: RequestInit = {}) => {
-      const response = await server.fetch(path, {
+      const response = await worker.fetch(path, {
         ...init, headers: { 'x-fixture-identity': tokens[who], 'x-fixture-gateway-identity': gatewayTokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...init.headers },
       });
       const body = await response.arrayBuffer();
       assert.notEqual(response.status, 500, new TextDecoder().decode(body));
       return new Response([204, 205, 304].includes(response.status) ? null : body, { status: response.status, headers: response.headers });
     };
-    const anonymous = await server.fetch('/api/account');
+    const anonymous = await worker.fetch('/api/account');
     assert.equal(anonymous.status, 401);
     assert.match(anonymous.headers.get('content-security-policy')!, /frame-ancestors 'none'/);
     assert.match(anonymous.headers.get('cache-control')!, /no-store/);
@@ -87,7 +90,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(providerStarts, 1);
     assert.equal((await call(`/api/jobs/${created.id}`, 1)).status, 404);
     assert.equal((await call(`/api/files/%73tems/${created.id}/vocals.mp3`, 1)).status, 400);
-    const callback = await server.fetch(`/api/webhooks/separation?job=${created.id}&token=contract-webhook`, { method: 'POST', body: '{"output":{"vocals":"https://attacker.test/private"}}' });
+    const callback = await worker.fetch(`/api/webhooks/separation?job=${created.id}&token=contract-webhook`, { method: 'POST', body: '{"output":{"vocals":"https://attacker.test/private"}}' });
     assert.equal(callback.status, 200);
     assert.equal(statusFetches, 1);
     const job = await (await call(`/api/jobs/${created.id}`)).json();
@@ -98,7 +101,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(stem.status, 200);
     assert.deepEqual(Buffer.from(await stem.arrayBuffer()), mp3);
     assert.match(stem.headers.get('cache-control')!, /no-store/);
-    const stats = async () => (await (await server.fetch('/__fixture/gateway-stats', { headers: { 'x-fixture': 'local-only' } })).json()).gatewayCalls;
+    const stats = async () => (await (await worker.fetch('/__fixture/gateway-stats', { headers: { 'x-fixture': 'local-only' } })).json()).gatewayCalls;
     const guide = await call(`/api/jobs/${created.id}/guide`, 0, { method: 'POST', body: '{}' });
     assert.match(await guide.text(), /"type":"done"/); assert.equal(await stats(), 1);
     const cached = await call(`/api/jobs/${created.id}/guide`, 0, { method: 'POST', body: '{}' });
@@ -126,7 +129,8 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ role: 'student', disabled: true, revision: alice.revision + 1 }) })).status, 200);
     assert.equal((await call(`/api/files/stems/${created.id}/vocals.mp3`)).status, 403);
     assert.equal(providerStarts, 1);
-    const denied = await Promise.all(Array.from({ length: 40 }, () => server.fetch('/api/account')));
+    const denied = await Promise.all(Array.from({ length: 40 }, () => worker.fetch('/api/account')));
     assert.ok(denied.every((response) => response.status === 401));
-  } finally { await server.close(); network.close(); }
+  } catch (error) { server.debug(); throw error; }
+  finally { await server.close(); network.close(); }
 });
