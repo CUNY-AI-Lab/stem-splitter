@@ -40,4 +40,3 @@ test('unprotected, wildcard or additional deployment branches are rejected', asy
     await assert.rejects(verifyReleaseSource({ ...base, api: fixture(options).api }));
   }
 });
-

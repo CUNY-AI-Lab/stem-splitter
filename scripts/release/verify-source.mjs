@@ -65,4 +65,3 @@ export const config = {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   verifyCurrentRelease(config).then(sha => console.log(`Release source verified: ${sha}`)).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
-
