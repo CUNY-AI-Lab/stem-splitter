@@ -59,6 +59,8 @@ jobs:
         run: bun run typecheck:analysis && bun run test:analysis-service
       - name: Run local browser E2E tests
         run: bun run test:e2e
+      - name: Run workshop browser tests against the Node host
+        run: bun run test:workshop
       - name: Run server-authoritative Auto E2E tests
         run: bun run test:e2e:auto
       - name: Run teacher-isolation shadow E2E tests

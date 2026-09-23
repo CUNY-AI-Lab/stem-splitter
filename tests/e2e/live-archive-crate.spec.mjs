@@ -64,6 +64,8 @@ for (const entry of TRACKS) {
     await page.getByRole('radio', { name: MODEL_RADIOS[MODEL] }).check();
 
     // -- search: identifier full-text match returns exactly the pinned item --
+    // The crate lives at the Remixer station now.
+    await page.getByRole('tab', { name: /REMIXER/ }).click();
     await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
     await page.getByLabel('Search the Internet Archive').fill(entry.identifier);
     const searchStart = Date.now();
@@ -141,6 +143,9 @@ for (const entry of TRACKS) {
     );
     expect(Math.max(...durations) - Math.min(...durations)).toBeLessThan(0.5);
 
+    // The finished console renders on the Splitter bench; the download link
+    // must be visible to click.
+    await page.getByRole('tab', { name: /SPLITTER/ }).click();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       page.locator('.dl').first().click(),

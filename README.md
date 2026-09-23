@@ -212,6 +212,7 @@ Notes:
 
 ```sh
 bun run test:e2e
+bun run test:workshop
 bun run typecheck:analysis
 bun run test:analysis-service
 bun run test:e2e:auto
@@ -235,6 +236,12 @@ ephemeral cleanup, private source-fingerprint parity, separate
 health/readiness, and exact deterministic browser/server classifier parity.
 Server Auto remains disabled unless its master flag and rollout mode are
 explicitly set; analyzer failure preserves the four-track fallback.
+
+The workshop suite runs Chrome against the active Node host with isolated
+SQLite jobs and stored audio. It verifies reopening class work, recording and
+saving a remix, and the remix chat protocol. Web Audio and MediaRecorder run
+natively; only the OpenRouter reply is substituted, and no separation runs.
+FFmpeg verifies the downloaded take contains audible samples.
 
 ## Offline long-tail instrument controls
 
