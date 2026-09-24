@@ -39,11 +39,9 @@
     // Cloudflare egress is usually bot-blocked by YouTube. Start with the
     // authenticated yt-dlp service, then fall back to the in-Worker client.
     "YOUTUBE_FETCH_ORDER": "replicate-first",
-    // OpenRouter model slug for the Listening Guy; swap to any cheap
+    // Gateway model for the Listening Guy; swap to any supported
     // tool-calling model without code changes. Unset disables the assistant.
-    "ASSISTANT_MODEL": "z-ai/glm-5.2",
-    // Independent tool-capable models tried when the primary route fails.
-    "ASSISTANT_FALLBACK_MODELS": "anthropic/claude-haiku-4.5,google/gemini-3-flash-preview"
+    "ASSISTANT_MODEL": "glm-5.2"
   }
 
   // Secrets (set with `wrangler secret put <NAME>`):
@@ -54,5 +52,6 @@
   //   AUDIO_SEPARATOR_TOKEN  — bearer token for the self-hosted separator API
   //   WEBHOOK_SECRET         — random string; authenticates Replicate webhooks
   //   CLASS_CODE             — shared code students enter to use the app
-  //   OPENROUTER_API_KEY     — openrouter.ai key for the Listening Guy
+  //   CAIL_IDENTITY_JWKS, CAIL_IDENTITY_ISSUER, CAIL_GATEWAY_URL,
+  //   CAIL_SOURCE_VERSION, CAIL_READINESS_TOKEN — see docs/fleet-integration.md
 }

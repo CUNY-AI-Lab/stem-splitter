@@ -1,8 +1,8 @@
 # YAMNet native-amd64 comparison acceptance
 
-This directory records the first complete native Linux amd64 execution of the
-current YAMNet comparison pipeline. GitHub Actions run `33450445790` checked
-out exact commit `76ea7c004d70cffa8aadcfcc177301ee74d2fe2b`, built and constrained
+This directory records the refreshed native Linux amd64 execution of the
+current YAMNet comparison pipeline. GitHub Actions run `34182311183` checked
+out exact commit `a64d5dfb98e9f6b1031ac95f631498b7b139d0d6`, built and constrained
 one immutable image, hydrated the exact licensed eleven-mix and eight-control
 corpora, and uploaded four JSON reports without audio.
 
@@ -22,3 +22,12 @@ Zach's separate 5:28 PM teacher attestation accepts the complete authorized
 source and its four frozen core stems for the v3.2 Auto pre-provision gate. It
 does not approve the 19-source instrument annotations, the 278 candidate
 negative control labels, or a discovery threshold. Those gates remain open.
+
+The comparator ran on branch `codex/stem-splitter-fleet-integration-20260908`.
+Its exact source CI run `34182311139` failed on pre-import comparator workflow
+evidence drift. The evidence import commit `9e4b17c5fee49276569a55abdb0b8dd5d84d35d5`
+subsequently passed full CI run `34182876507`, including source-gate job
+`101925325268`. `sourceGateCommit` records that later integration commit
+separately from the unchanged comparator source commit. This is accepted
+comparison-only evidence; all teacher-review, threshold and promotion blockers
+remain enforced.

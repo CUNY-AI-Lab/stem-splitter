@@ -2,8 +2,15 @@
 
 This directory records native Linux amd64 evidence for the exact role-v4,
 source-scope-v2 analysis image. `evidence.json` was captured by the successful
-native `analysis-image` job in GitHub Actions run `33353695281` for commit
-`431e21ffd627b1242abec640c09e3e383657ff6f`.
+native `analysis-image` job in GitHub Actions run `35815336561` for the combined
+workshop/fleet source `3ede1244c77e8665f604e3ff291db89dd3511915`.
+
+The artifact `audio-analysis-native-amd64-3ede1244c77e8665f604e3ff291db89dd3511915`
+(GitHub artifact ID `10731771044`) was downloaded unchanged. Its source hashes
+match this checkout. The image job succeeded; that first run's source job
+correctly rejected the previous artifact's source hashes before this import.
+After import all 329 Worker tests and the audio-pipeline validator passed
+locally. Full hosted source acceptance is a separate check on the import commit.
 
 The `analysis-image` CI job:
 

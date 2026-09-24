@@ -76,9 +76,10 @@ export function validateYamnetNativeAmd64Acceptance(value: unknown): JsonRecord 
   const capturedAt = canonicalIso(root.capturedAt, 'capturedAt');
 
   const source = record(root.source, 'source');
-  exactKeys(source, ['commit', 'branch', 'workflow', 'workflowPath', 'workflowSha256', 'runId', 'runUrl', 'jobId', 'job', 'conclusion', 'sourceGateRunId', 'sourceGateConclusion'], 'source');
+  if (source.sourceGateCommit !== '9e4b17c5fee49276569a55abdb0b8dd5d84d35d5') throw new Error('source gate commit drifted');
+  exactKeys(source, ['commit', 'branch', 'workflow', 'workflowPath', 'workflowSha256', 'runId', 'runUrl', 'jobId', 'job', 'conclusion', 'sourceGateRunId', 'sourceGateConclusion', 'sourceGateCommit'], 'source');
   const commit = string(source.commit, 'source commit');
-  if (!COMMIT.test(commit) || source.branch !== 'main' || source.conclusion !== 'success' || source.sourceGateConclusion !== 'success') {
+  if (!COMMIT.test(commit) || source.branch !== 'codex/stem-splitter-fleet-integration-20260908' || source.conclusion !== 'success' || source.sourceGateConclusion !== 'success' || source.sourceGateRunId !== '34182876507') {
     throw new Error('source run identity is not accepted');
   }
   const runId = string(source.runId, 'run id');

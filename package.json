@@ -27,6 +27,7 @@
     "smoke:local": "./scripts/smoke-local-bs.sh",
     "deploy": "wrangler deploy",
     "test:e2e": "playwright test --config playwright.config.mjs",
+    "test:workshop": "playwright test --config playwright.workshop.config.mjs",
     "test:e2e:auto": "playwright test --config playwright.server-auto.config.mjs",
     "test:e2e:isolation-shadow": "playwright test --config playwright.isolation-shadow.config.mjs",
     "test:e2e:real": "playwright test --config playwright.real-audio.config.mjs",
@@ -105,12 +106,17 @@
     "db:migrate:16": "wrangler d1 execute stem-splitter --remote --file=migrations/0016-instrument-isolation-output-ingestion.sql",
     "db:migrate:16:local": "wrangler d1 execute stem-splitter --local --file=migrations/0016-instrument-isolation-output-ingestion.sql",
     "db:migrate:17": "wrangler d1 execute stem-splitter --remote --file=migrations/0017-folders.sql",
-    "db:migrate:17:local": "wrangler d1 execute stem-splitter --local --file=migrations/0017-folders.sql"
+    "db:migrate:17:local": "wrangler d1 execute stem-splitter --local --file=migrations/0017-folders.sql",
+    "test:fleet:mount": "node --import tsx --test tests/fleet-mount.integration.mts",
+    "test:fleet:gateway": "node --import tsx --test tests/fleet-gateway.integration.mts"
   },
   "engines": {
     "node": "22.23.1"
   },
   "dependencies": {
+    "@cuny-ai-lab/cail-client": "6.2.2",
+    "@cuny-ai-lab/cail-identity": "5.2.6",
+    "@cuny-ai-lab/cail-log": "0.6.4",
     "@hono/node-server": "^2.1.0",
     "aws4fetch": "^1.0.20",
     "hono": "^4.12.34",

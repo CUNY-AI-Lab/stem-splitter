@@ -1,5 +1,7 @@
 # Stem Splitter
 
+Fleet integration source proposal: see [identity, Gateway and CI-only release boundaries](docs/fleet-integration.md). The Listening Guide now requires CAIL SSO in addition to the class code and uses CAIL Gateway. Historical OpenRouter setup below is superseded by that configuration; separation providers remain separate.
+
 A stem-separation web app for music students. Upload a song — or paste a
 YouTube link, or pull an openly licensed track from the Internet Archive —
 and get back isolated stems as MP3s (2-stem vocals / instrumental, 4-stem
@@ -17,18 +19,17 @@ Ethnomusicology Professor **Agustina Checa**.
 SQLite job state → a GPU provider (Replicate, pinned Demucs) or a local
 separator runs the split → webhook/polling marks the job done → the student
 streams synchronized MP3 parts → the host enforces 30-day retention. The
-Listening Guide runs on OpenRouter (`z-ai/glm-5.2` by default) behind
-class-code-gated endpoints; guides are generated once per song and cached
-class-wide.
+Listening Guide uses CAIL Gateway (`glm-5.2` by default) behind class-code
+and institutional-identity checks; guides are generated once per song and
+cached class-wide.
 
 - **~$0.045/song** on Replicate, scales to zero when idle (no GPU to manage).
 - The separation provider lives behind one interface
   (`src/separation/types.ts`) — swap in Modal/RunPod/self-hosted Demucs later
   by implementing it and flipping `SEPARATION_BACKEND`.
 - Fixed-length uploads stream into the mounted volume through the shared app.
-- The Listening Guide is provider-light too: plain `fetch` to OpenRouter,
-  model set by the `ASSISTANT_MODEL` var — swap to any cheap tool-calling
-  model with a var change and a redeploy. If the provider is down or
+- The Listening Guide uses the pinned CAIL Client, with a current canonical
+  Gateway model set by `ASSISTANT_MODEL`. If model access is unavailable or
   unconfigured, students see a friendly notice and the mixer keeps working.
 
 ```
@@ -39,7 +40,7 @@ src/
   r2.ts                 Signed URLs + local retention enforcement
   youtube.ts            YouTube audio fetch (youtubei.js + Replicate yt-dlp fallback)
   archive.ts            Internet Archive crate: licence-floored search + import
-  assistant/            Listening Guy: OpenRouter client, mixer tool schemas,
+  assistant/            Listening Guy: CAIL Gateway client, mixer tool schemas,
                         system prompt (prompt.ts), guide/chat orchestrators
   separation/
     types.ts            SeparationBackend interface (the swappable seam)
@@ -102,7 +103,8 @@ The app needs these secrets (set as Railway variables; local equivalents in
   version" below
 - `WEBHOOK_SECRET` — any long random string, e.g. `openssl rand -hex 32`
 - `CLASS_CODE` — what students type to use the app
-- `OPENROUTER_API_KEY` — openrouter.ai key; powers Listening Guy
+- `CAIL_IDENTITY_JWKS` and `CAIL_IDENTITY_ISSUER` — pinned institutional verifier configuration
+- `CAIL_READINESS_TOKEN` — private configuration readback credential
 - `TEACHER_SEED` — pre-hashed teacher records; see
   [Teacher provisioning and prompt governance](docs/teacher-provisioning.md)
 
@@ -110,10 +112,10 @@ Vars:
 
 - `PUBLIC_BASE_URL` — the deployed URL (the provider posts completion
   webhooks here)
-- `ASSISTANT_MODEL` — OpenRouter slug for the Listening Guy (default
-  `z-ai/glm-5.2`; remove it to disable the Listening Guide entirely)
-- `ASSISTANT_FALLBACK_MODELS` — comma-separated independent model routes,
-  tried after provider errors and an empty pre-content stream
+- `ASSISTANT_MODEL` — prefix-free Gateway model ID for the Listening Guy
+  (`glm-5.2`; remove it to disable the Listening Guide entirely)
+- `CAIL_GATEWAY_URL` — `https://tools.ailab.gc.cuny.edu`, without `/v1`
+- `CAIL_SOURCE_VERSION` — exact 40-character deployed source commit
 - `REPLICATE_YT_MODEL` / `REPLICATE_YT_MODEL_VERSION` — owner/name and exact
   deployed version of the `replicate-yt-audio/` fetch model; the version is
   required for that fallback and `latest` is rejected so a model push cannot
@@ -212,6 +214,7 @@ Notes:
 
 ```sh
 bun run test:e2e
+bun run test:workshop
 bun run typecheck:analysis
 bun run test:analysis-service
 bun run test:e2e:auto
@@ -235,6 +238,13 @@ ephemeral cleanup, private source-fingerprint parity, separate
 health/readiness, and exact deterministic browser/server classifier parity.
 Server Auto remains disabled unless its master flag and rollout mode are
 explicitly set; analyzer failure preserves the four-track fallback.
+
+The workshop suite runs Chrome against the active Node host with isolated
+SQLite jobs and stored audio. It verifies reopening class work, recording and
+saving a remix, and the remix chat protocol. Web Audio and MediaRecorder run
+natively; the Gateway reply and signed institutional identities are fixtures,
+and no separation runs.
+FFmpeg verifies the downloaded take contains audible samples.
 
 ## Offline long-tail instrument controls
 
@@ -287,12 +297,11 @@ Nothing else in the app changes.
 
 ## Swapping the Listening Guide model
 
-`ASSISTANT_MODEL` is the primary OpenRouter slug, and
-`ASSISTANT_FALLBACK_MODELS` is its ordered, comma-separated fallback list. All
-configured models must support function calling. The guide retries one empty
-pre-content stream with a fallback first, but never replays a partial
-response. The system prompt and mixer tool schemas in `src/assistant/` are
-model-agnostic.
+Choose a current prefix-free model ID from the Gateway catalog for
+`ASSISTANT_MODEL`. The selected model must support function calling. The app
+makes one model attempt and never retries or chooses a provider fallback.
+Gateway owns routing, quota and accounting. The system prompt and mixer tool
+schemas in `src/assistant/` remain model-agnostic.
 
 ## Operational notes
 
@@ -304,9 +313,9 @@ model-agnostic.
   stems are served from unguessable per-job URLs; the UI states the
   educational-use policy. Review this with whoever owns institutional risk
   before launch.
-- **Auth is a shared class code** (`x-class-code` header) — deliberately
-  minimal for v1. If you need per-student identity later, that's the
-  `requireClassCode` middleware in `src/index.ts`.
+- **Class writes require the shared class code** (`x-class-code` header).
+  Model use additionally requires separate same-person CAIL app and Gateway
+  identities. Institutional sign-in does not change classroom data ownership.
 - **Webhook auth** uses a secret token in the webhook URL. Replicate also
   supports signed webhooks if you want defense in depth.
 - **Stem URLs are public but unguessable** (UUID job ids) so `<audio>` tags

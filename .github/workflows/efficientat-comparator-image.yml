@@ -78,6 +78,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   native-amd64-image:
@@ -103,7 +104,17 @@ jobs:
         with:
           bun-version: 1.3.14
       - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f .npmrc' EXIT
+          cat > .npmrc <<'EOF'
+          @cuny-ai-lab:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          EOF
+          bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
       - name: Verify the native runner contract
         shell: bash
         run: |

@@ -120,8 +120,8 @@ function validateBaseline(input: ComparisonInput): {
   const controls = record(baseline.controls, 'YAMNet control evidence');
   const files = array(artifact.files, 'YAMNet artifact files');
   const expectedFiles = new Map([
-    ['yamnet-native-amd64-corpus.json', '6254494f4fcc4b397b3d95713f361229132288c4502bdd2332756b3b85d8a4be'],
-    ['yamnet-native-amd64-controls.json', 'c897a4a024978d51eee5ac82741b9bb13354f00a26c05fecb43f90962c77bf82'],
+    ['yamnet-native-amd64-corpus.json', '6a4adb10c99a41a82bede7d45543e69479b973813a694dfb6da477389b1e1e92'],
+    ['yamnet-native-amd64-controls.json', 'b7981e06d739ebb6b5a21ffa5630bba8c789fd96b68a6959cdbfc5899f5c605c'],
   ]);
   for (const item of files) {
     const file = record(item, 'YAMNet artifact file');
@@ -134,8 +134,8 @@ function validateBaseline(input: ComparisonInput): {
   if (
     baseline.$schema !== BASELINE_SCHEMA ||
     baseline.status !== 'passed-comparison-only' ||
-    source.runId !== '33450445790' ||
-    source.commit !== '76ea7c004d70cffa8aadcfcc177301ee74d2fe2b' ||
+    source.runId !== '34182311183' ||
+    source.commit !== 'a64d5dfb98e9f6b1031ac95f631498b7b139d0d6' ||
     expectedFiles.size !== 0 ||
     candidate.classifierVersion !== YAMNET_CLASSIFIER ||
     candidate.vocabularySha256 !== VOCABULARY_SHA256 ||
@@ -273,7 +273,7 @@ export function buildComparison(
       yamnetAcceptance: {
         path: baselineInput.path,
         sha256: baselineInput.sha256,
-        runId: '33450445790',
+        runId: '34182311183',
       },
       efficientatCorpus: { path: corpusInput.path, sha256: corpusInput.sha256 },
       efficientatControls: { path: controlsInput.path, sha256: controlsInput.sha256 },

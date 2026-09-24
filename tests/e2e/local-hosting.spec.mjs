@@ -175,7 +175,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   const labLink = page.getByRole('link', { name: 'CUNY AI Lab' });
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
-  await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
+  await expect(labLink.locator('img')).toHaveJSProperty('src', new URL('./cuny-ai-lab-logo.png', page.url()).href);
   await expect(page.locator('#split-summary')).toHaveText('// 2, 4, or 6 parts per song');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -1136,7 +1136,8 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
     name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
   }).check();
 
-  // Opening the crate runs the default search.
+  // The crate lives at the Remixer station; opening it runs the default search.
+  await page.getByRole('tab', { name: /REMIXER/ }).click();
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await expect(page.locator('.crate-item')).toHaveCount(1);
   await expect(page.locator('.crate-license')).toHaveText('CC BY-NC-SA 4.0');
@@ -1216,6 +1217,7 @@ test('refuses a NoDerivatives Internet Archive item', async ({ page, network }) 
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('tab', { name: /REMIXER/ }).click();
   await page.getByRole('button', { name: /BROWSE THE CRATE/ }).click();
   await page.locator('.crate-item-head').click();
 
@@ -1823,7 +1825,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);
   expect(await page.locator('link[rel="stylesheet"]').getAttribute('href')).toMatch(/\?v=/);
-  expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
+  expect(await page.locator('script[src*="teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'SIGN IN' });
   const signInButtonBox = await signInButton.boundingBox();
   expect(signInButtonBox).not.toBeNull();
@@ -2035,7 +2037,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     "WHO YOU'RE TALKING TO",
     'HOW YOU TALK (every message, both modes)',
   ]);
-  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-08-20.1');
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-09-01.1');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'TOP' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
@@ -2068,7 +2070,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-08-20.1');
+  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-09-01.1');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -2085,7 +2087,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     settingsRevision: 1,
     amendment,
     changeNote,
-    basePromptVersion: '2026-08-20.1',
+    basePromptVersion: '2026-09-01.1',
     basePromptHash: trace.basePromptHash,
     effectivePromptHash: trace.effectivePromptHash,
     updatedBy: 'e2eteacher',

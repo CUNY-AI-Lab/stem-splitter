@@ -1,51 +1,52 @@
 {
   "$schema": "stem-splitter.efficientat-native-amd64-acceptance.v1",
   "status": "passed-comparison-only",
-  "capturedAt": "2026-09-01T00:17:50.000Z",
+  "capturedAt": "2026-09-08T03:08:19.000Z",
   "source": {
-    "commit": "4e6c6bc61d1c3f8195a8c0f277bf0df9331a6e7d",
-    "branch": "main",
+    "commit": "a64d5dfb98e9f6b1031ac95f631498b7b139d0d6",
+    "branch": "codex/stem-splitter-fleet-integration-20260908",
     "workflow": "EfficientAT comparator image",
     "workflowPath": ".github/workflows/efficientat-comparator-image.yml",
-    "workflowSha256": "56bfc08905faf1a0e27fa2ce1c6434129fded2a410a4328c88c9dee17f1f3d03",
-    "runId": "33453966641",
-    "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/33453966641",
-    "jobId": "99689833333",
+    "workflowSha256": "60ae9f5310999cc6aa020d5dcc0ec930d558ea1324733fbcb69948c6ee259446",
+    "runId": "34182311130",
+    "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/34182311130",
+    "jobId": "101923681986",
     "job": "Pinned EfficientAT comparator (native amd64)",
     "conclusion": "success",
-    "sourceGateRunId": "33453966663",
-    "sourceGateConclusion": "success"
+    "sourceGateRunId": "34182876507",
+    "sourceGateConclusion": "success",
+    "sourceGateCommit": "9e4b17c5fee49276569a55abdb0b8dd5d84d35d5"
   },
   "artifact": {
-    "id": "9780824293",
-    "name": "efficientat-native-amd64-4e6c6bc61d1c3f8195a8c0f277bf0df9331a6e7d",
-    "compressedBytes": 26933,
-    "uncompressedBytes": 195884,
-    "expiresAt": "2026-10-01T00:17:44.000Z",
+    "id": "10039361429",
+    "name": "efficientat-native-amd64-a64d5dfb98e9f6b1031ac95f631498b7b139d0d6",
+    "compressedBytes": 26924,
+    "uncompressedBytes": 195877,
+    "expiresAt": "2026-10-08T03:08:13.000Z",
     "containsAudio": false,
     "files": [
       {
         "name": "efficientat-native-amd64-corpus.json",
         "schema": "stem-splitter.efficientat-comparator-evaluation.v2",
-        "bytes": 137909,
-        "sha256": "2ed33dddddff80804f0dd0eb06d84a921181ff571dad2c1ae587463518c1454c"
+        "bytes": 137894,
+        "sha256": "a0fd91ddeda91f4ccaa14439604e36cd654f3fcaa0c53e7540df27507603e807"
       },
       {
         "name": "efficientat-native-amd64-controls.json",
         "schema": "stem-splitter.efficientat-control-evaluation.v1",
-        "bytes": 54300,
-        "sha256": "97094a86dd42b65dc6e80cbfa89c7bfeb4e9c36ae1bdf0993bba1a4a55c251dc"
+        "bytes": 54308,
+        "sha256": "8047e39739a6594cc09df9f5d11b0e05ba377f590dad03fe7b24960566c760f0"
       },
       {
         "name": "instrument-classifier-comparison.json",
         "schema": "stem-splitter.instrument-classifier-comparison.v1",
         "bytes": 3675,
-        "sha256": "0157b888f53acd644e79a5cc6af1c549bc6eb3f7c857a1cdd1c636516a8ea418"
+        "sha256": "396e9a9abe19171af040d753a119ad9471ec4a84ce9fdafb87575272fb76bcda"
       }
     ]
   },
   "execution": {
-    "imageId": "sha256:f392155f2553ea8da35c24b7c096eda1c0a00c428c6d124d9bee55438c2748f9",
+    "imageId": "sha256:844c788272a0e283f9bacc2d98cc6fdd1f5e19225eaf7e920079c6f9b5f716cc",
     "imagePlatform": "linux/amd64",
     "hostPlatform": "linux/amd64",
     "emulated": false,
@@ -82,9 +83,9 @@
     "top5ExpectedGroups": 28,
     "top10ExpectedGroups": 30,
     "meanReciprocalRankBasisPoints": 3643,
-    "totalLoadMs": 1214,
-    "totalInferenceMs": 2144,
-    "totalComparatorMs": 4751,
+    "totalLoadMs": 1128,
+    "totalInferenceMs": 2506,
+    "totalComparatorMs": 5031,
     "thresholdSelected": null,
     "promotionEligible": false
   },
@@ -98,9 +99,9 @@
     "top10SpecificPositives": 6,
     "meanReciprocalRankBasisPoints": 8056,
     "candidateNegativeAnnotations": 286,
-    "totalLoadMs": 881,
-    "totalInferenceMs": 1545,
-    "totalComparatorMs": 3431,
+    "totalLoadMs": 826,
+    "totalInferenceMs": 1859,
+    "totalComparatorMs": 3690,
     "thresholdSelected": null,
     "precisionClaim": "none-review-pending",
     "promotionEligible": false
@@ -115,7 +116,9 @@
     "scoringPoliciesDiffer": true,
     "scoresDirectlyInterchangeable": false,
     "supportedLabelDelta": 1,
-    "addedDirectLabels": ["ukulele"],
+    "addedDirectLabels": [
+      "ukulele"
+    ],
     "corpusTop3Delta": 4,
     "corpusTop5Delta": 4,
     "corpusMeanReciprocalRankBasisPointsDelta": 278,

@@ -1,57 +1,58 @@
 {
   "$schema": "stem-splitter.yamnet-native-amd64-acceptance.v1",
   "status": "passed-comparison-only",
-  "capturedAt": "2026-08-31T23:25:15.000Z",
+  "capturedAt": "2026-09-08T03:08:02.000Z",
   "source": {
-    "commit": "76ea7c004d70cffa8aadcfcc177301ee74d2fe2b",
-    "branch": "main",
+    "commit": "a64d5dfb98e9f6b1031ac95f631498b7b139d0d6",
+    "branch": "codex/stem-splitter-fleet-integration-20260908",
     "workflow": "YAMNet comparator image",
     "workflowPath": ".github/workflows/yamnet-comparator-image.yml",
-    "workflowSha256": "de1f54252c9512046268d63f97fd59ba42b16059e059b14d27a5477e1eaa6e8e",
-    "runId": "33450445790",
-    "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/33450445790",
-    "jobId": "99678920223",
+    "workflowSha256": "14a928dfb73a08c3401dbf6f38833a7b634d15d2675e1f2290453ba9bbc4275a",
+    "runId": "34182311183",
+    "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/34182311183",
+    "jobId": "101923682202",
     "job": "Pinned YAMNet comparator (native amd64)",
     "conclusion": "success",
-    "sourceGateRunId": "33450445793",
-    "sourceGateConclusion": "success"
+    "sourceGateRunId": "34182876507",
+    "sourceGateConclusion": "success",
+    "sourceGateCommit": "9e4b17c5fee49276569a55abdb0b8dd5d84d35d5"
   },
   "artifact": {
-    "id": "9779606875",
-    "name": "yamnet-native-amd64-76ea7c004d70cffa8aadcfcc177301ee74d2fe2b",
-    "compressedBytes": 28587,
-    "uncompressedBytes": 198231,
-    "expiresAt": "2026-09-30T23:25:14.000Z",
+    "id": "10039356431",
+    "name": "yamnet-native-amd64-a64d5dfb98e9f6b1031ac95f631498b7b139d0d6",
+    "compressedBytes": 28632,
+    "uncompressedBytes": 198222,
+    "expiresAt": "2026-10-08T03:07:57.000Z",
     "containsAudio": false,
     "files": [
       {
         "name": "yamnet-native-amd64-corpus.json",
         "schema": "stem-splitter.yamnet-comparator-evaluation.v2",
-        "bytes": 136845,
-        "sha256": "6254494f4fcc4b397b3d95713f361229132288c4502bdd2332756b3b85d8a4be"
+        "bytes": 136833,
+        "sha256": "6a4adb10c99a41a82bede7d45543e69479b973813a694dfb6da477389b1e1e92"
       },
       {
         "name": "yamnet-native-amd64-controls.json",
         "schema": "stem-splitter.yamnet-control-evaluation.v1",
-        "bytes": 53255,
-        "sha256": "c897a4a024978d51eee5ac82741b9bb13354f00a26c05fecb43f90962c77bf82"
+        "bytes": 53258,
+        "sha256": "b7981e06d739ebb6b5a21ffa5630bba8c789fd96b68a6959cdbfc5899f5c605c"
       },
       {
         "name": "yamnet-native-amd64-source-report.json",
         "schema": "stem-splitter.yamnet-candidate-source-report.v1",
         "bytes": 558,
-        "sha256": "d7cb8655db354b2fe1595f0fa9c9db31814c27e3b5c3ab448d1dff157dfa3af9"
+        "sha256": "94b0b9f41585fdcaa7d06532b359b21d12813f24f80b5799877a798937727970"
       },
       {
         "name": "yamnet-native-amd64-candidate.json",
         "schema": "stem-splitter.instrument-candidate-observations.v3",
         "bytes": 7573,
-        "sha256": "8111a5c6b65c90cf08e234e8635baef10ac8f832f5056bf31472ceb194e6d7fc"
+        "sha256": "cd10c0daa611ef8fd939a021d5654f954ff88c2fe40b883ca23440a0f956f0dc"
       }
     ]
   },
   "execution": {
-    "imageId": "sha256:f493edc1516c131b95208ea7d4835a69fffc5a1e0375192efaedf8983fd371b9",
+    "imageId": "sha256:4f4db37422154a250e4d474326b04f3a7caa24514e194f34e7f729f8caa4c95c",
     "imagePlatform": "linux/amd64",
     "hostPlatform": "linux/amd64",
     "emulated": false,
@@ -84,9 +85,9 @@
     "diagnosticThreshold": 0.15,
     "diagnosticExpectedHits": 4,
     "diagnosticHardNegativeAlerts": 0,
-    "totalLoadMs": 9853,
-    "totalInferenceMs": 2263,
-    "totalComparatorMs": 12358,
+    "totalLoadMs": 8547,
+    "totalInferenceMs": 1863,
+    "totalComparatorMs": 10610,
     "thresholdSelected": null,
     "promotionEligible": false
   },
@@ -100,9 +101,9 @@
     "top10SpecificPositives": 6,
     "meanReciprocalRankBasisPoints": 8056,
     "candidateNegativeAnnotations": 278,
-    "totalLoadMs": 7142,
-    "totalInferenceMs": 1643,
-    "totalComparatorMs": 8963,
+    "totalLoadMs": 6205,
+    "totalInferenceMs": 1370,
+    "totalComparatorMs": 7722,
     "thresholdSelected": null,
     "precisionClaim": "none-review-pending",
     "promotionEligible": false

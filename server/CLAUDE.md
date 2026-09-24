@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+For fleet model configuration and the CI-only release proposal, follow [../docs/fleet-integration.md](../docs/fleet-integration.md). It supersedes historical OpenRouter and manual-deploy instructions below.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Scope: the **active Railway Node host**. Railway is the integration, live
@@ -54,7 +56,7 @@ Separation, YouTube import, analysis, coach, and teacher credentials
 the shadow-only `REPLICATE_AUDIOSEP_VERSION`,
 the dormant `QUERY_ISOLATION_COURSE_ID` + `QUERY_ISOLATION_SEMESTER_ID` +
 `QUERY_ISOLATION_MAX_PROVIDER_STARTS` budget policy,
-`AUDIO_ANALYSIS_URL` + `AUDIO_ANALYSIS_TOKEN`, `OPENROUTER_API_KEY`, and
+`AUDIO_ANALYSIS_URL` + `AUDIO_ANALYSIS_TOKEN`, the CAIL identity/Gateway configuration, and
 `TEACHER_SEED`) are **not** required to boot—see "Fail-fast vs. fail-lazy"
 below. Without `TEACHER_SEED`, the instructor console has no provisioned
 account. Generate its pre-hashed authoritative array through
@@ -109,7 +111,7 @@ Numbered `migrations/` remain deferred Cloudflare D1 migration inputs.
 
 `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION`, the YouTube model/version
 pair, the dormant AudioSep version and course-semester budget, the analysis
-URL/token pair, `OPENROUTER_API_KEY`, and `TEACHER_SEED` are
+URL/token pair, the CAIL identity/Gateway configuration, and `TEACHER_SEED` are
 checked lazily. This is deliberate: without them, upload, mixer, labels, notes,
 and stem playback all still work. `/healthz.configuration` reports only
 value-free `configured`/`unconfigured`/`incomplete`/`invalid` states and rollout

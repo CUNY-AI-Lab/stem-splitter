@@ -1,4 +1,14 @@
+import type { CailCorrelation } from '@cuny-ai-lab/cail-log';
 export type Env = {
+  CAIL_IDENTITY_JWKS?: string;
+  CAIL_IDENTITY_ISSUER?: string;
+  CAIL_GATEWAY_URL?: string;
+  CAIL_SOURCE_VERSION?: string;
+  CAIL_READINESS_TOKEN?: string;
+  CAIL_GATEWAY_IDENTITY_JWT?: string;
+  CAIL_CORRELATION?: CailCorrelation;
+  CAIL_ABORT_SIGNAL?: AbortSignal;
+  CAIL_CONVERSATION_ID?: string;
   // Bindings
   AUDIO: R2Bucket;
   DB: D1Database;
@@ -20,10 +30,8 @@ export type Env = {
   REPLICATE_YT_MODEL_VERSION?: string;
   /** "replicate-first" in production; defaults to the free in-Worker fetch first. */
   YOUTUBE_FETCH_ORDER?: string;
-  /** OpenRouter model slug for the Listening Guy; unset disables the assistant. */
+  /** Gateway model for the Listening Guy; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
-  /** Comma-separated OpenRouter model slugs used after the primary model fails. */
-  ASSISTANT_FALLBACK_MODELS?: string;
   /** Master kill switch for server-side Auto. Only literal "true" enables it. */
   SERVER_AUTO_ENABLED?: string;
   /** Rollout posture when server Auto is enabled: shadow (default) or authoritative. */
@@ -63,5 +71,4 @@ export type Env = {
   AUDIO_ANALYSIS_TOKEN?: string;
   WEBHOOK_SECRET: string;
   CLASS_CODE: string;
-  OPENROUTER_API_KEY: string;
 };
