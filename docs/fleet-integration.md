@@ -1,4 +1,4 @@
-# Fleet integration proposal (source only)
+# Fleet integration and CI release
 
 Owner: Stem Splitter. Affected action: generating a Listening Guide or sending a
 Listening Guy chat turn. Browser → existing Node host → cail-client 6.2.2 → CAIL
@@ -57,10 +57,36 @@ Node host; the Worker build is a dry compatibility check, not a migration.
    cancellation, public/campus DNS/access, teacher login, and existing published
    links on the deployed path before rollout acceptance.
 
-The release workflow above is intentionally a proposal, not an enabled deployment
-workflow. Existing manual deployment instructions are superseded by this CI-only
-rule for fleet releases. Source checks and local synthetic-provider tests do not
-prove deployed login, real model output, provider webhook reachability or spend.
+The release implementation is now in `.github/workflows/production-release.yml`
+and `scripts/release/`. It runs only on manual dispatch from canonical main,
+checks out trusted main before evaluating the requested SHA, and requires the
+latest exact-main source and release-safeguard workflows to have passed. The
+production environment must have exactly one deployment branch rule: branch
+`main`. Credentials are never supplied to PR jobs. Configure that environment
+and its project-scoped `RAILWAY_TOKEN` before dispatching; no environment, secret,
+deployment or route is provisioned by this source change.
+
+The workflow pins Railway CLI 5.30.4, uses the canonical project/environment/
+service IDs in `server/CLAUDE.md`, and rejects an unexpected data directory,
+Gateway origin, issuer or provider-prefixed model. The existing Railway service
+must have `DATA_DIR=/data`, its existing volume, required application credentials,
+public verifier material, `CAIL_READINESS_TOKEN`, and a read-only GitHub Packages
+`NODE_AUTH_TOKEN`. The release archive contains only tracked source plus a
+deterministic `.npmrc` token placeholder; no CI token is copied to Railway.
+Railpack uses the package credential already configured on the service.
+
+Immediately before upload, the guard rechecks current main. Only the source
+marker changes, with automatic variable-triggered deployment suppressed. The
+script uploads the archive once, follows the returned deployment ID, requires
+`SUCCESS` and one active version, then verifies anonymous readiness rejection
+and authenticated readiness at the exact SHA. An uncertain upload is never
+retried automatically. Roll back code as an explicit separate release; do not
+restore or replace application data implicitly.
+
+Existing manual deployment instructions are superseded by this CI-only rule
+for fleet releases. Source checks and readiness do not prove deployed CUNY
+login, real model output, provider webhook reachability or spend. The proposed
+Doorway mount and its live browser/audio checks remain separate release gates.
 
 ## Source and local verification, 2026-09-08
 

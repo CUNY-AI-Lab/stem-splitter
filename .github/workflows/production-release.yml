@@ -1,0 +1,42 @@
+name: Railway fleet release
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact current-main SHA with successful CI
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+concurrency:
+  group: stem-splitter-production
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: production
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Load the guard only from trusted main. The guard compares HEAD to
+          # the requested immutable SHA before any deployment credential is used.
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+      - name: Verify main, completed checks and protected environment
+        run: node scripts/release/verify-source.mjs
+      - name: Install pinned Railway CLI
+        run: npm install --global @railway/cli@5.30.4
+      - name: Release exact source and verify its deployment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: node scripts/release/railway.mjs
