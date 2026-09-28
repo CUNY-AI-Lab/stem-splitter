@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -12,7 +12,7 @@ export function parseRailwayJson(text) {
   catch { throw new Error('Railway returned an unreadable response. Raw output is withheld because it may contain private configuration.'); }
 }
 export function validateConfiguration(vars) {
-  for (const key of ['NODE_AUTH_TOKEN', 'CAIL_IDENTITY_JWKS', 'CAIL_READINESS_TOKEN', 'WEBHOOK_SECRET', 'CLASS_CODE']) {
+  for (const key of ['CAIL_IDENTITY_JWKS', 'CAIL_READINESS_TOKEN', 'WEBHOOK_SECRET', 'CLASS_CODE']) {
     if (typeof vars[key] !== 'string' || !vars[key].trim()) throw new Error(`Railway configuration is missing ${key}.`);
   }
   if (vars.DATA_DIR !== '/data' || vars.CAIL_GATEWAY_URL !== 'https://tools.ailab.gc.cuny.edu' ||
@@ -48,9 +48,6 @@ async function main() {
     run('mkdir', [source]);
     run('git', ['archive', '--format=tar', '--output', archive, sha]);
     run('tar', ['-xf', archive, '-C', source]);
-    // The placeholder is source configuration, never the CI token. Railpack
-    // resolves the existing read-only package token stored on this service.
-    writeFileSync(join(source, '.npmrc'), '@cuny-ai-lab:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n', { mode: 0o600 });
     await verifyCurrentRelease(config); // Reject a queued SHA superseded while preparing.
     run('railway', ['variable', 'set', `CAIL_SOURCE_VERSION=${sha}`, '--skip-deploys', ...scope]);
     const uploaded = parseRailwayJson(run('railway', ['up', source, '--path-as-root', '--no-gitignore', '--detach', '--json', '--message', `CI fleet release ${sha}`, ...scope]));

@@ -45,11 +45,11 @@
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 
-    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "https://npm.pkg.github.com/download/@cuny-ai-lab/cail-client/6.2.2/6efb4d2e477e255737f44899d98c606099c61ac1", { "dependencies": { "zod": "4.4.3" } }, "sha512-5Pcdu++6cHKjlBRVC/JtRPORzd6qE3LbR/0qnhbzTmLrZASUibFOQZ3Xbh7p1JQNMqF1H5DSkKXwhMGd324BWw=="],
+    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "", { "dependencies": { "zod": "4.4.3" } }, "sha512-4aBjULb7Bd7O8kBT7lrM5OGC7sTHkTp9Lc/5mMpK9f+QRSCkEK+eUCJjl/+ZPRdXoOk+XpyUdLZB8OtUvE5+xQ=="],
 
-    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "https://npm.pkg.github.com/download/@cuny-ai-lab/cail-identity/5.2.6/9744f7c35813cda8e6f07804a5d99fc1250e42f6", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-eaSX7lfSzZLqceTwiqkfz0I9EwFXHch3dNlpoHy+EzbHHRKwBz45mJGBpaK6znp7BAUJiJDffTw7t10JR+pslQ=="],
+    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-j4Klru5ivG6ZWoGQBvIIiI2v7EDwDPiDIOvzsOV73n7LrUj3deCXM4tzFTfhZntaYdonFh4lJ9xs933YwNRnNA=="],
 
-    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "https://npm.pkg.github.com/download/@cuny-ai-lab/cail-log/0.6.4/7d30c2cf3e0b915eef23a2348cc5d3685cb208cc", { "dependencies": { "zod": "4.4.3" } }, "sha512-HnHbutsDhZyBD/SD8YFSITycujuX1Lhc1xHaELEemk2dYKPA5IF5fFlwyfkIqsZiCpaJdWo7H2QPQnD2uHXmYQ=="],
+    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "", { "dependencies": { "zod": "4.4.3" } }, "sha512-j/YEmBC1hi/64rYTmHp8sawk5xJCQMCBU0F2ZllFIMbXMEG3mq0yF5SYo9sgqjn0MHy+ZQLdE2Svbz/oUbOTRA=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 

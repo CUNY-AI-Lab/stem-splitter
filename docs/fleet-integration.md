@@ -39,9 +39,10 @@ Node host; the Worker build is a dry compatibility check, not a migration.
 1. Review and merge source only after the authoritative CI gates pass. Existing
    audio-analysis evidence pins `bun.lock`; changed dependencies require new
    canonical native-amd64 evidence and linked listening/promotion validation.
-   Do not update a checksum to claim a run that did not happen. GitHub Packages
-   installation uses the CI token with packages:read; the image receives it only
-   through a BuildKit secret, never a build argument or persistent image ENV.
+   Do not update a checksum to claim a run that did not happen. The
+   `@cuny-ai-lab` packages install from public npm with no token, in CI and in
+   the image build alike; the tracked `.npmrc` pins their scope to
+   registry.npmjs.org.
 2. A dedicated protected-environment release workflow must run from `main`, with
    `concurrency: stem-splitter-production`, `cancel-in-progress: false`, reject a
    requested SHA that is no longer current main, and depend on successful source
@@ -70,10 +71,9 @@ The workflow pins Railway CLI 5.30.4, uses the canonical project/environment/
 service IDs in `server/CLAUDE.md`, and rejects an unexpected data directory,
 Gateway origin, issuer or provider-prefixed model. The existing Railway service
 must have `DATA_DIR=/data`, its existing volume, required application credentials,
-public verifier material, `CAIL_READINESS_TOKEN`, and a read-only GitHub Packages
-`NODE_AUTH_TOKEN`. The release archive contains only tracked source plus a
-deterministic `.npmrc` token placeholder; no CI token is copied to Railway.
-Railpack uses the package credential already configured on the service.
+public verifier material, and `CAIL_READINESS_TOKEN`. The release archive
+contains only tracked source; no CI token is copied to Railway. Railpack installs
+the `@cuny-ai-lab` packages from public npm with no package credential.
 
 Immediately before upload, the guard rechecks current main. Only the source
 marker changes, with automatic variable-triggered deployment suppressed. The
