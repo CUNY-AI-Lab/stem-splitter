@@ -32,7 +32,7 @@ test('Crate audio -> multi-source arrangement -> recorded song with credits, wit
     await page.goto(url.href);
     await expect(page).toHaveTitle('Stem Splitter');
     await page.getByRole('tab', { name: /REMIXER/ }).click();
-    await expect(page.locator('#view-remixer > section').first()).toHaveAttribute('id', 'crate');
+    await expect(page.locator('#view-remixer > section').last()).toHaveAttribute('id', 'crate');
     await expect(page.locator('#da-toggle')).toHaveCount(0);
     await page.getByRole('button', { name: 'SEARCH', exact: true }).click();
     await page.locator('.crate-item-head').click();

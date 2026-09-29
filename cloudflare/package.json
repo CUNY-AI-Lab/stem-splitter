@@ -8,6 +8,7 @@
     "test": "node --import ../node_modules/tsx/dist/loader.mjs --test *.test.ts"
   },
   "dependencies": {
+    "hono-cloudflare": "npm:hono@4.13.11",
     "@cuny-ai-lab/cail-client": "6.2.2",
     "@cuny-ai-lab/cail-identity": "5.2.6",
     "@cuny-ai-lab/cail-log": "0.6.4"

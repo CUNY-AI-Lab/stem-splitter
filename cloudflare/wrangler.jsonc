@@ -3,6 +3,7 @@
   "name": "cail-stem-splitter-preview",
   "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
   "main": "worker.ts",
+  "alias": { "hono": "hono-cloudflare", "hono/factory": "hono-cloudflare/factory" },
   "compatibility_date": "2026-09-06",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
@@ -34,6 +35,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-cuny-sso-20260908"
+    "RELEASE": "cloudflare-crate-gateway-20260929"
   }
 }
