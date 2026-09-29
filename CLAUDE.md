@@ -4,6 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current branch authority (September 8)
 
+September 29: `codex/crate-class-usage-20260929` builds on the Cloudflare Gateway
+PR #11. The user now requires the single Crate below the active station's other
+content, before the footer. This supersedes the earlier Crate-first placement.
+Class enrollment uses central Admission; Replicate allowance accounting remains
+an explicit gap documented in `docs/class-access-and-usage.md`.
+
 The user requires Cloudflare-only work. `codex/cloudflare-migration` merges the
 Crate-first hotfix and the gated raw-audio Remixer workflow. Only the isolated
 candidate configuration under `cloudflare/` and its existing alias are release

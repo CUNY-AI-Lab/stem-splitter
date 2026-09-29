@@ -23,7 +23,7 @@ Missing Gateway configuration fails closed, even if an old OpenRouter key
 remains on the Worker. The adapter does not use that key or provider fallbacks.
 
 This applies Steve's shared transport contract to the later Cloudflare product.
-It preserves the Crate-first design, disabled Remixer default, owned recordings,
+It preserves the single Crate, disabled Remixer default, owned recordings,
 folders, expiring instructor access, and existing independent D1/R2 storage.
 It does not import Railway's class-shared data or revive the Remixer assistant.
 
@@ -32,6 +32,22 @@ read-only package credential, tests the actual Worker/Hono/client boundary and
 Chrome UI, and dry-builds only this candidate. It does not deploy. Root analyzer
 dependency and existing native-image workflow inputs remain unchanged.
 See `../docs/superpowers/plans/2026-09-23-cloudflare-gateway.md` for acceptance.
+
+## Class access and Crate placement
+
+The Crate appears below the active station's workspace, before the footer. It
+remains one section: below the session rack when Remixer is disabled, or below
+the remix deck when enabled. Its search state and source attribution survive
+station changes.
+
+Active Lab class enrollment satisfies the existing Admission check, and the
+first signed-in request creates the student's local app record. No second
+student roster import is needed. Class enrollment, expiry and allowance scope
+stay in Admission; instructor editing access remains a separate expiring app
+grant. Administrators can reach Lab class management from Account → Manage access.
+
+See [class access and usage](../docs/class-access-and-usage.md) for the enrollment
+workflow, current billing coverage and outstanding Replicate accounting work.
 
 ## September 8 integration
 

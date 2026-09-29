@@ -989,7 +989,7 @@ async function importArchiveTrack(item, track, button) {
     });
 
     addJob(job);
-    showCrateImportMessage(`${processingMessage(job, 'stems')} It lands on the shelf below when ready.`);
+    showCrateImportMessage(`${processingMessage(job, 'stems')} ${runtime.remixer ? 'Find its stems on the shelf when ready.' : 'Find the split in your session rack when ready.'}`);
     renderJobs();
     pollSoon();
     button.textContent = 'QUEUED';
@@ -3051,9 +3051,9 @@ function initStations() {
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
   if (!runtime.remixer) document.querySelector('.crate-note').textContent = 'Browse openly licensed recordings and choose a track to split.';
-  if (!runtime.remixer) stationViews.splitter.prepend(document.getElementById('crate'));
+  if (!runtime.remixer) stationViews.splitter.append(document.getElementById('crate'));
   else {
-    stationViews.remixer.prepend(document.getElementById('crate'));
+    stationViews.remixer.append(document.getElementById('crate'));
     document.getElementById('crate-toggle').setAttribute('aria-expanded', 'true');
     crateToggle.classList.add('open');
     document.getElementById('crate-body').hidden = false;
