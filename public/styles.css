@@ -1014,6 +1014,8 @@ footer {
   .ch-id { min-width: 5rem; }
   .ch-name { font-size: 0.64rem; }
   .timecode { display: none; }
+  .tc-now { display: inline; min-width: 4ch; flex-shrink: 0; }
+  .transport { gap: 0.5rem; }
   .meter { max-width: 70px; }
 }
 

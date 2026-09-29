@@ -229,7 +229,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.locator('#account-footer')).toContainText('Your splits remain in your account for 30 days.');
+    await expect(page.locator('#account-footer')).toContainText('Your splits remain in your account for 90 days.');
     await expect(page.locator('body')).not.toContainText('open them on any browser');
     // Account details must not survive a sign-out from another tab.
     await context.setExtraHTTPHeaders({});

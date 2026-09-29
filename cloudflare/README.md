@@ -171,7 +171,7 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
 ## Data and access
 
 - Fresh D1: `cail-stem-splitter-preview`, ID `ae01c5db-c19e-48c8-91bd-132876276f22`.
-- R2: `cail-stem-splitter-preview-audio`; 30-day expiry and one-day incomplete
+- R2: `cail-stem-splitter-preview-audio`; 90-day expiry and one-day incomplete
   multipart cleanup. No public bucket access and no S3 credentials are needed.
 - Fresh schema: `wrangler d1 execute cail-stem-splitter-preview --remote --file ../schema.sql`.
 - Existing schema upgrades: explicitly execute `../migrations/0018-workspace-access.sql`

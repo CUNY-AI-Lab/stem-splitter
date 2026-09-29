@@ -1157,7 +1157,7 @@ app.get('/api/jobs', async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT j.id, j.filename, j.model, j.created_at
     FROM job_owners o JOIN jobs j ON j.id = o.job_id
-    WHERE o.subject = ? AND j.created_at > datetime('now', '-30 days')
+    WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
       AND (? IS NULL OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41
   `).bind(principal.subject, before?.createdAt ?? null, before?.createdAt ?? null,

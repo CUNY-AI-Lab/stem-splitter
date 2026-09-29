@@ -9,7 +9,11 @@ import { audioAnalysisSourceScopeForKey } from './analysis/source-scope.ts';
 const SOURCE_URL_TTL_SECONDS = 6 * 60 * 60;
 const ANALYSIS_URL_TTL_SECONDS = 10 * 60;
 const ISOLATION_URL_TTL_SECONDS = 15 * 60;
-const LOCAL_AUDIO_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+// Cloudflare account storage retains audio for 90 days. Keep the retained
+// Railway adapter's existing policy until a separate release is authorized.
+export function audioRetentionDays(env: Pick<Env, 'AUTH_MODE'>): number {
+  return env.AUTH_MODE === 'cail' ? 90 : 30;
+}
 const LOCAL_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 let nextLocalCleanupAt = 0;
@@ -138,12 +142,12 @@ export function isLocalSourceDownloadKey(key: string): boolean {
   );
 }
 
-function isExpiredLocalObject(object: R2Object, nowMs: number): boolean {
-  return object.uploaded.getTime() <= nowMs - LOCAL_AUDIO_RETENTION_MS;
+function isExpiredLocalObject(env: Env, object: R2Object, nowMs: number): boolean {
+  return object.uploaded.getTime() <= nowMs - audioRetentionDays(env) * 24 * 60 * 60 * 1000;
 }
 
 /**
- * Delete local Miniflare objects older than the production bucket's 30-day
+ * Delete local Miniflare objects older than the active adapter's retention
  * lifecycle. Pass nowMs explicitly in tests to verify expiry without waiting.
  */
 export async function cleanupExpiredLocalAudio(env: Env, nowMs = Date.now()): Promise<number> {
@@ -154,7 +158,7 @@ export async function cleanupExpiredLocalAudio(env: Env, nowMs = Date.now()): Pr
   do {
     const page = await env.AUDIO.list({ cursor });
     for (const object of page.objects) {
-      if (isExpiredLocalObject(object, nowMs)) expiredKeys.push(object.key);
+      if (isExpiredLocalObject(env, object, nowMs)) expiredKeys.push(object.key);
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
@@ -180,10 +184,10 @@ export async function maintainLocalAudioRetention(env: Env, nowMs = Date.now()):
   }
 }
 
-/** Fetch audio while enforcing the local 30-day retention boundary on access. */
+/** Fetch audio while enforcing the active adapter's retention boundary. */
 export async function getRetainedAudio(env: Env, key: string, nowMs = Date.now()): Promise<R2ObjectBody | null> {
   const object = await env.AUDIO.get(key);
-  if (!object || !usesRoutedAudio(env) || !isExpiredLocalObject(object, nowMs)) return object;
+  if (!object || !usesRoutedAudio(env) || !isExpiredLocalObject(env, object, nowMs)) return object;
 
   await env.AUDIO.delete(key);
   return null;
