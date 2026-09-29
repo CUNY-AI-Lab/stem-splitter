@@ -35,6 +35,12 @@ See `../docs/superpowers/plans/2026-09-23-cloudflare-gateway.md` for acceptance.
 
 ## Class access and Crate placement
 
+The Cloudflare production and Workerd-test bundles alias Hono to the adapter's
+patched `hono-cloudflare` pin (4.13.11). Keep the two alias maps aligned. The
+root dependency lock belongs to the frozen native-analyzer evidence and is not
+silently rebaselined by this Cloudflare release. Its older Hono dependency still
+needs a separately validated update before rebuilding that host.
+
 The Crate appears below the active station's workspace, before the footer. It
 remains one section: below the session rack when Remixer is disabled, or below
 the remix deck when enabled. Its search state and source attribution survive
