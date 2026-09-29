@@ -5,29 +5,32 @@ by the shared class code. Accounts are provisioned from the `TEACHER_SEED`
 secret as pre-hashed records; plaintext passwords must never enter Git, D1,
 shell history, command arguments, logs, or screenshots.
 
-## Cloudflare candidate: CUNY accounts
+## Cloudflare: CUNY accounts
 
 The migration authorized on 2026-09-06 uses CAIL Doorway sign-in and Admission,
 not `TEACHER_SEED`. Railway credentials remain in Railway; do not copy them to
-the candidate. The live Doorway route/sign-in acceptance is still outstanding.
+the Cloudflare app at `https://stem-splitter.ailab-452.workers.dev/`.
 
-Once the reviewed Doorway mount is available:
+Provision app-local instructor access through the existing CUNY sign-in:
 
 1. The person signs in through CUNY Login and has active Admission membership.
    Their first protected request creates a student workspace record; no password
    or role from browser input is accepted.
-2. They open **My account → Workspace ID** and give that pseudonymous ID to an
+2. They open **Account → Account ID** and give that pseudonymous ID to an
    existing CAIL Admission administrator. Do not use email guesses to link data.
-3. The administrator opens **My account → Workspace access**, chooses the exact
-   ID, selects Instructor, sets an expiry, and saves. A revision conflict requires
+3. The administrator opens **Account → Manage access**, chooses the exact
+   ID, selects Instructor, chooses a future end date or **No end date**, and saves.
+   Reload and reselect the account to verify the saved choice. A revision conflict requires
    reloading; do not overwrite a newer change. Admin status itself comes only
    from current Admission membership, never from this form.
 4. The instructor opens `/teacher.html` to edit guidance. The protected system
    prompt remains code-owned; amendment saves retain the existing revision/hash
    history. Instructor access does not grant another person's audio or folders.
 5. To revoke, suspend workspace access or remove Admission membership. Every
-   protected request rechecks both; expired instructor grants revert to student.
-   Use the CAIL portal for actual sign-out/session management.
+   protected request rechecks both; expired dated instructor grants revert to student.
+   **No end date** removes only the app-role expiry, not Lab membership or class
+   expiry. No Lab administrator grant is made. Use Account → Sign out to revoke
+   the app session without signing out of other CUNY applications.
 
 This currently governs one workspace. Admission-backed course rosters, explicit
 student submissions, per-course instructor authority and per-class guidance are

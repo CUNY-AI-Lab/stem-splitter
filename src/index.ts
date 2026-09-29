@@ -226,11 +226,13 @@ app.put('/api/admin/users/:subject', async (c) => {
   const body = parsed.value as { role?: unknown; disabled?: unknown; expiresAt?: unknown; revision?: unknown } | null;
   if (!body || !['student', 'instructor'].includes(String(body.role)) || typeof body.disabled !== 'boolean' ||
       !Number.isSafeInteger(body.revision) || Number(body.revision) < 0 ||
-      (body.role === 'instructor' && (typeof body.expiresAt !== 'string' || !Number.isFinite(Date.parse(body.expiresAt)) || Date.parse(body.expiresAt) <= Date.now()))) {
-    return c.json({ error: 'Choose a role and a future expiry for instructor access.' }, 400);
+      (body.role === 'instructor' && body.expiresAt !== null &&
+        (typeof body.expiresAt !== 'string' || !Number.isFinite(Date.parse(body.expiresAt)) || Date.parse(body.expiresAt) <= Date.now()))) {
+    return c.json({ error: 'Choose a role and either a future end date or no end date for instructor access.' }, 400);
   }
+  // Explicit null means no end date. An omitted expiry fails validation above.
   const result = await c.env.DB.prepare('UPDATE app_users SET role = ?, disabled = ?, role_expires_at = ?, updated_by = ?, revision = revision + 1 WHERE subject = ? AND revision = ?')
-    .bind(body.role, body.disabled ? 1 : 0, body.role === 'instructor' ? new Date(String(body.expiresAt)).toISOString() : null, actor.subject, subject, body.revision).run();
+    .bind(body.role, body.disabled ? 1 : 0, body.role === 'instructor' && body.expiresAt !== null ? new Date(String(body.expiresAt)).toISOString() : null, actor.subject, subject, body.revision).run();
   if (!result.meta.changes) return c.json({ error: 'This account changed. Reload and try again.' }, 409);
   return c.json({ ok: true });
 });

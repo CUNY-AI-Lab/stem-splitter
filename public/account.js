@@ -18,15 +18,19 @@ function selectMember() {
   if (!user) return;
   el('access-role').value = user.role;
   el('access-enabled').checked = !user.disabled;
+  el('access-permanent').checked = user.role === 'instructor' && user.role_expires_at === null;
   const date = user.role_expires_at ? new Date(user.role_expires_at) : null;
   el('access-expiry').value = date ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   showExpiry();
 }
 function showExpiry() {
   const instructor = el('access-role').value === 'instructor';
-  el('access-expiry-field').hidden = !instructor;
-  el('access-expiry').disabled = !instructor;
-  el('access-expiry').required = instructor;
+  el('access-permanent-field').hidden = !instructor;
+  el('access-permanent').disabled = !instructor;
+  const needsDate = instructor && !el('access-permanent').checked;
+  el('access-expiry-field').hidden = !needsDate;
+  el('access-expiry').disabled = !needsDate;
+  el('access-expiry').required = needsDate;
 }
 async function loadMembers() {
   if (membersLoading) return;
@@ -56,7 +60,12 @@ async function loadMembers() {
   } finally { membersLoading = false; }
 }
 el('access-member').addEventListener('change', selectMember);
-el('access-role').addEventListener('change', showExpiry);
+el('access-role').addEventListener('change', () => {
+  // Selecting a new role never silently selects a permanent grant.
+  el('access-permanent').checked = false;
+  showExpiry();
+});
+el('access-permanent').addEventListener('change', showExpiry);
 el('account-admin').addEventListener('toggle', async () => {
   if (el('account-admin').open && !membersLoaded && !membersLoading) {
     el('access-status').textContent = 'Loading accounts…';
@@ -77,7 +86,7 @@ el('access-form').addEventListener('submit', async (event) => {
     await request(`/api/admin/users/${encodeURIComponent(user.subject)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: el('access-role').value, disabled: !el('access-enabled').checked,
-        expiresAt: el('access-role').value === 'instructor' && el('access-expiry').value ? new Date(el('access-expiry').value).toISOString() : null, revision: user.revision }),
+        expiresAt: el('access-role').value === 'instructor' && !el('access-permanent').checked ? new Date(el('access-expiry').value).toISOString() : null, revision: user.revision }),
     });
     el('access-status').textContent = 'Access updated.';
     await loadMembers();

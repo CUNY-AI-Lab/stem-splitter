@@ -31,8 +31,9 @@ allowance drawdown.
    access and class membership keep their separate provenance.
 3. Students open STEM Splitter and sign in. Any current eligible Lab membership
    satisfies the app check. No per-student activation in STEM Splitter is needed.
-4. Give instructors the app's expiring Instructor role through Account → Manage
-   access when they need to edit Listening Guide guidance. A class instructor is
+4. Give instructors the app's Instructor role through Account → Manage access,
+   choosing a future end date or **No end date**, when they need to edit Listening
+   Guide guidance. The role never bypasses current Lab membership. A class instructor is
    not automatically a Lab administrator or a STEM Splitter instructor.
 
 This is automatic admission for the enrolled cohort, not an administrator bulk

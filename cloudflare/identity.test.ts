@@ -93,3 +93,39 @@ test('only current Admission administrators gain account-management authority', 
   membership.accessRole = 'member'; membership.budgetScope = 'person';
   assert.equal((await authorizeCailRequest(req('/api/admin/users'), env))?.status, 403);
 });
+
+test('permanent instructor access remains app-local, revocable and subject to current Admission', async () => {
+  const { env, db, membership } = setup();
+  await authorizeCailRequest(req(), env);
+  await db.prepare('UPDATE app_users SET role = ?, role_expires_at = NULL, updated_by = ?, revision = revision + 1 WHERE subject = ?')
+    .bind('instructor', TEST_SUBJECTS.bob, TEST_SUBJECTS.alice).run();
+  const principals: AppPrincipal[] = [];
+  assert.equal(await authorizeCailRequest(req('/api/teacher/prompt'), env, principal => principals.push(principal)), null);
+  assert.equal(principals[0]?.role, 'instructor');
+  assert.equal((await authorizeCailRequest(req('/api/admin/users'), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt', bob), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/jobs/not-owned'), env))?.status, 404);
+
+  membership.expiresAt = new Date(Date.now() - 1000).toISOString();
+  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+  membership.expiresAt = new Date(Date.now() + 60000).toISOString();
+  assert.equal(await authorizeCailRequest(req('/api/teacher/prompt'), env), null);
+  env.ADMISSION_RESOLVER = { resolveMembership: async () => ({ ok: false, code: 'not_admitted' }) };
+  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+  env.ADMISSION_RESOLVER = { resolveMembership: async () => membership };
+  await db.prepare('UPDATE app_users SET disabled = 1, revision = revision + 1 WHERE subject = ?').bind(TEST_SUBJECTS.alice).run();
+  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+});
+
+test('a null instructor end date is distinct from expired, empty or malformed dates', async () => {
+  const { env, db } = setup();
+  await authorizeCailRequest(req(), env);
+  for (const expiry of [new Date(Date.now() - 1000).toISOString(), '', 'invalid']) {
+    await db.prepare('UPDATE app_users SET role = ?, role_expires_at = ?, updated_by = ?, revision = revision + 1 WHERE subject = ?')
+      .bind('instructor', expiry, TEST_SUBJECTS.bob, TEST_SUBJECTS.alice).run();
+    const principals: AppPrincipal[] = [];
+    assert.equal(await authorizeCailRequest(req(), env, principal => principals.push(principal)), null);
+    assert.equal(principals[0]?.role, 'student');
+    assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+  }
+});
