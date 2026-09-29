@@ -1,8 +1,8 @@
-# STEM Splitter: next implementation sequence
+## Historical September 6 implementation sequence
 
 **Updated:** 2026-09-06
 
-**Active release target:** Railway
+**Historical release target:** Railway. Superseded for this work by the Cloudflare-only scope above.
 
 **Migration boundary:** The user authorized an isolated Cloudflare candidate;
 Railway production stays unchanged until the candidate is accepted and stress tested.
@@ -1697,3 +1697,38 @@ canary. Student access remains off.
 - [Slakh2100](https://www.slakh.com/) and
   [MedleyDB](https://medleydb.weebly.com/) — complementary synthetic and real
   multitrack evaluation sources.
+# September 29 account and classroom readiness
+
+Cloudflare only. Release against `codex/cloudflare-migration`, which includes
+PR #14 (instructor access with no end date). Do not merge into or deploy Railway
+main. The September 29 account fixes are not production until explicitly released.
+
+- [x] Reconcile PR #14 before preparing account recovery and daily limits.
+- [x] Repair same-origin logout forms without accepting null/cross-site origins.
+- [x] Clear browser credentials on revocation failure and disclose that server
+  revocation was not confirmed; test missing bindings and absent sessions.
+- [x] Recover owned splits from the server; verify pagination and cross-account isolation.
+- [x] Show save confirmation only after a successful signed-in creation response;
+  move the retention note to the signed-in dashboard footer.
+- [x] Refresh My account after another tab signs out or changes identity/role.
+- [x] Ten signed-in runs per UTC day, no shared split-count ceiling; concise run
+  terminology and local reset time. Failed submissions still count, as disclosed.
+- [x] Preserve the current subtitle and expand the YouTube input by default.
+- [x] Disclose that Guide instructions are app-wide, not class-specific.
+- [ ] Release the tested committed Cloudflare tree and run real student acceptance.
+- [ ] Three visitor runs per day. Blocked on approved Turnstile credentials/setup;
+  then add separate private visitor sessions, atomic limits, isolation and abuse tests.
+  Do not fake CAIL identities, weaken Admission, or enable paid guest work early.
+- [ ] Per-class instructions. First resolve class context through the supported
+  Admission contract; then scoped settings/history/cache keys and cross-class tests.
+- [ ] Account names in administration. Use an authorized directory contract, not
+  browser-supplied identity or inferred email matches; retain IDs as a fallback.
+- [ ] Legacy import. Inventory authorized records, verify destination identity,
+  review ownership, then implement a journaled importer/rollback and acceptance.
+- [ ] Replicate cost accounting through the shared Gateway. Existing billing stays
+  unchanged; require a supported asynchronous prediction/accounting contract first.
+- [ ] Auto/instrument discovery. Follow the frozen phased promotion gates; do not
+  enable service flags until provisioned and live-verified.
+- [ ] Remixer promotion and persistence. Keep disabled until live browser/media,
+  license/export and student acceptance pass; account project saves need their own
+  schema, ownership and expiry design. Browser takes are not account saves.

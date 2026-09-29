@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=app-20260908-sso" />
+  <link rel="stylesheet" href="/styles.css?v=20260929-account-rack" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -25,7 +25,7 @@
       </a>
       <p id="split-summary" class="kicker">// a closer listen</p>
       <h1>STEM<br /><span id="station-word">SPLITTER</span></h1>
-      <p id="station-tagline" class="tagline">Separate a song. Explore its layers.</p>
+      <p id="station-tagline" class="tagline">Split a song apart. Listen one layer at a time. Annotate as you go.</p>
     </header>
 
     <div id="view-splitter" role="tabpanel" aria-labelledby="tab-splitter">
@@ -39,7 +39,7 @@
         <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
       </section>
 
-      <details id="yt-disclosure" class="yt-disclosure">
+      <details id="yt-disclosure" class="yt-disclosure" open>
         <summary class="yt-summary mono">Or paste a YouTube link</summary>
         <form id="yt-form" class="yt-form">
           <input id="yt-url" type="url" placeholder="https://youtube.com/watch?v=…" aria-label="YouTube link" />
@@ -63,7 +63,10 @@
       <section id="jobs" class="rack">
         <h2 class="rack-title"><span>SESSION RACK</span></h2>
         <p id="empty-state" class="empty mono">— no tracks loaded —</p>
+        <p id="rack-status" class="account-help" role="status" hidden></p>
+        <button id="rack-retry" class="account-button" type="button" hidden>Try again</button>
         <ul id="job-list" class="job-list"></ul>
+        <button id="rack-more" class="account-button" type="button" hidden>Load more splits</button>
       </section>
 
       <!-- Instructor-only: revealed when a teacher session cookie is present. -->
@@ -181,6 +184,6 @@
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
-  <script src="/app.js?v=app-20260929-crate"></script>
+  <script src="/app.js?v=app-20260929-account-gaps"></script>
 </body>
 </html>

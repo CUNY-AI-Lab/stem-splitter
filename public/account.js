@@ -5,6 +5,30 @@ let subject = '';
 let membersLoaded = false;
 let membersLoading = false;
 let saving = false;
+let accountRole = '';
+let checkingAccount = false;
+window.addEventListener('focus', async () => {
+  if (!subject || checkingAccount) return;
+  checkingAccount = true;
+  try {
+    const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
+    if (response.status === 401 || response.status === 403) {
+      for (const id of ['account-details', 'account-reference', 'account-admin', 'account-footer']) el(id).hidden = true;
+      users = [];
+      el('account-id').textContent = '';
+      el('access-member').replaceChildren();
+      subject = '';
+      location.reload();
+    } else if (response.ok) {
+      const { account } = await response.json();
+      if (account?.subject !== subject || account?.role !== accountRole) {
+        for (const id of ['account-details', 'account-reference', 'account-admin', 'account-footer']) el(id).hidden = true;
+        location.reload();
+      }
+    }
+  } catch { /* A network outage is not a sign-out. */ }
+  finally { checkingAccount = false; }
+});
 async function request(path, options = {}) {
   const response = await fetch(path, { credentials: 'same-origin', ...options });
   const body = await response.json();
@@ -99,15 +123,23 @@ el('access-form').addEventListener('submit', async (event) => {
 });
 (async () => {
   try {
-    const { account } = await request('/api/account');
+    const { account, splitAllowance } = await request('/api/account');
     subject = account.subject;
+    accountRole = account.role;
     el('account-status').textContent = '';
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
     el('account-id').textContent = subject;
     el('account-details').hidden = false;
+    el('account-footer').hidden = false;
     el('account-reference').hidden = false;
     el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
     el('account-admin').hidden = account.role !== 'admin';
+    if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
+        splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
+        Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
+      const reset = new Date(splitAllowance.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+      el('account-splits').textContent = `${splitAllowance.remaining} of ${splitAllowance.limit} runs left today. Resets ${reset}.`;
+    }
     try {
       const { quota } = await request('/api/model-quota');
       if (quota && typeof quota.remaining_percent === 'number') el('account-quota').textContent = `CUNY AI Lab model allowance: ${quota.remaining_percent}% remaining (estimated).`;

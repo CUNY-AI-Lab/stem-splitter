@@ -87,6 +87,15 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const createdResponse = await call('/api/jobs', 0, jobRequest);
     assert.equal(createdResponse.status, 200, await createdResponse.clone().text());
     const created = await createdResponse.json();
+    assert.equal(created.savedToAccount, true);
+    const listed = await (await call('/api/jobs')).json();
+    assert.deepEqual(listed.jobs.map((row: { id: string }) => row.id), [created.id]);
+    assert.equal(listed.nextCursor, null);
+    assert.equal(JSON.stringify(listed).includes('source_key'), false);
+    assert.deepEqual((await (await call(`/api/jobs?subject=${subjects[0]}`, 1)).json()).jobs, []);
+    assert.deepEqual((await (await call('/api/jobs', 2)).json()).jobs, []); // Admin rack is still personal.
+    assert.equal((await worker.fetch('/api/jobs')).status, 401);
+    assert.equal((await call('/api/jobs?cursor=bad')).status, 400);
     assert.equal(providerStarts, 1);
     assert.equal((await call(`/api/jobs/${created.id}`, 1)).status, 404);
     assert.equal((await call(`/api/files/%73tems/${created.id}/vocals.mp3`, 1)).status, 400);
@@ -117,8 +126,27 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(quota.quota.remaining_percent, 90);
     assert.equal(await stats(), 3);
     const attempts = await Promise.all(Array.from({ length: 20 }, () => call('/api/jobs', 0, { method: 'POST', body: '{}' })));
-    assert.equal(attempts.filter((response) => response.status === 400).length, 4);
-    assert.equal(attempts.filter((response) => response.status === 429).length, 16);
+    assert.equal(attempts.filter((response) => response.status === 400).length, 9);
+    assert.equal(attempts.filter((response) => response.status === 429).length, 11);
+    const exhausted = attempts.find((response) => response.status === 429)!;
+    const exhaustedBody = await exhausted.json();
+    assert.equal(exhaustedBody.code, 'split_daily_limit');
+    assert.equal(exhaustedBody.limit, 10);
+    assert.ok(Number(exhausted.headers.get('retry-after')) > 0);
+    assert.match(exhaustedBody.resetsAt, /T00:00:00.000Z$/);
+    assert.match(exhausted.headers.get('cache-control')!, /no-store/);
+    // A second student and an admin each have ten, independently of the first
+    // person: thirty reservations in total, beyond the removed shared cap of 20.
+    for (const who of [1, 2]) {
+      const responses = await Promise.all(Array.from({ length: 12 }, () => call('/api/jobs', who, { method: 'POST', body: '{}' })));
+      assert.equal(responses.filter((response) => response.status === 400).length, who === 1 ? 9 : 10);
+      assert.equal(responses.filter((response) => response.status === 429).length, who === 1 ? 3 : 2);
+      const account = await (await call(`/api/account?subject=${subjects[0]}`, who)).json();
+      assert.equal(account.account.subject, subjects[who]);
+      assert.deepEqual(account.splitAllowance, { limit: 10, used: 10, remaining: 0, resetsAt: exhaustedBody.resetsAt });
+    }
+    const ownAllowance = (await (await call('/api/account')).json()).splitAllowance;
+    assert.deepEqual(ownAllowance, { limit: 10, used: 10, remaining: 0, resetsAt: exhaustedBody.resetsAt });
     assert.equal(providerStarts, 1); // Concurrent invalid/replayed requests cannot overspend the daily reservation.
     const users = await (await call('/api/admin/users', 2)).json();
     const alice = users.users.find((user: { subject: string }) => user.subject === subjects[0]);
@@ -151,6 +179,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(audit.status, 200);
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ role: 'student', disabled: true, revision: alice.revision + 2 }) })).status, 200);
     assert.equal((await call(`/api/files/stems/${created.id}/vocals.mp3`)).status, 403);
+    assert.equal((await call('/api/jobs')).status, 403);
     assert.equal(providerStarts, 1);
     const denied = await Promise.all(Array.from({ length: 40 }, () => worker.fetch('/api/account')));
     assert.ok(denied.every((response) => response.status === 401));

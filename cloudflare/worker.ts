@@ -10,7 +10,9 @@ export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
+  // Native same-origin POST forms need their Origin for CSRF validation.
+  // Continue suppressing referrers to other sites.
+  'Referrer-Policy': 'same-origin',
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
@@ -64,6 +66,7 @@ export default {
     }
     const headers = new Headers(response.headers);
     for (const [key, value] of Object.entries(HEADERS)) headers.set(key, value);
+    if (url.pathname.startsWith('/auth/')) headers.set('Referrer-Policy', 'no-referrer');
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname === '/healthz') headers.set('Cache-Control', 'private, no-store');
     return new Response(response.body, { status: response.status, headers });
   },

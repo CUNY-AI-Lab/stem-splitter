@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
+import { reserveDailyRequest, splitAllowance } from './daily-allowance.ts';
 import {
   getRetainedAudio,
   isLocalHosting,
@@ -176,16 +177,16 @@ app.use('/api/*', async (c, next) => {
     const scope = c.req.method !== 'POST' ? null : c.req.path === '/api/jobs' ? 'split'
       : !c.env.assistantTransport && /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(c.req.path) ? 'guide' : null;
     if (scope && principal) {
-      // An atomic database reservation, not a per-isolate counter. Reserve
-      // before imports or provider calls; failure never refunds an uncertain call.
-      const day = new Date().toISOString().slice(0, 10);
-      const reservation = await c.env.DB.prepare(`INSERT INTO app_request_reservations (id, subject, scope, day)
-        SELECT ?, ?, ?, ? WHERE
-        (SELECT COUNT(*) FROM app_request_reservations WHERE scope = ? AND day = ? AND subject = ?) < ? AND
-        (SELECT COUNT(*) FROM app_request_reservations WHERE scope = ? AND day = ?) < ?`)
-        .bind(crypto.randomUUID(), principal.subject, scope, day, scope, day, principal.subject,
-          scope === 'split' ? 5 : 100, scope, day, scope === 'split' ? 20 : 500).run();
-      if (!reservation.meta.changes) return c.json({ error: 'The daily allowance has been reached. Please try again tomorrow.' }, 429);
+      const reservation = await reserveDailyRequest(c.env.DB, principal.subject, scope);
+      if (!reservation.allowed) {
+        c.header('Retry-After', String(reservation.retryAfter));
+        return c.json({
+          error: scope === 'split' ? `You have used today's ${reservation.limit} runs. Your daily limit resets at midnight UTC.`
+            : 'The daily guide allowance has been reached. Please try again tomorrow.',
+          code: scope === 'split' ? 'split_daily_limit' : 'guide_daily_limit',
+          limit: reservation.limit, resetsAt: reservation.resetsAt,
+        }, 429);
+      }
     }
   } else if (c.req.path.startsWith('/api/teacher/') && !['GET', 'HEAD'].includes(c.req.method)) {
     if (c.req.header('origin') && !validWriteOrigin(c.req.raw, c.env)) return c.json({ error: 'Request origin not allowed' }, 403);
@@ -199,9 +200,13 @@ app.get('/api/runtime', (c) => c.json({
   remixer: c.env.REMIXER_ENABLED === 'true',
 }));
 
-app.get('/api/account', (c) => {
+app.get('/api/account', async (c) => {
   const principal = c.get('principal');
-  return principal ? c.json({ account: principal }) : c.json({ account: null }, 401);
+  if (!principal) return c.json({ account: null }, 401);
+  // Usage is informational; an unavailable count must not hide a valid account.
+  let allowance = null;
+  try { allowance = await splitAllowance(c.env.DB, principal.subject); } catch { /* Report unknown, not zero. */ }
+  return c.json({ account: principal, splitAllowance: allowance });
 });
 
 app.get('/api/model-quota', async (c) => {
@@ -1118,6 +1123,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   return c.json({
     id,
     status: 'processing',
+    savedToAccount: Boolean(c.get('principal')),
     filename,
     model,
     expectedStems: getSeparationOption(model)?.stems ?? [],
@@ -1129,6 +1135,39 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         }
       : {}),
   });
+});
+
+// The principal is verified by CAIL middleware. Never accept an owner from
+// query parameters, and never enumerate legacy class-shared/unclaimed jobs.
+app.get('/api/jobs', async (c) => {
+  c.header('Cache-Control', 'private, no-store');
+  const principal = c.get('principal');
+  if (!principal || c.env.AUTH_MODE !== 'cail') return c.json({ error: 'Sign in to view your splits.' }, 401);
+  let before: { createdAt: string; id: string } | null = null;
+  const cursor = c.req.query('cursor');
+  if (cursor !== undefined) {
+    try {
+      if (!cursor || cursor.length > 512) throw new Error('cursor');
+      const value = JSON.parse(atob(cursor));
+      if (!value || typeof value.createdAt !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value.createdAt) ||
+          typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value.id)) throw new Error('cursor');
+      before = value;
+    } catch { return c.json({ error: 'Invalid page. Reload your splits.' }, 400); }
+  }
+  const { results } = await c.env.DB.prepare(`
+    SELECT j.id, j.filename, j.model, j.created_at
+    FROM job_owners o JOIN jobs j ON j.id = o.job_id
+    WHERE o.subject = ? AND j.created_at > datetime('now', '-30 days')
+      AND (? IS NULL OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
+    ORDER BY j.created_at DESC, j.id DESC LIMIT 41
+  `).bind(principal.subject, before?.createdAt ?? null, before?.createdAt ?? null,
+    before?.createdAt ?? null, before?.id ?? null)
+    .all<Pick<JobRow, 'id' | 'filename' | 'model' | 'created_at'>>();
+  const rows = results.slice(0, 40);
+  const last = rows.at(-1);
+  return c.json({ jobs: rows.map(row => ({ id: row.id, filename: row.filename,
+    model: row.model ?? DEFAULT_DEMUCS_MODEL, createdAt: row.created_at })),
+    nextCursor: results.length > 40 && last ? btoa(JSON.stringify({ createdAt: last.created_at, id: last.id })) : null });
 });
 
 app.get('/api/jobs/:id', async (c) => {

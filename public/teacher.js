@@ -377,7 +377,7 @@ promptForm.addEventListener('submit', async (event) => {
     changeNote.value = '';
     await loadPrompt();
     showStatus(
-      record.guidesCleared ? 'Saved. Listening guides updated.' : 'Saved.'
+      record.guidesCleared ? 'Saved. Applies when a guide is generated.' : 'Saved.'
     );
     if (!previewWrap.hidden) await loadPreview();
   } catch (error) {
@@ -430,10 +430,11 @@ historyMoreBtn.addEventListener('click', async () => {
       signinForm.hidden = true;
       signoutBtn.hidden = true;
       const message = document.createElement('p');
-      message.textContent = 'Sign in with your CUNY account to open class guidance.';
+      message.textContent = 'Sign in with your CUNY account to open guide instructions.';
       signinPanel.append(message);
       if (runtime.loginUrl) {
         const link = document.createElement('a');
+        link.className = 'account-button';
         link.href = `${runtime.loginUrl}?next=/teacher.html`;
         link.textContent = 'CUNY Login';
         signinPanel.append(link);
@@ -442,7 +443,7 @@ historyMoreBtn.addEventListener('click', async () => {
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
       showPanel(false);
-      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit class guidance.';
+      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit guide instructions.';
       return;
     }
     await loadPrompt();

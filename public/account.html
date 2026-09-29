@@ -4,22 +4,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>STEM Splitter · Account</title>
-<link rel="stylesheet" href="/styles.css?v=20260908-account">
+<link rel="stylesheet" href="/styles.css?v=20260929-account-rack">
 <main class="teacher-main account-main">
   <header class="masthead">
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
     <h1>Account</h1>
   </header>
   <p id="account-status" role="status">Loading…</p>
-  <p id="account-login" hidden><a href="/auth/login?next=/account.html">CUNY Login</a></p>
+  <p id="account-login" hidden><a class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
   <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
+    <p id="account-splits">Daily split allowance unavailable.</p>
     <p id="account-quota">Model usage unavailable.</p>
+    <p class="account-help">Submitted runs count even if they fail. Listening Guy uses your Lab allowance separately.</p>
     <nav class="account-links" aria-label="STEM Splitter">
-      <a href="/">← Back to Splitter</a>
-      <a id="account-guidance" href="/teacher.html" hidden>Class guidance</a>
+      <a class="account-button" href="/">← Back to Splitter</a>
+      <a id="account-guidance" href="/teacher.html" hidden>Guide instructions</a>
     </nav>
-    <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
   </section>
   <details id="account-admin" class="account-disclosure" hidden>
     <summary>Manage access</summary>
@@ -45,6 +46,10 @@
     <code id="account-id"></code>
   </details>
   <p id="account-back" hidden><a href="/">← Back to Splitter</a></p>
+  <section id="account-footer" hidden>
+    <p class="account-help">Your splits remain in your account for 30 days.</p>
+    <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
+  </section>
 </main>
-<script src="/account.js?v=20260929-instructor"></script>
+<script src="/account.js?v=20260929-account-gaps"></script>
 </html>

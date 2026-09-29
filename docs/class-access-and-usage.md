@@ -58,11 +58,20 @@ owns their recordings; class enrollment alone does not share everyone's audio.
 | Separate audio with Replicate | Provider spend, not yet deducted from the Lab allowance |
 | Replicate YouTube fallback | Additional provider prediction, not yet deducted from the Lab allowance |
 
-Current split safeguards reserve at most five attempts per person and twenty
-for the whole app each UTC day. These limits are not dollar accounting and may
-constrain a full-class exercise. Failed or uncertain attempts consume a slot.
-Capacity changes should follow the expected class workload and a verified cost
-limit rather than silently raising these caps.
+The September 29 daily-allowance change reserves at most **ten split attempts
+per signed-in person per UTC day**, with **no shared class/app split-count cap**.
+Failed or uncertain attempts consume a slot; playback and saved-result reads do
+not. My account displays the remaining count and reset time separately from the
+estimated Lab model allowance. These changes require release before they affect
+production; the previously deployed safeguards were five per person and twenty
+across the app.
+
+The approved public policy is **three attempts per visitor per day**. That tier
+is not enabled: private visitor sessions and bot verification must precede
+public paid work. The user confirmed existing Replicate billing is covered;
+do not replace that transport or change credentials for this rollout. See the
+[daily allowance specification](superpowers/specs/2026-09-29-daily-split-allowances.md).
+Neither visitor nor member attempt counts constitute dollar accounting.
 
 ## Finish unified audio accounting
 
@@ -70,7 +79,8 @@ Cloudflare documents a Replicate proxy, but forwarding a prediction is not proof
 that its GPU cost is recorded against a human allowance. Its custom-cost header
 is token-based and does not calculate costs for responses without token usage.
 The current CAIL Gateway has no Replicate prediction contract. Keep this an
-explicit class-launch gap; do not substitute an app key, a browser-supplied user
+explicit accounting gap (not a blocker to the user-approved existing Replicate
+billing arrangement); do not substitute an app key, a browser-supplied user
 label, fake token counts or a separate local dollar balance.
 
 Required implementation order:
