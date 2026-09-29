@@ -4,6 +4,58 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
+import { handleAuth, SESSION_COOKIE, LOGIN_COOKIE } from './sso.ts';
+
+test('Sign out submits a trusted origin, clears cookies and returns to Splitter', async ({ page, context }) => {
+  const origin = 'https://stem-signout.test';
+  const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)) }] });
+  let revoked = false;
+  let submittedOrigin;
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    const { url } = await server.listen();
+    await context.addCookies([SESSION_COOKIE, LOGIN_COOKIE].map(name => ({ name, value: name === SESSION_COOKIE ? '00000000-0000-4000-8000-000000000001.' + 'a'.repeat(43) : 'pending', url: origin, secure: true, httpOnly: true, sameSite: 'Lax' })));
+    await page.route(origin + '/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path === '/auth/logout') {
+        const headers = await request.allHeaders();
+        submittedOrigin = headers.origin;
+        const response = await handleAuth(new Request(request.url(), { method: request.method(), headers }), {
+          PUBLIC_BASE_URL: origin, CANONICAL_BASE_URL: origin,
+          IDENTITY: { revoke: async () => { revoked = true; }, identities: async () => ({ ok: false, status: 403 }) },
+        });
+        // Redirect continuations bypass Playwright routing. Keep the destination
+        // on the local harness, never a live service, after checking the handler.
+        if (response.status === 303) expect(response.headers.get('location')).toBe('/');
+        await route.fulfill({ status: response.status, headers: { ...Object.fromEntries(response.headers), ...(response.status === 303 ? { location: url.href } : {}), ...(response.headers.has('set-cookie') ? { 'set-cookie': response.headers.getSetCookie().join('\n') } : {}) }, body: await response.text() });
+      } else if (path === '/api/account') {
+        await route.fulfill({ json: { account: { subject: 'fixture', role: 'student' } } });
+      } else if (path === '/api/model-quota') {
+        await route.fulfill({ json: { quota: null } });
+      } else if (path === '/') {
+        await route.fulfill({ contentType: 'text/html', body: '<title>STEM Splitter</title><h1>STEM Splitter</h1><a href="/auth/login">CUNY Login</a>' });
+      } else {
+        const response = await server.fetch(path);
+        const headers = Object.fromEntries(response.headers);
+        // Only the fixture redirects to HTTP loopback after logout. Permit that
+        // destination in its CSP while retaining the actual Referrer-Policy.
+        if (headers['content-security-policy']) headers['content-security-policy'] = headers['content-security-policy'].replace("form-action 'self'", `form-action 'self' ${url.origin}`);
+        await route.fulfill({ status: response.status, headers, body: Buffer.from(await response.arrayBuffer()) });
+      }
+    });
+    await page.goto(origin + '/account.html');
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    expect(submittedOrigin).toBe(origin);
+    await expect(page).toHaveURL(url.href);
+    expect(revoked).toBe(true);
+    expect((await context.cookies()).filter(cookie => [SESSION_COOKIE, LOGIN_COOKIE].includes(cookie.name))).toEqual([]);
+    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally { await server.close(); }
+});
 
 test('Account stays simple; administration is deliberate, responsive, and recoverable', async ({ page, context }) => {
   const issuer = await createTestIdentityIssuer();
@@ -14,6 +66,10 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     secrets: { WEBHOOK_SECRET: 'fixture-only' } }] });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  const consoleIssues = [];
+  page.on('console', message => {
+    if (['error', 'warning'].includes(message.type())) consoleIssues.push({ text: message.text(), url: message.location().url });
+  });
   let memberReads = 0;
   page.on('request', request => { if (new URL(request.url()).pathname === '/api/admin/users') memberReads++; });
   const receipts = process.env.STEM_SCREENSHOT_DIR;
@@ -27,7 +83,8 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page).toHaveTitle('STEM Splitter · Account');
     await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
-    await expect(page.getByRole('link', { name: 'Class guidance', exact: true })).toBeVisible();
+    await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
+    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
     await expect(page.locator('#account-id')).toBeHidden();
@@ -90,13 +147,31 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Student access');
+    await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.getByRole('link', { name: 'Class guidance', exact: true })).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeHidden();
     await page.getByText('Account ID', { exact: true }).click();
     await expect(page.locator('#account-id')).toHaveText(TEST_SUBJECTS.alice);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByText('Account ID', { exact: true }).click();
     if (receipts) await page.screenshot({ path: `${receipts}/account-student-mobile-fixture.png`, fullPage: true });
+    const day = new Date().toISOString().slice(0, 10);
+    await seed(Array.from({ length: 10 }, (_, index) => `INSERT INTO app_request_reservations (id, subject, scope, day) VALUES ('account-split-${index}', '${TEST_SUBJECTS.alice}', 'split', '${day}')`));
+    await page.reload();
+    await expect(page.locator('#account-splits')).toContainText('0 of 10 runs left today. Resets');
+    await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toBeVisible();
+    if (receipts) await page.screenshot({ path: `${receipts}/account-exhausted-mobile-fixture.png`, fullPage: true });
+    // A counter outage is not zero usage, a failed sign-in, or a full allowance.
+    await page.route('**/api/account', async route => {
+      const upstream = await route.fetch();
+      const body = await upstream.json();
+      await route.fulfill({ response: upstream, json: { ...body, splitAllowance: null } });
+    });
+    await page.reload();
+    await expect(page.locator('#account-splits')).toHaveText('Daily split allowance unavailable.');
+    await expect(page.locator('#account-role')).toHaveText('Student access');
+    await expect(page.locator('#account-login')).toBeHidden();
+    await page.unroute('**/api/account');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.reload();
     await page.getByText('Manage access', { exact: true }).click();
@@ -108,7 +183,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Class guidance', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
 
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
@@ -152,8 +227,23 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Class guidance', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
+    await expect(page.locator('#account-footer')).toContainText('Your splits remain in your account for 30 days.');
+    await expect(page.locator('body')).not.toContainText('open them on any browser');
+    // Account details must not survive a sign-out from another tab.
+    await context.setExtraHTTPHeaders({});
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(page.locator('#account-login')).toBeVisible();
+    await expect(page.locator('#account-details')).toBeHidden();
+    await expect(page.locator('#account-footer')).toBeHidden();
+    await expect(page.locator('#account-id')).toBeEmpty();
     expect(errors).toEqual([]);
+    // Quota fixture has no Gateway JWT (401); the deliberate management outage
+    // is 503. Do not allow unrelated console errors to disappear in that noise.
+    expect(consoleIssues.filter(message =>
+      !(/^Failed to load resource: the server responded with a status of (401|503)\b/.test(message.text) && /\/api\/(account|model-quota|admin\/users)$/.test(message.url)) &&
+      !(message.text === 'Failed to load resource: the server responded with a status of 404 (Not Found)' && message.url.endsWith('/favicon.ico'))
+    )).toEqual([]);
   } finally { await server.close(); }
 });

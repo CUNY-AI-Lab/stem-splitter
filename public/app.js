@@ -5,6 +5,10 @@ const POLL_INTERVAL_MS = 5000;
 const STEM_ORDER = ['vocals', 'instrumental', 'drums', 'bass', 'other', 'guitar', 'piano'];
 let runtime = { authMode: 'class-code', remixer: false, loginUrl: null };
 let jobsStorageKey = 'jobs';
+let accountSubject = null;
+let accountJobs = [];
+let rackCursor = null;
+let rackLoading = false;
 
 // Solo has two stages on purpose, and this is the quiet one: the rest of the
 // band drops back instead of disappearing, so you hear a part in its place
@@ -55,7 +59,7 @@ function sharedAudioContext() {
 // --- class code ---------------------------------------------------------
 
 function getClassCode() {
-  return localStorage.getItem('classCode') || '';
+  try { return localStorage.getItem('classCode') || ''; } catch { return ''; }
 }
 
 const classCodeDialog = document.getElementById('class-code-dialog');
@@ -138,6 +142,10 @@ async function api(path, options = {}) {
     throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
+  if (res.status === 429 && body.code === 'split_daily_limit' && Number.isFinite(Date.parse(body.resetsAt))) {
+    const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+    throw new Error(`You've used today's runs. You can split again ${reset}.`);
+  }
   if (!res.ok) throw new Error(body.error?.message || body.error || `Request failed (${res.status})`);
   return body;
 }
@@ -201,6 +209,7 @@ async function streamApi(path, body, onEvent, signal) {
 // --- local job list -------------------------------------------------------
 
 function getJobs() {
+  if (runtime.authMode === 'cail') return accountJobs;
   try {
     return jobsStorageKey ? JSON.parse(localStorage.getItem(jobsStorageKey) || '[]') : [];
   } catch {
@@ -209,7 +218,9 @@ function getJobs() {
 }
 
 function saveJobs(jobs) {
-  if (jobsStorageKey) localStorage.setItem(jobsStorageKey, JSON.stringify(jobs));
+  if (runtime.authMode === 'cail') accountJobs = jobs;
+  try { if (jobsStorageKey) localStorage.setItem(jobsStorageKey, JSON.stringify(jobs)); }
+  catch { /* Account-owned splits remain saved even when browser storage is unavailable. */ }
 }
 
 // A new song takes the spotlight: previous sessions collapse (nothing is
@@ -227,7 +238,7 @@ function addJob(job) {
     startedAt: Date.now(),
     collapsed: false,
   });
-  saveJobs(jobs.slice(0, 50));
+  saveJobs(runtime.authMode === 'cail' ? jobs : jobs.slice(0, 50));
 }
 
 function setJobCollapsed(id, collapsed) {
@@ -1190,6 +1201,7 @@ async function diagnoseUploadFailure(file) {
   try {
     const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
     if (res.status === 401) {
+      if (runtime.authMode === 'cail') return 'Upload failed — sign in with CUNY Login and try again.';
       localStorage.removeItem('classCode');
       void ensureClassCode();
       return 'Upload failed — the class code was not accepted. Re-enter it and try again.';
@@ -1216,7 +1228,8 @@ function processingMessage(job, noun = 'parts') {
       ? `AUTO USED THE ${count}-PART DEFAULT — ${reason.toUpperCase()}`
       : `AUTO CHOSE ${count} PARTS — ${reason.toUpperCase()}`;
   }
-  return `${prefix} — ${noun} will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.`;
+  const saved = runtime.authMode === 'cail' && accountSubject && job.savedToAccount === true ? 'Saved to your account. ' : '';
+  return `${saved}${prefix} — ${noun} will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.`;
 }
 
 // --- synchronized stem mixer ------------------------------------------------
@@ -1262,7 +1275,7 @@ class Mixer {
             <span class="badge ready">READY</span>
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
             <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
-            <button class="head-btn delete-btn" title="Remove this split from your rack — the class copy stays, and a shared link can bring it back">DELETE</button>
+            <button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit. Your split stays saved to your account.' : 'Remove this split from your rack — the class copy stays, and a shared link can bring it back'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>
             <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
           </div>
         </div>
@@ -2767,6 +2780,45 @@ const jobList = document.getElementById('job-list');
 const emptyState = document.getElementById('empty-state');
 const jobStates = new Map(); // id -> latest server response
 const mixers = new Map(); // id -> Mixer (persists across re-renders)
+const rackStatus = document.getElementById('rack-status');
+const rackRetry = document.getElementById('rack-retry');
+const rackMore = document.getElementById('rack-more');
+let rackRetryMore = false;
+async function loadAccountJobs(more = false) {
+  if (!accountSubject || rackLoading) return;
+  rackLoading = true;
+  rackRetryMore = more;
+  rackRetry.hidden = true;
+  rackMore.disabled = true;
+  rackStatus.hidden = false;
+  rackStatus.textContent = 'Loading your saved splits…';
+  emptyState.hidden = true;
+  try {
+    const response = await fetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`);
+    if (response.status === 401 || response.status === 403) { location.assign('/account.html'); return; }
+    if (!response.ok) throw new Error('load');
+    const result = await response.json();
+    if (!Array.isArray(result.jobs)) throw new Error('load');
+    const existing = new Map(getJobs().map(job => [job.id, job]));
+    const recovered = result.jobs.map((job, index) => ({ ...job,
+      startedAt: serverTime(job.createdAt), collapsed: existing.get(job.id)?.collapsed ?? (more || index > 0) }));
+    // New submissions that finish during this request must not disappear.
+    const combined = new Map([...getJobs(), ...recovered].map(job => [job.id, job]));
+    saveJobs([...combined.values()]);
+    rackCursor = result.nextCursor;
+    rackMore.hidden = !rackCursor;
+    rackStatus.textContent = '';
+    rackStatus.hidden = true;
+    renderJobs();
+    await pollActiveJobs();
+  } catch {
+    rackStatus.textContent = 'Your saved splits could not be loaded. Try again.';
+    rackRetry.hidden = false;
+    emptyState.hidden = true;
+  } finally { rackLoading = false; rackMore.disabled = false; }
+}
+rackRetry.addEventListener('click', () => void loadAccountJobs(rackRetryMore));
+rackMore.addEventListener('click', () => void loadAccountJobs(true));
 
 // Pointer taps do not reliably focus buttons on mobile browsers. Dismiss open
 // action menus from the pointer target instead of depending on focusout, which
@@ -2839,7 +2891,7 @@ function renderJobs() {
                 (Date.now() - since) / 1000
               )}</span>`
         }</span>
-        ${failed ? '<button class="head-btn delete-btn" title="Remove this failed split from your rack">DELETE</button>' : ''}
+        ${failed ? `<button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit' : 'Remove this failed split from your rack'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>` : ''}
       </div>
       ${
         failed
@@ -2921,7 +2973,7 @@ async function adoptSharedJob() {
   try {
     if ((await adoptJobById(id)) === 'missing') {
       showUploadMessage(
-        'That link points at a track that is no longer here. Splits are wiped after 30 days.',
+        runtime.authMode === 'cail' ? 'This split is unavailable to your account or has expired.' : 'That link points at a track that is no longer here. Splits are wiped after 30 days.',
         true
       );
       return;
@@ -2933,7 +2985,7 @@ async function adoptSharedJob() {
 
   const position = getJobs().findIndex((existing) => existing.id === id);
   jobList.children[position]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  showUploadMessage('Opened a shared track. Names and notes here are shared with the class.');
+  showUploadMessage(runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
 }
 
 function stemDescription(expectedStems) {
@@ -2952,11 +3004,20 @@ async function pollActiveJobs() {
 
     try {
       const res = await fetch(`/api/jobs/${job.id}`);
+      if (runtime.authMode === 'cail' && (res.status === 401 || res.status === 403)) {
+        for (const mixer of mixers.values()) if (mixer.playing) mixer.pause();
+        accountJobs = [];
+        jobStates.clear();
+        renderJobs();
+        location.assign('/account.html');
+        return;
+      }
       if (res.status === 404) {
         // Job expired (30-day cleanup) or unknown — drop it.
         saveJobs(getJobs().filter((j) => j.id !== job.id));
         continue;
       }
+      if (!res.ok) throw new Error('Split could not be loaded');
       const state = await res.json();
       jobStates.set(job.id, state);
       if (state.status !== 'done' && state.status !== 'failed') anyActive = true;
@@ -2991,7 +3052,7 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'SPLITTER',
-    tagline: 'Separate a song. Explore its layers.',
+    tagline: 'Split a song apart. Listen one layer at a time. Annotate as you go.',
   },
   remixer: {
     word: 'REMIXER',
@@ -3881,27 +3942,45 @@ window.addEventListener('pageshow', event => { if (event.persisted && runtime.au
 async function initialize() {
   try {
     const response = await fetch('/api/runtime');
-    if (response.ok) runtime = await response.json();
-  } catch { /* Server still enforces access; optional stations stay hidden. */ }
+    if (!response.ok) throw new Error('runtime');
+    runtime = await response.json();
+  } catch {
+    jobsStorageKey = null;
+    showUploadMessage('The app could not connect. Reload the page to try again.', true);
+    return;
+  }
   if (runtime.authMode === 'cail') {
     jobsStorageKey = null;
     const account = document.createElement('p');
-    account.className = 'mono';
+    account.className = 'account-nav';
     let principal = null;
+    let accountNeedsHelp = false;
     try {
       const response = await fetch('/api/account');
       if (response.ok) principal = (await response.json()).account;
-    } catch { /* A failed sign-in check must not expose another user's saved rack. */ }
+      else if (response.status !== 401) {
+        accountNeedsHelp = true;
+        rackStatus.hidden = false;
+        rackStatus.textContent = response.status === 403 ? 'Your Lab access needs attention. Open My account for details.' : 'Account access is temporarily unavailable. Reload to try again.';
+      }
+    } catch {
+      accountNeedsHelp = true;
+      rackStatus.hidden = false;
+      rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
+    }
     if (principal && /^cail-[0-9a-f]{32}$/.test(principal.subject)) {
       jobsStorageKey = `jobs:${principal.subject}`;
+      accountSubject = principal.subject;
       const link = document.createElement('a');
+      link.className = 'account-button';
       link.href = '/account.html';
       link.textContent = 'My account';
       account.append(link);
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
-      link.href = runtime.loginUrl;
-      link.textContent = 'CUNY Login';
+      link.className = 'account-button';
+      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl;
+      link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead').append(account);
@@ -3912,6 +3991,14 @@ async function initialize() {
   initStations();
   initRemixDeck();
   renderJobs();
-  void pollActiveJobs().then(adoptSharedJob);
+  if (accountSubject) void loadAccountJobs().then(adoptSharedJob);
+  else if (runtime.authMode !== 'cail') void pollActiveJobs().then(adoptSharedJob);
 }
+window.addEventListener('focus', async () => {
+  if (!accountSubject) return;
+  try {
+    const response = await fetch('/api/account');
+    if (response.status === 401 || response.status === 403 || (response.ok && (await response.json()).account?.subject !== accountSubject)) location.reload();
+  } catch { /* An outage is not a new identity. */ }
+});
 void initialize();

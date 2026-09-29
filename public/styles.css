@@ -1538,6 +1538,19 @@ footer {
 /* ─── instructor console (teacher.html) ───────────────────────────── */
 
 .teacher-main { max-width: 780px; padding-top: 2.25rem; }
+.account-nav { margin: 1.25rem 0 0; }
+.account-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: .65rem 1rem; box-sizing: border-box;
+  border: 1px solid var(--panel-edge); border-radius: 4px;
+  background: var(--panel); color: var(--ink); font: inherit;
+  font-family: var(--font-mono); font-size: .75rem; letter-spacing: .08em;
+  text-transform: uppercase; text-decoration: none; cursor: pointer;
+}
+.account-button:hover { color: var(--hot); border-color: var(--hot); }
+.account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
+.account-button:disabled { opacity: .5; cursor: wait; }
+.account-button[hidden] { display: none; }
 .account-main { max-width: 680px; }
 main.account-main .masthead h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.04em; }
 .account-main .masthead h1, .account-main .lab-brand { animation: none; }

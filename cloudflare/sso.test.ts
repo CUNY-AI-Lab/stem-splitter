@@ -48,6 +48,25 @@ test('CUNY handoff: S256 proof, host-only cookies, clean return, private JWT for
   assert.equal((await authenticatedRequest(f.request('/api/account', { headers: { Cookie: session } }), f.env) as Response).status, 401);
 });
 
+test('logout clears browser cookies during identity outages and without an active session', async () => {
+  const f = fixture();
+  const request = f.request('/auth/logout', { method: 'POST', headers: { Origin: origin, Cookie: `${SESSION_COOKIE}=${token}` } });
+  for (const client of [undefined, { ...f.client, revoke: async () => { throw new Error('private'); } }]) {
+    const response = await handleAuth(request, { ...f.env, IDENTITY: client });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.getSetCookie().length, 2);
+    assert.ok(response.headers.getSetCookie().every(value => value.includes('Max-Age=0')));
+    assert.match(await response.text(), /Signed out of this browser/);
+  }
+  const anonymous = await handleAuth(f.request('/auth/logout', { method: 'POST', headers: { Origin: origin } }), { ...f.env, IDENTITY: undefined });
+  assert.equal(anonymous.status, 303);
+  assert.equal(anonymous.headers.get('location'), '/');
+  assert.equal(anonymous.headers.getSetCookie().length, 2);
+  const unsafe = await handleAuth(f.request('/auth/logout', { method: 'POST', headers: { Origin: 'null' } }), f.env);
+  assert.equal(unsafe.status, 403);
+  assert.equal(unsafe.headers.has('set-cookie'), false);
+});
+
 test('state/cookie/proof expiry, duplicate parameters, replay and redirect injection fail closed', async () => {
   const f = fixture();
   const start = await handleAuth(f.request('/auth/login?next=//attacker.test'), f.env);

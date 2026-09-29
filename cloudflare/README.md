@@ -188,8 +188,8 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
   date. Admission expiry, revocation, local disable and audio ownership still apply.
 - Admission owns enrollment and CUNY sign-in. Do not seed legacy passwords or
   infer roles from JWT display/entitlement claims. Real CUNY handoff remains a release gate.
-- Application reservations cap split attempts at 5/person/day and
-  20/workspace/day (UTC). Gateway owns model quotas; this adapter does not reserve
+- This candidate caps signed-in splits at 10/person/day (UTC), with no shared
+  class/workspace split ceiling. Visitor runs remain disabled. Gateway owns model quotas; this adapter does not reserve
   guide/chat attempts locally. Failed/uncertain split requests consume a
   reservation. YouTube may use two
   provider predictions per split; these are job caps, not an exact dollar budget.

@@ -64,11 +64,27 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
   const url = new URL(request.url);
   if (url.protocol !== 'https:' || ![env.PUBLIC_BASE_URL, env.CANONICAL_BASE_URL].includes(url.origin)) return denied(403);
   const client = identityClient(request, env);
-  if (!client) return denied(503);
   if (!['/auth/login', '/auth/callback', '/auth/logout'].includes(url.pathname)) return new Response('Not found', { status: 404 });
   const method = url.pathname === '/auth/logout' ? 'POST' : 'GET';
   if (request.method !== method) return new Response(null, { status: 405, headers: { Allow: method } });
   if (method === 'POST' && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return denied(403);
+  if (url.pathname === '/auth/logout') {
+    const cleared = [cookie(SESSION_COOKIE, '', 0), cookie(LOGIN_COOKIE, '', 0)];
+    const token = readCookie(request, SESSION_COOKIE);
+    try {
+      if (TOKEN.test(token)) {
+        if (!client) throw new Error('Identity unavailable');
+        await boundedRpc(client.revoke(token));
+      }
+      return redirect('/', cleared);
+    } catch {
+      // Always remove this browser's credentials; do not claim remote revocation.
+      const response = new Response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign out</title><link rel="stylesheet" href="/styles.css"><main class="teacher-main"><h1>Signed out of this browser</h1><p>We could not confirm that your server session ended. Close any other STEM Splitter tabs on this device.</p><a href="/">Back to Splitter</a></main></html>', { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' } });
+      for (const value of cleared) response.headers.append('Set-Cookie', value);
+      return response;
+    }
+  }
+  if (!client) return denied(503);
   try {
     if (url.pathname === '/auth/login') {
       if (!env.REQUEST_LIMIT) return denied(503);
@@ -98,9 +114,7 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
       if (TOKEN.test(previous) && previous !== result.token) await boundedRpc(client.revoke(previous));
       return redirect(safeNext(pending.next), [cookie(SESSION_COOKIE, result.token, Math.min(86400, Math.floor((result.expiresAt - Date.now()) / 1000))), cookie(LOGIN_COOKIE, '', 0)]);
     }
-    const token = readCookie(request, SESSION_COOKIE);
-    if (TOKEN.test(token)) await boundedRpc(client.revoke(token));
-    return redirect('/', [cookie(SESSION_COOKIE, '', 0), cookie(LOGIN_COOKIE, '', 0)]);
+    return new Response('Not found', { status: 404 });
   } catch { return denied(503); }
 }
 
