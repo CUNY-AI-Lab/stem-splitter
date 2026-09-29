@@ -40,6 +40,69 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.locator('#crate')).toHaveCount(1);
     await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    // A tap on the current seek position has no native `change` event.
+    // Releasing it must not leave playback's clock in scrub-preview mode.
+    const seek = page.locator('.console .seek');
+    await seek.dispatchEvent('pointerdown', { pointerId: 1 });
+    await seek.dispatchEvent('pointerup', { pointerId: 1 });
+    await page.locator('.console .play-btn').click();
+    await expect(page.locator('.console .tc-now')).not.toHaveText('0:00', { timeout: 8000 });
+    if (receipts) {
+      await page.locator('.console').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${receipts}/timer-playing-desktop.png` });
+    }
+    await page.locator('.console .play-btn').click();
+    for (const event of ['pointercancel', 'lostpointercapture', 'blur']) {
+      await seek.dispatchEvent('pointerdown', { pointerId: 1 });
+      await seek.dispatchEvent(event, { pointerId: 1 });
+      expect(await page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(false);
+    }
+    await seek.focus();
+    await seek.press('ArrowRight');
+    expect(await page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(false);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.console .tc-now')).toBeVisible();
+    await seek.dispatchEvent('pointerdown', { pointerId: 2, pointerType: 'touch' });
+    await seek.dispatchEvent('pointerup', { pointerId: 2, pointerType: 'touch' });
+    await page.locator('.console .play-btn').click();
+    await expect.poll(() => page.evaluate(() => {
+      const mixer = mixers.get('remix-fixture');
+      return mixer.tcNow.textContent === fmt(mixer.audios[0].currentTime) && mixer.audios[0].currentTime > 1;
+    })).toBe(true);
+    if (receipts) {
+      await page.locator('.console').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${receipts}/timer-playing-mobile.png` });
+    }
+    await page.locator('.console .play-btn').click();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const startup = await page.evaluate(async () => {
+      const mixer = mixers.get('remix-fixture');
+      const audio = mixer.audios[0];
+      const original = audio.play;
+      let resolve, calls = 0;
+      audio.play = () => { calls++; return new Promise(done => { resolve = done; }); };
+      const first = mixer.play();
+      await mixer.play();
+      mixer.pause();
+      resolve();
+      await first;
+      audio.play = original;
+      return { calls, playing: mixer.playing, starting: mixer.starting };
+    });
+    expect(startup).toEqual({ calls: 1, playing: false, starting: false });
+    const failure = await page.evaluate(async () => {
+      const mixer = mixers.get('remix-fixture');
+      const extra = new Audio(mixer.audios[0].src);
+      mixer.audios.push(extra);
+      await mixer.play();
+      mixer.audios[0].dispatchEvent(new Event('error'));
+      const result = { stopped: mixer.audios.every(audio => audio.paused), playing: mixer.playing, disabled: mixer.playBtn.disabled };
+      mixer.audios.pop();
+      return result;
+    });
+    expect(failure).toEqual({ stopped: true, playing: false, disabled: true });
+    await page.reload();
+    await expect(page.locator('.badge.ready')).toBeVisible();
     await page.getByRole('tab', { name: /REMIXER/ }).click();
     await expect(page.locator('#crate')).toBeVisible();
     await page.locator('.shelf-stem').first().click();

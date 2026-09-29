@@ -1243,6 +1243,8 @@ class Mixer {
     this.job = job;
     this.audios = [];
     this.playing = false;
+    this.starting = false;
+    this.playAttempt = 0;
     this.annotations = [...(job.annotations || [])];
     this.channelsByName = new Map(); // canonical stem name -> { audio, row, muteBtn, soloBtn }
     this.chatHistory = []; // per-instance; survives re-renders via the mixers Map
@@ -1507,13 +1509,23 @@ class Mixer {
     });
     master.addEventListener('ended', () => this.stop(true));
 
-    this.playBtn.addEventListener('click', () => (this.playing ? this.pause() : this.play()));
+    this.playBtn.addEventListener('click', () => (this.playing || this.starting ? this.pause() : this.play()));
 
     // Scrub smoothly: while dragging, only preview the timecode (paint() backs
     // off); the actual multi-stem seek happens once, on release ('change').
     this.scrubbing = false;
-    this.seek.addEventListener('pointerdown', () => (this.scrubbing = true));
-    this.seek.addEventListener('pointercancel', () => (this.scrubbing = false));
+    this.seek.addEventListener('pointerdown', (event) => {
+      this.scrubbing = true;
+      // Keep the release even if the pointer leaves the slider. A tap at the
+      // current position emits no `change`, so it must end preview separately.
+      if (this.seek.hasPointerCapture(event.pointerId) === false) {
+        try { this.seek.setPointerCapture(event.pointerId); } catch { /* synthetic/no active pointer */ }
+      }
+    });
+    const endScrub = () => { this.scrubbing = false; };
+    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) {
+      this.seek.addEventListener(event, endScrub);
+    }
     this.seek.addEventListener('input', () => {
       this.scrubbing = true;
       const t = (this.seek.value / 1000) * (master.duration || 0);
@@ -1558,7 +1570,7 @@ class Mixer {
           // A focused button already answers to Space; don't fire twice.
           if (t.tagName === 'BUTTON' || t.tagName === 'A' || t.tagName === 'SUMMARY') return;
           e.preventDefault();
-          if (!this.playBtn.disabled) (this.playing ? this.pause() : this.play());
+          if (!this.playBtn.disabled) (this.playing || this.starting ? this.pause() : this.play());
           break;
         case 'ArrowLeft':
           e.preventDefault();
@@ -1647,7 +1659,7 @@ class Mixer {
     // invisible stale menu instead of opening a fresh one.
     if (collapsed) this.el.querySelector('.folder-menu')?.remove();
     if (this.el.classList.contains('collapsed') === collapsed) return;
-    if (collapsed && this.playing) this.pause();
+    if (collapsed && (this.playing || this.starting)) this.pause();
     this.setActionsOpen(false);
     this.el.classList.toggle('collapsed', collapsed);
     const label = collapsed ? 'Expand this session' : 'Collapse this session';
@@ -1733,7 +1745,7 @@ class Mixer {
     const channel = this.channelsByName.get(stemName);
     if (!channel || channel.row.classList.contains('unavailable')) return;
 
-    channel.audio.pause();
+    this.pause();
     channel.row.classList.add('unavailable');
     channel.muteBtn.disabled = true;
     channel.muteBtn.textContent = 'NO AUDIO';
@@ -1747,6 +1759,10 @@ class Mixer {
   }
 
   async play() {
+    if (this.playing || this.starting || this.playBtn.disabled) return;
+    const attempt = ++this.playAttempt;
+    this.starting = true;
+    this.playBtn.textContent = '❚❚';
     this.audios.forEach((a) => (a.preload = 'auto'));
     // play() is called synchronously inside the click so the gesture still
     // counts; the audio graph is wired afterwards, once the context is awake.
@@ -1755,9 +1771,12 @@ class Mixer {
     } catch {
       // Autoplay rejection or a stalled stem — park everything so we never
       // sit half-playing behind a ▶ button; the user can tap again.
-      this.audios.forEach((a) => a.pause());
+      if (attempt === this.playAttempt) this.pause();
       return;
     }
+    // A pause, collapse or audio failure may have cancelled this pending start.
+    if (attempt !== this.playAttempt) return;
+    this.starting = false;
     void this.wireGraph();
     this.playing = true;
     this.playBtn.textContent = '❚❚';
@@ -1782,6 +1801,8 @@ class Mixer {
   }
 
   stopUi() {
+    this.playAttempt += 1;
+    this.starting = false;
     this.playing = false;
     this.playBtn.textContent = '▶';
     this.playBtn.classList.remove('playing');
@@ -2619,7 +2640,7 @@ async function loadFolderItems(folder, container) {
       ${
         item.available
           ? '<button class="head-btn folder-item-load">LOAD</button>'
-          : '<span class="mono folder-item-expired" title="Splits are wiped after 30 days — run this song again to restore it">EXPIRED</span>'
+          : '<span class="mono folder-item-expired" title="This split has expired — run this song again to restore it">EXPIRED</span>'
       }
       <button class="head-btn folder-item-remove" title="Remove from this folder">✕</button>
     `;
@@ -2666,7 +2687,7 @@ async function loadWholeFolder(folder, button) {
       if ((await adoptJobById(item.jobId)) === 'added') added += 1;
     }
     const expiredNote = expired
-      ? ` ${expired} entr${expired === 1 ? 'y has' : 'ies have'} expired (30-day wipe).`
+      ? ` ${expired} entr${expired === 1 ? 'y has' : 'ies have'} expired.`
       : '';
     showUploadMessage(`Loaded ${added} split${added === 1 ? '' : 's'} from “${folder.name}”.${expiredNote}`);
     document.getElementById('jobs').scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -2838,7 +2859,7 @@ document.addEventListener('pointerdown', (event) => {
 // on the server, so a shared link — or a teacher folder — can bring it back.
 function deleteJob(id) {
   const mixer = mixers.get(id);
-  if (mixer?.playing) mixer.pause();
+  if (mixer?.playing || mixer?.starting) mixer.pause();
   mixers.delete(id);
   jobStates.delete(id);
   saveJobs(getJobs().filter((j) => j.id !== id));
@@ -3005,7 +3026,7 @@ async function pollActiveJobs() {
     try {
       const res = await fetch(`/api/jobs/${job.id}`);
       if (runtime.authMode === 'cail' && (res.status === 401 || res.status === 403)) {
-        for (const mixer of mixers.values()) if (mixer.playing) mixer.pause();
+        for (const mixer of mixers.values()) if (mixer.playing || mixer.starting) mixer.pause();
         accountJobs = [];
         jobStates.clear();
         renderJobs();

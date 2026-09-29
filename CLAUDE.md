@@ -4,6 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current branch authority (September 8)
 
+September 29 retention update: the CAIL Cloudflare application retains uploaded
+audio and stems for 90 days. Apply `cloudflare/audio-lifecycle.json` to only
+`cail-stem-splitter-preview-audio`; account listing and routed audio expiry match
+that boundary. Railway and the legacy bucket retain their existing policies.
+
 September 29: `codex/crate-class-usage-20260929` builds on the Cloudflare Gateway
 PR #11. The user now requires the single Crate below the active station's other
 content, before the footer. This supersedes the earlier Crate-first placement.

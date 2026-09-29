@@ -26,11 +26,11 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
       `INSERT INTO jobs (id, filename, source_key, status) VALUES ('bob-only', 'Bob private recording', 'uploads/bob.wav', 'failed')`,
       `INSERT INTO job_owners (job_id, subject) VALUES ('bob-only', '${TEST_SUBJECTS.bob}')`,
       `INSERT INTO jobs (id, filename, source_key, status) VALUES ('unclaimed', 'Reviewed legacy recording', 'uploads/legacy.wav', 'failed')`,
-      `INSERT INTO jobs (id, filename, source_key, status, created_at) VALUES ('expired', 'Expired recording', 'uploads/old.wav', 'failed', datetime('now', '-31 days'))`,
+      `INSERT INTO jobs (id, filename, source_key, status, created_at) VALUES ('expired', 'Expired recording', 'uploads/old.wav', 'failed', datetime('now', '-91 days'))`,
       `INSERT INTO job_owners (job_id, subject) VALUES ('expired', '${TEST_SUBJECTS.alice}')`,
     ];
     for (let n = 0; n < 41; n++) {
-      sql.push(`INSERT INTO jobs (id, filename, source_key, status, created_at) VALUES ('older-${n}', 'Older recording ${n}', 'uploads/older.wav', 'failed', datetime('now', '-1 minute'))`,
+      sql.push(`INSERT INTO jobs (id, filename, source_key, status, created_at) VALUES ('older-${n}', 'Older recording ${n}', 'uploads/older.wav', 'failed', datetime('now', '-60 days'))`,
         `INSERT INTO job_owners (job_id, subject) VALUES ('older-${n}', '${TEST_SUBJECTS.alice}')`);
     }
     await seed(sql);
