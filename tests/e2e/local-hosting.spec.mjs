@@ -820,7 +820,7 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
       name: '6 parts: adds plucked strings and keys',
     })
     .check();
-  await page.getByText('Or paste a YouTube link').click();
+  await expect(page.getByLabel('YouTube link')).toBeVisible();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );
@@ -1027,7 +1027,7 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByRole('radio', { name: '2 parts: voice, everything else' }).check();
-  await page.getByText('Or paste a YouTube link').click();
+  await expect(page.getByLabel('YouTube link')).toBeVisible();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );
@@ -1858,11 +1858,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'CLASS GUIDANCE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'GUIDE INSTRUCTIONS' })).toBeVisible();
   await expect(page.getByText('More', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
-  await expect(page.getByLabel('Class guidance')).not.toHaveAttribute('placeholder');
+  await expect(page.getByLabel('Guide instructions')).not.toHaveAttribute('placeholder');
   const instructorSurfaceText = await page.locator('body').innerText();
   expect(instructorSurfaceText).not.toMatch(
     /\b(?:e2e|end-to-end|authorized testing|advisory|classifier|routing|training eligible|job id|shadow mode)\b/i
