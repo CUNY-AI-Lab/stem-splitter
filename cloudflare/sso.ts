@@ -1,4 +1,6 @@
 import { authFailure } from '../src/identity.ts';
+import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
+import { REQUEST_ID } from './gateway.ts';
 
 // Doorway owns CUNY OIDC, one-use PKCE grants, session revocation and Admission.
 // These RPC capabilities have deployment-pinned audiences and callback hosts.
@@ -14,6 +16,7 @@ export interface SsoEnv {
   IDENTITY?: WorkerIdentity;
   PREVIEW_IDENTITY?: WorkerIdentity;
   REQUEST_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
+  CAIL_IDENTITY_JWKS?: string;
 }
 export const SESSION_COOKIE = '__Host-stem-session';
 export const LOGIN_COOKIE = '__Host-stem-login';
@@ -109,11 +112,16 @@ export function publicApi(request: Request): boolean {
 
 export async function authenticatedRequest(request: Request, env: SsoEnv): Promise<Request | Response> {
   const headers = new Headers(request.headers);
+  const requestId = headers.get('x-cail-request-id') ?? headers.get('x-request-id');
   // Even a valid app JWT submitted by the browser is not authority here.
   for (const name of [...headers.keys()]) if (name === 'cookie' || name === 'authorization' || name.startsWith('x-cail-')) headers.delete(name);
+  if (requestId && REQUEST_ID.test(requestId)) headers.set('x-cail-request-id', requestId);
   if (!publicApi(request)) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
         (request.headers.get('origin') !== env.PUBLIC_BASE_URL || request.headers.get('sec-fetch-site') === 'cross-site')) return denied(403);
+    const [appConfig, gatewayConfig] = await Promise.all(['cail:stem-splitter', 'cail:gateway'].map(expectedAudience =>
+      loadIdentityVerifierConfig({ jwks: env.CAIL_IDENTITY_JWKS, issuer: CAIL_CANONICAL_ISSUER, expectedAudience, supportedIssuers: [CAIL_CANONICAL_ISSUER] })));
+    if (!appConfig.ok || !gatewayConfig.ok) return authFailure('identity_unavailable', 503);
     const token = readCookie(request, SESSION_COOKIE);
     if (!TOKEN.test(token)) return denied(401);
     const client = identityClient(request, env);
@@ -123,6 +131,14 @@ export async function authenticatedRequest(request: Request, env: SsoEnv): Promi
       if (!result.ok) return denied(result.status);
       if (typeof result.appJwt !== 'string' || !result.appJwt || result.appJwt.length > 16384) return denied(503);
       headers.set('x-cail-identity-jwt', result.appJwt);
+      const modelAction = /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(new URL(request.url).pathname) || new URL(request.url).pathname === '/api/model-quota';
+      if (modelAction) {
+        if (typeof result.gatewayJwt !== 'string' || result.gatewayJwt.length > 16384) return authFailure('invalid_credential', 401);
+        const app = await verifyIdentityJwt(result.appJwt, appConfig.config);
+        const gateway = await verifyIdentityJwt(result.gatewayJwt, gatewayConfig.config);
+        if (!app || !gateway || app.subject !== gateway.subject) return authFailure('invalid_credential', 401);
+        headers.set('x-cail-gateway-identity-jwt', result.gatewayJwt);
+      }
     } catch { return denied(503); }
   }
   // The shared app still verifies signature/audience + fresh Admission + role + ownership.

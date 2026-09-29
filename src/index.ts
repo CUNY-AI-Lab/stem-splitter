@@ -174,7 +174,7 @@ app.use('/api/*', async (c, next) => {
     c.header('Cache-Control', 'private, no-store');
     const principal = c.get('principal');
     const scope = c.req.method !== 'POST' ? null : c.req.path === '/api/jobs' ? 'split'
-      : /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(c.req.path) ? 'guide' : null;
+      : !c.env.assistantTransport && /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(c.req.path) ? 'guide' : null;
     if (scope && principal) {
       // An atomic database reservation, not a per-isolate counter. Reserve
       // before imports or provider calls; failure never refunds an uncertain call.
@@ -202,6 +202,12 @@ app.get('/api/runtime', (c) => c.json({
 app.get('/api/account', (c) => {
   const principal = c.get('principal');
   return principal ? c.json({ account: principal }) : c.json({ account: null }, 401);
+});
+
+app.get('/api/model-quota', async (c) => {
+  if (!c.get('principal') || !c.env.assistantQuota) return c.json({ quota: null }, 503);
+  try { return c.json({ quota: await c.env.assistantQuota() }); }
+  catch { return c.json({ quota: null }, 503); }
 });
 
 app.get('/api/admin/users', async (c) => {
@@ -1598,7 +1604,7 @@ app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c
 app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   // Keep the documented pre-stream 503 for unconfigured deployments — once
   // streaming starts, errors can only arrive as in-stream events.
-  if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
+  if ((!c.env.assistantTransport && !c.env.OPENROUTER_API_KEY) || !c.env.ASSISTANT_MODEL) {
     return c.json({ error: COACH_UNCONFIGURED }, 503);
   }
   const id = c.req.param('id');
@@ -1616,9 +1622,9 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
-  return sseResponse(c, async (emit) => {
+  return sseResponse(c, async (emit, signal) => {
     const { guide, cached } = await streamGuide(
-      c.env, row, results ?? [], parseDuration(body?.durationSec),
+      { ...c.env, ASSISTANT_ABORT_SIGNAL: signal }, row, results ?? [], parseDuration(body?.durationSec),
       (text) => emit({ type: 'delta', text })
     );
     await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
@@ -1630,7 +1636,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
 // events, then validated mixer tool calls (solo / set_mute / seek / add_note)
 // arrive in one tool_calls event for the browser to execute, then done.
 app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
-  if (!c.env.OPENROUTER_API_KEY || !c.env.ASSISTANT_MODEL) {
+  if ((!c.env.assistantTransport && !c.env.OPENROUTER_API_KEY) || !c.env.ASSISTANT_MODEL) {
     return c.json({ error: COACH_UNCONFIGURED }, 503);
   }
   const id = c.req.param('id');
@@ -1658,9 +1664,9 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
-  return sseResponse(c, async (emit) => {
+  return sseResponse(c, async (emit, signal) => {
     const result = await streamChat(
-      c.env, row, results ?? [], turns, parseDuration(body?.durationSec),
+      { ...c.env, ASSISTANT_ABORT_SIGNAL: signal }, row, results ?? [], turns, parseDuration(body?.durationSec),
       (text) => emit({ type: 'delta', text })
     );
     if (result.toolCalls.length) await emit({ type: 'tool_calls', calls: result.toolCalls });
@@ -1997,20 +2003,23 @@ function parseDuration(value: unknown): number | undefined {
 // the stream become a terminal error event with a student-safe message.
 function sseResponse(
   c: Context<AppContext>,
-  run: (emit: (event: Record<string, unknown>) => Promise<void>) => Promise<void>
+  run: (emit: (event: Record<string, unknown>) => Promise<void>, signal: AbortSignal) => Promise<void>
 ): Response {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
+  const aborted = new AbortController();
+  const signal = AbortSignal.any([c.req.raw.signal, aborted.signal]);
+  void writer.closed.catch(() => aborted.abort(new DOMException('Response closed', 'AbortError')));
   const encoder = new TextEncoder();
   const emit = (event: Record<string, unknown>) =>
     writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   const pump = (async () => {
     try {
-      await run(emit);
+      await run(emit, signal);
     } catch (err) {
-      if (!(err instanceof AssistantError)) console.error('assistant error', err);
+      if (!(err instanceof AssistantError) && !c.env.assistantTransport) console.error('assistant error', err);
       const message = err instanceof AssistantError ? err.studentMessage : COACH_DOWN;
-      await emit({ type: 'error', message }).catch(() => {});
+      if (!signal.aborted) await emit({ type: 'error', message, ...(err instanceof AssistantError ? { code: err.code, shouldRetry: err.shouldRetry, requestId: err.requestId } : {}) }).catch(() => {});
     } finally {
       await writer.close().catch(() => {});
     }

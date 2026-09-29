@@ -145,11 +145,12 @@ async function api(path, options = {}) {
 // POST to a Listening Guide endpoint and consume its SSE stream, calling onEvent for
 // each `data:` JSON event. Setup failures are plain JSON with a real status;
 // mid-stream failures arrive as {type:'error'} events, which throw here.
-async function streamApi(path, body, onEvent) {
+async function streamApi(path, body, onEvent, signal) {
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode() },
     body: JSON.stringify(body),
+    signal,
   });
   if (res.status === 401) {
     if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
@@ -167,7 +168,7 @@ async function streamApi(path, body, onEvent) {
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) throw new Error('The Listening Guide response ended before completion. The mixer still works.');
       buf += decoder.decode(value, { stream: true });
       let nl;
       while ((nl = buf.indexOf('\n')) !== -1) {
@@ -180,7 +181,10 @@ async function streamApi(path, body, onEvent) {
         } catch {
           continue;
         }
-        if (event.type === 'error') throw new Error(event.message || 'The Listening Guide dropped out — try again.');
+        if (event.type === 'error') {
+          const support = typeof event.requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(event.requestId) ? ` Support ID: ${event.requestId}` : '';
+          throw new Error((event.message || 'The Listening Guide could not complete this request. The mixer still works.') + support);
+        }
         onEvent(event);
         // `done` is the application protocol's terminal event. Some proxies
         // keep an otherwise complete SSE response open, so waiting for the
@@ -190,6 +194,7 @@ async function streamApi(path, body, onEvent) {
     }
   } finally {
     reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }
 
@@ -1393,6 +1398,13 @@ class Mixer {
     this.coachLog = li.querySelector('.coach-log');
     this.coachForm = li.querySelector('.coach-form');
     this.coachInput = this.coachForm.querySelector('input');
+    this.coachCancel = document.createElement('button');
+    this.coachCancel.type = 'button';
+    this.coachCancel.className = 'crate-page-btn';
+    this.coachCancel.textContent = 'CANCEL REQUEST';
+    this.coachCancel.hidden = true;
+    this.coachCancel.addEventListener('click', () => this.coachAbort?.abort());
+    this.coachBody.insertBefore(this.coachCancel, this.coachForm);
     this.coachToggle.addEventListener('click', () => {
       const open = this.coachBody.hidden;
       this.coachBody.hidden = !open;
@@ -1401,6 +1413,7 @@ class Mixer {
       // for would otherwise still show the cue button here. Opening the panel
       // is the moment that matters — pick up their guide, names, and notes.
       if (open) void this.refresh();
+      else this.coachAbort?.abort();
     });
     this.coachForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -2162,6 +2175,11 @@ class Mixer {
   }
 
   async requestGuide() {
+    if (this.coachBusy) return;
+    this.coachBusy = true;
+    this.coachInput.disabled = true;
+    this.coachAbort = new AbortController();
+    this.coachCancel.hidden = false;
     const btn = this.coachGuide.querySelector('.coach-cue-btn');
     const hint = this.coachGuide.querySelector('.coach-hint');
     if (btn) btn.disabled = true;
@@ -2184,17 +2202,21 @@ class Mixer {
         } else if (ev.type === 'done') {
           this.job.guide = { text: ev.text || acc, model: ev.model, createdAt: ev.createdAt };
         }
-      });
-      if (!this.job.guide) this.job.guide = { text: acc }; // stream ended without a done event
+      }, this.coachAbort.signal);
       this.renderGuide();
     } catch (err) {
       this.setLed('idle');
       this.renderGuide(); // restore the cue; partial text is discarded
       const failHint = this.coachGuide.querySelector('.coach-hint');
       if (failHint) {
-        failHint.textContent = err.message;
+        failHint.textContent = err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message;
         failHint.classList.add('error');
       }
+    } finally {
+      this.coachBusy = false;
+      this.coachInput.disabled = false;
+      this.coachCancel.hidden = true;
+      this.coachAbort = null;
     }
   }
 
@@ -2270,6 +2292,8 @@ class Mixer {
   async sendChat(text) {
     if (this.coachBusy) return;
     this.coachBusy = true;
+    this.coachAbort = new AbortController();
+    this.coachCancel.hidden = false;
     this.chatHistory.push({ role: 'user', content: text });
     this.chatHistory = this.chatHistory.slice(-12);
     this.addChatRow('you', esc(text));
@@ -2304,8 +2328,10 @@ class Mixer {
             finalText = ev.text || acc;
             finishReason = ev.finishReason || 'stop';
           }
-        }
+        }, this.coachAbort.signal
       );
+      this.coachAbort.signal.throwIfAborted();
+      this.coachCancel.hidden = true;
       typing.remove();
       if (finalText) {
         this.chatHistory.push({ role: 'assistant', content: finalText });
@@ -2324,9 +2350,11 @@ class Mixer {
       typing.remove();
       if (row && !acc) row.remove();
       if (row) row.classList.remove('streaming');
-      this.addChatRow('error', esc(err.message));
+      this.addChatRow('error', esc(err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message));
     }
     this.coachBusy = false;
+    this.coachCancel.hidden = true;
+    this.coachAbort = null;
     this.coachInput.disabled = false;
     this.coachInput.focus();
     this.setLed(this.job.guide ? 'ready' : 'idle');

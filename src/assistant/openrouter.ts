@@ -25,10 +25,14 @@ export const COACH_UNCONFIGURED = "The Listening Guide isn't set up yet — tell
 export class AssistantError extends Error {
   httpStatus: 502 | 503;
   studentMessage: string;
-  constructor(httpStatus: 502 | 503, studentMessage: string) {
+  requestId?: string;
+  code?: string;
+  shouldRetry?: boolean;
+  constructor(httpStatus: 502 | 503, studentMessage: string, details: { requestId?: string; code?: string; shouldRetry?: boolean } = {}) {
     super(studentMessage);
     this.httpStatus = httpStatus;
     this.studentMessage = studentMessage;
+    Object.assign(this, details);
   }
 }
 

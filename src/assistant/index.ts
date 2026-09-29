@@ -89,7 +89,7 @@ async function loadAmendmentState(env: Env): Promise<AmendmentState> {
       ).first<{ amendment: string }>();
       return { amendment: row?.amendment ?? '', revision: null };
     } catch {
-      console.error('assistant amendment lookup failed', err);
+      if (!env.assistantTransport) console.error('assistant amendment lookup failed', err);
       return { amendment: '', revision: null };
     }
   }
@@ -184,7 +184,7 @@ export async function streamGuide(
   const promptState = await loadAmendmentState(env);
   const promptHash = await hashSystemPromptFingerprint(promptState.amendment);
   const ctx = contextFromJob(row, annotations, durationSec, 'guide', promptState.amendment);
-  const reply = await openRouterChatStream(
+  const reply = await (env.assistantTransport ?? openRouterChatStream)(
     env,
     {
       messages: [
@@ -250,7 +250,7 @@ export async function streamChat(
   const ctx = contextFromJob(row, annotations, durationSec, 'chat', await loadAmendment(env));
   const stemNames = ctx.stems.map((s) => s.name);
   const messages: WireMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...turns];
-  const reply = await openRouterChatStream(
+  const reply = await (env.assistantTransport ?? openRouterChatStream)(
     env,
     {
       messages,
@@ -267,6 +267,10 @@ export async function streamChat(
   // guiding. One cheap tool-free follow-up turns the console moves into prose;
   // if it fails, degrade to action-chips-only rather than failing the request.
   let content = reply.content;
+  if (!content && toolCalls.length > 0 && env.assistantTransport) {
+    content = `I ${toolCalls.map(describeCall).join('; ')}. What do you notice?`;
+    await onDelta(content);
+  }
   if (!content && toolCalls.length > 0) {
     try {
       const followUp = await openRouterChatStream(
