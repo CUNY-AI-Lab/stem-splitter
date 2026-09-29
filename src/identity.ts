@@ -75,7 +75,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     .bind(identity.subject).first<{ role: string; disabled: number; role_expires_at: string | null }>();
   if (!user || user.disabled) return authFailure('admission_required', 403);
   const role: AppRole = membership.accessRole === 'admin' ? 'admin'
-    : user.role === 'instructor' && user.role_expires_at && Date.parse(user.role_expires_at) > Date.now()
+    : user.role === 'instructor' && (user.role_expires_at === null || Date.parse(user.role_expires_at) > Date.now())
       ? 'instructor' : 'student';
   const principal = { subject: identity.subject, role };
   if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);

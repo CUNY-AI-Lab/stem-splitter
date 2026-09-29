@@ -53,6 +53,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('instructor');
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toHaveAttribute('required', '');
+    await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
     await page.getByLabel('Instructor access ends', { exact: true }).fill('2026-12-01T12:00');
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('student');
     await page.getByLabel('Allow access to STEM Splitter', { exact: true }).uncheck();
@@ -104,6 +105,50 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await page.getByLabel('Instructor access ends', { exact: true }).fill('2026-12-01T12:00');
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
+    await page.reload();
+    await expect(page.locator('#account-role')).toHaveText('Instructor access');
+    await expect(page.getByRole('link', { name: 'Class guidance', exact: true })).toBeVisible();
+    await expect(page.locator('#account-admin')).toBeHidden();
+
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
+    await page.reload();
+    await page.getByText('Manage access', { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
+    await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
+    await page.getByLabel('No end date', { exact: true }).check();
+    await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeHidden();
+    await expect(page.locator('#access-expiry')).toBeDisabled();
+    const [permanentUpdate] = await Promise.all([
+      page.waitForRequest(request => request.method() === 'PUT'),
+      page.getByRole('button', { name: 'Save changes', exact: true }).click(),
+    ]);
+    expect(permanentUpdate.postDataJSON()).toMatchObject({ role: 'instructor', disabled: false, expiresAt: null });
+    await expect(page.locator('#access-status')).toHaveText('Access updated.');
+    await page.reload();
+    await page.getByText('Manage access', { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
+    await expect(page.getByRole('combobox', { name: 'Access level', exact: true })).toHaveValue('instructor');
+    await expect(page.getByLabel('No end date', { exact: true })).toBeChecked();
+    await expect(page.locator('#access-expiry')).toHaveValue('');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (receipts) await page.screenshot({ path: `${receipts}/account-permanent-mobile-fixture.png`, fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.reload();
+    await page.getByText('Manage access', { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
+    await expect(page.getByLabel('No end date', { exact: true })).toBeChecked();
+    if (receipts) await page.screenshot({ path: `${receipts}/account-permanent-desktop-fixture.png`, fullPage: true });
+    await page.getByLabel('No end date', { exact: true }).uncheck();
+    await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeVisible();
+    await expect(page.locator('#access-expiry')).toHaveAttribute('required', '');
+    await page.getByLabel('No end date', { exact: true }).check();
+    await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('student');
+    await expect(page.getByLabel('No end date', { exact: true })).toBeHidden();
+    await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('instructor');
+    await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
+    await expect(page.locator('#access-expiry')).toHaveAttribute('required', '');
+
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');

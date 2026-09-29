@@ -30,6 +30,7 @@
       <p id="access-help" class="account-help">Choose the account ID shared with you. These changes apply only to STEM Splitter.</p>
       <fieldset id="access-editor" disabled hidden>
         <label class="teacher-field">Access level<select id="access-role"><option value="student">Student</option><option value="instructor">Instructor</option></select></label>
+        <label id="access-permanent-field" class="account-checkbox" hidden><input id="access-permanent" type="checkbox" disabled> No end date</label>
         <label id="access-expiry-field" class="teacher-field" hidden>Instructor access ends<input id="access-expiry" type="datetime-local" disabled></label>
         <label class="account-checkbox"><input id="access-enabled" type="checkbox"> Allow access to STEM Splitter</label>
         <button type="submit" class="yt-go teacher-submit">Save changes</button>
@@ -45,5 +46,5 @@
   </details>
   <p id="account-back" hidden><a href="/">← Back to Splitter</a></p>
 </main>
-<script src="/account.js?v=20260929-allowance"></script>
+<script src="/account.js?v=20260929-instructor"></script>
 </html>

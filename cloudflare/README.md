@@ -24,7 +24,7 @@ remains on the Worker. The adapter does not use that key or provider fallbacks.
 
 This applies Steve's shared transport contract to the later Cloudflare product.
 It preserves the single Crate, disabled Remixer default, owned recordings,
-folders, expiring instructor access, and existing independent D1/R2 storage.
+folders, app-local instructor access, and existing independent D1/R2 storage.
 It does not import Railway's class-shared data or revive the Remixer assistant.
 
 `cloudflare-candidate.yml` installs exact packages with the workflow's temporary
@@ -49,8 +49,9 @@ station changes.
 Active Lab class enrollment satisfies the existing Admission check, and the
 first signed-in request creates the student's local app record. No second
 student roster import is needed. Class enrollment, expiry and allowance scope
-stay in Admission; instructor editing access remains a separate expiring app
-grant. Administrators can reach Lab class management from Account → Manage access.
+stay in Admission; instructor editing access remains a separate app grant with
+an end date or an explicit **No end date** choice. Neither bypasses Admission.
+Administrators can reach Lab class management from Account → Manage access.
 
 See [class access and usage](../docs/class-access-and-usage.md) for the enrollment
 workflow, current billing coverage and outstanding Replicate accounting work.
@@ -73,7 +74,7 @@ app session; it does not sign the user out of other CUNY applications.
 
 Protected requests discard browser identity/authorization headers, resolve the
 opaque session through Doorway, then retain the existing exact JWT verifier,
-fresh Admission check, expiring instructor grants and recording ownership.
+fresh Admission check, app-local instructor grants and recording ownership.
 Writes require the exact app origin. Provider webhooks and signed source reads
 remain independent capability routes. No provider settings or data are migrated.
 
@@ -180,7 +181,11 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
   each protected request. Network/config failures deny access with 503.
 - New admitted members become students. Ordinary students/instructors access
   only owned recordings and folders. An Admission admin can manage workspace
-  roles in `/account.html`; grants need an expiry and changes are revision-checked.
+  roles in `/account.html`; grants require a future end date or an explicit
+  **No end date** choice. Changes are revision-checked and immutably audited.
+  A null `role_expires_at` on an instructor row means no end date; missing API
+  expiry fields are rejected. Students never gain instructor access from a null
+  date. Admission expiry, revocation, local disable and audio ownership still apply.
 - Admission owns enrollment and CUNY sign-in. Do not seed legacy passwords or
   infer roles from JWT display/entitlement claims. Real CUNY handoff remains a release gate.
 - Application reservations cap split attempts at 5/person/day and

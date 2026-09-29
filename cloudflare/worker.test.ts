@@ -126,7 +126,30 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, grantRole)).status, 200);
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, grantRole)).status, 409);
     assert.equal((await call('/api/teacher/prompt')).status, 200);
-    assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ role: 'student', disabled: true, revision: alice.revision + 1 }) })).status, 200);
+    const permanentBody = { role: 'instructor', expiresAt: null, disabled: false, revision: alice.revision + 1 };
+    for (const expiresAt of [undefined, '', 'invalid', false, 0, new Date(Date.now() - 1000).toISOString()]) {
+      assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ ...permanentBody, expiresAt }) })).status, 400);
+    }
+    const permanentGrant = { method: 'PUT', body: JSON.stringify(permanentBody) };
+    assert.equal((await call(`/api/admin/users/${subjects[0]}`, 0, permanentGrant)).status, 403);
+    assert.equal((await call(`/api/admin/users/${subjects[2]}`, 2, permanentGrant)).status, 400);
+    assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, permanentGrant)).status, 200);
+    assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, permanentGrant)).status, 409);
+    const updated = (await (await call('/api/admin/users', 2)).json()).users.find((user: { subject: string }) => user.subject === subjects[0]);
+    assert.equal(updated.role, 'instructor');
+    assert.equal(updated.role_expires_at, null);
+    assert.equal(updated.revision, alice.revision + 2);
+    assert.equal((await (await call('/api/account')).json()).account.role, 'instructor');
+    assert.equal((await call('/api/teacher/prompt')).status, 200);
+    assert.equal((await call('/api/admin/users')).status, 403);
+    assert.equal((await call('/api/teacher/prompt', 1)).status, 403);
+    // The existing immutable trigger records the explicit permanent grant.
+    const audit = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify([
+      'CREATE TABLE audit_check (ok INTEGER CHECK (ok = 1))',
+      `INSERT INTO audit_check SELECT COUNT(*) FROM app_user_events WHERE subject = '${subjects[0]}' AND actor = '${subjects[2]}' AND role = 'instructor' AND role_expires_at IS NULL AND revision = ${alice.revision + 2}`,
+    ]) });
+    assert.equal(audit.status, 200);
+    assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ role: 'student', disabled: true, revision: alice.revision + 2 }) })).status, 200);
     assert.equal((await call(`/api/files/stems/${created.id}/vocals.mp3`)).status, 403);
     assert.equal(providerStarts, 1);
     const denied = await Promise.all(Array.from({ length: 40 }, () => worker.fetch('/api/account')));
