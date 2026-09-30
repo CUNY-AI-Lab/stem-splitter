@@ -2,7 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Current branch authority (September 8)
+## Current branch authority (September 29)
+
+The canonical Cloudflare app is `https://stem-splitter.ailab-452.workers.dev/`.
+PRs #11 and #13–16 are released from `codex/cloudflare-migration`; the latest
+verified baseline is `be7b8b4` / `cloudflare-playback-retention-20260929`.
+`TODO.md` and `MIGRATION.md` now distinguish released work from remaining
+classroom acceptance, visitor access, accounting and migration gates. This
+section supersedes the historical Railway architecture/release notes below.
+Never use root `wrangler.jsonc` or merge this lane into Railway's `main`.
 
 September 29 retention update: the CAIL Cloudflare application retains uploaded
 audio and stems for 90 days. Apply `cloudflare/audio-lifecycle.json` to only

@@ -1,11 +1,11 @@
 # Account saves and migration readiness
 
-## Account recovery implemented locally
+## Account recovery released; student acceptance still pending
 
-The Cloudflare account-recovery branch adds a server-owned Session Rack list.
-Once released, admitted students can return through My account or use another
-browser and recover their owned splits within the existing 30-day retention
-window. Labels, annotations and the cached opening Listening Guide are read from
+The canonical Cloudflare app has a server-owned Session Rack list. Admitted
+students can recover their owned, unexpired splits after signing in. Cloudflare
+uploads now use a 90-day retention window. Labels, annotations and the cached
+opening Listening Guide are read from
 the existing job endpoints. Browser storage is not the ownership authority.
 
 The list uses the current verified CAIL subject, not an email, username or query
@@ -82,9 +82,11 @@ part of this readiness review.
    do not establish individual ownership. Leave ambiguous/shared records
    unassigned until their custody is resolved; never assign the whole class to
    one instructor just to make the rack visible.
-4. Preserve original job dates and the remaining retention interval. Copy only
-   audio still eligible under the 30-day policy, verify bytes/checksums, and
-   ensure destination expiry does not extend retention. Expired/missing audio
+4. Preserve original job dates and the remaining source retention interval.
+   Railway's legacy policy remains 30 days; Cloudflare's current 90-day setting
+   does not authorize extending that source policy during an import. Copy only
+   eligible audio, verify bytes/checksums, and enforce the reviewed destination
+   expiry. Expired/missing audio
    must be reported, not represented as a playable migrated split.
 5. Preserve labels, notes, model/source/license provenance, guide policy
    fingerprints, and relevant folder relationships. Preserve immutable prompt
@@ -103,12 +105,15 @@ part of this readiness review.
 
 ## Remaining gates
 
-- This document and the account recovery tests are local implementation evidence,
-  not a deployment or a real person's successful CUNY login.
+- PRs #13–#16 are released at the canonical Cloudflare address. On September 29,
+  an existing administrator's sign-out/sign-in restored four owned recordings.
+  That reused an existing Lab session: it is not fresh CUNY authentication or
+  acceptance by a class-only student.
 - No legacy source inventory, ownership adjudication, importer or data transfer
   has been performed by this change.
-- Resolve the affected instructor's central admission and any separately required
-  Sandbox reconciliation using current protected records and owner runbooks.
+- The user reports approving the affected instructor. Verify her next sign-in
+  independently; approval does not perform Sandbox reconciliation or migrate
+  STEM Splitter recordings.
 - Run a live student save/logout/login/return check after release, plus an
   authorized real separation and Guide check before classroom acceptance.
 - Replicate GPU charges do not yet draw down the person's Lab allowance; the

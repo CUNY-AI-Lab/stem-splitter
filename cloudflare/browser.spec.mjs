@@ -40,6 +40,11 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.locator('#crate')).toHaveCount(1);
     await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    // Screenshot capture can outlast the short fixture. Keep it playing until
+    // the explicit pause click, rather than accidentally toggling Play again.
+    await page.evaluate(() => {
+      for (const audio of mixers.get('remix-fixture').audios) audio.loop = true;
+    });
     // A tap on the current seek position has no native `change` event.
     // Releasing it must not leave playback's clock in scrub-preview mode.
     const seek = page.locator('.console .seek');
@@ -78,6 +83,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     const startup = await page.evaluate(async () => {
       const mixer = mixers.get('remix-fixture');
       const audio = mixer.audios[0];
+      audio.loop = false;
       const original = audio.play;
       let resolve, calls = 0;
       audio.play = () => { calls++; return new Promise(done => { resolve = done; }); };

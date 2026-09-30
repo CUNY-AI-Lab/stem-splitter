@@ -1,4 +1,20 @@
-# Isolated Cloudflare candidate
+# Cloudflare deployment
+
+## Current authority — September 29, 2026
+
+The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from
+`codex/cloudflare-migration`, not Railway's `main`. The latest verified baseline
+is PR #16, merge `be7b8b450b5f5cb79c9cd974d9f94ae724d4275a`, with release marker
+`cloudflare-playback-retention-20260929`. The runtime Worker remains named
+`cail-stem-splitter-preview`; the canonical alias uses the same D1/R2 data.
+
+Account recovery, ten daily signed-in runs and 90-day upload retention are
+released. The Listening Guide uses the private CAIL Gateway. Remixer, server
+Auto, instrument discovery and public paid visitor runs remain disabled. See
+[the current progression](../TODO.md) and [migration status](../MIGRATION.md)
+for acceptance gates. Railway remains untouched, with its separate release and
+data policies. Dated handoffs below are historical evidence, not current
+deployment instructions where they conflict with this section.
 
 ## September 23 Gateway handoff
 
@@ -92,7 +108,7 @@ callback. Deployment and actual sign-in/reload/logout must be verified separatel
 That sign-in release retained the approved Replicate and Listening Guide
 transports. The September 23 source change above replaces only model transport.
 
-Railway is still production. This directory targets only
+At the September 8 handoff, Railway was the original production lane. This directory targets only
 `cail-stem-splitter-preview` in CUNY AI Lab account
 `452c33847cf5cb1e46f391fca32fd1b5`; never use the root legacy deploy command.
 

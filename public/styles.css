@@ -1553,6 +1553,11 @@ footer {
 .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
 .account-button:disabled { opacity: .5; cursor: wait; }
 .account-button[hidden] { display: none; }
+.signin-recovery { max-width: 38rem; }
+.signin-recovery h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); letter-spacing: -.03em; animation: none; }
+.signin-recovery p { color: var(--ink-dim); line-height: 1.6; }
+.signin-recovery a:not(.account-button) { color: var(--hot); text-underline-offset: .2em; }
+.signin-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
 .account-main { max-width: 680px; }
 main.account-main .masthead h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.04em; }
 .account-main .masthead h1, .account-main .lab-brand { animation: none; }
