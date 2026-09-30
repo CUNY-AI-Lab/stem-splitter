@@ -27,6 +27,56 @@ function fixture() {
 }
 const pair = (response: Response, name: string) => response.headers.getSetCookie().find(c => c.startsWith(name + '='))!.split(';')[0];
 
+test('browser sign-in failures offer safe recovery while JSON clients keep the auth contract', async () => {
+  const f = fixture();
+  const path = '/auth/callback?code=private-code&state=private-state&next=https://attacker.test';
+  const browser = await handleAuth(f.request(path, { headers: { Accept: 'text/html' } }), f.env);
+  assert.equal(browser.status, 401);
+  assert.match(browser.headers.get('content-type')!, /text\/html/);
+  assert.match(browser.headers.get('cache-control')!, /no-store/);
+  assert.equal(browser.headers.get('referrer-policy'), 'no-referrer');
+  const html = await browser.text();
+  assert.match(html, /href="\/auth\/login"/);
+  assert.match(html, /href="\/account.html"/);
+  assert.doesNotMatch(html, /private-code|private-state|attacker\.test|admission_required/);
+  assert.equal(browser.headers.getSetCookie().length, 1);
+  assert.match(pair(browser, LOGIN_COOKIE), /=\s*$/);
+  const json = await handleAuth(f.request(path, { headers: { Accept: 'application/json' } }), f.env);
+  assert.equal(json.status, 401);
+  assert.equal((await json.json()).error.code, 'authentication_required');
+  const background = await handleAuth(f.request(path, { headers: { Accept: 'text/html', 'Sec-Fetch-Dest': 'empty' } }), f.env);
+  assert.equal(background.status, 401);
+  assert.equal((await background.json()).error.code, 'authentication_required');
+  assert.equal(f.calls(), 0);
+});
+
+test('browser recovery distinguishes denied admission, unavailable sign-in and rate limits', async () => {
+  for (const status of [403, 503]) {
+    const f = fixture();
+    const start = await handleAuth(f.request('/auth/login'), f.env);
+    const pending = pair(start, LOGIN_COOKIE);
+    const response = await handleAuth(f.request(`/auth/callback?code=${code}&state=${f.state()}`, {
+      headers: { Accept: 'text/html', Cookie: pending },
+    }), { ...f.env, IDENTITY: { ...f.client, redeem: async () => ({ ok: false as const, status }) } });
+    assert.equal(response.status, status);
+    const html = await response.text();
+    assert.match(html, status === 403 ? /href="https:\/\/ailab.gc.cuny.edu\/request-access\/"/ : /Sign-in is temporarily unavailable/);
+    assert.ok(response.headers.getSetCookie().every(value => !value.startsWith(SESSION_COOKIE + '=')));
+  }
+  const f = fixture();
+  const request = f.request('/auth/login', { headers: { Accept: 'text/html' } });
+  const missing = await handleAuth(request, { ...f.env, IDENTITY: undefined });
+  assert.equal(missing.status, 503);
+  assert.match(await missing.text(), /Sign-in is temporarily unavailable/);
+  const limited = await handleAuth(request, { ...f.env, REQUEST_LIMIT: { limit: async () => ({ success: false }) } });
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get('retry-after'), '60');
+  assert.match(await limited.text(), /Wait a minute/);
+  const exception = await handleAuth(request, { ...f.env, IDENTITY: { ...f.client, begin: async () => { throw new Error('private provider detail'); } } });
+  assert.equal(exception.status, 503);
+  assert.doesNotMatch(await exception.text(), /private provider detail/);
+});
+
 test('CUNY handoff: S256 proof, host-only cookies, clean return, private JWT forwarding and logout', async () => {
   const f = fixture();
   const start = await handleAuth(f.request('/auth/login?next=/teacher.html'), f.env);
