@@ -37,7 +37,7 @@ test('browser sign-in failures offer safe recovery while JSON clients keep the a
   assert.equal(browser.headers.get('referrer-policy'), 'no-referrer');
   const html = await browser.text();
   assert.match(html, /href="\/auth\/login"/);
-  assert.match(html, /href="\/account.html"/);
+  assert.doesNotMatch(html, /My account|href="\/account.html"/);
   assert.doesNotMatch(html, /private-code|private-state|attacker\.test|admission_required/);
   assert.equal(browser.headers.getSetCookie().length, 1);
   assert.match(pair(browser, LOGIN_COOKIE), /=\s*$/);
@@ -61,6 +61,8 @@ test('browser recovery distinguishes denied admission, unavailable sign-in and r
     assert.equal(response.status, status);
     const html = await response.text();
     assert.match(html, status === 403 ? /href="https:\/\/ailab.gc.cuny.edu\/request-access\/"/ : /Sign-in is temporarily unavailable/);
+    assert.doesNotMatch(html, /CUNY Login|My account/);
+    if (status === 503) assert.match(html, />Retry<\/a>/);
     assert.ok(response.headers.getSetCookie().every(value => !value.startsWith(SESSION_COOKIE + '=')));
   }
   const f = fixture();
@@ -75,6 +77,89 @@ test('browser recovery distinguishes denied admission, unavailable sign-in and r
   const exception = await handleAuth(request, { ...f.env, IDENTITY: { ...f.client, begin: async () => { throw new Error('private provider detail'); } } });
   assert.equal(exception.status, 503);
   assert.doesNotMatch(await exception.text(), /private provider detail/);
+});
+
+test('verified sessions navigate home after an expired callback, without replay, renewal or untrusted redirects', async () => {
+  const f = fixture();
+  const appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+  let checks = 0;
+  const env = { ...f.env, IDENTITY: { ...f.client,
+    identities: async () => { checks++; return { ok: true as const, appJwt, gatewayJwt: 'unused', workspaceJwt: null }; },
+    begin: async () => { throw new Error('must not start another login'); },
+    redeem: async () => { throw new Error('must not replay the callback'); },
+    revoke: async () => { throw new Error('must not revoke the existing session'); },
+  } };
+  const headers = { Accept: 'text/html', Cookie: `${SESSION_COOKIE}=${token}` };
+  for (const path of ['/auth/callback?code=expired&state=old&next=//attacker.test', '/auth/callback?code=expired&state=old&next=/teacher.html']) {
+    const response = await handleAuth(f.request(path, { headers }), env);
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get('location'), '/');
+    assert.equal(await response.text(), '');
+    assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+    assert.match(response.headers.get('cache-control')!, /no-store/);
+    assert.ok(response.headers.getSetCookie().every(value => value.startsWith(LOGIN_COOKIE + '=') && value.includes('Max-Age=0')));
+  }
+  for (const [next, target] of [['/teacher.html', '/teacher.html'], ['//attacker.test', '/']]) {
+    const response = await handleAuth(f.request('/auth/login?next=' + next, { headers }), env);
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get('location'), target);
+    assert.equal(response.headers.has('set-cookie'), false);
+  }
+  const expiredPending = encodeURIComponent(JSON.stringify({ state: 'a'.repeat(43), verifier: 'b'.repeat(43), next: '/teacher.html', expiresAt: Date.now() - 1000 }));
+  const expired = await handleAuth(f.request('/auth/callback?code=' + code + '&state=' + 'a'.repeat(43), {
+    headers: { ...headers, Cookie: `${SESSION_COOKIE}=${token}; ${LOGIN_COOKIE}=${expiredPending}` },
+  }), env);
+  assert.equal(expired.status, 303);
+  assert.equal(expired.headers.get('location'), '/');
+  assert.ok(expired.headers.getSetCookie().every(value => value.startsWith(LOGIN_COOKIE + '=') && value.includes('Max-Age=0')));
+  assert.equal(checks, 5);
+  const json = await handleAuth(f.request('/auth/callback?code=expired', {
+    headers: { ...headers, Accept: 'application/json' },
+  }), env);
+  assert.equal(json.status, 401);
+  assert.equal(checks, 5);
+});
+
+test('missing, malformed or ambiguous cookies never count as an existing session', async () => {
+  const f = fixture();
+  for (const Cookie of ['', `${SESSION_COOKIE}=forged`, `${SESSION_COOKIE}=${token}; ${SESSION_COOKIE}=${token}`]) {
+    const response = await handleAuth(f.request('/auth/callback?code=expired', { headers: { Accept: 'text/html', Cookie } }), f.env);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.has('location'), false);
+    assert.match(await response.text(), />CUNY Login<\/a>/);
+  }
+  assert.equal(f.calls(), 0);
+});
+
+test('expired sessions offer login, revoked access offers help, and unverified sessions offer only Retry', async () => {
+  const f = fixture();
+  const headers = { Accept: 'text/html', Cookie: `${SESSION_COOKIE}=${token}` };
+  for (const status of [401, 403, 503, 500]) {
+    const response = await handleAuth(f.request('/auth/callback?code=expired', { headers }), {
+      ...f.env, IDENTITY: { ...f.client, identities: async () => ({ ok: false as const, status }) },
+    });
+    assert.equal(response.status, status === 500 ? 503 : status);
+    assert.equal(response.headers.has('location'), false);
+    const html = await response.text();
+    assert.doesNotMatch(html, /My account/);
+    assert.match(html, status === 401 ? />CUNY Login<\/a>/ : status === 403 ? />Request Lab access<\/a>/ : />Retry<\/a>/);
+    if (status !== 401) assert.doesNotMatch(html, /CUNY Login/);
+  }
+  const wrongAudience = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
+  for (const appJwt of ['forged', wrongAudience]) {
+    const response = await handleAuth(f.request('/auth/callback?code=expired', { headers }), {
+      ...f.env, IDENTITY: { ...f.client, identities: async () => ({ ok: true as const, appJwt, gatewayJwt: 'unused', workspaceJwt: null }) },
+    });
+    assert.equal(response.status, 503);
+    assert.match(await response.text(), />Retry<\/a>/);
+    assert.equal(response.headers.has('location'), false);
+  }
+  const unavailable = await handleAuth(f.request('/auth/login', { headers }), {
+    ...f.env, IDENTITY: { ...f.client, identities: async () => { throw new Error('private error'); } },
+  });
+  assert.equal(unavailable.status, 503);
+  assert.doesNotMatch(await unavailable.text(), /CUNY Login|My account|private error/);
+  assert.equal(f.state(), '');
 });
 
 test('CUNY handoff: S256 proof, host-only cookies, clean return, private JWT forwarding and logout', async () => {

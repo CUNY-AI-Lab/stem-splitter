@@ -54,34 +54,59 @@ function denied(status: number): Response {
   const safe = status === 401 || status === 403 ? status : 503;
   return authFailure(safe === 401 ? 'authentication_required' : safe === 403 ? 'admission_required' : 'admission_unavailable', safe);
 }
+function isDocumentNavigation(request: Request): boolean {
+  const destination = request.headers.get('sec-fetch-dest');
+  return destination === null
+    ? request.headers.get('accept')?.includes('text/html') === true
+    : destination === 'document';
+}
 function signInFailure(request: Request, status = 401): Response {
   const safe = [401, 403, 429].includes(status) ? status : 503;
-  const destination = request.headers.get('sec-fetch-dest');
-  const documentNavigation = destination === null
-    ? request.headers.get('accept')?.includes('text/html')
-    : destination === 'document';
-  if (!documentNavigation) {
+  if (!isDocumentNavigation(request)) {
     return safe === 429
       ? new Response('Please wait a moment before signing in again.', { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'private, no-store' } })
       : denied(safe);
   }
   const title = safe === 401 ? 'Start sign-in again' : safe === 403 ? 'Lab access required'
     : safe === 429 ? 'Wait a minute before trying again' : 'Sign-in is temporarily unavailable';
-  const message = safe === 401 ? 'This sign-in link has expired or has already been used. Start again, or check My account if you have already signed in.'
-    : safe === 403 ? 'You need active CUNY AI Lab access to continue. If you were recently approved, try signing in again. Otherwise, request access from the Lab.'
+  const message = safe === 401 ? 'This sign-in link is no longer active. Sign in again to continue.'
+    : safe === 403 ? 'You need active CUNY AI Lab access to continue. Request access, or contact the Lab if you were recently approved.'
     : safe === 429 ? 'You have tried signing in several times. Your saved splits have not changed.'
     : 'We could not reach the sign-in service. Please try again shortly. Your saved splits have not changed.';
   // Only fixed links and copy enter this page. Never echo callback state, codes,
   // provider errors or caller-supplied destinations into an authentication page.
-  const access = safe === 403 ? '<p><a href="https://ailab.gc.cuny.edu/request-access/">Request Lab access</a> · <a href="mailto:ailab@gc.cuny.edu">Contact the Lab</a></p>' : '';
+  const action = safe === 403
+    ? '<a class="account-button" href="https://ailab.gc.cuny.edu/request-access/">Request Lab access</a>'
+    : `<a class="account-button" href="/auth/login">${safe === 401 ? 'CUNY Login' : 'Retry'}</a>`;
+  const access = safe === 403 ? '<p><a href="mailto:ailab@gc.cuny.edu">Contact the Lab</a></p>' : '';
   const headers = new Headers({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow',
     'Content-Security-Policy': "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
   if (safe === 429) headers.set('Retry-After', '60');
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign in</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>${title}</h1><p>${message}</p><p class="signin-actions"><a class="account-button" href="/auth/login">CUNY Login</a> <a class="account-button" href="/account.html">My account</a></p>${access}<p><a href="/">Back to Splitter</a></p></main></body></html>`, { status: safe, headers });
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign in</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>${title}</h1><p>${message}</p><p class="signin-actions">${action}</p>${access}<p><a href="/">Back to Splitter</a></p></main></body></html>`, { status: safe, headers });
 }
-function loginFailure(request: Request, status = 401): Response {
-  const response = signInFailure(request, status);
+async function existingSessionStatus(request: Request, env: SsoEnv): Promise<200 | 401 | 403 | 503> {
+  const token = readCookie(request, SESSION_COOKIE);
+  if (!TOKEN.test(token)) return 401;
+  const client = identityClient(request, env);
+  if (!client) return 503;
+  try {
+    // A cookie is not proof of a current session. Doorway rechecks the session
+    // and Admission; validate the returned app identity before navigating.
+    const result = await boundedRpc(client.identities(token));
+    if (!result.ok) return result.status === 401 || result.status === 403 ? result.status : 503;
+    const verifier = await loadIdentityVerifierConfig({ jwks: env.CAIL_IDENTITY_JWKS,
+      issuer: CAIL_CANONICAL_ISSUER, expectedAudience: 'cail:stem-splitter', supportedIssuers: [CAIL_CANONICAL_ISSUER] });
+    if (!verifier.ok || typeof result.appJwt !== 'string' || result.appJwt.length > 16384) return 503;
+    return await verifyIdentityJwt(result.appJwt, verifier.config) ? 200 : 503;
+  } catch { return 503; }
+}
+async function loginFailure(request: Request, env: SsoEnv, status = 401): Promise<Response> {
+  const sessionStatus = status === 401 && isDocumentNavigation(request)
+    ? await existingSessionStatus(request, env) : status;
+  // Recovery is navigation only: never replay the callback or renew a session.
+  // Once its transaction is invalid, do not trust its destination. Use home.
+  const response = sessionStatus === 200 ? redirect('/') : signInFailure(request, sessionStatus);
   response.headers.append('Set-Cookie', cookie(LOGIN_COOKIE, '', 0));
   return response;
 }
@@ -116,6 +141,11 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
       if (!env.REQUEST_LIMIT) return signInFailure(request, 503);
       const limited = await env.REQUEST_LIMIT.limit({ key: `stem-login:${request.headers.get('cf-connecting-ip') || 'unknown'}` });
       if (!limited.success) return signInFailure(request, 429);
+      if (isDocumentNavigation(request)) {
+        const status = await existingSessionStatus(request, env);
+        if (status === 200) return redirect(safeNext(url.searchParams.get('next')));
+        if (status !== 401) return signInFailure(request, status);
+      }
       const verifier = random(), state = random();
       const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
       const result = await boundedRpc(client.begin(challenge, state));
@@ -125,16 +155,16 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
     }
     if (url.pathname === '/auth/callback') {
       const raw = readCookie(request, LOGIN_COOKIE);
-      if (!raw || raw.length > 1500) return loginFailure(request);
+      if (!raw || raw.length > 1500) return loginFailure(request, env);
       let pending;
-      try { pending = JSON.parse(decodeURIComponent(raw)); } catch { return loginFailure(request); }
+      try { pending = JSON.parse(decodeURIComponent(raw)); } catch { return loginFailure(request, env); }
       const code = url.searchParams.get('code');
       if (!pending || typeof pending !== 'object' || !PROOF.test(pending.state) || !PROOF.test(pending.verifier) ||
           pending.state !== url.searchParams.get('state') || !Number.isSafeInteger(pending.expiresAt) || pending.expiresAt <= Date.now() || pending.expiresAt > Date.now() + 600000 ||
-          !code || !UUID.test(code) || url.searchParams.getAll('state').length !== 1 || url.searchParams.getAll('code').length !== 1) return loginFailure(request);
+          !code || !UUID.test(code) || url.searchParams.getAll('state').length !== 1 || url.searchParams.getAll('code').length !== 1) return loginFailure(request, env);
       const result = await boundedRpc(client.redeem(code, pending.verifier));
-      if (!result.ok) return loginFailure(request, result.status);
-      if (!TOKEN.test(result.token) || !Number.isSafeInteger(result.expiresAt) || result.expiresAt <= Date.now()) return loginFailure(request, 503);
+      if (!result.ok) return loginFailure(request, env, result.status);
+      if (!TOKEN.test(result.token) || !Number.isSafeInteger(result.expiresAt) || result.expiresAt <= Date.now()) return loginFailure(request, env, 503);
       // A new login replaces this browser's previous app session, not CUNY's.
       const previous = readCookie(request, SESSION_COOKIE);
       if (TOKEN.test(previous) && previous !== result.token) await boundedRpc(client.revoke(previous));

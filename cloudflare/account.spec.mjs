@@ -30,7 +30,7 @@ test('Expired sign-in links give students readable recovery on desktop and mobil
       expect(response.status()).toBe(401);
       await expect(page.getByRole('heading', { name: 'Start sign-in again', exact: true })).toBeVisible();
       await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'My account', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(/private-code|private-state|admission_required/);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (process.env.STEM_SCREENSHOT_DIR) {
@@ -41,9 +41,67 @@ test('Expired sign-in links give students readable recovery on desktop and mobil
     await page.getByRole('link', { name: 'CUNY Login', exact: true }).click();
     await expect(page).toHaveURL(origin + '/auth/login');
     await expect(page.getByRole('heading', { name: 'Sign-in is temporarily unavailable', exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'My account', exact: true }).click();
-    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
-    await expect(page.locator('#account-details')).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Retry', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally { await server.close(); }
+});
+
+test('Verified sessions return to Splitter directly; unavailable verification offers Retry without guessing state', async ({ page, context }) => {
+  const origin = 'https://stem-recovery.test';
+  const issuer = await createTestIdentityIssuer();
+  const appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+  const token = '00000000-0000-4000-8000-000000000001.' + 's'.repeat(43);
+  const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)), vars: {
+    TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true',
+  } }] });
+  let available = false, identityChecks = 0;
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    const { url } = await server.listen();
+    await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' },
+      body: JSON.stringify(schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'))) });
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': appJwt });
+    await context.addCookies([{ name: SESSION_COOKIE, value: token, url: origin, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+    await page.route(origin + '/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      const response = path.startsWith('/auth/')
+        ? await handleAuth(new Request(request.url(), { headers: await request.allHeaders() }), {
+          PUBLIC_BASE_URL: origin, CANONICAL_BASE_URL: origin, CAIL_IDENTITY_JWKS: issuer.jwksJson,
+          REQUEST_LIMIT: { limit: async () => ({ success: true }) },
+          IDENTITY: { identities: async received => {
+            expect(received).toBe(token);
+            identityChecks++;
+            if (!available) throw new Error('fixture outage');
+            return { ok: true, appJwt, gatewayJwt: 'unused', workspaceJwt: null };
+          } },
+        }) : await server.fetch(path);
+      // Follow the actual handler's fixed home redirect into the local app,
+      // never the real CUNY provider. This is a synthetic session fixture.
+      if (response.status === 303) expect(response.headers.get('location')).toBe('/');
+      await route.fulfill({ status: response.status,
+        headers: { ...Object.fromEntries(response.headers), ...(response.status === 303 ? { location: url.href } : {}) },
+        body: Buffer.from(await response.arrayBuffer()) });
+    });
+    const expiredLink = origin + '/auth/callback?code=expired&state=expired&next=//attacker.test';
+    await page.goto(expiredLink);
+    await expect(page.getByRole('heading', { name: 'Sign-in is temporarily unavailable', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Retry', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: /CUNY Login|My account/i })).toHaveCount(0);
+    available = true;
+    await page.getByRole('link', { name: 'Retry', exact: true }).click();
+    await expect(page).toHaveURL(url.href);
+    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'My account', exact: true })).toBeVisible();
+    await page.goto(expiredLink);
+    await expect(page).toHaveURL(url.href);
+    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /sign.in/i })).toHaveCount(0);
+    expect(identityChecks).toBe(3);
+    expect((await context.cookies(origin)).find(cookie => cookie.name === SESSION_COOKIE)?.value).toBe(token);
     expect(errors).toEqual([]);
   } finally { await server.close(); }
 });

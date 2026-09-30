@@ -34,12 +34,15 @@ Visitor paid runs are not implemented or enabled.
 - [ ] Resolve repeated/stale callback recovery in its owning service without
   replaying codes, accepting invalid state or bypassing Admission.
   [Doorway PR #279](https://github.com/CUNY-AI-Lab/cail-tools-admission/pull/279)
-  recognizes an already verified session without granting/renewing access.
+  redirects an already verified session to the Lab tools home without
+  granting/renewing access.
   Local tests pass; the shared source gate is blocked by the dependency audit
   already addressed in prerequisite PR #278. Review, release and fresh CUNY
   acceptance remain required.
-- [ ] Release browser-readable STEM auth failures with safe retry/account/help
-  links. Local implementation: `codex/classroom-readiness-20260929`, not deployed.
+- [ ] Release state-aware STEM sign-in recovery: verified sessions return home;
+  expired sessions get CUNY Login; unavailable verification gets Retry; denied
+  access gets Lab help. Local implementation: `codex/classroom-readiness-20260929`,
+  not deployed.
 - [ ] Verify fresh CUNY login, app logout, expiry, revocation and shared-device
   switching. Existing Doorway-session reuse is not fresh CUNY MFA acceptance.
 
