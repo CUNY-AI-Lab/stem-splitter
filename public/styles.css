@@ -80,7 +80,7 @@ main {
 
 .kicker {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.84rem;
   letter-spacing: 0.14em;
   color: var(--hot);
   margin: 0 0 0.5rem;
