@@ -1315,6 +1315,7 @@ class Mixer {
           <button class="loop-clear" aria-label="Stop looping">✕</button>
         </div>
       </div>
+      <p class="transport-notice" role="status" hidden></p>
       <div class="channels"></div>
       <div class="notes" hidden></div>
       <p class="console-keys mono" aria-hidden="true"></p>
@@ -1340,6 +1341,7 @@ class Mixer {
     `;
 
     this.playBtn = li.querySelector('.play-btn');
+    this.transportNotice = li.querySelector('.transport-notice');
     this.readyBadge = li.querySelector('.badge');
     this.seek = li.querySelector('.seek');
     this.tcNow = li.querySelector('.tc-now');
@@ -1508,7 +1510,7 @@ class Mixer {
       });
       this.userMuted.set(stem.name, false);
       muteBtn.addEventListener('click', () =>
-        this.setMute(stem.name, !this.userMuted.get(stem.name))
+        this.toggleMute(stem.name)
       );
       soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
       audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
@@ -1527,35 +1529,62 @@ class Mixer {
       this.tcEnd.textContent = fmt(master.duration);
       this.renderMarkers();
     });
-    master.addEventListener('ended', () => this.stop(true));
+    master.addEventListener('ended', () => {
+      // Firefox also emits ended when seeking to the end while paused. Leave
+      // that chosen position visible; only completed playback rewinds the rack.
+      if (this.playing || this.starting) this.stop(true);
+    });
+    // Media events remain a clock source when animation frames are throttled
+    // or a decorative meter cannot render. Always display actual media time.
+    for (const event of ['timeupdate', 'seeked', 'pause']) {
+      master.addEventListener(event, () => this.paint());
+    }
 
     this.playBtn.addEventListener('click', () => (this.playing || this.starting ? this.pause() : this.play()));
 
-    // Scrub smoothly: while dragging, only preview the timecode (paint() backs
-    // off); the actual multi-stem seek happens once, on release ('change').
+    // Preview while dragging; seek every stem only when the gesture finishes.
+    // Native range event ordering differs across browsers. A late input or a
+    // missing change must never leave the display permanently in preview mode.
     this.scrubbing = false;
     this.seek.addEventListener('pointerdown', (event) => {
+      this.endScrub(false);
       this.scrubbing = true;
-      // Keep the release even if the pointer leaves the slider. A tap at the
-      // current position emits no `change`, so it must end preview separately.
-      if (this.seek.hasPointerCapture(event.pointerId) === false) {
-        try { this.seek.setPointerCapture(event.pointerId); } catch { /* synthetic/no active pointer */ }
-      }
+      this.scrubPointer = event.pointerId;
+      // Let the native range own pointer capture. Observe releases outside the
+      // element too, without taking capture away from its browser-native thumb.
+      this.scrubEvents = new AbortController();
+      const options = { capture: true, signal: this.scrubEvents.signal };
+      window.addEventListener('pointerup', (e) => {
+        if (e.pointerId === this.scrubPointer) this.queueScrubEnd();
+      }, options);
+      window.addEventListener('pointercancel', (e) => {
+        if (e.pointerId === this.scrubPointer) this.endScrub(false);
+      }, options);
+      window.addEventListener('blur', (event) => {
+        if (event.target === window) this.endScrub(false);
+      }, options);
     });
-    const endScrub = () => { this.scrubbing = false; };
-    for (const event of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) {
-      this.seek.addEventListener(event, endScrub);
-    }
+    this.seek.addEventListener('pointerup', () => this.queueScrubEnd());
+    this.seek.addEventListener('pointercancel', () => this.endScrub(false));
+    this.seek.addEventListener('lostpointercapture', () => this.queueScrubEnd());
+    this.seek.addEventListener('blur', () => this.endScrub(true));
+    // Recover a lost release before the next mixer interaction.
+    li.addEventListener('pointerdown', (event) => {
+      if (event.target !== this.seek && this.scrubbing) this.endScrub(true);
+    }, true);
     this.seek.addEventListener('input', () => {
       this.scrubbing = true;
       const t = (this.seek.value / 1000) * (master.duration || 0);
+      this.scrubTarget = t;
       this.seek.style.setProperty('--fill', `${this.seek.value / 10}%`);
       this.tcNow.textContent = fmt(t);
+      // Keyboard/assistive input has no pointer lifecycle. Give native change
+      // its turn, then commit even if that event is absent.
+      if (this.scrubPointer == null) this.queueScrubEnd();
     });
     this.seek.addEventListener('change', () => {
-      const t = (this.seek.value / 1000) * (master.duration || 0);
-      this.scrubbing = false;
-      this.seekTo(t);
+      this.scrubTarget = (this.seek.value / 1000) * (master.duration || 0);
+      this.endScrub(true);
     });
 
     this.bindKeys(li);
@@ -1586,7 +1615,7 @@ class Mixer {
         if (!name) return;
         e.preventDefault();
         if (e.shiftKey) this.cycleSolo(name);
-        else this.setMute(name, !this.userMuted.get(name));
+        else this.toggleMute(name);
         return;
       }
       if (e.shiftKey) return;
@@ -1799,22 +1828,40 @@ class Mixer {
     if (this.playing || this.starting || this.playBtn.disabled) return;
     const attempt = ++this.playAttempt;
     this.starting = true;
+    this.transportNotice.hidden = true;
     this.playBtn.textContent = '❚❚';
     this.audios.forEach((a) => (a.preload = 'auto'));
     // play() is called synchronously inside the click so the gesture still
     // counts; the audio graph is wired afterwards, once the context is awake.
+    const startAbort = new AbortController();
+    this.startAbort = startAbort;
+    let startupTimer;
+    const deadline = new Promise((_, reject) => {
+      startupTimer = setTimeout(() => reject(new Error('Playback startup timed out')), 15_000);
+      startAbort.signal.addEventListener('abort', () => reject(new Error('Playback cancelled')), { once: true });
+    });
     try {
-      await Promise.all(this.audios.map((a) => a.play()));
+      const starts = this.audios.map((a) => a.play());
+      // Resume an existing graph inside this user gesture too: a backgrounded
+      // tab may have suspended it since the previous play.
+      void this.wireGraph();
+      await Promise.race([Promise.all(starts), deadline]);
     } catch {
       // Autoplay rejection or a stalled stem — park everything so we never
       // sit half-playing behind a ▶ button; the user can tap again.
-      if (attempt === this.playAttempt) this.pause();
+      if (attempt === this.playAttempt) {
+        this.pause();
+        this.transportNotice.textContent = 'Playback could not start. Press play to try again.';
+        this.transportNotice.hidden = false;
+      }
       return;
+    } finally {
+      clearTimeout(startupTimer);
+      if (this.startAbort === startAbort) this.startAbort = null;
     }
     // A pause, collapse or audio failure may have cancelled this pending start.
     if (attempt !== this.playAttempt) return;
     this.starting = false;
-    void this.wireGraph();
     this.playing = true;
     this.playBtn.textContent = '❚❚';
     this.playBtn.classList.add('playing');
@@ -1839,6 +1886,7 @@ class Mixer {
 
   stopUi() {
     this.playAttempt += 1;
+    this.startAbort?.abort();
     this.starting = false;
     this.playing = false;
     this.playBtn.textContent = '▶';
@@ -1846,6 +1894,8 @@ class Mixer {
     this.el.classList.remove('playing');
     clearInterval(this.syncTimer);
     cancelAnimationFrame(this.raf);
+    this.clockProgress = null;
+    this.endScrub(false);
     // The rAF loop is what drives the bars, so settle them here rather than
     // leaving the last frame frozen mid-song.
     for (const channel of this.channelsByName.values()) {
@@ -1856,6 +1906,25 @@ class Mixer {
   }
 
   resync() {
+    if (!this.playing) return;
+    const now = performance.now();
+    // A stalled master must not leave the other instruments playing against a
+    // frozen timer indefinitely. Watch real media progress, not mute/focus:
+    // even inaudible stems must keep advancing to rejoin the mix correctly.
+    if (!this.clockProgress) this.clockProgress = this.audios.map(a => ({ time: a.currentTime, advancedAt: now }));
+    for (let i = 0; i < this.audios.length; i++) {
+      const time = this.audios[i].currentTime;
+      const progress = this.clockProgress[i];
+      if (Math.abs(time - progress.time) > 0.001) {
+        progress.time = time;
+        progress.advancedAt = now;
+      } else if (now - progress.advancedAt > 5000) {
+        this.pause();
+        this.transportNotice.textContent = 'Playback stalled. Press play to try again.';
+        this.transportNotice.hidden = false;
+        return;
+      }
+    }
     const master = this.audios[0];
     if (master.seeking) return; // still landing after a jump — no reference time yet
     const t = master.currentTime;
@@ -1872,7 +1941,6 @@ class Mixer {
   // context is genuinely running: a suspended context that owns the elements
   // would play nothing at all, which is far worse than decorative meters.
   async wireGraph() {
-    if (this.graphWired) return;
     const ctx = sharedAudioContext();
     if (!ctx) return;
     try {
@@ -1880,7 +1948,7 @@ class Mixer {
     } catch {
       return;
     }
-    if (ctx.state !== 'running') return; // try again on the next play
+    if (ctx.state !== 'running' || this.graphWired) return; // may have raced another resume
 
     this.graphWired = true;
     for (const channel of this.channelsByName.values()) {
@@ -1913,7 +1981,16 @@ class Mixer {
   paintMeters() {
     for (const channel of this.channelsByName.values()) {
       if (!channel.analyser) continue;
-      channel.analyser.getByteFrequencyData(channel.bins);
+      try {
+        channel.analyser.getByteFrequencyData(channel.bins);
+      } catch {
+        // A meter failure must not kill the transport's animation loop.
+        channel.analyser = null;
+        channel.levels.fill(0);
+        channel.row.querySelector('.meter').classList.remove('live');
+        for (const bar of channel.bars) bar.style.height = '18%';
+        continue;
+      }
       for (let band = 0; band < METER_BANDS.length; band += 1) {
         const [from, to] = METER_BANDS[band];
         let sum = 0;
@@ -1934,7 +2011,7 @@ class Mixer {
   paint() {
     if (this.scrubbing) return; // don't fight the user's drag
     const master = this.audios[0];
-    const dur = master.duration || 0;
+    const dur = Number.isFinite(master.duration) ? master.duration : 0;
     const pct = dur ? (master.currentTime / dur) * 1000 : 0;
     this.seek.value = pct;
     this.seek.style.setProperty('--fill', `${pct / 10}%`);
@@ -1982,7 +2059,31 @@ class Mixer {
     input.addEventListener('blur', () => done(true));
   }
 
+  queueScrubEnd() {
+    clearTimeout(this.scrubTimer);
+    // Wait until native range release/change processing has completed before
+    // paint writes the slider value. Do not overwrite the final thumb position.
+    this.scrubTimer = setTimeout(() => this.endScrub(true), 0);
+  }
+
+  endScrub(commit) {
+    const target = this.scrubTarget;
+    clearTimeout(this.scrubTimer);
+    this.scrubEvents?.abort();
+    this.scrubEvents = null;
+    this.scrubPointer = null;
+    this.scrubTarget = null;
+    this.scrubbing = false;
+    if (commit && Number.isFinite(target)) this.seekTo(target);
+    else if (!commit) this.paint();
+  }
+
   seekTo(t) {
+    if (!Number.isFinite(t)) return;
+    this.endScrub(false);
+    this.clockProgress = null;
+    const duration = this.audios[0].duration;
+    t = Math.max(0, Number.isFinite(duration) ? Math.min(t, duration) : t);
     for (const a of this.audios) {
       // Seeks can land while paused (Listening Guide tool calls do this a lot) — start
       // buffering the target region now so play() finds data ready instead of
@@ -2561,9 +2662,16 @@ class Mixer {
     }
   }
 
+  toggleMute(stemName) {
+    // A focused strip is audible even when its stored mute is on. Pressing
+    // MUTE should silence what the student hears, not toggle an invisible bit.
+    this.setMute(stemName, this.soloState?.stem === stemName || !this.userMuted.get(stemName));
+  }
+
   setMute(stemName, muted) {
     if (!this.channelsByName.has(stemName)) return;
     this.userMuted.set(stemName, Boolean(muted));
+    if (muted && this.soloState?.stem === stemName) this.soloState = null;
     this.applyMix();
   }
 
@@ -2607,7 +2715,7 @@ class Mixer {
       channel.row.classList.toggle('muted', gain === 0);
       channel.row.classList.toggle('behind', gain > 0 && gain < 1);
       channel.row.classList.toggle('focused', focused);
-      channel.muteBtn.setAttribute('aria-pressed', String(muted));
+      channel.muteBtn.setAttribute('aria-pressed', String(muted && !focused));
       channel.soloBtn.setAttribute('aria-pressed', String(focused));
       channel.soloBtn.textContent = focused ? (solo.stage === 'only' ? 'ONLY' : 'FRONT') : 'SOLO';
     }

@@ -60,7 +60,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     for (const event of ['pointercancel', 'lostpointercapture', 'blur']) {
       await seek.dispatchEvent('pointerdown', { pointerId: 1 });
       await seek.dispatchEvent(event, { pointerId: 1 });
-      expect(await page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(false);
+      await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(false);
     }
     await seek.focus();
     await seek.press('ArrowRight');
