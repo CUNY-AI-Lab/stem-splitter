@@ -45,7 +45,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await expect(page.locator('.console-title')).toHaveText('Shared audio');
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('.play-btn')).toBeVisible();
-    await page.screenshot({ path: '/tmp/stem-shared-mobile.png', fullPage: true });
+    await page.locator('.console').screenshot({ path: '/tmp/stem-shared-mobile.png', animations: 'disabled' });
     expect(errors).toEqual([]);
   } finally { await server.close(); }
 });
