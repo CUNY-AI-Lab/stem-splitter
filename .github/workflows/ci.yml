@@ -41,11 +41,11 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --project local-separator --locked
       - name: Install FFmpeg test dependency
-        run: bash .github/scripts/install-media-tools.sh ffmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - name: Verify instrument-discovery dependency lock
         run: uv lock --check --project instrument-discovery
       - name: Install Chrome for Playwright
-        run: bash .github/scripts/install-media-tools.sh chrome
+        run: bun run playwright -- install --with-deps chrome
       - name: Run unit and Python tests
         run: bun run test
       - name: Validate ordered audio-pipeline promotion
