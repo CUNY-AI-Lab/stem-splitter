@@ -1248,6 +1248,12 @@ class Mixer {
     this.annotations = [...(job.annotations || [])];
     this.channelsByName = new Map(); // canonical stem name -> { audio, row, muteBtn, soloBtn }
     this.chatHistory = []; // per-instance; survives re-renders via the mixers Map
+    this.conversationEntries = [];
+    this.conversationRevision = 0;
+    this.conversationLoaded = false;
+    this.conversationLoading = null;
+    this.conversationSaveQueue = Promise.resolve();
+    this.conversationSaveStatus = null;
     this.coachBusy = false;
     // The student's own mute switches. Solo is a temporary override layered on
     // top and never writes here, so releasing solo restores exactly this.
@@ -1276,6 +1282,7 @@ class Mixer {
           <div class="console-actions" id="${actionsId}">
             <span class="badge ready">READY</span>
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
+            <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
             <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
             <button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit. Your split stays saved to your account.' : 'Remove this split from your rack — the class copy stays, and a shared link can bring it back'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>
             <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
@@ -1285,7 +1292,7 @@ class Mixer {
       <div class="console-sub mono">
         <span class="split-meta"></span>
         <button class="share-btn to-remix-btn" title="Stack this split's layers on the Remixer deck">SEND TO REMIXER ⤳</button>
-        <button class="share-btn" title="Copy a link to this console">COPY LINK</button>
+        <button class="share-btn" title="Anyone with this link can listen. Notes and conversations stay private.">COPY LINK</button>
       </div>
       <div class="transport">
         <button class="play-btn" aria-label="Play all stems">▶</button>
@@ -1322,6 +1329,7 @@ class Mixer {
             <div class="coach-archive-log" hidden></div>
           </div>
           <div class="coach-log" role="log" aria-live="polite"></div>
+          <p class="coach-save-status" role="status" hidden></p>
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
             <button type="submit">ASK</button>
@@ -1366,6 +1374,14 @@ class Mixer {
     });
     this.exportBtn = li.querySelector('.export-btn');
     this.exportBtn.addEventListener('click', () => this.exportZip());
+    this.unshareBtn = li.querySelector('.unshare-btn');
+    this.unshareBtn.addEventListener('click', async () => {
+      try {
+        await api(`/api/jobs/${this.job.id}/share`, { method: 'DELETE' });
+        this.unshareBtn.hidden = true;
+        showUploadMessage('Sharing stopped. Your saved split is unchanged.');
+      } catch { showUploadMessage('Could not stop sharing. Please try again.', true); }
+    });
     this.folderBtn = li.querySelector('.folder-btn');
     this.folderBtn.addEventListener('click', () => {
       const actionsWereOpen = this.el.classList.contains('actions-open');
@@ -1427,7 +1443,10 @@ class Mixer {
       // Polling stops once a job is done, so a guide a classmate already paid
       // for would otherwise still show the cue button here. Opening the panel
       // is the moment that matters — pick up their guide, names, and notes.
-      if (open) void this.refresh();
+      if (open) {
+        if (runtime.authMode === 'cail') void this.loadConversation().catch(() => {});
+        void this.refresh();
+      }
       else this.coachAbort?.abort();
     });
     this.coachForm.addEventListener('submit', (e) => {
@@ -1449,6 +1468,7 @@ class Mixer {
     this.coachArchive = li.querySelector('.coach-archive');
     this.archiveToggle = li.querySelector('.coach-archive-toggle');
     this.archiveLog = li.querySelector('.coach-archive-log');
+    this.conversationSaveStatus = li.querySelector('.coach-save-status');
     this.archiveToggle.addEventListener('click', () => {
       const open = this.archiveLog.hidden;
       this.archiveLog.hidden = !open;
@@ -1543,6 +1563,12 @@ class Mixer {
     this.applyMix();
     this.renderNotes();
     this.renderGuide();
+    if (this.job.readOnlyShared) {
+      for (const node of li.querySelectorAll('.coach, .note-btn, .folder-btn, .export-btn, .to-remix-btn')) node.hidden = true;
+      for (const node of li.querySelectorAll('.ch-name')) { node.removeAttribute('tabindex'); node.removeAttribute('title'); }
+      this.readyBadge.textContent = 'SHARED';
+      this.keysHint.textContent = 'SPACE play · ←→ 5s · 1–9 mute · ⇧1–9 solo';
+    }
     return li;
   }
 
@@ -1610,6 +1636,10 @@ class Mixer {
   }
 
   async copyLink() {
+    if (runtime.authMode === 'cail' && !this.job.readOnlyShared) {
+      try { await api(`/api/jobs/${this.job.id}/share`, { method: 'POST', body: '{}' }); this.unshareBtn.hidden = false; }
+      catch (error) { showUploadMessage(`Could not share this split. ${error.message}`, true); return; }
+    }
     const url = `${location.origin}${location.pathname}?job=${this.job.id}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -1686,7 +1716,13 @@ class Mixer {
       for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text}`);
       lines.push('');
     }
-    if (this.chatHistory.length) {
+    if (runtime.authMode === 'cail' && this.conversationEntries.length) {
+      lines.push('## Listening Guy conversation', '');
+      for (const entry of this.conversationEntries) {
+        if (entry.kind === 'action') lines.push(`- Mixer action: ${entry.text}`, '');
+        else lines.push(`**${entry.kind === 'you' ? 'You' : 'Listening Guy'}:** ${entry.text}`, '');
+      }
+    } else if (this.chatHistory.length) {
       lines.push('## Listening Guy chat', '');
       for (const turn of this.chatHistory) {
         lines.push(`**${turn.role === 'user' ? 'You' : 'Listening Guy'}:** ${turn.content}`, '');
@@ -1701,6 +1737,7 @@ class Mixer {
     this.exportBtn.textContent = 'PACKING…';
     let saved = false;
     try {
+      if (runtime.authMode === 'cail') await this.loadConversation();
       const entries = [];
       const used = new Set();
       for (const stem of this.job.stems) {
@@ -1909,6 +1946,7 @@ class Mixer {
   }
 
   editLabel(stemName, nameEl) {
+    if (this.job.readOnlyShared) return;
     const input = document.createElement('input');
     input.className = 'ch-name-input';
     input.maxLength = 40;
@@ -2093,6 +2131,7 @@ class Mixer {
   }
 
   addNote() {
+    if (this.job.readOnlyShared) return;
     if (this.el.querySelector('.note-form')) return;
     const t = this.audios[0].currentTime;
     const form = document.createElement('form');
@@ -2140,6 +2179,7 @@ class Mixer {
   // Labels, notes, and the guide are class-wide; this pulls in whatever other
   // students have added since the page loaded. Read-only, so no class code.
   async refresh() {
+    if (this.job.readOnlyShared) return;
     try {
       const res = await fetch(`/api/jobs/${this.job.id}`);
       if (!res.ok) return;
@@ -2254,13 +2294,14 @@ class Mixer {
     }
   }
 
-  // --- previous-session archive (per song, localStorage) ----------------
+  // --- previous-session archive ------------------------------------------
 
   archiveKey() {
     return `coachChat:${this.job.id}`;
   }
 
   loadArchive() {
+    if (runtime.authMode === 'cail') return this.conversationEntries;
     try {
       const entries = JSON.parse(localStorage.getItem(this.archiveKey()) || '[]');
       return Array.isArray(entries) ? entries : [];
@@ -2269,10 +2310,44 @@ class Mixer {
     }
   }
 
-  // Persist one conversation entry so the session survives a reload (it shows
-  // up collapsed under "EARLIER SESSION" next time). Display-only: the model
-  // still starts fresh each page load.
+  async loadConversation() {
+    if (runtime.authMode !== 'cail' || this.conversationLoaded) return;
+    if (this.conversationLoading) return this.conversationLoading;
+    this.conversationLoading = (async () => {
+      try {
+        const result = await api(`/api/jobs/${this.job.id}/listening-conversation`, { signal: AbortSignal.timeout(15000) });
+        this.conversationEntries = Array.isArray(result.entries) ? result.entries : [];
+        this.conversationRevision = Number(result.revision) || 0;
+        this.conversationLoaded = true;
+        this.chatHistory = this.conversationEntries
+          .filter((entry) => entry.kind === 'you' || entry.kind === 'coach')
+          .slice(-12)
+          .map((entry) => ({ role: entry.kind === 'you' ? 'user' : 'assistant', content: entry.text.slice(0, 2000) }));
+        // CUNY account history is authoritative; never adopt a browser-local
+        // copy that may belong to a different person using this device.
+        try { localStorage.removeItem(this.archiveKey()); } catch { /* no local copy is needed */ }
+        this.renderArchive();
+      } catch (error) {
+        if (this.conversationSaveStatus) {
+          this.conversationSaveStatus.hidden = false;
+          this.conversationSaveStatus.textContent = 'Could not load this account’s conversation. Try reopening Listening Guy.';
+        }
+        throw error;
+      } finally {
+        this.conversationLoading = null;
+      }
+    })();
+    return this.conversationLoading;
+  }
+
+  // Account mode writes the transcript to the signed-in CUNY subject. Legacy
+  // class-code mode retains its browser-only archive behavior.
   logChatEntry(kind, text) {
+    if (runtime.authMode === 'cail') {
+      this.conversationEntries = [...this.conversationEntries, { kind, text }].slice(-60);
+      this.queueConversationSave();
+      return;
+    }
     try {
       localStorage.setItem(this.archiveKey(), JSON.stringify([...this.loadArchive(), { kind, text }].slice(-60)));
     } catch {
@@ -2280,8 +2355,35 @@ class Mixer {
     }
   }
 
+  queueConversationSave() {
+    this.conversationSaveQueue = this.conversationSaveQueue.then(async () => {
+      if (!this.conversationLoaded) await this.loadConversation();
+      const result = await api(`/api/jobs/${this.job.id}/listening-conversation`, {
+        method: 'PUT',
+        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({ entries: this.conversationEntries, revision: this.conversationRevision }),
+      });
+      this.conversationRevision = result.revision;
+      if (this.conversationSaveStatus) {
+        this.conversationSaveStatus.hidden = false;
+        this.conversationSaveStatus.textContent = 'Saved to your CUNY account.';
+        this.conversationSaveStatus.classList.remove('error');
+      }
+    }).catch((error) => {
+      if (this.conversationSaveStatus) {
+        this.conversationSaveStatus.hidden = false;
+        this.conversationSaveStatus.textContent = error.message.includes('another tab')
+          ? 'This conversation changed elsewhere. Reload the split to sync it.'
+          : 'Conversation not saved. Check your connection and try again.';
+        this.conversationSaveStatus.classList.add('error');
+      }
+    });
+    return this.conversationSaveQueue;
+  }
+
   renderArchive() {
     const entries = this.loadArchive();
+    this.archiveLog.innerHTML = '';
     if (!entries.length) return;
     this.coachArchive.hidden = false;
     this.archiveToggle.innerHTML = `<span class="coach-caret">▾</span>EARLIER SESSION · ${entries.length}`;
@@ -2299,7 +2401,29 @@ class Mixer {
   // A fresh start for the conversation only: the model's context (chatHistory),
   // the live log, and the reload archive all clear together, while the cached
   // opening guide stays — it is class-shared and cost money to generate.
-  resetCoachConversation() {
+  async resetCoachConversation() {
+    if (this.coachBusy) return;
+    this.coachBusy = true;
+    this.coachInput.disabled = true;
+    if (runtime.authMode === 'cail') {
+      try {
+        await this.conversationLoading?.catch(() => {});
+        await this.conversationSaveQueue;
+        const reset = await api(`/api/jobs/${this.job.id}/listening-conversation`, { method: 'DELETE', signal: AbortSignal.timeout(15000) });
+        this.conversationEntries = [];
+        this.conversationRevision = reset.revision;
+        this.conversationLoaded = true;
+      } catch {
+        if (this.conversationSaveStatus) {
+          this.conversationSaveStatus.hidden = false;
+          this.conversationSaveStatus.textContent = 'Could not reset this account’s conversation. Try again.';
+          this.conversationSaveStatus.classList.add('error');
+        }
+        this.coachBusy = false;
+        this.coachInput.disabled = false;
+        return;
+      }
+    }
     this.chatHistory = [];
     this.coachLog.innerHTML = '';
     try {
@@ -2311,6 +2435,9 @@ class Mixer {
     this.archiveLog.hidden = true;
     this.archiveLog.innerHTML = '';
     this.archiveToggle.setAttribute('aria-expanded', 'false');
+    this.conversationSaveStatus.hidden = true;
+    this.coachBusy = false;
+    this.coachInput.disabled = false;
     this.coachInput.focus();
   }
 
@@ -2326,6 +2453,10 @@ class Mixer {
   async sendChat(text) {
     if (this.coachBusy) return;
     this.coachBusy = true;
+    if (runtime.authMode === 'cail') {
+      try { await this.loadConversation(); }
+      catch { this.coachBusy = false; return; }
+    }
     this.coachAbort = new AbortController();
     this.coachCancel.hidden = false;
     this.chatHistory.push({ role: 'user', content: text });
@@ -2380,11 +2511,13 @@ class Mixer {
         row.remove(); // stream produced nothing durable
       }
       await this.executeToolCalls(calls);
+      if (runtime.authMode === 'cail') await this.conversationSaveQueue;
     } catch (err) {
       typing.remove();
       if (row && !acc) row.remove();
       if (row) row.classList.remove('streaming');
       this.addChatRow('error', esc(err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message));
+      if (runtime.authMode === 'cail') await this.conversationSaveQueue;
     }
     this.coachBusy = false;
     this.coachCancel.hidden = true;
@@ -2967,7 +3100,10 @@ function runElapsedClock() {
 // which owns the user-facing message for its own context.
 async function adoptJobById(id) {
   if (getJobs().some((existing) => existing.id === id)) return 'present';
-  const res = await fetch(`/api/jobs/${id}`);
+  let res = accountSubject || runtime.authMode !== 'cail' ? await fetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
+  if (runtime.authMode === 'cail' && (!res || res.status === 401 || res.status === 403 || res.status === 404)) {
+    res = await fetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
+  }
   if (!res.ok) return 'missing';
   const state = await res.json();
   jobStates.set(id, state);
@@ -2989,7 +3125,6 @@ async function adoptJobById(id) {
 async function adoptSharedJob() {
   const id = new URLSearchParams(location.search).get('job');
   if (!id) return;
-  history.replaceState(null, '', location.pathname);
 
   try {
     if ((await adoptJobById(id)) === 'missing') {
@@ -3006,7 +3141,7 @@ async function adoptSharedJob() {
 
   const position = getJobs().findIndex((existing) => existing.id === id);
   jobList.children[position]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  showUploadMessage(runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
+  showUploadMessage(jobStates.get(id)?.readOnlyShared ? 'Shared split · Listen and mix. Notes and conversations stay private.' : runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
 }
 
 function stemDescription(expectedStems) {
@@ -3095,6 +3230,9 @@ const stationTagline = document.getElementById('station-tagline');
 
 let currentStation = 'splitter';
 let splitterKicker = '// a closer listen';
+// Keep the Crate implementation available for the gated Remixer, but take its
+// entry point off the Splitter until the revised workflow is ready to return.
+const CRATE_ON_SPLITTER_ENABLED = false;
 
 // The kicker doubles as the split-options summary on the Splitter bench, so
 // async option loads route through here instead of writing the DOM directly —
@@ -3133,9 +3271,15 @@ function initStations() {
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
   if (!runtime.remixer) document.querySelector('.crate-note').textContent = 'Browse openly licensed recordings and choose a track to split.';
-  if (!runtime.remixer) stationViews.splitter.append(document.getElementById('crate'));
+  if (!runtime.remixer) {
+    const crate = document.getElementById('crate');
+    stationViews.splitter.append(crate);
+    crate.hidden = runtime.authMode === 'cail' && !CRATE_ON_SPLITTER_ENABLED;
+  }
   else {
-    stationViews.remixer.append(document.getElementById('crate'));
+    const crate = document.getElementById('crate');
+    stationViews.remixer.append(crate);
+    crate.hidden = false;
     document.getElementById('crate-toggle').setAttribute('aria-expanded', 'true');
     crateToggle.classList.add('open');
     document.getElementById('crate-body').hidden = false;
@@ -4000,7 +4144,8 @@ async function initialize() {
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
-      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl;
+      const linkedJob = new URLSearchParams(location.search).get('job');
+      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
     } else account.textContent = 'CUNY Login will be available here soon.';
@@ -4014,6 +4159,7 @@ async function initialize() {
   renderJobs();
   if (accountSubject) void loadAccountJobs().then(adoptSharedJob);
   else if (runtime.authMode !== 'cail') void pollActiveJobs().then(adoptSharedJob);
+  else void adoptSharedJob();
 }
 window.addEventListener('focus', async () => {
   if (!accountSubject) return;

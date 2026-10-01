@@ -1260,6 +1260,12 @@ footer {
   opacity: 0.75;
   margin-top: 0.3rem;
 }
+.coach-save-status {
+  color: var(--ink-faint);
+  font-size: 0.68rem;
+  margin: 0.25rem 0;
+}
+.coach-save-status.error { color: var(--danger); }
 
 .coach-log {
   display: flex;

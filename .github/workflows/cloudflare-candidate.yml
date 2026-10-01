@@ -44,7 +44,7 @@ jobs:
         working-directory: cloudflare
         run: bun run typecheck && bun run test
       - name: Install Chrome
-        run: bun run playwright -- install --with-deps chrome
+        run: bash .github/scripts/install-media-tools.sh chrome
       - name: Exercise recording, account and Listening Guide browser paths
         working-directory: cloudflare
         run: ../node_modules/.bin/playwright test --config playwright.config.mjs

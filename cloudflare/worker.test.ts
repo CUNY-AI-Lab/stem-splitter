@@ -105,6 +105,56 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const job = await (await call(`/api/jobs/${created.id}`)).json();
     assert.equal(job.status, 'done');
     assert.equal(job.stems.length, 4);
+    const sharePath = `/api/jobs/${created.id}/share`;
+    const publicPath = `/api/shared-jobs/${created.id}`;
+    assert.equal((await worker.fetch(publicPath)).status, 404);
+    assert.equal((await call(sharePath, 1, { method: 'POST', body: '{}' })).status, 404);
+    assert.equal((await call(sharePath, 2, { method: 'POST', body: '{}' })).status, 404);
+    assert.equal((await worker.fetch(sharePath, { method: 'POST' })).status, 403); // origin checked before session
+    assert.equal((await call(sharePath, 0, { method: 'POST', body: '{}' })).status, 200);
+    const shared = await (await worker.fetch(publicPath)).json();
+    assert.equal(shared.readOnlyShared, true);
+    assert.deepEqual(Object.keys(shared).sort(), ['annotations', 'filename', 'guide', 'id', 'labels', 'model', 'readOnlyShared', 'status', 'stems'].sort());
+    assert.deepEqual(shared.annotations, []);
+    assert.equal(shared.guide, null);
+    const publicAudio = await worker.fetch(shared.stems[0].url);
+    assert.equal(publicAudio.status, 200);
+    assert.deepEqual(Buffer.from(await publicAudio.arrayBuffer()), mp3);
+    assert.equal((await worker.fetch(`${publicPath}/stems/999`)).status, 404);
+    assert.equal((await worker.fetch(`/api/jobs/${created.id}`)).status, 401);
+    assert.equal((await worker.fetch(publicPath, { method: 'PUT', body: '{}' })).status, 403);
+    assert.equal((await call(sharePath, 1, { method: 'DELETE' })).status, 404);
+    assert.equal((await call(sharePath, 0, { method: 'DELETE' })).status, 200);
+    assert.equal((await worker.fetch(publicPath)).status, 404);
+    assert.equal((await worker.fetch(shared.stems[0].url)).status, 404);
+    assert.equal((await call(sharePath, 0, { method: 'POST', body: '{}' })).status, 200);
+    const conversationPath = `/api/jobs/${created.id}/listening-conversation`;
+    const emptyConversation = await (await call(conversationPath)).json();
+    assert.deepEqual(emptyConversation.entries, []);
+    assert.equal(emptyConversation.revision, 0);
+    assert.match(emptyConversation.expiresAt, /^\d{4}-\d\d-\d\d /);
+    const transcript = [{ kind: 'you', text: 'What does the bass do here?' }, { kind: 'coach', text: 'Listen beneath the vocal.' }];
+    const savedConversation = await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: transcript, revision: 0 }) });
+    assert.equal(savedConversation.status, 200, await savedConversation.clone().text());
+    assert.equal((await savedConversation.json()).revision, 1);
+    assert.deepEqual((await (await call(conversationPath)).json()).entries, transcript);
+    assert.equal((await call(conversationPath, 1)).status, 404); // private to the owning CUNY identity
+    assert.equal((await call(conversationPath, 2)).status, 404); // admin does not inherit a student's private history
+    assert.equal((await worker.fetch(conversationPath)).status, 401);
+    for (const who of [1, 2]) {
+      assert.equal((await call(conversationPath, who, { method: 'PUT', body: JSON.stringify({ entries: transcript, revision: 1 }) })).status, 404);
+    }
+    const nextConversation = await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: [...transcript, { kind: 'you', text: 'And the drums?' }], revision: 1 }) });
+    const updatedConversation = await nextConversation.json();
+    assert.equal(updatedConversation.revision, 2);
+    assert.equal(updatedConversation.expiresAt, emptyConversation.expiresAt);
+    assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: transcript, revision: 1 }) })).status, 409);
+    assert.equal((await call(conversationPath, 1, { method: 'DELETE' })).status, 404);
+    assert.equal((await call(conversationPath, 0, { method: 'DELETE' })).status, 200);
+    assert.equal((await (await call(conversationPath)).json()).revision, 3);
+    assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: transcript, revision: 1 }) })).status, 409);
+    assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: [{ kind: 'system', text: 'no' }], revision: 0 }) })).status, 400);
+    assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: [], revision: 8 }) })).status, 409);
     assert.equal((await call(`/api/files/stems/${created.id}/vocals.mp3`, 1)).status, 404);
     const stem = await call(`/api/files/stems/${created.id}/vocals.mp3`);
     assert.equal(stem.status, 200);
@@ -177,6 +227,19 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
       `INSERT INTO audit_check SELECT COUNT(*) FROM app_user_events WHERE subject = '${subjects[0]}' AND actor = '${subjects[2]}' AND role = 'instructor' AND role_expires_at IS NULL AND revision = ${alice.revision + 2}`,
     ]) });
     assert.equal(audit.status, 200);
+    const expiryFixture = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify([
+      `UPDATE jobs SET created_at = datetime('now', '-91 days') WHERE id = '${created.id}'`,
+      `UPDATE listening_conversations SET expires_at = datetime('now', '-1 day') WHERE job_id = '${created.id}' AND subject = '${subjects[0]}'`,
+    ]) });
+    assert.equal(expiryFixture.status, 200);
+    assert.equal((await worker.fetch(publicPath)).status, 404);
+    assert.equal((await worker.fetch(shared.stems[0].url)).status, 404);
+    assert.equal((await call(conversationPath)).status, 404);
+    assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: transcript, revision: 3 }) })).status, 404);
+    assert.equal((await call(conversationPath, 0, { method: 'DELETE' })).status, 404);
+    const purged = await worker.fetch('/__fixture/purge-conversations', { headers: { 'x-fixture': 'local-only' } });
+    assert.equal((await purged.json()).deleted, 1);
+    assert.equal((await call(conversationPath)).status, 404); // fixed 90-day lifetime, not extended by chat
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ role: 'student', disabled: true, revision: alice.revision + 2 }) })).status, 200);
     assert.equal((await call(`/api/files/stems/${created.id}/vocals.mp3`)).status, 403);
     assert.equal((await call('/api/jobs')).status, 403);

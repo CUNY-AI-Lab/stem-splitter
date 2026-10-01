@@ -29,6 +29,7 @@ const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).rep
 const random = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
 
 export function safeNext(value: unknown): string {
+  if (typeof value === 'string' && /^\/\?job=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) return value;
   // Fixed page destinations, never a caller-selected host, callback or API.
   return typeof value === 'string' && ['/', '/teacher.html', '/account.html'].includes(value) ? value : '/';
 }
@@ -176,6 +177,7 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
 
 export function publicApi(request: Request): boolean {
   const path = new URL(request.url).pathname;
+  if (request.method === 'GET' && /^\/api\/shared-jobs\/[a-zA-Z0-9-]+(?:\/stems\/\d+)?$/.test(path)) return true;
   return ((path === '/api/runtime' || path === '/api/separation-options' || path.startsWith('/api/local-sources/')) && request.method === 'GET') ||
     (path === '/api/webhooks/separation' && request.method === 'POST');
 }

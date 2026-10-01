@@ -123,6 +123,7 @@ const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_SMALL_JSON_BYTES = 4 * 1024;
 const MAX_JOB_JSON_BYTES = 32 * 1024;
+const MAX_CONVERSATION_JSON_BYTES = 256 * 1024;
 const MAX_WEBHOOK_JSON_BYTES = 64 * 1024;
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
@@ -199,6 +200,55 @@ app.get('/api/runtime', (c) => c.json({
   loginUrl: c.env.CAIL_LOGIN_URL || null,
   remixer: c.env.REMIXER_ENABLED === 'true',
 }));
+
+// Explicit sharing exposes only finished audio and its title, never account
+// identity, uploaded originals, notes, guide content, or conversation history.
+app.post('/api/jobs/:id/share', async (c) => {
+  const principal = c.get('principal');
+  if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in to share a split.' }, 401);
+  const id = c.req.param('id');
+  const result = await c.env.DB.prepare(`INSERT INTO public_split_links (job_id)
+    SELECT j.id FROM jobs j JOIN job_owners o ON o.job_id=j.id
+    WHERE j.id=? AND o.subject=? AND j.status='done' AND j.created_at > datetime('now', '-90 days')
+    ON CONFLICT(job_id) DO UPDATE SET job_id=excluded.job_id RETURNING job_id`)
+    .bind(id, principal.subject).first();
+  return result ? c.json({ url: `/?job=${encodeURIComponent(id)}` }) : c.json({ error: 'Split not found.' }, 404);
+});
+
+app.delete('/api/jobs/:id/share', async (c) => {
+  const principal = c.get('principal');
+  if (!principal || !(await c.env.DB.prepare('SELECT 1 FROM job_owners WHERE job_id=? AND subject=?')
+    .bind(c.req.param('id'), principal.subject).first())) return c.json({ error: 'Split not found.' }, 404);
+  await c.env.DB.prepare('DELETE FROM public_split_links WHERE job_id=?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+async function sharedSplit(env: Env, id: string) {
+  return env.DB.prepare(`SELECT j.* FROM jobs j JOIN public_split_links s ON s.job_id=j.id
+    WHERE j.id=? AND j.status='done' AND j.created_at > datetime('now', '-90 days')`).bind(id).first<JobRow>();
+}
+
+app.get('/api/shared-jobs/:id', async (c) => {
+  const row = await sharedSplit(c.env, c.req.param('id'));
+  if (!row) return c.json({ error: 'This shared split is unavailable or has expired.' }, 404);
+  const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
+  return c.json({ id: row.id, filename: row.filename, status: 'done', model: row.model,
+    readOnlyShared: true, labels: {}, annotations: [], guide: null,
+    stems: stems.map((stem, i) => ({ name: stem.name, url: `/api/shared-jobs/${row.id}/stems/${i}` })) });
+});
+
+app.get('/api/shared-jobs/:id/stems/:index', async (c) => {
+  const row = await sharedSplit(c.env, c.req.param('id'));
+  if (!row) return c.text('Not found', 404);
+  const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
+  const key = stems[Number(c.req.param('index'))]?.key;
+  if (!key?.startsWith(`stems/${row.id}/`)) return c.text('Not found', 404);
+  const obj = await getRetainedAudio(c.env, key);
+  if (!obj) return c.text('Not found', 404);
+  const headers = new Headers({ 'Cache-Control': 'private, no-store', 'Content-Length': String(obj.size) });
+  obj.writeHttpMetadata(headers);
+  return new Response(obj.body, { headers });
+});
 
 app.get('/api/account', async (c) => {
   const principal = c.get('principal');
@@ -1209,7 +1259,8 @@ app.get('/api/jobs/:id', async (c) => {
   // SELECT on the frequent still-processing polls.
   const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
   const attribution = await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id = ?').bind(id).first<{ attribution: string }>();
-  return c.json({ ...jobResponse(row, results ?? [], guide), attribution: attribution ? JSON.parse(attribution.attribution) : null });
+  const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
+  return c.json({ ...jobResponse(row, results ?? [], guide), publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
 
 app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
@@ -1670,6 +1721,87 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     );
     await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
   });
+});
+
+// A Listening Guy transcript belongs to the exact CUNY subject that owns the
+// split. Admin role does not broaden this private read/write boundary. Its
+// expiry is anchored to the split's 90-day lifetime and never slides forward.
+app.get('/api/jobs/:id/listening-conversation', async (c) => {
+  const principal = c.get('principal');
+  if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in with CUNY Login to save this conversation.' }, 401);
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare(`
+    SELECT conv.entries, conv.revision, conv.expires_at AS expiresAt
+    FROM listening_conversations conv
+    JOIN jobs j ON j.id = conv.job_id
+    JOIN job_owners o ON o.job_id = j.id
+    WHERE conv.job_id = ? AND conv.subject = ? AND o.subject = ?
+      AND j.created_at > datetime('now', '-90 days') AND conv.expires_at > datetime('now')
+  `).bind(id, principal.subject, principal.subject).first<{ entries: string; revision: number; expiresAt: string }>();
+  if (row) return c.json({ entries: JSON.parse(row.entries), revision: row.revision, expiresAt: row.expiresAt });
+  const job = await c.env.DB.prepare(`SELECT datetime(created_at, '+90 days') AS expiresAt FROM jobs
+    WHERE id = ? AND created_at > datetime('now', '-90 days') AND EXISTS (
+      SELECT 1 FROM job_owners WHERE job_id = jobs.id AND subject = ?
+    )`).bind(id, principal.subject).first<{ expiresAt: string }>();
+  if (!job) return c.json({ error: 'Split not found.' }, 404);
+  return c.json({ entries: [], revision: 0, expiresAt: job.expiresAt });
+});
+
+app.put('/api/jobs/:id/listening-conversation', async (c) => {
+  const principal = c.get('principal');
+  if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in with CUNY Login to save this conversation.' }, 401);
+  const parsed = await boundedJson(c, MAX_CONVERSATION_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.value as { entries?: unknown; revision?: unknown } | null;
+  if (!body || !Array.isArray(body.entries) || body.entries.length > 60 ||
+      !Number.isSafeInteger(body.revision) || Number(body.revision) < 0) {
+    return c.json({ error: 'Conversation is invalid. Reload the split and try again.' }, 400);
+  }
+  const entries: Array<{ kind: 'you' | 'coach' | 'action'; text: string }> = [];
+  for (const entry of body.entries) {
+    if (!entry || typeof entry !== 'object') return c.json({ error: 'Conversation is invalid.' }, 400);
+    const value = entry as Record<string, unknown>;
+    if (!['you', 'coach', 'action'].includes(String(value.kind)) || typeof value.text !== 'string' ||
+        !value.text.trim() || value.text.length > 3000) return c.json({ error: 'Conversation is invalid.' }, 400);
+    entries.push({ kind: value.kind as 'you' | 'coach' | 'action', text: value.text });
+  }
+  const id = c.req.param('id');
+  const result = await c.env.DB.prepare(`
+    INSERT INTO listening_conversations (job_id, subject, entries, revision, expires_at)
+    SELECT j.id, ?, ?, 1, datetime(j.created_at, '+90 days') FROM jobs j
+    JOIN job_owners o ON o.job_id = j.id AND o.subject = ?
+    WHERE j.id = ? AND j.created_at > datetime('now', '-90 days')
+      AND (? = 0 OR EXISTS (SELECT 1 FROM listening_conversations prior WHERE prior.job_id = j.id AND prior.subject = ?))
+    ON CONFLICT(job_id, subject) DO UPDATE SET entries = excluded.entries,
+      revision = listening_conversations.revision + 1, updated_at = datetime('now')
+    WHERE listening_conversations.revision = ? AND listening_conversations.expires_at > datetime('now')
+    RETURNING revision, expires_at AS expiresAt
+  `).bind(principal.subject, JSON.stringify(entries), principal.subject, id, Number(body.revision), principal.subject, Number(body.revision))
+    .first<{ revision: number; expiresAt: string }>();
+  if (result) return c.json({ ok: true, revision: result.revision, expiresAt: result.expiresAt });
+  const owned = await c.env.DB.prepare(`SELECT 1 FROM jobs j JOIN job_owners o ON o.job_id = j.id
+    WHERE j.id = ? AND o.subject = ? AND j.created_at > datetime('now', '-90 days')`)
+    .bind(id, principal.subject).first();
+  if (!owned) return c.json({ error: 'Split not found.' }, 404);
+  return c.json({ error: 'This conversation changed in another tab. Reload before saving.' }, 409);
+});
+
+app.delete('/api/jobs/:id/listening-conversation', async (c) => {
+  const principal = c.get('principal');
+  if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in with CUNY Login to reset this conversation.' }, 401);
+  const id = c.req.param('id');
+  const result = await c.env.DB.prepare(`
+    INSERT INTO listening_conversations (job_id, subject, entries, revision, expires_at)
+    SELECT j.id, ?, '[]', 1, datetime(j.created_at, '+90 days') FROM jobs j
+    JOIN job_owners o ON o.job_id = j.id AND o.subject = ?
+    WHERE j.id = ? AND j.created_at > datetime('now', '-90 days')
+    ON CONFLICT(job_id, subject) DO UPDATE SET entries = '[]',
+      revision = listening_conversations.revision + 1, updated_at = datetime('now')
+    WHERE listening_conversations.expires_at > datetime('now')
+    RETURNING revision
+  `).bind(principal.subject, principal.subject, id).first<{ revision: number }>();
+  if (!result) return c.json({ error: 'Split not found.' }, 404);
+  return c.json({ ok: true, revision: result.revision });
 });
 
 // Chat with the Listening Guide about one song, streamed as SSE. The conversation lives
