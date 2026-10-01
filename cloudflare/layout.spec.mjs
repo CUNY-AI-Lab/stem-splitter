@@ -35,32 +35,51 @@ for (const remixer of [false, true]) test(`Crate below the workspace, no adversa
       await page.setViewportSize({ width: 1280, height: 900 });
     }
     if (remixer) await page.getByRole('tab', { name: /REMIXER/ }).click();
-    await expect(page.locator(`#view-${remixer ? 'remixer' : 'splitter'} > section`).last()).toHaveAttribute('id', 'crate');
     const workspace = page.locator(remixer ? '#remix-deck' : '#jobs');
     const workspaceBox = await workspace.boundingBox();
-    const crateBox = await page.locator('#crate').boundingBox();
-    expect(crateBox.y).toBeGreaterThanOrEqual(workspaceBox.y + workspaceBox.height);
     await expect(page.locator('#crate')).toHaveCount(1);
     await expect(page.locator('[id^="da-"], .da-panel')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(/devil|defend your mix|challenge me/i);
-    if (!remixer) await page.locator('#crate-toggle').click();
-    await expect(page.locator('#crate-body')).toBeVisible();
-    await page.locator('#crate-toggle').click();
-    await expect(page.locator('#crate-body')).toBeHidden();
+    if (!remixer) {
+      await expect(page.locator('#crate')).toBeHidden();
+      await expect(page.getByText('BROWSE THE CRATE', { exact: true })).toBeHidden();
+      if (process.env.STEM_SCREENSHOT_DIR) {
+        await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/splitter-crate-hidden-desktop.png`, fullPage: true, animations: 'disabled' });
+      }
+    } else {
+      await expect(page.locator('#view-remixer > section').last()).toHaveAttribute('id', 'crate');
+      const crateBox = await page.locator('#crate').boundingBox();
+      expect(crateBox.y).toBeGreaterThanOrEqual(workspaceBox.y + workspaceBox.height);
+      await expect(page.locator('#crate')).toBeVisible();
+      await expect(page.locator('#crate-body')).toBeVisible();
+      await page.locator('#crate-toggle').click();
+      await expect(page.locator('#crate-body')).toBeHidden();
+    }
     const receipts = process.env.STEM_SCREENSHOT_DIR;
     if (receipts) {
       await mkdir(receipts, { recursive: true });
-      await page.locator('#crate').scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `${receipts}/${remixer ? 'remixer' : 'splitter'}-crate-below-desktop.png`, animations: 'disabled' });
+      if (remixer) {
+        await page.locator('#crate').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${receipts}/remixer-crate-below-desktop.png`, animations: 'disabled' });
+      }
     }
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const mobileWorkspace = await workspace.boundingBox();
-    const mobileCrate = await page.locator('#crate').boundingBox();
-    expect(mobileCrate.y).toBeGreaterThanOrEqual(mobileWorkspace.y + mobileWorkspace.height);
+    if (remixer) {
+      const mobileCrate = await page.locator('#crate').boundingBox();
+      expect(mobileCrate.y).toBeGreaterThanOrEqual(mobileWorkspace.y + mobileWorkspace.height);
+    } else {
+      await expect(page.locator('#crate')).toBeHidden();
+      if (process.env.STEM_SCREENSHOT_DIR) {
+        await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/splitter-crate-hidden-mobile.png`, fullPage: true, animations: 'disabled' });
+      }
+    }
     if (receipts) {
-      await page.locator('#crate').scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `${receipts}/${remixer ? 'remixer' : 'splitter'}-crate-below-mobile.png`, animations: 'disabled' });
+      if (remixer) {
+        await page.locator('#crate').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `${receipts}/remixer-crate-below-mobile.png`, animations: 'disabled' });
+      }
     }
     expect(errors).toEqual([]);
   } finally { await server.close(); }

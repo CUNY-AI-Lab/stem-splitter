@@ -3,6 +3,7 @@ import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
 import { gatewayForRequest, canonicalModel } from './gateway.ts';
 import { authenticatedRequest, handleAuth, type WorkerIdentity } from './sso.ts';
+import { purgeExpiredListeningConversations } from './retention.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> &
@@ -32,6 +33,9 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
 }
 
 export default {
+  async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(purgeExpiredListeningConversations(env.DB));
+  },
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     // The explicit alias shares this runtime through a service binding. Keep

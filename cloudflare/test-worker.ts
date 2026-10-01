@@ -1,10 +1,16 @@
 // Local test entrypoint only. Never referenced by the deployment config.
 import preview, { type WorkerEnv } from './worker.ts';
+import { purgeExpiredListeningConversations } from './retention.ts';
 import { SESSION_COOKIE, type WorkerIdentity } from './sso.ts';
 type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_BROWSER?: string };
 let gatewayCalls = 0;
+let gatewayMessages: Array<{ role: string; content: string }> = [];
 export default {
   async fetch(request: Request, env: TestEnv, ctx: ExecutionContext) {
+    if (new URL(request.url).pathname === '/__fixture/gateway-messages' && request.headers.get('x-fixture') === 'local-only') return Response.json({ messages: gatewayMessages });
+    if (new URL(request.url).pathname === '/__fixture/purge-conversations' && request.headers.get('x-fixture') === 'local-only') {
+      return Response.json({ deleted: await purgeExpiredListeningConversations(env.DB) });
+    }
     if (new URL(request.url).pathname === '/__fixture/gateway-stats' && request.headers.get('x-fixture') === 'local-only') return Response.json({ gatewayCalls });
     if (new URL(request.url).pathname === '/__fixture/audio' && request.headers.get('x-fixture') === 'local-only') {
       await env.AUDIO.put('stems/remix-fixture/vocals.mp3', await request.arrayBuffer());
@@ -47,6 +53,7 @@ export default {
         if (outbound.headers.get('x-cail-identity-jwt') !== gatewayJwt || outbound.headers.has('authorization')) throw new Error('fixture credential contract');
         const body = await outbound.json<{ model: string }>();
         if (body.model !== 'glm-5.2') throw new Error('fixture model contract');
+        if ('messages' in body && Array.isArray((body as { messages?: unknown }).messages)) gatewayMessages = (body as { messages: Array<{ role: string; content: string }> }).messages;
         if (gatewayMode === 'pending') return new Response(new ReadableStream({ start() {} }), { headers: { 'Content-Type': 'text/event-stream' } });
         const requestId = '01900000-0000-7000-8000-000000000001';
         const error = { error: { code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'private fixture', cail: { request_id: requestId, should_retry: false } } };

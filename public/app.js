@@ -1248,6 +1248,12 @@ class Mixer {
     this.annotations = [...(job.annotations || [])];
     this.channelsByName = new Map(); // canonical stem name -> { audio, row, muteBtn, soloBtn }
     this.chatHistory = []; // per-instance; survives re-renders via the mixers Map
+    this.conversationEntries = [];
+    this.conversationRevision = 0;
+    this.conversationLoaded = false;
+    this.conversationLoading = null;
+    this.conversationSaveQueue = Promise.resolve();
+    this.conversationSaveStatus = null;
     this.coachBusy = false;
     // The student's own mute switches. Solo is a temporary override layered on
     // top and never writes here, so releasing solo restores exactly this.
@@ -1322,6 +1328,7 @@ class Mixer {
             <div class="coach-archive-log" hidden></div>
           </div>
           <div class="coach-log" role="log" aria-live="polite"></div>
+          <p class="coach-save-status" role="status" hidden></p>
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
             <button type="submit">ASK</button>
@@ -1427,7 +1434,10 @@ class Mixer {
       // Polling stops once a job is done, so a guide a classmate already paid
       // for would otherwise still show the cue button here. Opening the panel
       // is the moment that matters — pick up their guide, names, and notes.
-      if (open) void this.refresh();
+      if (open) {
+        if (runtime.authMode === 'cail') void this.loadConversation().catch(() => {});
+        void this.refresh();
+      }
       else this.coachAbort?.abort();
     });
     this.coachForm.addEventListener('submit', (e) => {
@@ -1449,6 +1459,7 @@ class Mixer {
     this.coachArchive = li.querySelector('.coach-archive');
     this.archiveToggle = li.querySelector('.coach-archive-toggle');
     this.archiveLog = li.querySelector('.coach-archive-log');
+    this.conversationSaveStatus = li.querySelector('.coach-save-status');
     this.archiveToggle.addEventListener('click', () => {
       const open = this.archiveLog.hidden;
       this.archiveLog.hidden = !open;
@@ -1686,7 +1697,13 @@ class Mixer {
       for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text}`);
       lines.push('');
     }
-    if (this.chatHistory.length) {
+    if (runtime.authMode === 'cail' && this.conversationEntries.length) {
+      lines.push('## Listening Guy conversation', '');
+      for (const entry of this.conversationEntries) {
+        if (entry.kind === 'action') lines.push(`- Mixer action: ${entry.text}`, '');
+        else lines.push(`**${entry.kind === 'you' ? 'You' : 'Listening Guy'}:** ${entry.text}`, '');
+      }
+    } else if (this.chatHistory.length) {
       lines.push('## Listening Guy chat', '');
       for (const turn of this.chatHistory) {
         lines.push(`**${turn.role === 'user' ? 'You' : 'Listening Guy'}:** ${turn.content}`, '');
@@ -1701,6 +1718,7 @@ class Mixer {
     this.exportBtn.textContent = 'PACKING…';
     let saved = false;
     try {
+      if (runtime.authMode === 'cail') await this.loadConversation();
       const entries = [];
       const used = new Set();
       for (const stem of this.job.stems) {
@@ -2254,13 +2272,14 @@ class Mixer {
     }
   }
 
-  // --- previous-session archive (per song, localStorage) ----------------
+  // --- previous-session archive ------------------------------------------
 
   archiveKey() {
     return `coachChat:${this.job.id}`;
   }
 
   loadArchive() {
+    if (runtime.authMode === 'cail') return this.conversationEntries;
     try {
       const entries = JSON.parse(localStorage.getItem(this.archiveKey()) || '[]');
       return Array.isArray(entries) ? entries : [];
@@ -2269,10 +2288,44 @@ class Mixer {
     }
   }
 
-  // Persist one conversation entry so the session survives a reload (it shows
-  // up collapsed under "EARLIER SESSION" next time). Display-only: the model
-  // still starts fresh each page load.
+  async loadConversation() {
+    if (runtime.authMode !== 'cail' || this.conversationLoaded) return;
+    if (this.conversationLoading) return this.conversationLoading;
+    this.conversationLoading = (async () => {
+      try {
+        const result = await api(`/api/jobs/${this.job.id}/listening-conversation`, { signal: AbortSignal.timeout(15000) });
+        this.conversationEntries = Array.isArray(result.entries) ? result.entries : [];
+        this.conversationRevision = Number(result.revision) || 0;
+        this.conversationLoaded = true;
+        this.chatHistory = this.conversationEntries
+          .filter((entry) => entry.kind === 'you' || entry.kind === 'coach')
+          .slice(-12)
+          .map((entry) => ({ role: entry.kind === 'you' ? 'user' : 'assistant', content: entry.text.slice(0, 2000) }));
+        // CUNY account history is authoritative; never adopt a browser-local
+        // copy that may belong to a different person using this device.
+        try { localStorage.removeItem(this.archiveKey()); } catch { /* no local copy is needed */ }
+        this.renderArchive();
+      } catch (error) {
+        if (this.conversationSaveStatus) {
+          this.conversationSaveStatus.hidden = false;
+          this.conversationSaveStatus.textContent = 'Could not load this account’s conversation. Try reopening Listening Guy.';
+        }
+        throw error;
+      } finally {
+        this.conversationLoading = null;
+      }
+    })();
+    return this.conversationLoading;
+  }
+
+  // Account mode writes the transcript to the signed-in CUNY subject. Legacy
+  // class-code mode retains its browser-only archive behavior.
   logChatEntry(kind, text) {
+    if (runtime.authMode === 'cail') {
+      this.conversationEntries = [...this.conversationEntries, { kind, text }].slice(-60);
+      this.queueConversationSave();
+      return;
+    }
     try {
       localStorage.setItem(this.archiveKey(), JSON.stringify([...this.loadArchive(), { kind, text }].slice(-60)));
     } catch {
@@ -2280,8 +2333,35 @@ class Mixer {
     }
   }
 
+  queueConversationSave() {
+    this.conversationSaveQueue = this.conversationSaveQueue.then(async () => {
+      if (!this.conversationLoaded) await this.loadConversation();
+      const result = await api(`/api/jobs/${this.job.id}/listening-conversation`, {
+        method: 'PUT',
+        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({ entries: this.conversationEntries, revision: this.conversationRevision }),
+      });
+      this.conversationRevision = result.revision;
+      if (this.conversationSaveStatus) {
+        this.conversationSaveStatus.hidden = false;
+        this.conversationSaveStatus.textContent = 'Saved to your CUNY account.';
+        this.conversationSaveStatus.classList.remove('error');
+      }
+    }).catch((error) => {
+      if (this.conversationSaveStatus) {
+        this.conversationSaveStatus.hidden = false;
+        this.conversationSaveStatus.textContent = error.message.includes('another tab')
+          ? 'This conversation changed elsewhere. Reload the split to sync it.'
+          : 'Conversation not saved. Check your connection and try again.';
+        this.conversationSaveStatus.classList.add('error');
+      }
+    });
+    return this.conversationSaveQueue;
+  }
+
   renderArchive() {
     const entries = this.loadArchive();
+    this.archiveLog.innerHTML = '';
     if (!entries.length) return;
     this.coachArchive.hidden = false;
     this.archiveToggle.innerHTML = `<span class="coach-caret">▾</span>EARLIER SESSION · ${entries.length}`;
@@ -2299,7 +2379,29 @@ class Mixer {
   // A fresh start for the conversation only: the model's context (chatHistory),
   // the live log, and the reload archive all clear together, while the cached
   // opening guide stays — it is class-shared and cost money to generate.
-  resetCoachConversation() {
+  async resetCoachConversation() {
+    if (this.coachBusy) return;
+    this.coachBusy = true;
+    this.coachInput.disabled = true;
+    if (runtime.authMode === 'cail') {
+      try {
+        await this.conversationLoading?.catch(() => {});
+        await this.conversationSaveQueue;
+        const reset = await api(`/api/jobs/${this.job.id}/listening-conversation`, { method: 'DELETE', signal: AbortSignal.timeout(15000) });
+        this.conversationEntries = [];
+        this.conversationRevision = reset.revision;
+        this.conversationLoaded = true;
+      } catch {
+        if (this.conversationSaveStatus) {
+          this.conversationSaveStatus.hidden = false;
+          this.conversationSaveStatus.textContent = 'Could not reset this account’s conversation. Try again.';
+          this.conversationSaveStatus.classList.add('error');
+        }
+        this.coachBusy = false;
+        this.coachInput.disabled = false;
+        return;
+      }
+    }
     this.chatHistory = [];
     this.coachLog.innerHTML = '';
     try {
@@ -2311,6 +2413,9 @@ class Mixer {
     this.archiveLog.hidden = true;
     this.archiveLog.innerHTML = '';
     this.archiveToggle.setAttribute('aria-expanded', 'false');
+    this.conversationSaveStatus.hidden = true;
+    this.coachBusy = false;
+    this.coachInput.disabled = false;
     this.coachInput.focus();
   }
 
@@ -2326,6 +2431,10 @@ class Mixer {
   async sendChat(text) {
     if (this.coachBusy) return;
     this.coachBusy = true;
+    if (runtime.authMode === 'cail') {
+      try { await this.loadConversation(); }
+      catch { this.coachBusy = false; return; }
+    }
     this.coachAbort = new AbortController();
     this.coachCancel.hidden = false;
     this.chatHistory.push({ role: 'user', content: text });
@@ -2380,11 +2489,13 @@ class Mixer {
         row.remove(); // stream produced nothing durable
       }
       await this.executeToolCalls(calls);
+      if (runtime.authMode === 'cail') await this.conversationSaveQueue;
     } catch (err) {
       typing.remove();
       if (row && !acc) row.remove();
       if (row) row.classList.remove('streaming');
       this.addChatRow('error', esc(err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message));
+      if (runtime.authMode === 'cail') await this.conversationSaveQueue;
     }
     this.coachBusy = false;
     this.coachCancel.hidden = true;
@@ -3095,6 +3206,9 @@ const stationTagline = document.getElementById('station-tagline');
 
 let currentStation = 'splitter';
 let splitterKicker = '// a closer listen';
+// Keep the Crate implementation available for the gated Remixer, but take its
+// entry point off the Splitter until the revised workflow is ready to return.
+const CRATE_ON_SPLITTER_ENABLED = false;
 
 // The kicker doubles as the split-options summary on the Splitter bench, so
 // async option loads route through here instead of writing the DOM directly —
@@ -3133,9 +3247,15 @@ function initStations() {
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
   if (!runtime.remixer) document.querySelector('.crate-note').textContent = 'Browse openly licensed recordings and choose a track to split.';
-  if (!runtime.remixer) stationViews.splitter.append(document.getElementById('crate'));
+  if (!runtime.remixer) {
+    const crate = document.getElementById('crate');
+    stationViews.splitter.append(crate);
+    crate.hidden = runtime.authMode === 'cail' && !CRATE_ON_SPLITTER_ENABLED;
+  }
   else {
-    stationViews.remixer.append(document.getElementById('crate'));
+    const crate = document.getElementById('crate');
+    stationViews.remixer.append(crate);
+    crate.hidden = false;
     document.getElementById('crate-toggle').setAttribute('aria-expanded', 'true');
     crateToggle.classList.add('open');
     document.getElementById('crate-body').hidden = false;

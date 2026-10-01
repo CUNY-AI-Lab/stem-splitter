@@ -57,10 +57,9 @@ root dependency lock belongs to the frozen native-analyzer evidence and is not
 silently rebaselined by this Cloudflare release. Its older Hono dependency still
 needs a separately validated update before rebuilding that host.
 
-The Crate appears below the active station's workspace, before the footer. It
-remains one section: below the session rack when Remixer is disabled, or below
-the remix deck when enabled. Its search state and source attribution survive
-station changes.
+The Crate is temporarily hidden in Splitter. When Remixer is enabled, the single
+Crate appears below the remix deck. Its search state and source attribution
+survive station changes.
 
 Active Lab class enrollment satisfies the existing Admission check, and the
 first signed-in request creates the student's local app record. No second
@@ -191,7 +190,8 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
   multipart cleanup. No public bucket access and no S3 credentials are needed.
 - Fresh schema: `wrangler d1 execute cail-stem-splitter-preview --remote --file ../schema.sql`.
 - Existing schema upgrades: explicitly execute `../migrations/0018-workspace-access.sql`
-  against the intended database after backup. No Railway database is migrated by this work.
+  and `../migrations/0019-listening-conversations.sql` against the intended database
+  after backup. No Railway database is migrated by this work.
 - Identity: exact `cail:stem-splitter` audience, canonical Doorway issuer and
   pinned public JWKS. The private `AdmissionResolver` binding rechecks membership
   each protected request. Network/config failures deny access with 503.
@@ -210,6 +210,9 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
   reservation. YouTube may use two
   provider predictions per split; these are job caps, not an exact dollar budget.
 - The edge IP rate limiter is supplemental and approximate, not spend authority.
+- Listening Guy chat history is stored per owning CUNY subject and split, never
+  shared across accounts, and expires at the split's fixed 90-day boundary.
+  Wrangler runs its daily purge at 08:00 UTC.
 
 ## Candidate deployment
 

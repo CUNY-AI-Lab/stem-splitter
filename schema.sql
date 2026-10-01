@@ -494,6 +494,19 @@ CREATE TABLE IF NOT EXISTS job_attributions (
   job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
   attribution TEXT NOT NULL
 );
+-- Private, account-scoped Listening Guy transcript. Expiry is anchored to the
+-- source split's creation time, not extended by later conversation activity.
+CREATE TABLE IF NOT EXISTS listening_conversations (
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL REFERENCES app_users(subject),
+  entries TEXT NOT NULL CHECK (json_valid(entries) AND json_type(entries) = 'array'),
+  revision INTEGER NOT NULL CHECK (revision >= 1),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  PRIMARY KEY (job_id, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_listening_conversations_expiry ON listening_conversations(expires_at);
 CREATE TABLE IF NOT EXISTS app_request_reservations (
   id TEXT PRIMARY KEY,
   subject TEXT NOT NULL REFERENCES app_users(subject),
