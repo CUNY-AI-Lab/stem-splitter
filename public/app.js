@@ -1282,6 +1282,7 @@ class Mixer {
           <div class="console-actions" id="${actionsId}">
             <span class="badge ready">READY</span>
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
+            <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
             <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
             <button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit. Your split stays saved to your account.' : 'Remove this split from your rack — the class copy stays, and a shared link can bring it back'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>
             <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
@@ -1291,7 +1292,7 @@ class Mixer {
       <div class="console-sub mono">
         <span class="split-meta"></span>
         <button class="share-btn to-remix-btn" title="Stack this split's layers on the Remixer deck">SEND TO REMIXER ⤳</button>
-        <button class="share-btn" title="Copy a link to this console">COPY LINK</button>
+        <button class="share-btn" title="Anyone with this link can listen. Notes and conversations stay private.">COPY LINK</button>
       </div>
       <div class="transport">
         <button class="play-btn" aria-label="Play all stems">▶</button>
@@ -1373,6 +1374,14 @@ class Mixer {
     });
     this.exportBtn = li.querySelector('.export-btn');
     this.exportBtn.addEventListener('click', () => this.exportZip());
+    this.unshareBtn = li.querySelector('.unshare-btn');
+    this.unshareBtn.addEventListener('click', async () => {
+      try {
+        await api(`/api/jobs/${this.job.id}/share`, { method: 'DELETE' });
+        this.unshareBtn.hidden = true;
+        showUploadMessage('Sharing stopped. Your saved split is unchanged.');
+      } catch { showUploadMessage('Could not stop sharing. Please try again.', true); }
+    });
     this.folderBtn = li.querySelector('.folder-btn');
     this.folderBtn.addEventListener('click', () => {
       const actionsWereOpen = this.el.classList.contains('actions-open');
@@ -1554,6 +1563,12 @@ class Mixer {
     this.applyMix();
     this.renderNotes();
     this.renderGuide();
+    if (this.job.readOnlyShared) {
+      for (const node of li.querySelectorAll('.coach, .note-btn, .folder-btn, .export-btn, .to-remix-btn')) node.hidden = true;
+      for (const node of li.querySelectorAll('.ch-name')) { node.removeAttribute('tabindex'); node.removeAttribute('title'); }
+      this.readyBadge.textContent = 'SHARED';
+      this.keysHint.textContent = 'SPACE play · ←→ 5s · 1–9 mute · ⇧1–9 solo';
+    }
     return li;
   }
 
@@ -1621,6 +1636,10 @@ class Mixer {
   }
 
   async copyLink() {
+    if (runtime.authMode === 'cail' && !this.job.readOnlyShared) {
+      try { await api(`/api/jobs/${this.job.id}/share`, { method: 'POST', body: '{}' }); this.unshareBtn.hidden = false; }
+      catch (error) { showUploadMessage(`Could not share this split. ${error.message}`, true); return; }
+    }
     const url = `${location.origin}${location.pathname}?job=${this.job.id}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -1927,6 +1946,7 @@ class Mixer {
   }
 
   editLabel(stemName, nameEl) {
+    if (this.job.readOnlyShared) return;
     const input = document.createElement('input');
     input.className = 'ch-name-input';
     input.maxLength = 40;
@@ -2111,6 +2131,7 @@ class Mixer {
   }
 
   addNote() {
+    if (this.job.readOnlyShared) return;
     if (this.el.querySelector('.note-form')) return;
     const t = this.audios[0].currentTime;
     const form = document.createElement('form');
@@ -2158,6 +2179,7 @@ class Mixer {
   // Labels, notes, and the guide are class-wide; this pulls in whatever other
   // students have added since the page loaded. Read-only, so no class code.
   async refresh() {
+    if (this.job.readOnlyShared) return;
     try {
       const res = await fetch(`/api/jobs/${this.job.id}`);
       if (!res.ok) return;
@@ -3078,7 +3100,10 @@ function runElapsedClock() {
 // which owns the user-facing message for its own context.
 async function adoptJobById(id) {
   if (getJobs().some((existing) => existing.id === id)) return 'present';
-  const res = await fetch(`/api/jobs/${id}`);
+  let res = accountSubject || runtime.authMode !== 'cail' ? await fetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
+  if (runtime.authMode === 'cail' && (!res || res.status === 401 || res.status === 403 || res.status === 404)) {
+    res = await fetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
+  }
   if (!res.ok) return 'missing';
   const state = await res.json();
   jobStates.set(id, state);
@@ -3100,7 +3125,6 @@ async function adoptJobById(id) {
 async function adoptSharedJob() {
   const id = new URLSearchParams(location.search).get('job');
   if (!id) return;
-  history.replaceState(null, '', location.pathname);
 
   try {
     if ((await adoptJobById(id)) === 'missing') {
@@ -3117,7 +3141,7 @@ async function adoptSharedJob() {
 
   const position = getJobs().findIndex((existing) => existing.id === id);
   jobList.children[position]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  showUploadMessage(runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
+  showUploadMessage(jobStates.get(id)?.readOnlyShared ? 'Shared split · Listen and mix. Notes and conversations stay private.' : runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
 }
 
 function stemDescription(expectedStems) {
@@ -4120,7 +4144,8 @@ async function initialize() {
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
-      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl;
+      const linkedJob = new URLSearchParams(location.search).get('job');
+      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
     } else account.textContent = 'CUNY Login will be available here soon.';
@@ -4134,6 +4159,7 @@ async function initialize() {
   renderJobs();
   if (accountSubject) void loadAccountJobs().then(adoptSharedJob);
   else if (runtime.authMode !== 'cail') void pollActiveJobs().then(adoptSharedJob);
+  else void adoptSharedJob();
 }
 window.addEventListener('focus', async () => {
   if (!accountSubject) return;

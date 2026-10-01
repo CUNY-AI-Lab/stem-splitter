@@ -99,7 +99,7 @@ test('verified sessions navigate home after an expired callback, without replay,
     assert.match(response.headers.get('cache-control')!, /no-store/);
     assert.ok(response.headers.getSetCookie().every(value => value.startsWith(LOGIN_COOKIE + '=') && value.includes('Max-Age=0')));
   }
-  for (const [next, target] of [['/teacher.html', '/teacher.html'], ['//attacker.test', '/']]) {
+  for (const [next, target] of [['/teacher.html', '/teacher.html'], ['//attacker.test', '/'], ['/?job=49b9865f-523c-4f8d-bcc2-d2ea5e2be7b2', '/?job=49b9865f-523c-4f8d-bcc2-d2ea5e2be7b2']]) {
     const response = await handleAuth(f.request('/auth/login?next=' + next, { headers }), env);
     assert.equal(response.status, 303);
     assert.equal(response.headers.get('location'), target);
@@ -112,12 +112,12 @@ test('verified sessions navigate home after an expired callback, without replay,
   assert.equal(expired.status, 303);
   assert.equal(expired.headers.get('location'), '/');
   assert.ok(expired.headers.getSetCookie().every(value => value.startsWith(LOGIN_COOKIE + '=') && value.includes('Max-Age=0')));
-  assert.equal(checks, 5);
+  assert.equal(checks, 6);
   const json = await handleAuth(f.request('/auth/callback?code=expired', {
     headers: { ...headers, Accept: 'application/json' },
   }), env);
   assert.equal(json.status, 401);
-  assert.equal(checks, 5);
+  assert.equal(checks, 6);
 });
 
 test('missing, malformed or ambiguous cookies never count as an existing session', async () => {

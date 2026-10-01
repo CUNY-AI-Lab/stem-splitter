@@ -42,6 +42,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     return Response.json({ error: 'Invalid request path' }, { status: 400 });
   }
   if (path === '/api/runtime' || path === '/api/separation-options' || path === '/api/webhooks/separation') return null;
+  if (request.method === 'GET' && /^\/api\/shared-jobs\/[a-zA-Z0-9-]+(?:\/stems\/\d+)?$/.test(path)) return null;
   if (path.startsWith('/api/local-sources/') && request.method === 'GET') return null; // HMAC capability checked by the source route.
   if (!env.verifyCailIdentity || !env.ADMISSION_RESOLVER) return authFailure('identity_verification_misconfigured', 503);
   const token = request.headers.get('x-cail-identity-jwt');

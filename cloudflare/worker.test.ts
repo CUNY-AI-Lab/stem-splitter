@@ -105,6 +105,29 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const job = await (await call(`/api/jobs/${created.id}`)).json();
     assert.equal(job.status, 'done');
     assert.equal(job.stems.length, 4);
+    const sharePath = `/api/jobs/${created.id}/share`;
+    const publicPath = `/api/shared-jobs/${created.id}`;
+    assert.equal((await worker.fetch(publicPath)).status, 404);
+    assert.equal((await call(sharePath, 1, { method: 'POST', body: '{}' })).status, 404);
+    assert.equal((await call(sharePath, 2, { method: 'POST', body: '{}' })).status, 404);
+    assert.equal((await worker.fetch(sharePath, { method: 'POST' })).status, 403); // origin checked before session
+    assert.equal((await call(sharePath, 0, { method: 'POST', body: '{}' })).status, 200);
+    const shared = await (await worker.fetch(publicPath)).json();
+    assert.equal(shared.readOnlyShared, true);
+    assert.deepEqual(Object.keys(shared).sort(), ['annotations', 'filename', 'guide', 'id', 'labels', 'model', 'readOnlyShared', 'status', 'stems'].sort());
+    assert.deepEqual(shared.annotations, []);
+    assert.equal(shared.guide, null);
+    const publicAudio = await worker.fetch(shared.stems[0].url);
+    assert.equal(publicAudio.status, 200);
+    assert.deepEqual(Buffer.from(await publicAudio.arrayBuffer()), mp3);
+    assert.equal((await worker.fetch(`${publicPath}/stems/999`)).status, 404);
+    assert.equal((await worker.fetch(`/api/jobs/${created.id}`)).status, 401);
+    assert.equal((await worker.fetch(publicPath, { method: 'PUT', body: '{}' })).status, 403);
+    assert.equal((await call(sharePath, 1, { method: 'DELETE' })).status, 404);
+    assert.equal((await call(sharePath, 0, { method: 'DELETE' })).status, 200);
+    assert.equal((await worker.fetch(publicPath)).status, 404);
+    assert.equal((await worker.fetch(shared.stems[0].url)).status, 404);
+    assert.equal((await call(sharePath, 0, { method: 'POST', body: '{}' })).status, 200);
     const conversationPath = `/api/jobs/${created.id}/listening-conversation`;
     const emptyConversation = await (await call(conversationPath)).json();
     assert.deepEqual(emptyConversation.entries, []);
@@ -209,6 +232,8 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
       `UPDATE listening_conversations SET expires_at = datetime('now', '-1 day') WHERE job_id = '${created.id}' AND subject = '${subjects[0]}'`,
     ]) });
     assert.equal(expiryFixture.status, 200);
+    assert.equal((await worker.fetch(publicPath)).status, 404);
+    assert.equal((await worker.fetch(shared.stems[0].url)).status, 404);
     assert.equal((await call(conversationPath)).status, 404);
     assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: transcript, revision: 3 }) })).status, 404);
     assert.equal((await call(conversationPath, 0, { method: 'DELETE' })).status, 404);

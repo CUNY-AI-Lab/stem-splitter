@@ -201,6 +201,55 @@ app.get('/api/runtime', (c) => c.json({
   remixer: c.env.REMIXER_ENABLED === 'true',
 }));
 
+// Explicit sharing exposes only finished audio and its title, never account
+// identity, uploaded originals, notes, guide content, or conversation history.
+app.post('/api/jobs/:id/share', async (c) => {
+  const principal = c.get('principal');
+  if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in to share a split.' }, 401);
+  const id = c.req.param('id');
+  const result = await c.env.DB.prepare(`INSERT INTO public_split_links (job_id)
+    SELECT j.id FROM jobs j JOIN job_owners o ON o.job_id=j.id
+    WHERE j.id=? AND o.subject=? AND j.status='done' AND j.created_at > datetime('now', '-90 days')
+    ON CONFLICT(job_id) DO UPDATE SET job_id=excluded.job_id RETURNING job_id`)
+    .bind(id, principal.subject).first();
+  return result ? c.json({ url: `/?job=${encodeURIComponent(id)}` }) : c.json({ error: 'Split not found.' }, 404);
+});
+
+app.delete('/api/jobs/:id/share', async (c) => {
+  const principal = c.get('principal');
+  if (!principal || !(await c.env.DB.prepare('SELECT 1 FROM job_owners WHERE job_id=? AND subject=?')
+    .bind(c.req.param('id'), principal.subject).first())) return c.json({ error: 'Split not found.' }, 404);
+  await c.env.DB.prepare('DELETE FROM public_split_links WHERE job_id=?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+async function sharedSplit(env: Env, id: string) {
+  return env.DB.prepare(`SELECT j.* FROM jobs j JOIN public_split_links s ON s.job_id=j.id
+    WHERE j.id=? AND j.status='done' AND j.created_at > datetime('now', '-90 days')`).bind(id).first<JobRow>();
+}
+
+app.get('/api/shared-jobs/:id', async (c) => {
+  const row = await sharedSplit(c.env, c.req.param('id'));
+  if (!row) return c.json({ error: 'This shared split is unavailable or has expired.' }, 404);
+  const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
+  return c.json({ id: row.id, filename: row.filename, status: 'done', model: row.model,
+    readOnlyShared: true, labels: {}, annotations: [], guide: null,
+    stems: stems.map((stem, i) => ({ name: stem.name, url: `/api/shared-jobs/${row.id}/stems/${i}` })) });
+});
+
+app.get('/api/shared-jobs/:id/stems/:index', async (c) => {
+  const row = await sharedSplit(c.env, c.req.param('id'));
+  if (!row) return c.text('Not found', 404);
+  const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
+  const key = stems[Number(c.req.param('index'))]?.key;
+  if (!key?.startsWith(`stems/${row.id}/`)) return c.text('Not found', 404);
+  const obj = await getRetainedAudio(c.env, key);
+  if (!obj) return c.text('Not found', 404);
+  const headers = new Headers({ 'Cache-Control': 'private, no-store', 'Content-Length': String(obj.size) });
+  obj.writeHttpMetadata(headers);
+  return new Response(obj.body, { headers });
+});
+
 app.get('/api/account', async (c) => {
   const principal = c.get('principal');
   if (!principal) return c.json({ account: null }, 401);
@@ -1210,7 +1259,8 @@ app.get('/api/jobs/:id', async (c) => {
   // SELECT on the frequent still-processing polls.
   const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
   const attribution = await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id = ?').bind(id).first<{ attribution: string }>();
-  return c.json({ ...jobResponse(row, results ?? [], guide), attribution: attribution ? JSON.parse(attribution.attribution) : null });
+  const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
+  return c.json({ ...jobResponse(row, results ?? [], guide), publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
 
 app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
