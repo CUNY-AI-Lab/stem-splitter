@@ -54,6 +54,57 @@ async function clockAdvances(page) {
   })).toBeGreaterThan(start + 1);
 }
 
+test('compact mixer controls leave the full signal width clear and omit the duplicate instrument list', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
+  try {
+    await expect(page).toHaveTitle('Stem Splitter');
+    await expect(page.locator('#split-legend')).toBeHidden();
+    await page.getByRole('radio', { name: /^auto/i }).check();
+    await expect(page.locator('#split-legend')).toBeVisible();
+    await page.getByRole('radio', { name: /^4 splits/i }).check();
+    await expect(page.locator('#split-legend')).toBeHidden();
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      const row = page.locator('.channel').first();
+      const name = await row.locator('.ch-name').boundingBox();
+      expect(name.height).toBeLessThan(25);
+      const meter = await row.locator('.meter').boundingBox();
+      const rowBox = await row.boundingBox();
+      expect(meter.x).toBeGreaterThan(name.x + name.width);
+      expect(meter.x + meter.width).toBeCloseTo(rowBox.x + rowBox.width - 1.6, 0);
+      if (width < 540) expect(meter.width).toBeGreaterThan(width - 200);
+      for (const label of ['SOLO', 'FRONT', 'ONLY']) {
+        await expect(row.locator('.solo-btn')).toHaveText(label);
+        const solo = await row.locator('.solo-btn').boundingBox();
+        const mute = await row.locator('.mute-btn').boundingBox();
+        expect(solo.width).toBeCloseTo(mute.width, 2);
+        expect(solo.height).toBeCloseTo(mute.height, 2);
+        expect(mute.height).toBeLessThanOrEqual(33);
+        expect(mute.width).toBeLessThanOrEqual(69);
+        const currentMeter = await row.locator('.meter').boundingBox();
+        expect(solo.y).toBeGreaterThanOrEqual(currentMeter.y + currentMeter.height);
+        await row.locator('.solo-btn').click();
+      }
+      await row.locator('.mute-btn').click();
+      await expect(row.locator('.mute-btn')).toHaveAttribute('aria-pressed', 'true');
+      await row.locator('.mute-btn').click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.play-btn').click();
+      await clockAdvances(page);
+      await expect(row.locator('.waveform')).toBeVisible();
+      expect(await page.evaluate(() => {
+        const c = mixers.get('remix-fixture').channelsByName.get('vocals');
+        return c.samples.some(sample => sample !== 128) && c.waveform.width >= c.waveform.clientWidth;
+      })).toBe(true);
+      await page.locator('.console').screenshot({ path: `/tmp/stem-layout-${process.env.STEM_BROWSER || 'chrome'}-${width}.png` });
+      await page.locator('.play-btn').click();
+    }
+    expect(errors).toEqual([]);
+  } finally { await server.close(); }
+});
+
 for (const names of [['vocals', 'instrumental'], ['vocals', 'drums', 'bass', 'other'], ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']]) {
   test(`${names.length} stems: seek to 0:43 and switch ONLY to FRONT without freezing`, async ({ page }) => {
     const errors = [];
