@@ -54,7 +54,7 @@ async function clockAdvances(page) {
   })).toBeGreaterThan(start + 1);
 }
 
-test('compact mixer controls leave the full signal width clear and omit the duplicate instrument list', async ({ page }) => {
+test('compact controls overlay a full-height signal and omit the duplicate instrument list', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
@@ -74,9 +74,11 @@ test('compact mixer controls leave the full signal width clear and omit the dupl
         const box = await row.boundingBox();
         const controls = await row.locator('.ch-actions').boundingBox();
         expect(name.height).toBeLessThan(25);
+        expect(meter.height).toBeCloseTo(width <= 540 ? 76 : 84, 1);
         expect(meter.x).toBeGreaterThan(name.x + name.width);
         expect(meter.x + meter.width).toBeCloseTo(box.x + box.width - 1.6, 0);
-        expect(controls.y).toBeGreaterThanOrEqual(meter.y + meter.height);
+        expect(controls.y).toBeGreaterThanOrEqual(meter.y);
+        expect(controls.y + controls.height).toBeCloseTo(meter.y + meter.height, 0);
         expect(controls.x).toBeGreaterThanOrEqual(meter.x - 1);
         expect(controls.x + controls.width).toBeLessThanOrEqual(box.x + box.width);
       }
@@ -103,7 +105,7 @@ test('compact mixer controls leave the full signal width clear and omit the dupl
         expect(mute.height).toBeLessThanOrEqual(33);
         expect(mute.width).toBeLessThanOrEqual(69);
         const currentMeter = await row.locator('.meter').boundingBox();
-        expect(solo.y).toBeGreaterThanOrEqual(currentMeter.y + currentMeter.height);
+        expect(solo.y + solo.height).toBeCloseTo(currentMeter.y + currentMeter.height, 0);
         await row.locator('.solo-btn').click();
       }
       await row.locator('.mute-btn').click();
@@ -111,16 +113,74 @@ test('compact mixer controls leave the full signal width clear and omit the dupl
       await row.locator('.mute-btn').click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.locator('.play-btn').click();
+      expect(await page.evaluate(() => {
+        const c = mixers.get('remix-fixture').channelsByName.get('vocals');
+        return c.waveformSignal.level === 0 && c.waveformSignal.history.every(level => level === 0);
+      })).toBe(true);
       await clockAdvances(page);
       await expect(row.locator('.waveform')).toBeVisible();
       expect(await page.evaluate(() => {
         const c = mixers.get('remix-fixture').channelsByName.get('vocals');
-        return c.samples.some(sample => sample !== 128) && c.waveform.width >= c.waveform.clientWidth;
+        return c.samples.some(sample => Math.abs(sample) > 0.001) &&
+          c.waveformSignal.history.some(level => level > 0.1) && c.waveform.width >= c.waveform.clientWidth;
       })).toBe(true);
       await page.locator('.console').screenshot({ path: `/tmp/stem-layout-${process.env.STEM_BROWSER || 'chrome'}-${width}.png` });
       await page.locator('.play-btn').click();
     }
     expect(errors).toEqual([]);
+  } finally { await server.close(); }
+});
+
+test('waveform modulation is phase-independent, bounded, smoothed and cleared on mute or seek', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
+  try {
+    const results = await page.evaluate(() => {
+      const tone = (amplitude, phase = 0) => Float32Array.from({ length: 1024 },
+        (_, i) => amplitude * Math.sin(i / 1024 * Math.PI * 32 + phase));
+      const quiet = waveformAmplitude(tone(0.0001));
+      const normal = waveformAmplitude(tone(0.04));
+      const shifted = waveformAmplitude(tone(0.04, Math.PI / 3));
+      const loud = waveformAmplitude(tone(1));
+      const signal = createWaveformSignal();
+      updateWaveformSignal(signal, tone(0.04), 0, 1, true);
+      const attack = signal.level;
+      const first = [...signal.history];
+      updateWaveformSignal(signal, tone(0.8), 16, 1.016, true);
+      const throttled = first.every((v, i) => v === signal.history[i]);
+      updateWaveformSignal(signal, tone(0), 50, 1.05, true);
+      const release = signal.level;
+      for (let i = 2; i <= 40; i++) updateWaveformSignal(signal, tone(0.04), i * 50, 1 + i * 0.05, true);
+      const settled = signal.level;
+      updateWaveformSignal(signal, tone(0), 2050, 43, true);
+      const seekCleared = signal.history.every(v => v === 0);
+      updateWaveformSignal(signal, tone(0.04), 2100, 43.05, true);
+      updateWaveformSignal(signal, tone(0.04), 2150, 43.1, false);
+      const muted = signal.level === 0 && signal.history.every(v => v === 0);
+      return { quiet, normal, shifted, loud, attack, throttled, release, settled, seekCleared, muted };
+    });
+    expect(results.quiet).toBe(0);
+    expect(results.normal).toBeGreaterThan(0.4);
+    expect(results.normal).toBeLessThan(0.65);
+    expect(results.shifted).toBeCloseTo(results.normal, 3);
+    expect(results.loud).toBe(1);
+    expect(results.attack).toBeGreaterThan(0);
+    expect(results.attack).toBeLessThan(results.normal);
+    expect(results.throttled).toBe(true);
+    expect(results.release).toBeGreaterThan(results.attack * 0.7);
+    expect(results.release).toBeLessThan(results.attack);
+    expect(results.settled).toBeCloseTo(results.normal, 3);
+    expect(results.seekCleared).toBe(true);
+    expect(results.muted).toBe(true);
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformSignal.level)).toBeGreaterThan(0.4);
+    const vocals = page.locator('.channel').filter({ hasText: 'vocals' });
+    await vocals.locator('.mute-btn').click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformSignal.history.every(level => level === 0))).toBe(true);
+    await vocals.locator('.mute-btn').click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformSignal.level)).toBeGreaterThan(0.4);
+    await clockAdvances(page);
+    await page.locator('.play-btn').click();
   } finally { await server.close(); }
 });
 
