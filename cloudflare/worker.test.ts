@@ -120,6 +120,13 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const publicAudio = await worker.fetch(shared.stems[0].url);
     assert.equal(publicAudio.status, 200);
     assert.deepEqual(Buffer.from(await publicAudio.arrayBuffer()), mp3);
+    const publicHead = await worker.fetch(shared.stems[0].url + '?download', { method: 'HEAD' });
+    assert.equal(publicHead.status, 200);
+    assert.equal(publicHead.headers.get('content-length'), String(mp3.length));
+    assert.equal(publicHead.headers.get('accept-ranges'), 'bytes');
+    assert.match(publicHead.headers.get('content-disposition') || '', /^attachment;/);
+    assert.equal(await publicHead.text(), '');
+    assert.equal((await worker.fetch(`/api/files/stems/${created.id}/vocals.mp3`, { method: 'HEAD' })).status, 401);
     assert.equal((await worker.fetch(`${publicPath}/stems/999`)).status, 404);
     assert.equal((await worker.fetch(`/api/jobs/${created.id}`)).status, 401);
     assert.equal((await worker.fetch(publicPath, { method: 'PUT', body: '{}' })).status, 403);
@@ -127,6 +134,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call(sharePath, 0, { method: 'DELETE' })).status, 200);
     assert.equal((await worker.fetch(publicPath)).status, 404);
     assert.equal((await worker.fetch(shared.stems[0].url)).status, 404);
+    assert.equal((await worker.fetch(shared.stems[0].url, { method: 'HEAD' })).status, 404);
     assert.equal((await call(sharePath, 0, { method: 'POST', body: '{}' })).status, 200);
     const conversationPath = `/api/jobs/${created.id}/listening-conversation`;
     const emptyConversation = await (await call(conversationPath)).json();

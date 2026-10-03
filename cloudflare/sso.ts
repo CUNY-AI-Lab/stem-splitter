@@ -177,7 +177,7 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
 
 export function publicApi(request: Request): boolean {
   const path = new URL(request.url).pathname;
-  if (request.method === 'GET' && /^\/api\/shared-jobs\/[a-zA-Z0-9-]+(?:\/stems\/\d+)?$/.test(path)) return true;
+  if (['GET', 'HEAD'].includes(request.method) && /^\/api\/shared-jobs\/[a-zA-Z0-9-]+(?:\/stems\/\d+)?$/.test(path)) return true;
   return ((path === '/api/runtime' || path === '/api/separation-options' || path.startsWith('/api/local-sources/')) && request.method === 'GET') ||
     (path === '/api/webhooks/separation' && request.method === 'POST');
 }
