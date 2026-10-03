@@ -172,7 +172,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
   await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
-  const labLink = page.getByRole('link', { name: 'CUNY AI Lab' });
+  const labLink = page.locator('.masthead').getByRole('link', { name: 'CUNY AI Lab' });
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
@@ -180,7 +180,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
-    page.getByRole('radio', { name: '4 parts: voice, percussion, low end, the rest' })
+    page.getByRole('radio', { name: '4 splits: voice, percussion, low end, the rest' })
   ).toBeChecked();
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -567,7 +567,7 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const twoTrackChoice = page.getByRole('radio', {
-    name: '2 parts: voice, everything else',
+    name: '2 splits: voice, everything else',
   });
   await expect(twoTrackChoice).toBeVisible();
   await twoTrackChoice.check();
@@ -650,12 +650,12 @@ test('AUTO listens to a local upload and resolves to a real split', async ({ pag
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const auto = page.getByRole('radio', {
-    name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
+    name: 'Auto: listen to a local file and choose 2, 4, or 6 splits',
   });
   await expect(auto).toBeVisible();
   await auto.check();
   await expect(page.locator('#split-legend')).toHaveText(
-    'Processes local audio, then splits into either 2, 4, or 6 parts'
+    'Processes local audio, then splits into either 2, 4, or 6 splits'
   );
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -706,7 +706,7 @@ test('fails an incomplete six-track result instead of rendering blank channels',
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const sixTrackChoice = page.getByRole('radio', {
-    name: '6 parts: adds plucked strings and keys',
+    name: '6 splits: adds plucked strings and keys',
   });
   await expect(sixTrackChoice).toBeVisible();
   await sixTrackChoice.check();
@@ -817,7 +817,7 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page
     .getByRole('radio', {
-      name: '6 parts: adds plucked strings and keys',
+      name: '6 splits: adds plucked strings and keys',
     })
     .check();
   await expect(page.getByLabel('YouTube link')).toBeVisible();
@@ -909,7 +909,7 @@ test('completes a six-track split whose guitar and piano tracks are near-silent'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page
     .getByRole('radio', {
-      name: '6 parts: adds plucked strings and keys',
+      name: '6 splits: adds plucked strings and keys',
     })
     .check();
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
@@ -1026,7 +1026,7 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('radio', { name: '2 parts: voice, everything else' }).check();
+  await page.getByRole('radio', { name: '2 splits: voice, everything else' }).check();
   await expect(page.getByLabel('YouTube link')).toBeVisible();
   await page.getByLabel('YouTube link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
@@ -1141,7 +1141,7 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
   // AUTO must state that limitation and resolve to the catalogue default,
   // never send the UI-only id to the Worker.
   await page.getByRole('radio', {
-    name: 'Auto: listen to a local file and choose 2, 4, or 6 parts',
+    name: 'Auto: listen to a local file and choose 2, 4, or 6 splits',
   }).check();
 
   // The optional station is off by default; the single Crate stays in Splitter.
@@ -1828,7 +1828,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(instructorLink).toBeVisible();
   await instructorLink.click();
   await expect(page).toHaveURL(/\/teacher(?:\.html)?$/);
-  await expect(page.getByRole('link', { name: 'CUNY AI Lab' })).toBeVisible();
+  await expect(page.locator('.masthead').getByRole('link', { name: 'CUNY AI Lab' })).toBeVisible();
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);

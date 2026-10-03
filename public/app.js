@@ -404,8 +404,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
       note:
         serverAutoMode === 'shadow'
-          ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
-          : `AUTO can only listen to files on this device, so ${sourceLabel} gets the ${fallbackParts}-part default — pick 2, 4, or 6 parts yourself for a different split.`,
+          ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-split default.`
+          : `AUTO can only listen to files on this device, so ${sourceLabel} gets the ${fallbackParts}-split default — pick 2, 4, or 6 splits yourself for a different split.`,
     };
   }
 
@@ -428,7 +428,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       note:
         serverAutoMode === 'authoritative'
           ? 'AUTO will analyze the track after upload.'
-          : `AUTO is unavailable — using the ${fallbackParts}-part default.`,
+          : `AUTO is unavailable — using the ${fallbackParts}-split default.`,
     };
   }
 
@@ -441,8 +441,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
         ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
         note:
           serverAutoMode === 'shadow'
-            ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
-            : `AUTO could not analyze this long or large file — using the ${fallbackParts}-part default.`,
+            ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-split default.`
+            : `AUTO could not analyze this long or large file — using the ${fallbackParts}-split default.`,
       };
     }
     const duration = await readAudioDuration(file);
@@ -452,8 +452,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
         ...(serverAutoMode === 'shadow' ? { routingRequest: AUTO_MODEL } : {}),
         note:
           serverAutoMode === 'shadow'
-            ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-part default.`
-            : `AUTO could not analyze this long or large file — using the ${fallbackParts}-part default.`,
+            ? `AUTO is checking ${sourceLabel}; this split uses the ${fallbackParts}-split default.`
+            : `AUTO could not analyze this long or large file — using the ${fallbackParts}-split default.`,
       };
     }
     context = new AudioContextType();
@@ -478,8 +478,8 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
         : { routingRequest: AUTO_MODEL, browserAnalysis }),
       note:
         serverAutoMode === 'authoritative'
-          ? `AUTO heard a likely ${parts || fallbackParts}-part split and will confirm it after upload.`
-          : `AUTO CHOSE ${parts || fallbackParts} PARTS — ${verdict.reason.toUpperCase()}.`,
+          ? `AUTO suggests ${parts || fallbackParts} splits and will confirm after upload.`
+          : `AUTO CHOSE ${parts || fallbackParts} SPLITS — ${splitDisplayCopy(verdict.reason).toUpperCase()}.`,
     };
   } catch {
     return {
@@ -488,7 +488,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
       note:
         serverAutoMode === 'authoritative'
           ? 'AUTO will analyze the track after upload.'
-          : `AUTO could not read this file — using the ${fallbackParts}-part default.`,
+          : `AUTO could not read this file — using the ${fallbackParts}-split default.`,
     };
   } finally {
     if (context) void context.close().catch(() => {});
@@ -551,6 +551,12 @@ async function loadSeparationOptions() {
 // the same colour that part gets in the mixer. The count is the only text —
 // the part names live in the legend for the selected choice, and in the radio's
 // accessible name so a screen reader still hears all of them.
+// Keep stored classifier decisions and the provider catalogue unchanged.
+// Normalize their legacy wording only when presenting it to the listener.
+function splitDisplayCopy(text) {
+  return text.replace(/\bparts\b/gi, 'splits').replace(/\bpart\b/gi, 'split');
+}
+
 function buildSplitOption(model, checked) {
   const option = document.createElement('label');
   option.className = 'split-option';
@@ -560,7 +566,7 @@ function buildSplitOption(model, checked) {
   input.name = 'stem-model';
   input.value = model.id;
   input.checked = checked;
-  input.setAttribute('aria-label', model.label);
+  input.setAttribute('aria-label', splitDisplayCopy(model.label));
 
   const bar = document.createElement('span');
   bar.className = 'split-bar';
@@ -579,7 +585,7 @@ function buildSplitOption(model, checked) {
   count.textContent = String(model.stems.length);
   const word = document.createElement('span');
   word.className = 'split-word';
-  word.textContent = 'parts';
+  word.textContent = 'splits';
 
   const line = document.createElement('span');
   line.className = 'split-line';
@@ -599,8 +605,8 @@ function buildAutoOption() {
   input.setAttribute(
     'aria-label',
     serverAutoMode === 'authoritative'
-      ? 'Auto: listen after import and choose 2, 4, or 6 parts'
-      : 'Auto: listen to a local file and choose 2, 4, or 6 parts'
+      ? 'Auto: listen after import and choose 2, 4, or 6 splits'
+      : 'Auto: listen to a local file and choose 2, 4, or 6 splits'
   );
 
   const bar = document.createElement('span');
@@ -635,8 +641,8 @@ function renderSplitLegend(models) {
     const item = document.createElement('li');
     item.textContent =
       serverAutoMode === 'authoritative'
-        ? 'listens after import, then picks 2, 4, or 6 parts'
-        : 'Processes local audio, then splits into either 2, 4, or 6 parts';
+        ? 'listens after import, then picks 2, 4, or 6 splits'
+        : 'Processes local audio, then splits into either 2, 4, or 6 splits';
     splitLegend.appendChild(item);
     return;
   }
@@ -1218,15 +1224,15 @@ function showUploadMessage(message, isError = false) {
   uploadMessage.classList.toggle('error', isError);
 }
 
-function processingMessage(job, noun = 'parts') {
+function processingMessage(job, noun = 'splits') {
   const route = job.autoRouting;
   let prefix = 'PROCESSING';
   const reason = route?.analysis?.decision?.reason;
   if (route?.mode === 'authoritative' && reason) {
     const count = job.expectedStems?.length || 4;
     prefix = route.analysis?.degraded?.active
-      ? `AUTO USED THE ${count}-PART DEFAULT — ${reason.toUpperCase()}`
-      : `AUTO CHOSE ${count} PARTS — ${reason.toUpperCase()}`;
+      ? `AUTO USED THE ${count}-SPLIT DEFAULT — ${splitDisplayCopy(reason).toUpperCase()}`
+      : `AUTO CHOSE ${count} SPLITS — ${splitDisplayCopy(reason).toUpperCase()}`;
   }
   const saved = runtime.authMode === 'cail' && accountSubject && job.savedToAccount === true ? 'Saved to your account. ' : '';
   return `${saved}${prefix} — ${noun} will appear in the rack below. First track after a quiet spell can take a couple of minutes while the model warms up.`;
@@ -1491,7 +1497,7 @@ class Mixer {
       row.innerHTML = `
         <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
         <span class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-        <button class="solo-btn" aria-pressed="false" title="Press once to bring this part forward, again to hear it alone">SOLO</button>
+        <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
         <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
         <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
       `;
@@ -1593,6 +1599,11 @@ class Mixer {
     this.renderNotes();
     this.renderGuide();
     if (this.job.readOnlyShared) {
+      li.classList.add('shared');
+      const notice = document.createElement('p');
+      notice.className = 'shared-notice';
+      notice.textContent = 'Shared listening view. Only the owner can rename splits or add notes.';
+      li.querySelector('.console-sub').after(notice);
       for (const node of li.querySelectorAll('.coach, .note-btn, .folder-btn, .export-btn, .to-remix-btn')) node.hidden = true;
       for (const node of li.querySelectorAll('.ch-name')) { node.removeAttribute('tabindex'); node.removeAttribute('title'); }
       this.readyBadge.textContent = 'SHARED';
@@ -1660,8 +1671,8 @@ class Mixer {
     const meta = splitMeta.get(this.job.model);
     const count = this.job.stems.length;
     this.splitMetaEl.textContent = meta?.engine
-      ? `${count} PARTS · ${meta.engine.toUpperCase()}`
-      : `${count} PARTS`;
+      ? `${count} SPLITS · ${meta.engine.toUpperCase()}`
+      : `${count} SPLITS`;
   }
 
   async copyLink() {
@@ -2023,10 +2034,11 @@ class Mixer {
   }
 
   editLabel(stemName, nameEl) {
-    if (this.job.readOnlyShared) return;
+    if (this.job.readOnlyShared || this.labelSaving || !nameEl.isConnected) return;
     const input = document.createElement('input');
     input.className = 'ch-name-input';
     input.maxLength = 40;
+    input.setAttribute('aria-label', 'Split name');
     input.value = this.label(stemName);
     nameEl.replaceWith(input);
     input.focus();
@@ -2037,18 +2049,27 @@ class Mixer {
       if (finished) return;
       finished = true;
       const value = input.value.trim().slice(0, 40);
-      input.replaceWith(nameEl);
-      if (!save || !value || value === this.label(stemName)) return;
-
-      this.job.labels = { ...(this.job.labels || {}), [stemName]: value };
-      nameEl.textContent = value;
+      if (!save || !value || value === this.label(stemName)) {
+        input.replaceWith(nameEl);
+        nameEl.focus();
+        return;
+      }
+      this.labelSaving = true;
+      input.disabled = true;
+      input.setAttribute('aria-busy', 'true');
       try {
-        await api(`/api/jobs/${this.job.id}/labels`, {
+        const result = await api(`/api/jobs/${this.job.id}/labels`, {
           method: 'PUT',
-          body: JSON.stringify({ labels: this.job.labels }),
+          body: JSON.stringify({ labels: { ...(this.job.labels || {}), [stemName]: value } }),
         });
+        this.job.labels = result.labels;
       } catch (err) {
         showUploadMessage(err.message, true);
+      } finally {
+        this.labelSaving = false;
+        input.replaceWith(nameEl);
+        this.renderChannelNames();
+        nameEl.focus();
       }
     };
 
@@ -3253,7 +3274,7 @@ async function adoptSharedJob() {
 }
 
 function stemDescription(expectedStems) {
-  return expectedStems?.length ? expectedStems.join(' / ') : 'the parts you picked';
+  return expectedStems?.length ? expectedStems.join(' / ') : 'the splits you picked';
 }
 
 let pollTimer = null;

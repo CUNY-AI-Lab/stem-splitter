@@ -865,6 +865,11 @@ footer {
   color: var(--ink-faint);
   font-size: 0.8rem;
 }
+footer a { color: var(--ink-dim); text-underline-offset: .2em; }
+footer a:hover { color: var(--hot); }
+.project-credit { margin: 0 0 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--panel-edge); line-height: 1.6; }
+.console.shared .ch-name { cursor: default; border-bottom-color: transparent; }
+.shared-notice { color: var(--ink-dim); font-size: .8rem; margin: .75rem 0; }
 
 .class-code-dialog {
   width: min(420px, calc(100vw - 32px));
@@ -1574,6 +1579,10 @@ main.account-main .masthead h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spaci
 .account-overview > p { margin: 0; color: var(--ink-dim); }
 .account-links { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; }
 .account-links a { display: inline-flex; align-items: center; min-height: 44px; }
+.account-resources { margin-top: 2rem; border-top: 1px solid var(--panel-edge); padding-top: 1rem; }
+.account-resources h2 { font-size: 1rem; margin: 0 0 .5rem; }
+.account-resources ul { display: flex; flex-wrap: wrap; gap: 0 1.5rem; padding: 0; margin: 0; list-style: none; }
+.account-resources a { display: inline-flex; align-items: center; min-height: 44px; }
 .account-disclosure { border-top: 1px solid var(--panel-edge); padding: .25rem 0; }
 .account-disclosure > summary { cursor: pointer; padding: 1rem 0; color: var(--ink-dim); }
 .account-disclosure > summary:hover { color: var(--ink); }

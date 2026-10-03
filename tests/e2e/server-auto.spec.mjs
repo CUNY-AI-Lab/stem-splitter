@@ -377,17 +377,17 @@ test('authoritative Auto UI keeps auto unresolved until the server returns its d
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const auto = page.getByRole('radio', {
-    name: 'Auto: listen after import and choose 2, 4, or 6 parts',
+    name: 'Auto: listen after import and choose 2, 4, or 6 splits',
   });
   await expect(auto).toBeVisible();
   await auto.check();
   await expect(page.locator('#split-legend')).toHaveText(
-    'listens after import, then picks 2, 4, or 6 parts'
+    'listens after import, then picks 2, 4, or 6 splits'
   );
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
   await expect(page.locator('.console')).toHaveCount(1);
-  await expect(page.locator('#upload-message')).toContainText('AUTO CHOSE 6 PARTS');
+  await expect(page.locator('#upload-message')).toContainText('AUTO CHOSE 6 SPLITS');
   const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
   expect(created.model).toBe('htdemucs_6s');
   expect(created.autoRouting.routingRequest).toBe('auto');

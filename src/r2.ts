@@ -193,6 +193,65 @@ export async function getRetainedAudio(env: Env, key: string, nowMs = Date.now()
   return null;
 }
 
+/** Stream a single byte range; never buffer a song in Worker memory.
+ * Authorization and canonical stem-key validation belong to the caller.
+ * Malformed/multipart ranges are ignored; valid unsatisfiable ranges get 416.
+ */
+export async function serveStemAudio(env: Env, key: string, request: Request): Promise<Response> {
+  const metadata = await env.AUDIO.head(key);
+  const missing = () => new Response('Not found', { status: 404 });
+  if (!metadata) return missing();
+  if (usesRoutedAudio(env) && isExpiredLocalObject(env, metadata, Date.now())) {
+    await env.AUDIO.delete(key);
+    return missing();
+  }
+  const headers = new Headers();
+  metadata.writeHttpMetadata(headers);
+  headers.set('Cache-Control', env.AUTH_MODE === 'cail' ? 'private, no-store' : 'private, max-age=3600');
+  headers.set('Accept-Ranges', 'bytes');
+  if (metadata.httpEtag) headers.set('ETag', metadata.httpEtag);
+  headers.set('Last-Modified', metadata.uploaded.toUTCString());
+  if (new URL(request.url).searchParams.has('download')) {
+    const filename = (key.split('/').pop() || 'split.mp3').replace(/[^\w. -]/g, '_');
+    headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+  }
+  headers.set('Content-Length', String(metadata.size));
+  // Range applies only to GET, not HEAD.
+  if (request.method === 'HEAD') return new Response(null, { headers });
+  const ifRange = request.headers.get('If-Range');
+  const rangeAllowed = !ifRange || ifRange === metadata.httpEtag ||
+    (ifRange === metadata.uploaded.toUTCString());
+  const match = rangeAllowed && /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('Range') || '');
+  let range: { offset: number; length: number } | undefined;
+  if (match && (match[1] || match[2])) {
+    const first = match[1] ? Number(match[1]) : undefined;
+    const last = match[2] ? Number(match[2]) : undefined;
+    if ((first === undefined || Number.isSafeInteger(first)) &&
+        (last === undefined || Number.isSafeInteger(last))) {
+      const start = first ?? Math.max(0, metadata.size - last!);
+      const end = first === undefined ? metadata.size - 1 : Math.min(last ?? metadata.size - 1, metadata.size - 1);
+      if (start >= metadata.size || end < start) {
+        headers.set('Content-Range', `bytes */${metadata.size}`);
+        headers.set('Content-Length', '0');
+        return new Response(null, { status: 416, headers });
+      }
+      range = { offset: start, length: end - start + 1 };
+    }
+  }
+  const object = await env.AUDIO.get(key, {
+    ...(range ? { range } : {}),
+    // Prevent an overwrite between HEAD and GET from mixing metadata and bytes.
+    ...(metadata.etag ? { onlyIf: { etagMatches: metadata.etag } } : {}),
+  });
+  if (!object) return missing();
+  if (!('body' in object)) return new Response('Audio changed. Please retry.', { status: 409, headers: { 'Cache-Control': 'no-store' } });
+  if (range) {
+    headers.set('Content-Range', `bytes ${range.offset}-${range.offset + range.length - 1}/${metadata.size}`);
+    headers.set('Content-Length', String(range.length));
+  }
+  return new Response(object.body, { status: range ? 206 : 200, headers });
+}
+
 /** Presigned PUT for browser uploads (15 min). */
 export function presignUpload(env: Env, key: string): Promise<string> {
   if (usesRoutedAudio(env)) {

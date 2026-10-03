@@ -181,7 +181,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
     await expect(page).toHaveTitle('STEM Splitter · Account');
-    await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
@@ -247,6 +247,16 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Student access');
+    const resources = page.getByRole('navigation', { name: 'CUNY AI Lab resources' });
+    for (const [name, href] of Object.entries({
+      'Lab home': 'https://ailab.gc.cuny.edu/',
+      FAQ: 'https://ailab.gc.cuny.edu/faq/',
+      Welcome: 'https://tools.ailab.gc.cuny.edu/welcome',
+      'Model access': 'https://tools.ailab.gc.cuny.edu/model-access',
+      'My classes': 'https://tools.ailab.gc.cuny.edu/my-classes',
+    })) await expect(resources.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
+    await expect(page.locator('footer')).toContainText('Built through the Critical AI Literacy Institute.');
+    await expect(page.locator('footer')).toContainText('Uploaded files are deleted after 90 days.');
     await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeHidden();
