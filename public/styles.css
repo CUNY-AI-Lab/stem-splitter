@@ -834,7 +834,7 @@ h1 span {
   color: var(--ink-dim);
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .mute-btn:hover { border-color: var(--ink-dim); color: var(--ink); }
 .mute-btn[aria-pressed="true"] {
@@ -1472,7 +1472,7 @@ footer a:hover { color: var(--hot); }
   cursor: pointer;
   flex-shrink: 0;
   min-width: 5.1rem;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .solo-btn:hover:not(:disabled) { border-color: var(--ink-dim); color: var(--ink); }
 .solo-btn:disabled { opacity: 0.4; cursor: default; }
@@ -1548,22 +1548,24 @@ footer a:hover { color: var(--hot); }
   .console-keys { transition: none; }
   .share-btn, .rate-opt, .solo-btn { transition: none; }
 }
-/* The signal owns the row; compact actions sit beneath its right edge. */
+/* The signal fills the entire row; compact actions overlay its lower right. */
 .channel {
   display: grid;
   grid-template-columns: 6.2rem minmax(0, 1fr);
   gap: .3rem .75rem;
   padding: .7rem .1rem;
 }
-.channel .ch-id { min-width: 0; overflow-wrap: anywhere; }
+.channel .ch-id { grid-column: 1; grid-row: 1; min-width: 0; overflow-wrap: anywhere; align-self: center; }
 .channel .ch-name { font-size: .72rem; letter-spacing: .08em; }
 .channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
 .channel .meter {
+  grid-column: 2;
+  grid-row: 1;
   position: relative;
   width: 100%;
   max-width: none;
   min-width: 0;
-  height: 2.25rem;
+  height: 5.25rem;
   gap: 4px;
 }
 .channel .meter i { display: none; }
@@ -1580,7 +1582,7 @@ footer a:hover { color: var(--hot); }
 .waveform { position: absolute; inset: 0; width: 100%; height: 100%; display: none; }
 .meter.live .waveform { display: block; }
 .meter.live::before { display: none; }
-.ch-actions { grid-column: 2; display: flex; justify-content: flex-end; align-items: center; gap: .35rem; }
+.ch-actions { grid-column: 2; grid-row: 1; align-self: end; z-index: 1; display: flex; justify-content: flex-end; align-items: center; gap: .35rem; }
 .channel .solo-btn,
 .channel .mute-btn {
   box-sizing: border-box;
@@ -1604,6 +1606,7 @@ footer a:hover { color: var(--hot); }
 }
 @media (max-width: 540px) {
   .channel { grid-template-columns: 5.25rem minmax(0, 1fr); gap: .25rem .55rem; }
+  .channel .meter { height: 4.75rem; }
   .channel .solo-btn,
   .channel .mute-btn { flex-basis: 3.4rem; width: 3.4rem; height: 1.8rem; font-size: .65rem; letter-spacing: .08em; }
   .channel .dl { width: 1.8rem; height: 1.8rem; }

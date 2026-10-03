@@ -26,6 +26,50 @@ const METER_BANDS = [
   [32, 80],
 ];
 
+// Display the recent amplitude envelope, not an untriggered oscilloscope whose
+// sample phase jumps every frame. These values affect pixels only, never audio.
+const WAVEFORM_POINTS = 96;
+const WAVEFORM_INTERVAL_MS = 50;
+
+function createWaveformSignal() {
+  return { history: new Float32Array(WAVEFORM_POINTS), level: 0, sampledAt: null, mediaTime: null };
+}
+
+function waveformAmplitude(samples) {
+  let energy = 0, peak = 0;
+  for (const sample of samples) {
+    const value = Number.isFinite(sample) ? sample : 0;
+    energy += value * value;
+    peak = Math.max(peak, Math.abs(value));
+  }
+  const amplitude = samples.length ? 0.8 * Math.sqrt(energy / samples.length) + 0.2 * peak : 0;
+  // Fixed logarithmic compression makes normal audio legible without turning
+  // silence/noise into a full-height signal or normalizing every stem equally.
+  return amplitude > 0 ? Math.max(0, Math.min(1, (20 * Math.log10(amplitude) + 54) / 48)) : 0;
+}
+
+function updateWaveformSignal(signal, samples, now, mediaTime, active) {
+  const jumped = signal.mediaTime !== null &&
+    (mediaTime < signal.mediaTime - 0.01 || mediaTime - signal.mediaTime > 0.35);
+  if (!active || jumped) {
+    signal.history.fill(0);
+    signal.level = 0;
+    signal.sampledAt = null;
+    signal.mediaTime = null;
+    if (!active) return;
+  }
+  const elapsed = signal.sampledAt === null ? WAVEFORM_INTERVAL_MS : now - signal.sampledAt;
+  if (elapsed < WAVEFORM_INTERVAL_MS) return;
+  const target = waveformAmplitude(samples);
+  const timeConstant = target > signal.level ? 80 : 240;
+  const blend = 1 - Math.exp(-Math.min(elapsed, 200) / timeConstant);
+  signal.level += (target - signal.level) * blend;
+  signal.history.copyWithin(0, 1);
+  signal.history[signal.history.length - 1] = signal.level;
+  signal.sampledAt = now;
+  signal.mediaTime = mediaTime;
+}
+
 // Contract id -> display copy from /api/separation-options, so a finished
 // console can say which split made it. Filled once the options land.
 const splitMeta = new Map();
@@ -1507,6 +1551,7 @@ class Mixer {
         bars: [...row.querySelectorAll('.meter i')],
         levels: new Float32Array(METER_BANDS.length),
         waveform: row.querySelector('.waveform'),
+        waveformSignal: createWaveformSignal(),
         mixGain: 1,
       });
       this.userMuted.set(stem.name, false);
@@ -1963,13 +2008,13 @@ class Mixer {
         const source = ctx.createMediaElementSource(channel.audio);
         const gain = ctx.createGain();
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 1024;
         analyser.smoothingTimeConstant = 0.7;
         source.connect(gain).connect(analyser).connect(ctx.destination);
         channel.gainNode = gain;
         channel.analyser = analyser;
         channel.bins = new Uint8Array(analyser.frequencyBinCount);
-        channel.samples = new Uint8Array(analyser.fftSize);
+        channel.samples = new Float32Array(analyser.fftSize);
         channel.row.querySelector('.meter').classList.add('live');
       } catch {
         // This strip keeps element-level mixing and a resting signal line.
@@ -1991,7 +2036,7 @@ class Mixer {
       if (!channel.analyser) continue;
       try {
         channel.analyser.getByteFrequencyData(channel.bins);
-        channel.analyser.getByteTimeDomainData(channel.samples);
+        channel.analyser.getFloatTimeDomainData(channel.samples);
       } catch {
         // A meter failure must not kill the transport's animation loop.
         channel.analyser = null;
@@ -2021,6 +2066,8 @@ class Mixer {
   paintWaveform(channel, active) {
     // This display is optional: canvas failures must never interrupt playback.
     try {
+      updateWaveformSignal(channel.waveformSignal, channel.samples || [],
+        performance.now(), channel.audio.currentTime, active);
       const canvas = channel.waveform;
       const width = Math.round(canvas.clientWidth);
       const height = Math.round(canvas.clientHeight);
@@ -2039,17 +2086,26 @@ class Mixer {
       // The row must be attached before its CSS channel color can be resolved.
       channel.waveformColor ||= getComputedStyle(channel.row.querySelector('.ch-dot')).backgroundColor;
       context.strokeStyle = channel.waveformColor;
+      context.fillStyle = channel.waveformColor;
       context.lineWidth = 1.25;
+      context.lineJoin = 'round';
+      const history = channel.waveformSignal.history;
+      const center = height / 2;
+      const extent = height / 2 - 3;
       context.beginPath();
-      const samples = channel.samples;
-      const count = active && samples ? samples.length : 2;
-      for (let i = 0; i < count; i++) {
-        const x = i / (count - 1) * width;
-        const level = active && samples ? Math.max(-1, Math.min(1, (samples[i] - 128) / 128 * 3)) : 0;
-        const y = height / 2 + level * (height / 2 - 2);
+      for (let i = 0; i < history.length; i++) {
+        const x = i / (history.length - 1) * width;
+        const y = center - history[i] * extent;
         if (i === 0) context.moveTo(x, y);
         else context.lineTo(x, y);
       }
+      for (let i = history.length - 1; i >= 0; i--) {
+        context.lineTo(i / (history.length - 1) * width, center + history[i] * extent);
+      }
+      context.closePath();
+      context.globalAlpha = 0.18;
+      context.fill();
+      context.globalAlpha = 1;
       context.stroke();
     } catch { /* The transport remains independent of the visualization. */ }
   }

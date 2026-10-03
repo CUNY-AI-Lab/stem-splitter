@@ -36,6 +36,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-compact-waveform-20261003"
+    "RELEASE": "cloudflare-waveform-envelope-20261003"
   }
 }
