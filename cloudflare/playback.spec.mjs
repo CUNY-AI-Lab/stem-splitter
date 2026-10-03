@@ -51,7 +51,7 @@ async function clockAdvances(page) {
     const m = mixers.get('remix-fixture');
     return m.audios[0].currentTime > 0 && m.tcNow.textContent === fmt(m.audios[0].currentTime)
       && !m.scrubbing ? m.audios[0].currentTime : -1;
-  })).toBeGreaterThan(start + 1);
+  }), { intervals: [80, 120, 160] }).toBeGreaterThan(start + 1);
 }
 
 test('compact controls overlay a full-height signal and omit the duplicate instrument list', async ({ page }) => {
@@ -113,10 +113,6 @@ test('compact controls overlay a full-height signal and omit the duplicate instr
       await row.locator('.mute-btn').click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.locator('.play-btn').click();
-      expect(await page.evaluate(() => {
-        const c = mixers.get('remix-fixture').channelsByName.get('vocals');
-        return c.waveformSignal.level === 0 && c.waveformSignal.history.every(level => level === 0);
-      })).toBe(true);
       await clockAdvances(page);
       await expect(row.locator('.waveform')).toBeVisible();
       expect(await page.evaluate(() => {
@@ -126,6 +122,10 @@ test('compact controls overlay a full-height signal and omit the duplicate instr
       })).toBe(true);
       await page.locator('.console').screenshot({ path: `/tmp/stem-layout-${process.env.STEM_BROWSER || 'chrome'}-${width}.png` });
       await page.locator('.play-btn').click();
+      expect(await page.evaluate(() => {
+        const c = mixers.get('remix-fixture').channelsByName.get('vocals');
+        return c.waveformSignal.level === 0 && c.waveformSignal.history.every(level => level === 0);
+      })).toBe(true);
     }
     expect(errors).toEqual([]);
   } finally { await server.close(); }
