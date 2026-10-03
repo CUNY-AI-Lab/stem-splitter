@@ -54,7 +54,7 @@ async function clockAdvances(page) {
   }), { intervals: [80, 120, 160] }).toBeGreaterThan(start + 1);
 }
 
-test('compact controls overlay a full-height signal and omit the duplicate instrument list', async ({ page }) => {
+test('compact controls never obscure the short full-track waveform and omit the duplicate instrument list', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
@@ -74,11 +74,11 @@ test('compact controls overlay a full-height signal and omit the duplicate instr
         const box = await row.boundingBox();
         const controls = await row.locator('.ch-actions').boundingBox();
         expect(name.height).toBeLessThan(25);
-        expect(meter.height).toBeCloseTo(width <= 540 ? 76 : 84, 1);
+        expect(meter.height).toBeCloseTo(width <= 540 ? 24 : 28, 1);
         expect(meter.x).toBeGreaterThan(name.x + name.width);
         expect(meter.x + meter.width).toBeCloseTo(box.x + box.width - 1.6, 0);
-        expect(controls.y).toBeGreaterThanOrEqual(meter.y);
-        expect(controls.y + controls.height).toBeCloseTo(meter.y + meter.height, 0);
+        expect(controls.y + controls.height).toBeLessThanOrEqual(meter.y - 2);
+        expect(box.height).toBeLessThan(71);
         expect(controls.x).toBeGreaterThanOrEqual(meter.x - 1);
         expect(controls.x + controls.width).toBeLessThanOrEqual(box.x + box.width);
       }
@@ -105,7 +105,8 @@ test('compact controls overlay a full-height signal and omit the duplicate instr
         expect(mute.height).toBeLessThanOrEqual(33);
         expect(mute.width).toBeLessThanOrEqual(69);
         const currentMeter = await row.locator('.meter').boundingBox();
-        expect(solo.y + solo.height).toBeCloseTo(currentMeter.y + currentMeter.height, 0);
+        expect(solo.y + solo.height).toBeLessThanOrEqual(currentMeter.y - 2);
+        expect(mute.height).toBeGreaterThanOrEqual(24);
         await row.locator('.solo-btn').click();
       }
       await row.locator('.mute-btn').click();
@@ -115,70 +116,99 @@ test('compact controls overlay a full-height signal and omit the duplicate instr
       await page.locator('.play-btn').click();
       await clockAdvances(page);
       await expect(row.locator('.waveform')).toBeVisible();
+      await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformStatus)).toBe('ready');
       expect(await page.evaluate(() => {
         const c = mixers.get('remix-fixture').channelsByName.get('vocals');
-        return c.samples.some(sample => Math.abs(sample) > 0.001) &&
-          c.waveformSignal.history.some(level => level > 0.1) && c.waveform.width >= c.waveform.clientWidth;
+        return c.waveformPeaks.some(sample => Math.abs(sample) > 0.03) &&
+          c.waveformDuration > 69 && c.waveform.width >= c.waveform.clientWidth;
       })).toBe(true);
       await page.locator('.console').screenshot({ path: `/tmp/stem-layout-${process.env.STEM_BROWSER || 'chrome'}-${width}.png` });
       await page.locator('.play-btn').click();
       expect(await page.evaluate(() => {
         const c = mixers.get('remix-fixture').channelsByName.get('vocals');
-        return c.waveformSignal.level === 0 && c.waveformSignal.history.every(level => level === 0);
+        return c.waveformStatus === 'ready' && c.waveformPeaks.some(sample => Math.abs(sample) > 0.03);
       })).toBe(true);
     }
     expect(errors).toEqual([]);
   } finally { await server.close(); }
 });
 
-test('waveform modulation is phase-independent, bounded, smoothed and cleared on mute or seek', async ({ page }) => {
+test('waveforms preserve source amplitude and stereo peaks; mute, pause and seek move no peaks', async ({ page }) => {
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
   try {
-    const results = await page.evaluate(() => {
-      const tone = (amplitude, phase = 0) => Float32Array.from({ length: 1024 },
-        (_, i) => amplitude * Math.sin(i / 1024 * Math.PI * 32 + phase));
-      const quiet = waveformAmplitude(tone(0.0001));
-      const normal = waveformAmplitude(tone(0.04));
-      const shifted = waveformAmplitude(tone(0.04, Math.PI / 3));
-      const loud = waveformAmplitude(tone(1));
-      const signal = createWaveformSignal();
-      updateWaveformSignal(signal, tone(0.04), 0, 1, true);
-      const attack = signal.level;
-      const first = [...signal.history];
-      updateWaveformSignal(signal, tone(0.8), 16, 1.016, true);
-      const throttled = first.every((v, i) => v === signal.history[i]);
-      updateWaveformSignal(signal, tone(0), 50, 1.05, true);
-      const release = signal.level;
-      for (let i = 2; i <= 40; i++) updateWaveformSignal(signal, tone(0.04), i * 50, 1 + i * 0.05, true);
-      const settled = signal.level;
-      updateWaveformSignal(signal, tone(0), 2050, 43, true);
-      const seekCleared = signal.history.every(v => v === 0);
-      updateWaveformSignal(signal, tone(0.04), 2100, 43.05, true);
-      updateWaveformSignal(signal, tone(0.04), 2150, 43.1, false);
-      const muted = signal.level === 0 && signal.history.every(v => v === 0);
-      return { quiet, normal, shifted, loud, attack, throttled, release, settled, seekCleared, muted };
+    const results = await page.evaluate(async () => {
+      const buffer = (...channels) => ({ length: channels[0].length, numberOfChannels: channels.length,
+        getChannelData: c => Float32Array.from(channels[c]) });
+      const silence = await waveformPeaks(buffer([0, 0, 0, 0]));
+      const quiet = await waveformPeaks(buffer([0.001, -0.001, 0.001, -0.001]));
+      const stereo = await waveformPeaks(buffer([0.5, 0.5, 0.5, 0.5], [-0.5, -0.5, -0.5, -0.5]));
+      const invalid = await waveformPeaks(buffer([NaN, Infinity, 2, -2]));
+      const arranged = await waveformPeaks(buffer([...Array(1024).fill(0), ...Array(1024).fill(0.75)]));
+      return { silent: silence.every(v => v === 0), quiet: Math.max(...quiet),
+        stereoLow: stereo[0], stereoHigh: stereo[1], bounded: invalid.every(v => Number.isFinite(v) && Math.abs(v) <= 1),
+        early: arranged.slice(0, 2048).every(v => v === 0), later: Math.max(...arranged.slice(2048)) };
     });
-    expect(results.quiet).toBe(0);
-    expect(results.normal).toBeGreaterThan(0.4);
-    expect(results.normal).toBeLessThan(0.65);
-    expect(results.shifted).toBeCloseTo(results.normal, 3);
-    expect(results.loud).toBe(1);
-    expect(results.attack).toBeGreaterThan(0);
-    expect(results.attack).toBeLessThan(results.normal);
-    expect(results.throttled).toBe(true);
-    expect(results.release).toBeGreaterThan(results.attack * 0.7);
-    expect(results.release).toBeLessThan(results.attack);
-    expect(results.settled).toBeCloseTo(results.normal, 3);
-    expect(results.seekCleared).toBe(true);
-    expect(results.muted).toBe(true);
+    expect(results).toEqual({ silent: true, quiet: expect.closeTo(.001, 5), stereoLow: -.5, stereoHigh: .5,
+      bounded: true, early: true, later: .75 });
     await page.locator('.play-btn').click();
     await clockAdvances(page);
-    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformSignal.level)).toBeGreaterThan(0.4);
+    await expect.poll(() => page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.values()].every(c => c.waveformStatus === 'ready'))).toBe(true);
+    const sourcePeaks = await page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.get('vocals').waveformPeaks]);
     const vocals = page.locator('.channel').filter({ hasText: 'vocals' });
     await vocals.locator('.mute-btn').click();
-    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformSignal.history.every(level => level === 0))).toBe(true);
+    await expect(vocals).toHaveClass(/muted/);
+    expect(await page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.get('vocals').waveformPeaks])).toEqual(sourcePeaks);
     await vocals.locator('.mute-btn').click();
-    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').channelsByName.get('vocals').waveformSignal.level)).toBeGreaterThan(0.4);
+    await page.locator('.play-btn').click();
+    await page.evaluate(() => mixers.get('remix-fixture').seekTo(43));
+    await expect(page.locator('.tc-now')).toHaveText('0:43');
+    expect(await page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.get('vocals').waveformPeaks])).toEqual(sourcePeaks);
+    expect(await page.evaluate(() => {
+      const c = mixers.get('remix-fixture').channelsByName.get('vocals');
+      return Number(c.waveformFrame.split(':')[3]) / c.waveform.clientWidth;
+    })).toBeCloseTo(43 / 70, 2);
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await page.locator('.play-btn').click();
+  } finally { await server.close(); }
+});
+
+test('failed waveform decoding leaves normal playback and the transport intact', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.OfflineAudioContext = class { decodeAudioData() { return Promise.reject(new Error('fixture decoder unavailable')); } };
+  });
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
+  try {
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await expect.poll(() => page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.values()].every(c => c.waveformStatus === 'unavailable'))).toBe(true);
+    expect(await page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.values()].every(c => c.waveformPeaks === null))).toBe(true);
+    await page.evaluate(() => mixers.get('remix-fixture').seekTo(43));
+    await clockAdvances(page);
+    await page.locator('.channel').first().locator('.solo-btn').click();
+    await clockAdvances(page);
+    await page.locator('.play-btn').click();
+  } finally { await server.close(); }
+});
+
+test('waveform downloads are bounded and disposed sessions cancel queued work', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
+  try {
+    const results = await page.evaluate(async () => {
+      const oversized = await waveformBytes(new Response('', { headers: { 'Content-Length': String(WAVEFORM_MAX_BYTES + 1) } })).then(() => false, () => true);
+      const streaming = await waveformBytes(new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new Uint8Array(WAVEFORM_MAX_BYTES));
+        controller.enqueue(new Uint8Array(1));
+        controller.close();
+      } }))).then(() => false, () => true);
+      const bytes = await waveformBytes(new Response(new Uint8Array([1, 2, 3])));
+      const m = mixers.get('remix-fixture');
+      m.disposeWaveforms();
+      const cancelled = await waveformFor(m.audios[0], m.waveformAbort.signal).then(() => false, () => true);
+      return { oversized, streaming, bytes: [...new Uint8Array(bytes)], cancelled };
+    });
+    expect(results).toEqual({ oversized: true, streaming: true, bytes: [1, 2, 3], cancelled: true });
+    await page.locator('.play-btn').click();
     await clockAdvances(page);
     await page.locator('.play-btn').click();
   } finally { await server.close(); }

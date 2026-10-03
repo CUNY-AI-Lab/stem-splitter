@@ -26,48 +26,83 @@ const METER_BANDS = [
   [32, 80],
 ];
 
-// Display the recent amplitude envelope, not an untriggered oscilloscope whose
-// sample phase jumps every frame. These values affect pixels only, never audio.
-const WAVEFORM_POINTS = 96;
-const WAVEFORM_INTERVAL_MS = 50;
+// A fixed, full-track min/max envelope: time runs left to right and the
+// playhead moves over the source. Mute/focus never redraw the underlying audio.
+// Decode one visible stem at a time, at a low display-only sample rate; keep
+// just its small peak array, not PCM. Playback never waits for this work.
+const WAVEFORM_POINTS = 2048;
+const WAVEFORM_MAX_BYTES = 32 * 1024 * 1024;
+const WAVEFORM_MAX_SECONDS = 20 * 60;
+let waveformQueue = Promise.resolve();
 
-function createWaveformSignal() {
-  return { history: new Float32Array(WAVEFORM_POINTS), level: 0, sampledAt: null, mediaTime: null };
+async function waveformPeaks(buffer, signal) {
+  const peaks = new Float32Array(WAVEFORM_POINTS * 2);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  for (let point = 0; point < WAVEFORM_POINTS; point++) {
+    if (point % 128 === 0) {
+      signal?.throwIfAborted();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    const start = Math.floor(point * buffer.length / WAVEFORM_POINTS);
+    const end = Math.min(buffer.length, Math.max(start + 1, Math.floor((point + 1) * buffer.length / WAVEFORM_POINTS)));
+    let low = 0, high = 0;
+    for (const samples of channels) {
+      for (let i = start; i < end; i++) {
+        const value = Number.isFinite(samples[i]) ? Math.max(-1, Math.min(1, samples[i])) : 0;
+        low = Math.min(low, value);
+        high = Math.max(high, value);
+      }
+    }
+    peaks[point * 2] = low;
+    peaks[point * 2 + 1] = high;
+  }
+  return peaks;
 }
 
-function waveformAmplitude(samples) {
-  let energy = 0, peak = 0;
-  for (const sample of samples) {
-    const value = Number.isFinite(sample) ? sample : 0;
-    energy += value * value;
-    peak = Math.max(peak, Math.abs(value));
+async function waveformBytes(response) {
+  if (!response.ok || Number(response.headers.get('content-length')) > WAVEFORM_MAX_BYTES) {
+    await response.body?.cancel();
+    throw new Error('Waveform source unavailable or too large');
   }
-  const amplitude = samples.length ? 0.8 * Math.sqrt(energy / samples.length) + 0.2 * peak : 0;
-  // Fixed logarithmic compression makes normal audio legible without turning
-  // silence/noise into a full-height signal or normalizing every stem equally.
-  return amplitude > 0 ? Math.max(0, Math.min(1, (20 * Math.log10(amplitude) + 54) / 48)) : 0;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > WAVEFORM_MAX_BYTES) throw new Error('Waveform source too large');
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes.buffer;
 }
 
-function updateWaveformSignal(signal, samples, now, mediaTime, active) {
-  const jumped = signal.mediaTime !== null &&
-    (mediaTime < signal.mediaTime - 0.01 || mediaTime - signal.mediaTime > 0.35);
-  if (!active || jumped) {
-    signal.history.fill(0);
-    signal.level = 0;
-    signal.sampledAt = null;
-    signal.mediaTime = null;
-    if (!active) return;
-  }
-  const elapsed = signal.sampledAt === null ? WAVEFORM_INTERVAL_MS : now - signal.sampledAt;
-  if (elapsed < WAVEFORM_INTERVAL_MS) return;
-  const target = waveformAmplitude(samples);
-  const timeConstant = target > signal.level ? 80 : 240;
-  const blend = 1 - Math.exp(-Math.min(elapsed, 200) / timeConstant);
-  signal.level += (target - signal.level) * blend;
-  signal.history.copyWithin(0, 1);
-  signal.history[signal.history.length - 1] = signal.level;
-  signal.sampledAt = now;
-  signal.mediaTime = mediaTime;
+function waveformFor(audio, signal) {
+  const task = waveformQueue.then(async () => {
+    signal.throwIfAborted();
+    if (!Number.isFinite(audio.duration) || audio.duration <= 0 || audio.duration > WAVEFORM_MAX_SECONDS) {
+      throw new Error('Waveform duration out of bounds');
+    }
+    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Offline) throw new Error('Waveform decoding unavailable');
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)]);
+    const response = await fetch(audio.src, { signal: deadline, cache: 'force-cache' });
+    const decoder = new Offline(1, 1, 8000);
+    const buffer = await decoder.decodeAudioData(await waveformBytes(response));
+    deadline.throwIfAborted();
+    if (buffer.duration > WAVEFORM_MAX_SECONDS || buffer.numberOfChannels > 2) throw new Error('Waveform source out of bounds');
+    return { peaks: await waveformPeaks(buffer, deadline), duration: buffer.duration };
+  });
+  waveformQueue = task.catch(() => {});
+  return task;
 }
 
 // Contract id -> display copy from /api/separation-options, so a finished
@@ -77,8 +112,8 @@ const splitMeta = new Map();
 // --- shared audio graph ---------------------------------------------------
 //
 // One AudioContext for the page routes each instrument through its own gain
-// and analyser. The waveform follows that instrument's actual output; if the
-// context cannot start, element-level playback continues with a resting line.
+// and analyser. Waveform decoding is separate from this playback graph, so a
+// display/decoder failure cannot silence the mixer or strand the transport.
 
 let audioCtx = null;
 let audioCtxBlocked = false;
@@ -1304,6 +1339,15 @@ class Mixer {
     this.loop = null; // { start, end }
     this.rate = 1;
     this.el = this.build();
+    this.waveformAbort = new AbortController();
+    this.waveformResize = new ResizeObserver(() => {
+      for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
+    });
+    this.waveformResize.observe(this.el);
+    this.waveformObserver = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) this.loadWaveforms();
+    }, { rootMargin: '100px' });
+    this.waveformObserver.observe(this.el);
   }
 
   build() {
@@ -1551,7 +1595,8 @@ class Mixer {
         bars: [...row.querySelectorAll('.meter i')],
         levels: new Float32Array(METER_BANDS.length),
         waveform: row.querySelector('.waveform'),
-        waveformSignal: createWaveformSignal(),
+        waveformStatus: 'idle',
+        waveformPeaks: null,
         mixGain: 1,
       });
       this.userMuted.set(stem.name, false);
@@ -1560,6 +1605,7 @@ class Mixer {
       );
       soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
       audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
+      audio.addEventListener('loadedmetadata', () => this.loadWaveforms());
 
       const nameEl = row.querySelector('.ch-name');
       nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
@@ -1624,6 +1670,7 @@ class Mixer {
       this.scrubTarget = t;
       this.seek.style.setProperty('--fill', `${this.seek.value / 10}%`);
       this.tcNow.textContent = fmt(t);
+      for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
       // Keyboard/assistive input has no pointer lifecycle. Give native change
       // its turn, then commit even if that event is absent.
       if (this.scrubPointer == null) this.queueScrubEnd();
@@ -1778,6 +1825,7 @@ class Mixer {
     this.collapseBtn.title = label;
     this.collapseBtn.setAttribute('aria-label', label);
     this.collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+    if (!collapsed) this.loadWaveforms();
   }
 
   // --- session export -----------------------------------------------------
@@ -1947,13 +1995,11 @@ class Mixer {
     cancelAnimationFrame(this.raf);
     this.clockProgress = null;
     this.endScrub(false);
-    // The rAF loop is what drives the bars, so settle them here rather than
-    // leaving the last frame frozen mid-song.
+    // Settle the live meters, but leave the source waveforms visible on pause.
     for (const channel of this.channelsByName.values()) {
-      if (!channel.analyser) continue;
       channel.levels.fill(0);
       for (const bar of channel.bars) bar.style.height = '18%';
-      this.paintWaveform(channel, false);
+      this.paintWaveform(channel);
     }
   }
 
@@ -2059,20 +2105,51 @@ class Mixer {
         channel.levels[band] = level;
         channel.bars[band].style.height = `${18 + level * 77}%`;
       }
-      this.paintWaveform(channel, this.playing && channel.mixGain > 0);
     }
   }
 
-  paintWaveform(channel, active) {
+  loadWaveforms() {
+    if (!this.waveformAbort || this.waveformAbort.signal.aborted || !this.el.isConnected || this.el.classList.contains('collapsed')) return;
+    const rect = this.el.getBoundingClientRect();
+    if (rect.bottom < -100 || rect.top > innerHeight + 100) return;
+    for (const channel of this.channelsByName.values()) {
+      if (channel.waveformStatus !== 'idle' || !Number.isFinite(channel.audio.duration)) continue;
+      channel.waveformStatus = 'loading';
+      void waveformFor(channel.audio, this.waveformAbort.signal).then(({ peaks, duration }) => {
+        channel.waveformPeaks = peaks;
+        channel.waveformDuration = duration;
+        channel.waveformStatus = 'ready';
+        channel.waveformFrame = null;
+        this.paintWaveform(channel);
+      }).catch(() => {
+        // Neutral baseline/playhead rather than a fabricated waveform. Audio
+        // still streams normally if decoding is unsupported, too large or fails.
+        channel.waveformStatus = 'unavailable';
+      });
+    }
+  }
+
+  disposeWaveforms() {
+    this.waveformAbort.abort();
+    this.waveformObserver.disconnect();
+    this.waveformResize.disconnect();
+  }
+
+  paintWaveform(channel) {
     // This display is optional: canvas failures must never interrupt playback.
     try {
-      updateWaveformSignal(channel.waveformSignal, channel.samples || [],
-        performance.now(), channel.audio.currentTime, active);
       const canvas = channel.waveform;
       const width = Math.round(canvas.clientWidth);
       const height = Math.round(canvas.clientHeight);
       if (!width || !height) return;
       const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const master = this.audios[0];
+      const time = this.scrubbing ? this.scrubTarget || 0 : master.currentTime;
+      const progress = Number.isFinite(master.duration) && master.duration > 0 ? Math.max(0, Math.min(1, time / master.duration)) : 0;
+      const x = Math.min(width - 1, Math.floor(progress * width));
+      const dim = channel.mixGain === 0 ? .35 : channel.mixGain < 1 ? .65 : 1;
+      const frame = `${width}:${height}:${scale}:${x}:${dim}`;
+      if (channel.waveformFrame === frame) return;
       const pixelWidth = Math.round(width * scale);
       const pixelHeight = Math.round(height * scale);
       if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -2087,26 +2164,39 @@ class Mixer {
       channel.waveformColor ||= getComputedStyle(channel.row.querySelector('.ch-dot')).backgroundColor;
       context.strokeStyle = channel.waveformColor;
       context.fillStyle = channel.waveformColor;
-      context.lineWidth = 1.25;
-      context.lineJoin = 'round';
-      const history = channel.waveformSignal.history;
       const center = height / 2;
       const extent = height / 2 - 3;
-      context.beginPath();
-      for (let i = 0; i < history.length; i++) {
-        const x = i / (history.length - 1) * width;
-        const y = center - history[i] * extent;
-        if (i === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
+      context.globalAlpha = .18 * dim;
+      context.fillRect(0, center, width, 1);
+      const peaks = channel.waveformPeaks;
+      if (peaks) {
+        if (channel.waveformPathSize !== `${width}:${height}`) {
+          const path = new Path2D();
+          for (let i = 0; i < WAVEFORM_POINTS; i++) {
+            const px = i / (WAVEFORM_POINTS - 1) * width;
+            const y = center - peaks[i * 2 + 1] * extent;
+            if (i === 0) path.moveTo(px, y);
+            else path.lineTo(px, y);
+          }
+          for (let i = WAVEFORM_POINTS - 1; i >= 0; i--) path.lineTo(i / (WAVEFORM_POINTS - 1) * width, center - peaks[i * 2] * extent);
+          path.closePath();
+          channel.waveformPath = path;
+          channel.waveformPathSize = `${width}:${height}`;
+        }
+        context.globalAlpha = .35 * dim;
+        context.fill(channel.waveformPath);
+        context.save();
+        context.beginPath();
+        context.rect(0, 0, x, height);
+        context.clip();
+        context.globalAlpha = .85 * dim;
+        context.fill(channel.waveformPath);
+        context.restore();
       }
-      for (let i = history.length - 1; i >= 0; i--) {
-        context.lineTo(i / (history.length - 1) * width, center + history[i] * extent);
-      }
-      context.closePath();
-      context.globalAlpha = 0.18;
-      context.fill();
-      context.globalAlpha = 1;
-      context.stroke();
+      context.globalAlpha = .9;
+      context.fillRect(x, 2, 1, height - 4);
+      channel.waveformFrame = frame;
+      channel.row.querySelector('.meter').classList.add('waveform-ready');
     } catch { /* The transport remains independent of the visualization. */ }
   }
 
@@ -2118,6 +2208,7 @@ class Mixer {
     this.seek.value = pct;
     this.seek.style.setProperty('--fill', `${pct / 10}%`);
     this.tcNow.textContent = fmt(master.currentTime);
+    for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
   }
 
   label(name) {
@@ -2830,6 +2921,7 @@ class Mixer {
       channel.muteBtn.setAttribute('aria-pressed', String(muted && !focused));
       channel.soloBtn.setAttribute('aria-pressed', String(focused));
       channel.soloBtn.textContent = focused ? (solo.stage === 'only' ? 'ONLY' : 'FRONT') : 'SOLO';
+      this.paintWaveform(channel);
     }
     this.el.classList.toggle('soloing', Boolean(solo));
   }
@@ -3213,6 +3305,7 @@ document.addEventListener('pointerdown', (event) => {
 function deleteJob(id) {
   const mixer = mixers.get(id);
   if (mixer?.playing || mixer?.starting) mixer.pause();
+  mixer?.disposeWaveforms();
   mixers.delete(id);
   jobStates.delete(id);
   saveJobs(getJobs().filter((j) => j.id !== id));
