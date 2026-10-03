@@ -36,6 +36,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-public-links-account-history-20261001"
+    "RELEASE": "cloudflare-mixer-delivery-20261003"
   }
 }

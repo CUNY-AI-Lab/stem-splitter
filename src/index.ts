@@ -5,6 +5,7 @@ import type { Env } from './env';
 import { reserveDailyRequest, splitAllowance } from './daily-allowance.ts';
 import {
   getRetainedAudio,
+  serveStemAudio,
   isLocalHosting,
   usesRoutedAudio,
   isLocalSourceDownloadKey,
@@ -243,11 +244,7 @@ app.get('/api/shared-jobs/:id/stems/:index', async (c) => {
   const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
   const key = stems[Number(c.req.param('index'))]?.key;
   if (!key?.startsWith(`stems/${row.id}/`)) return c.text('Not found', 404);
-  const obj = await getRetainedAudio(c.env, key);
-  if (!obj) return c.text('Not found', 404);
-  const headers = new Headers({ 'Cache-Control': 'private, no-store', 'Content-Length': String(obj.size) });
-  obj.writeHttpMetadata(headers);
-  return new Response(obj.body, { headers });
+  return serveStemAudio(c.env, key, c.req.raw);
 });
 
 app.get('/api/account', async (c) => {
@@ -1904,17 +1901,7 @@ app.get('/api/files/*', async (c) => {
   // Only serve generated stems, never uploaded originals.
   if (!key?.startsWith('stems/')) return c.text('Not found', 404);
 
-  const obj = await getRetainedAudio(c.env, key);
-  if (!obj) return c.text('Not found', 404);
-
-  const headers = new Headers();
-  obj.writeHttpMetadata(headers);
-  headers.set('Content-Length', String(obj.size));
-  headers.set('Cache-Control', c.env.AUTH_MODE === 'cail' ? 'private, no-store' : 'private, max-age=3600');
-  if (c.req.query('download') !== undefined) {
-    headers.set('Content-Disposition', `attachment; filename="${key.split('/').pop()}"`);
-  }
-  return new Response(obj.body, { headers });
+  return serveStemAudio(c.env, key, c.req.raw);
 });
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));

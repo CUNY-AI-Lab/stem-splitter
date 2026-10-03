@@ -48,6 +48,23 @@ jobs:
       - name: Exercise recording, account and Listening Guide browser paths
         working-directory: cloudflare
         run: ../node_modules/.bin/playwright test --config playwright.config.mjs
+      - name: Install Firefox for mixer regression checks
+        timeout-minutes: 3
+        run: ./node_modules/.bin/playwright install --with-deps firefox
+      - name: Exercise Firefox seeking and instrument switching
+        working-directory: cloudflare
+        env:
+          STEM_BROWSER: firefox
+        run: |
+          bash ../.github/scripts/start-test-audio.sh
+          ../node_modules/.bin/playwright test --config playwright.config.mjs playback.spec.mjs
       - name: Validate the isolated candidate bundle
         working-directory: cloudflare
         run: ./node_modules/.bin/wrangler deploy --config wrangler.jsonc --dry-run --outdir "$RUNNER_TEMP/stem-cloudflare"
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cloudflare-browser-failures
+          path: cloudflare/test-results
+          retention-days: 7

@@ -66,9 +66,11 @@ class FsR2Object {
 class FsR2ObjectBody extends FsR2Object {
   readonly body: ReadableStream;
 
-  constructor(meta: StoredMeta, blobPath: string) {
+  constructor(meta: StoredMeta, blobPath: string, range?: { offset: number; length: number }) {
     super(meta);
-    this.body = Readable.toWeb(createReadStream(blobPath)) as unknown as ReadableStream;
+    this.body = Readable.toWeb(createReadStream(blobPath, range ? {
+      start: range.offset, end: range.offset + range.length - 1,
+    } : undefined)) as unknown as ReadableStream;
   }
 }
 
@@ -161,11 +163,11 @@ export class FsR2Bucket {
     });
   }
 
-  async get(key: string): Promise<FsR2ObjectBody | null> {
+  async get(key: string, options?: { range?: { offset: number; length: number } }): Promise<FsR2ObjectBody | null> {
     await this.ready;
     const meta = await this.readMeta(key);
     if (!meta) return null;
-    return new FsR2ObjectBody(meta, this.blobPath(key));
+    return new FsR2ObjectBody(meta, this.blobPath(key), options?.range);
   }
 
   async head(key: string): Promise<FsR2Object | null> {
