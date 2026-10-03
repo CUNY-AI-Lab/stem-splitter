@@ -65,6 +65,25 @@ test('compact mixer controls leave the full signal width clear and omit the dupl
     await expect(page.locator('#split-legend')).toBeVisible();
     await page.getByRole('radio', { name: /^4 splits/i }).check();
     await expect(page.locator('#split-legend')).toBeHidden();
+    for (const width of [320, 360, 375, 390, 430, 540, 541, 600, 768, 834, 1024, 1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      for (const row of await page.locator('.channel').all()) {
+        const name = await row.locator('.ch-name').boundingBox();
+        const meter = await row.locator('.meter').boundingBox();
+        const box = await row.boundingBox();
+        const controls = await row.locator('.ch-actions').boundingBox();
+        expect(name.height).toBeLessThan(25);
+        expect(meter.x).toBeGreaterThan(name.x + name.width);
+        expect(meter.x + meter.width).toBeCloseTo(box.x + box.width - 1.6, 0);
+        expect(controls.y).toBeGreaterThanOrEqual(meter.y + meter.height);
+        expect(controls.x).toBeGreaterThanOrEqual(meter.x - 1);
+        expect(controls.x + controls.width).toBeLessThanOrEqual(box.x + box.width);
+      }
+      if ([320, 540, 768, 1440].includes(width)) {
+        await page.locator('.console').screenshot({ path: `/tmp/stem-viewport-${process.env.STEM_BROWSER || 'chrome'}-${width}.png` });
+      }
+    }
     for (const width of [1280, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       const row = page.locator('.channel').first();

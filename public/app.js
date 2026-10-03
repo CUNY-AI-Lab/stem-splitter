@@ -2026,9 +2026,11 @@ class Mixer {
       const height = Math.round(canvas.clientHeight);
       if (!width || !height) return;
       const scale = Math.min(window.devicePixelRatio || 1, 2);
-      if (canvas.width !== width * scale || canvas.height !== height * scale) {
-        canvas.width = width * scale;
-        canvas.height = height * scale;
+      const pixelWidth = Math.round(width * scale);
+      const pixelHeight = Math.round(height * scale);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
       }
       const context = canvas.getContext('2d');
       if (!context) return;

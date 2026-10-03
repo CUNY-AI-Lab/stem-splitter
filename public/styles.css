@@ -1556,6 +1556,8 @@ footer a:hover { color: var(--hot); }
   padding: .7rem .1rem;
 }
 .channel .ch-id { min-width: 0; overflow-wrap: anywhere; }
+.channel .ch-name { font-size: .72rem; letter-spacing: .08em; }
+.channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
 .channel .meter {
   position: relative;
   width: 100%;
@@ -1603,7 +1605,7 @@ footer a:hover { color: var(--hot); }
 @media (max-width: 540px) {
   .channel { grid-template-columns: 5.25rem minmax(0, 1fr); gap: .25rem .55rem; }
   .channel .solo-btn,
-  .channel .mute-btn { flex-basis: 3.4rem; width: 3.4rem; height: 1.8rem; }
+  .channel .mute-btn { flex-basis: 3.4rem; width: 3.4rem; height: 1.8rem; font-size: .65rem; letter-spacing: .08em; }
   .channel .dl { width: 1.8rem; height: 1.8rem; }
 }
 
