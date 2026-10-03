@@ -32,11 +32,9 @@ const splitMeta = new Map();
 
 // --- shared audio graph ---------------------------------------------------
 //
-// The five bars per channel used to be a fixed CSS loop: they moved whenever a
-// stem was playing, whatever was in it. One AudioContext for the whole page
-// makes them true — each bar is a frequency band of that stem, so a bass strip
-// and a hi-hat strip stop looking alike, and a near-silent stem reads as
-// silent. Everything falls back to the CSS loop if the context won't start.
+// One AudioContext for the page routes each instrument through its own gain
+// and analyser. The waveform follows that instrument's actual output; if the
+// context cannot start, element-level playback continues with a resting line.
 
 let audioCtx = null;
 let audioCtxBlocked = false;
@@ -533,8 +531,8 @@ async function loadSeparationOptions() {
     // did the engine name they were missing.
     for (const mixer of mixers.values()) mixer.renderSplitMeta();
     if (!selectedModel()) stemChoice.querySelector('input').checked = true;
-    stemChoice.addEventListener('change', () => renderSplitLegend(options.models));
-    renderSplitLegend(options.models);
+    stemChoice.addEventListener('change', renderSplitLegend);
+    renderSplitLegend();
     renderSeparationSummary(options.models);
     return true;
   } catch {
@@ -549,8 +547,7 @@ async function loadSeparationOptions() {
 
 // A choice is a strip of the song cut into its parts: one segment per part, in
 // the same colour that part gets in the mixer. The count is the only text —
-// the part names live in the legend for the selected choice, and in the radio's
-// accessible name so a screen reader still hears all of them.
+// the instrument descriptions stay in each radio's accessible name.
 // Keep stored classifier decisions and the provider catalogue unchanged.
 // Normalize their legacy wording only when presenting it to the listener.
 function splitDisplayCopy(text) {
@@ -635,8 +632,9 @@ function buildAutoOption() {
   return option;
 }
 
-function renderSplitLegend(models) {
+function renderSplitLegend() {
   splitLegend.replaceChildren();
+  splitLegend.hidden = selectedModel() !== AUTO_MODEL;
   if (selectedModel() === AUTO_MODEL) {
     const item = document.createElement('li');
     item.textContent =
@@ -645,12 +643,6 @@ function renderSplitLegend(models) {
         : 'Processes local audio, then splits into either 2, 4, or 6 splits';
     splitLegend.appendChild(item);
     return;
-  }
-  const selected = models.find((model) => model.id === selectedModel()) || models[0];
-  for (const stem of selected?.stems || []) {
-    const item = document.createElement('li');
-    item.textContent = stem;
-    splitLegend.appendChild(item);
   }
 }
 
@@ -1439,7 +1431,7 @@ class Mixer {
     this.coachInput = this.coachForm.querySelector('input');
     this.coachCancel = document.createElement('button');
     this.coachCancel.type = 'button';
-    this.coachCancel.className = 'crate-page-btn';
+    this.coachCancel.className = 'coach-cancel';
     this.coachCancel.textContent = 'CANCEL REQUEST';
     this.coachCancel.hidden = true;
     this.coachCancel.addEventListener('click', () => this.coachAbort?.abort());
@@ -1496,10 +1488,12 @@ class Mixer {
       row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
       row.innerHTML = `
         <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
-        <span class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-        <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
-        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
-        <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
+        <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="ch-actions">
+          <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
+          <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
+          <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
+        </span>
       `;
       const muteBtn = row.querySelector('.mute-btn');
       const soloBtn = row.querySelector('.solo-btn');
@@ -1512,6 +1506,7 @@ class Mixer {
         download,
         bars: [...row.querySelectorAll('.meter i')],
         levels: new Float32Array(METER_BANDS.length),
+        waveform: row.querySelector('.waveform'),
         mixGain: 1,
       });
       this.userMuted.set(stem.name, false);
@@ -1913,6 +1908,7 @@ class Mixer {
       if (!channel.analyser) continue;
       channel.levels.fill(0);
       for (const bar of channel.bars) bar.style.height = '18%';
+      this.paintWaveform(channel, false);
     }
   }
 
@@ -1973,9 +1969,10 @@ class Mixer {
         channel.gainNode = gain;
         channel.analyser = analyser;
         channel.bins = new Uint8Array(analyser.frequencyBinCount);
+        channel.samples = new Uint8Array(analyser.fftSize);
         channel.row.querySelector('.meter').classList.add('live');
       } catch {
-        // This strip keeps the element-level mixing and the CSS meter.
+        // This strip keeps element-level mixing and a resting signal line.
       }
     }
     // Gain nodes are the authority for any strip that got one.
@@ -1994,6 +1991,7 @@ class Mixer {
       if (!channel.analyser) continue;
       try {
         channel.analyser.getByteFrequencyData(channel.bins);
+        channel.analyser.getByteTimeDomainData(channel.samples);
       } catch {
         // A meter failure must not kill the transport's animation loop.
         channel.analyser = null;
@@ -2016,7 +2014,44 @@ class Mixer {
         channel.levels[band] = level;
         channel.bars[band].style.height = `${18 + level * 77}%`;
       }
+      this.paintWaveform(channel, this.playing && channel.mixGain > 0);
     }
+  }
+
+  paintWaveform(channel, active) {
+    // This display is optional: canvas failures must never interrupt playback.
+    try {
+      const canvas = channel.waveform;
+      const width = Math.round(canvas.clientWidth);
+      const height = Math.round(canvas.clientHeight);
+      if (!width || !height) return;
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const pixelWidth = Math.round(width * scale);
+      const pixelHeight = Math.round(height * scale);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      context.setTransform(scale, 0, 0, scale, 0, 0);
+      context.clearRect(0, 0, width, height);
+      // The row must be attached before its CSS channel color can be resolved.
+      channel.waveformColor ||= getComputedStyle(channel.row.querySelector('.ch-dot')).backgroundColor;
+      context.strokeStyle = channel.waveformColor;
+      context.lineWidth = 1.25;
+      context.beginPath();
+      const samples = channel.samples;
+      const count = active && samples ? samples.length : 2;
+      for (let i = 0; i < count; i++) {
+        const x = i / (count - 1) * width;
+        const level = active && samples ? Math.max(-1, Math.min(1, (samples[i] - 128) / 128 * 3)) : 0;
+        const y = height / 2 + level * (height / 2 - 2);
+        if (i === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.stroke();
+    } catch { /* The transport remains independent of the visualization. */ }
   }
 
   paint() {

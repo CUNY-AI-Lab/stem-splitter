@@ -76,11 +76,23 @@ test('Listening Guide preserves the mixer and syncs private CUNY history across 
     await page.locator('.coach-form input').fill('A cancellable request.');
     await page.locator('.coach-form input').press('Enter');
     await expect.poll(stats).toBe(5);
-    await page.getByRole('button', { name: 'CANCEL REQUEST', exact: true }).click();
+    const cancel = page.getByRole('button', { name: 'CANCEL REQUEST', exact: true });
+    await expect(cancel).toBeVisible();
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      const button = await cancel.boundingBox();
+      const body = await page.locator('.coach-body').boundingBox();
+      expect(button.width).toBeLessThan(body.width * .7);
+      expect(button.height).toBeLessThan(33);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.console > .coach').screenshot({ path: `/tmp/stem-guide-controls-${process.env.STEM_BROWSER || 'chrome'}-${width}.png` });
+    }
+    await cancel.click();
     await expect(page.locator('.coach-row.error').last()).toContainText('Request cancelled');
     await expect(page.locator('.coach-form input')).toBeEnabled();
     await expect(page.getByRole('button', { name: 'CANCEL REQUEST', exact: true })).toBeHidden();
     expect(await stats()).toBe(5);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await context.setExtraHTTPHeaders(headers);
     await page.locator('.coach-reset').click();
     await page.locator('.coach-reset').click();
