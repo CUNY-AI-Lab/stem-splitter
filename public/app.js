@@ -3270,7 +3270,9 @@ async function adoptSharedJob() {
 
   const position = getJobs().findIndex((existing) => existing.id === id);
   jobList.children[position]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  showUploadMessage(jobStates.get(id)?.readOnlyShared ? 'Shared split · Listen and mix. Notes and conversations stay private.' : runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
+  if (!jobStates.get(id)?.readOnlyShared) {
+    showUploadMessage(runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
+  }
 }
 
 function stemDescription(expectedStems) {

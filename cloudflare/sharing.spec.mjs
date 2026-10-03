@@ -74,6 +74,8 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await page.goto(new URL('/?job=remix-fixture', url).href);
     await expect(page.locator('.console-title')).toHaveText('Shared audio');
     await expect(page.locator('.badge')).toHaveText('SHARED');
+    await expect(page.locator('#upload-message')).toBeHidden();
+    await expect(page.getByText('Shared split · Listen and mix. Notes and conversations stay private.', { exact: true })).toHaveCount(0);
     await expect(page.locator('.coach')).toBeHidden();
     await expect(page.locator('.note-btn')).toBeHidden();
     await expect(page.locator('.folder-btn')).toBeHidden();
