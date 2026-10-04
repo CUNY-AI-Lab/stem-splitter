@@ -1,3 +1,4 @@
+import { uniqueCookie, parseLoginTransaction } from './session-contract/session.js';
 import { authFailure } from '../src/identity.ts';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
 import { REQUEST_ID } from './gateway.ts';
@@ -20,8 +21,6 @@ export interface SsoEnv {
 }
 export const SESSION_COOKIE = '__Host-stem-session';
 export const LOGIN_COOKIE = '__Host-stem-login';
-const PROOF = /^[A-Za-z0-9_-]{43}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TOKEN = /^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/;
 const DOORWAY = 'https://tools.ailab.gc.cuny.edu';
 const cookie = (name: string, value: string, seconds: number) => `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${seconds}`;
@@ -33,10 +32,7 @@ export function safeNext(value: unknown): string {
   // Fixed page destinations, never a caller-selected host, callback or API.
   return typeof value === 'string' && ['/', '/teacher.html', '/account.html'].includes(value) ? value : '/';
 }
-function readCookie(request: Request, name: string): string {
-  const values = (request.headers.get('cookie') || '').split(';').map(part => part.trim()).filter(part => part.startsWith(name + '='));
-  return values.length === 1 ? values[0].slice(name.length + 1) : '';
-}
+const readCookie = uniqueCookie;
 function identityClient(request: Request, env: SsoEnv): WorkerIdentity | undefined {
   return new URL(request.url).origin === env.CANONICAL_BASE_URL ? env.IDENTITY : env.PREVIEW_IDENTITY;
 }
@@ -155,14 +151,9 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
       return redirect(target.href, [cookie(LOGIN_COOKIE, encodeURIComponent(JSON.stringify({ verifier, state, next: safeNext(url.searchParams.get('next')), expiresAt: Date.now() + 600000 })), 600)]);
     }
     if (url.pathname === '/auth/callback') {
-      const raw = readCookie(request, LOGIN_COOKIE);
-      if (!raw || raw.length > 1500) return loginFailure(request, env);
-      let pending;
-      try { pending = JSON.parse(decodeURIComponent(raw)); } catch { return loginFailure(request, env); }
-      const code = url.searchParams.get('code');
-      if (!pending || typeof pending !== 'object' || !PROOF.test(pending.state) || !PROOF.test(pending.verifier) ||
-          pending.state !== url.searchParams.get('state') || !Number.isSafeInteger(pending.expiresAt) || pending.expiresAt <= Date.now() || pending.expiresAt > Date.now() + 600000 ||
-          !code || !UUID.test(code) || url.searchParams.getAll('state').length !== 1 || url.searchParams.getAll('code').length !== 1) return loginFailure(request, env);
+      const pending = parseLoginTransaction(readCookie(request, LOGIN_COOKIE), url.searchParams);
+      if (!pending) return loginFailure(request, env);
+      const code = url.searchParams.get('code')!;
       const result = await boundedRpc(client.redeem(code, pending.verifier));
       if (!result.ok) return loginFailure(request, env, result.status);
       if (!TOKEN.test(result.token) || !Number.isSafeInteger(result.expiresAt) || result.expiresAt <= Date.now()) return loginFailure(request, env, 503);
