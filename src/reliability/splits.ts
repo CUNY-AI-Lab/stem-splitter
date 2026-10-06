@@ -206,7 +206,8 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       }
     }
   } catch(error) {
-    if(error instanceof YouTubeError||error instanceof ArchiveError) await fail(env,claimed,error.code);
+    if(error instanceof YouTubeError||error instanceof ArchiveError) await fail(env,claimed,error.code,
+      error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
     else if(error instanceof UpstreamError&&error.notBefore) await setCooldown(env.DB,'replicate',error.notBefore);
     // Provider/storage outage retains the exact prediction, never creates another.
   } finally {

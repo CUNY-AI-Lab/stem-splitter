@@ -229,3 +229,16 @@ test('a crash after chat reservation but before its running transition releases 
  await recoverExpired(db,now+90001);assert.equal((await readOperation(db,operation.id))!.state,'failed');
  assert.equal((await operationAllowance(db,subject,'chat')).remaining,50);
 });
+test('a confirmed oversize import releases its allowance and shows the supported limit and upload alternative',async t=>{
+ const {db,env,split}=await setup(t),op=await split('oversize-import-0001','fetch');
+ env.REPLICATE_YT_MODEL='fixture/import';env.REPLICATE_YT_MODEL_VERSION='a'.repeat(64);env.REPLICATE_API_TOKEN='mock-only-import-token-0000';
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='oversize-fixture' WHERE id=?").bind(op.id).run();
+ t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>String(input).startsWith('https://api.replicate.com/')
+  ?Response.json({id:'oversize-fixture',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/source.m4a',title:'Fixture',duration:240}})
+  :new Response(new Uint8Array([0,0,0,24]),{headers:{'Content-Length':String(12*1024*1024+1),'Content-Type':'audio/mp4'}}));
+ await reconcileSplit(env,(await readOperation(db,op.id))!,async()=>assert.fail('Import must not reach separation'));
+ assert.equal((await readOperation(db,op.id))!.error_code,'audio_too_large');
+ const job=await db.prepare('SELECT status,error FROM jobs WHERE id=?').bind(op.id).first<any>();
+ assert.equal(job!.status,'failed');assert.match(job!.error,/12 MiB/);assert.match(job!.error,/upload an original or licensed file/);
+ assert.equal((await splitAllowance(db,subject)).completed,0);assert.equal((await splitAllowance(db,subject)).inProgress,0);
+});

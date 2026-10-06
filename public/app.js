@@ -4598,6 +4598,8 @@ async function initialize() {
   }
   if (runtime.authMode === 'cail') {
     jobsStorageKey = null;
+    const importHelp=document.getElementById('import-help');
+    if(importHelp)importHelp.textContent='YouTube imports support up to 15 minutes and 12 MiB of extracted audio. You can also upload an original or licensed audio file.';
     const account = document.createElement('p');
     account.className = 'account-nav';
     let principal = null;
