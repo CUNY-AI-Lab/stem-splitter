@@ -1939,7 +1939,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   let durable: Awaited<ReturnType<typeof beginCourseTurn>> | null = null;
   if (course) {
-    try { durable = await beginCourseTurn(c.env,id,c.get('principal')!,turns.at(-1)!.content,body?.messageId,body?.revision); }
+    try { durable = await beginCourseTurn(c.env,id,c.get('principal')!,turns.at(-1)!.content,body?.messageId,body?.revision);receipt?.bindCourseClaim(durable.claimId); }
     catch(error) {await receipt?.failed();if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
   }
   return sseResponse(c, async (emit, signal) => {
@@ -1955,15 +1955,15 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
         }
       );
       await receipt?.effect();
-      const revision = durable ? await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,result,false,principal!.displayName) : undefined;
+      const revision = durable ? await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,result,false,principal!.displayName,reservation?.operation.id) : undefined;
       if(durable && revision===null) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');
       // A personal note also has a durable operation/call identity. Completion
       // replay cannot add it twice. Course notes are fenced in finishCourseTurn.
       if(principal && reservation && !durable) {
         for(const [index,call] of result.toolCalls.entries()) if(call.name==='add_note') {
           await c.env.DB.prepare(`INSERT OR IGNORE INTO annotations(id,job_id,at_seconds,text,author_subject,author_name,provenance)
-            SELECT ?,?,?,?,?,?,'server-assistant' WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND state='running')`)
-            .bind(`${reservation.operation.id}-${index}`,id,Number(call.args.seconds),String(call.args.text),principal.subject,principal.displayName,reservation.operation.id).run();
+            SELECT ?,?,?,?,?,?,'server-assistant' WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND state='running' AND lease_until>?)`)
+            .bind(`${reservation.operation.id}-${index}`,id,Number(call.args.seconds),String(call.args.text),principal.subject,principal.displayName,reservation.operation.id,Date.now()).run();
         }
       }
       const calls=principal?result.toolCalls.filter(call=>call.name!=='add_note'):result.toolCalls;
@@ -1972,7 +1972,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
       await emit({type:'done',text:result.reply,finishReason:result.finishReason,operationId:reservation?.operation.id,
         ...(revision===undefined?{}:{revision}),notesChanged:!!principal&&result.toolCalls.some(call=>call.name==='add_note')});
     } catch(error) {
-      if(durable)await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,{reply:streamed,toolCalls:[],finishReason:'error'},true);
+      if(durable)await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,{reply:streamed,toolCalls:[],finishReason:'error'},true,principal!.displayName,reservation?.operation.id);
       await receipt?.failed();throw error;
     }
   });

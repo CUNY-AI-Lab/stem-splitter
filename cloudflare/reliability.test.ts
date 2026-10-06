@@ -100,7 +100,7 @@ test('ninety-day purge redacts private request/cache content but preserves an un
 test('chat receipts never copy content; failure releases, partial/unknown count once, settled replay cannot call a model',async t=>{
  const {db,env}=await setup(t);
  const first=await reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]);const receipt=assistantReceipt(env,first.operation);
- await receipt.delta('Secret transcript');await receipt.failed();await receipt.complete('Late secret');
+ await receipt.delta('Secret transcript');await receipt.failed();await assert.rejects(receipt.complete('Late secret'),/input ended/);
  assert.equal((await readOperation(db,first.operation.id))!.state,'partial');assert.doesNotMatch((await readOperation(db,first.operation.id))!.result_json!,/Secret|Late/);
  await assert.rejects(reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]),/already accepted/);
  const second=await reserveAssistant(env,subject,null,'chat','human-message-0002','job',[]);await assistantReceipt(env,second.operation).failed();
@@ -109,6 +109,10 @@ test('chat receipts never copy content; failure releases, partial/unknown count 
  await assert.rejects(assistantReceipt(env,third.operation).delta('Late output'));
  const fourth=await reserveAssistant(env,subject,null,'chat','human-message-0004','job',[]);await assistantReceipt(env,fourth.operation).effect();await recoverExpired(db,Date.now()+90001);
  assert.equal((await readOperation(db,fourth.operation.id))!.error_code,'delivery_uncertain');assert.equal((await operationAllowance(db,subject,'chat')).completed,2);
+ await assert.rejects(assistantReceipt(env,fourth.operation).complete('Late usable result'),/input ended/);
+ const fifth=await reserveAssistant(env,subject,null,'chat','human-message-0005','job',[]);
+ await assert.rejects(assistantReceipt(env,fifth.operation).complete('  '),/could not finish/);
+ assert.equal((await readOperation(db,fifth.operation.id))!.state,'failed');
 });
 
 test('mocked lifecycle rejects empty/corrupt audio, failed storage and cancelled/failed predictions without a successful charge',async t=>{

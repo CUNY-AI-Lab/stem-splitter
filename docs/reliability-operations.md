@@ -129,6 +129,13 @@ prompt remain unchanged. Partial/trailing stream failure never calls another
 model. Tools-only replies get local narration, and duplicate tool IDs fail.
 Missing or different backup configuration fails closed.
 
+Course deltas and effect intents atomically check the active conversation claim.
+Notes and durable replies also require the live 90-second operation lease,
+within the conversation's longer 120-second recovery lease. Final delivery
+requires a winning operation settlement and the unchanged completed course
+revision. Expiry, recovery or reset cannot authorize a stale tool event or
+restore a cleared transcript.
+
 ## Private operational and usage evidence
 
 Lifecycle and attempt events are transactionally recorded alongside the durable

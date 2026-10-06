@@ -14,6 +14,8 @@ import { hashSystemPromptFingerprint } from '../src/assistant/prompt.ts';
 import { authorizeStoredCourseWork } from '../src/classroom/access.ts';
 import { saveCoursePrompt } from '../src/classroom/prompts.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
+import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
+import { recoverExpired } from '../src/reliability/queue.ts';
 const B='another-reviewed-course';
 const ids={alice:`cail-${'1'.repeat(32)}`,bob:`cail-${'2'.repeat(32)}`,ownerA:`cail-${'3'.repeat(32)}`,ownerB:`cail-${'4'.repeat(32)}`,outsider:`cail-${'5'.repeat(32)}`,admin:`cail-${'6'.repeat(32)}`};
 type Person=keyof typeof ids;
@@ -111,6 +113,33 @@ test('reset during an in-flight chat fences late deltas, receipts and notes with
  const operations=(await db.prepare('SELECT state,result_json,request_json FROM app_operations').all<any>()).results;
  assert.equal(operations[0].state,'failed');assert.doesNotMatch(JSON.stringify(operations),/Late private|Private input/);
  assert.equal((await request('/api/jobs/reset-stream/chat','alice','POST',body)).status,409);assert.equal(calls,1);
+});
+test('the operation deadline fences course effects before the longer conversation lease expires',async()=>{
+ for(const recovered of [false,true]) {
+  const {env,job,db,principal}=await setup();await job('deadline');const p=await principal();
+  const {operation}=await reserveAssistant(env,p.subject,A,'chat','operation-fenced-turn-01','deadline',[]);
+  const receipt=assistantReceipt(env,operation),turn=await beginCourseTurn(env,'deadline',p,'Listen','operation-fenced-turn-01',0);
+  receipt.bindCourseClaim(turn.claimId);await receipt.effect();
+  if(recovered)await recoverExpired(db as unknown as D1Database,Date.now()+90001);
+  else await db.prepare('UPDATE app_operations SET lease_until=0 WHERE id=?').bind(operation.id).run();
+  const result={reply:'Late private result',toolCalls:[{name:'add_note' as const,args:{seconds:1,text:'Late note'}}],finishReason:'stop'};
+  assert.equal(await finishCourseTurn(env,'deadline',p.subject,turn.turnId,turn.claimId,result,false,p.displayName,operation.id),null);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM annotations').first<any>())!.n,0);
+  assert.deepEqual((await conversationPage(env,'deadline',p.subject)).entries.map(e=>e.text),['Listen']);
+  await assert.rejects(receipt.complete(result.reply),/input ended/);
+  await assert.rejects(receipt.delta('Late delta'),/input ended/);
+ }
+});
+test('reset between durable course completion and final delivery invalidates the completion receipt',async()=>{
+ const {env,job,principal}=await setup();await job('reset-finish');const p=await principal();
+ const {operation}=await reserveAssistant(env,p.subject,A,'chat','reset-finish-turn-0001','reset-finish',[]);
+ const receipt=assistantReceipt(env,operation),turn=await beginCourseTurn(env,'reset-finish',p,'Listen','reset-finish-turn-0001',0);
+ receipt.bindCourseClaim(turn.claimId);await receipt.effect();
+ const revision=await finishCourseTurn(env,'reset-finish',p.subject,turn.turnId,turn.claimId,{reply:'Private answer',toolCalls:[],finishReason:'stop'},false,p.displayName,operation.id);
+ assert.equal(revision,2);await resetCourseConversation(env,'reset-finish',p.subject,revision);
+ await assert.rejects(receipt.complete('Private answer'),/input ended/);
+ await assert.rejects(receipt.delta('Late delta'),/input ended/);
+ assert.deepEqual((await conversationPage(env,'reset-finish',p.subject)).entries,[]);
 });
 test('course prompt writes conflict, preserve immutable history and invalidate only matching caches',async()=>{
   const {env,job,db}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);const empty=await hashSystemPromptFingerprint();
