@@ -1,13 +1,14 @@
-import app from '../src/index.ts';
+import app, { runReliableJobs } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
-import { gatewayForRequest, canonicalModel } from './gateway.ts';
+import { gatewayForRequest, canonicalModel, gatewayModelsConfigured } from './gateway.ts';
 import { authenticatedRequest, handleAuth, type WorkerIdentity } from './sso.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
+import { purgeOperationContent } from '../src/reliability/retention.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> &
-  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string };
+  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -29,12 +30,14 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
   }
   const gateway = gatewayForRequest(env.GATEWAY, request.headers.get('x-cail-gateway-identity-jwt'), request, env.RELEASE || 'candidate');
   return app.fetch(request, { ...env, ASSISTANT_MODEL: env.GATEWAY_MODEL,
+    ASSISTANT_FALLBACK_MODELS: env.GATEWAY_FALLBACK_MODEL ?? '',
     assistantTransport: gateway.stream, assistantQuota: gateway.quota, verifyCailIdentity }, ctx);
 }
 
 export default {
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(purgeExpiredListeningConversations(env.DB));
+    ctx.waitUntil(runReliableJobs(env));
+    if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -50,8 +53,8 @@ export default {
         const db = await env.DB.prepare('SELECT 1 AS ready').first();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
           remixer: env.REMIXER_ENABLED === 'true', production: false,
-          listeningGuide: { configured: Boolean(env.GATEWAY && canonicalModel(env.GATEWAY_MODEL)),
-            transport: 'cail-gateway', fallbackConfigured: false } });
+          listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
+            transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
       } else if (url.pathname.startsWith('/auth/')) {

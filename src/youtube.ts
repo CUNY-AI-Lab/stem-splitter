@@ -5,6 +5,7 @@
 import { Innertube, type Types } from 'youtubei.js/cf-worker';
 import type { Env } from './env';
 import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
+import { retryAt, UpstreamError } from './reliability/retry.ts';
 
 const MAX_DURATION_SECONDS = 15 * 60; // cost/scope guard for class use
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
@@ -14,9 +15,8 @@ const MODEL_NAME_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const MODEL_VERSION_PATTERN = /^[0-9a-f]{64}$/;
 const SAFE_TOKEN_PATTERN = /^[^\s\u0000-\u001f\u007f]+$/;
 
-// YouTube bot-checks the default WEB client from datacenter IPs; the app
-// clients are usually exempt. Try them in order until one is playable.
-const CLIENTS: Types.InnerTubeClient[] = ['IOS', 'ANDROID', 'TV', 'TV_EMBEDDED', 'WEB_EMBEDDED', 'MWEB', 'WEB'];
+// One supported client. A source restriction is not a reason to rotate clients.
+const CLIENTS: Types.InnerTubeClient[] = ['WEB'];
 
 const REPLICATE_API = 'https://api.replicate.com/v1';
 const REPLICATE_POLL_MS = 2000;
@@ -78,7 +78,7 @@ function replicateConfiguration(env: Env) {
 }
 
 export function parseYouTubeVideoId(url: string): string | null {
-  if (url.length > 2048) return null;
+  if (typeof url !== 'string' || url.length > 2048) return null;
   let u: URL;
   try {
     u = new URL(url.trim());
@@ -134,7 +134,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
     } catch (err) {
       if (
         err instanceof YouTubeError &&
-        ['live_stream', 'video_too_long'].includes(err.code)
+        ['live_stream', 'video_too_long', 'youtube_fetch_blocked', 'youtube_source_denied'].includes(err.code)
       ) {
         throw err;
       }
@@ -163,7 +163,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
   throw new YouTubeError(
     'YouTube blocked this import. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
     'youtube_fetch_blocked',
-    true
+    false
   );
 }
 
@@ -347,7 +347,8 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
         (error instanceof YouTubeError && error.code === 'youtube_fetch_timeout') ||
         Date.now() >= deadline
       ) throw youtubeTimedOut();
-      continue; // client-specific parse/availability failure — try the next one
+      if (/private|sign.?in|age.?restrict|region|country|unavailable|removed|drm|bot|captcha|challenge/i.test(error instanceof Error ? error.message : '')) throw sourceDenied();
+      throw providerUnavailable();
     }
 
     const basic = info.basic_info;
@@ -362,7 +363,7 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
       );
     }
     if (info.playability_status && info.playability_status.status !== 'OK') {
-      continue;
+      throw sourceDenied();
     }
 
     // Audio-only M4A/AAC — Demucs ingests M4A directly, no transcoding needed.
@@ -377,7 +378,8 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
         (error instanceof YouTubeError && error.code === 'youtube_fetch_timeout') ||
         Date.now() >= deadline
       ) throw youtubeTimedOut();
-      continue; // no matching format via this client — try the next one
+      if (/private|sign.?in|age.?restrict|region|country|unavailable|removed|drm|bot|captcha|challenge/i.test(error instanceof Error ? error.message : '')) throw sourceDenied();
+      throw invalidAudioResponse();
     }
     const data = await readBoundedResponse(new Response(stream), {
       maximumBytes: MAX_AUDIO_BYTES,
@@ -398,7 +400,7 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
   throw new YouTubeError(
     'Video is not playable with the available import clients.',
     'youtube_fetch_blocked',
-    true
+    false
   );
 }
 
@@ -769,11 +771,46 @@ function normalizePredictionError(raw: string): YouTubeError {
       true
     );
   }
-  return new YouTubeError(
-    'YouTube blocked this import. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
-    'youtube_fetch_blocked',
-    true
-  );
+  return sourceDenied();
+}
+
+function sourceDenied(): YouTubeError {
+  return new YouTubeError('This source cannot be imported. Upload an original or licensed audio file, use your own Studio/Takeout download, or choose an openly licensed Archive track.','youtube_source_denied',false);
+}
+
+/** Durable coordinator API. Exactly one POST; no polling or client fallbacks
+ * are hidden inside it. A lost response cannot be classified as a failed start.
+ */
+export async function startYouTubeImport(url: string, env: Env, webhook: string): Promise<string> {
+  const config=replicateConfiguration(env), videoId=parseYouTubeVideoId(url);
+  if (!config || !videoId) throw new UpstreamError('import_configuration','rejected');
+  let res: Response;
+  try { res=await fetch(`${REPLICATE_API}/predictions`,{
+    method:'POST',headers:{Authorization:`Bearer ${config.apiToken}`,'Content-Type':'application/json','Cancel-After':'4m'},
+    body:JSON.stringify({version:config.modelVersion,input:{url:`https://www.youtube.com/watch?v=${videoId}`,max_duration:MAX_DURATION_SECONDS},webhook,webhook_events_filter:['completed']}),
+    redirect:'manual',signal:AbortSignal.timeout(20000),
+  }); } catch { throw new UpstreamError('import_start_uncertain','uncertain'); }
+  if (!res.ok) {
+    await res.body?.cancel().catch(()=>undefined);
+    throw new UpstreamError(res.status===429?'provider_capacity':res.status===402?'provider_credit':'import_start_rejected',res.status>=500?'uncertain':'rejected',res.status,
+      res.status===429?retryAt(res.headers.get('retry-after')):0);
+  }
+  try { return (await readPrediction(res,15000)).id; }
+  catch { throw new UpstreamError('import_start_response_unreadable','uncertain'); }
+}
+
+export async function pollYouTubeImport(id: string, env: Env): Promise<YouTubeAudio | null> {
+  if (!PREDICTION_ID_PATTERN.test(id)) throw providerUnavailable();
+  const config=replicateConfiguration(env);
+  if (!config) throw providerUnavailable();
+  const deadline=Date.now()+AUDIO_DOWNLOAD_TIMEOUT_MS;
+  const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
+  if (!res.ok) { await res.body?.cancel(); throw new UpstreamError('import_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0); }
+  const prediction=await readPrediction(res,15000,id);
+  if (prediction.status==='starting'||prediction.status==='processing') return null;
+  if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
+  const data=await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline);
+  return validateFetchedAudio({data,title:prediction.output.title,durationSec:prediction.output.duration});
 }
 
 function invalidAudioResponse(): YouTubeError {

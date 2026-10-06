@@ -8,7 +8,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
-  "triggers": { "crons": ["0 8 * * *"] },
+  "triggers": { "crons": ["* * * * *", "0 8 * * *"] },
   "assets": { "directory": "../public", "binding": "ASSETS", "run_worker_first": true },
   "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
   "d1_databases": [{ "binding": "DB", "database_name": "cail-stem-splitter-preview", "database_id": "ae01c5db-c19e-48c8-91bd-132876276f22" }],
@@ -22,6 +22,7 @@
   "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } }],
   "vars": {
     "GATEWAY_MODEL": "glm-5.2",
+    "GATEWAY_FALLBACK_MODEL": "deepseek-v4-flash-0731",
     "AUTH_MODE": "cail",
     "CAIL_BROWSER_ORIGIN": "https://tools.ailab.gc.cuny.edu",
     "PUBLIC_BASE_URL": "https://cail-stem-splitter-preview.ailab-452.workers.dev",

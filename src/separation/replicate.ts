@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import { DEFAULT_DEMUCS_MODEL, getReplicateRunner, replicateVersion } from './options';
 import type { SeparationBackend, SeparationResult, SeparationStartRequest } from './types';
 import { readBoundedResponse } from '../http/bounded-response.ts';
+import { retryAt, UpstreamError } from '../reliability/retry.ts';
 
 // Replicate-hosted Demucs (ryan5453/demucs), running the htdemucs_ft
 // fine-tuned model with MP3 output. ~$0.04–0.05/song on A40.
@@ -15,6 +16,7 @@ interface ReplicatePrediction {
   status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
   output?: Record<string, string | null>;
   error?: unknown;
+  webhook?: string;
 }
 
 const API = 'https://api.replicate.com/v1';
@@ -34,18 +36,6 @@ export function replicateBackend(env: Env): SeparationBackend {
     'Content-Type': 'application/json',
   };
 
-  // Low-credit accounts get "burst of 1" rate limits; a YouTube import makes
-  // two predictions back-to-back (fetch, then separate), so honor 429s.
-  const fetchRetrying429 = async (url: string, init: RequestInit): Promise<Response> => {
-    for (let attempt = 0; ; attempt++) {
-      const res = await fetch(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(30000) });
-      if (res.status !== 429 || attempt >= 3) return res;
-      await res.body?.cancel().catch(() => undefined);
-      const retryAfter = Number(res.headers.get('retry-after')) || 5;
-      await new Promise((r) => setTimeout(r, Math.min(retryAfter + 1, 15) * 1000));
-    }
-  };
-
   const backend: SeparationBackend = {
     async start(req: SeparationStartRequest): Promise<{ externalId: string }> {
       // The catalogue owns the version and the input shape; this backend only
@@ -59,7 +49,8 @@ export function replicateBackend(env: Env): SeparationBackend {
       if (!version) {
         throw new Error(`${runner.versionVar} is not configured`);
       }
-      const res = await fetchRetrying429(`${API}/predictions`, {
+      let res: Response;
+      try { res = await fetch(`${API}/predictions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -68,13 +59,16 @@ export function replicateBackend(env: Env): SeparationBackend {
           webhook: req.webhookUrl,
           webhook_events_filter: ['completed'],
         }),
-      });
+        redirect: 'manual', signal: AbortSignal.timeout(30000),
+      }); } catch { throw new UpstreamError('start_uncertain','uncertain'); }
       if (!res.ok) {
         await res.body?.cancel().catch(() => undefined);
-        throw new Error(`The separator could not start (${res.status}). Please try again.`);
+        throw new UpstreamError(res.status === 429 ? 'provider_capacity' : res.status === 402 ? 'provider_credit' : 'provider_rejected',
+          res.status >= 500 ? 'uncertain' : 'rejected',res.status,res.status === 429 ? retryAt(res.headers.get('retry-after')) : 0);
       }
-      const prediction = await predictionJson(res);
-      if (typeof prediction.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(prediction.id)) throw new Error('The separator returned an invalid prediction');
+      let prediction: ReplicatePrediction;
+      try { prediction = await predictionJson(res); } catch { throw new UpstreamError('start_response_unreadable','uncertain'); }
+      if (typeof prediction.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(prediction.id)) throw new UpstreamError('start_id_missing','uncertain');
       return { externalId: prediction.id };
     },
 
@@ -100,6 +94,14 @@ export function replicateBackend(env: Env): SeparationBackend {
         throw new Error(`The separator status is unavailable (${res.status}).`);
       }
       return backend.parseResult(await predictionJson(res));
+    },
+
+    async confirmStart(externalId: string, webhookUrl: string): Promise<boolean> {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(externalId)) return false;
+      const res=await fetch(`${API}/predictions/${externalId}`,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});
+      if (!res.ok) { await res.body?.cancel(); return false; }
+      const prediction=await predictionJson(res);
+      return prediction.id===externalId && prediction.webhook===webhookUrl;
     },
   };
 

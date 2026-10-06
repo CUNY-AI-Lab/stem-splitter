@@ -33,4 +33,6 @@ export interface SeparationBackend {
   parseResult(payload: unknown): SeparationResult;
   /** Poll the provider directly (reconciliation fallback if a webhook is missed). */
   fetchStatus(externalId: string): Promise<SeparationResult>;
+  /** Prove an otherwise unknown accepted start belongs to this operation. */
+  confirmStart?(externalId: string, webhookUrl: string): Promise<boolean>;
 }

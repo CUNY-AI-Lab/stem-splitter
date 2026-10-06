@@ -5,7 +5,11 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
-import { reserveDailyRequest, splitAllowance } from './daily-allowance.ts';
+import { splitAllowance, operationAllowance, dailyWindow } from './daily-allowance.ts';
+import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback } from './reliability/splits.ts';
+import { readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
+import { cancelOperation } from './reliability/queue.ts';
+import { reserveAssistant, assistantReceipt } from './reliability/assistant.ts';
 import {
   getRetainedAudio,
   serveStemAudio,
@@ -183,20 +187,6 @@ app.use('/api/*', async (c, next) => {
     c.header('Cache-Control', 'private, no-store');
     const principal = c.get('principal');
     if(principal)c.header('X-Stem-Account',principal.subject);
-    const scope = c.req.method !== 'POST' ? null : c.req.path === '/api/jobs' ? 'split'
-      : !c.env.assistantTransport && /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(c.req.path) ? 'guide' : null;
-    if (scope && principal) {
-      const reservation = await reserveDailyRequest(c.env.DB, principal.subject, scope);
-      if (!reservation.allowed) {
-        c.header('Retry-After', String(reservation.retryAfter));
-        return c.json({
-          error: scope === 'split' ? `You have used today's ${reservation.limit} runs. Your daily limit resets at midnight UTC.`
-            : 'The daily guide allowance has been reached. Please try again tomorrow.',
-          code: scope === 'split' ? 'split_daily_limit' : 'guide_daily_limit',
-          limit: reservation.limit, resetsAt: reservation.resetsAt,
-        }, 429);
-      }
-    }
   } else if (c.req.path.startsWith('/api/teacher/') && !['GET', 'HEAD'].includes(c.req.method)) {
     if (c.req.header('origin') && !validWriteOrigin(c.req.raw, c.env)) return c.json({ error: 'Request origin not allowed' }, 403);
   }
@@ -262,7 +252,9 @@ app.get('/api/account', async (c) => {
   // Usage is informational; an unavailable count must not hide a valid account.
   let allowance = null;
   try { allowance = await splitAllowance(c.env.DB, principal.subject); } catch { /* Report unknown, not zero. */ }
-  return c.json({ account: principal, splitAllowance: allowance });
+  let chatAllowance = null;
+  try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat'); } catch {}
+  return c.json({ account: principal, splitAllowance: allowance, chatAllowance });
 });
 
 app.get('/api/model-quota', async (c) => {
@@ -910,6 +902,12 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 app.post('/api/jobs', requireClassCode, async (c) => {
   const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
   if ('response' in parsed) return parsed.response;
+  if (c.env.AUTH_MODE === 'cail' && c.get('principal')) {
+    const result=await submitSplit(c.env,c.get('principal')!,parsed.value,c.req.header('Idempotency-Key'));
+    try { c.executionCtx.waitUntil(runReliableJobs(c.env)); } catch { await runReliableJobs(c.env); }
+    const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(result.operation.job_id).first<JobRow>();
+    return c.json({...jobResponse(row!), savedToAccount:true, operationId:result.operation.id, replay:!result.created}, result.created?202:200);
+  }
   const body = parsed.value as
     | {
         coursePolicy?: string;
@@ -1233,8 +1231,18 @@ app.get('/api/jobs', async (c) => {
     nextCursor: results.length > 40 && last ? btoa(JSON.stringify({ createdAt: last.created_at, id: last.id })) : null });
 });
 
+app.post('/api/jobs/:id/cancel', requireClassCode, async (c) => {
+  const principal=c.get('principal');
+  if (!principal || !await cancelOperation(c.env.DB,c.req.param('id'),principal.subject)) return c.json({error:'Split not found.'},404);
+  return c.json({ok:true});
+});
+
 app.get('/api/jobs/:id', async (c) => {
   const id = c.req.param('id');
+  if(c.env.AUTH_MODE==='cail') {
+    const operation=await readOperation(c.env.DB,id);
+    if(operation) { await reconcileSplit(c.env,operation,ingestResult); try {c.executionCtx.waitUntil(runReliableJobs(c.env));} catch {} }
+  }
   let row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
 
@@ -1252,7 +1260,7 @@ app.get('/api/jobs/:id', async (c) => {
   // Reconciliation fallback: if we're still 'processing', poll the provider
   // directly in case the completion webhook was missed (also makes local
   // dev work, where webhooks can't reach us).
-  if (row.status === 'processing' && row.external_id) {
+  if (row.status === 'processing' && row.external_id && !(c.env.AUTH_MODE==='cail' && await readOperation(c.env.DB,id))) {
     try {
       const result = await getBackend(c.env).fetchStatus(row.external_id);
       if (result.status !== 'processing') {
@@ -1915,6 +1923,20 @@ app.post('/api/webhooks/separation', async (c) => {
   const jobId = c.req.query('job');
   if (!(await equalSecret(token, c.env.WEBHOOK_SECRET))) return c.text('Forbidden', 403);
   if (!jobId) return c.text('Missing job', 400);
+  if(c.env.AUTH_MODE==='cail') {
+    let operation=await readOperation(c.env.DB,jobId);
+    if(operation) {
+      if(!operation.provider_id) {
+        const parsed=await boundedJson(c,MAX_WEBHOOK_JSON_BYTES);
+        const value=parsed.value as {id?:unknown}|undefined;
+        if(value && typeof value.id==='string') await recoverCallback(c.env,operation,value.id);
+        operation=await readOperation(c.env.DB,jobId);
+      } else await c.req.raw.body?.cancel().catch(()=>undefined);
+      if(operation?.provider_id) await reconcileSplit(c.env,{...operation,not_before:0},ingestResult);
+      try {c.executionCtx.waitUntil(runReliableJobs(c.env));} catch {}
+      return c.json({ok:true});
+    }
+  }
 
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(jobId).first<JobRow>();
   if (!row) return c.text('Unknown job', 404);
@@ -1972,11 +1994,16 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
 app.onError((_error, c) => {
   if(_error instanceof CourseError)return courseErrorResponse(_error);
+  if (_error instanceof OperationError) {
+    if(_error.retryAfter)c.header('Retry-After',String(_error.retryAfter));
+    return c.json({error:_error.message,code:_error.code,resetsAt:dailyWindow().resetsAt},_error.status);
+  }
   console.error(JSON.stringify({ event: 'request_failed', method: c.req.method }));
   return c.json({ error: 'The service is temporarily unavailable. Please try again.' }, 503);
 });
 
 export default app;
+export async function runReliableJobs(env: Env) { return drainSplitQueue(env,ingestResult); }
 
 // --- helpers ------------------------------------------------------------
 
@@ -2037,18 +2064,19 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
         }
       }
       const audio = await downloadStem(stem.name, stem.url);
-      const key = `stems/${jobId}/${stem.name}.mp3`;
+      const key = `stems/${jobId}/${lease.split(':').at(-1)}/${stem.name}.mp3`;
       await env.AUDIO.put(key, audio, {
         httpMetadata: { contentType: 'audio/mpeg' },
       });
       stored.push({ name: stem.name, key });
     }
 
-    await env.DB.prepare(
+    const committed = await env.DB.prepare(
       "UPDATE jobs SET status = ?, stems = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
     )
       .bind('done', JSON.stringify(stored), jobId, lease)
       .run();
+    if (!committed.meta.changes) await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
   } catch (error) {
     const cleanup = await Promise.allSettled(stored.map(({ key }) => env.AUDIO.delete(key)));
     if (cleanup.some((result) => result.status === 'rejected')) {
@@ -2060,6 +2088,10 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
       )
         .bind(error.message, jobId, lease)
         .run();
+      return;
+    }
+    if(env.AUTH_MODE==='cail' && await readOperation(env.DB,jobId)) {
+      await env.DB.prepare("UPDATE jobs SET status='failed',error='The finished audio could not be saved. No successful-split allowance was used.' WHERE id=? AND status='ingesting' AND error=?").bind(jobId,lease).run();
       return;
     }
     // Let a provider retry or the next browser poll make another attempt.

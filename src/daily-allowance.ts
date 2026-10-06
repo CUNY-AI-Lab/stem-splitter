@@ -1,5 +1,6 @@
-/** Request-count guard, not a monetary balance or a substitute for Gateway authorization. */
-export const SIGNED_IN_SPLITS_PER_DAY = 10;
+/** App allowances are independent of provider spend and Gateway authorization. */
+export const SIGNED_IN_SPLITS_PER_DAY = 15;
+export const HUMAN_INPUTS_PER_DAY = 50;
 
 export function dailyWindow(now = new Date()) {
   const day = now.toISOString().slice(0, 10);
@@ -9,12 +10,20 @@ export function dailyWindow(now = new Date()) {
 }
 
 export async function splitAllowance(db: D1Database, subject: string, now = new Date()) {
+  return operationAllowance(db, subject, 'split', now);
+}
+
+export async function operationAllowance(db: D1Database, subject: string, kind: 'split' | 'chat', now = new Date()) {
   const { day, resetsAt } = dailyWindow(now);
-  const row = await db.prepare("SELECT COUNT(*) AS used FROM app_request_reservations WHERE scope = 'split' AND day = ? AND subject = ?")
-    .bind(day, subject).first<{ used: number }>();
+  const row = await db.prepare(`SELECT
+    COALESCE(SUM(CASE WHEN state IN ('succeeded','partial') THEN 1 ELSE 0 END),0) AS completed,
+    COALESCE(SUM(CASE WHEN state NOT IN ('succeeded','partial','failed','cancelled') THEN 1 ELSE 0 END),0) AS inProgress
+    FROM app_operations WHERE kind=? AND day=? AND subject=?`)
+    .bind(kind, day, subject).first<{ completed: number; inProgress: number }>();
   // A missing/corrupt read must never present a full allowance as verified.
-  if (!row || !Number.isSafeInteger(row.used) || row.used < 0) throw new Error('Allowance unavailable');
-  return { limit: SIGNED_IN_SPLITS_PER_DAY, used: row.used, remaining: Math.max(0, SIGNED_IN_SPLITS_PER_DAY - row.used), resetsAt };
+  if (!row || !Number.isSafeInteger(row.completed) || row.completed < 0 || !Number.isSafeInteger(row.inProgress) || row.inProgress < 0) throw new Error('Allowance unavailable');
+  const limit = kind === 'split' ? SIGNED_IN_SPLITS_PER_DAY : HUMAN_INPUTS_PER_DAY;
+  return { limit, completed: row.completed, inProgress: row.inProgress, remaining: Math.max(0, limit-row.completed-row.inProgress), resetsAt };
 }
 
 /** One atomic insert: parallel requests and different isolates share the same count.

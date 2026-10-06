@@ -11,6 +11,10 @@ export type Env = {
   assistantTransport?: typeof import('./assistant/openrouter.ts').openRouterChatStream;
   assistantQuota?: () => Promise<unknown>;
   ASSISTANT_ABORT_SIGNAL?: AbortSignal;
+  /** Trusted logical input, bound to authenticated subject/course by the route. */
+  ASSISTANT_OPERATION_ID?: string;
+  /** Drain/reconcile existing operations while preventing new paid starts. */
+  SPLIT_STARTS_DISABLED?: string;
   CAIL_BROWSER_ORIGIN?: string;
   CAIL_COURSE_IDS?: string;
   /** Literal false pauses course collaboration while retaining owner-only reads. */
