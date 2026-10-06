@@ -124,7 +124,7 @@ el('access-form').addEventListener('submit', async (event) => {
 });
 (async () => {
   try {
-    const { account, splitAllowance } = await request('/api/account');
+    const { account, splitAllowance, chatAllowance } = await request('/api/account');
     subject = account.subject;
     window.StemSessionGuard?.start(subject,()=>{users=[];subject='';});
     accountRole = account.role;
@@ -140,7 +140,11 @@ el('access-form').addEventListener('submit', async (event) => {
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
       const reset = new Date(splitAllowance.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-      el('account-splits').textContent = `${splitAllowance.remaining} of ${splitAllowance.limit} runs left today. Resets ${reset}.`;
+      el('account-splits').textContent = `Splits: ${splitAllowance.completed} completed, ${splitAllowance.inProgress} in progress, ${splitAllowance.remaining} available of ${splitAllowance.limit}. Resets ${reset}.`;
+    }
+    if (chatAllowance && Number.isInteger(chatAllowance.completed) && Number.isInteger(chatAllowance.inProgress) && Number.isInteger(chatAllowance.remaining)) {
+      const reset=new Date(chatAllowance.resetsAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+      el('account-chat').textContent=`Listening Guy: ${chatAllowance.completed} inputs answered, ${chatAllowance.inProgress} in progress, ${chatAllowance.remaining} available of ${chatAllowance.limit}. Partial replies count once. Resets ${reset}.`;
     }
     try {
       const { quota } = await request('/api/model-quota');

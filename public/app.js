@@ -204,17 +204,28 @@ async function ensureClassCode() {
   }
 }
 
+async function splitRequestKey(body) {
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`${selectedCourse}\0${body || ''}`))),b=>b.toString(16).padStart(2,'0')).join('');
+  const slot=`pendingSplit:${hash}`;
+  let key;
+  try { key=sessionStorage.getItem(slot); } catch {}
+  if(!key) {key=crypto.randomUUID();try {sessionStorage.setItem(slot,key);}catch {}}
+  return {key,slot};
+}
+
 async function api(path, options = {}) {
   if (runtime.authMode === 'cail' && selectedCourse !== 'personal' && options.method === 'POST' && ['/api/uploads','/api/jobs'].includes(path)) {
     if (!document.getElementById('course-consent').checked) throw new Error('Confirm the course visibility notice before creating course work.');
     if (path === '/api/jobs') options = { ...options, body: JSON.stringify({ ...JSON.parse(options.body || '{}'), coursePolicy:'course-work-v1' }) };
   }
+  const pending=path==='/api/jobs' && options.method==='POST' ? await splitRequestKey(options.body) : null;
   const res = await fetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'x-class-code': getClassCode(),
       ...(runtime.authMode==='cail'?{'x-stem-course':selectedCourse}:{}),
+      ...(pending ? {'Idempotency-Key':pending.key} : {}),
       ...(options.headers || {}),
     },
   });
@@ -226,9 +237,10 @@ async function api(path, options = {}) {
     throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
+  if(pending && (res.ok || res.status<500 && res.status!==429)) {try{sessionStorage.removeItem(pending.slot);}catch{}}
   if (res.status === 429 && body.code === 'split_daily_limit' && Number.isFinite(Date.parse(body.resetsAt))) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-    throw new Error(`You've used today's runs. You can split again ${reset}.`);
+    throw new Error(`Today's 15 places are completed or in progress. Available places reset ${reset}. Failed splits do not count as completed.`);
   }
   if (!res.ok) throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`),{status:res.status});
   return body;
@@ -238,9 +250,10 @@ async function api(path, options = {}) {
 // each `data:` JSON event. Setup failures are plain JSON with a real status;
 // mid-stream failures arrive as {type:'error'} events, which throw here.
 async function streamApi(path, body, onEvent, signal) {
+  if(path.endsWith('/chat') && !body.messageId) body={...body,messageId:crypto.randomUUID()};
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode() },
+    headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode(), ...(body.messageId ? {'Idempotency-Key':body.messageId} : {}) },
     body: JSON.stringify(body),
     signal,
   });
@@ -1305,6 +1318,9 @@ function showUploadMessage(message, isError = false) {
 }
 
 function processingMessage(job, noun = 'splits') {
+  if(job.status==='queued')return 'Saved to your account and queued. You can close this tab; the split will continue.';
+  if(job.status==='importing')return 'Importing the permitted source audio. Your successful-split allowance has not been charged.';
+  if(job.status==='reconciling')return 'Checking the provider response for this saved request. Please do not submit it again. The successful-split count has not changed.';
   const route = job.autoRouting;
   let prefix = 'PROCESSING';
   const reason = route?.analysis?.decision?.reason;
