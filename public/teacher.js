@@ -40,13 +40,17 @@ let loadedRevision = 0;
 let showingPromptTop = false;
 let historyNextBeforeId = null;
 let historyLoading = false;
+let selectedCourse=null;
+let courseMode=false;
 
 async function api(path, options = {}) {
+  if(courseMode&&path.startsWith('/api/teacher/prompt'))path=path.replace('/api/teacher/prompt',`/api/classroom/courses/${encodeURIComponent(selectedCourse)}/prompt`);
   const res = await fetch(path, {
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   });
+  window.StemSessionGuard?.observe(res);
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`), {
@@ -439,6 +443,22 @@ historyMoreBtn.addEventListener('click', async () => {
         link.textContent = 'CUNY Login';
         signinPanel.append(link);
       }
+    }
+    if(cail){
+      const {account}=await api('/api/account');window.StemSessionGuard?.start(account.subject,()=>{selectedCourse=null;courseMode=false;loadedAmendment='';amendment.value='';changeNote.value='';});
+      const courses=[];let cursor=null;
+      do{const page=await api('/api/classroom/courses'+(cursor?`?cursor=${encodeURIComponent(cursor)}`:''));courses.push(...page.courses.filter(course=>course.owner));cursor=page.nextCursor;}while(cursor);
+      if(!courses.length){showPanel(false);signinPanel.querySelector('p').textContent='Current course ownership is required to review students or edit course instructions.';return;}
+      courseMode=true;const select=document.getElementById('teacher-course');
+      for(const course of courses)select.add(new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId));
+      const requested=new URLSearchParams(location.search).get('course');selectedCourse=courses.some(c=>c.classId===requested)?requested:courses[0].classId;select.value=selectedCourse;
+      document.getElementById('teacher-courses').hidden=false;
+      const setRoster=()=>{document.getElementById('teacher-roster').href=`/classroom.html?course=${encodeURIComponent(selectedCourse)}`;};setRoster();
+      select.addEventListener('change',async()=>{
+        if(amendment.value.trim()!==loadedAmendment&&!confirm('Discard unsaved course instructions?')){select.value=selectedCourse;return;}
+        selectedCourse=select.value;setRoster();try{await loadPrompt();showStatus('');}catch(error){showStatus(error.message,true);}
+      });
+      await loadPrompt();showPanel(true,{displayName:courses.find(c=>c.classId===selectedCourse).displayName||'Instructor'});return;
     }
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
