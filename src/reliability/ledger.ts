@@ -16,8 +16,8 @@ export const MAX_SPLIT_ATTEMPTS_PER_DAY = 40;
 export const MAX_CHAT_ATTEMPTS_PER_DAY = 80;
 export const validOperationKey = (key: unknown): key is string => typeof key === 'string' && /^[a-zA-Z0-9_-]{16,80}$/.test(key);
 export class OperationError extends Error {
-  code: string; status: 400|409|429|503; retryAfter: number;
-  constructor(code: string, status: 400 | 409 | 429 | 503, message: string, retryAfter = 0) { super(message);this.code=code;this.status=status;this.retryAfter=retryAfter; }
+  code: string; status: 400|404|409|429|503; retryAfter: number;
+  constructor(code: string, status: 400 | 404 | 409 | 429 | 503, message: string, retryAfter = 0) { super(message);this.code=code;this.status=status;this.retryAfter=retryAfter; }
 }
 export async function fingerprint(value: unknown): Promise<string> {
   const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
@@ -77,7 +77,7 @@ export async function settleOperation(db: D1Database, id: string, state: 'succee
     WHERE id=? AND state NOT IN (${TERMINAL}) AND (? IS NULL OR fence=?)
     AND (? NOT IN ('succeeded','partial') OR cancel_requested=0)`)
     .bind(state,code,result === null ? null : JSON.stringify(result),Date.now(),id,fence ?? null,fence ?? null,state).run();
-  return update.meta.changes === 1;
+  return update.meta.changes > 0;
 }
 export async function beginAttempt(db: D1Database, operation: Operation, provider: string, model?: string) {
   const id=crypto.randomUUID(), now=Date.now();

@@ -183,7 +183,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page).toHaveTitle('Stem Splitter · Account');
     await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
-    await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
+    await expect(page.locator('#account-splits')).toContainText('Splits: 0 completed, 0 in progress, 15 available of 15. Resets');
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
@@ -257,7 +257,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     })) await expect(resources.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
     await expect(page.locator('footer')).toContainText('Built through the Critical AI Literacy Institute.');
     await expect(page.locator('footer')).toContainText('Uploaded files are deleted after 90 days.');
-    await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
+    await expect(page.locator('#account-splits')).toContainText('Splits: 0 completed, 0 in progress, 15 available of 15. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeHidden();
     await page.getByText('Account ID', { exact: true }).click();
@@ -268,7 +268,12 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     const day = new Date().toISOString().slice(0, 10);
     await seed(Array.from({ length: 10 }, (_, index) => `INSERT INTO app_request_reservations (id, subject, scope, day) VALUES ('account-split-${index}', '${TEST_SUBJECTS.alice}', 'split', '${day}')`));
     await page.reload();
-    await expect(page.locator('#account-splits')).toContainText('0 of 10 runs left today. Resets');
+    await expect(page.locator('#account-splits')).toContainText('15 available of 15'); // historical attempts are not manufactured successes
+    await expect(page.locator('#account-chat')).toContainText('50 available of 50');
+    const clock=Date.now();
+    await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
+    await page.reload();
+    await expect(page.locator('#account-splits')).toContainText('Splits: 8 completed, 7 in progress, 0 available of 15. Resets');
     await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toBeVisible();
     if (receipts) await page.screenshot({ path: `${receipts}/account-exhausted-mobile-fixture.png`, fullPage: true });
     // A counter outage is not zero usage, a failed sign-in, or a full allowance.

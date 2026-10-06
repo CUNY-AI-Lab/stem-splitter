@@ -1,6 +1,7 @@
 import classroomRoutes from './classroom/routes.ts';
 import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
+import { coursePrompt } from './classroom/prompts.ts';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -10,6 +11,7 @@ import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback } from '.
 import { readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt } from './reliability/assistant.ts';
+import { validMp3Frames } from './reliability/media.ts';
 import {
   getRetainedAudio,
   serveStemAudio,
@@ -1283,7 +1285,8 @@ app.get('/api/jobs/:id', async (c) => {
   const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
   const principal = c.get('principal');
   const permission = principal ? await jobPermission(c.env, principal, id) : null;
-  return c.json({ ...jobResponse(row, results ?? [], guide), annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+  const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
+  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
     courseId:permission?.courseId??null, permissions:permission, publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
@@ -1754,12 +1757,23 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
+  const principal=c.get('principal');
+  const cachedGuide=await getGuide(c.env,id);
+  if(cachedGuide)return sseResponse(c,async emit=>{await emit({type:'done',text:cachedGuide.text,model:cachedGuide.model,createdAt:cachedGuide.createdAt,cached:true,finishReason:'stop'});});
+  const scope=await jobCourse(c.env,id);
+  const prompt=await coursePrompt(c.env,scope?.course_id ?? null);
+  const guideKey=await fingerprint([id,scope?.course_id ?? null,prompt.revision,await hashSystemPromptFingerprint(prompt.amendment),Math.floor(Date.now()/300000)]);
+  const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,{guideKey}):null;
+  const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   return sseResponse(c, async (emit, signal) => {
-    const { guide, cached } = await streamGuide(
-      { ...c.env, ASSISTANT_ABORT_SIGNAL: signal }, row, results ?? [], parseDuration(body?.durationSec),
-      (text) => emit({ type: 'delta', text })
-    );
-    await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
+    try {
+      const { guide, cached } = await streamGuide(
+        { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id,assistantEffectIntent:()=>receipt?.effect() ?? Promise.resolve() }, row, results ?? [], parseDuration(body?.durationSec),
+        async text => {await receipt?.delta(text);await emit({type:'delta',text});}
+      );
+      await receipt?.complete(guide.text);
+      await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
+    } catch(error) {await receipt?.failed();throw error;}
   });
 });
 
@@ -1890,29 +1904,50 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     .all<AnnotationRow>();
 
   const course = await jobCourse(c.env,id);
+  const principal=c.get('principal');
+  if(course && (!Number.isSafeInteger(body?.revision) || Number(body?.revision)<0)) return c.json({error:'Reload this conversation before sending.'},400);
+  const inputKey=typeof body?.messageId==='string'?body.messageId:c.req.header('Idempotency-Key') ?? '';
+  const reservation=principal?await reserveAssistant(c.env,principal.subject,course?.course_id ?? null,'chat',inputKey,id,
+    [id,course?.course_id ?? null,course?[turns.at(-1),body?.revision]:turns,parseDuration(body?.durationSec)]):null;
+  const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   let durable: Awaited<ReturnType<typeof beginCourseTurn>> | null = null;
   if (course) {
     try { durable = await beginCourseTurn(c.env,id,c.get('principal')!,turns.at(-1)!.content,body?.messageId,body?.revision); }
-    catch(error) { if(error instanceof CourseError)return courseErrorResponse(error);throw error; }
+    catch(error) {await receipt?.failed();if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
   }
   return sseResponse(c, async (emit, signal) => {
-    if (durable?.replay) {
-      await emit({type:'done',text:durable.replay.reply??'',finishReason:durable.replay.finish_reason??'stop',revision:durable.replay.revision,replayed:true});return;
-    }
     let streamed = '';
-    let result;
-    try { result = await streamChat(
-      { ...c.env, ASSISTANT_ABORT_SIGNAL: signal }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
-      (text) => { streamed += text; return emit({ type: 'delta', text }); }
-    ); } catch(error) {
-      if(durable) await finishCourseTurn(c.env,id,c.get('principal')!.subject,durable.turnId,durable.claimId,{reply:streamed,toolCalls:[],finishReason:'error'},true);
-      throw error;
+    try {
+      if(durable?.replay) {await receipt?.failed();throw new AssistantError(503,'This input was already accepted. Reload the conversation before continuing.');}
+      const result = await streamChat(
+        { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
+        async text => {
+          if(durable && !await c.env.DB.prepare(`SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`)
+            .bind(id,principal!.subject,durable.claimId).first()) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');
+          streamed+=text;await receipt?.delta(text);await emit({type:'delta',text});
+        }
+      );
+      await receipt?.effect();
+      const revision = durable ? await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,result,false,principal!.displayName) : undefined;
+      if(durable && revision===null) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');
+      // A personal note also has a durable operation/call identity. Completion
+      // replay cannot add it twice. Course notes are fenced in finishCourseTurn.
+      if(principal && reservation && !durable) {
+        for(const [index,call] of result.toolCalls.entries()) if(call.name==='add_note') {
+          await c.env.DB.prepare(`INSERT OR IGNORE INTO annotations(id,job_id,at_seconds,text,author_subject,author_name,provenance)
+            SELECT ?,?,?,?,?,?,'server-assistant' WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND state='running')`)
+            .bind(`${reservation.operation.id}-${index}`,id,Number(call.args.seconds),String(call.args.text),principal.subject,principal.displayName,reservation.operation.id).run();
+        }
+      }
+      const calls=principal?result.toolCalls.filter(call=>call.name!=='add_note'):result.toolCalls;
+      await receipt?.complete(result.reply);
+      if(calls.length)await emit({type:'tool_calls',calls,operationId:reservation?.operation.id});
+      await emit({type:'done',text:result.reply,finishReason:result.finishReason,operationId:reservation?.operation.id,
+        ...(revision===undefined?{}:{revision}),notesChanged:!!principal&&result.toolCalls.some(call=>call.name==='add_note')});
+    } catch(error) {
+      if(durable)await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,{reply:streamed,toolCalls:[],finishReason:'error'},true);
+      await receipt?.failed();throw error;
     }
-    const revision = durable ? await finishCourseTurn(c.env,id,c.get('principal')!.subject,durable.turnId,durable.claimId,result,false,c.get('principal')!.displayName) : undefined;
-    if(durable && revision===null) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');
-    const calls = durable ? result.toolCalls.filter(call => call.name !== 'add_note') : result.toolCalls;
-    if (calls.length) await emit({ type: 'tool_calls', calls });
-    await emit({ type: 'done', text: result.reply, finishReason: result.finishReason, ...(revision===undefined?{}:{revision,notesChanged:result.toolCalls.some(call=>call.name==='add_note')}) });
   });
 });
 
@@ -1926,13 +1961,18 @@ app.post('/api/webhooks/separation', async (c) => {
   if(c.env.AUTH_MODE==='cail') {
     let operation=await readOperation(c.env.DB,jobId);
     if(operation) {
+      // A delayed import callback must never recover a separator prediction.
+      if(c.req.query('phase')!==operation.phase) {await c.req.raw.body?.cancel().catch(()=>undefined);return c.json({ok:true});}
       if(!operation.provider_id) {
         const parsed=await boundedJson(c,MAX_WEBHOOK_JSON_BYTES);
         const value=parsed.value as {id?:unknown}|undefined;
         if(value && typeof value.id==='string') await recoverCallback(c.env,operation,value.id);
         operation=await readOperation(c.env.DB,jobId);
       } else await c.req.raw.body?.cancel().catch(()=>undefined);
-      if(operation?.provider_id) await reconcileSplit(c.env,{...operation,not_before:0},ingestResult);
+      if(operation?.provider_id) {
+        await c.env.DB.prepare('UPDATE app_operations SET not_before=0 WHERE id=?').bind(operation.id).run();
+        await reconcileSplit(c.env,operation,ingestResult);
+      }
       try {c.executionCtx.waitUntil(runReliableJobs(c.env));} catch {}
       return c.json({ok:true});
     }
@@ -2063,7 +2103,8 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
           throw new InvalidStemAudioError('The separator returned an unsupported audio address');
         }
       }
-      const audio = await downloadStem(stem.name, stem.url);
+      const audio = await downloadStem(stem.name, stem.url,env.AUTH_MODE==='cail');
+      if(env.AUTH_MODE==='cail' && (!env.validateStemAudio || !await env.validateStemAudio(audio))) throw new InvalidStemAudioError('The separator returned audio that could not be decoded. No successful-split allowance was used.');
       const key = `stems/${jobId}/${lease.split(':').at(-1)}/${stem.name}.mp3`;
       await env.AUDIO.put(key, audio, {
         httpMetadata: { contentType: 'audio/mpeg' },
@@ -2106,7 +2147,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
 
 class InvalidStemAudioError extends Error {}
 
-async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
+async function downloadStem(name: string, url: string, strict = false): Promise<ArrayBuffer> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -2135,7 +2176,7 @@ async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
             unreadable: () => new Error('Audio download could not be read'),
           },
         });
-        if (!looksLikeMp3(audio)) {
+        if (!(strict ? validMp3Frames(audio) : looksLikeMp3(audio))) {
           lastError = new InvalidStemAudioError(
             `The "${name}" track was empty or was not a playable MP3`
           );

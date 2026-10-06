@@ -1,3 +1,5 @@
+import { youtubeImportConfiguration } from '../src/youtube.ts';
+import { validateStemAudio } from './audio-validator.ts';
 import app, { runReliableJobs } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
@@ -31,12 +33,12 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
   const gateway = gatewayForRequest(env.GATEWAY, request.headers.get('x-cail-gateway-identity-jwt'), request, env.RELEASE || 'candidate');
   return app.fetch(request, { ...env, ASSISTANT_MODEL: env.GATEWAY_MODEL,
     ASSISTANT_FALLBACK_MODELS: env.GATEWAY_FALLBACK_MODEL ?? '',
-    assistantTransport: gateway.stream, assistantQuota: gateway.quota, verifyCailIdentity }, ctx);
+    assistantTransport: gateway.stream, assistantQuota: gateway.quota, verifyCailIdentity, validateStemAudio }, ctx);
 }
 
 export default {
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runReliableJobs(env));
+    ctx.waitUntil(runReliableJobs({...env,validateStemAudio}));
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
@@ -53,6 +55,7 @@ export default {
         const db = await env.DB.prepare('SELECT 1 AS ready').first();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
           remixer: env.REMIXER_ENABLED === 'true', production: false,
+          youtubeImport: {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
           listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
             transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
       } else if (env.AUTH_MODE !== 'cail') {

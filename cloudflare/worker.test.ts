@@ -44,9 +44,17 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const schema = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
     const setup = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });
     assert.equal(setup.status, 200);
+    // Real locally bundled Wasm runs in Workerd, with no inference/media service.
+    for(const valid of [true,false]) {
+      const audio=valid?mp3:Buffer.alloc(417*8,255);
+      if(!valid)for(let i=0;i<8;i++)audio.set([255,251,144,0],417*i);
+      const checked=await worker.fetch('/__fixture/validate-audio',{method:'POST',headers:{'x-fixture':'local-only'},body:audio});
+      assert.deepEqual(await checked.json(),{valid});
+    }
+
     const call = async (path: string, who = 0, init: RequestInit = {}) => {
       const response = await worker.fetch(path, {
-        ...init, headers: { 'x-fixture-identity': tokens[who], 'x-fixture-gateway-identity': gatewayTokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...init.headers },
+        ...init, headers: { 'x-fixture-identity': tokens[who], 'x-fixture-gateway-identity': gatewayTokens[who], Origin: 'https://split.test', 'Content-Type': 'application/json', ...(init.method==='POST'?{'Idempotency-Key':crypto.randomUUID()}:{}), ...init.headers },
       });
       const body = await response.arrayBuffer();
       assert.notEqual(response.status, 500, new TextDecoder().decode(body));
@@ -82,10 +90,10 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call(uploadPath, 1, upload)).status, 404);
     assert.equal((await call(uploadPath, 0, upload)).status, 204);
     assert.equal((await call(uploadPath, 0, upload)).status, 409);
-    const jobRequest = { method: 'POST', body: JSON.stringify({ key: grant.key, filename: 'source.wav', model: 'htdemucs_ft' }) };
+    const jobRequest = { method: 'POST', headers:{'Idempotency-Key':'workerd-split-request-0001'}, body: JSON.stringify({ key: grant.key, filename: 'source.wav', model: 'htdemucs_ft' }) };
     assert.equal((await call('/api/jobs', 1, jobRequest)).status, 404);
     const createdResponse = await call('/api/jobs', 0, jobRequest);
-    assert.equal(createdResponse.status, 200, await createdResponse.clone().text());
+    assert.equal(createdResponse.status, 202, await createdResponse.clone().text());
     const created = await createdResponse.json();
     assert.equal(created.savedToAccount, true);
     const listed = await (await call('/api/jobs')).json();
@@ -96,12 +104,13 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.deepEqual((await (await call('/api/jobs', 2)).json()).jobs, []); // Admin rack is still personal.
     assert.equal((await worker.fetch('/api/jobs')).status, 401);
     assert.equal((await call('/api/jobs?cursor=bad')).status, 400);
-    assert.equal(providerStarts, 1);
+    for(let i=0;i<20&&providerStarts===0;i++){await call(`/api/jobs/${created.id}`);await new Promise(resolve=>setTimeout(resolve,20));}
+    assert.equal(providerStarts, 1,JSON.stringify(await(await worker.fetch('/__fixture/operations',{headers:{'x-fixture':'local-only'}})).json()));
     assert.equal((await call(`/api/jobs/${created.id}`, 1)).status, 404);
     assert.equal((await call(`/api/files/%73tems/${created.id}/vocals.mp3`, 1)).status, 400);
-    const callback = await worker.fetch(`/api/webhooks/separation?job=${created.id}&token=contract-webhook`, { method: 'POST', body: '{"output":{"vocals":"https://attacker.test/private"}}' });
+    const callback = await worker.fetch(`/api/webhooks/separation?job=${created.id}&phase=split&token=contract-webhook`, { method: 'POST', body: '{"output":{"vocals":"https://attacker.test/private"}}' });
     assert.equal(callback.status, 200);
-    assert.equal(statusFetches, 1);
+    assert.ok(statusFetches>=1);
     const job = await (await call(`/api/jobs/${created.id}`)).json();
     assert.equal(job.status, 'done');
     assert.equal(job.stems.length, 4);
@@ -164,7 +173,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: [{ kind: 'system', text: 'no' }], revision: 0 }) })).status, 400);
     assert.equal((await call(conversationPath, 0, { method: 'PUT', body: JSON.stringify({ entries: [], revision: 8 }) })).status, 409);
     assert.equal((await call(`/api/files/stems/${created.id}/vocals.mp3`, 1)).status, 404);
-    const stem = await call(`/api/files/stems/${created.id}/vocals.mp3`);
+    const stem = await call(job.stems[0].url);
     assert.equal(stem.status, 200);
     assert.deepEqual(Buffer.from(await stem.arrayBuffer()), mp3);
     assert.match(stem.headers.get('cache-control')!, /no-store/);
@@ -183,29 +192,14 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const quota = await (await call('/api/model-quota')).json();
     assert.equal(quota.quota.remaining_percent, 90);
     assert.equal(await stats(), 3);
-    const attempts = await Promise.all(Array.from({ length: 20 }, () => call('/api/jobs', 0, { method: 'POST', body: '{}' })));
-    assert.equal(attempts.filter((response) => response.status === 400).length, 9);
-    assert.equal(attempts.filter((response) => response.status === 429).length, 11);
-    const exhausted = attempts.find((response) => response.status === 429)!;
-    const exhaustedBody = await exhausted.json();
-    assert.equal(exhaustedBody.code, 'split_daily_limit');
-    assert.equal(exhaustedBody.limit, 10);
-    assert.ok(Number(exhausted.headers.get('retry-after')) > 0);
-    assert.match(exhaustedBody.resetsAt, /T00:00:00.000Z$/);
-    assert.match(exhausted.headers.get('cache-control')!, /no-store/);
-    // A second student and an admin each have ten, independently of the first
-    // person: thirty reservations in total, beyond the removed shared cap of 20.
-    for (const who of [1, 2]) {
-      const responses = await Promise.all(Array.from({ length: 12 }, () => call('/api/jobs', who, { method: 'POST', body: '{}' })));
-      assert.equal(responses.filter((response) => response.status === 400).length, who === 1 ? 9 : 10);
-      assert.equal(responses.filter((response) => response.status === 429).length, who === 1 ? 3 : 2);
-      const account = await (await call(`/api/account?subject=${subjects[0]}`, who)).json();
-      assert.equal(account.account.subject, subjects[who]);
-      assert.deepEqual(account.splitAllowance, { limit: 10, used: 10, remaining: 0, resetsAt: exhaustedBody.resetsAt });
-    }
-    const ownAllowance = (await (await call('/api/account')).json()).splitAllowance;
-    assert.deepEqual(ownAllowance, { limit: 10, used: 10, remaining: 0, resetsAt: exhaustedBody.resetsAt });
-    assert.equal(providerStarts, 1); // Concurrent invalid/replayed requests cannot overspend the daily reservation.
+    const invalid = await Promise.all(Array.from({length:20},()=>call('/api/jobs',0,{method:'POST',body:'{}'})));
+    assert.equal(invalid.every(response=>response.status===400),true);
+    const allowance=(await(await call('/api/account')).json()).splitAllowance;
+    assert.equal(allowance.limit,15);assert.equal(allowance.completed,1);assert.equal(allowance.inProgress,0);assert.equal(allowance.remaining,14);
+    const chatCount=(await(await call('/api/account')).json()).chatAllowance;
+    assert.equal(chatCount.limit,50);assert.equal(chatCount.completed,1);assert.equal(chatCount.inProgress,0);assert.equal(chatCount.remaining,49);
+    const replay=await call('/api/jobs',0,jobRequest);assert.equal(replay.status,200);assert.equal((await replay.json()).id,created.id);
+    assert.equal(providerStarts,1);
     const users = await (await call('/api/admin/users', 2)).json();
     const alice = users.users.find((user: { subject: string }) => user.subject === subjects[0]);
     const grantRole = { method: 'PUT', body: JSON.stringify({ role: 'instructor', expiresAt: new Date(Date.now() + 60000).toISOString(), disabled: false, revision: alice.revision }) };

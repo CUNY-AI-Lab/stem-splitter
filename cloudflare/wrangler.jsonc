@@ -21,6 +21,7 @@
   ],
   "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } }],
   "vars": {
+    "YOUTUBE_FETCH_ORDER": "replicate-first",
     "GATEWAY_MODEL": "glm-5.2",
     "GATEWAY_FALLBACK_MODEL": "deepseek-v4-flash-0731",
     "AUTH_MODE": "cail",

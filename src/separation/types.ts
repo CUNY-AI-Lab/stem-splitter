@@ -34,5 +34,5 @@ export interface SeparationBackend {
   /** Poll the provider directly (reconciliation fallback if a webhook is missed). */
   fetchStatus(externalId: string): Promise<SeparationResult>;
   /** Prove an otherwise unknown accepted start belongs to this operation. */
-  confirmStart?(externalId: string, webhookUrl: string): Promise<boolean>;
+  confirmStart?(externalId: string, webhookUrl: string, version: string): Promise<boolean>;
 }

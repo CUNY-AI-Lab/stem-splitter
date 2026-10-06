@@ -60,7 +60,7 @@ export interface YouTubeAudio {
   durationSec: number;
 }
 
-function replicateConfiguration(env: Env) {
+export function replicateConfiguration(env: Env) {
   const modelName = env.REPLICATE_YT_MODEL ?? '';
   const modelVersion = env.REPLICATE_YT_MODEL_VERSION ?? '';
   const apiToken = env.REPLICATE_API_TOKEN ?? '';
@@ -75,6 +75,13 @@ function replicateConfiguration(env: Env) {
     return null;
   }
   return { modelName, modelVersion, apiToken };
+}
+
+export function youtubeImportConfiguration(env: Env) {
+  const values=[env.REPLICATE_YT_MODEL,env.REPLICATE_YT_MODEL_VERSION,env.REPLICATE_API_TOKEN];
+  if(values.every(v=>!v))return 'unconfigured';
+  if(values.some(v=>!v))return 'incomplete';
+  return replicateConfiguration(env)?'configured':'invalid';
 }
 
 export function parseYouTubeVideoId(url: string): string | null {
@@ -95,15 +102,15 @@ export function parseYouTubeVideoId(url: string): string | null {
   const host = u.hostname.toLowerCase().replace(/^(www|m)\./, '');
   let videoId: string | null = null;
   if (host === 'youtu.be') {
-    videoId = u.pathname.slice(1).split('/')[0] || null;
+    videoId = /^\/[A-Za-z0-9_-]{11}\/?$/.test(u.pathname) ? u.pathname.split('/')[1] : null;
   } else if (
     host === 'youtube.com' ||
     host === 'music.youtube.com' ||
     host === 'youtube-nocookie.com'
   ) {
     if (u.pathname === '/watch') {
-      videoId = u.searchParams.get('v');
-    } else if (/^\/(shorts|embed|live)\//.test(u.pathname)) {
+      videoId = u.searchParams.getAll('v').length===1 ? u.searchParams.get('v') : null;
+    } else if (/^\/(shorts|embed|live)\/[A-Za-z0-9_-]{11}\/?$/.test(u.pathname)) {
       videoId = u.pathname.split('/')[2] || null;
     }
   }
@@ -293,6 +300,10 @@ export function createInnertubeFetch(deadline: number): typeof fetch {
       }
 
       if (![301, 302, 303, 307, 308].includes(response.status)) {
+        if(response.status===401||response.status===403) {
+          await response.body?.cancel().catch(()=>undefined);
+          throw sourceDenied();
+        }
         return isInnertubeAudioHost(url)
           ? response
           : boundedInnertubeControlResponse(response, deadline);
@@ -343,6 +354,7 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
     try {
       info = await withDeadline(() => yt.getBasicInfo(videoId, { client }), deadline);
     } catch (error) {
+      if(error instanceof YouTubeError&&!error.retryable)throw error;
       if (
         (error instanceof YouTubeError && error.code === 'youtube_fetch_timeout') ||
         Date.now() >= deadline
@@ -374,6 +386,7 @@ async function fetchViaInnertube(videoId: string): Promise<YouTubeAudio> {
         deadline
       );
     } catch (error) {
+      if(error instanceof YouTubeError&&!error.retryable)throw error;
       if (
         (error instanceof YouTubeError && error.code === 'youtube_fetch_timeout') ||
         Date.now() >= deadline
@@ -771,7 +784,12 @@ function normalizePredictionError(raw: string): YouTubeError {
       true
     );
   }
-  return sourceDenied();
+  if (/extractor_dependency_missing/.test(message)) return new YouTubeError('The audio importer needs maintenance. Upload an original or licensed file for now.','extractor_dependency_missing');
+  if (/extractor_timeout/.test(message)) return new YouTubeError('The audio import timed out. Try a shorter source or upload an original or licensed file.','extractor_timeout',true);
+  if (/invalid_audio_response/.test(message)) return new YouTubeError('The source did not produce usable audio. Try another source or upload an original or licensed file.','invalid_audio_response');
+  if (/extractor_failed|extractor_response_too_large/.test(message)) return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
+  if (/source_denied|sign.?in|log.?in|captcha|challenge|bot|cookie|private|age.?restrict|not available|unavailable|removed|region|geo.?block|copyright|DRM/i.test(message)) return sourceDenied();
+  return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
 }
 
 function sourceDenied(): YouTubeError {
@@ -804,9 +822,12 @@ export async function pollYouTubeImport(id: string, env: Env): Promise<YouTubeAu
   const config=replicateConfiguration(env);
   if (!config) throw providerUnavailable();
   const deadline=Date.now()+AUDIO_DOWNLOAD_TIMEOUT_MS;
-  const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
-  if (!res.ok) { await res.body?.cancel(); throw new UpstreamError('import_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0); }
-  const prediction=await readPrediction(res,15000,id);
+  let prediction: YtPrediction;
+  try {
+    const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
+    if (!res.ok) { await res.body?.cancel(); throw new UpstreamError('import_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0); }
+    prediction=await readPrediction(res,15000,id);
+  } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
   if (prediction.status==='starting'||prediction.status==='processing') return null;
   if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
   const data=await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline);

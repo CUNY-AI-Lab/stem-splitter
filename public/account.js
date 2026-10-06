@@ -136,7 +136,7 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-reference').hidden = false;
     el('account-guidance').hidden = !(['admin', 'instructor'].includes(account.role)||account.course?.owner);
     el('account-admin').hidden = account.role !== 'admin';
-    if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
+    if (splitAllowance && Number.isInteger(splitAllowance.completed) && Number.isInteger(splitAllowance.inProgress) && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
       const reset = new Date(splitAllowance.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
@@ -144,7 +144,7 @@ el('access-form').addEventListener('submit', async (event) => {
     }
     if (chatAllowance && Number.isInteger(chatAllowance.completed) && Number.isInteger(chatAllowance.inProgress) && Number.isInteger(chatAllowance.remaining)) {
       const reset=new Date(chatAllowance.resetsAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
-      el('account-chat').textContent=`Listening Guy: ${chatAllowance.completed} inputs answered, ${chatAllowance.inProgress} in progress, ${chatAllowance.remaining} available of ${chatAllowance.limit}. Partial replies count once. Resets ${reset}.`;
+      el('account-chat').textContent=`Listening Guy: ${chatAllowance.completed} inputs counted, ${chatAllowance.inProgress} in progress, ${chatAllowance.remaining} available of ${chatAllowance.limit}. Partial replies and replies whose delivery could not be confirmed count once. Resets ${reset}.`;
     }
     try {
       const { quota } = await request('/api/model-quota');

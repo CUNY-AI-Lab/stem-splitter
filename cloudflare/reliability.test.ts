@@ -1,0 +1,146 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { SqliteD1 } from '../server/d1.ts';
+import { FsR2Bucket } from '../server/r2.ts';
+import type { Env } from '../src/env.ts';
+import { beginAttempt, finishAttempt, readOperation, reserveOperation, settleOperation } from '../src/reliability/ledger.ts';
+import { cancelOperation, claimNext, recoverExpired, transition } from '../src/reliability/queue.ts';
+import { drainSplitQueue, operationWebhook, recoverCallback, reconcileSplit } from '../src/reliability/splits.ts';
+import { purgeOperationContent } from '../src/reliability/retention.ts';
+import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
+import { MPEGDecoder } from 'mpg123-decoder';
+import { validMp3Frames, mp3FrameInfo, validateMp3Pcm } from '../src/reliability/media.ts';
+import { splitAllowance, operationAllowance } from '../src/daily-allowance.ts';
+import { courseFixture } from './course-fixture.ts';
+import { runReliableJobs } from '../src/index.ts';
+
+const subject='cail-'+ 'e'.repeat(32);
+async function setup(t:{after:(f:()=>void)=>void}) {
+ const directory=mkdtempSync(join(tmpdir(),'stem-recovery-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+ const local=new SqliteD1(join(directory,'db'));local.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ const db=local as unknown as D1Database;await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(subject).run();
+ const env={DB:db,AUDIO:new FsR2Bucket(join(directory,'audio')),AUTH_MODE:'cail',SEPARATION_BACKEND:'replicate',LOCAL_HOSTING:'true',
+  PUBLIC_BASE_URL:'https://split.test',WEBHOOK_SECRET:'fixture-only',REPLICATE_API_TOKEN:'mock-only',REPLICATE_MODEL_VERSION:'separator-pin',REPLICATE_YT_MODEL_VERSION:'import-pin',
+  validateStemAudio:(data:ArrayBuffer)=>validateMp3Pcm(data,()=>new MPEGDecoder()),
+  ADMISSION_RESOLVER:{resolveCourseAccess:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)}} as unknown as Env;
+ async function split(key='test-operation-0001',phase:'fetch'|'split'='split') {
+  const id=crypto.randomUUID();
+  return (await reserveOperation(db,{subject,courseId:null,kind:'split',key,fingerprint:key,phase,jobId:id,
+   request:{sourceType:phase==='fetch'?'youtube':'upload',youtubeUrl:'https://www.youtube.com/watch?v=abcdefghijk',filename:'private fixture',model:'htdemucs_ft',key:'uploads/fixture/audio.wav'},
+   statements:op=>[db.prepare("INSERT INTO jobs(id,filename,source_key,status,model) SELECT id,'private fixture','uploads/fixture/audio.wav','queued','htdemucs_ft' FROM app_operations WHERE id=?").bind(op)]})).operation;
+ }
+ return {db,env,split,directory};
+}
+
+test('expiry before attempt fences the stale runner; accepted response after expiry is adopted without another start',async t=>{
+ const {db,split}=await setup(t);await split();const old=(await claimNext(db,'split'))!;
+ await transition(db,old,'starting');await recoverExpired(db,old.lease_until+1);
+ await assert.rejects(beginAttempt(db,old,'replicate','separator-pin'));
+ const next=(await claimNext(db,'split'))!;await transition(db,next,'starting');
+ const attempt=await beginAttempt(db,next,'replicate','separator-pin');await recoverExpired(db,next.lease_until+1);
+ await finishAttempt(db,attempt,'accepted',{externalId:'paid-start'});
+ assert.equal(await transition(db,next,'processing',{providerId:'paid-start'}),false);
+ await recoverExpired(db,next.lease_until+2);const recovered=(await readOperation(db,next.id))!;
+ assert.equal(recovered.provider_id,'paid-start');assert.equal(recovered.state,'reconciling');assert.equal(await claimNext(db,'split'),null);
+});
+
+test('queued cancellation releases once; unknown cancellation prevents deletion and rejects late success',async t=>{
+ const {db,split}=await setup(t);const queued=await split();await cancelOperation(db,queued.id,subject);await cancelOperation(db,queued.id,subject);
+ assert.equal((await readOperation(db,queued.id))!.state,'cancelled');await db.prepare('DELETE FROM jobs WHERE id=?').bind(queued.id).run();
+ const accepted=await split('test-operation-0002');const lease=(await claimNext(db,'split'))!;await transition(db,lease,'starting');await beginAttempt(db,lease,'replicate','separator-pin');
+ await recoverExpired(db,lease.lease_until+1);await cancelOperation(db,accepted.id,subject);
+ await assert.rejects(db.prepare('DELETE FROM jobs WHERE id=?').bind(accepted.id).run());
+ await assert.rejects(db.prepare("UPDATE jobs SET status='done' WHERE id=?").bind(accepted.id).run());
+ assert.equal((await splitAllowance(db,subject)).inProgress,1);
+ await db.prepare("UPDATE jobs SET status='failed' WHERE id=?").bind(accepted.id).run();
+ await db.prepare("UPDATE jobs SET status='failed' WHERE id=?").bind(accepted.id).run();assert.equal((await splitAllowance(db,subject)).remaining,15);
+});
+
+test('provider 429 observes full cooldown, confirmed 402 releases, 5xx/network stay uncertain and cannot replay',async t=>{
+ for(const status of [429,402,503,0]) {
+  const {db,env,split}=await setup(t);const op=await split();let posts=0;
+  const mock=t.mock.method(globalThis,'fetch',async()=>{posts++;if(!status)throw new Error('lost response');return new Response('',{status,headers:{'Retry-After':'90'}});});
+  const before=Date.now();await drainSplitQueue(env,async()=>{});const state=(await readOperation(db,op.id))!;
+  assert.equal(state.state,status===429?'queued':status===402?'failed':'reconciling');
+  if(status===429){assert.ok(state.not_before>=before+90000);assert.equal(await claimNext(db,'split',before+89999),null);}
+  await drainSplitQueue(env,async()=>{});assert.equal(posts,1);
+  const count=await splitAllowance(db,subject);assert.equal(count.completed,0);assert.equal(count.inProgress,status===402?0:1);mock.mock.restore();
+ }
+});
+
+test('unknown callback requires matching phase/version and durable attempt; duplicate callback and polls settle once',async t=>{
+ const {db,env,split}=await setup(t);const op=await split();const lease=(await claimNext(db,'split'))!;
+ await transition(db,lease,'starting');await beginAttempt(db,lease,'replicate','separator-pin');await recoverExpired(db,lease.lease_until+1);
+ let version='import-pin',phase:'fetch'|'split'='fetch',reads=0;
+ t.mock.method(globalThis,'fetch',async()=>{reads++;return Response.json({id:'candidate',webhook:operationWebhook(env,op.id,phase),version,status:'succeeded',output:{}});});
+ await recoverCallback(env,(await readOperation(db,op.id))!,'candidate');assert.equal((await readOperation(db,op.id))!.provider_id,null);
+ phase='split';await recoverCallback(env,(await readOperation(db,op.id))!,'candidate');assert.equal((await readOperation(db,op.id))!.provider_id,null);
+ version='separator-pin';await recoverCallback(env,(await readOperation(db,op.id))!,'candidate');const accepted=(await readOperation(db,op.id))!;assert.equal(accepted.provider_id,'candidate');
+ await recoverCallback(env,accepted,'candidate');assert.equal(reads,3);
+ let completed=0;const finish=async()=>{completed++;await db.prepare("UPDATE jobs SET status='done' WHERE id=?").bind(op.id).run();};
+ await Promise.all([reconcileSplit(env,accepted,finish),reconcileSplit(env,accepted,finish)]);
+ assert.equal(completed,1);assert.equal((await splitAllowance(db,subject)).completed,1);
+});
+
+test('ninety-day purge redacts private request/cache content but preserves an uncertain reservation and cost evidence',async t=>{
+ const {db,split}=await setup(t);const op=await split();const lease=(await claimNext(db,'split'))!;await transition(db,lease,'starting');
+ const attempt=await beginAttempt(db,lease,'replicate','separator-pin');await finishAttempt(db,attempt,'uncertain',{code:'lost_response'});
+ await recoverExpired(db,lease.lease_until+1);
+ await db.prepare("INSERT INTO import_cache(scope,source,operation_id,object_key,metadata_json,expires_at) VALUES('scope','source',?,'private/key','private title',?)").bind(op.id,Date.now()+1000).run();
+ await purgeOperationContent(db,op.created_at+90*86400000+1);const remaining=(await readOperation(db,op.id))!;
+ assert.equal(remaining.request_json,'{}');assert.equal(remaining.result_json,null);assert.equal(remaining.cancel_requested,1);assert.equal(remaining.state,'reconciling');
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM import_cache').first<{n:number}>())!.n,0);
+ assert.equal((await db.prepare('SELECT outcome FROM operation_attempts WHERE id=?').bind(attempt).first<{outcome:string}>())!.outcome,'uncertain');
+});
+
+test('chat receipts never copy content; failure releases, partial/unknown count once, settled replay cannot call a model',async t=>{
+ const {db,env}=await setup(t);
+ const first=await reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]);const receipt=assistantReceipt(env,first.operation);
+ await receipt.delta('Secret transcript');await receipt.failed();await receipt.complete('Late secret');
+ assert.equal((await readOperation(db,first.operation.id))!.state,'partial');assert.doesNotMatch((await readOperation(db,first.operation.id))!.result_json!,/Secret|Late/);
+ await assert.rejects(reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]),/already accepted/);
+ const second=await reserveAssistant(env,subject,null,'chat','human-message-0002','job',[]);await assistantReceipt(env,second.operation).failed();
+ const third=await reserveAssistant(env,subject,null,'chat','human-message-0003','job',[]);await recoverExpired(db,Date.now()+90001);
+ assert.equal((await readOperation(db,third.operation.id))!.error_code,'no_usable_response');
+ await assert.rejects(assistantReceipt(env,third.operation).delta('Late output'));
+ const fourth=await reserveAssistant(env,subject,null,'chat','human-message-0004','job',[]);await assistantReceipt(env,fourth.operation).effect();await recoverExpired(db,Date.now()+90001);
+ assert.equal((await readOperation(db,fourth.operation.id))!.error_code,'delivery_uncertain');assert.equal((await operationAllowance(db,subject,'chat')).completed,2);
+});
+
+test('mocked lifecycle rejects empty/corrupt audio, failed storage and cancelled/failed predictions without a successful charge',async t=>{
+ const fixture=readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+ for(const mode of ['empty','corrupt','storage','failed','cancelled','success']) {
+  const {db,env,split}=await setup(t);const operation=await split();let posts=0;
+  const mock=t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+   if(init?.method==='POST'){posts++;return Response.json({id:'prediction'});}
+   if(String(input).startsWith('https://api.replicate.com/'))return Response.json({id:'prediction',status:mode==='failed'?'failed':'succeeded',output:Object.fromEntries(['vocals','drums','bass','other'].map(name=>[name,`https://fixtures.replicate.delivery/${name}.mp3`]))});
+   return new Response(mode==='empty'?new Uint8Array():mode==='corrupt'?new Uint8Array([255,251,144,0]):fixture,{headers:{'Content-Type':'audio/mpeg'}});
+  });
+  let storage:ReturnType<typeof t.mock.method>|undefined;
+  if(mode==='storage')storage=t.mock.method(env.AUDIO,'put',async()=>{throw new Error('simulated R2 unavailable');});
+  await runReliableJobs(env);if(mode==='cancelled')await cancelOperation(db,operation.id,subject);await runReliableJobs(env);await runReliableJobs(env);
+  assert.equal(posts,1);const op=(await readOperation(db,operation.id))!;
+  assert.equal(op.state,mode==='success'?'succeeded':mode==='cancelled'?'cancelled':'failed',mode);
+  const usage=await splitAllowance(db,subject);assert.equal(usage.completed,mode==='success'?1:0,mode);assert.equal(usage.inProgress,0,mode);
+  mock.mock.restore();storage?.mock.restore();
+ }
+});
+
+test('frame validation rejects truncation but documents its inability to establish PCM decodability',async t=>{
+ const {directory}=await setup(t);const audio=readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+ assert.ok(validMp3Frames(audio.buffer.slice(audio.byteOffset,audio.byteOffset+audio.length) as ArrayBuffer));
+ assert.equal(validMp3Frames(audio.buffer.slice(audio.byteOffset,audio.byteOffset+audio.length-17) as ArrayBuffer),false);
+ // Valid MPEG-1 Layer III 128kbps/44.1kHz headers; deliberately impossible
+ // side information. The structural checker accepts it; a real decoder fails.
+ const corrupt=Buffer.alloc(417*8,255);for(let i=0;i<8;i++)corrupt.set([255,251,144,0],417*i);
+ assert.equal(validMp3Frames(corrupt.buffer.slice(corrupt.byteOffset,corrupt.byteOffset+corrupt.length) as ArrayBuffer),true);
+ assert.equal(mp3FrameInfo(corrupt.buffer.slice(corrupt.byteOffset,corrupt.byteOffset+corrupt.length) as ArrayBuffer),null);
+ assert.equal(await validateMp3Pcm(corrupt.buffer.slice(corrupt.byteOffset,corrupt.byteOffset+corrupt.length) as ArrayBuffer,()=>new MPEGDecoder()),false);
+ const path=join(directory,'corrupt.mp3');writeFileSync(path,corrupt);
+ const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-xerror','-i',path,'-f','null','-'],{encoding:'utf8'});
+ assert.ifError(result.error);assert.notEqual(result.status,0);assert.match(result.stderr,/invalid|error|Error|decode|backstep|big_values/);
+});

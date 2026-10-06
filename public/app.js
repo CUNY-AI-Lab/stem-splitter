@@ -1318,6 +1318,7 @@ function showUploadMessage(message, isError = false) {
 }
 
 function processingMessage(job, noun = 'splits') {
+  if(job.operation?.cancelRequested)return 'Cancellation requested. We are waiting for the provider to stop; this split will not use successful-split allowance.';
   if(job.status==='queued')return 'Saved to your account and queued. You can close this tab; the split will continue.';
   if(job.status==='importing')return 'Importing the permitted source audio. Your successful-split allowance has not been charged.';
   if(job.status==='reconciling')return 'Checking the provider response for this saved request. Please do not submit it again. The successful-split count has not changed.';
@@ -3495,10 +3496,11 @@ function renderJobs() {
         <span class="badge ${failed ? 'failed' : 'processing'}">${
           failed
             ? 'FAILED'
-            : `SEPARATING<span class="elapsed" data-since="${since}">${fmt(
+            : `${({queued:'QUEUED',importing:'IMPORTING',reconciling:'CHECKING'})[state.status]||'SEPARATING'}<span class="elapsed" data-since="${since}">${fmt(
                 (Date.now() - since) / 1000
               )}</span>`
         }</span>
+        ${!failed && runtime.authMode==='cail' && !state.operation?.cancelRequested ? '<button class="head-btn cancel-job-btn" type="button">Cancel</button>' : ''}
         ${failed ? `<button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit' : 'Remove this failed split from your rack'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>` : ''}
       </div>
       ${
@@ -3506,11 +3508,15 @@ function renderJobs() {
           ? `<p class="job-error">${esc(
               state.error || 'No playable tracks were returned. Run the split again.'
             )}</p>`
-          : `<p class="job-note">Creating ${esc(
-              stemDescription(state.expectedStems || job.expectedStems)
-            )}…</p>`
+          : `<p class="job-note">${esc(processingMessage({...state,savedToAccount:true}))}</p>`
       }
     `;
+    const cancelBtn=li.querySelector('.cancel-job-btn');
+    if(cancelBtn)cancelBtn.addEventListener('click',async()=>{
+      cancelBtn.disabled=true;
+      try{await api(`/api/jobs/${job.id}/cancel`,{method:'POST',body:'{}'});await pollActiveJobs();}
+      catch(error){cancelBtn.disabled=false;li.querySelector('.job-note').textContent=error.message;}
+    });
     const deleteBtn = li.querySelector('.delete-btn');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () =>

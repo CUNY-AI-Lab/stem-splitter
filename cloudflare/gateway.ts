@@ -130,7 +130,7 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
         if (attemptId) await finishAttempt(env.DB,attemptId,'succeeded',{usage});
         return { content: content.trim(), model, toolCalls: [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call), finishReason };
       } catch (error) {
-        if (attemptId) await finishAttempt(env.DB,attemptId,outputStarted?'partial':accepted?'uncertain':'rejected',{code:error instanceof CailError?error.code:'gateway_failure',usage});
+        if (attemptId) await finishAttempt(env.DB,attemptId,outputStarted?'partial':accepted||!(error instanceof CailError)?'uncertain':'rejected',{code:error instanceof CailError?error.code:'gateway_failure',usage});
         if (!signal.aborted && !accepted && !outputStarted && modelIndex===0 && models.length===2 && eligibleGatewayFallback(error)) {
           if (operation) await setCooldown(env.DB,`gateway:${model}`,retryAt(error instanceof CailError ? String(error.extras.retry_after ?? error.extras.retry_after_seconds ?? '30') : '30'));
           continue;

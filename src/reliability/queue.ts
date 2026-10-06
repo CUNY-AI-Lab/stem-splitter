@@ -29,7 +29,9 @@ export async function transition(db: D1Database, operation: Operation, state: Op
     WHERE id=? AND fence=? AND lease_owner IS ? AND state NOT IN (${TERMINAL})`)
     .bind(state,changes.phase ?? operation.phase,changes.providerId === undefined ? operation.provider_id : changes.providerId,
       changes.notBefore ?? 0,changes.code ?? null,Date.now(),operation.id,operation.fence,operation.lease_owner).run();
-  return result.meta.changes===1;
+  // D1 includes audit-trigger writes in changes; SQLite's shim counts only
+  // the outer row. Zero is the portable losing-CAS signal.
+  return result.meta.changes>0;
 }
 
 export async function recoverExpired(db: D1Database, now=Date.now()) {
@@ -51,9 +53,11 @@ export async function recoverExpired(db: D1Database, now=Date.now()) {
   await db.prepare(`UPDATE jobs SET external_id=(SELECT provider_id FROM app_operations WHERE job_id=jobs.id AND kind='split'),status='processing'
     WHERE id IN(SELECT job_id FROM app_operations WHERE kind='split' AND phase='split' AND state='reconciling' AND provider_id IS NOT NULL)
     AND status NOT IN ('done','failed')`).run();
-  // Chat can never be regenerated after a Worker crash: conservatively keep
-  // its one input charged when output receipt is uncertain, with no tool replay.
-  await db.prepare(`UPDATE app_operations SET state='partial',error_code='delivery_uncertain',updated_at=?
+  // Every usable delta/effect intent is persisted before delivery. An absent
+  // marker proves no usable output was delivered; a marker may be partial.
+  // Both outcomes fence the old key/runner and never regenerate its tools.
+  await db.prepare(`UPDATE app_operations SET state=CASE WHEN result_json IS NULL THEN 'failed' ELSE 'partial' END,
+    error_code=CASE WHEN result_json IS NULL THEN 'no_usable_response' ELSE 'delivery_uncertain' END,updated_at=?
     WHERE kind IN ('chat','guide') AND state IN ('running','starting','reconciling') AND lease_until<?`).bind(now,now).run();
 }
 

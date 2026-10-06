@@ -1,9 +1,9 @@
 import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
-import { parseYouTubeVideoId, pollYouTubeImport, startYouTubeImport, YouTubeError } from '../youtube.ts';
+import { parseYouTubeVideoId, pollYouTubeImport, startYouTubeImport, replicateConfiguration, YouTubeError } from '../youtube.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
-import { getSeparationOptions, modelIsAllowed } from '../separation/options.ts';
+import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
 import { serverAutoCapability, configuredAudioAnalysisProvider, resolveAutoRoutingWithSource, audioAnalysisTimeoutMs, AUTO_ROUTING_REQUEST, prepareAuthoritativeAutoSource } from '../analysis/index.ts';
 import { parseBrowserAutoSummary } from '../analysis/contract.ts';
@@ -20,7 +20,7 @@ interface SplitInput {
 }
 type Complete = (env: Env, jobId: string, result: SeparationResult) => Promise<void>;
 const title=(value: unknown) => typeof value==='string' ? value.replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().slice(0,200) : '';
-export const operationWebhook=(env: Env,id: string) => `${env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${env.WEBHOOK_SECRET}`;
+export const operationWebhook=(env: Env,id: string,phase: 'fetch'|'split') => `${env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&phase=${phase}&token=${env.WEBHOOK_SECRET}`;
 
 export async function submitSplit(env: Env, principal: AppPrincipal, body: unknown, key: string | undefined) {
   if (env.SPLIT_STARTS_DISABLED==='true') throw new OperationError('splits_paused',503,'New splits are temporarily paused. Saved audio still plays.');
@@ -38,6 +38,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (value.youtubeUrl!==undefined) {
     const id=parseYouTubeVideoId(value.youtubeUrl as string);
     if (!id) throw new OperationError('invalid_youtube_url',400,'Paste a full YouTube video link.');
+    if(!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'YouTube import is temporarily unavailable. Upload an original or licensed audio file.');
     input.sourceType='youtube'; input.youtubeUrl=`https://www.youtube.com/watch?v=${id}`; input.filename='YouTube audio';
   } else if (value.archiveId!==undefined) {
     const id=typeof value.archiveId==='string'&&parseArchiveIdentifier(value.archiveId);
@@ -48,7 +49,8 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     const owned=await env.DB.prepare("SELECT 1 FROM upload_owners WHERE object_key=? AND subject=? AND state='ready' AND expires_at>?")
       .bind(value.key,principal.subject,new Date().toISOString()).first();
     const source=owned&&await env.AUDIO.head(value.key);
-    if (!source||source.size<=0||source.size>MAX_BYTES) throw new OperationError('invalid_upload',400,'The upload is unavailable, empty, or too large. Upload it again.');
+    if (!source) throw new OperationError('upload_not_found',404,'The upload is unavailable. Upload it again.');
+    if (source.size<=0||source.size>MAX_BYTES) throw new OperationError('invalid_upload',400,'The upload is empty or too large. Upload it again.');
     input.key=value.key;input.filename=title(value.filename);
   }
   const id=crypto.randomUUID();
@@ -83,10 +85,12 @@ async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:Ar
   }
   input.key=key;input.filename=title(audio.title)||input.filename;
   await env.DB.batch([
-    env.DB.prepare(`UPDATE jobs SET source_key=?,source_hash=?,filename=?,status='queued' WHERE id=?`).bind(key,sha,input.filename,op.job_id),
-    env.DB.prepare(`UPDATE app_operations SET request_json=?,provider_id=NULL,phase='split',state='queued',lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=?`).bind(JSON.stringify(input),Date.now(),op.id,op.fence),
-    ...(audio.attribution?[env.DB.prepare('INSERT OR REPLACE INTO job_attributions(job_id,attribution) VALUES(?,?)').bind(op.job_id,JSON.stringify(audio.attribution))]:[]),
+    env.DB.prepare(`UPDATE jobs SET source_key=?,source_hash=?,filename=?,status='queued' WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(key,sha,input.filename,op.job_id,op.id,op.fence),
+    env.DB.prepare(`UPDATE app_operations SET request_json=?,provider_id=NULL,phase='split',state='queued',lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL})`).bind(JSON.stringify(input),Date.now(),op.id,op.fence),
+    ...(audio.attribution?[env.DB.prepare(`INSERT OR REPLACE INTO job_attributions(job_id,attribution) SELECT ?,? WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(op.job_id,JSON.stringify(audio.attribution),op.id,op.fence)]:[]),
   ]);
+  const saved=await env.DB.prepare('SELECT source_key FROM jobs WHERE id=?').bind(op.job_id).first<{source_key:string}>();
+  if(saved?.source_key!==key)await env.AUDIO.delete(key);
 }
 async function storeArchive(env: Env,op: Operation,input: SplitInput) {
   const scope=await fingerprint([op.subject,op.course_id]),source=await fingerprint([input.archiveId,input.archiveFile]);
@@ -140,10 +144,12 @@ async function start(env: Env,op: Operation) {
     }
     // This write precedes every paid POST. A crash from here reconciles, never retries.
     if (!await transition(env.DB,op,'starting')) return;
-    attempt=await beginAttempt(env.DB,op,'replicate',op.phase==='fetch'?env.REPLICATE_YT_MODEL_VERSION:model);
+    const runner=getReplicateRunner(model);
+    const version=op.phase==='fetch'?env.REPLICATE_YT_MODEL_VERSION:runner?replicateVersion(env,runner):undefined;
+    attempt=await beginAttempt(env.DB,op,'replicate',version);
     const providerId=op.phase==='fetch'
-      ? await startYouTubeImport(input.youtubeUrl!,env,operationWebhook(env,op.id))
-      : (await getBackend(env).start({jobId:op.id,audioUrl:sourceUrl,webhookUrl:operationWebhook(env,op.id),model})).externalId;
+      ? await startYouTubeImport(input.youtubeUrl!,env,operationWebhook(env,op.id,op.phase as 'fetch'|'split'))
+      : (await getBackend(env).start({jobId:op.id,audioUrl:sourceUrl,webhookUrl:operationWebhook(env,op.id,op.phase as 'fetch'|'split'),model})).externalId;
     await finishAttempt(env.DB,attempt,'accepted',{externalId:providerId});
     if (await transition(env.DB,op,'processing',{providerId})) {
       await env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE id=? AND fence=?').bind(op.id,op.fence).run();
@@ -207,9 +213,16 @@ export async function drainSplitQueue(env: Env,complete: Complete) {
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {
   if(operation.provider_id||!['starting','reconciling'].includes(operation.state))return;
-  // Provider API evidence must bind its prediction to our exact callback.
-  if(!await getBackend(env).confirmStart?.(externalId,operationWebhook(env,operation.id)))return;
+  // A capability is unique to the operation AND phase. The accepted prediction
+  // must also match the exact model version recorded before its paid POST.
+  const attempt=await env.DB.prepare(`SELECT id,model FROM operation_attempts WHERE operation_id=? AND phase=?
+    AND provider='replicate' AND outcome IN ('starting','uncertain') ORDER BY created_at DESC LIMIT 1`)
+    .bind(operation.id,operation.phase).first<{id:string;model:string|null}>();
+  if(!attempt?.model)return;
+  if(!await getBackend(env).confirmStart?.(externalId,operationWebhook(env,operation.id,operation.phase as 'fetch'|'split'),attempt.model))return;
+  await finishAttempt(env.DB,attempt.id,'accepted',{externalId});
   const accepted=await env.DB.prepare(`UPDATE app_operations SET provider_id=?,state='processing',lease_until=0,lease_owner=NULL,updated_at=?
-    WHERE id=? AND provider_id IS NULL AND state IN ('starting','reconciling')`).bind(externalId,Date.now(),operation.id).run();
-  if(accepted.meta.changes&&operation.phase==='split')await env.DB.prepare("UPDATE jobs SET external_id=?,status='processing' WHERE id=? AND status<>'failed'").bind(externalId,operation.job_id).run();
+    WHERE id=? AND fence=? AND phase=? AND provider_id IS NULL AND state IN ('starting','reconciling')`)
+    .bind(externalId,Date.now(),operation.id,operation.fence,operation.phase).run();
+  if(accepted.meta.changes&&operation.phase==='split')await env.DB.prepare("UPDATE jobs SET external_id=?,status='processing' WHERE id=? AND status NOT IN ('done','failed')").bind(externalId,operation.job_id).run();
 }

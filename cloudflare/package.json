@@ -10,10 +10,11 @@
     "db:migrate:19:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0019-listening-conversations.sql"
   },
   "dependencies": {
-    "hono-cloudflare": "npm:hono@4.13.11",
     "@cuny-ai-lab/cail-client": "6.2.2",
     "@cuny-ai-lab/cail-identity": "5.2.6",
-    "@cuny-ai-lab/cail-log": "0.6.4"
+    "@cuny-ai-lab/cail-log": "0.6.4",
+    "hono-cloudflare": "npm:hono@4.13.11",
+    "mpg123-decoder": "1.0.3"
   },
   "devDependencies": {
     "wrangler": "4.129.0"

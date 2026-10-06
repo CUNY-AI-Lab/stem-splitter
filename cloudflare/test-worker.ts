@@ -1,3 +1,4 @@
+import { validateStemAudio } from './audio-validator.ts';
 import { courseFixture } from './course-fixture.ts';
 import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 // Local test entrypoint only. Never referenced by the deployment config.
@@ -9,6 +10,8 @@ let gatewayCalls = 0;
 let gatewayMessages: Array<{ role: string; content: string }> = [];
 export default {
   async fetch(request: Request, env: TestEnv, ctx: ExecutionContext) {
+    if(new URL(request.url).pathname==='/__fixture/validate-audio'&&request.headers.get('x-fixture')==='local-only')return Response.json({valid:await validateStemAudio(await request.arrayBuffer())});
+    if(new URL(request.url).pathname==='/__fixture/operations'&&request.headers.get('x-fixture')==='local-only')return Response.json((await env.DB.prepare('SELECT id,state,phase,error_code,fence,lease_until,not_before FROM app_operations').all()).results);
     if (new URL(request.url).pathname === '/__fixture/gateway-messages' && request.headers.get('x-fixture') === 'local-only') return Response.json({ messages: gatewayMessages });
     if (new URL(request.url).pathname === '/__fixture/purge-conversations' && request.headers.get('x-fixture') === 'local-only') {
       return Response.json({ deleted: await purgeExpiredListeningConversations(env.DB) });
@@ -50,6 +53,7 @@ export default {
       PUBLIC_BASE_URL: env.TEST_BROWSER === 'true' ? new URL(request.url).origin : env.PUBLIC_BASE_URL,
       CAIL_IDENTITY_JWKS: env.TEST_JWKS,
       GATEWAY_MODEL: 'glm-5.2',
+      GATEWAY_FALLBACK_MODEL: 'deepseek-v4-flash-0731',
       GATEWAY: { fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         const outbound = new Request(input, init);
         if (new URL(outbound.url).pathname.endsWith('/quota')) return Response.json({ object: 'quota', managed_by: 'cloudflare', state: 'estimated', unit: 'microdollar', currency: 'USD', limit: 1000000, estimated_used: 100000, estimated_remaining: 900000, used_percent: 10, remaining_percent: 90, window_seconds: 86400, window_technique: 'sliding', calculated_at: Math.floor(Date.now() / 1000) });

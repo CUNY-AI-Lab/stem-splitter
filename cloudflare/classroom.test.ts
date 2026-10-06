@@ -134,6 +134,10 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const db=new SqliteD1(':memory:');db.applySchema(legacy);await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(ids.alice).run();await db.prepare("INSERT INTO jobs(id,filename,source_key,status) VALUES('old','Old private','uploads/old/source.wav','done')").run();await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind('old',ids.alice).run();await db.prepare("INSERT INTO listening_conversations(job_id,subject,entries,revision,expires_at) VALUES(?,?,'[{\"kind\":\"coach\",\"text\":\"Private history\"}]',3,datetime('now','+90 days'))").bind('old',ids.alice).run();
   await db.prepare("INSERT INTO annotations(id,job_id,at_seconds,text) VALUES('legacy-note','old',1,'Legacy private note')").run();
   const migration=readFileSync(new URL('../migrations/0021-classroom.sql',import.meta.url),'utf8');db.applySchema(migration);
+  await db.prepare("INSERT INTO app_request_reservations(id,subject,scope,day) VALUES('historical-attempt',?,'split','2026-10-05')").bind(ids.alice).run();
+  const reliability=readFileSync(new URL('../migrations/0022-reliable-operations.sql',import.meta.url),'utf8');db.applySchema(reliability);db.applySchema(reliability);
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM app_request_reservations WHERE id='historical-attempt'").first<any>()).n,1);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<any>()).n,0);
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);
