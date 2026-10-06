@@ -429,7 +429,11 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(await page.evaluate((id) => localStorage.getItem(`coachChat:${id}`), jobId)).toBeNull();
   await expect(page.locator('.coach-guide-text')).toBeVisible();
 
-  const storedStemResponse = await server.fetch(`/api/files/stems/${jobId}/vocals.mp3`);
+  const savedJob=await(await server.fetch(`/api/jobs/${jobId}`)).json();
+  expect(savedJob.stems.map(stem=>stem.name)).toEqual(['vocals','drums','bass','other']);
+  for(const stem of savedJob.stems)expect(stem.url).toMatch(new RegExp(`^/api/files/stems/${jobId}/[a-f0-9-]+/${stem.name}\\.mp3$`));
+  const savedVocals=savedJob.stems.find(stem=>stem.name==='vocals');
+  const storedStemResponse = await server.fetch(savedVocals.url);
   expect(storedStemResponse.status).toBe(200);
   expect(storedStemResponse.headers.get('content-length')).toBe(
     String(stemAudio.get('vocals').length)
@@ -440,17 +444,14 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(storedKeysResponse.status).toBe(200);
   const { keys: storedKeys } = await storedKeysResponse.json();
   expect(storedKeys).toEqual([
-    `stems/${jobId}/bass.mp3`,
-    `stems/${jobId}/drums.mp3`,
-    `stems/${jobId}/other.mp3`,
-    `stems/${jobId}/vocals.mp3`,
+    ...savedJob.stems.map(stem=>stem.url.replace('/api/files/','')).sort(),
     expect.stringMatching(/^uploads\/[0-9a-f-]+\/source\.wav$/),
   ]);
   expect(browserErrors).toEqual([]);
 
   await page.screenshot({ path: testInfo.outputPath('local-hosting-ready.png'), fullPage: false });
 
-  await page.route(`**/api/files/stems/${jobId}/vocals.mp3`, (route) =>
+  await page.route(`**${savedVocals.url}`, (route) =>
     route.fulfill({ status: 404, body: 'Not found' })
   );
   await page.reload();

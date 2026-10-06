@@ -71,7 +71,8 @@ export async function recoverExpired(db: D1Database, now=Date.now()) {
   // Both outcomes fence the old key/runner and never regenerate its tools.
   await db.prepare(`UPDATE app_operations SET state=CASE WHEN result_json IS NULL THEN 'failed' ELSE 'partial' END,
     error_code=CASE WHEN result_json IS NULL THEN 'no_usable_response' ELSE 'delivery_uncertain' END,updated_at=?
-    WHERE kind IN ('chat','guide') AND state IN ('running','starting','reconciling') AND lease_until<?`).bind(now,now).run();
+    WHERE kind IN ('chat','guide') AND ((state IN ('running','starting','reconciling') AND lease_until<?)
+      OR (state='queued' AND created_at<=?))`).bind(now,now,now-90000).run();
 }
 
 export async function cancelOperation(db: D1Database, id: string, subject: string) {

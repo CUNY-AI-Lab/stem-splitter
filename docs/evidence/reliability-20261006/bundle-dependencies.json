@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-10-06",
+  "command": "wrangler deploy --config wrangler.jsonc --dry-run --metafile",
+  "honoInputCount": 27,
+  "allHonoInputsUsePatchedAlias": true,
+  "legacyRootHonoInputCount": 0,
+  "bundledHonoVersion": "4.13.11",
+  "metafileSha256": "a74175fa5fdfc5a573ba0a102d20b896412f22186df9b269b93fef2e53e0fecb",
+  "rootAnalysisDependencyInputsChanged": false
+}

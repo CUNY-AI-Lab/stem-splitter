@@ -70,7 +70,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
     });
     await page.locator('#yt-url').fill('https://www.youtube.com/watch?v=fixture1234');
     await page.locator('#yt-form button').click();
-    await expect(page.locator('#upload-message')).toContainText("You've used today's runs.");
+    await expect(page.locator('#upload-message')).toContainText("Today's 15 places are completed or in progress.");
     await expect(page.locator('#upload-message')).not.toContainText('Saved to your account');
     await page.unroute('**/api/jobs');
     await page.getByRole('link', { name: 'My account', exact: true }).click();

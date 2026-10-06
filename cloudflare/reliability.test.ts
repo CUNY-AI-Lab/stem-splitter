@@ -208,3 +208,20 @@ test('lost final database acknowledgement preserves committed stem objects and c
   mock.mock.restore();dbMock.mock.restore();
  }
 });
+
+test('a shared provider cooldown fences reconciliation of other operations in both phases',async t=>{
+ const {db,env,split}=await setup(t),fetch=await split('shared-floor-fetch-01','fetch'),separate=await split('shared-floor-split-01');
+ for(const op of [fetch,separate])await db.prepare("UPDATE app_operations SET state='processing',provider_id='known-provider-id',not_before=0 WHERE id=?").bind(op.id).run();
+ await db.prepare("INSERT INTO provider_cooldowns(provider,until_ms) VALUES('replicate',?)").bind(Date.now()+120000).run();
+ let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error('shared floor must prevent any network');});
+ await runReliableJobs(env);assert.equal(calls,0);
+ for(const op of [fetch,separate])assert.equal((await readOperation(db,op.id))!.fence,0);
+});
+
+test('a crash after chat reservation but before its running transition releases without usable output',async t=>{
+ const {db}=await setup(t);const now=Date.now();
+ const {operation}=await reserveOperation(db,{subject,courseId:null,kind:'chat',phase:'chat',key:'queued-chat-crash-01',fingerprint:'input',now});
+ await recoverExpired(db,now+89999);assert.equal((await readOperation(db,operation.id))!.state,'queued');
+ await recoverExpired(db,now+90001);assert.equal((await readOperation(db,operation.id))!.state,'failed');
+ assert.equal((await operationAllowance(db,subject,'chat')).remaining,50);
+});

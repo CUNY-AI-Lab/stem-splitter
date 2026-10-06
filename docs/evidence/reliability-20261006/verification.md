@@ -28,12 +28,17 @@ The follow-up implementation tree passed:
 | Chrome usage events, one retry, deduplication and account-clear case | 1/1 |
 | Candidate Wrangler dry-run | Pass; no deploy |
 | Adapter production dependency audit | No vulnerabilities in 10 packages |
-| Root production dependency audit | **Blocked: four moderate Hono advisories** |
+| Root legacy dependency audit | Four moderate Hono advisories; absent from candidate bundle |
 
 The root dependency inputs remain frozen. Audit reported `hono@4.12.34` with
 GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc, GHSA-crvj-82cr-hjcx and
-GHSA-hxh3-vqpv-xpqv. Shared Worker imports still use the root application package;
-the adapter-only audit does not establish a clean deployed dependency tree.
+GHSA-hxh3-vqpv-xpqv. The candidate and test Wrangler configurations explicitly alias both `hono`
+and `hono/factory` to adapter `hono-cloudflare@4.13.11`. The dry-run build
+metafile confirms all 27 Hono inputs use that patched alias and zero use the
+legacy root package. The [bundle receipt](bundle-dependencies.json) records
+that check. The four root advisories remain a legacy Node/analyzer dependency
+finding; they are not a demonstrated candidate runtime exposure. Frozen root
+analysis-image inputs were not changed.
 
 Five direct independent-review regressions now cover abandoned-ingestion cron
 recovery, stale import fencing, no-network missing-pin failure, complete

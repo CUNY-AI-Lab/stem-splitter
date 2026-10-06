@@ -183,8 +183,9 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
   if (!op.provider_id||!['processing','reconciling'].includes(op.state)) return;
   const now=Date.now(),owner=crypto.randomUUID();
   const claimed=await env.DB.prepare(`UPDATE app_operations SET lease_owner=?,lease_until=?,fence=fence+1,updated_at=?
-    WHERE id=? AND fence=? AND lease_until<=? AND not_before<=? AND state IN ('processing','reconciling') RETURNING *`)
-    .bind(owner,now+WORK_LEASE_MS,now,op.id,op.fence,now,now).first<Operation>();
+    WHERE id=? AND fence=? AND lease_until<=? AND not_before<=? AND state IN ('processing','reconciling')
+    AND COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=? RETURNING *`)
+    .bind(owner,now+WORK_LEASE_MS,now,op.id,op.fence,now,now,now).first<Operation>();
   if(!claimed)return;
   try {
     if (claimed.phase==='fetch') {
