@@ -1,3 +1,6 @@
+import classroomRoutes from './classroom/routes.ts';
+import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
+import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -156,6 +159,9 @@ interface AnnotationRow {
   at_seconds: number;
   text: string;
   created_at: string;
+  author_subject?: string | null;
+  author_name?: string | null;
+  provenance?: string | null;
 }
 
 async function sha256Audio(data: ArrayBuffer): Promise<string> {
@@ -195,6 +201,8 @@ app.use('/api/*', async (c, next) => {
   }
   await next();
 });
+
+app.route('/api/classroom', classroomRoutes);
 
 app.get('/api/runtime', (c) => c.json({
   authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
@@ -454,7 +462,7 @@ function ensureTeachersSeeded(c: Context<AppContext>): Promise<void> {
 async function currentTeacher(c: Context<AppContext>) {
   if (c.env.AUTH_MODE === 'cail') {
     const principal = c.get('principal');
-    return principal && principal.role !== 'student' ? { username: principal.subject, displayName: 'Instructor' } : null;
+    return principal && (principal.role !== 'student' || principal.course?.owner) ? { username: principal.subject, displayName: principal.displayName } : null;
   }
   await ensureTeachersSeeded(c);
   return resolveSession(c.env, readSessionCookie(c.req.header('Cookie')));
@@ -902,6 +910,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   if ('response' in parsed) return parsed.response;
   const body = parsed.value as
     | {
+        coursePolicy?: string;
         key?: string;
         filename?: string;
         youtubeUrl?: string;
@@ -913,6 +922,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       }
     | null;
 
+  if (c.get('principal')?.courseId && body?.coursePolicy !== 'course-work-v1') return c.json({ error: 'Confirm that your instructor can review new course work and Listening Guy conversations.' }, 400);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
   const submittedModel = body?.model ?? options.defaultModel;
   const autoCapability = serverAutoCapability(c.env);
@@ -1138,7 +1148,11 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       );
     const statements = [insertJob];
     const principal = c.get('principal');
-    if (principal) statements.push(c.env.DB.prepare('INSERT INTO job_owners (job_id, subject) VALUES (?, ?)').bind(id, principal.subject));
+    if (principal) {
+      statements.push(c.env.DB.prepare('INSERT INTO job_owners (job_id, subject) VALUES (?, ?)').bind(id, principal.subject));
+      const assignment = courseAssignmentStatement(c.env, id, principal);
+      if (assignment) statements.push(assignment);
+    }
     if (attribution) statements.push(c.env.DB.prepare('INSERT INTO job_attributions (job_id, attribution) VALUES (?, ?)').bind(id, JSON.stringify(attribution)));
     await c.env.DB.batch(statements);
   } catch (error) {
@@ -1257,7 +1271,11 @@ app.get('/api/jobs/:id', async (c) => {
   const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
   const attribution = await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id = ?').bind(id).first<{ attribution: string }>();
   const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
-  return c.json({ ...jobResponse(row, results ?? [], guide), publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
+  const principal = c.get('principal');
+  const permission = principal ? await jobPermission(c.env, principal, id) : null;
+  return c.json({ ...jobResponse(row, results ?? [], guide), annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+    authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
+    courseId:permission?.courseId??null, permissions:permission, publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
 
 app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {
@@ -1669,13 +1687,28 @@ app.post('/api/jobs/:id/annotations', requireClassCode, async (c) => {
   }
 
   const annotationId = crypto.randomUUID();
-  await c.env.DB.prepare('INSERT INTO annotations (id, job_id, at_seconds, text) VALUES (?, ?, ?, ?)')
-    .bind(annotationId, id, atSeconds, text)
-    .run();
-  return c.json({ id: annotationId, atSeconds, text });
+  const principal = c.get('principal');
+  if (principal) {
+    await c.env.DB.prepare('INSERT INTO annotations (id,job_id,at_seconds,text,author_subject,author_name,provenance) VALUES(?,?,?,?,?,?,?)')
+      .bind(annotationId,id,atSeconds,text,principal.subject,principal.displayName,'student').run();
+  } else await c.env.DB.prepare('INSERT INTO annotations (id,job_id,at_seconds,text) VALUES(?,?,?,?)').bind(annotationId,id,atSeconds,text).run();
+  return c.json({ id:annotationId,atSeconds,text,authorName:principal?.displayName??'Author unavailable',canDelete:true,provenance:principal?'student':null });
+});
+
+app.put('/api/jobs/:id/annotations/:annotationId', requireClassCode, async c => {
+  const principal=c.get('principal');
+  if(!principal)return c.json({error:'Sign in to edit a note.'},401);
+  const parsed=await boundedJson(c,MAX_SMALL_JSON_BYTES);if(parsed.response)return parsed.response;
+  const text=(parsed.value as {text?:unknown})?.text;
+  if(typeof text!=='string'||!text.trim()||text.trim().length>200)return c.json({error:'Enter a note up to 200 characters.'},400);
+  const result=await c.env.DB.prepare('UPDATE annotations SET text=? WHERE id=? AND job_id=? AND author_subject=?')
+    .bind(text.trim(),c.req.param('annotationId'),c.req.param('id'),principal.subject).run();
+  return result.meta.changes?c.json({ok:true,text:text.trim()}):c.json({error:'Note not found'},404);
 });
 
 app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c) => {
+  const principal = c.get('principal');
+  if (principal && !(await c.env.DB.prepare('SELECT 1 FROM annotations WHERE id=? AND job_id=? AND author_subject=?').bind(c.req.param('annotationId'),c.req.param('id'),principal.subject).first())) return c.json({error:'Note not found'},404);
   await c.env.DB.prepare('DELETE FROM annotations WHERE id = ? AND job_id = ?')
     .bind(c.req.param('annotationId'), c.req.param('id'))
     .run();
@@ -1727,6 +1760,12 @@ app.get('/api/jobs/:id/listening-conversation', async (c) => {
   const principal = c.get('principal');
   if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in with CUNY Login to save this conversation.' }, 401);
   const id = c.req.param('id');
+  if (await jobCourse(c.env,id)) {
+    const cursor=Number(c.req.query('cursor')??0),revision=c.req.query('revision');
+    if(!Number.isSafeInteger(cursor)||cursor<0||(revision!==undefined&&!/^\d+$/.test(revision))) return c.json({error:'Invalid conversation page.'},400);
+    try { return c.json(await conversationPage(c.env,id,principal.subject,cursor,revision===undefined?undefined:Number(revision))); }
+    catch(error) { if(error instanceof CourseError)return courseErrorResponse(error);throw error; }
+  }
   const row = await c.env.DB.prepare(`
     SELECT conv.entries, conv.revision, conv.expires_at AS expiresAt
     FROM listening_conversations conv
@@ -1745,6 +1784,7 @@ app.get('/api/jobs/:id/listening-conversation', async (c) => {
 });
 
 app.put('/api/jobs/:id/listening-conversation', async (c) => {
+  if (await jobCourse(c.env,c.req.param('id'))) return c.json({ error:'Course conversations are saved by Listening Guy. Reload before continuing.' },409);
   const principal = c.get('principal');
   if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in with CUNY Login to save this conversation.' }, 401);
   const parsed = await boundedJson(c, MAX_CONVERSATION_JSON_BYTES);
@@ -1787,6 +1827,11 @@ app.delete('/api/jobs/:id/listening-conversation', async (c) => {
   const principal = c.get('principal');
   if (c.env.AUTH_MODE !== 'cail' || !principal) return c.json({ error: 'Sign in with CUNY Login to reset this conversation.' }, 401);
   const id = c.req.param('id');
+  if (await jobCourse(c.env,id)) {
+    const parsed=await boundedJson(c,MAX_SMALL_JSON_BYTES);if(parsed.response)return parsed.response;
+    try { return c.json(await resetCourseConversation(c.env,id,principal.subject,(parsed.value as {revision?:unknown})?.revision)); }
+    catch(error) { if(error instanceof CourseError)return courseErrorResponse(error);throw error; }
+  }
   const result = await c.env.DB.prepare(`
     INSERT INTO listening_conversations (job_id, subject, entries, revision, expires_at)
     SELECT j.id, ?, '[]', 1, datetime(j.created_at, '+90 days') FROM jobs j
@@ -1819,7 +1864,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
   if ('response' in parsed) return parsed.response;
   const body = parsed.value as
-    | { messages?: unknown; durationSec?: unknown; mode?: unknown; deck?: unknown }
+    | { messages?: unknown; durationSec?: unknown; mode?: unknown; deck?: unknown; messageId?: unknown; revision?: unknown }
     | null;
   const turns = validateTurns(body?.messages);
   if (!turns) {
@@ -1834,13 +1879,30 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     .bind(id)
     .all<AnnotationRow>();
 
+  const course = await jobCourse(c.env,id);
+  let durable: Awaited<ReturnType<typeof beginCourseTurn>> | null = null;
+  if (course) {
+    try { durable = await beginCourseTurn(c.env,id,c.get('principal')!,turns.at(-1)!.content,body?.messageId,body?.revision); }
+    catch(error) { if(error instanceof CourseError)return courseErrorResponse(error);throw error; }
+  }
   return sseResponse(c, async (emit, signal) => {
-    const result = await streamChat(
-      { ...c.env, ASSISTANT_ABORT_SIGNAL: signal }, row, results ?? [], turns, parseDuration(body?.durationSec),
-      (text) => emit({ type: 'delta', text })
-    );
-    if (result.toolCalls.length) await emit({ type: 'tool_calls', calls: result.toolCalls });
-    await emit({ type: 'done', text: result.reply, finishReason: result.finishReason });
+    if (durable?.replay) {
+      await emit({type:'done',text:durable.replay.reply??'',finishReason:durable.replay.finish_reason??'stop',revision:durable.replay.revision,replayed:true});return;
+    }
+    let streamed = '';
+    let result;
+    try { result = await streamChat(
+      { ...c.env, ASSISTANT_ABORT_SIGNAL: signal }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
+      (text) => { streamed += text; return emit({ type: 'delta', text }); }
+    ); } catch(error) {
+      if(durable) await finishCourseTurn(c.env,id,c.get('principal')!.subject,durable.turnId,durable.claimId,{reply:streamed,toolCalls:[],finishReason:'error'},true);
+      throw error;
+    }
+    const revision = durable ? await finishCourseTurn(c.env,id,c.get('principal')!.subject,durable.turnId,durable.claimId,result,false,c.get('principal')!.displayName) : undefined;
+    if(durable && revision===null) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');
+    const calls = durable ? result.toolCalls.filter(call => call.name !== 'add_note') : result.toolCalls;
+    if (calls.length) await emit({ type: 'tool_calls', calls });
+    await emit({ type: 'done', text: result.reply, finishReason: result.finishReason, ...(revision===undefined?{}:{revision,notesChanged:result.toolCalls.some(call=>call.name==='add_note')}) });
   });
 });
 
@@ -1907,6 +1969,7 @@ app.get('/api/files/*', async (c) => {
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
 app.onError((_error, c) => {
+  if(_error instanceof CourseError)return courseErrorResponse(_error);
   console.error(JSON.stringify({ event: 'request_failed', method: c.req.method }));
   return c.json({ error: 'The service is temporarily unavailable. Please try again.' }, 503);
 });

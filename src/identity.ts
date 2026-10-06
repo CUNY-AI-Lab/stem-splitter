@@ -1,9 +1,12 @@
+import { courseIds, resolveCourse, jobCourse, jobPermission, cleanDisplayName, CourseError, courseErrorResponse } from './classroom/access.ts';
+import { STEM_COURSE_ID } from './classroom/contract.ts';
+import type { AdmissionCourseResolver, CourseAssignment } from './classroom/contract.ts';
 import type { Env } from './env.ts';
 
 export const STEM_AUDIENCE = 'cail:stem-splitter';
 export type AppRole = 'student' | 'instructor' | 'admin';
-export interface AppPrincipal { subject: string; role: AppRole; }
-export interface AdmissionResolver {
+export interface AppPrincipal { subject: string; role: AppRole; displayName: string; course: CourseAssignment | null; courseId: string | null; }
+export interface AdmissionResolver extends AdmissionCourseResolver {
   resolveMembership(input: { subject: string }): Promise<unknown>;
 }
 
@@ -78,23 +81,58 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
   const role: AppRole = membership.accessRole === 'admin' ? 'admin'
     : user.role === 'instructor' && (user.role_expires_at === null || Date.parse(user.role_expires_at) > Date.now())
       ? 'instructor' : 'student';
-  const principal = { subject: identity.subject, role };
-  if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);
-  if (path.startsWith('/api/admin/') && role !== 'admin') return authFailure('admission_required', 403);
-  if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && path !== '/api/teacher/logout' && role === 'student') {
-    return authFailure('admission_required', 403);
-  }
   const jobId = /^\/api\/(?:teacher\/)?jobs\/([^/]+)/.exec(path)?.[1] ?? /^\/api\/files\/stems\/([^/]+)/.exec(path)?.[1];
-  if (jobId) {
-    const owner = await env.DB.prepare('SELECT subject FROM job_owners WHERE job_id = ?').bind(jobId).first<{ subject: string }>();
-    // Existing unclaimed jobs are deliberately unavailable until a reviewed data import assigns ownership.
-    if (!owner || (role !== 'admin' && owner.subject !== identity.subject)) return Response.json({ error: 'Job not found' }, { status: 404 });
+  try {
+    const storedCourse = jobId ? await jobCourse(env, jobId) : null;
+    const routeCourse = /^\/api\/classroom\/courses\/([^/]+)/.exec(path)?.[1];
+    const selected = storedCourse?.course_id ?? routeCourse ?? request.headers.get('x-stem-course') ?? courseIds(env)[0];
+    const personal = selected === 'personal';
+    // Admin/app roles remain separate. They never create a course-owner grant.
+    let course: CourseAssignment | null = null;
+    try { course = await resolveCourse(env, identity.subject, personal ? courseIds(env)[0] : selected); }
+    catch (error) {
+      if (!(error instanceof CourseError) || error.status === 503) throw error;
+      if (!request.headers.has('x-stem-course') && !storedCourse && !routeCourse && ['/api/account','/api/teacher/me','/api/classroom/courses'].includes(path)) {
+        // Course owners may discover their independently authorized teaching context.
+        for (const id of courseIds(env).filter(id=>id!==selected)) {
+          try { const candidate=await resolveCourse(env,identity.subject,id); if(candidate.owner){course=candidate;break;} }
+          catch(lookup) { if(!(lookup instanceof CourseError)||lookup.status===503)throw lookup; }
+        }
+      }
+      if (!course && (role === 'student' || storedCourse || routeCourse || (!personal && selected !== courseIds(env)[0]))) throw error;
+    }
+    // The entry policy is the exact MSH245 participant source, independently of
+    // which other configured course is selected. Owners use their separate relationship.
+    if (course && !course.owner && course.classId !== STEM_COURSE_ID) {
+      const entry = await resolveCourse(env,identity.subject,STEM_COURSE_ID);
+      if (!entry.participant) throw new CourseError(403,'target_course_enrollment_required');
+    }
+    const principal: AppPrincipal = { subject: identity.subject, role,
+      displayName: cleanDisplayName(identity.name), course,
+      courseId: !personal && request.headers.has('x-stem-course') && course ? course.classId : null };
+    if (course?.displayNameSource === 'verified_profile') principal.displayName = cleanDisplayName(course.displayName);
+    if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);
+    if (path.startsWith('/api/admin/') && role !== 'admin') return authFailure('admission_required', 403);
+    if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && role === 'student' && !course?.owner) return authFailure('admission_required', 403);
+    // Cloudflare amendments belong to a course; the legacy singleton remains Railway-only.
+    if (path.startsWith('/api/teacher/prompt')) return Response.json({ error: 'Choose a course in the instructor page.' }, { status: 409 });
+    if (jobId) {
+      const permission = await jobPermission(env, principal, jobId);
+      if (!permission) return Response.json({ error: 'Job not found' }, { status: 404 });
+      const annotationWrite = /\/annotations(?:\/[^/]+)?$/.test(path);
+      const read = ['GET', 'HEAD'].includes(request.method);
+      if (!permission.owner && !permission.administration && ((!read && !(annotationWrite && permission.comment)) || path.includes('/listening-conversation') || path.startsWith('/api/teacher/'))) return Response.json({ error: 'Job not found' }, { status: 404 });
+      principal.courseId = permission.courseId;
+    }
+    authenticated(principal);
+  } catch (error) {
+    if (error instanceof CourseError) return courseErrorResponse(error);
+    throw error;
   }
   const folderId = /^\/api\/teacher\/folders\/([^/]+)/.exec(path)?.[1];
   if (folderId) {
     const folder = await env.DB.prepare('SELECT created_by FROM folders WHERE id = ?').bind(folderId).first<{ created_by: string }>();
     if (!folder || (role !== 'admin' && folder.created_by !== identity.subject)) return Response.json({ error: 'Folder not found' }, { status: 404 });
   }
-  authenticated(principal);
   return null;
 }

@@ -1,3 +1,4 @@
+import { courseFixture } from './course-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -15,7 +16,7 @@ function setup() {
   db.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   const membership = { ok: true, expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1, accessRole: 'member', budgetScope: 'person' };
   const env = { AUTH_MODE: 'cail', PUBLIC_BASE_URL: 'https://split.test', CAIL_IDENTITY_JWKS: issuer.jwksJson, DB: db, verifyCailIdentity,
-    ADMISSION_RESOLVER: { resolveMembership: async () => membership } } as unknown as Env;
+    ADMISSION_RESOLVER: { resolveMembership: async () => membership, resolveCourseAccess: async ({subject,classId})=>courseFixture(subject,classId) } } as unknown as Env;
   return { db, env, membership };
 }
 function req(path = '/api/account', token = alice, method = 'GET', origin = 'https://split.test') {
@@ -29,7 +30,7 @@ test('valid CAIL identity becomes a student; display and entitlement claims neve
   const principals: AppPrincipal[] = [];
   assert.equal(await authorizeCailRequest(request, env, (principal) => principals.push(principal)), null);
   assert.equal(principals[0]?.role, 'student');
-  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt', token), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/teacher/folders', token), env))?.status, 403);
 });
 test('wrong audience, array audience, expired token, wrong issuer, forged header fail authentication', async () => {
   const { env } = setup();
@@ -78,7 +79,7 @@ test('workspace disable and instructor expiry are enforced without a new login',
   await authorizeCailRequest(req(), env);
   await db.prepare('UPDATE app_users SET role = ?, role_expires_at = ?, updated_by = ?, revision = revision + 1 WHERE subject = ?')
     .bind('instructor', new Date(Date.now() + 60000).toISOString(), TEST_SUBJECTS.bob, TEST_SUBJECTS.alice).run();
-  assert.equal(await authorizeCailRequest(req('/api/teacher/prompt'), env), null);
+  assert.equal(await authorizeCailRequest(req('/api/teacher/folders'), env), null);
   await db.prepare('UPDATE app_users SET disabled = 1, revision = revision + 1 WHERE subject = ?').bind(TEST_SUBJECTS.alice).run();
   assert.equal((await authorizeCailRequest(req(), env))?.status, 403);
   const events = await db.prepare('SELECT * FROM app_user_events').all();
@@ -100,21 +101,21 @@ test('permanent instructor access remains app-local, revocable and subject to cu
   await db.prepare('UPDATE app_users SET role = ?, role_expires_at = NULL, updated_by = ?, revision = revision + 1 WHERE subject = ?')
     .bind('instructor', TEST_SUBJECTS.bob, TEST_SUBJECTS.alice).run();
   const principals: AppPrincipal[] = [];
-  assert.equal(await authorizeCailRequest(req('/api/teacher/prompt'), env, principal => principals.push(principal)), null);
+  assert.equal(await authorizeCailRequest(req('/api/teacher/folders'), env, principal => principals.push(principal)), null);
   assert.equal(principals[0]?.role, 'instructor');
   assert.equal((await authorizeCailRequest(req('/api/admin/users'), env))?.status, 403);
-  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt', bob), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/teacher/folders', bob), env))?.status, 403);
   assert.equal((await authorizeCailRequest(req('/api/jobs/not-owned'), env))?.status, 404);
 
   membership.expiresAt = new Date(Date.now() - 1000).toISOString();
-  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/teacher/folders'), env))?.status, 403);
   membership.expiresAt = new Date(Date.now() + 60000).toISOString();
-  assert.equal(await authorizeCailRequest(req('/api/teacher/prompt'), env), null);
+  assert.equal(await authorizeCailRequest(req('/api/teacher/folders'), env), null);
   env.ADMISSION_RESOLVER = { resolveMembership: async () => ({ ok: false, code: 'not_admitted' }) };
-  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/teacher/folders'), env))?.status, 403);
   env.ADMISSION_RESOLVER = { resolveMembership: async () => membership };
   await db.prepare('UPDATE app_users SET disabled = 1, revision = revision + 1 WHERE subject = ?').bind(TEST_SUBJECTS.alice).run();
-  assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+  assert.equal((await authorizeCailRequest(req('/api/teacher/folders'), env))?.status, 403);
 });
 
 test('a null instructor end date is distinct from expired, empty or malformed dates', async () => {
@@ -126,6 +127,6 @@ test('a null instructor end date is distinct from expired, empty or malformed da
     const principals: AppPrincipal[] = [];
     assert.equal(await authorizeCailRequest(req(), env, principal => principals.push(principal)), null);
     assert.equal(principals[0]?.role, 'student');
-    assert.equal((await authorizeCailRequest(req('/api/teacher/prompt'), env))?.status, 403);
+    assert.equal((await authorizeCailRequest(req('/api/teacher/folders'), env))?.status, 403);
   }
 });

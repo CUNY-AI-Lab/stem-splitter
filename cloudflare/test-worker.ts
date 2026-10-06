@@ -1,3 +1,5 @@
+import { courseFixture } from './course-fixture.ts';
+import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 // Local test entrypoint only. Never referenced by the deployment config.
 import preview, { type WorkerEnv } from './worker.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
@@ -26,6 +28,8 @@ export default {
     const jwt = request.headers.get('x-fixture-identity');
     const gatewayJwt = request.headers.get('x-fixture-gateway-identity') || '';
     const gatewayMode = request.headers.get('x-fixture-gateway-mode');
+    const courseOwner=request.headers.get('x-fixture-course-role')==='owner';
+    const courseRevoked=request.headers.get('x-fixture-course-state')==='revoked';
     const fixtureToken = '00000000-0000-4000-8000-000000000001.' + 'a'.repeat(43);
     const identity: WorkerIdentity = {
       begin: async () => { throw new Error('No fixture login'); },
@@ -62,7 +66,11 @@ export default {
           gatewayMode === 'trailing-error' ? error : { choices: [], usage: { total_tokens: 20 } }];
         return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream', 'x-request-id': requestId } });
       } } as Fetcher,
-      ADMISSION_RESOLVER: { resolveMembership: async ({ subject }) => ({
+      ADMISSION_RESOLVER: {
+        resolveCourseAccess: async ({subject,classId}) => courseRevoked?{ok:false,code:'revoked',retryable:false}:courseFixture(subject,classId,courseOwner),
+        listCourseAssignments: async ({subject}) => {const assignment=await courseFixture(subject,STEM_COURSE_ID,courseOwner);return {ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:1,assignments:[assignment],nextCursor:null};},
+        listCourseRoster: async ({subject,classId}) => {const assignment=await courseFixture(subject,classId,true);return {ok:true,classId,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:1,participants:[],nextCursor:null};},
+        resolveMembership: async ({ subject }) => ({
         ok: true, expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1,
         accessRole: subject === env.TEST_ADMIN ? 'admin' : 'member',
         budgetScope: subject === env.TEST_ADMIN ? 'admin' : 'person',
