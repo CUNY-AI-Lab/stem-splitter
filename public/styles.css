@@ -1131,6 +1131,7 @@ footer a:hover { color: var(--hot); }
 .note-form-time { color: var(--hot); font-size: 0.75rem; }
 .note-form input {
   flex: 1;
+  min-width: 0;
   background: var(--bg-raise);
   border: 1px solid var(--hot);
   border-radius: 6px;
@@ -1402,6 +1403,9 @@ footer a:hover { color: var(--hot); }
   margin: -0.35rem 0 0.9rem;
   min-height: 1.5rem;
 }
+
+/* An open note form sits between the transport and this row. */
+.note-form + .transport-aux { margin-top: 0.6rem; }
 
 .aux-label {
   font-size: 0.58rem;
