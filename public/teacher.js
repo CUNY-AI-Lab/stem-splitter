@@ -42,9 +42,25 @@ let historyNextBeforeId = null;
 let historyLoading = false;
 let selectedCourse=null;
 let courseMode=false;
+let promptGeneration=0, activePrompt=null, loadedPrompt=null, promptSaving=false;
+let previewSequence=0, historySequence=0;
+const reloadPromptBtn=document.getElementById('prompt-reload');
+const currentPrompt=context=>context&&context===activePrompt&&context.course===(courseMode?selectedCourse:null);
+const promptPath=(context,suffix='')=>context.course?`/api/classroom/courses/${encodeURIComponent(context.course)}/prompt${suffix}`:`/api/teacher/prompt${suffix}`;
+function enablePrompt(enabled){
+  for(const control of promptForm.querySelectorAll('input,textarea,button'))control.disabled=!enabled;
+  historyMoreBtn.disabled=!enabled||historyLoading;
+}
+function clearPrompt(){
+  loadedPrompt=null;loadedAmendment='';loadedRevision=0;promptSaving=false;historyLoading=false;
+  previewSequence++;historySequence++;promptForm.reset();enablePrompt(false);historyMoreBtn.textContent='LOAD EARLIER REVISIONS';
+  amendmentMeta.textContent='';fixedPromptMeta.textContent='';effectivePromptMeta.textContent='';
+  fixedPromptBody.replaceChildren();previewBody.replaceChildren();previewWrap.hidden=true;previewWrap.open=false;
+  renderHistory([]);setHistoryPagination(false,null);paintCounts();reloadPromptBtn.hidden=true;
+}
+
 
 async function api(path, options = {}) {
-  if(courseMode&&path.startsWith('/api/teacher/prompt'))path=path.replace('/api/teacher/prompt',`/api/classroom/courses/${encodeURIComponent(selectedCourse)}/prompt`);
   const res = await fetch(path, {
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -76,6 +92,7 @@ function showStatus(message, isError = false) {
 }
 
 function clearTeacherConsole() {
+  activePrompt=null;promptGeneration++;clearPrompt();
   signinForm.reset();
   promptForm.reset();
   loadedAmendment = '';
@@ -287,23 +304,25 @@ function setHistoryPagination(hasMore, nextBeforeId) {
 }
 
 async function loadPrompt() {
-  const record = await api('/api/teacher/prompt');
-  maxChars = record.maxChars ?? maxChars;
-  maxChangeNoteChars = record.maxChangeNoteChars ?? maxChangeNoteChars;
-  amendment.maxLength = maxChars;
-  changeNote.maxLength = maxChangeNoteChars;
-  amendment.value = record.amendment || '';
-  loadedAmendment = amendment.value.trim();
-  loadedRevision = record.revision ?? 0;
-  renderPromptMarkdown(record.basePrompt || '', fixedPromptBody);
-  paintCounts();
-  paintMeta(record);
-  renderHistory(record.history || []);
-  setHistoryPagination(record.historyHasMore, record.historyNextBeforeId);
-  requestAnimationFrame(() => {
-    fixedPromptScroll.scrollTop = fixedPromptScroll.scrollHeight;
-  });
+  const context={course:courseMode?selectedCourse:null,generation:++promptGeneration};
+  activePrompt=context;clearPrompt();showStatus('Loading course instructions…');
+  try {
+    const record=await api(promptPath(context));
+    if(!currentPrompt(context))return null;
+    maxChars=record.maxChars??maxChars;maxChangeNoteChars=record.maxChangeNoteChars??maxChangeNoteChars;
+    amendment.maxLength=maxChars;changeNote.maxLength=maxChangeNoteChars;
+    amendment.value=record.amendment||'';loadedAmendment=amendment.value.trim();loadedRevision=record.revision??0;
+    renderPromptMarkdown(record.basePrompt||'',fixedPromptBody);paintCounts();paintMeta(record);
+    renderHistory(record.history||[]);setHistoryPagination(record.historyHasMore,record.historyNextBeforeId);
+    loadedPrompt=context;enablePrompt(true);showStatus('');
+    requestAnimationFrame(()=>{if(currentPrompt(context))fixedPromptScroll.scrollTop=fixedPromptScroll.scrollHeight;});
+    return context;
+  } catch(error) {
+    if(currentPrompt(context)){enablePrompt(false);reloadPromptBtn.hidden=false;showStatus(error.message,true);}
+    throw error;
+  }
 }
+reloadPromptBtn.addEventListener('click',()=>{void loadPrompt().catch(()=>{});});
 
 signinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -352,76 +371,55 @@ fixedPromptDetails.addEventListener('toggle', () => {
   requestAnimationFrame(showPromptEnd);
 });
 
-promptForm.addEventListener('submit', async (event) => {
+promptForm.addEventListener('submit', async event => {
   event.preventDefault();
-  const nextAmendment = amendment.value.trim();
-  const changed = nextAmendment !== loadedAmendment;
-  if (changed && !changeNote.value.trim()) {
-    showStatus('Add a change note before saving.', true);
-    changeNote.focus();
-    return;
-  }
-
-  showStatus('SAVING…');
+  let context=loadedPrompt;
+  if(!currentPrompt(context)||promptSaving)return;
+  const changed=amendment.value.trim()!==loadedAmendment;
+  if(changed&&!changeNote.value.trim()){showStatus('Add a change note before saving.',true);changeNote.focus();return;}
+  const payload={amendment:amendment.value,changeNote:changeNote.value,expectedRevision:loadedRevision};
+  promptSaving=true;enablePrompt(false);previewSequence++;historySequence++;showStatus('SAVING…');
   try {
-    const record = await api('/api/teacher/prompt', {
-      method: 'PUT',
-      body: JSON.stringify({
-        amendment: amendment.value,
-        changeNote: changeNote.value,
-        expectedRevision: loadedRevision,
-      }),
-    });
-
-    if (!record.changed) {
-      showStatus('Nothing changed.');
-      return;
-    }
-
-    changeNote.value = '';
-    await loadPrompt();
-    showStatus(
-      record.guidesCleared ? 'Saved. Applies when a guide is generated.' : 'Saved.'
-    );
-    if (!previewWrap.hidden) await loadPreview();
-  } catch (error) {
-    showStatus(error.message, true);
+    const record=await api(promptPath(context),{method:'PUT',body:JSON.stringify(payload)});
+    if(!currentPrompt(context))return;
+    if(!record.changed){showStatus('Nothing changed.');return;}
+    context=await loadPrompt();
+    if(currentPrompt(context))showStatus(record.guidesCleared?'Saved. Applies when a guide is generated.':'Saved.');
+  } catch(error) {
+    if(currentPrompt(context))showStatus(error.message,true);
+  } finally {
+    if(currentPrompt(context)){promptSaving=false;enablePrompt(loadedPrompt===context);}
   }
 });
 
-async function loadPreview() {
-  const { prompt } = await api('/api/teacher/prompt/preview');
-  renderPromptMarkdown(prompt, previewBody);
-}
-
 previewBtn.addEventListener('click', async () => {
+  const context=loadedPrompt,sequence=++previewSequence;
+  if(!currentPrompt(context)||promptSaving)return;
+  previewBtn.disabled=true;
   try {
-    await loadPreview();
-    previewWrap.hidden = false;
-    previewWrap.open = true;
-    previewWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } catch (error) {
-    showStatus(error.message, true);
+    const {prompt}=await api(promptPath(context,'/preview'));
+    if(!currentPrompt(context)||sequence!==previewSequence)return;
+    renderPromptMarkdown(prompt,previewBody);previewWrap.hidden=false;previewWrap.open=true;
+    previewWrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+  } catch(error) {
+    if(currentPrompt(context)&&sequence===previewSequence)showStatus(error.message,true);
+  } finally {
+    if(currentPrompt(context)&&sequence===previewSequence)previewBtn.disabled=false;
   }
 });
 
 historyMoreBtn.addEventListener('click', async () => {
-  if (historyLoading || historyNextBeforeId === null) return;
-  historyLoading = true;
-  historyMoreBtn.disabled = true;
-  historyMoreBtn.textContent = 'LOADING EARLIER REVISIONS…';
+  const context=loadedPrompt,sequence=++historySequence;
+  if(!currentPrompt(context)||promptSaving||historyLoading||historyNextBeforeId===null)return;
+  historyLoading=true;historyMoreBtn.disabled=true;historyMoreBtn.textContent='LOADING EARLIER REVISIONS…';
   try {
-    const page = await api(
-      `/api/teacher/prompt/history?before=${encodeURIComponent(historyNextBeforeId)}`
-    );
-    renderHistory(page.history || [], true);
-    setHistoryPagination(page.historyHasMore, page.historyNextBeforeId);
-  } catch (error) {
-    showStatus(error.message, true);
+    const page=await api(promptPath(context,`/history?before=${encodeURIComponent(historyNextBeforeId)}`));
+    if(!currentPrompt(context)||sequence!==historySequence)return;
+    renderHistory(page.history||[],true);setHistoryPagination(page.historyHasMore,page.historyNextBeforeId);
+  } catch(error) {
+    if(currentPrompt(context)&&sequence===historySequence)showStatus(error.message,true);
   } finally {
-    historyLoading = false;
-    historyMoreBtn.disabled = false;
-    historyMoreBtn.textContent = 'LOAD EARLIER REVISIONS';
+    if(currentPrompt(context)&&sequence===historySequence){historyLoading=false;historyMoreBtn.disabled=false;historyMoreBtn.textContent='LOAD EARLIER REVISIONS';}
   }
 });
 
@@ -445,7 +443,7 @@ historyMoreBtn.addEventListener('click', async () => {
       }
     }
     if(cail){
-      const {account}=await api('/api/account');window.StemSessionGuard?.start(account.subject,()=>{selectedCourse=null;courseMode=false;loadedAmendment='';amendment.value='';changeNote.value='';});
+      const {account}=await api('/api/account');window.StemSessionGuard?.start(account.subject,()=>{selectedCourse=null;courseMode=false;activePrompt=null;promptGeneration++;clearTeacherConsole();});
       const courses=[];let cursor=null;
       do{const page=await api('/api/classroom/courses'+(cursor?`?cursor=${encodeURIComponent(cursor)}`:''));courses.push(...page.courses.filter(course=>course.owner));cursor=page.nextCursor;}while(cursor);
       if(!courses.length){showPanel(false);signinPanel.querySelector('p').textContent='Current course ownership is required to review students or edit course instructions.';return;}
@@ -456,9 +454,9 @@ historyMoreBtn.addEventListener('click', async () => {
       const setRoster=()=>{document.getElementById('teacher-roster').href=`/classroom.html?course=${encodeURIComponent(selectedCourse)}`;};setRoster();
       select.addEventListener('change',async()=>{
         if(amendment.value.trim()!==loadedAmendment&&!confirm('Discard unsaved course instructions?')){select.value=selectedCourse;return;}
-        selectedCourse=select.value;setRoster();try{await loadPrompt();showStatus('');}catch(error){showStatus(error.message,true);}
+        selectedCourse=select.value;setRoster();try{await loadPrompt();}catch{/* The current load owns its error state. */}
       });
-      await loadPrompt();showPanel(true,{displayName:courses.find(c=>c.classId===selectedCourse).displayName||'Instructor'});return;
+      showPanel(true,{displayName:courses.find(c=>c.classId===selectedCourse).displayName||'Instructor'});await loadPrompt().catch(()=>{});return;
     }
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {

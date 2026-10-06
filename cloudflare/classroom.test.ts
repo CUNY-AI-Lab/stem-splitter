@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import app from '../src/index.ts';
 import { SqliteD1 } from '../server/d1.ts';
 import type { Env } from '../src/env.ts';
@@ -129,7 +129,8 @@ test('course folders enforce same-course items, grants and author-only notes on 
 });
 test('fresh and additive migration preserve private history, no backfill; retained course messages purge',async()=>{
   const fresh=readFileSync(new URL('../schema.sql',import.meta.url),'utf8');
-  const legacy=execFileSync('git',['show','e1918da3cb6fc37f9715d4cd143af5a5c6c880c6:schema.sql'],{encoding:'utf8'});
+  const legacy=readFileSync(new URL('./fixtures/pre-classroom-schema.sql',import.meta.url),'utf8');
+  assert.equal(createHash('sha256').update(legacy).digest('hex'),'daa7333b25af106c1b2db9cf71bcee70601ed59c51642ca4ff8a0c6eb3f13362');
   const db=new SqliteD1(':memory:');db.applySchema(legacy);await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(ids.alice).run();await db.prepare("INSERT INTO jobs(id,filename,source_key,status) VALUES('old','Old private','uploads/old/source.wav','done')").run();await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind('old',ids.alice).run();await db.prepare("INSERT INTO listening_conversations(job_id,subject,entries,revision,expires_at) VALUES(?,?,'[{\"kind\":\"coach\",\"text\":\"Private history\"}]',3,datetime('now','+90 days'))").bind('old',ids.alice).run();
   await db.prepare("INSERT INTO annotations(id,job_id,at_seconds,text) VALUES('legacy-note','old',1,'Legacy private note')").run();
   const migration=readFileSync(new URL('../migrations/0021-classroom.sql',import.meta.url),'utf8');db.applySchema(migration);

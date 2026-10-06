@@ -24,6 +24,12 @@ malformed, expired, scheduled, or stale authority receipt never grants access.
 precedence over it. Course owners do not become app instructors or admins.
 `X-Stem-Account` identifies only the requesting account so a restored or changed
 browser session can discard the previous account's visible state.
+An identity recheck immediately hides and disables the private view and pauses
+its audio. An outage keeps the view concealed with a Retry action. Only a
+verified same-account response restores its drafts; account changes clear them.
+Course selections also have independent request generations: pending/failed
+loads clear and disable prior course data, and late reads or writes cannot
+replace the newly selected course's prompt, history, roster or folder state.
 
 New work defaults to Personal. Course work requires explicit selection and the
 `course-work-v1` disclosure acknowledgment before creation. Job ownership and
@@ -103,6 +109,9 @@ and compare table/column contracts with a fresh database. They assert unchanged
 private history and zero manufactured associations. Fresh schema reapplication
 is supported; accidental raw migration replay fails at the duplicate column
 without rewriting historical content. Workerd browser tests use fresh D1.
+The old schema is a digest-checked fixture with its baseline commit recorded in
+`cloudflare/fixtures/pre-classroom-schema.md`, so this test also works in shallow
+CI checkouts without fetching repository history.
 
 For a separate authorized rehearsal, from `cloudflare/` use isolated local state:
 

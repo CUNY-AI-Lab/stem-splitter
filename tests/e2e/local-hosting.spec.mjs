@@ -171,12 +171,13 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
-  await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
   const labLink = page.locator('.masthead').getByRole('link', { name: 'CUNY AI Lab' });
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  await expect(labLink.locator('img')).toHaveCSS('height', '44px');
+  await expect(labLink.locator('img')).toHaveCSS('width', '150px');
+  await expect(page.locator('.tagline')).toHaveText('Split apart a song, listen one layer at a time, annotate as you go.');
   await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -194,7 +195,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // controls stay behind the downward caret instead of squeezing the title
   // down to a one-letter ellipsis.
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(labLink.locator('img')).toHaveCSS('height', '36px');
+  expect((await labLink.locator('img').boundingBox()).width).toBeLessThanOrEqual(150);
   expect((await labLink.boundingBox()).height).toBeGreaterThanOrEqual(44);
   const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
     element.getBoundingClientRect().width

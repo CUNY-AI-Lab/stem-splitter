@@ -10,15 +10,15 @@ policy. The independent reviewer records their own findings separately.
 
 | Check | Result | Local evidence |
 | --- | --- | --- |
-| Root `bun run test` | Typechecks; 321 Worker, 42 server, 5 separator, 30 discovery and 9 comparator tests pass | `/tmp/stem-classroom-root-reviewed.log` |
-| Cloudflare `bun run typecheck && bun run test` | 50 tests pass | `/tmp/stem-classroom-unit-final.log` |
-| Full Cloudflare Chrome browser suite | 30 tests pass | `/tmp/stem-classroom-chrome-final.log` |
-| Firefox playback, sharing and classroom suite | 19 pass; native Chromium zoom intentionally skipped | `/tmp/stem-classroom-firefox-reviewed.log` |
-| WebKit playback, sharing and classroom suite | 19 pass; native Chromium zoom intentionally skipped | `/tmp/stem-classroom-webkit-reviewed.log` |
-| Final Firefox classroom rerun | 4 pass; native Chromium zoom skipped | `/tmp/stem-classroom-firefox-final.log` |
-| Final WebKit classroom control rerun | 4 pass; native Chromium zoom skipped | `/tmp/stem-classroom-webkit-controls.log` |
+| Root `bun run test` | Typechecks; 321 Worker, 42 server, 5 separator, 30 discovery and 9 comparator tests pass | `/tmp/stem-pr2-root-final.log` |
+| Cloudflare `bun run typecheck && bun run test` | 50 tests pass | `/tmp/stem-classroom-unit-portable.log` |
+| Full Cloudflare Chrome browser suite | 36 tests pass | `/tmp/stem-pr2-chrome-final.log` |
+| Firefox playback, sharing and classroom suite | 25 pass; native Chromium zoom intentionally skipped | `/tmp/stem-pr2-firefox-final.log` |
+| WebKit playback, sharing and classroom suite | 25 pass; native Chromium zoom intentionally skipped | `/tmp/stem-pr2-webkit-final.log` |
+| Native Chromium 200% follow-up | Waveform mouse and keyboard seek move both stems together; note/speed spacing passes | `/tmp/stem-pr2-native-zoom-final.log` |
+| Fully mocked local-hosting browser suite | 19 tests pass | `/tmp/stem-local-hosting-final.log` |
 | Local Wrangler D1 baseline → migration 0021 | Old private jobs, note text and conversation revision/text unchanged; zero course assignments manufactured; lease column present | `/tmp/stem-classroom-d1-reviewed.log` |
-| Cloudflare Wrangler dry build | Pass; no deployment | `/tmp/stem-classroom-dryrun-final.log` |
+| Cloudflare Wrangler dry build | Pass; no deployment | `/tmp/stem-pr2-dryrun-final.log` |
 | Production dependency audit, Cloudflare | No vulnerabilities in 6 audited packages | `/tmp/stem-classroom-cloudflare-audit.log` |
 | Production dependency audit, legacy root | Four pre-existing moderate Hono advisories; frozen root lock unchanged | `/tmp/stem-classroom-root-audit.log` |
 
@@ -34,7 +34,8 @@ inverted validity windows, stale receipts and access markers on plain assignment
 pages. Conversation tests cover concurrent duplicate input, late completion
 after reset with the same client message ID, interrupted claims, and storage
 failure before/after commit. Recovery preserves earlier messages and does not
-repeat an uncertain model operation.
+repeat an uncertain model operation. The upgrade fixture has a pinned baseline
+commit and digest; it no longer depends on Git history being present in CI.
 
 ## Browser observations
 
@@ -56,14 +57,29 @@ empty collection. Offline failures and revoked access are deliberately injected
 and shown as recoverable status messages. Tests assert overflow and usable
 controls at widths 320, 360, 390, 414, 540, 768, 1024 and 1440. Course and sharing
 selectors have actual rendered heights of at least 44 pixels in all three
-engines. PR27's note-entry/speed-control spacing checks remain in the suite.
+engines. Additional browser regressions hold account checks and course requests
+open, return 503/network failures, switch courses twice, and finish stale prompt,
+preview, history and folder requests. They verify hidden/inert private views,
+paused audio, same-account draft recovery and writes bound to the originating
+course. PR27's note-entry/speed-control spacing checks remain in the suite.
 
 CSS layout zoom and native browser zoom are different checks. The native
 Chromium test calls the browser's `tabs.setZoom(2)` in a disposable test profile,
 asserts `getZoom() === 2`, doubled device-pixel ratio and reduced CSS viewport,
-then checks the note/SAVE and speed controls. Its screenshot uses the browser's
+then clicks a waveform, uses Home/ArrowRight and checks that both audio clocks
+move together before checking the note/SAVE and speed controls. Its audio fixture
+honors byte-range requests, matching the real media endpoint. The screenshot uses the browser's
 visible-tab capture, not CSS zoom. Firefox and WebKit skip only this
 Chromium-specific native-zoom test and retain their layout/interaction checks.
+
+Every stem waveform now contains a named native range input. Waveforms and the
+main slider use the same preview, cancellation, keyboard and single multi-stem
+commit path. Browser checks cover all six track rows, narrow layouts, paused and
+playing clocks, playback rate, same-song track changes, two songs, missing/invalid
+durations, detached sessions and stale pointer input. All three engines exercise
+native mouse drags, keyboard input and touch taps; Chromium additionally uses
+real touch-start/move/end events for a drag. Existing two-, four- and six-stem
+playback, mix/focus, seek and waveform-peak checks remain passing.
 
 Screenshots are outside the repository under
 `/tmp/stem-classroom-screenshots/`. Reviewable examples:
@@ -74,6 +90,8 @@ Screenshots are outside the repository under
 - `classroom-roster-folders-mobile-webkit.png`: narrow course/folder layout.
 - `classroom-prompt-desktop-chrome.png`: saved course prompt controls.
 - `classroom-native-browser-200-chromium.png`: actual 200% browser zoom.
+- `waveform-seek-focus-chrome.png`: keyboard focus on a narrow waveform control.
+- `classroom-account-unavailable-chrome.png`: private view concealed during an outage.
 
 These checks do not prove a real CUNY MFA return, live enrollment/owner state,
 production permissions, real provider output or remote migration. Those remain

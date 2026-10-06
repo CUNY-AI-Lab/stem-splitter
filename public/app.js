@@ -1587,7 +1587,9 @@ class Mixer {
       row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
       row.innerHTML = `
         <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
-        <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="meter"><canvas class="waveform" aria-hidden="true"></canvas><i></i><i></i><i></i><i></i><i></i>
+          <input class="waveform-seek" type="range" min="0" max="1000" value="0" disabled aria-label="${esc(this.label(stem.name))} waveform position in ${esc(this.job.filename)}" title="Click or drag to seek all stems" />
+        </span>
         <span class="ch-actions">
           <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
           <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
@@ -1606,6 +1608,7 @@ class Mixer {
         bars: [...row.querySelectorAll('.meter i')],
         levels: new Float32Array(METER_BANDS.length),
         waveform: row.querySelector('.waveform'),
+        seek: row.querySelector('.waveform-seek'),
         waveformStatus: 'idle',
         waveformPeaks: null,
         mixGain: 1,
@@ -1616,7 +1619,9 @@ class Mixer {
       );
       soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
       audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
-      audio.addEventListener('loadedmetadata', () => this.loadWaveforms());
+      audio.addEventListener('loadedmetadata', () => { this.loadWaveforms(); this.paint(); });
+      audio.addEventListener('durationchange', () => this.paint());
+      audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
 
       const nameEl = row.querySelector('.ch-name');
       nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
@@ -1645,51 +1650,11 @@ class Mixer {
 
     this.playBtn.addEventListener('click', () => (this.playing || this.starting ? this.pause() : this.play()));
 
-    // Preview while dragging; seek every stem only when the gesture finishes.
-    // Native range event ordering differs across browsers. A late input or a
-    // missing change must never leave the display permanently in preview mode.
+    // Every waveform and the main slider share the same native-range lifecycle.
     this.scrubbing = false;
-    this.seek.addEventListener('pointerdown', (event) => {
-      this.endScrub(false);
-      this.scrubbing = true;
-      this.scrubPointer = event.pointerId;
-      // Let the native range own pointer capture. Observe releases outside the
-      // element too, without taking capture away from its browser-native thumb.
-      this.scrubEvents = new AbortController();
-      const options = { capture: true, signal: this.scrubEvents.signal };
-      window.addEventListener('pointerup', (e) => {
-        if (e.pointerId === this.scrubPointer) this.queueScrubEnd();
-      }, options);
-      window.addEventListener('pointercancel', (e) => {
-        if (e.pointerId === this.scrubPointer) this.endScrub(false);
-      }, options);
-      window.addEventListener('blur', (event) => {
-        if (event.target === window) this.endScrub(false);
-      }, options);
-    });
-    this.seek.addEventListener('pointerup', () => this.queueScrubEnd());
-    this.seek.addEventListener('pointercancel', () => this.endScrub(false));
-    this.seek.addEventListener('lostpointercapture', () => this.queueScrubEnd());
-    this.seek.addEventListener('blur', () => this.endScrub(true));
-    // Recover a lost release before the next mixer interaction.
-    li.addEventListener('pointerdown', (event) => {
-      if (event.target !== this.seek && this.scrubbing) this.endScrub(true);
-    }, true);
-    this.seek.addEventListener('input', () => {
-      this.scrubbing = true;
-      const t = (this.seek.value / 1000) * (master.duration || 0);
-      this.scrubTarget = t;
-      this.seek.style.setProperty('--fill', `${this.seek.value / 10}%`);
-      this.tcNow.textContent = fmt(t);
-      for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
-      // Keyboard/assistive input has no pointer lifecycle. Give native change
-      // its turn, then commit even if that event is absent.
-      if (this.scrubPointer == null) this.queueScrubEnd();
-    });
-    this.seek.addEventListener('change', () => {
-      this.scrubTarget = (this.seek.value / 1000) * (master.duration || 0);
-      this.endScrub(true);
-    });
+    this.seekControls = [this.seek, ...[...this.channelsByName.values()].map(channel => channel.seek)];
+    for (const control of this.seekControls) this.bindSeekControl(control);
+    this.paint();
 
     this.refreshBtn=li.querySelector('.refresh-btn');
     this.refreshStatus=li.querySelector('.refresh-status');
@@ -1835,6 +1800,7 @@ class Mixer {
     // invisible stale menu instead of opening a fresh one.
     if (collapsed) this.el.querySelector('.folder-menu')?.remove();
     if (this.el.classList.contains('collapsed') === collapsed) return;
+    if (collapsed) this.endScrub(false);
     if (collapsed && (this.playing || this.starting)) this.pause();
     this.setActionsOpen(false);
     this.el.classList.toggle('collapsed', collapsed);
@@ -2159,6 +2125,8 @@ class Mixer {
   }
 
   disposeWaveforms() {
+    this.disposed = true;
+    this.endScrub(false);
     this.waveformAbort.abort();
     this.waveformObserver.disconnect();
     this.waveformResize.disconnect();
@@ -2232,10 +2200,7 @@ class Mixer {
   paint() {
     if (this.scrubbing) return; // don't fight the user's drag
     const master = this.audios[0];
-    const dur = Number.isFinite(master.duration) ? master.duration : 0;
-    const pct = dur ? (master.currentTime / dur) * 1000 : 0;
-    this.seek.value = pct;
-    this.seek.style.setProperty('--fill', `${pct / 10}%`);
+    this.paintSeekControls(master.currentTime);
     this.tcNow.textContent = fmt(master.currentTime);
     for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
   }
@@ -2291,6 +2256,78 @@ class Mixer {
     input.addEventListener('blur', () => done(true));
   }
 
+  seekDuration() {
+    // A displayed/decoded waveform is not proof that each media clock is ready.
+    // Never write NaN/Infinity or start a partial multi-stem seek during loading.
+    if (this.disposed || !this.audios.every(audio => Number.isFinite(audio.duration) && audio.duration > 0 && !audio.error)) return 0;
+    return this.audios[0].duration;
+  }
+
+  paintSeekControls(time) {
+    const duration = this.seekDuration();
+    const bounded = duration && Number.isFinite(time) ? Math.max(0, Math.min(time, duration)) : 0;
+    const value = duration ? bounded / duration * 1000 : 0;
+    for (const control of this.seekControls || []) {
+      control.disabled = !duration;
+      control.value = value;
+      control.setAttribute('aria-valuetext', duration ? `${fmt(bounded)} of ${fmt(duration)}` : 'Audio is loading');
+    }
+    this.seek.style.setProperty('--fill', `${value / 10}%`);
+  }
+
+  bindSeekControl(control) {
+    const active = () => this.scrubControl === control;
+    control.addEventListener('pointerdown', event => {
+      if (control.disabled || event.button !== 0 || (event.pointerType && !event.isPrimary)) return;
+      this.endScrub(false);
+      this.scrubbing = true;
+      this.scrubControl = control;
+      this.scrubPointer = event.pointerId;
+      // The native range retains pointer capture for mouse, pen and touch.
+      // These shared listeners recover outside releases and interrupted gestures.
+      this.scrubEvents = new AbortController();
+      const options = { capture: true, signal: this.scrubEvents.signal };
+      window.addEventListener('pointerup', event => {
+        if (event.pointerId === this.scrubPointer) this.queueScrubEnd();
+      }, options);
+      window.addEventListener('pointercancel', event => {
+        if (event.pointerId === this.scrubPointer) this.endScrub(false);
+      }, options);
+      window.addEventListener('pointerdown', event => {
+        if (event.target !== control) this.endScrub(true);
+      }, options);
+      window.addEventListener('blur', event => {
+        if (event.target === window) this.endScrub(false);
+      }, options);
+    });
+    control.addEventListener('pointerup', () => { if (active()) this.queueScrubEnd(); });
+    control.addEventListener('pointercancel', () => { if (active()) this.endScrub(false); });
+    control.addEventListener('lostpointercapture', () => { if (active()) this.queueScrubEnd(); });
+    control.addEventListener('blur', () => { if (active()) this.endScrub(true); });
+    control.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && active()) { event.preventDefault(); this.endScrub(false); }
+    });
+    const preview = () => {
+      if (control.disabled || (this.scrubControl && !active())) return false;
+      const duration = this.seekDuration();
+      if (!duration) { this.endScrub(false); return false; }
+      this.scrubControl = control;
+      this.scrubbing = true;
+      this.scrubTarget = Number(control.value) / 1000 * duration;
+      this.paintSeekControls(this.scrubTarget);
+      this.tcNow.textContent = fmt(this.scrubTarget);
+      for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
+      return true;
+    };
+    control.addEventListener('input', () => {
+      if (!preview()) return;
+      // Keyboard/assistive input has no pointer lifecycle. Native change gets
+      // its turn before the fallback commit, just as on the main slider.
+      if (this.scrubPointer == null) this.queueScrubEnd();
+    });
+    control.addEventListener('change', () => { if (preview()) this.endScrub(true); });
+  }
+
   queueScrubEnd() {
     clearTimeout(this.scrubTimer);
     // Wait until native range release/change processing has completed before
@@ -2304,6 +2341,7 @@ class Mixer {
     this.scrubEvents?.abort();
     this.scrubEvents = null;
     this.scrubPointer = null;
+    this.scrubControl = null;
     this.scrubTarget = null;
     this.scrubbing = false;
     if (commit && Number.isFinite(target)) this.seekTo(target);
@@ -2313,15 +2351,16 @@ class Mixer {
   seekTo(t) {
     if (!Number.isFinite(t)) return;
     this.endScrub(false);
+    const duration = this.seekDuration();
+    if (!duration) return;
     this.clockProgress = null;
-    const duration = this.audios[0].duration;
-    t = Math.max(0, Number.isFinite(duration) ? Math.min(t, duration) : t);
+    t = Math.max(0, Math.min(t, duration));
     for (const a of this.audios) {
       // Seeks can land while paused (Listening Guide tool calls do this a lot) — start
       // buffering the target region now so play() finds data ready instead of
       // six stems stalling at once.
       if (a.preload !== 'auto') a.preload = 'auto';
-      a.currentTime = t;
+      a.currentTime = Math.min(t, a.duration);
     }
     this.paint();
   }
@@ -2578,6 +2617,7 @@ class Mixer {
       if (!nameEl) continue; // a rename is open in this strip — leave it alone
       nameEl.textContent = this.label(name);
       channel.muteBtn.setAttribute('aria-label', `Mute ${this.label(name)}`);
+      channel.seek.setAttribute('aria-label', `${this.label(name)} waveform position in ${this.job.filename}`);
     }
   }
 
@@ -4548,7 +4588,7 @@ async function initialize() {
     if (principal && /^cail-[0-9a-f]{32}$/.test(principal.subject)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
-      window.StemSessionGuard?.start(accountSubject,()=>{for(const mixer of mixers.values()){mixer.pause();mixer.disposeWaveforms();}mixers.clear();jobStates.clear();accountJobs=[];accountSubject=null;selectedCourse='personal';});
+      window.StemSessionGuard?.start(accountSubject,()=>{for(const mixer of mixers.values()){mixer.pause();mixer.disposeWaveforms();}mixers.clear();jobStates.clear();accountJobs=[];accountSubject=null;selectedCourse='personal';},()=>{for(const mixer of mixers.values()){mixer.pause();mixer.coachAbort?.abort();}});
       const link = document.createElement('a');
       link.className = 'account-button';
       link.href = '/account.html';
