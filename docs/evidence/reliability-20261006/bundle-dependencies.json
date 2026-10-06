@@ -1,10 +1,11 @@
 {
   "checkedAt": "2026-10-06",
+  "sourceHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
   "command": "wrangler deploy --config wrangler.jsonc --dry-run --metafile",
   "honoInputCount": 27,
   "allHonoInputsUsePatchedAlias": true,
   "legacyRootHonoInputCount": 0,
   "bundledHonoVersion": "4.13.11",
-  "metafileSha256": "f6ac622e342670aaffec8383cd1220393a8a09c3174125f24d00fbbf15bb8392",
+  "metafileSha256": "90f2d753424dc61b3064b5350ea2719e58b530eb2c2c2900758921c572cb1b8a",
   "rootAnalysisDependencyInputsChanged": false
 }
