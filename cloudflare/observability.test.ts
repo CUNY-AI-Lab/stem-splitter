@@ -39,9 +39,23 @@ test('operation attempts, fallback and settlement emit one durable receipt witho
  assert.ok(results!.some(r=>r.model==='deepseek-v4-flash-0731'&&r.fallback===1));
  assert.equal(JSON.stringify((await db.prepare('SELECT usage_json FROM operation_attempts').all()).results).includes('private_text'),false);
  const summary=await usageSummary(db,7);assert.equal(JSON.stringify(summary).includes(principal.subject),false);
+ assert.ok(summary.operations.length>0);assert.ok(summary.operations.every(row=>(row as any).actor_class==='member'));
  await db.prepare('UPDATE operation_events SET at=?').bind(Date.now()-31*86400000).run();
  await purgeOperationContent(db);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_events').first<any>())!.n,0);
  assert.ok(await db.prepare('SELECT 1 FROM app_operations').first());
+});
+test('guest and member usage summaries keep immutable accounting classes separate without exposing identities',async()=>{
+ const db=setup(),now=Date.now(),guest={...principal,subject:'guest-'+ 'a'.repeat(64),role:'guest' as const,quotaClass:'guest' as const};
+ await db.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
+   .bind(guest.subject,now,now+86400000,new Date(now).toISOString().slice(0,10)).run();
+ const {operation}=await reserveOperation(db,{subject:guest.subject,quotaClass:'guest',courseId:null,kind:'chat',phase:'chat',key:'guest-observed-input-01',fingerprint:'hash'});
+ await settleOperation(db,operation.id,'partial','partial_response');
+ for(let i=0;i<260;i++)await recordClientUses(db,guest,[{id:`guest-usage-${String(i).padStart(12,'0')}`,type:'page_view'}]);
+ const summary=await usageSummary(db,7);
+ assert.ok(summary.operations.some(row=>(row as any).actor_class==='guest'&&(row as any).quota_effect==='charged'));
+ assert.equal(summary.uses.reduce((count,row)=>count+Number((row as any).count),0),250);
+ assert.ok(summary.uses.every(row=>(row as any).actor_class==='guest'));
+ assert.equal(JSON.stringify(summary).includes(guest.subject),false);
 });
 test('server request rejection retries coalesce and never retain request contents',async()=>{
  const db=setup(),env={AUTH_MODE:'cail',DB:db} as Env;

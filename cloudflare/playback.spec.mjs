@@ -639,12 +639,13 @@ test('waveforms support native touch input without moving the narrow page or con
 });
 
 test('usage observations retry once with stable IDs and exclude private content and clock ticks',async({page})=>{
- const batches=[];
- await page.route('**/api/usage-events',async route=>{batches.push(route.request().postDataJSON());await route.fulfill({status:batches.length===1?503:200,contentType:'application/json',body:'{"accepted":true}'});});
+ const batches=[],actors=[];
+ await page.route('**/api/usage-events',async route=>{batches.push(route.request().postDataJSON());actors.push(route.request().headers()['x-stem-usage-actor']);await route.fulfill({status:batches.length===1?503:200,contentType:'application/json',body:'{"accepted":true}'});});
  const server=await fixture(page,['vocals','drums','bass','other'],{owned:true});
  try {
   await expect.poll(()=>batches.length).toBeGreaterThanOrEqual(2);
   expect(batches[0]).toEqual(batches[1]);
+  expect(actors[0]).toBe(TEST_SUBJECTS.alice);expect(actors[1]).toBe(actors[0]);
   await page.locator('.play-btn').click();
   await expect.poll(()=>page.evaluate(()=>mixers.get('remix-fixture').playing)).toBe(true);
   await page.evaluate(()=>{const m=mixers.get('remix-fixture');m.seekTo(42);m.seekTo(8,'loop');});

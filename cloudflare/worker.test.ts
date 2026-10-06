@@ -133,9 +133,10 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(job.status, 'done');
     assert.equal(job.stems.length, 4);
     const usageEvent={id:'workerd-usage-event-0001',type:'seek',jobId:created.id,positionBucket:4};
-    assert.equal((await call('/api/usage-events',1,{method:'POST',body:JSON.stringify({events:[usageEvent]})})).status,404);
-    assert.equal((await call('/api/usage-events',0,{method:'POST',body:JSON.stringify({events:[{...usageEvent,text:'must not be logged'}]})})).status,400);
-    for(let n=0;n<2;n++)assert.equal((await call('/api/usage-events',0,{method:'POST',body:JSON.stringify({events:[usageEvent]})})).status,200);
+    assert.equal((await call('/api/usage-events',1,{method:'POST',headers:{'X-Stem-Usage-Actor':subjects[1]},body:JSON.stringify({events:[usageEvent]})})).status,404);
+    assert.equal((await call('/api/usage-events',0,{method:'POST',headers:{'X-Stem-Usage-Actor':subjects[0]},body:JSON.stringify({events:[{...usageEvent,text:'must not be logged'}]})})).status,400);
+    assert.equal((await call('/api/usage-events',1,{method:'POST',headers:{'X-Stem-Usage-Actor':subjects[0]},body:JSON.stringify({events:[{id:'old-account-page-0001',type:'page_view'}]})})).status,409,'old queued observations cannot become the next account');
+    for(let n=0;n<2;n++)assert.equal((await call('/api/usage-events',0,{method:'POST',headers:{'X-Stem-Usage-Actor':subjects[0]},body:JSON.stringify({events:[usageEvent]})})).status,200);
     assert.equal((await call('/api/admin/usage-events')).status,403);
     const usage=await(await call('/api/admin/usage-events',2)).json();
     assert.equal(usage.uses.find((row:any)=>row.event_type==='seek').count,1);

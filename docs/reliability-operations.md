@@ -8,7 +8,13 @@ release gates below still apply.
 ## Accounting and recovery
 
 A student's successful splits plus active reservations cannot exceed 15 per
-UTC submission day, across courses and browsers. One operation binds subject,
+UTC submission day, across courses and browsers. The separate guest allowance
+is five successful splits and 25 human inputs per server-issued guest session;
+[guest access and activation](guest-access.md) describe its separate ownership,
+seven-day session and bot/sponsor requirements. Guest access remains off by
+default. Anonymous sessions cannot establish a unique human.
+
+One operation binds subject and immutable quota class,
 verified stored course, idempotency key and input fingerprint to import,
 separation, ingestion and settlement. Validation precedes reservation. `done`
 settles once only after every expected stem is locally decoded and stored.
@@ -16,7 +22,7 @@ Failed or cancelled work releases its reservation once; historical
 `app_request_reservations` are preserved as attempts, never inferred successes.
 An old operation finishing after midnight settles against its original day.
 
-Listening Guy allows 50 human inputs per UTC day. One reservation wraps tools
+Listening Guy allows 50 member or 25 guest human inputs per UTC day. One reservation wraps tools
 and both Gateway attempts. Guide generation, cache reads and instructor review
 are separate. No usable reply and no durable effect marker releases an input;
 a partial reply counts once. A crash after a persisted delivery/effect-intent
@@ -30,7 +36,9 @@ ledger. Empty replies cannot settle success.
 App allowance release is **not a provider-billing refund**. Attempts record
 provider, exact model/version, phase, request outcome, external ID and reported
 usage separately. Unreported cost is unknown, never assumed free. Daily abuse
-ceilings are 40 split attempts and 80 human-input attempts. Those denials,
+ceilings for members are 40 split attempts and 80 human-input attempts; guests
+have 15 and 50 respectively, plus two active splits per session and ten active
+guest splits globally. Those denials,
 success/active allowance exhaustion and the 100-operation queue ceiling have
 distinct codes and messages.
 
@@ -160,7 +168,12 @@ batches of at most ten, with one bounded retry and stable IDs. Closing a page,
 offline use, blocked requests, process loss or the daily protection ceiling can
 lose observations. Signed-out public-audio playback and seek cannot submit
 private usage events; only page/download server observations cover that case.
-Account changes clear the queue and abort outstanding work.
+Account changes clear the queue and abort outstanding work. Each batch also
+carries the expected opaque account identifier in a request header; the server
+compares it with the verified actor before recording anything. This prevents
+an old queued batch from being attributed to a newly selected account even
+before browser revalidation notices the cookie change. The header is not
+retained in the event record and grants no authority.
 Server critical operation triggers are durable; auxiliary request/page logging
 cannot break the original request on a diagnostics failure. Idempotent rejected
 requests coalesce; requests with no operation key are separate observations.
@@ -172,6 +185,7 @@ observations and 25,000 total auxiliary events globally. The existing admin-only
 `GET /api/admin/usage-events?days=7` returns aggregate counts, outcomes and mean
 durations for at most 30 days, without identities or content. Client and server
 counts remain separate to prevent treating them as additive exact usage.
+Member and guest operation aggregates use the ledger's immutable quota class.
 Minimal non-content unresolved operation/billing evidence follows the separate
 reconciliation policy below; no external analytics destination is introduced.
 
@@ -186,6 +200,11 @@ once; do not blindly rerun it. `0022` is repeatable. Fresh `schema.sql` and the
 baseline-to-0021-to-0022 upgrade are compared in tests, including preservation
 of old private messages, notes, ownership and historical attempts. No legacy
 course associations or successful charges are manufactured.
+
+This remains an unreleased migration. A disposable database initialized from an
+earlier PR3 draft of 0022 must be rebuilt or explicitly upgraded before using
+the final guest principal schema; rerunning `CREATE TABLE IF NOT EXISTS` cannot
+add the later draft's columns. No production database has received any draft.
 
 Choose and record a UTC start boundary. Pause old-version intake before it;
 new reservations start only under the new version after the schema is ready.

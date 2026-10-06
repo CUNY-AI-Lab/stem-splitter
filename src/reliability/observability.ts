@@ -75,8 +75,10 @@ export async function usageSummary(db:D1Database,days:number) {
   const [uses,operations]=await Promise.all([
     db.prepare(`SELECT event_type,source,actor_class,outcome,code,http_status,COUNT(*) AS count,ROUND(AVG(duration_ms)) AS mean_duration_ms
       FROM usage_events WHERE at>=? GROUP BY event_type,source,actor_class,outcome,code,http_status ORDER BY count DESC LIMIT 250`).bind(since).all(),
-    db.prepare(`SELECT event_type,kind,phase,state,code,model,fallback,quota_effect,COUNT(*) AS count,ROUND(AVG(duration_ms)) AS mean_duration_ms
-      FROM operation_events WHERE at>=? GROUP BY event_type,kind,phase,state,code,model,fallback,quota_effect ORDER BY count DESC LIMIT 250`).bind(since).all(),
+    db.prepare(`SELECT e.event_type,o.quota_class AS actor_class,e.kind,e.phase,e.state,e.code,e.model,e.fallback,e.quota_effect,
+      COUNT(*) AS count,ROUND(AVG(e.duration_ms)) AS mean_duration_ms
+      FROM operation_events e JOIN app_operations o ON o.id=e.operation_id WHERE e.at>=?
+      GROUP BY e.event_type,o.quota_class,e.kind,e.phase,e.state,e.code,e.model,e.fallback,e.quota_effect ORDER BY count DESC LIMIT 250`).bind(since).all(),
   ]);
   return {days,retentionDays:30,clientCapture:'best_effort',uses:uses.results??[],operations:operations.results??[]};
 }

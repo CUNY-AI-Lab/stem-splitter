@@ -71,7 +71,7 @@
     return checking;
   }
   window.StemSessionGuard = {
-    start(value, onClear, onPause) { subject = value; cleanup = onClear || cleanup; pause = onPause || pause; window.StemUsage?.start(); },
+    start(value, onClear, onPause) { subject = value; cleanup = onClear || cleanup; pause = onPause || pause; window.StemUsage?.start(value); },
     observe, check, clear,
   };
   window.addEventListener('focus', () => void check());

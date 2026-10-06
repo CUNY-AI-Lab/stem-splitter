@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqliteD1 } from '../server/d1.ts';
 import { reserveOperation,settleOperation } from '../src/reliability/ledger.ts';
-import { dailyWindow,splitAllowance } from '../src/daily-allowance.ts';
+import { dailyWindow,splitAllowance,operationAllowance } from '../src/daily-allowance.ts';
 import type { Env } from '../src/env.ts';
 
 const origin='https://split.test';
@@ -129,8 +129,10 @@ test('workerd guests: verified cookie, split/chat settlement, replay, isolation,
     assert.equal((await call(`/api/jobs/${job.id}`,cookieA,{headers:{'x-fixture-identity':jwt}})).status,404,'member does not inherit guest work');
     assert.equal((await call(`/api/jobs/${job.id}/share`,cookieA,{method:'POST',body:'{}'})).status,403);
     const usage=JSON.stringify({events:[{id:'guest-playback-event-0001',type:'playback_start',jobId:job.id}]});
-    assert.equal((await call('/api/usage-events',cookieA,{method:'POST',body:usage})).status,200,'own playback telemetry');
-    assert.equal((await call('/api/usage-events',cookieB,{method:'POST',body:usage})).status,404,'other guest cannot attach a job to telemetry');
+    const accountB=await(await call('/api/account',cookieB)).json() as any;
+    assert.equal((await call('/api/usage-events',cookieA,{method:'POST',headers:{'X-Stem-Usage-Actor':account.account.subject},body:usage})).status,200,'own playback telemetry');
+    assert.equal((await call('/api/usage-events',cookieB,{method:'POST',headers:{'X-Stem-Usage-Actor':accountB.account.subject},body:usage})).status,404,'other guest cannot attach a job to telemetry');
+    assert.equal((await call('/api/usage-events',cookieB,{method:'POST',headers:{'X-Stem-Usage-Actor':account.account.subject},body:JSON.stringify({events:[{id:'old-guest-page-event-001',type:'page_view'}]})})).status,409,'guest switch rejects old queued observations');
     assert.equal((await call('/api/admin/usage-events',cookieA)).status,403);
     const note=await call(`/api/jobs/${job.id}/annotations`,cookieA,{method:'POST',body:JSON.stringify({atSeconds:1,text:'Guest listening note'})});
     assert.equal(note.status,200);const noteId=(await note.json() as any).id;
@@ -188,6 +190,17 @@ test('guest expiry, signing scope, immutable quota class, atomic reservations an
   await assert.rejects(reserveOperation(db,{subject,quotaClass:'guest',courseId:'course-a',kind:'chat',key:'guest-course-forgery',fingerprint:'x',phase:'chat'}),/course/);
   const tomorrow=now+86400000;
   assert.equal((await splitAllowance(db,subject,new Date(tomorrow),'guest')).remaining,5,'UTC-day allowance is separate');
+  const chats=await Promise.allSettled(Array.from({length:30},(_,i)=>reserveOperation(db,{subject,quotaClass:'guest',courseId:null,
+    kind:'chat',phase:'chat',key:`guest-parallel-chat-${String(i).padStart(4,'0')}`,fingerprint:String(i),now})));
+  const admitted=chats.flatMap(result=>result.status==='fulfilled'?[result.value.operation]:[]);
+  assert.equal(admitted.length,25,'parallel 25th/26th input cannot oversubscribe');
+  for(const [index,operation] of admitted.entries())await settleOperation(db,operation.id,index===0?'failed':index===1?'partial':'succeeded');
+  assert.equal((await operationAllowance(db,subject,'chat',new Date(now),'guest')).completed,24);
+  assert.equal((await operationAllowance(db,subject,'chat',new Date(tomorrow),'guest')).completed,0,'late settlement remains on submission day');
+  const replacement=await reserveOperation(db,{subject,quotaClass:'guest',courseId:null,kind:'chat',phase:'chat',key:'guest-chat-replacement-01',fingerprint:'replacement',now});
+  await settleOperation(db,replacement.operation.id,'succeeded');
+  await settleOperation(db,admitted[1].id,'failed');
+  assert.equal((await operationAllowance(db,subject,'chat',new Date(now),'guest')).completed,25,'partial replay cannot refund a charged input');
   await db.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(now,subject).run();
   assert.equal(await readGuestSession(new Request(origin,{headers:{Cookie:cookie}}),env),null,'revoked copied cookie');
   await assert.rejects(db.prepare('UPDATE guest_sessions SET revoked_at=NULL WHERE subject=?').bind(subject).run(),/immutable/);

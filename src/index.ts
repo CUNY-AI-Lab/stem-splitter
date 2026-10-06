@@ -209,6 +209,9 @@ app.route('/api/classroom', classroomRoutes);
 app.post('/api/usage-events',async c=>{
   const principal=c.get('principal');
   if(!principal||c.env.AUTH_MODE!=='cail')return c.json({error:'Sign in to continue.'},401);
+  // This opaque expectation grants no authority. It prevents a queued batch
+  // from being attributed to the next cookie's account after a browser switch.
+  if(c.req.header('X-Stem-Usage-Actor')!==principal.subject)return c.json({error:'The account changed. Discard these observations.'},409);
   const parsed=await boundedJson(c,8192);if('response'in parsed)return parsed.response;
   const events=parseClientUses(parsed.value);if(!events)return c.json({error:'Invalid usage event batch.'},400);
   for(const jobId of new Set(events.map(e=>e.jobId).filter((id):id is string=>!!id))) {

@@ -5,6 +5,6 @@
   "allHonoInputsUsePatchedAlias": true,
   "legacyRootHonoInputCount": 0,
   "bundledHonoVersion": "4.13.11",
-  "metafileSha256": "a74175fa5fdfc5a573ba0a102d20b896412f22186df9b269b93fef2e53e0fecb",
+  "metafileSha256": "f6ac622e342670aaffec8383cd1220393a8a09c3174125f24d00fbbf15bb8392",
   "rootAnalysisDependencyInputsChanged": false
 }
