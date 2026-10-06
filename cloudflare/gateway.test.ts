@@ -61,3 +61,37 @@ test('unavailable aggregate quota stays unavailable and is never a local permiss
   const transport = gatewayForRequest({ fetch: async () => { calls++; return Response.json({ error: { code: 'quota_unavailable', message: 'Unavailable' } }, { status: 503 }); } } as unknown as Fetcher, 'gateway-leg', request(), 'test');
   await assert.rejects(transport.quota()); assert.equal(calls, 1);
 });
+
+test('ordered fallback uses only documented capacity rejections; policy/quota/auth/unknown do not fall back',async()=>{
+ for(const [code,status,shouldRetry,fallback] of [
+  ['upstream_rate_limited',429,true,true],['upstream_unavailable',503,true,true],['model_unavailable',503,true,true],
+  ['quota_exceeded',429,false,false],['rate_limit_unknown',429,false,false],['upstream_auth_error',401,false,false],
+  ['upstream_payment_required',402,false,false],['upstream_timeout',504,false,false],['upstream_unavailable',503,false,false],
+ ] as const) {
+  const models:string[]=[];
+  const transport=gatewayForRequest({fetch:async(outbound:Request)=>{
+   assert.equal(outbound.headers.get('x-cail-identity-jwt'),'same-verified-subject');
+   const body=await outbound.json() as {model:string;messages:unknown[]};models.push(body.model);assert.deepEqual(body.messages,params.messages);
+   if(models.length===1)return Response.json({error:{code,type:code,param:null,message:'DO NOT DISPLAY',cail:{should_retry:shouldRetry}}},{status,headers:{'x-should-retry':String(shouldRetry)}});
+   return sse([{choices:[{delta:{content:'A calm backup answer.'},finish_reason:null}]},finished]);
+  }} as unknown as Fetcher,'same-verified-subject',request(),'test');
+  const pending=transport.stream({...env,ASSISTANT_FALLBACK_MODELS:'deepseek-v4-flash-0731'},params,()=>{});
+  if(fallback){assert.equal((await pending).model,'deepseek-v4-flash-0731');assert.deepEqual(models,['glm-5.2','deepseek-v4-flash-0731']);}
+  else {await assert.rejects(pending,AssistantError);assert.deepEqual(models,['glm-5.2']);}
+ }
+});
+test('both failures stop at two, stream/tool output forbids fallback, and mis-mapped backup fails closed',async()=>{
+ for(const mode of ['both','partial','tools','trailing']) {
+  let calls=0;
+  const error={error:{code:'upstream_unavailable',type:'upstream_unavailable',param:null,message:'secret',cail:{should_retry:true}}};
+  const transport=gatewayForRequest({fetch:async()=>{calls++;
+   if(mode==='both')return Response.json(error,{status:503,headers:{'x-should-retry':'true'}});
+   const delta=mode==='tools'?{tool_calls:[{index:0,id:'a',function:{name:'solo',arguments:'{"stem":"vocals"}'}}]}:{content:'Partial.'};
+   return sse([{choices:[{delta,finish_reason:null}]},...(mode==='trailing'?[finished]:[]),error]);
+  }} as unknown as Fetcher,'identity',request(),'test');
+  await assert.rejects(transport.stream({...env,ASSISTANT_FALLBACK_MODELS:'deepseek-v4-flash-0731'},params,()=>{}),AssistantError);
+  assert.equal(calls,mode==='both'?2:1);
+ }
+ let calls=0;const transport=gatewayForRequest({fetch:async()=>{calls++;return sse([finished]);}} as unknown as Fetcher,'identity',request(),'test');
+ await assert.rejects(transport.stream({...env,ASSISTANT_FALLBACK_MODELS:'deepseek-flash'},params,()=>{}),AssistantError);assert.equal(calls,0);
+});
