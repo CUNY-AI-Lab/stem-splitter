@@ -681,10 +681,81 @@ VALUES(NEW.id,NEW.course_id,NEW.created_by,NEW.permission,NEW.revision);
 END;
 -- Deliberately separate from historical app_request_reservations. No inferred
 -- successful charges/backfill. Apply only with the queue-drain rollback plan.
+-- Guest authority is app-local. Never insert anonymous identities into app_users.
+CREATE TABLE IF NOT EXISTS guest_sessions (
+  subject TEXT PRIMARY KEY CHECK(length(subject)=70 AND subject GLOB 'guest-*'),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL CHECK(expires_at>created_at AND expires_at<=created_at+604800000),
+  verified_day TEXT NOT NULL,
+  revoked_at INTEGER
+);
+CREATE TRIGGER IF NOT EXISTS guest_session_identity_fence BEFORE UPDATE ON guest_sessions
+WHEN NEW.subject<>OLD.subject OR NEW.created_at<>OLD.created_at OR NEW.expires_at<>OLD.expires_at
+  OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS NOT OLD.revoked_at)
+BEGIN SELECT RAISE(ABORT,'immutable guest session'); END;
+CREATE TABLE IF NOT EXISTS guest_challenges (
+  token_hash TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS guest_job_owners (
+  job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL REFERENCES guest_sessions(subject)
+);
+CREATE INDEX IF NOT EXISTS guest_job_owners_subject ON guest_job_owners(subject);
+CREATE TRIGGER IF NOT EXISTS guest_job_separation BEFORE INSERT ON guest_job_owners
+WHEN EXISTS(SELECT 1 FROM job_owners WHERE job_id=NEW.job_id) OR EXISTS(SELECT 1 FROM job_courses WHERE job_id=NEW.job_id)
+BEGIN SELECT RAISE(ABORT,'guest work cannot be course or member work'); END;
+CREATE TRIGGER IF NOT EXISTS member_job_separation BEFORE INSERT ON job_owners
+WHEN EXISTS(SELECT 1 FROM guest_job_owners WHERE job_id=NEW.job_id)
+BEGIN SELECT RAISE(ABORT,'guest work cannot be member work'); END;
+CREATE TRIGGER IF NOT EXISTS guest_course_separation BEFORE INSERT ON job_courses
+WHEN EXISTS(SELECT 1 FROM guest_job_owners WHERE job_id=NEW.job_id)
+BEGIN SELECT RAISE(ABORT,'guest work cannot be course work'); END;
+
+CREATE TABLE IF NOT EXISTS guest_upload_owners (
+  object_key TEXT PRIMARY KEY,
+  subject TEXT NOT NULL REFERENCES guest_sessions(subject),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  state TEXT NOT NULL DEFAULT 'issued' CHECK(state IN ('issued','uploading','ready'))
+);
+CREATE TABLE IF NOT EXISTS guest_listening_conversations (
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL REFERENCES guest_sessions(subject),
+  entries TEXT NOT NULL CHECK(json_valid(entries) AND json_type(entries)='array'),
+  revision INTEGER NOT NULL CHECK(revision>=1),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  PRIMARY KEY(job_id,subject)
+);
+-- Accounting provenance is not an access grant. Live session/Admission checks
+-- still run before requests and delayed paid starts. Keep member/guest FKs separate.
+CREATE TABLE IF NOT EXISTS operation_principals (
+  subject TEXT PRIMARY KEY,
+  quota_class TEXT NOT NULL CHECK(quota_class IN ('member','guest')),
+  member_subject TEXT UNIQUE REFERENCES app_users(subject),
+  guest_subject TEXT UNIQUE REFERENCES guest_sessions(subject),
+  UNIQUE(subject,quota_class),
+  CHECK((quota_class='member' AND member_subject IS NOT NULL AND member_subject=subject AND guest_subject IS NULL)
+    OR (quota_class='guest' AND guest_subject IS NOT NULL AND guest_subject=subject AND member_subject IS NULL))
+);
+INSERT OR IGNORE INTO operation_principals(subject,quota_class,member_subject)
+  SELECT subject,'member',subject FROM app_users;
+CREATE TRIGGER IF NOT EXISTS member_operation_principal AFTER INSERT ON app_users BEGIN
+  INSERT INTO operation_principals(subject,quota_class,member_subject) VALUES(NEW.subject,'member',NEW.subject);
+END;
+CREATE TRIGGER IF NOT EXISTS guest_operation_principal AFTER INSERT ON guest_sessions BEGIN
+  INSERT INTO operation_principals(subject,quota_class,guest_subject) VALUES(NEW.subject,'guest',NEW.subject);
+END;
+CREATE TRIGGER IF NOT EXISTS operation_principal_immutable BEFORE UPDATE ON operation_principals
+BEGIN SELECT RAISE(ABORT,'immutable operation principal'); END;
+
 CREATE TABLE IF NOT EXISTS app_operations (
   id TEXT PRIMARY KEY,
-  subject TEXT NOT NULL REFERENCES app_users(subject),
-  course_id TEXT,
+  subject TEXT NOT NULL,
+  quota_class TEXT NOT NULL DEFAULT 'member' CHECK(quota_class IN ('member','guest')),
+  course_id TEXT CHECK(quota_class<>'guest' OR course_id IS NULL),
   kind TEXT NOT NULL CHECK(kind IN ('split','chat','guide')),
   idempotency_key TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
@@ -704,7 +775,8 @@ CREATE TABLE IF NOT EXISTS app_operations (
   error_code TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  UNIQUE(subject,kind,idempotency_key)
+  UNIQUE(subject,kind,idempotency_key),
+  FOREIGN KEY(subject,quota_class) REFERENCES operation_principals(subject,quota_class)
 );
 CREATE INDEX IF NOT EXISTS app_operations_allowance ON app_operations(subject,kind,day,state);
 CREATE INDEX IF NOT EXISTS app_operations_queue ON app_operations(kind,phase,state,not_before,created_at);
@@ -741,7 +813,7 @@ CREATE TRIGGER IF NOT EXISTS operation_terminal_fence BEFORE UPDATE ON app_opera
 WHEN OLD.state IN ('succeeded','partial','failed','cancelled') AND NEW.state<>OLD.state
 BEGIN SELECT RAISE(ABORT,'terminal operation'); END;
 CREATE TRIGGER IF NOT EXISTS operation_identity_fence BEFORE UPDATE ON app_operations
-WHEN NEW.subject<>OLD.subject OR NEW.kind<>OLD.kind OR NEW.day<>OLD.day OR
+WHEN NEW.subject<>OLD.subject OR NEW.quota_class<>OLD.quota_class OR NEW.kind<>OLD.kind OR NEW.day<>OLD.day OR
  NEW.fingerprint<>OLD.fingerprint OR NEW.idempotency_key<>OLD.idempotency_key OR NEW.course_id IS NOT OLD.course_id
 BEGIN SELECT RAISE(ABORT,'immutable operation identity'); END;
 CREATE TABLE IF NOT EXISTS operation_attempts (

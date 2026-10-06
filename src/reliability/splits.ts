@@ -12,6 +12,7 @@ import { authorizeStoredCourseWork, courseAssignmentStatement } from '../classro
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation, reserveOperation, TERMINAL, type Operation } from './ledger.ts';
 import { claimNext, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
 import { cooldown, setCooldown, UpstreamError } from './retry.ts';
+import { activeGuest, ownershipTable } from '../guest/access.ts';
 
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
@@ -46,7 +47,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     input.sourceType='archive';input.archiveId=id;input.archiveFile=value.archiveFile as string|undefined;input.filename='Archive audio';
   } else {
     if (typeof value.key!=='string'||!/^uploads\/[a-zA-Z0-9-]+\/[^/]+$/.test(value.key)||!title(value.filename)) throw new OperationError('invalid_upload',400,'Choose and upload an audio file.');
-    const owned=await env.DB.prepare("SELECT 1 FROM upload_owners WHERE object_key=? AND subject=? AND state='ready' AND expires_at>?")
+    const owned=await env.DB.prepare(`SELECT 1 FROM ${ownershipTable(principal,'upload')} WHERE object_key=? AND subject=? AND state='ready' AND expires_at>?`)
       .bind(value.key,principal.subject,new Date().toISOString()).first();
     const source=owned&&await env.AUDIO.head(value.key);
     if (!source) throw new OperationError('upload_not_found',404,'The upload is unavailable. Upload it again.');
@@ -54,12 +55,12 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     input.key=value.key;input.filename=title(value.filename);
   }
   const id=crypto.randomUUID();
-  return reserveOperation(env.DB,{subject:principal.subject,courseId,kind:'split',key:key ?? '',fingerprint:await fingerprint(input),phase:input.sourceType==='upload'?'split':'fetch',jobId:id,request:input,
+  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',courseId,kind:'split',key:key ?? '',fingerprint:await fingerprint(input),phase:input.sourceType==='upload'?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
       const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type)
         SELECT id,?,?,'queued',?,? FROM app_operations WHERE id=?`)
         .bind(input.filename,input.key ?? `uploads/${id}/source.m4a`,input.model,input.sourceType,opId),
-        env.DB.prepare('INSERT INTO job_owners(job_id,subject) SELECT id,subject FROM app_operations WHERE id=?').bind(opId)];
+        env.DB.prepare(`INSERT INTO ${ownershipTable(principal,'job')}(job_id,subject) SELECT id,subject FROM app_operations WHERE id=?`).bind(opId)];
       const course=courseAssignmentStatement(env,id,principal);
       if (course) statements.push(course);
       return statements;
@@ -114,7 +115,11 @@ async function storeArchive(env: Env,op: Operation,input: SplitInput) {
 
 async function start(env: Env,op: Operation) {
   const input=JSON.parse(op.request_json) as SplitInput;
-  try { await authorizeStoredCourseWork(env,op.subject,op.course_id); }
+  try {
+    if (op.quota_class === 'guest') {
+      if (!env.guestRuntimeReady || op.course_id !== null || !await activeGuest(env.DB,op.subject)) throw new Error('Guest access ended');
+    } else await authorizeStoredCourseWork(env,op.subject,op.course_id);
+  }
   catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No successful-split allowance was used.');return; }
   if (op.cancel_requested) {await fail(env,op,'cancelled');return;}
   if (op.phase==='fetch'&&input.sourceType==='archive') {

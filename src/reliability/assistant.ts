@@ -1,10 +1,11 @@
 import type { Env } from '../env.ts';
 import { fingerprint, OperationError, reserveOperation, settleOperation, type Operation } from './ledger.ts';
+import type { QuotaClass } from '../daily-allowance.ts';
 
 /** One reservation surrounds the human message, tools, and both model attempts.
  * This ledger contains no transcript text. Conversation storage owns readback. */
-export async function reserveAssistant(env: Env, subject: string, courseId: string | null, kind: 'chat'|'guide', key: string, jobId: string, input: unknown) {
-  const reserved=await reserveOperation(env.DB,{subject,courseId,kind,key,jobId,fingerprint:await fingerprint(input),phase:kind,request:{}});
+export async function reserveAssistant(env: Env, subject: string, courseId: string | null, kind: 'chat'|'guide', key: string, jobId: string, input: unknown, quotaClass: QuotaClass = 'member') {
+  const reserved=await reserveOperation(env.DB,{subject,quotaClass,courseId,kind,key,jobId,fingerprint:await fingerprint(input),phase:kind,request:{}});
   const op=reserved.operation;
   if(!reserved.created) {
     throw new OperationError('input_already_submitted',409,op.state==='failed'?'This input did not complete. Send a new message to try again.':op.error_code==='delivery_uncertain'?'A reply may have started before the connection ended. This counts as one input. Reload the conversation before continuing.':'This input was already accepted. Reload the conversation before continuing.');

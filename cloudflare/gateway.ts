@@ -31,7 +31,7 @@ function safeFailure(error: unknown, fallback: string): AssistantError {
   return new AssistantError(error instanceof CailError && error.status === 429 ? 503 : 502, message, { requestId, code, shouldRetry });
 }
 
-export function gatewayForRequest(binding: Fetcher | undefined, token: string | null, request: Request, release: string) {
+export function gatewayForRequest(binding: Fetcher | undefined, token: string | null, request: Request, release: string, credentialKind: 'jwt' | 'key' = 'jwt') {
   const headers = new Headers(request.headers);
   const incoming = headers.get('x-cail-request-id') ?? headers.get('x-request-id');
   if (incoming && REQUEST_ID.test(incoming)) headers.set('x-cail-request-id', incoming);
@@ -73,7 +73,7 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
           model, messages: params.messages.map(({ role, content }) => ({ role, content })),
           ...(params.tools?.length ? { tools: params.tools.map(tool => ({ type: tool.type, function: { ...tool.function, parameters: JSON.parse(JSON.stringify(tool.function.parameters)) } })), tool_choice: 'auto' } : {}),
           stream: true, stream_options: { include_usage: true }, max_tokens: params.maxTokens, temperature: params.temperature,
-        }, { kind: 'jwt', token }, { signal, correlation });
+        }, { kind: credentialKind, token }, { signal, correlation });
         accepted = true;
         const responseId = response.headers.get('x-request-id') ?? response.headers.get('x-cail-request-id');
         if (responseId && REQUEST_ID.test(responseId)) requestId = responseId;
@@ -152,6 +152,8 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
       throw new AssistantError(503,COACH_DOWN);
     }, env.ASSISTANT_ABORT_SIGNAL ?? request.signal, 60000);
   return { stream, quota: () => deadline(async signal => {
+    // Anonymous guests must never inspect the sponsor application's balance.
+    if (credentialKind === 'key') throw new AssistantError(503,COACH_UNCONFIGURED);
     if (!binding || !token) throw new AssistantError(503, COACH_UNCONFIGURED);
     // cail-client validates the bounded quota envelope; it never grants access.
     const quotaClient = createCailClient({ app: 'stem-splitter', fetchImpl: async (input, init) => {

@@ -18,7 +18,7 @@
     <p id="account-splits">Daily split allowance unavailable.</p>
     <p id="account-chat" class="account-help">Listening Guy allowance unavailable.</p>
     <p id="account-quota">Model usage unavailable.</p>
-    <p class="account-help">Only finished splits use the daily split allowance. Pending splits reserve a place; failed or cancelled splits return it. Listening Guy allows 50 human inputs per UTC day, separate from estimated Lab model usage.</p>
+    <p id="account-allowance-help" class="account-help">Only finished splits use the daily split allowance. Pending splits reserve a place; failed or cancelled splits return it. Listening Guy allows 50 human inputs per UTC day, separate from estimated Lab model usage.</p>
     <nav class="account-links" aria-label="Stem Splitter">
       <a class="account-button" href="/">← Back to Splitter</a>
       <a id="account-guidance" href="/teacher.html" hidden>Guide instructions</a>
@@ -49,7 +49,7 @@
   </details>
   <p id="account-back" hidden><a href="/">← Back to Splitter</a></p>
   <section id="account-footer" hidden>
-    <p class="account-help">Your splits remain in your account for 90 days.</p>
+    <p id="account-retention" class="account-help">Your splits remain in your account for 90 days.</p>
     <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
   </section>
   <nav class="account-resources" aria-label="CUNY AI Lab resources">
@@ -70,5 +70,6 @@
 </main>
 <script src="/usage.js?v=20261006-reliability"></script>
 <script src="/session-guard.js?v=20261006-classroom"></script>
-<script src="/account.js?v=20261006-classroom"></script>
+<script src="/guest.js?v=20261006"></script>
+<script src="/account.js?v=20261006-guest"></script>
 </html>

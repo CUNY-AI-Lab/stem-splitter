@@ -60,7 +60,9 @@ export default {
         const outbound = new Request(input, init);
         if (new URL(outbound.url).pathname.endsWith('/quota')) return Response.json({ object: 'quota', managed_by: 'cloudflare', state: 'estimated', unit: 'microdollar', currency: 'USD', limit: 1000000, estimated_used: 100000, estimated_remaining: 900000, used_percent: 10, remaining_percent: 90, window_seconds: 86400, window_technique: 'sliding', calculated_at: Math.floor(Date.now() / 1000) });
         gatewayCalls++;
-        if (outbound.headers.get('x-cail-identity-jwt') !== gatewayJwt || outbound.headers.has('authorization')) throw new Error('fixture credential contract');
+        if (env.GUEST_ENABLED === 'true' && outbound.headers.get('authorization') === `Bearer ${env.GUEST_GATEWAY_API_KEY}`) {
+          if(outbound.headers.has('x-cail-identity-jwt'))throw new Error('fixture mixed credential contract');
+        } else if (outbound.headers.get('x-cail-identity-jwt') !== gatewayJwt || outbound.headers.has('authorization')) throw new Error('fixture credential contract');
         const body = await outbound.json<{ model: string }>();
         if (body.model !== 'glm-5.2') throw new Error('fixture model contract');
         if ('messages' in body && Array.isArray((body as { messages?: unknown }).messages)) gatewayMessages = (body as { messages: Array<{ role: string; content: string }> }).messages;
@@ -68,7 +70,7 @@ export default {
         const requestId = '01900000-0000-7000-8000-000000000001';
         const error = { error: { code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'private fixture', cail: { request_id: requestId, should_retry: false } } };
         if (gatewayMode === 'quota') return Response.json(error, { status: 429, headers: { 'x-should-retry': 'false', 'x-request-id': requestId } });
-        const chunks = [{ choices: [{ delta: { content: 'Listen for the bass against the drums.' }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        const chunks = [{ choices: [{ delta: { content: gatewayMode==='empty'?'':'Listen for the bass against the drums.' }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] },
           gatewayMode === 'trailing-error' ? error : { choices: [], usage: { total_tokens: 20 } }];
         return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream', 'x-request-id': requestId } });
       } } as Fetcher,

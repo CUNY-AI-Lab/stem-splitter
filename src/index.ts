@@ -130,6 +130,7 @@ import {
 import { audioSepReplicateIdentity } from './isolation/options.ts';
 import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal } from './identity.ts';
 import { readBoundedResponse } from './http/bounded-response.ts';
+import { guestPrincipal, ownershipTable, conversationTable } from './guest/access.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -228,6 +229,7 @@ app.get('/api/runtime', (c) => c.json({
   authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
   loginUrl: c.env.CAIL_LOGIN_URL || null,
   remixer: c.env.REMIXER_ENABLED === 'true',
+  guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,splitLimit:5,chatLimit:25} : null,
 }));
 
 // Explicit sharing exposes only finished audio and its title, never account
@@ -280,10 +282,11 @@ app.get('/api/account', async (c) => {
   if (!principal) return c.json({ account: null }, 401);
   // Usage is informational; an unavailable count must not hide a valid account.
   let allowance = null;
-  try { allowance = await splitAllowance(c.env.DB, principal.subject); } catch { /* Report unknown, not zero. */ }
+  try { allowance = await splitAllowance(c.env.DB, principal.subject,new Date(),principal.quotaClass ?? 'member'); } catch { /* Report unknown, not zero. */ }
   let chatAllowance = null;
-  try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat'); } catch {}
-  return c.json({ account: principal, splitAllowance: allowance, chatAllowance });
+  try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),principal.quotaClass ?? 'member'); } catch {}
+  return c.json({ account: principal, splitAllowance: allowance, chatAllowance,
+    ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
 });
 
 app.get('/api/model-quota', async (c) => {
@@ -394,8 +397,14 @@ app.post('/api/uploads', requireClassCode, async (c) => {
   const key = `uploads/${crypto.randomUUID()}/${filename}`;
   const uploadUrl = await presignUpload(c.env, key);
   const principal = c.get('principal');
-  if (principal) await c.env.DB.prepare('INSERT INTO upload_owners (object_key, subject, expires_at) VALUES (?, ?, ?)')
-    .bind(key, principal.subject, new Date(Date.now() + 3600000).toISOString()).run();
+  if (guestPrincipal(principal)) {
+    const inserted=await c.env.DB.prepare(`INSERT INTO guest_upload_owners(object_key,subject,expires_at)
+      SELECT ?,?,? WHERE (SELECT COUNT(*) FROM guest_upload_owners WHERE subject=? AND created_at>=date('now'))<15
+      AND (SELECT COUNT(*) FROM guest_upload_owners WHERE subject=? AND state IN ('issued','uploading') AND expires_at>?)<3`)
+      .bind(key,principal!.subject,new Date(Date.now()+3600000).toISOString(),principal!.subject,principal!.subject,new Date().toISOString()).run();
+    if (!inserted.meta.changes) throw new OperationError('guest_upload_limit',429,'The guest upload protection limit has been reached. Wait for pending uploads to expire or use CUNY Login.',3600);
+  } else if (principal) await c.env.DB.prepare('INSERT INTO upload_owners (object_key, subject, expires_at) VALUES (?, ?, ?)')
+      .bind(key, principal.subject, new Date(Date.now() + 3600000).toISOString()).run();
   return c.json({ key, uploadUrl });
 });
 
@@ -406,7 +415,7 @@ app.put('/api/local-uploads/*', requireClassCode, async (c) => {
   const key = localObjectKey(c.req.url, '/api/local-uploads/');
   if (!key?.startsWith('uploads/')) return c.text('Not found', 404);
   const principal = c.get('principal');
-  if (principal && !(await c.env.DB.prepare('SELECT object_key FROM upload_owners WHERE object_key = ? AND subject = ? AND expires_at > ?')
+  if (principal && !(await c.env.DB.prepare(`SELECT object_key FROM ${ownershipTable(principal,'upload')} WHERE object_key = ? AND subject = ? AND expires_at > ?`)
     .bind(key, principal.subject, new Date().toISOString()).first())) return c.text('Not found', 404);
 
   const contentLength = c.req.header('content-length');
@@ -426,7 +435,7 @@ app.put('/api/local-uploads/*', requireClassCode, async (c) => {
   if (!c.req.raw.body) return c.json({ error: 'Upload body is required' }, 400);
 
   if (principal) {
-    const claim = await c.env.DB.prepare("UPDATE upload_owners SET state = 'uploading' WHERE object_key = ? AND subject = ? AND state = 'issued' AND expires_at > ?")
+    const claim = await c.env.DB.prepare(`UPDATE ${ownershipTable(principal,'upload')} SET state = 'uploading' WHERE object_key = ? AND subject = ? AND state = 'issued' AND expires_at > ?`)
       .bind(key, principal.subject, new Date().toISOString()).run();
     if (!claim.meta.changes) return c.json({ error: 'This upload has already been used. Choose the file again.' }, 409);
   }
@@ -439,7 +448,7 @@ app.put('/api/local-uploads/*', requireClassCode, async (c) => {
     await c.env.AUDIO.delete(key);
     return c.json({ error: 'Upload size did not match Content-Length' }, 400);
   }
-  if (principal) await c.env.DB.prepare("UPDATE upload_owners SET state = 'ready' WHERE object_key = ? AND subject = ? AND state = 'uploading'")
+  if (principal) await c.env.DB.prepare(`UPDATE ${ownershipTable(principal,'upload')} SET state = 'ready' WHERE object_key = ? AND subject = ? AND state = 'uploading'`)
     .bind(key, principal.subject).run();
   return c.body(null, 204);
 });
@@ -484,7 +493,7 @@ function ensureTeachersSeeded(c: Context<AppContext>): Promise<void> {
 async function currentTeacher(c: Context<AppContext>) {
   if (c.env.AUTH_MODE === 'cail') {
     const principal = c.get('principal');
-    return principal && principal.role !== 'student' ? { username: principal.subject, displayName: principal.displayName } : null;
+    return principal && ['instructor','admin'].includes(principal.role) ? { username: principal.subject, displayName: principal.displayName } : null;
   }
   await ensureTeachersSeeded(c);
   return resolveSession(c.env, readSessionCookie(c.req.header('Cookie')));
@@ -1246,7 +1255,7 @@ app.get('/api/jobs', async (c) => {
   }
   const { results } = await c.env.DB.prepare(`
     SELECT j.id, j.filename, j.model, j.created_at
-    FROM job_owners o JOIN jobs j ON j.id = o.job_id
+    FROM ${ownershipTable(principal,'job')} o JOIN jobs j ON j.id = o.job_id
     WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
       AND (? IS NULL OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41
@@ -1790,7 +1799,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   const scope=await jobCourse(c.env,id);
   const prompt=await coursePrompt(c.env,scope?.course_id ?? null);
   const guideKey=await fingerprint([id,scope?.course_id ?? null,prompt.revision,await hashSystemPromptFingerprint(prompt.amendment),Math.floor(Date.now()/300000)]);
-  const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,{guideKey}):null;
+  const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,{guideKey},principal.quotaClass ?? 'member'):null;
   const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   return sseResponse(c, async (emit, signal) => {
     try {
@@ -1819,16 +1828,16 @@ app.get('/api/jobs/:id/listening-conversation', async (c) => {
   }
   const row = await c.env.DB.prepare(`
     SELECT conv.entries, conv.revision, conv.expires_at AS expiresAt
-    FROM listening_conversations conv
+    FROM ${conversationTable(principal)} conv
     JOIN jobs j ON j.id = conv.job_id
-    JOIN job_owners o ON o.job_id = j.id
+    JOIN ${ownershipTable(principal,'job')} o ON o.job_id = j.id
     WHERE conv.job_id = ? AND conv.subject = ? AND o.subject = ?
       AND j.created_at > datetime('now', '-90 days') AND conv.expires_at > datetime('now')
   `).bind(id, principal.subject, principal.subject).first<{ entries: string; revision: number; expiresAt: string }>();
   if (row) return c.json({ entries: JSON.parse(row.entries), revision: row.revision, expiresAt: row.expiresAt });
   const job = await c.env.DB.prepare(`SELECT datetime(created_at, '+90 days') AS expiresAt FROM jobs
     WHERE id = ? AND created_at > datetime('now', '-90 days') AND EXISTS (
-      SELECT 1 FROM job_owners WHERE job_id = jobs.id AND subject = ?
+      SELECT 1 FROM ${ownershipTable(principal,'job')} WHERE job_id = jobs.id AND subject = ?
     )`).bind(id, principal.subject).first<{ expiresAt: string }>();
   if (!job) return c.json({ error: 'Split not found.' }, 404);
   return c.json({ entries: [], revision: 0, expiresAt: job.expiresAt });
@@ -1855,19 +1864,19 @@ app.put('/api/jobs/:id/listening-conversation', async (c) => {
   }
   const id = c.req.param('id');
   const result = await c.env.DB.prepare(`
-    INSERT INTO listening_conversations (job_id, subject, entries, revision, expires_at)
+    INSERT INTO ${conversationTable(principal)} (job_id, subject, entries, revision, expires_at)
     SELECT j.id, ?, ?, 1, datetime(j.created_at, '+90 days') FROM jobs j
-    JOIN job_owners o ON o.job_id = j.id AND o.subject = ?
+    JOIN ${ownershipTable(principal,'job')} o ON o.job_id = j.id AND o.subject = ?
     WHERE j.id = ? AND j.created_at > datetime('now', '-90 days')
-      AND (? = 0 OR EXISTS (SELECT 1 FROM listening_conversations prior WHERE prior.job_id = j.id AND prior.subject = ?))
+      AND (? = 0 OR EXISTS (SELECT 1 FROM ${conversationTable(principal)} prior WHERE prior.job_id = j.id AND prior.subject = ?))
     ON CONFLICT(job_id, subject) DO UPDATE SET entries = excluded.entries,
-      revision = listening_conversations.revision + 1, updated_at = datetime('now')
-    WHERE listening_conversations.revision = ? AND listening_conversations.expires_at > datetime('now')
+      revision = ${conversationTable(principal)}.revision + 1, updated_at = datetime('now')
+    WHERE ${conversationTable(principal)}.revision = ? AND ${conversationTable(principal)}.expires_at > datetime('now')
     RETURNING revision, expires_at AS expiresAt
   `).bind(principal.subject, JSON.stringify(entries), principal.subject, id, Number(body.revision), principal.subject, Number(body.revision))
     .first<{ revision: number; expiresAt: string }>();
   if (result) return c.json({ ok: true, revision: result.revision, expiresAt: result.expiresAt });
-  const owned = await c.env.DB.prepare(`SELECT 1 FROM jobs j JOIN job_owners o ON o.job_id = j.id
+  const owned = await c.env.DB.prepare(`SELECT 1 FROM jobs j JOIN ${ownershipTable(principal,'job')} o ON o.job_id = j.id
     WHERE j.id = ? AND o.subject = ? AND j.created_at > datetime('now', '-90 days')`)
     .bind(id, principal.subject).first();
   if (!owned) return c.json({ error: 'Split not found.' }, 404);
@@ -1884,13 +1893,13 @@ app.delete('/api/jobs/:id/listening-conversation', async (c) => {
     catch(error) { if(error instanceof CourseError)return courseErrorResponse(error);throw error; }
   }
   const result = await c.env.DB.prepare(`
-    INSERT INTO listening_conversations (job_id, subject, entries, revision, expires_at)
+    INSERT INTO ${conversationTable(principal)} (job_id, subject, entries, revision, expires_at)
     SELECT j.id, ?, '[]', 1, datetime(j.created_at, '+90 days') FROM jobs j
-    JOIN job_owners o ON o.job_id = j.id AND o.subject = ?
+    JOIN ${ownershipTable(principal,'job')} o ON o.job_id = j.id AND o.subject = ?
     WHERE j.id = ? AND j.created_at > datetime('now', '-90 days')
     ON CONFLICT(job_id, subject) DO UPDATE SET entries = '[]',
-      revision = listening_conversations.revision + 1, updated_at = datetime('now')
-    WHERE listening_conversations.expires_at > datetime('now')
+      revision = ${conversationTable(principal)}.revision + 1, updated_at = datetime('now')
+    WHERE ${conversationTable(principal)}.expires_at > datetime('now')
     RETURNING revision
   `).bind(principal.subject, principal.subject, id).first<{ revision: number }>();
   if (!result) return c.json({ error: 'Split not found.' }, 404);
@@ -1935,7 +1944,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   if(course && (!Number.isSafeInteger(body?.revision) || Number(body?.revision)<0)) return c.json({error:'Reload this conversation before sending.'},400);
   const inputKey=typeof body?.messageId==='string'?body.messageId:c.req.header('Idempotency-Key') ?? '';
   const reservation=principal?await reserveAssistant(c.env,principal.subject,course?.course_id ?? null,'chat',inputKey,id,
-    [id,course?.course_id ?? null,course?[turns.at(-1),body?.revision]:turns,parseDuration(body?.durationSec)]):null;
+    [id,course?.course_id ?? null,course?[turns.at(-1),body?.revision]:turns,parseDuration(body?.durationSec)],principal.quotaClass ?? 'member'):null;
   const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   let durable: Awaited<ReturnType<typeof beginCourseTurn>> | null = null;
   if (course) {

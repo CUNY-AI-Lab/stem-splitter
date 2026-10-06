@@ -1,10 +1,10 @@
-import { dailyWindow, SIGNED_IN_SPLITS_PER_DAY, HUMAN_INPUTS_PER_DAY } from '../daily-allowance.ts';
+import { dailyWindow, allowanceLimit, type QuotaClass } from '../daily-allowance.ts';
 
 export type OperationKind = 'split' | 'chat' | 'guide';
 export type Phase = 'fetch' | 'split' | 'chat' | 'guide';
 export type State = 'queued' | 'running' | 'starting' | 'processing' | 'reconciling' | 'succeeded' | 'partial' | 'failed' | 'cancelled';
 export interface Operation {
-  id: string; subject: string; course_id: string | null; kind: OperationKind;
+  id: string; subject: string; quota_class: QuotaClass; course_id: string | null; kind: OperationKind;
   idempotency_key: string; fingerprint: string; day: string; state: State; phase: Phase;
   job_id: string | null; request_json: string; result_json: string | null; provider_id: string | null;
   lease_owner: string | null; lease_until: number; fence: number; not_before: number;
@@ -33,27 +33,34 @@ export async function findOperation(db: D1Database, subject: string, kind: Opera
  * The unique key handles racing replays; quota includes active and settled work.
  */
 export async function reserveOperation(db: D1Database, input: {
-  subject: string; courseId: string | null; kind: OperationKind; key: string; fingerprint: string;
+  subject: string; quotaClass?: QuotaClass; courseId: string | null; kind: OperationKind; key: string; fingerprint: string;
   phase: Phase; jobId?: string; request?: unknown; now?: number;
   statements?: (id: string) => D1PreparedStatement[];
 }): Promise<{ operation: Operation; created: boolean }> {
   if (!validOperationKey(input.key)) throw new OperationError('idempotency_required', 400, 'Reload and submit again with a request identifier.');
   const now = input.now ?? Date.now();
   const { day, retryAfter } = dailyWindow(new Date(now));
-  const limit = input.kind === 'split' ? SIGNED_IN_SPLITS_PER_DAY : input.kind === 'chat' ? HUMAN_INPUTS_PER_DAY : 20;
-  const abuseLimit = input.kind === 'split' ? MAX_SPLIT_ATTEMPTS_PER_DAY : input.kind === 'chat' ? MAX_CHAT_ATTEMPTS_PER_DAY : 20;
+  const quotaClass = input.quotaClass ?? 'member';
+  if (quotaClass === 'guest' && input.courseId !== null) throw new OperationError('guest_course_forbidden',400,'Guest work cannot be assigned to a course.');
+  const limit = allowanceLimit(input.kind,quotaClass);
+  const abuseLimit = quotaClass === 'guest' ? input.kind === 'split' ? 15 : input.kind === 'chat' ? 50 : 10
+    : input.kind === 'split' ? MAX_SPLIT_ATTEMPTS_PER_DAY : input.kind === 'chat' ? MAX_CHAT_ATTEMPTS_PER_DAY : 20;
   const id = input.kind==='split' && input.jobId ? input.jobId : crypto.randomUUID();
   const insert = db.prepare(`INSERT INTO app_operations
-    (id,subject,course_id,kind,idempotency_key,fingerprint,day,state,phase,job_id,request_json,deadline,created_at,updated_at)
-    SELECT ?,?,?,?,?,?,?,'queued',?,?,?,?,?,? WHERE
+    (id,subject,quota_class,course_id,kind,idempotency_key,fingerprint,day,state,phase,job_id,request_json,deadline,created_at,updated_at)
+    SELECT ?,?,?,?,?,?,?,?,'queued',?,?,?,?,?,? WHERE
       (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=? AND state NOT IN ('failed','cancelled')) < ?
       AND (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=?) < ?
       AND (? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE kind='split' AND state NOT IN (${TERMINAL})) < ?)
       AND (? <> 'guide' OR (SELECT COUNT(*) FROM app_operations WHERE kind='guide' AND day=?) < 200)
+      AND (? <> 'guest' OR EXISTS(SELECT 1 FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL AND verified_day=?))
+      AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind='split' AND state NOT IN (${TERMINAL})) < 2)
+      AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE quota_class='guest' AND kind='split' AND state NOT IN (${TERMINAL})) < 10)
     ON CONFLICT(subject,kind,idempotency_key) DO NOTHING`)
-    .bind(id,input.subject,input.courseId,input.kind,input.key,input.fingerprint,day,input.phase,input.jobId ?? null,
+    .bind(id,input.subject,quotaClass,input.courseId,input.kind,input.key,input.fingerprint,day,input.phase,input.jobId ?? null,
       JSON.stringify(input.request ?? {}),now+24*60*60*1000,now,now,input.subject,input.kind,day,limit,
-      input.subject,input.kind,day,abuseLimit,input.kind,MAX_QUEUED_SPLITS,input.kind,day);
+      input.subject,input.kind,day,abuseLimit,input.kind,MAX_QUEUED_SPLITS,input.kind,day,
+      quotaClass,input.subject,now,day,quotaClass,input.kind,input.subject,quotaClass,input.kind);
   await db.batch([insert,...(input.statements?.(id) ?? [])]);
   const operation = await findOperation(db,input.subject,input.kind,input.key);
   if (!operation) {
@@ -61,13 +68,13 @@ export async function reserveOperation(db: D1Database, input: {
       SUM(CASE WHEN state NOT IN ('failed','cancelled') THEN 1 ELSE 0 END) AS held
       FROM app_operations WHERE subject=? AND kind=? AND day=?`).bind(input.subject,input.kind,day).first<{attempts:number;held:number}>();
     if ((counts?.held ?? 0)>=limit) throw new OperationError(`${input.kind}_daily_limit`,429,
-      input.kind==='split'?'Completed and in-progress splits fill today\'s 15 places. Failed splits do not count as completed.'
+      input.kind==='split'?`Completed and in-progress splits fill today's ${limit} places. Failed splits do not count as completed.`
         :'Today\'s Listening Guy input allowance is full.',retryAfter);
     if ((counts?.attempts ?? 0)>=abuseLimit || input.kind==='guide') throw new OperationError(`${input.kind}_attempt_limit`,429,
       'Repeated requests have reached the daily protection limit. Failed splits did not use successful-split allowance. Please try again after the reset.',retryAfter);
     throw new OperationError('split_queue_full',429,'The audio queue is full. Wait a minute and submit the same request again.',60);
   }
-  if (operation.fingerprint !== input.fingerprint || operation.course_id !== input.courseId) {
+  if (operation.fingerprint !== input.fingerprint || operation.course_id !== input.courseId || operation.quota_class !== quotaClass) {
     throw new OperationError('idempotency_conflict',409,'This request identifier belongs to different input. Submit a new request.');
   }
   return { operation, created: operation.id === id && operation.created_at === now };

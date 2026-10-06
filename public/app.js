@@ -6,6 +6,7 @@ const STEM_ORDER = ['vocals', 'instrumental', 'drums', 'bass', 'other', 'guitar'
 let runtime = { authMode: 'class-code', remixer: false, loginUrl: null };
 let jobsStorageKey = 'jobs';
 let accountSubject = null;
+let guestSessionActive = false;
 let accountJobs = [];
 let rackCursor = null;
 let rackLoading = false;
@@ -1517,6 +1518,7 @@ class Mixer {
     this.toRemixBtn = li.querySelector('.to-remix-btn');
     this.toRemixBtn.addEventListener('click', () => sendJobToRemixer(this.job));
     this.shareBtn = li.querySelector('.share-btn:not(.to-remix-btn):not(.refresh-btn)');
+    if (guestSessionActive && !this.job.readOnlyShared) this.shareBtn.hidden = true;
     this.shareBtn.addEventListener('click', () => this.copyLink());
     this.rateGroup = li.querySelector('.rate');
     this.loopRegion = li.querySelector('.loop-region');
@@ -2811,7 +2813,7 @@ class Mixer {
       this.conversationRevision = result.revision;
       if (this.conversationSaveStatus) {
         this.conversationSaveStatus.hidden = false;
-        this.conversationSaveStatus.textContent = 'Saved to your CUNY account.';
+        this.conversationSaveStatus.textContent = guestSessionActive ? 'Saved to this guest session.' : 'Saved to your CUNY account.';
         this.conversationSaveStatus.classList.remove('error');
       }
     }).catch((error) => {
@@ -4599,10 +4601,11 @@ async function initialize() {
     const account = document.createElement('p');
     account.className = 'account-nav';
     let principal = null;
+    let guestState = null;
     let accountNeedsHelp = false;
     try {
       const response = await fetch('/api/account');
-      if (response.ok) principal = (await response.json()).account;
+      if (response.ok) {const result=await response.json();principal=result.account;guestState=result.guest;}
       else if (response.status !== 401) {
         accountNeedsHelp = true;
         rackStatus.hidden = false;
@@ -4613,16 +4616,17 @@ async function initialize() {
       rackStatus.hidden = false;
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
-    if (principal && /^cail-[0-9a-f]{32}$/.test(principal.subject)) {
+    guestSessionActive=principal?.quotaClass==='guest' && principal?.role==='guest' && /^guest-[0-9a-f]{64}$/.test(principal.subject);
+    if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
       window.StemSessionGuard?.start(accountSubject,()=>{for(const mixer of mixers.values()){mixer.pause();mixer.disposeWaveforms();}mixers.clear();jobStates.clear();accountJobs=[];accountSubject=null;selectedCourse='personal';},()=>{for(const mixer of mixers.values()){mixer.pause();mixer.coachAbort?.abort();}});
       const link = document.createElement('a');
       link.className = 'account-button';
       link.href = '/account.html';
-      link.textContent = 'My account';
+      link.textContent = guestSessionActive ? 'My guest session' : 'My account';
       account.append(link);
-      void loadCourseOptions();
+      if (!guestSessionActive) void loadCourseOptions();
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
@@ -4632,6 +4636,8 @@ async function initialize() {
       account.append(link);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead').append(account);
+    if (!accountNeedsHelp && (!principal || guestSessionActive)) window.StemGuest?.mount(document.querySelector('.masthead'),runtime.guest,
+      {active:guestSessionActive,verificationRequired:guestState?.verificationRequired});
   }
   separationOptionsReady = loadSeparationOptions();
   void ensureClassCode();

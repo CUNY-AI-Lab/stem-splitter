@@ -1,4 +1,4 @@
-export type Env = {
+export type Env = import('./guest/access.ts').GuestSettings & {
   // Bindings
   AUDIO: R2Bucket;
   DB: D1Database;
