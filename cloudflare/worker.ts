@@ -1,3 +1,4 @@
+import { recordPageUse, recordServerUse } from '../src/reliability/observability.ts';
 import { youtubeImportConfiguration } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
 import app, { runReliableJobs } from '../src/index.ts';
@@ -28,7 +29,10 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
     if (!env.REQUEST_LIMIT) return Response.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
     const key = request.headers.get('cf-connecting-ip') || 'unknown';
     const limited = await env.REQUEST_LIMIT.limit({ key: `stem-preview:${key}` });
-    if (!limited.success) return Response.json({ error: 'Please wait a moment and try again.' }, { status: 429, headers: { 'Retry-After': '60' } });
+    if (!limited.success) {
+      const response=Response.json({ error: 'Please wait a moment and try again.' }, { status: 429, headers: { 'Retry-After': '60' } });
+      ctx.waitUntil(recordServerUse(env,request,response,undefined,Date.now()));return response;
+    }
   }
   const gateway = gatewayForRequest(env.GATEWAY, request.headers.get('x-cail-gateway-identity-jwt'), request, env.RELEASE || 'candidate');
   return app.fetch(request, { ...env, ASSISTANT_MODEL: env.GATEWAY_MODEL,
@@ -66,9 +70,11 @@ export default {
         // Admission and ownership run in the shared application. Limit expensive
         // ingress before provider work; signed provider callbacks are independent.
         const internal = await authenticatedRequest(request, env);
+        if(internal instanceof Response)ctx.waitUntil(recordServerUse(env,request,internal,undefined,Date.now()));
         response = internal instanceof Response ? internal : await serveApi(internal, { ...env, CAIL_LOGIN_URL: '/auth/login' }, ctx);
       } else {
         response = env.ASSETS ? await env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
+        if(request.method==='GET'&&['/','/index.html','/account.html','/teacher.html','/classroom.html'].includes(url.pathname))ctx.waitUntil(recordPageUse(env,response));
       }
     } catch {
       // No provider body, private URL, SQL error, or identity enters logs.

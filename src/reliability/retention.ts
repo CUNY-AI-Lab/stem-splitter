@@ -4,6 +4,8 @@
 export async function purgeOperationContent(db: D1Database, now=Date.now()) {
   const cutoff=now-90*86400000;
   await db.batch([
+    db.prepare('DELETE FROM usage_events WHERE at<?').bind(now-30*86400000),
+    db.prepare('DELETE FROM operation_events WHERE at<?').bind(now-30*86400000),
     db.prepare('DELETE FROM import_cache WHERE expires_at<=?').bind(now),
     db.prepare(`UPDATE app_operations SET request_json='{}',result_json=NULL,cancel_requested=1,updated_at=?
       WHERE created_at<=? AND (request_json<>'{}' OR result_json IS NOT NULL)`).bind(now,cutoff),

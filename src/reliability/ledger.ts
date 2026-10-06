@@ -84,10 +84,20 @@ export async function beginAttempt(db: D1Database, operation: Operation, provide
   const inserted=await db.prepare(`INSERT INTO operation_attempts(id,operation_id,phase,provider,model,outcome,created_at,updated_at)
     SELECT ?,id,phase,?,?,'starting',?,? FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL})`)
     .bind(id,provider,model ?? null,now,now,operation.id,operation.fence).run();
-  if(inserted.meta.changes!==1)throw new OperationError('operation_fenced',409,'This request is being recovered.');
+  if(!inserted.meta.changes)throw new OperationError('operation_fenced',409,'This request is being recovered.');
   return id;
 }
 export async function finishAttempt(db: D1Database, id: string, outcome: string, detail: { externalId?: string; status?: number; code?: string; usage?: unknown } = {}) {
   await db.prepare('UPDATE operation_attempts SET outcome=?,external_id=COALESCE(?,external_id),http_status=?,code=?,usage_json=?,updated_at=? WHERE id=?')
-    .bind(outcome,detail.externalId ?? null,detail.status ?? null,detail.code ?? null,detail.usage === undefined ? null : JSON.stringify(detail.usage),Date.now(),id).run();
+    .bind(outcome,detail.externalId ?? null,detail.status ?? null,safeEventCode(detail.code),numericUsage(detail.usage),Date.now(),id).run();
 }
+
+// Gateway usage is untrusted structured data. Preserve only numeric accounting
+// fields, never arbitrary provider strings or nested response content.
+function numericUsage(value:unknown) {
+  if(!value||typeof value!=='object'||Array.isArray(value))return null;
+  const fields=['prompt_tokens','completion_tokens','total_tokens','input_tokens','output_tokens','cost','cost_usd'];
+  const result=Object.fromEntries(fields.flatMap(key=>{const n=(value as Record<string,unknown>)[key];return typeof n==='number'&&Number.isFinite(n)&&n>=0?[[key,n]]:[];}));
+  return Object.keys(result).length?JSON.stringify(result):null;
+}
+export const safeEventCode=(code:unknown):string|null=>typeof code==='string'&&/^[a-z][a-z0-9_]{0,63}$/.test(code)?code:null;

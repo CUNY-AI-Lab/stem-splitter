@@ -1,3 +1,4 @@
+import { parsePredictionJson } from '../src/reliability/prediction-json.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -631,10 +632,10 @@ test('durable importer bounds prediction and audio copies before reading oversiz
     globalThis.fetch=async()=>new Response('{}',{headers:{'Content-Type':'application/json','Content-Length':String(CAIL_PREDICTION_BYTES+1)}});
     await assert.rejects(()=>startYouTubeImport('https://youtu.be/jNQXAC9IVRw',TEST_ENV as never,'https://app.test/callback'),(error:any)=>error.code==='import_start_response_unreadable'&&error.outcome==='uncertain');
     // The inline limit is independently enforced after a bounded JSON parse.
-    for(const size of [2048,CAIL_INLINE_BYTES+1]) {
+    for(const size of [2048,6*1024*1024,CAIL_INLINE_BYTES,CAIL_INLINE_BYTES+1]) {
       const audio=Buffer.from(makeM4a(size)).toString('base64');
       globalThis.fetch=async()=>Response.json({id:'bounded',status:'succeeded',output:{audio:`data:audio/mp4;base64,${audio}`,title:'Fixture',duration:1}});
-      if(size===2048)assert.equal((await pollYouTubeImport('bounded',TEST_ENV as never))?.data.byteLength,size);
+      if(size<=CAIL_INLINE_BYTES)assert.equal((await pollYouTubeImport('bounded',TEST_ENV as never))?.data.byteLength,size);
       else await assert.rejects(()=>pollYouTubeImport('bounded',TEST_ENV as never),(error:any)=>error.code==='audio_too_large');
     }
   } finally {globalThis.fetch=saved;}
@@ -654,4 +655,18 @@ test('durable extractor errors distinguish format, configuration and explicit so
       await assert.rejects(()=>pollYouTubeImport('classified',TEST_ENV as never),(error:any)=>error.code===code,`${message}: ${code}`);
     }
   }finally{globalThis.fetch=saved;}
+});
+
+test('bounded inline parsing validates metadata location, escapes, base64 and duplicate audio fields',()=>{
+  const parse=(text:string)=>parsePredictionJson(new TextEncoder().encode(text).buffer,32);
+  const payload='data:audio/mp4;base64,AQIDBA==';
+  assert.deepEqual(new Uint8Array(parse(JSON.stringify({output:{audio:payload,title:'a "title"',duration:1}})).inlineAudio!),new Uint8Array([1,2,3,4]));
+  for(const text of [
+    JSON.stringify({error:{audio:payload},output:{audio:'https://safe.test'}}),
+    '{"output":{"audio":"'+payload+'","audio":"https://safe.test"}}',
+    '{"output":{"audio":"'+payload+'"},"invalid":}',
+    JSON.stringify({output:{audio:'data:audio/mp4;base64,AAAA=A=='}}),
+    JSON.stringify({output:{audio:payload},logs:'x'.repeat(256*1024)}),
+  ])assert.throws(()=>parse(text));
+  assert.deepEqual(parse('{"output":{"audio":"https://safe.test"}}').value,{output:{audio:'https://safe.test'}});
 });

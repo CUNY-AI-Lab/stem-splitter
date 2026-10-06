@@ -33,7 +33,7 @@
   }
   function clear() {
     if (clearing) return;
-    clearing = true; suspend(); cleanup();
+    clearing = true; window.StemUsage?.clear(); suspend(); cleanup();
     const main = document.querySelector('main');
     if (main) main.replaceChildren();
     message.textContent = 'Your account changed. Reloading your workspace…'; retry.hidden = true;
@@ -71,7 +71,7 @@
     return checking;
   }
   window.StemSessionGuard = {
-    start(value, onClear, onPause) { subject = value; cleanup = onClear || cleanup; pause = onPause || pause; },
+    start(value, onClear, onPause) { subject = value; cleanup = onClear || cleanup; pause = onPause || pause; window.StemUsage?.start(); },
     observe, check, clear,
   };
   window.addEventListener('focus', () => void check());

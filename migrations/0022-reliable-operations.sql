@@ -35,16 +35,26 @@ CREATE TABLE IF NOT EXISTS operation_events (
   phase TEXT NOT NULL,
   fence INTEGER NOT NULL,
   code TEXT,
-  at INTEGER NOT NULL
+  at INTEGER NOT NULL,
+  event_type TEXT NOT NULL DEFAULT 'lifecycle',
+  attempt_id TEXT,
+  kind TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  fallback INTEGER NOT NULL DEFAULT 0,
+  quota_effect TEXT NOT NULL DEFAULT 'none'
 );
 CREATE TRIGGER IF NOT EXISTS operation_created AFTER INSERT ON app_operations BEGIN
-  INSERT INTO operation_events(operation_id,state,phase,fence,code,at)
-  VALUES(NEW.id,NEW.state,NEW.phase,NEW.fence,NEW.error_code,NEW.updated_at);
+  INSERT INTO operation_events(operation_id,state,phase,fence,code,at,kind,duration_ms,quota_effect)
+  VALUES(NEW.id,NEW.state,NEW.phase,NEW.fence,NEW.error_code,NEW.updated_at,NEW.kind,
+    MAX(0,NEW.updated_at-NEW.created_at),'reserved');
 END;
 CREATE TRIGGER IF NOT EXISTS operation_changed AFTER UPDATE ON app_operations
 WHEN OLD.state<>NEW.state OR OLD.phase<>NEW.phase OR OLD.fence<>NEW.fence BEGIN
-  INSERT INTO operation_events(operation_id,state,phase,fence,code,at)
-  VALUES(NEW.id,NEW.state,NEW.phase,NEW.fence,NEW.error_code,NEW.updated_at);
+  INSERT INTO operation_events(operation_id,state,phase,fence,code,at,kind,duration_ms,quota_effect)
+  VALUES(NEW.id,NEW.state,NEW.phase,NEW.fence,NEW.error_code,NEW.updated_at,NEW.kind,
+    MAX(0,NEW.updated_at-NEW.created_at),CASE WHEN NEW.state IN ('succeeded','partial') THEN 'charged'
+    WHEN NEW.state IN ('failed','cancelled') THEN 'released' ELSE 'none' END);
 END;
 CREATE TRIGGER IF NOT EXISTS operation_terminal_fence BEFORE UPDATE ON app_operations
 WHEN OLD.state IN ('succeeded','partial','failed','cancelled') AND NEW.state<>OLD.state
@@ -105,3 +115,37 @@ WHEN NEW.status IN ('done','failed') BEGIN
    lease_owner=NULL,lease_until=0,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000
  WHERE job_id=NEW.id AND kind='split' AND state NOT IN ('succeeded','partial','failed','cancelled');
 END;
+
+-- Attempts and lifecycle events are in the same transaction as their evidence.
+-- No body, transcript, filename, source URL, name, email or credential is copied.
+CREATE TRIGGER IF NOT EXISTS operation_attempt_created AFTER INSERT ON operation_attempts BEGIN
+ INSERT INTO operation_events(operation_id,state,phase,fence,code,at,event_type,attempt_id,kind,duration_ms,model,fallback)
+ SELECT NEW.operation_id,NEW.outcome,NEW.phase,o.fence,NEW.code,NEW.created_at,'attempt_start',NEW.id,o.kind,0,NEW.model,
+  CASE WHEN NEW.provider='cail-gateway' AND EXISTS(SELECT 1 FROM operation_attempts a WHERE a.operation_id=NEW.operation_id AND a.id<>NEW.id) THEN 1 ELSE 0 END
+ FROM app_operations o WHERE o.id=NEW.operation_id;
+END;
+CREATE TRIGGER IF NOT EXISTS operation_attempt_changed AFTER UPDATE ON operation_attempts
+WHEN NEW.outcome<>OLD.outcome BEGIN
+ INSERT INTO operation_events(operation_id,state,phase,fence,code,at,event_type,attempt_id,kind,duration_ms,model,fallback)
+ SELECT NEW.operation_id,NEW.outcome,NEW.phase,o.fence,NEW.code,NEW.updated_at,'attempt_end',NEW.id,o.kind,
+  MAX(0,NEW.updated_at-NEW.created_at),NEW.model,
+  CASE WHEN NEW.provider='cail-gateway' AND NEW.model='deepseek-v4-flash-0731' THEN 1 ELSE 0 END
+ FROM app_operations o WHERE o.id=NEW.operation_id;
+END;
+CREATE INDEX IF NOT EXISTS operation_events_retention ON operation_events(at);
+CREATE TABLE IF NOT EXISTS usage_events (
+ event_id TEXT PRIMARY KEY,
+ actor_key TEXT NOT NULL,
+ actor_class TEXT NOT NULL CHECK(actor_class IN ('member','guest','anonymous')),
+ event_type TEXT NOT NULL,
+ source TEXT NOT NULL CHECK(source IN ('client','server')),
+ job_id TEXT,
+ outcome TEXT NOT NULL,
+ code TEXT,
+ http_status INTEGER,
+ duration_ms INTEGER,
+ position_bucket INTEGER,
+ at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS usage_events_retention ON usage_events(at);
+CREATE INDEX IF NOT EXISTS usage_events_actor ON usage_events(actor_key,at);

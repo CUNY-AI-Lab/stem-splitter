@@ -1,3 +1,5 @@
+import { retryAt } from './reliability/retry.ts';
+import { parseClientUses, recordClientUses, recordServerUse, usageSummary } from './reliability/observability.ts';
 import classroomRoutes from './classroom/routes.ts';
 import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
@@ -8,7 +10,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { splitAllowance, operationAllowance, dailyWindow } from './daily-allowance.ts';
 import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback } from './reliability/splits.ts';
-import { readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
+import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt } from './reliability/assistant.ts';
 import { validMp3Frames } from './reliability/media.ts';
@@ -182,6 +184,12 @@ async function sha256Text(value: string): Promise<string> {
 type AppContext = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const app = new Hono<AppContext>();
 
+app.use('/api/*', async (c,next)=>{
+  const started=Date.now();
+  await next();
+  await recordServerUse(c.env,c.req.raw,c.res,c.get('principal'),started);
+});
+
 app.use('/api/*', async (c, next) => {
   if (c.env.AUTH_MODE === 'cail') {
     const denied = await authorizeCailRequest(c.req.raw, c.env, (principal) => c.set('principal', principal));
@@ -196,6 +204,25 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.route('/api/classroom', classroomRoutes);
+
+app.post('/api/usage-events',async c=>{
+  const principal=c.get('principal');
+  if(!principal||c.env.AUTH_MODE!=='cail')return c.json({error:'Sign in to continue.'},401);
+  const parsed=await boundedJson(c,8192);if('response'in parsed)return parsed.response;
+  const events=parseClientUses(parsed.value);if(!events)return c.json({error:'Invalid usage event batch.'},400);
+  for(const jobId of new Set(events.map(e=>e.jobId).filter((id):id is string=>!!id))) {
+    if(!await jobPermission(c.env,principal,jobId))return c.json({error:'Job not found'},404);
+  }
+  await recordClientUses(c.env.DB,principal,events);
+  return c.json({accepted:true,capture:'best_effort'});
+});
+app.get('/api/admin/usage-events',async c=>{
+  if(c.get('principal')?.role!=='admin')return c.json({error:'Not allowed'},403);
+  const days=Number(c.req.query('days')??7);
+  if(!Number.isInteger(days)||days<1||days>30)return c.json({error:'days must be 1–30.'},400);
+  return c.json(await usageSummary(c.env.DB,days));
+});
+
 
 app.get('/api/runtime', (c) => c.json({
   authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
@@ -1970,7 +1997,7 @@ app.post('/api/webhooks/separation', async (c) => {
         operation=await readOperation(c.env.DB,jobId);
       } else await c.req.raw.body?.cancel().catch(()=>undefined);
       if(operation?.provider_id) {
-        await c.env.DB.prepare('UPDATE app_operations SET not_before=0 WHERE id=?').bind(operation.id).run();
+        await c.env.DB.prepare(`UPDATE app_operations SET not_before=MAX(not_before,COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)) WHERE id=?`).bind(operation.id).run();
         await reconcileSplit(c.env,operation,ingestResult);
       }
       try {c.executionCtx.waitUntil(runReliableJobs(c.env));} catch {}
@@ -2048,7 +2075,7 @@ export async function runReliableJobs(env: Env) { return drainSplitQueue(env,ing
 // --- helpers ------------------------------------------------------------
 
 /** Download finished stems from the provider and store them in R2. */
-async function ingestResult(env: Env, jobId: string, result: SeparationResult): Promise<void> {
+async function ingestResult(env: Env, jobId: string, result: SeparationResult, operation?: Operation): Promise<void> {
   if (result.status !== 'failed' && result.status !== 'succeeded') return;
 
   const job = await env.DB.prepare('SELECT model FROM jobs WHERE id = ?')
@@ -2063,9 +2090,10 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
   // so a later poll can recover if this Worker dies before releasing the claim.
   const lease = `${INGEST_LEASE_PREFIX}${Date.now()}:${crypto.randomUUID()}`;
   const claim = await env.DB.prepare(
-    "UPDATE jobs SET status = 'ingesting', error = ? WHERE id = ? AND status = 'processing'"
+    `UPDATE jobs SET status = 'ingesting', error = ? WHERE id = ? AND status = 'processing'
+      AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ? AND lease_until>?))`
   )
-    .bind(lease, jobId)
+    .bind(lease, jobId,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null,Date.now())
     .run();
   if (!claim.meta.changes) return;
 
@@ -2113,34 +2141,32 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult): 
     }
 
     const committed = await env.DB.prepare(
-      "UPDATE jobs SET status = ?, stems = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
+      `UPDATE jobs SET status = ?, stems = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?
+        AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`
     )
-      .bind('done', JSON.stringify(stored), jobId, lease)
+      .bind('done', JSON.stringify(stored), jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null)
       .run();
     if (!committed.meta.changes) await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
   } catch (error) {
-    const cleanup = await Promise.allSettled(stored.map(({ key }) => env.AUDIO.delete(key)));
-    if (cleanup.some((result) => result.status === 'rejected')) {
-      console.error('failed to remove partial stem files', { jobId });
-    }
-    if (error instanceof InvalidStemAudioError) {
-      await env.DB.prepare(
-        "UPDATE jobs SET status = 'failed', error = ? WHERE id = ? AND status = 'ingesting' AND error = ?"
-      )
-        .bind(error.message, jobId, lease)
-        .run();
-      return;
-    }
-    if(env.AUTH_MODE==='cail' && await readOperation(env.DB,jobId)) {
-      await env.DB.prepare("UPDATE jobs SET status='failed',error='The finished audio could not be saved. No successful-split allowance was used.' WHERE id=? AND status='ingesting' AND error=?").bind(jobId,lease).run();
-      return;
-    }
-    // Let a provider retry or the next browser poll make another attempt.
-    await env.DB.prepare(
-      "UPDATE jobs SET status = 'processing', error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
-    )
-      .bind(jobId, lease)
-      .run();
+    // A failed acknowledgement does not prove a failed commit. First fence the
+    // old ingestion lease, then inspect durable references before any deletion.
+    // If either database read/write is uncertain, leave objects for recovery.
+    try {
+      const snapshot=await env.DB.prepare('SELECT status,stems,error FROM jobs WHERE id=?').bind(jobId).first<{status:string;stems:string|null;error:string|null}>();
+      const referenced=(row:typeof snapshot)=>new Set(row?.stems?JSON.parse(row.stems).map((stem:{key:string})=>stem.key):[]);
+      if(stored.some(({key})=>referenced(snapshot).has(key)))return;
+      const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No successful-split allowance was used.';
+      const terminal=error instanceof InvalidStemAudioError||env.AUTH_MODE==='cail';
+      await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?
+        AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`)
+        .bind(terminal?'failed':'processing',terminal?failure:null,jobId,lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null).run();
+      const durable=await env.DB.prepare('SELECT status,stems,error FROM jobs WHERE id=?').bind(jobId).first<{status:string;stems:string|null;error:string|null}>();
+      if(durable?.status==='ingesting'&&durable.error===lease)return;
+      const keep=referenced(durable);
+      const cleanup=await Promise.allSettled(stored.filter(({key})=>!keep.has(key)).map(({key})=>env.AUDIO.delete(key)));
+      if(cleanup.some(result=>result.status==='rejected'))console.error(JSON.stringify({event:'partial_stem_cleanup_failed',jobId}));
+      if(terminal)return;
+    }catch {return;}
     throw error;
   }
 }
@@ -2149,11 +2175,13 @@ class InvalidStemAudioError extends Error {}
 
 async function downloadStem(name: string, url: string, strict = false): Promise<ArrayBuffer> {
   let lastError: Error | null = null;
+  const deadline=Date.now()+60000;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if(strict&&Date.now()>=deadline)throw lastError??new Error('Audio download deadline expired');
     let response: Response;
     try {
-      response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(20000) });
+      response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(strict?Math.max(1,Math.min(20000,deadline-Date.now())):20000) });
     } catch (error) {
       lastError =
         error instanceof Error
@@ -2169,7 +2197,7 @@ async function downloadStem(name: string, url: string, strict = false): Promise<
       try {
         const audio = await readBoundedResponse(response, {
           maximumBytes: (strict?24:32) * 1024 * 1024,
-          timeoutMs: 30000,
+          timeoutMs: strict?Math.max(1,Math.min(30000,deadline-Date.now())):30000,
           errors: {
             tooLarge: () => new InvalidStemAudioError('The separator returned an oversized track'),
             timedOut: () => new Error('Audio download timed out'),
@@ -2207,7 +2235,10 @@ async function downloadStem(name: string, url: string, strict = false): Promise<
     if (response.status !== 429 && response.status < 500) throw lastError;
 
     if (attempt < 3) {
-      await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+      const wait=strict&&response.status===429?Math.max(0,retryAt(response.headers.get('retry-after'))-Date.now()):attempt*100;
+      // A safe GET may stop retrying; it may never retry before the full floor.
+      if(strict&&Date.now()+wait>=deadline)throw lastError;
+      await new Promise((resolve) => setTimeout(resolve,wait));
     }
   }
 

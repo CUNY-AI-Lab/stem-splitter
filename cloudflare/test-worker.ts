@@ -1,3 +1,4 @@
+import { pollYouTubeImport } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
 import { courseFixture } from './course-fixture.ts';
 import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
@@ -10,6 +11,7 @@ let gatewayCalls = 0;
 let gatewayMessages: Array<{ role: string; content: string }> = [];
 export default {
   async fetch(request: Request, env: TestEnv, ctx: ExecutionContext) {
+    if(new URL(request.url).pathname==='/__fixture/inline-import'&&request.headers.get('x-fixture')==='local-only') {const audio=await pollYouTubeImport('inline-memory-fixture',{...env,REPLICATE_API_TOKEN:'test-replicate-token-000',REPLICATE_YT_MODEL:'test/fixture',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});return Response.json({bytes:audio?.data.byteLength});}
     if(new URL(request.url).pathname==='/__fixture/validate-audio'&&request.headers.get('x-fixture')==='local-only')return Response.json({valid:await validateStemAudio(await request.arrayBuffer())});
     if(new URL(request.url).pathname==='/__fixture/operations'&&request.headers.get('x-fixture')==='local-only')return Response.json((await env.DB.prepare('SELECT id,state,phase,error_code,fence,lease_until,not_before FROM app_operations').all()).results);
     if (new URL(request.url).pathname === '/__fixture/gateway-messages' && request.headers.get('x-fixture') === 'local-only') return Response.json({ messages: gatewayMessages });

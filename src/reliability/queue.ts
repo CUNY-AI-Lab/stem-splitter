@@ -35,6 +35,19 @@ export async function transition(db: D1Database, operation: Operation, state: Op
 }
 
 export async function recoverExpired(db: D1Database, now=Date.now()) {
+  // Cron and callbacks recover abandoned ingestion without a browser poll.
+  // The job lease is a separate output-write fence; reopening it invalidates
+  // a late old uploader's final CAS and preserves the known provider ID.
+  const ingestions=await db.prepare(`SELECT j.id,j.error FROM jobs j JOIN app_operations o ON o.job_id=j.id
+    WHERE j.status='ingesting' AND o.kind='split' AND o.state IN ('processing','reconciling') AND o.lease_until<=? LIMIT 100`)
+    .bind(now).all<{id:string;error:string|null}>();
+  for(const job of ingestions.results) {
+    const timestamp=/^ingesting:(\d{10,16}):[a-zA-Z0-9-]+$/.exec(job.error??'')?.[1];
+    if(timestamp&&Number(timestamp)+WORK_LEASE_MS<=now)await db.prepare(`UPDATE jobs SET status='processing',error=NULL
+      WHERE id=? AND status='ingesting' AND error=? AND EXISTS(SELECT 1 FROM app_operations WHERE job_id=?
+      AND state IN ('processing','reconciling') AND lease_until<=?)`).bind(job.id,job.error,job.id,now).run();
+  }
+
   // Never blindly repeat an accepted or ambiguously accepted POST. Work that
   // died before an attempt record is safe to enqueue; starts reconcile.
   await db.prepare(`UPDATE app_operations SET state=CASE

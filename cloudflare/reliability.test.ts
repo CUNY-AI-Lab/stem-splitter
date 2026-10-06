@@ -144,3 +144,67 @@ test('frame validation rejects truncation but documents its inability to establi
  const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-xerror','-i',path,'-f','null','-'],{encoding:'utf8'});
  assert.ifError(result.error);assert.notEqual(result.status,0);assert.match(result.stderr,/invalid|error|Error|decode|backstep|big_values/);
 });
+
+test('cron recovers abandoned ingestion and admits the next job without browser polling',async t=>{
+ const {db,env,split}=await setup(t),first=await split('orphan-ingestion-001'),next=await split('queued-next-work-002');
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='prediction' WHERE id=?").bind(first.id).run();
+ await db.prepare("UPDATE jobs SET status='ingesting',external_id='prediction',error=? WHERE id=?").bind(`ingesting:${Date.now()-600000}:old-worker`,first.id).run();
+ let posts=0;t.mock.method(globalThis,'fetch',async(_input:RequestInfo|URL,init?:RequestInit)=>{if(init?.method==='POST'){posts++;return Response.json({id:'next-prediction'});}return Response.json({id:'prediction',status:'succeeded',output:{}});});
+ await runReliableJobs(env);
+ assert.equal((await readOperation(db,first.id))?.state,'failed');
+ assert.equal((await readOperation(db,next.id))?.state,'processing');assert.equal(posts,1);
+});
+
+test('stale imported audio cleans up only its own object and cannot cancel a newer fenced operation',async t=>{
+ const {db,env,split}=await setup(t),op=await split('stale-import-work-01','fetch');
+ Object.assign(env,{REPLICATE_API_TOKEN:'fixture-replicate-token',REPLICATE_YT_MODEL:'test/importer',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='import-prediction' WHERE id=?").bind(op.id).run();
+ await db.prepare("UPDATE jobs SET status='importing' WHERE id=?").bind(op.id).run();
+ const data=Buffer.alloc(65536);data.write('ftyp',4);
+ t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>String(input).includes('api.replicate.com')?Response.json({id:'import-prediction',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/audio.m4a',title:'Fixture',duration:2}}):new Response(data,{headers:{'Content-Type':'audio/mp4'}}));
+ const put=env.AUDIO.put.bind(env.AUDIO);let staleKey='';
+ t.mock.method(env.AUDIO,'put',async(key:string,...args:any[])=>{staleKey=key;const saved=await (put as any)(key,...args);await db.prepare("UPDATE app_operations SET fence=fence+1,phase='split',state='processing',provider_id='new-separator',lease_owner='new-worker' WHERE id=?").bind(op.id).run();await db.prepare("UPDATE jobs SET status='processing',external_id='new-separator' WHERE id=?").bind(op.id).run();return saved;});
+ await reconcileSplit(env,(await readOperation(db,op.id))!,async()=>{});
+ const current=(await readOperation(db,op.id))!;assert.equal(current.state,'processing');assert.equal(current.provider_id,'new-separator');assert.equal(current.error_code,null);
+ assert.equal(await env.AUDIO.head(staleKey),null);
+});
+
+test('missing provider configuration creates no attempt or paid start and releases the reservation',async t=>{
+ const {db,env,split}=await setup(t);env.REPLICATE_MODEL_VERSION='';const op=await split('no-provider-pin-0001');let calls=0;
+ t.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error('must not fetch');});await runReliableJobs(env);
+ assert.equal(calls,0);assert.equal((await readOperation(db,op.id))?.state,'failed');assert.equal((await readOperation(db,op.id))?.error_code,'provider_configuration');
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<any>())?.n,0);assert.equal((await splitAllowance(db,subject)).remaining,15);
+});
+
+test('separation status429 shares the complete Retry-After floor across queue drains and callbacks',async t=>{
+ const {db,env,split}=await setup(t),op=await split('poll-rate-limit-0001');
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='prediction' WHERE id=?").bind(op.id).run();
+ let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;return new Response(null,{status:429,headers:{'Retry-After':'120'}});});
+ const before=Date.now();await runReliableJobs(env);const current=(await readOperation(db,op.id))!;
+ assert.ok(current.not_before>=before+120000);assert.ok((await db.prepare("SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'").first<any>())!.until_ms>=before+120000);
+ await runReliableJobs(env);assert.equal(calls,1);
+ const {default:app}=await import('../src/index.ts');
+ const response=await app.fetch(new Request(operationWebhook(env,op.id,'split'),{method:'POST',body:'{}'}),env);
+ assert.equal(response.status,200);assert.equal(calls,1);assert.ok((await readOperation(db,op.id))!.not_before>=before+120000);
+});
+
+test('lost final database acknowledgement preserves committed stem objects and charges once',async t=>{
+ for(const mode of ['before_commit','lost_ack','lost_ack_read_unavailable']) {
+  const {db,env,split}=await setup(t),op=await split(`ingest-commit-${mode}`);const fixture=readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+  const mock=t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>init?.method==='POST'?Response.json({id:'prediction'}):String(input).includes('api.replicate.com')?Response.json({id:'prediction',status:'succeeded',output:Object.fromEntries(['vocals','drums','bass','other'].map(name=>[name,`https://fixtures.replicate.delivery/${name}.mp3`]))}):new Response(fixture));
+  const prepare=db.prepare.bind(db);let injected=false;
+  const dbMock=t.mock.method(db,'prepare',(sql:string)=>{
+   if(mode==='lost_ack_read_unavailable'&&injected&&sql.startsWith('SELECT status,stems,error FROM jobs'))throw new Error('reread unavailable');
+   const statement=prepare(sql);
+   if(sql.includes('SET status = ?, stems = ?')) {
+    const bind=statement.bind.bind(statement);statement.bind=(...args:any[])=>{const bound=bind(...args),run=bound.run.bind(bound);bound.run=async()=>{if(!injected){injected=true;if(mode==='before_commit')throw new Error('before commit');await run();throw new Error('lost acknowledgement');}return run();};return bound;};
+   }
+   return statement;
+  });
+  await runReliableJobs(env);await runReliableJobs(env);
+  const job=await db.prepare('SELECT status,stems FROM jobs WHERE id=?').bind(op.id).first<any>();assert.equal(injected,true);
+  assert.equal(job.status,mode.startsWith('lost_ack')?'done':'failed');assert.equal((await splitAllowance(db,subject)).completed,mode.startsWith('lost_ack')?1:0);
+  if(mode.startsWith('lost_ack'))for(const stem of JSON.parse(job.stems))assert.ok(await env.AUDIO.head(stem.key),stem.key);
+  mock.mock.restore();dbMock.mock.restore();
+ }
+});

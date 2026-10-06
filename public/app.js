@@ -1616,6 +1616,7 @@ class Mixer {
       const muteBtn = row.querySelector('.mute-btn');
       const soloBtn = row.querySelector('.solo-btn');
       const download = row.querySelector('.dl');
+      download.addEventListener('click',()=>window.StemUsage?.record('download_intent',{jobId:this.job.id}));
       this.channelsByName.set(stem.name, {
         audio,
         row,
@@ -1896,6 +1897,7 @@ class Mixer {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(makeZip(entries));
       a.download = `${fileSafe(this.job.filename) || 'session'}-export.zip`;
+      window.StemUsage?.record('download_intent',{jobId:this.job.id});
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1974,6 +1976,8 @@ class Mixer {
     if (attempt !== this.playAttempt) return;
     this.starting = false;
     this.playing = true;
+    this.usagePlayStarted=performance.now();
+    window.StemUsage?.record('playback_start',{jobId:this.job.id});
     this.playBtn.textContent = '❚❚';
     this.playBtn.classList.add('playing');
     this.el.classList.add('playing');
@@ -1996,6 +2000,7 @@ class Mixer {
   }
 
   stopUi() {
+    if(this.playing)window.StemUsage?.record('playback_stop',{jobId:this.job.id,durationMs:performance.now()-(this.usagePlayStarted||performance.now())});
     this.playAttempt += 1;
     this.startAbort?.abort();
     this.starting = false;
@@ -2085,7 +2090,7 @@ class Mixer {
   tick() {
     this.paint();
     this.paintMeters();
-    if (this.loop && this.audios[0].currentTime >= this.loop.end) this.seekTo(this.loop.start);
+    if (this.loop && this.audios[0].currentTime >= this.loop.end) this.seekTo(this.loop.start, 'loop');
     if (this.playing) this.raf = requestAnimationFrame(() => this.tick());
   }
 
@@ -2365,7 +2370,7 @@ class Mixer {
     else if (!commit) this.paint();
   }
 
-  seekTo(t) {
+  seekTo(t, reason = 'action') {
     if (!Number.isFinite(t)) return;
     this.endScrub(false);
     const duration = this.seekDuration();
@@ -2379,6 +2384,7 @@ class Mixer {
       if (a.preload !== 'auto') a.preload = 'auto';
       a.currentTime = Math.min(t, a.duration);
     }
+    if(reason==='action')window.StemUsage?.record('seek',{jobId:this.job.id,position:t});
     this.paint();
   }
 
@@ -4574,7 +4580,7 @@ async function loadCourseOptions() {
       for(const course of page.courses)select.add(new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId));cursor=page.nextCursor;
     }while(cursor);
     wrapper.hidden=false;
-    select.addEventListener('change',()=>{selectedCourse=select.value;document.getElementById('course-disclosure').hidden=selectedCourse==='personal';document.getElementById('course-consent').checked=false;});
+    select.addEventListener('change',()=>{selectedCourse=select.value;window.StemUsage?.setCourse(selectedCourse);document.getElementById('course-disclosure').hidden=selectedCourse==='personal';document.getElementById('course-consent').checked=false;});
   }catch{wrapper.hidden=true;}
 }
 

@@ -1,3 +1,4 @@
+import { parsePredictionJson } from './reliability/prediction-json.ts';
 // YouTube audio fetch behind the fetchYouTubeAudio() seam.
 //
 // Strategy: use the configured provider order, with a Replicate-hosted yt-dlp
@@ -11,7 +12,7 @@ const MAX_DURATION_SECONDS = 15 * 60; // cost/scope guard for class use
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 // Cloudflare's 128 MiB isolate must also hold JSON/base64 and a split decoder.
 export const CAIL_IMPORT_BYTES=12*1024*1024;
-export const CAIL_INLINE_BYTES=4*1024*1024;
+export const CAIL_INLINE_BYTES=12*1024*1024;
 export const CAIL_PREDICTION_BYTES=Math.ceil(CAIL_INLINE_BYTES*4/3)+256*1024;
 const MIN_AUDIO_BYTES = 1024;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
@@ -428,6 +429,8 @@ interface YtPrediction {
   status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
   output?: { audio: string; title: string; duration: number };
   error?: string;
+  inlineAudio?: ArrayBuffer;
+  inlineTooLarge?: boolean;
 }
 
 async function replicateFetch(
@@ -454,7 +457,8 @@ async function readPrediction(
   response: Response,
   timeoutMs: number,
   expectedId?: string,
-  maximumBytes=MAX_PREDICTION_BYTES
+  maximumBytes=MAX_PREDICTION_BYTES,
+  boundedInline=false
 ): Promise<YtPrediction> {
   if (responseMediaType(response) !== 'application/json') {
     await response.body?.cancel().catch(() => undefined);
@@ -470,9 +474,10 @@ async function readPrediction(
     },
   });
 
-  let value: unknown;
+  let value: unknown,inlineAudio:ArrayBuffer|undefined,inlineTooLarge:boolean|undefined;
   try {
-    value = JSON.parse(
+    if(boundedInline)({value,inlineAudio,inlineTooLarge}=parsePredictionJson(bytes,CAIL_INLINE_BYTES));
+    else value = JSON.parse(
       new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)
     );
   } catch {
@@ -522,7 +527,7 @@ async function readPrediction(
   return {
     id: candidate.id,
     status: candidate.status as YtPrediction['status'],
-    output,
+    output,inlineAudio,inlineTooLarge,
     error: typeof candidate.error === 'string' ? candidate.error.slice(0, 300) : undefined,
   };
 }
@@ -820,7 +825,7 @@ export async function startYouTubeImport(url: string, env: Env, webhook: string)
     throw new UpstreamError(res.status===429?'provider_capacity':res.status===402?'provider_credit':'import_start_rejected',res.status>=500?'uncertain':'rejected',res.status,
       res.status===429?retryAt(res.headers.get('retry-after')):0);
   }
-  try { return (await readPrediction(res,15000,undefined,CAIL_PREDICTION_BYTES)).id; }
+  try { return (await readPrediction(res,15000,undefined,CAIL_PREDICTION_BYTES,true)).id; }
   catch { throw new UpstreamError('import_start_response_unreadable','uncertain'); }
 }
 
@@ -833,11 +838,12 @@ export async function pollYouTubeImport(id: string, env: Env): Promise<YouTubeAu
   try {
     const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
     if (!res.ok) { await res.body?.cancel(); throw new UpstreamError('import_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0); }
-    prediction=await readPrediction(res,15000,id,CAIL_PREDICTION_BYTES);
+    prediction=await readPrediction(res,15000,id,CAIL_PREDICTION_BYTES,true);
   } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
   if (prediction.status==='starting'||prediction.status==='processing') return null;
   if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
-  const data=await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES);
+  if(prediction.inlineTooLarge)throw new YouTubeError('This import exceeds the 12 MiB audio limit. Try a shorter clip or upload an original or licensed file.','audio_too_large');
+  const data=prediction.inlineAudio??await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES);
   return validateFetchedAudio({data,title:prediction.output.title,durationSec:prediction.output.duration});
 }
 

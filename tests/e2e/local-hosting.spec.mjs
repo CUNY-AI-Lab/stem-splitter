@@ -595,8 +595,10 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
   const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
   const storedKeys = (await storedKeysResponse.json()).keys;
   // Stored under the contract name, so /api/files and the mixer agree.
-  expect(storedKeys).toContain(`stems/${created.id}/instrumental.mp3`);
-  expect(storedKeys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  const instrumental=result.stems.find(stem=>stem.name==='instrumental');
+  expect(instrumental.url).toMatch(new RegExp(`^/api/files/stems/${created.id}/[a-f0-9-]+/instrumental\\.mp3$`));
+  expect(storedKeys).toContain(instrumental.url.replace('/api/files/',''));
+  expect(storedKeys.some(key=>key.startsWith(`stems/${created.id}/`)&&key.endsWith('/no_vocals.mp3'))).toBe(false);
   expect(browserErrors).toEqual([]);
 });
 
@@ -941,7 +943,9 @@ test('completes a six-track split whose guitar and piano tracks are near-silent'
 
   // The quiet tracks were stored verbatim rather than dropped or substituted.
   for (const name of quietNames) {
-    const stored = await server.fetch(`/api/files/stems/${created.id}/${name}.mp3`);
+    const track=result.stems.find(stem=>stem.name===name);
+    expect(track.url).toMatch(new RegExp(`^/api/files/stems/${created.id}/[a-f0-9-]+/${name}\\.mp3$`));
+    const stored = await server.fetch(track.url);
     expect(stored.status).toBe(200);
     expect(Buffer.from(await stored.arrayBuffer()).equals(quietAudio)).toBe(true);
   }
@@ -1045,8 +1049,11 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
 
   const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
   const { keys } = await storedKeysResponse.json();
-  expect(keys).toContain(`stems/${created.id}/instrumental.mp3`);
-  expect(keys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  const result=await (await server.fetch(`/api/jobs/${created.id}`)).json();
+  const instrumental=result.stems.find(stem=>stem.name==='instrumental');
+  expect(instrumental.url).toMatch(new RegExp(`^/api/files/stems/${created.id}/[a-f0-9-]+/instrumental\\.mp3$`));
+  expect(keys).toContain(instrumental.url.replace('/api/files/',''));
+  expect(keys.some(key=>key.startsWith(`stems/${created.id}/`)&&key.endsWith('/no_vocals.mp3'))).toBe(false);
   expect(keys.some((key) => /^uploads\/[0-9a-f-]+\/source\.m4a$/.test(key))).toBe(true);
   expect(browserErrors).toEqual([]);
 });

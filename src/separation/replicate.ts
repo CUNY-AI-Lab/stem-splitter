@@ -92,15 +92,17 @@ export function replicateBackend(env: Env): SeparationBackend {
       const res = await fetch(`${API}/predictions/${externalId}`, { headers, redirect: 'manual', signal: AbortSignal.timeout(20000) });
       if (!res.ok) {
         await res.body?.cancel().catch(() => undefined);
-        throw new Error(`The separator status is unavailable (${res.status}).`);
+        throw new UpstreamError('provider_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0);
       }
-      return backend.parseResult(await predictionJson(res));
+      const prediction=await predictionJson(res);
+      if(prediction.id!==externalId)throw new UpstreamError('provider_poll_identity','uncertain');
+      return backend.parseResult(prediction);
     },
 
     async confirmStart(externalId: string, webhookUrl: string, version: string): Promise<boolean> {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(externalId)) return false;
       const res=await fetch(`${API}/predictions/${externalId}`,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});
-      if (!res.ok) { await res.body?.cancel(); return false; }
+      if (!res.ok) { await res.body?.cancel();if(res.status===429)throw new UpstreamError('provider_poll_unavailable','uncertain',429,retryAt(res.headers.get('retry-after'))); return false; }
       const prediction=await predictionJson(res);
       return prediction.id===externalId && prediction.webhook===webhookUrl && prediction.version===version;
     },

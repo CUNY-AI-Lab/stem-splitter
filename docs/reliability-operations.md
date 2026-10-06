@@ -64,7 +64,9 @@ nonfinite PCM, empty output, implausible duration and damaged syntax fail.
 Input is at most 24 MiB per stem and 900.1 seconds; PCM is discarded per 4 KiB
 compressed chunk. Expected channels and every durable R2 write gate settlement.
 The CAIL importer separately caps remote audio at 12 MiB and inline audio at
-4 MiB, with a roughly 5.6 MiB prediction-JSON envelope. Declared oversized
+12 MiB, with a roughly 16.3 MiB prediction-JSON envelope. The inline value is removed at the byte level before metadata JSON parsing;
+base64 decodes in 16 KiB chunks directly into one output buffer. Metadata is
+bounded at 256 KiB. Declared oversized
 bodies are cancelled before reading, streamed bodies are bounded, and decoded
 stems are validated/ingested sequentially. The decoder heap is about 16.2 MiB;
 a 24 MiB compressed stem plus bounded response copies and one PCM chunk fits
@@ -126,6 +128,45 @@ fallback. One deadline spans both attempts. The verified subject and course
 prompt remain unchanged. Partial/trailing stream failure never calls another
 model. Tools-only replies get local narration, and duplicate tool IDs fail.
 Missing or different backup configuration fails closed.
+
+## Private operational and usage evidence
+
+Lifecycle and attempt events are transactionally recorded alongside the durable
+ledger, including operation/attempt IDs, type, phase, state, elapsed duration,
+normalized error, pinned model, fallback and reservation/charge/release effect.
+Repeated settlement or unchanged attempt completion cannot add a second charge
+receipt. Provider usage retains only finite numeric accounting fields.
+
+Discrete browser observations cover page/session attachment, successful play,
+stop, committed seek and download intent. Server observations cover page
+responses, rejected split/chat requests, annotation saves/deletes and routed
+download responses. Download acceptance is not proof the browser saved a file;
+client observations are not billing evidence or unique-person counts.
+There is no audio, chat/annotation text, name, email, title, source URL, signed
+URL or credential in these event tables. Job/operation IDs are internal support
+correlations. Date-scoped subject hashes limit logging volume without
+copying the institutional identity into usage events; these are pseudonymous
+operational records, not an anonymity guarantee.
+
+Client recording is explicitly best effort: a 50-event in-memory queue sends
+batches of at most ten, with one bounded retry and stable IDs. Closing a page,
+offline use, blocked requests, process loss or the daily protection ceiling can
+lose observations. Signed-out public-audio playback and seek cannot submit
+private usage events; only page/download server observations cover that case.
+Account changes clear the queue and abort outstanding work.
+Server critical operation triggers are durable; auxiliary request/page logging
+cannot break the original request on a diagnostics failure. Idempotent rejected
+requests coalesce; requests with no operation key are separate observations.
+
+Events are access-controlled in the existing D1 database and purged after
+30 days. A student/guest may submit only the fixed event vocabulary for work
+they can currently access. Per-day client ceilings are 500 member/250 guest
+observations and 25,000 total auxiliary events globally. The existing admin-only
+`GET /api/admin/usage-events?days=7` returns aggregate counts, outcomes and mean
+durations for at most 30 days, without identities or content. Client and server
+counts remain separate to prevent treating them as additive exact usage.
+Minimal non-content unresolved operation/billing evidence follows the separate
+reconciliation policy below; no external analytics destination is introduced.
 
 ## Migration, drain and rollback
 

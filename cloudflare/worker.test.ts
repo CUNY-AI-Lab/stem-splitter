@@ -18,7 +18,9 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
   let providerStarts = 0;
   let statusFetches = 0;
+  const inlineAudio=Buffer.alloc(12*1024*1024);inlineAudio.set([0,0,0,24,102,116,121,112,77,52,65,32]);
   const network = setupServer(
+    http.get('https://api.replicate.com/v1/predictions/inline-memory-fixture',()=>HttpResponse.json({id:'inline-memory-fixture',status:'succeeded',output:{audio:'data:audio/mp4;base64,'+inlineAudio.toString('base64'),title:'Memory fixture',duration:600}})),
     http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
       const body = await request.json();
       assert.equal(body.version, 'contract-pin');
@@ -56,6 +58,17 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const silence=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t','2','-c:a','libmp3lame','-b:a','128k','-f','mp3','pipe:1'],{timeout:10000,maxBuffer:1024*1024});
     assert.equal(silence.status,0,String(silence.stderr));
     assert.deepEqual(await(await worker.fetch('/__fixture/validate-audio',{method:'POST',headers:{'x-fixture':'local-only'},body:silence.stdout})).json(),{valid:true});
+
+    // A long high-bitrate stem and an ordinary-size inline import overlap in
+    // the same Workerd isolate. This is a local bounded-input check, not a
+    // claimed production CPU or peak-RSS measurement.
+    const longAudio=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t','600','-c:a','libmp3lame','-b:a','320k','-f','mp3','pipe:1'],{timeout:30000,maxBuffer:25*1024*1024});
+    assert.equal(longAudio.status,0,String(longAudio.stderr));assert.ok(longAudio.stdout.length>22*1024*1024);
+    const largeChecks=await Promise.all([
+      worker.fetch('/__fixture/validate-audio',{method:'POST',headers:{'x-fixture':'local-only'},body:longAudio.stdout}).then(r=>r.json()),
+      worker.fetch('/__fixture/inline-import',{headers:{'x-fixture':'local-only'}}).then(r=>r.json()),
+    ]);
+    assert.deepEqual(largeChecks,[{valid:true},{bytes:12*1024*1024}]);
 
     const call = async (path: string, who = 0, init: RequestInit = {}) => {
       const response = await worker.fetch(path, {
@@ -119,6 +132,15 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const job = await (await call(`/api/jobs/${created.id}`)).json();
     assert.equal(job.status, 'done');
     assert.equal(job.stems.length, 4);
+    const usageEvent={id:'workerd-usage-event-0001',type:'seek',jobId:created.id,positionBucket:4};
+    assert.equal((await call('/api/usage-events',1,{method:'POST',body:JSON.stringify({events:[usageEvent]})})).status,404);
+    assert.equal((await call('/api/usage-events',0,{method:'POST',body:JSON.stringify({events:[{...usageEvent,text:'must not be logged'}]})})).status,400);
+    for(let n=0;n<2;n++)assert.equal((await call('/api/usage-events',0,{method:'POST',body:JSON.stringify({events:[usageEvent]})})).status,200);
+    assert.equal((await call('/api/admin/usage-events')).status,403);
+    const usage=await(await call('/api/admin/usage-events',2)).json();
+    assert.equal(usage.uses.find((row:any)=>row.event_type==='seek').count,1);
+    assert.equal(JSON.stringify(usage).includes(subjects[0]),false);
+
     const sharePath = `/api/jobs/${created.id}/share`;
     const publicPath = `/api/shared-jobs/${created.id}`;
     assert.equal((await worker.fetch(publicPath)).status, 404);

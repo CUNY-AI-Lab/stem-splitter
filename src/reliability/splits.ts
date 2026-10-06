@@ -18,7 +18,7 @@ interface SplitInput {
   sourceType: 'upload'|'youtube'|'archive'; key?: string; filename: string; youtubeUrl?: string;
   archiveId?: string; archiveFile?: string; model: string; auto: boolean; browserAnalysis?: unknown;
 }
-type Complete = (env: Env, jobId: string, result: SeparationResult) => Promise<void>;
+type Complete = (env: Env, jobId: string, result: SeparationResult,operation?:Operation) => Promise<void>;
 const title=(value: unknown) => typeof value==='string' ? value.replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().slice(0,200) : '';
 export const operationWebhook=(env: Env,id: string,phase: 'fetch'|'split') => `${env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&phase=${phase}&token=${env.WEBHOOK_SECRET}`;
 
@@ -81,7 +81,9 @@ async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:Ar
   await env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:audio.fileName?archiveContentType(audio.fileName):'audio/mp4'}});
   const current=await readOperation(env.DB,op.id);
   if (!current||current.fence!==op.fence||current.cancel_requested||['failed','cancelled'].includes(current.state)) {
-    await env.AUDIO.delete(key);if(current)await fail(env,current,'cancelled');return;
+    await env.AUDIO.delete(key);
+    if(current?.fence===op.fence&&current.cancel_requested)await fail(env,op,'cancelled');
+    return;
   }
   input.key=key;input.filename=title(audio.title)||input.filename;
   await env.DB.batch([
@@ -105,7 +107,7 @@ async function storeArchive(env: Env,op: Operation,input: SplitInput) {
   const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES});
   await imported(env,op,input,audio);
   const current=await readOperation(env.DB,op.id);
-  if (current?.phase==='split'&&input.key) await env.DB.prepare(`INSERT INTO import_cache(scope,source,operation_id,object_key,metadata_json,expires_at)
+  if (current?.fence===op.fence&&current.phase==='split'&&input.key) await env.DB.prepare(`INSERT INTO import_cache(scope,source,operation_id,object_key,metadata_json,expires_at)
     VALUES(?,?,?,?,?,?) ON CONFLICT(scope,source) DO UPDATE SET operation_id=excluded.operation_id,object_key=excluded.object_key,metadata_json=excluded.metadata_json,expires_at=excluded.expires_at`)
     .bind(scope,source,op.id,input.key,JSON.stringify({title:audio.title,fileName:audio.fileName,attribution:audio.attribution}),op.created_at+24*60*60*1000).run();
 }
@@ -128,7 +130,7 @@ async function start(env: Env,op: Operation) {
         const options=getSeparationOptions(env.SEPARATION_BACKEND);
         let expectedSourceBytes: number | undefined;
         if (input.sourceType==='upload'&&capability.mode==='authoritative') {
-          const snapshot=await prepareAuthoritativeAutoSource(env,{jobId:op.id,sourceKey});sourceKey=snapshot.snapshotKey;expectedSourceBytes=snapshot.bytes;
+          const snapshot=await prepareAuthoritativeAutoSource(env,{jobId:op.id,sourceKey,allowExisting:true,isCurrent:async()=>{const current=await readOperation(env.DB,op.id);return current?.fence===op.fence&&current.lease_owner===op.lease_owner&&current.state==='running'&&!current.cancel_requested;}});sourceKey=snapshot.snapshotKey;expectedSourceBytes=snapshot.bytes;
         }
         const stored=await env.DB.prepare('SELECT source_hash FROM jobs WHERE id=?').bind(op.job_id).first<{source_hash:string|null}>();
         const head=stored?.source_hash?await env.AUDIO.head(sourceKey):null;
@@ -138,14 +140,17 @@ async function start(env: Env,op: Operation) {
           ...(expectedSourceBytes!==undefined?{expectedSourceBytes}:{}),
           provider:configuredAudioAnalysisProvider(env),timeoutMs:audioAnalysisTimeoutMs(env),instrumentDiscovery:processingFeatureFlags(env).instrumentDiscovery});
         model=resolution.decision.resolvedCoreModel;
-        await env.DB.prepare('UPDATE jobs SET model=?,routing_request=?,analysis=?,source_key=? WHERE id=?').bind(model,AUTO_ROUTING_REQUEST,JSON.stringify(resolution.decision),sourceKey,op.job_id).run();
+        const changed=await env.DB.prepare(`UPDATE jobs SET model=?,routing_request=?,analysis=?,source_key=? WHERE id=?
+          AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=0 AND state='running')`).bind(model,AUTO_ROUTING_REQUEST,JSON.stringify(resolution.decision),sourceKey,op.job_id,op.id,op.fence,op.lease_owner).run();
+        if(!changed.meta.changes)return;
       }
       sourceUrl=await presignDownload(env,sourceKey);
     }
-    // This write precedes every paid POST. A crash from here reconciles, never retries.
-    if (!await transition(env.DB,op,'starting')) return;
     const runner=getReplicateRunner(model);
     const version=op.phase==='fetch'?env.REPLICATE_YT_MODEL_VERSION:runner?replicateVersion(env,runner):undefined;
+    if(!version||!env.REPLICATE_API_TOKEN) {await fail(env,op,'provider_configuration','Audio separation is temporarily unavailable. No successful-split allowance was used.');return;}
+    // This write precedes every paid POST. A crash from here reconciles, never retries.
+    if (!await transition(env.DB,op,'starting')) return;
     attempt=await beginAttempt(env.DB,op,'replicate',version);
     const providerId=op.phase==='fetch'
       ? await startYouTubeImport(input.youtubeUrl!,env,operationWebhook(env,op.id,op.phase as 'fetch'|'split'))
@@ -153,8 +158,8 @@ async function start(env: Env,op: Operation) {
     await finishAttempt(env.DB,attempt,'accepted',{externalId:providerId});
     if (await transition(env.DB,op,'processing',{providerId})) {
       await env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE id=? AND fence=?').bind(op.id,op.fence).run();
-      await env.DB.prepare('UPDATE jobs SET status=?,external_id=? WHERE id=? AND status<>\'failed\'')
-        .bind(op.phase==='fetch'?'importing':'processing',op.phase==='fetch'?null:providerId,op.job_id).run();
+      await env.DB.prepare(`UPDATE jobs SET status=?,external_id=? WHERE id=? AND status NOT IN ('failed','done') AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state='processing')`)
+        .bind(op.phase==='fetch'?'importing':'processing',op.phase==='fetch'?null:providerId,op.job_id,op.id,op.fence).run();
     }
   } catch(error) {
     if (attempt) await finishAttempt(env.DB,attempt,error instanceof UpstreamError?error.outcome:'uncertain',{
@@ -170,7 +175,7 @@ async function start(env: Env,op: Operation) {
       await fail(env,op,error.code);return;
     }
     await transition(env.DB,op,'reconciling',{code:'start_uncertain'});
-    await env.DB.prepare("UPDATE jobs SET status='reconciling' WHERE id=? AND status<>'failed'").bind(op.job_id).run();
+    await env.DB.prepare("UPDATE jobs SET status='reconciling' WHERE id=? AND status NOT IN ('failed','done') AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state='reconciling')").bind(op.job_id,op.id,op.fence).run();
   }
 }
 
@@ -187,9 +192,11 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       if(audio)await imported(env,claimed,JSON.parse(claimed.request_json),audio);
     } else {
       const result=await getBackend(env).fetchStatus(claimed.provider_id!);
+      const current=await readOperation(env.DB,claimed.id);
+      if(current?.fence!==claimed.fence||current.lease_owner!==claimed.lease_owner)return;
       if(result.status!=='processing') {
         if(claimed.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
-        else await complete(env,claimed.job_id!,result);
+        else await complete(env,claimed.job_id!,result,claimed);
       }
     }
   } catch(error) {
@@ -219,7 +226,9 @@ export async function recoverCallback(env: Env,operation: Operation,externalId: 
     AND provider='replicate' AND outcome IN ('starting','uncertain') ORDER BY created_at DESC LIMIT 1`)
     .bind(operation.id,operation.phase).first<{id:string;model:string|null}>();
   if(!attempt?.model)return;
-  if(!await getBackend(env).confirmStart?.(externalId,operationWebhook(env,operation.id,operation.phase as 'fetch'|'split'),attempt.model))return;
+  if(await cooldown(env.DB,'replicate')>Date.now())return;
+  try {if(!await getBackend(env).confirmStart?.(externalId,operationWebhook(env,operation.id,operation.phase as 'fetch'|'split'),attempt.model))return;}
+  catch(error) {if(error instanceof UpstreamError&&error.notBefore) {await setCooldown(env.DB,'replicate',error.notBefore);await env.DB.prepare('UPDATE app_operations SET not_before=MAX(not_before,?) WHERE id=?').bind(error.notBefore,operation.id).run();}return;}
   await finishAttempt(env.DB,attempt.id,'accepted',{externalId});
   const accepted=await env.DB.prepare(`UPDATE app_operations SET provider_id=?,state='processing',lease_until=0,lease_owner=NULL,updated_at=?
     WHERE id=? AND fence=? AND phase=? AND provider_id IS NULL AND state IN ('starting','reconciling')`)
