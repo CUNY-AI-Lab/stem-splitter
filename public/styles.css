@@ -1584,6 +1584,16 @@ footer a:hover { color: var(--hot); }
   opacity: .55;
 }
 .waveform { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.waveform-seek {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+  appearance: none; -webkit-appearance: none; opacity: 0; cursor: ew-resize;
+  touch-action: pan-y; user-select: none;
+}
+.waveform-seek::-webkit-slider-thumb { -webkit-appearance: none; width: 1px; height: 100%; }
+.waveform-seek::-moz-range-thumb { width: 1px; height: 100%; border: 0; }
+.waveform-seek:disabled { cursor: wait; }
+.meter:focus-within { outline: 2px solid var(--hot); outline-offset: 2px; }
+@media (forced-colors: active) { .meter:focus-within { outline-color: Highlight; } }
 .meter.waveform-ready::before { display: none; }
 .ch-actions { grid-column: 2; grid-row: 1; display: flex; justify-content: flex-end; align-items: center; gap: .35rem; }
 .channel .solo-btn,
@@ -2745,3 +2755,68 @@ body.instructor .folder-btn { display: inline-block; }
 /* Feature visibility is authoritative even where component rules set display. */
 [hidden] { display: none !important; }
 body:not(.remixer-enabled) .to-remix-btn { display: none; }
+
+/* Shared classroom controls. Keep the PR27 note form's positive flow spacing. */
+:root { --control-height: 44px; --control-radius: 7px; --control-pad: .55rem .85rem; }
+main { padding-top: 1.4rem; }
+.masthead { margin-bottom: 1.35rem; }
+.masthead h1 { font-size: clamp(2rem, 6vw, 3.2rem); line-height: 1.05; text-transform: none; }
+.compact-masthead { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: .65rem 1.1rem; }
+.compact-masthead h1 { grid-column: 1; grid-row: 1; }
+.compact-masthead .lab-brand { grid-column: 2; grid-row: 1; margin: 0; justify-self: end; }
+.compact-masthead .lab-logo { height: auto; width: 150px; max-width: 100%; }
+.compact-masthead .tagline { grid-column: 1; grid-row: 2; margin: 0; max-width: none; font-size: .96rem; }
+.compact-masthead .account-nav { grid-column: 2; grid-row: 2; margin: 0; justify-self: end; }
+.compact-masthead #split-summary { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.compact-masthead h1 span { color: var(--ink); -webkit-text-stroke: 0; }
+.account-button, .yt-go, .crate-page-btn, .teacher-submit, .course-context button, .top-return a, .teacher-actions button, .bench-tab {
+  min-height: var(--control-height); box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  padding: var(--control-pad); border: 1px solid var(--panel-edge); border-radius: var(--control-radius);
+  font-family: var(--font-body); font-size: .9rem; font-weight: 600; line-height: 1.3; text-transform: none; letter-spacing: 0;
+}
+button:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+button:disabled { opacity: .55; cursor: wait; }
+.top-return { margin-bottom: 1rem; }
+.bottom-help { margin-top: 1.7rem; text-align: center; }
+.bottom-help hr { border: 0; border-top: 1px solid var(--panel-edge); margin: .65rem 0; }
+.bottom-help a { display: inline-flex; min-height: 44px; align-items: center; color: var(--ink); }
+.course-context { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin: .85rem 0; }
+.course-context label { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
+.course-context select { appearance: none; -webkit-appearance: none; height: 44px; padding-right: 2rem; background-image: linear-gradient(45deg,transparent 50%,var(--ink-dim) 50%),linear-gradient(135deg,var(--ink-dim) 50%,transparent 50%); background-position: calc(100% - 14px) 50%,calc(100% - 9px) 50%; background-size: 5px 5px; background-repeat: no-repeat; overflow: hidden; text-overflow: ellipsis; min-height: 44px; max-width: 100%; min-width: 0; border: 1px solid var(--panel-edge); border-radius: var(--control-radius); padding: .4rem 2rem .4rem .4rem; background-color: var(--bg-raise); color: var(--ink); font: inherit; }
+.course-context > label:first-child { flex: 1 1 240px; }
+.course-context > label:first-child select { width: 100%; }
+.course-context .course-disclosure { width: 100%; flex-wrap: nowrap; align-items: flex-start; font-size: .88rem; color: var(--ink-dim); }
+.course-disclosure input { flex: 0 0 22px; min-height: 24px; }
+.classroom-list { list-style: none; padding: 0; display: grid; gap: .65rem; }
+.classroom-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; padding: .65rem; border: 1px solid var(--panel-edge); border-radius: 7px; overflow-wrap: anywhere; }
+.classroom-list li > span { flex: 1 1 200px; min-width: 0; white-space: pre-wrap; }
+.classroom-main section { margin-top: 1rem; }
+.classroom-main h2 { margin: .9rem 0 .55rem; font-size: 1.15rem; }
+.classroom-main .yt-form input { min-width: 0; }
+.note-author { display: block; font-size: .75rem; color: var(--ink-dim); overflow-wrap: anywhere; }
+.refresh-status { font-size: .75rem; color: var(--ink-dim); text-transform: none; letter-spacing: 0; }
+.refresh-btn { min-height: 28px; text-transform: none; }
+.session-check { max-width: 42rem; margin: 3rem auto; padding: 1.5rem; }
+.head-btn, .share-btn, .note-time, .note-loop, .note-del { min-height: 28px; }
+.console-sub { flex-wrap: wrap; }
+@media (max-width: 540px) {
+  .compact-masthead { gap: .65rem .7rem; }
+  .compact-masthead .lab-logo { width: 100px; }
+  .compact-masthead h1 { font-size: clamp(1.7rem, 6.5vw, 2.3rem); }
+  .compact-masthead .tagline { grid-column: 1 / -1; grid-row: 2; }
+  .compact-masthead .account-nav { grid-column: 1 / -1; grid-row: 3; justify-self: start; }
+  .course-context > * { max-width: 100%; }
+  .classroom-main .yt-form { flex-wrap: wrap; }
+  .classroom-main .yt-form input { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .masthead *, .classroom-main * { animation: none; scroll-behavior: auto; } }
+@media (forced-colors: active) { button, .account-button, select { border: 1px solid ButtonText; } .note-author,.refresh-status { color: CanvasText; } }
+.note-edit { min-height: 28px; font: inherit; font-size: .75rem; background: transparent; border: 1px solid var(--panel-edge); color: var(--ink); border-radius: 4px; }
+.note-edit-form { display: flex; gap: .4rem; flex-basis: 100%; min-width: 0; }
+.note-edit-form input { min-width: 0; flex: 1; }
+.note-edit-form button { min-height: 32px; }
+.note-row { flex-wrap: wrap; }
+.refresh-btn { cursor: pointer; background: transparent; font-family: inherit; border: 1px solid var(--panel-edge); border-radius: 5px; padding: .3rem .6rem; font-size: .8rem; letter-spacing: 0; color: var(--ink); }
+.classroom-main .yt-form input:not([type="hidden"]) { min-height: 44px; box-sizing: border-box; width: 100%; padding: .55rem .75rem; border: 1px solid var(--panel-edge); border-radius: var(--control-radius); background: var(--bg-raise); color: var(--ink); font: inherit; }
+#folder-add { align-items: center; flex-wrap: wrap; }
+#folder-selected { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>Stem Splitter · Courses</title><link rel="stylesheet" href="/styles.css?v=20261006-classroom">
+<main class="teacher-main classroom-main">
+  <nav class="top-return"><a class="account-button" href="/">Back to Splitter</a></nav>
+  <header class="masthead"><a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a><h1>Course work</h1></header>
+  <p id="classroom-status" role="status">Loading course access…</p>
+  <section id="classroom-content" hidden>
+    <div class="course-context"><label>Course <select id="classroom-course"></select></label><a id="classroom-prompt" class="account-button" hidden>Guide instructions</a><button id="classroom-refresh" class="account-button">Refresh</button></div>
+    <p class="account-help">New course work is visible to the course instructor. Personal work and earlier private conversations stay private. Conversations reset by their author disappear here too. Audio and conversations expire after 90 days.</p>
+    <section id="classroom-roster" hidden><h2>Enrolled students</h2><ul id="roster-list" class="classroom-list"></ul><button id="roster-more" class="account-button" hidden>More students</button></section>
+    <section id="classroom-jobs" hidden><h2 id="classroom-student"></h2><ul id="student-jobs" class="classroom-list"></ul><button id="jobs-more" class="account-button" hidden>More splits</button></section>
+    <section id="classroom-conversation" hidden><h2>Listening Guy conversation</h2><p class="account-help">Read only. Opening this page does not generate a reply or use allowance.</p><ol id="conversation-messages" class="classroom-list"></ol><button id="conversation-more" class="account-button" hidden>More messages</button></section>
+    <section><h2>Course folders</h2><form id="folder-create" class="yt-form" hidden><input id="folder-name" maxlength="80" aria-label="New folder name" placeholder="New folder name" required><button class="account-button">Create private folder</button></form><ul id="course-folders" class="classroom-list"></ul></section>
+    <section id="folder-detail" hidden><h2 id="folder-title"></h2><div id="folder-controls" class="course-context" hidden><label>Course sharing <select id="folder-permission"><option value="private">Private to instructors</option><option value="read">Enrolled students can listen</option><option value="comment">Enrolled students can listen and add notes</option></select></label><button id="folder-grant" class="account-button">Save sharing</button><button id="folder-link" class="account-button">Copy course link</button></div><p id="folder-status" role="status"></p><ul id="folder-items" class="classroom-list"></ul><form id="folder-add" class="yt-form" hidden><input id="folder-job" type="hidden"><span id="folder-selected">Choose a split from course work above.</span><button id="folder-add-button" class="account-button" disabled>Add selected split</button></form></section>
+  </section>
+  <div class="bottom-help"><hr><a href="mailto:ailab@gc.cuny.edu">Having trouble?</a><hr></div>
+</main><script src="/session-guard.js?v=20261006-classroom"></script>
+<script src="/classroom.js?v=20261006-classroom"></script></html>

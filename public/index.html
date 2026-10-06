@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20261006-annotation-layout" />
+  <link rel="stylesheet" href="/styles.css?v=20261006-classroom" />
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -19,16 +19,17 @@
       <button type="button" id="tab-remixer" class="bench-tab" role="tab" aria-selected="false" aria-controls="view-remixer" tabindex="-1">02 · REMIXER</button>
     </nav>
 
-    <header class="masthead">
+    <header class="masthead compact-masthead">
       <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab">
         <img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" />
       </a>
       <p id="split-summary" class="kicker">// a closer listen</p>
-      <h1>STEM<br /><span id="station-word">SPLITTER</span></h1>
-      <p id="station-tagline" class="tagline">Split a song apart. Listen one layer at a time. Annotate as you go.</p>
+      <h1>Stem <span id="station-word">Splitter</span></h1>
+      <p id="station-tagline" class="tagline">Split apart a song, listen one layer at a time, annotate as you go.</p>
     </header>
 
     <div id="view-splitter" role="tabpanel" aria-labelledby="tab-splitter">
+      <section id="course-context" class="course-context" hidden><label>Save new work to <select id="course-select"><option value="personal">Personal work</option></select></label><a class="account-button" href="/classroom.html">Course folders</a><label id="course-disclosure" class="course-disclosure" hidden><input id="course-consent" type="checkbox"> I understand my course instructor can review this new split and its Listening Guy conversation. Course folders may share audio and notes with enrolled classmates. Reset removes the conversation for everyone.</label></section>
       <section id="dropzone" class="deck" tabindex="0" role="button" aria-label="Upload a song">
         <div class="deck-slot">
           <span class="deck-arrow" aria-hidden="true">▼</span>
@@ -40,12 +41,12 @@
       </section>
 
       <details id="yt-disclosure" class="yt-disclosure" open>
-        <summary class="yt-summary mono">Or paste a YouTube link</summary>
+        <summary class="yt-summary mono">Paste a link to fetch audio</summary>
         <form id="yt-form" class="yt-form">
           <input id="yt-url" type="url" placeholder="https://youtube.com/watch?v=…" aria-label="YouTube link" />
           <button type="submit" class="yt-go">FETCH</button>
         </form>
-      </details>
+      <p class="account-help">YouTube links are supported. You can also upload an audio file you are entitled to use.</p></details>
 
       <section class="split-picker">
         <p id="split-picker-label" class="split-picker-label mono">Split into</p>
@@ -167,7 +168,8 @@
       <p id="engine-summary" class="mono footer-sig">SEPARATION MODELS: LOADING…</p>
       <a class="mono footer-teacher-link" href="/teacher.html">INSTRUCTOR</a>
     </footer>
-  </main>
+    <div class="bottom-help"><hr><a href="mailto:ailab@gc.cuny.edu">Having trouble?</a><hr></div>
+</main>
 
   <dialog id="class-code-dialog" class="class-code-dialog" aria-labelledby="class-code-title">
     <form id="class-code-form" class="class-code-form">
@@ -185,6 +187,7 @@
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
-  <script src="/app.js?v=app-20261003-waveform-timeline"></script>
+  <script src="/session-guard.js?v=20261006-classroom"></script>
+<script src="/app.js?v=20261006-classroom"></script>
 </body>
 </html>
