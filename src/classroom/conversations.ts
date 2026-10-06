@@ -5,7 +5,27 @@ import type { ChatTurn } from '../assistant/types.ts';
 import { CourseError } from './access.ts';
 
 type Turn = { input: string; state: string; reply: string | null; tools: string | null; finish_reason: string | null; revision: number };
+/** Longer than the 60-second model deadline. Expiry never retries inference. */
+export const COURSE_TURN_LEASE_SECONDS = 120;
+export async function recoverExpiredCourseTurn(env: Env, jobId: string, subject: string): Promise<boolean> {
+  const expired=await env.DB.prepare("SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn IS NOT NULL AND (pending_expires_at IS NULL OR pending_expires_at<=datetime('now')) AND expires_at>datetime('now')").bind(jobId,subject).first();
+  if(!expired)return false;
+  const token=`recover-${crypto.randomUUID()}`;
+  const recovered=await env.DB.batch([
+    env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=?,pending_expires_at=datetime('now','+5 seconds')
+      WHERE job_id=? AND subject=? AND pending_turn IS NOT NULL AND (pending_expires_at IS NULL OR pending_expires_at<=datetime('now'))
+      AND expires_at>datetime('now') AND EXISTS(SELECT 1 FROM jobs WHERE id=? AND created_at>datetime('now','-90 days'))`).bind(token,jobId,subject,jobId),
+    env.DB.prepare(`INSERT INTO course_messages(id,job_id,subject,turn_id,kind,provenance,text)
+      SELECT ?,c.job_id,c.subject,t.turn_id,'status','server-status',? FROM course_conversations c JOIN course_turns t ON t.job_id=c.job_id AND t.subject=c.subject
+      WHERE c.job_id=? AND c.subject=? AND c.pending_turn=? AND t.state='pending'`).bind(crypto.randomUUID(),'The previous request ended before its completion could be verified. Earlier messages are preserved. It will not be retried automatically; send a new message to continue.',jobId,subject,token),
+    env.DB.prepare(`UPDATE course_turns SET state='failed',reply=NULL,tools='[]',finish_reason='interrupted',revision=(SELECT revision FROM course_conversations WHERE job_id=? AND subject=?)
+      WHERE job_id=? AND subject=? AND state='pending' AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=?)`).bind(jobId,subject,jobId,subject,jobId,subject,token),
+    env.DB.prepare('UPDATE course_conversations SET pending_turn=NULL,pending_expires_at=NULL WHERE job_id=? AND subject=? AND pending_turn=?').bind(jobId,subject,token),
+  ]);
+  return Boolean(recovered[0].meta.changes);
+}
 export async function conversationPage(env: Env, jobId: string, subject: string, after = 0, expectedRevision?: number) {
+  await recoverExpiredCourseTurn(env,jobId,subject);
   const state = await env.DB.prepare(`SELECT revision,expires_at AS expiresAt,pending_turn AS pendingTurn FROM course_conversations
     WHERE job_id=? AND subject=? AND expires_at>datetime('now')`).bind(jobId,subject).first<{ revision: number; expiresAt: string; pendingTurn: string | null }>();
   if (expectedRevision !== undefined && expectedRevision !== (state?.revision ?? 0)) throw new CourseError(409,'conversation_changed');
@@ -19,8 +39,10 @@ export async function conversationPage(env: Env, jobId: string, subject: string,
 export async function beginCourseTurn(env: Env, jobId: string, principal: AppPrincipal, input: unknown, turnId: unknown, revision: unknown) {
   if (typeof input !== 'string' || !input.trim() || input.length>2000 || typeof turnId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(turnId) || !Number.isSafeInteger(revision) || Number(revision)<0) throw new CourseError(400,'invalid_conversation_turn');
   const subject = principal.subject;
+  await recoverExpiredCourseTurn(env,jobId,subject);
   const existing = await env.DB.prepare('SELECT input,state,reply,tools,finish_reason,revision FROM course_turns WHERE job_id=? AND subject=? AND turn_id=?').bind(jobId,subject,turnId).first<Turn>();
   if (existing) {
+    if(existing.state==='failed')throw new CourseError(409,'conversation_interrupted');
     if (existing.input !== input || existing.state === 'pending') throw new CourseError(409,'conversation_changed');
     return { turnId, claimId: '', replay: existing, revision: existing.revision, turns: [] as ChatTurn[] };
   }
@@ -29,7 +51,7 @@ export async function beginCourseTurn(env: Env, jobId: string, principal: AppPri
     env.DB.prepare(`INSERT OR IGNORE INTO course_conversations(job_id,subject,expires_at)
       SELECT j.id,?,datetime(j.created_at,'+90 days') FROM jobs j JOIN job_courses c ON c.job_id=j.id
       JOIN job_owners o ON o.job_id=j.id WHERE j.id=? AND o.subject=? AND j.created_at>datetime('now','-90 days')`).bind(subject,jobId,subject),
-    env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=? WHERE job_id=? AND subject=? AND revision=? AND pending_turn IS NULL AND expires_at>datetime('now')`).bind(claimId,jobId,subject,revision),
+    env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=?,pending_expires_at=datetime('now','+${COURSE_TURN_LEASE_SECONDS} seconds') WHERE job_id=? AND subject=? AND revision=? AND pending_turn IS NULL AND expires_at>datetime('now')`).bind(claimId,jobId,subject,revision),
     env.DB.prepare(`INSERT INTO course_turns(job_id,subject,turn_id,input,state,revision)
       SELECT job_id,subject,?,?, 'pending',revision FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=?`).bind(turnId,input,jobId,subject,claimId),
     env.DB.prepare(`INSERT INTO course_messages(id,job_id,subject,turn_id,kind,provenance,text)
@@ -44,18 +66,18 @@ export async function finishCourseTurn(env: Env, jobId: string, subject: string,
   const statements = [];
   for (const call of result.toolCalls) if (!failed && call.name === 'add_note') {
     statements.push(env.DB.prepare(`INSERT INTO annotations(id,job_id,at_seconds,text,author_subject,author_name,provenance)
-      SELECT ?,job_id,?,?,subject,?,'server-assistant' FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND expires_at>datetime('now')`)
+      SELECT ?,job_id,?,?,subject,?,'server-assistant' FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`)
       .bind(crypto.randomUUID(),Number(call.args.seconds),String(call.args.text).slice(0,200),displayName,jobId,subject,claimId));
   }
 
   if (result.reply) statements.push(env.DB.prepare(`INSERT INTO course_messages(id,job_id,subject,turn_id,kind,provenance,text)
-    SELECT ?,job_id,subject,?,'coach','server-assistant',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND expires_at>datetime('now')`).bind(crypto.randomUUID(),turnId,result.reply,jobId,subject,claimId));
+    SELECT ?,job_id,subject,?,'coach','server-assistant',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`).bind(crypto.randomUUID(),turnId,result.reply,jobId,subject,claimId));
   if (result.toolCalls.length) statements.push(env.DB.prepare(`INSERT INTO course_messages(id,job_id,subject,turn_id,kind,provenance,text)
-    SELECT ?,job_id,subject,?,'action','server-tool',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND expires_at>datetime('now')`).bind(crypto.randomUUID(),turnId,JSON.stringify(result.toolCalls),jobId,subject,claimId));
+    SELECT ?,job_id,subject,?,'action','server-tool',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`).bind(crypto.randomUUID(),turnId,JSON.stringify(result.toolCalls),jobId,subject,claimId));
   statements.push(env.DB.prepare(`UPDATE course_turns SET state=?,reply=?,tools=?,finish_reason=?,revision=revision+1
-    WHERE job_id=? AND subject=? AND turn_id=? AND state='pending' AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND expires_at>datetime('now'))`)
+    WHERE job_id=? AND subject=? AND turn_id=? AND state='pending' AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now'))`)
     .bind(failed?'failed':'complete',result.reply,JSON.stringify(result.toolCalls),result.finishReason,jobId,subject,turnId,jobId,subject,claimId));
-  statements.push(env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=NULL WHERE job_id=? AND subject=? AND pending_turn=? AND expires_at>datetime('now') RETURNING revision`).bind(jobId,subject,claimId));
+  statements.push(env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=NULL,pending_expires_at=NULL WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now') RETURNING revision`).bind(jobId,subject,claimId));
   const saved = await env.DB.batch<{ revision: number }>(statements);
   if(!saved.at(-1)?.meta.changes)return null;
   const completed=await env.DB.prepare('SELECT revision FROM course_turns WHERE job_id=? AND subject=? AND turn_id=?').bind(jobId,subject,turnId).first<{revision:number}>();
@@ -68,7 +90,7 @@ export async function resetCourseConversation(env: Env, jobId: string, subject: 
     env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=? WHERE job_id=? AND subject=? AND revision=? AND expires_at>datetime('now') RETURNING revision`).bind(token,jobId,subject,revision),
     env.DB.prepare(`DELETE FROM course_messages WHERE job_id=? AND subject=? AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=?)`).bind(jobId,subject,jobId,subject,token),
     env.DB.prepare(`DELETE FROM course_turns WHERE job_id=? AND subject=? AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=?)`).bind(jobId,subject,jobId,subject,token),
-    env.DB.prepare('UPDATE course_conversations SET pending_turn=NULL WHERE job_id=? AND subject=? AND pending_turn=?').bind(jobId,subject,token),
+    env.DB.prepare('UPDATE course_conversations SET pending_turn=NULL,pending_expires_at=NULL WHERE job_id=? AND subject=? AND pending_turn=?').bind(jobId,subject,token),
   ]);
   if (!result[0].meta.changes) {
     if (revision===0 && !(await env.DB.prepare('SELECT 1 FROM course_conversations WHERE job_id=? AND subject=?').bind(jobId,subject).first())) return { ok:true,revision:0 };

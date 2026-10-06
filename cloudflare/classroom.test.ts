@@ -6,11 +6,12 @@ import app from '../src/index.ts';
 import { SqliteD1 } from '../server/d1.ts';
 import type { Env } from '../src/env.ts';
 import type { AppPrincipal } from '../src/identity.ts';
-import { STEM_COURSE_ID as A, validAssignment, validPage, validFailure } from '../src/classroom/contract.ts';
+import { STEM_COURSE_ID as A, validAccess, validAssignment, validPage, validFailure } from '../src/classroom/contract.ts';
 import { courseFixture } from './course-fixture.ts';
-import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from '../src/classroom/conversations.ts';
+import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation, recoverExpiredCourseTurn } from '../src/classroom/conversations.ts';
 import { cacheGuideIfPromptCurrent, getGuide } from '../src/assistant/index.ts';
 import { hashSystemPromptFingerprint } from '../src/assistant/prompt.ts';
+import { authorizeStoredCourseWork } from '../src/classroom/access.ts';
 import { saveCoursePrompt } from '../src/classroom/prompts.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 const B='another-reviewed-course';
@@ -29,7 +30,7 @@ async function setup(){
     verifyCailIdentity:async(token:string)=>Object.values(ids).includes(token as never)?{subject:token,name:'Ignored JWT fallback'}:null,
     ADMISSION_RESOLVER:{resolveMembership:async({subject}:{subject:string})=>({ok:true,accessRole:subject===ids.admin?'admin':'member',budgetScope:subject===ids.admin?'admin':'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}),
       resolveCourseAccess:async({subject,classId}:{subject:string;classId:string})=>assignments(subject,classId),
-      listCourseAssignments:async({subject}:{subject:string})=>{const a=await assignments(subject,A),b=await assignments(subject,B);return {ok:true,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),revision:1,assignments:[a,b].filter(a=>a.ok),nextCursor:null};},
+      listCourseAssignments:async({subject}:{subject:string})=>{const a=await assignments(subject,A),b=await assignments(subject,B);return {ok:true,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),revision:1,assignments:[a,b].filter(a=>a.ok).map(({ok,...row})=>row),nextCursor:null};},
       listCourseRoster:async({subject,classId,cursor}:{subject:string;classId:string;cursor?:string})=>{const authority=await assignments(subject,classId);if(!('owner'in authority)||!authority.owner)return {ok:false,code:'not_owner',retryable:false};const people=await Promise.all(Array.from({length:45},(_,i)=>courseFixture(i===0?ids.alice:`cail-${i.toString(16).padStart(32,'0')}`,classId)));const start=cursor==='next'?40:0;return {ok:true,classId,checkedAt:authority.checkedAt,expiresAt:authority.expiresAt,revision:1,participants:people.slice(start,start+40).map(({memberId,displayName,displayNameSource,startsAt,expiresAt})=>({memberId,displayName,displayNameSource,startsAt,expiresAt})),nextCursor:start===0?'next':null};}},
     ASSISTANT_MODEL:'fixture',assistantTransport:async(_env:unknown,input:{messages:Array<{content:string}>},delta:(text:string)=>Promise<void>)=>{calls++;await delta('A server reply.');return {content:'A server reply.',model:'fixture',toolCalls:[],finishReason:'stop'};},
   } as unknown as Env;
@@ -55,6 +56,8 @@ test('current target enrollment and independent course ownership protect direct 
   assert.equal((await request('/api/jobs/personal/listening-conversation','admin')).status,404);
   assert.equal((await request('/api/classroom/courses/'+B+'/roster','ownerA')).status,403);
   assert.equal((await request('/api/admin/users','ownerA')).status,403);
+  assert.equal((await request('/api/teacher/folders','ownerA')).status,403);
+  assert.equal((await request('/api/jobs','alice','POST',{youtubeUrl:'https://www.youtube.com/watch?v=fixture'},{'x-stem-course':A})).status,400);
   assert.equal((await request('/api/account','ownerB')).status,200);
   assert.equal((await request('/api/jobs/%61','alice')).status,400);
   revoked.add(`${ids.alice}:${A}`);
@@ -115,6 +118,8 @@ test('course folders enforce same-course items, grants and author-only notes on 
   assert.equal((await request(base,'ownerA','PUT',{permission:'comment',revision:0})).status,200);
   assert.equal((await request('/api/jobs/a','bob')).status,200);
   const note=await(await request('/api/jobs/a/annotations','bob','POST',{atSeconds:2,text:'Peer note',authorName:'Forged',authorSubject:ids.alice})).json() as any;assert.equal(note.authorName,'Student');
+  assert.equal((await request(`/api/jobs/a/annotations/${note.id}`,'alice','PUT',{text:'Impersonated'})).status,404);
+  assert.equal((await request(`/api/jobs/a/annotations/${note.id}`,'bob','PUT',{text:'Edited by author',authorName:'Forged'})).status,200);
   assert.equal((await request(`/api/jobs/a/annotations/${note.id}`,'alice','DELETE')).status,404);
   assert.equal((await request(`/api/jobs/a/annotations/${note.id}`,'ownerA','DELETE')).status,404);
   assert.equal((await request(`/api/jobs/a/annotations/${note.id}`,'bob','DELETE')).status,200);
@@ -126,20 +131,89 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const fresh=readFileSync(new URL('../schema.sql',import.meta.url),'utf8');
   const legacy=execFileSync('git',['show','e1918da3cb6fc37f9715d4cd143af5a5c6c880c6:schema.sql'],{encoding:'utf8'});
   const db=new SqliteD1(':memory:');db.applySchema(legacy);await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(ids.alice).run();await db.prepare("INSERT INTO jobs(id,filename,source_key,status) VALUES('old','Old private','uploads/old/source.wav','done')").run();await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind('old',ids.alice).run();await db.prepare("INSERT INTO listening_conversations(job_id,subject,entries,revision,expires_at) VALUES(?,?,'[{\"kind\":\"coach\",\"text\":\"Private history\"}]',3,datetime('now','+90 days'))").bind('old',ids.alice).run();
-  db.applySchema(readFileSync(new URL('../migrations/0021-classroom.sql',import.meta.url),'utf8'));
-  const clean=new SqliteD1(':memory:');clean.applySchema(fresh);
+  await db.prepare("INSERT INTO annotations(id,job_id,at_seconds,text) VALUES('legacy-note','old',1,'Legacy private note')").run();
+  const migration=readFileSync(new URL('../migrations/0021-classroom.sql',import.meta.url),'utf8');db.applySchema(migration);
+  const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
+  assert.throws(()=>db.applySchema(migration),/duplicate column name/);
+  assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);
   const schema=async(db:SqliteD1)=>(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()).results;
-  assert.deepEqual(await schema(db),await schema(clean));assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM job_courses').first<any>()).n,0);assert.equal((await db.prepare('SELECT revision FROM listening_conversations').first<any>()).revision,3);
+  assert.deepEqual(await schema(db),await schema(clean));
+  const columns=async(database:SqliteD1,name:string)=>(await database.prepare(`PRAGMA table_info(${name})`).all<any>()).results.map(({cid,...column})=>column).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  for(const {name} of await schema(db) as {name:string}[])assert.deepEqual(await columns(db,name),await columns(clean,name));assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM job_courses').first<any>()).n,0);assert.equal((await db.prepare('SELECT revision FROM listening_conversations').first<any>()).revision,3);
   const fixture=await setup();await fixture.job('expired');const p=await fixture.principal();const start=await beginCourseTurn(fixture.env,'expired',p,'Hi','retained-message-1234',0);await finishCourseTurn(fixture.env,'expired',p.subject,start.turnId,start.claimId,{reply:'Retained reply',toolCalls:[],finishReason:'stop'});await fixture.db.prepare("UPDATE jobs SET created_at=datetime('now','-91 days') WHERE id='expired'").run();
   assert.equal((await conversationPage(fixture.env,'expired',p.subject)).entries.length,0);await purgeExpiredListeningConversations(fixture.env.DB);assert.equal((await fixture.db.prepare('SELECT count(*) AS n FROM course_messages').first<any>()).n,0);
 });
 
 test('the exact shared private-wire fixture validates, while stale/extra/mismatched authority fails closed',async()=>{
  const fixture=JSON.parse(readFileSync(new URL('./fixtures/stem-course-v1.json',import.meta.url),'utf8'));
- const now=Date.parse(fixture.access.checkedAt);assert.equal(validAssignment(fixture.access,now),true);assert.equal(validPage(fixture.roster,now),true);assert.equal(validFailure(fixture.denied),true);
- assert.equal(validAssignment({...fixture.access,subject:ids.alice},now),false);assert.equal(validAssignment(fixture.access,now+31000),false);
+ const now=Date.parse(fixture.access.checkedAt);assert.equal(validAccess(fixture.access,now),true);assert.equal(validPage(fixture.roster,now),true);assert.equal(validFailure(fixture.denied),true);
+ assert.equal(validAccess({...fixture.access,subject:ids.alice},now),false);assert.equal(validAccess(fixture.access,now+31000),false);
  const {env,request}=await setup();for(const altered of [{startsAt:new Date(Date.now()+60000).toISOString()},{expiresAt:new Date(Date.now()-1).toISOString()},{classId:B},{revision:-1},{owner:false,participant:false},{subject:ids.alice}]){
   env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({...await courseFixture(ids.alice,A),...altered});assert.equal((await request('/api/account')).status,503);
  }
  for(const code of ['scheduled','expired','revoked']){env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({ok:false,code,retryable:false});assert.equal((await request('/api/account')).status,403);}
+});
+
+test('concurrent duplicate course turns claim once; assistant notes retain the verified initiating author',async()=>{
+  const {env,job,principal,db}=await setup();await job('race');const p=await principal();
+  const attempts=await Promise.allSettled([beginCourseTurn(env,'race',p,'Listen','concurrent-turn-123456',0),beginCourseTurn(env,'race',p,'Listen','concurrent-turn-123456',0)]);
+  const successes=attempts.filter(a=>a.status==='fulfilled');assert.equal(successes.length,1);
+  const conflict=attempts.find(a=>a.status==='rejected') as PromiseRejectedResult;assert.equal(conflict.reason.status,409);
+  const start=(successes[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof beginCourseTurn>>>).value;
+  const result={reply:'Heard it',toolCalls:[{name:'add_note' as const,args:{seconds:2,text:'Server note'}}],finishReason:'stop'};
+  await finishCourseTurn(env,'race',p.subject,start.turnId,start.claimId,result,false,p.displayName);
+  assert.equal(await finishCourseTurn(env,'race',p.subject,start.turnId,start.claimId,result,false,p.displayName),null);
+  const notes=(await db.prepare('SELECT author_subject,author_name,provenance FROM annotations').all()).results;
+  assert.deepEqual(JSON.parse(JSON.stringify(notes)),[{author_subject:p.subject,author_name:'Alice',provenance:'server-assistant'}]);
+  assert.deepEqual((await conversationPage(env,'race',p.subject)).entries.map((v:any)=>v.provenance),['student','server-assistant','server-tool']);
+});
+test('maintenance pause preserves assignments and private owner reads while stopping course disclosure and starts',async()=>{
+  const {env,request,job,db}=await setup();await job('a');env.CAIL_CLASSROOM_ENABLED='false';
+  assert.equal((await request('/api/jobs/a')).status,200);
+  assert.equal((await request('/api/jobs/a','ownerA')).status,404);
+  assert.equal((await request(`/api/classroom/courses/${A}/roster`,'ownerA')).status,503);
+  assert.equal((await request('/api/jobs/a/chat','alice','POST',{})).status,503);
+  assert.equal((await request('/api/jobs','alice','POST',{coursePolicy:'course-work-v1'},{'x-stem-course':A})).status,503);
+  await assert.rejects(authorizeStoredCourseWork(env,ids.alice,A),/course_work_paused/);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM job_courses').first<any>()).n,1);
+  env.CAIL_CLASSROOM_ENABLED='true';assert.equal((await request('/api/jobs/a','ownerA')).status,200);
+});
+
+test('private course mirror rejects impossible UTC dates, inverted validity windows and access markers on plain assignments',async()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/stem-course-v1.json',import.meta.url),'utf8'));const now=Date.parse(fixture.access.checkedAt);const {ok,...plain}=fixture.access;
+ assert.equal(validAssignment(plain,now),true);assert.equal(validAssignment({...plain,ok:true},now),false);assert.equal(validAssignment({...plain,ok:false},now),false);
+ assert.equal(validAccess({...plain,ok:false},now),false);assert.equal(validAccess(plain,now),false);
+ assert.equal(validAccess({...fixture.access,startsAt:'2026-02-31T00:00:00.000Z'},now),false);
+ assert.equal(validAccess({...fixture.access,checkedAt:new Date(now+2000).toISOString(),expiresAt:new Date(now+1000).toISOString()},now),false);
+ assert.equal(validPage({...fixture.roster,checkedAt:new Date(now+2000).toISOString(),expiresAt:new Date(now+1000).toISOString()},now),false);
+ const {env,request}=await setup();env.ADMISSION_RESOLVER!.listCourseAssignments=async()=>{const access=await courseFixture(ids.alice);return {ok:true,checkedAt:access.checkedAt,expiresAt:access.expiresAt,revision:1,assignments:[{...access,ok:false}],nextCursor:null};};
+ assert.equal((await request('/api/classroom/courses')).status,503);
+});
+
+test('expired course turn leases recover without deleting prior messages or retrying uncertain inference',async()=>{
+ const {env,db,job,principal}=await setup();await job('orphan');const p=await principal();
+ const first=await beginCourseTurn(env,'orphan',p,'Earlier question','earlier-turn-123456',0);await finishCourseTurn(env,'orphan',p.subject,first.turnId,first.claimId,{reply:'Earlier verified answer',toolCalls:[],finishReason:'stop'});
+ const lost=await beginCourseTurn(env,'orphan',p,'Uncertain request','orphaned-turn-123456',2);
+ assert.equal(await recoverExpiredCourseTurn(env,'orphan',p.subject),false);
+ await db.prepare("UPDATE course_conversations SET pending_expires_at=datetime('now','-1 second') WHERE job_id='orphan'").run();
+ assert.equal(await finishCourseTurn(env,'orphan',p.subject,lost.turnId,lost.claimId,{reply:'Late answer',toolCalls:[{name:'add_note',args:{seconds:1,text:'Late note'}}],finishReason:'stop'}),null);
+ const recovered=await Promise.all([recoverExpiredCourseTurn(env,'orphan',p.subject),recoverExpiredCourseTurn(env,'orphan',p.subject)]);assert.equal(recovered.filter(Boolean).length,1);
+ const page=await conversationPage(env,'orphan',p.subject);assert.equal(page.pending,false);assert.equal(page.revision,4);assert.deepEqual(page.entries.slice(0,3).map(m=>m.text),['Earlier question','Earlier verified answer','Uncertain request']);assert.equal(page.entries[3].kind,'status');assert.match(page.entries[3].text,/will not be retried automatically/);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM annotations').first<any>()).n,0);
+ await assert.rejects(beginCourseTurn(env,'orphan',p,'Uncertain request',lost.turnId,page.revision),error=>(error as any).code==='conversation_interrupted');
+ const fresh=await beginCourseTurn(env,'orphan',p,'Fresh question','recovered-turn-1234',page.revision);assert.equal(await recoverExpiredCourseTurn(env,'orphan',p.subject),false);
+ assert.equal(await finishCourseTurn(env,'orphan',p.subject,lost.turnId,lost.claimId,{reply:'Very late answer',toolCalls:[],finishReason:'stop'}),null);
+ await finishCourseTurn(env,'orphan',p.subject,fresh.turnId,fresh.claimId,{reply:'Fresh answer',toolCalls:[],finishReason:'stop'});assert.equal((await conversationPage(env,'orphan',p.subject)).entries.length,6);
+});
+test('storage failures before and after finish remain recoverable and never duplicate conversation effects',async()=>{
+ const {env,db,job,principal}=await setup();await job('storage');const p=await principal();const original=db.batch.bind(db);
+ const pending=await beginCourseTurn(env,'storage',p,'Storage request','storage-turn-123456',0);
+ db.batch=(async()=>{throw new Error('injected storage unavailable');}) as typeof db.batch;
+ await assert.rejects(finishCourseTurn(env,'storage',p.subject,pending.turnId,pending.claimId,{reply:'Unsaved reply',toolCalls:[],finishReason:'stop'}));db.batch=original;
+ await db.prepare("UPDATE course_conversations SET pending_expires_at=datetime('now','-1 second') WHERE job_id='storage'").run();
+ const page=await conversationPage(env,'storage',p.subject);assert.equal(page.pending,false);assert.equal(page.entries.length,2);
+ const fresh=await beginCourseTurn(env,'storage',p,'Another request','storage-next-123456',page.revision);
+ db.batch=(async(statements)=>{await original(statements);throw new Error('injected lost acknowledgment');}) as typeof db.batch;
+ await assert.rejects(finishCourseTurn(env,'storage',p.subject,fresh.turnId,fresh.claimId,{reply:'Saved once',toolCalls:[],finishReason:'stop'}));db.batch=original;
+ const retry=await beginCourseTurn(env,'storage',p,'Another request',fresh.turnId,fresh.revision);assert.ok(retry.replay);assert.equal(retry.replay.reply,'Saved once');assert.equal((await conversationPage(env,'storage',p.subject)).entries.length,4);
 });

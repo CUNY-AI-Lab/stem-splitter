@@ -13,6 +13,8 @@ export type Env = {
   ASSISTANT_ABORT_SIGNAL?: AbortSignal;
   CAIL_BROWSER_ORIGIN?: string;
   CAIL_COURSE_IDS?: string;
+  /** Literal false pauses course collaboration while retaining owner-only reads. */
+  CAIL_CLASSROOM_ENABLED?: string;
   /** Trusted request scope set only after stored-job authorization. */
   ASSISTANT_COURSE_ID?: string | null;
   CAIL_LOGIN_URL?: string;

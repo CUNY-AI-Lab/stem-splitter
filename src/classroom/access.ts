@@ -1,9 +1,11 @@
 import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
-import { COURSE_APP, STEM_COURSE_ID, validAssignment, validClassId, validFailure, type CourseAssignment } from './contract.ts';
+import { COURSE_APP, STEM_COURSE_ID, validAccess, validClassId, validFailure, type CourseAssignment } from './contract.ts';
 
 export class CourseError extends Error {
-  constructor(public status: 400 | 403 | 404 | 409 | 503, public code: string) { super(code); }
+  status: 400 | 403 | 404 | 409 | 503;
+  code: string;
+  constructor(status: 400 | 403 | 404 | 409 | 503, code: string) { super(code); this.status=status; this.code=code; }
 }
 export const courseIds = (env: Env): string[] => {
   const ids = env.CAIL_COURSE_IDS?.split(',').map(s => s.trim()) ?? [STEM_COURSE_ID];
@@ -21,11 +23,12 @@ export async function resolveCourse(env: Env, subject: string, classId: string):
   if (!env.ADMISSION_RESOLVER?.resolveCourseAccess) throw new CourseError(503, 'course_authority_unavailable');
   const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccess!({ subject, app: COURSE_APP, classId }));
   if (validFailure(value)) throw new CourseError(403, value.code);
-  if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAssignment(value) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
+  if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAccess(value) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
   return value;
 }
 /** Used again by delayed operation workers; a remembered launch is not permission. */
 export async function authorizeStoredCourseWork(env: Env, subject: string, courseId: string | null): Promise<CourseAssignment> {
+  if (courseId && env.CAIL_CLASSROOM_ENABLED === 'false') throw new CourseError(503, 'course_work_paused');
   const user = await env.DB.prepare('SELECT disabled FROM app_users WHERE subject=?').bind(subject).first<{ disabled: number }>();
   if (!user || user.disabled) throw new CourseError(403, 'workspace_disabled');
   const access=await resolveCourse(env,subject,courseId??STEM_COURSE_ID);
@@ -54,6 +57,7 @@ export async function jobPermission(env: Env, principal: AppPrincipal, id: strin
   if (!row.course_id) return row.subject === principal.subject || principal.role === 'admin' ? { owner:row.subject===principal.subject,read:true,comment:true,courseId:null,instructor:false,administration:principal.role==='admin' } : null;
   const course = principal.course?.classId === row.course_id ? principal.course : await resolveCourse(env, principal.subject, row.course_id);
   const owner = row.subject === principal.subject;
+  if (env.CAIL_CLASSROOM_ENABLED === 'false') return owner ? {owner:true,read:true,comment:false,courseId:row.course_id,instructor:false} : null;
   if (owner || course.owner) return { owner, read: true, comment: true, courseId: row.course_id, instructor: course.owner };
   const grant = await env.DB.prepare(`SELECT MAX(f.permission='comment') AS comment FROM course_folders f
     JOIN course_folder_items i ON i.folder_id=f.id WHERE i.job_id=? AND f.course_id=? AND f.permission IN ('read','comment')
@@ -62,6 +66,7 @@ export async function jobPermission(env: Env, principal: AppPrincipal, id: strin
 }
 export function courseErrorResponse(error: CourseError): Response {
   const message = error.status === 503 ? 'Course access is temporarily unavailable. Try again shortly.'
+    : error.code === 'conversation_interrupted' ? 'The previous reply could not be confirmed. Reload the conversation and send a new message; the old request will not be retried.'
     : error.status === 409 ? 'This course changed. Refresh and try again.' : 'This course work is not available to your account.';
   return Response.json({ error: { code: error.code, message } }, { status: error.status, headers: { 'Cache-Control': 'private, no-store' } });
 }

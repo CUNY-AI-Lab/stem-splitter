@@ -9,10 +9,10 @@ export async function coursePrompt(env: Env, courseId: string | null) {
 }
 export async function promptView(env: Env, courseId: string, before = Number.MAX_SAFE_INTEGER) {
   const state = await coursePrompt(env, courseId);
-  const { results } = await env.DB.prepare(`SELECT id,revision,amendment,change_note AS changeNote,base_version AS basePromptVersion,
+  const { results } = await env.DB.prepare(`SELECT id,revision,revision AS settingsRevision,'Course instructor' AS updatedBy,amendment,change_note AS changeNote,base_version AS basePromptVersion,
     base_hash AS basePromptHash,effective_hash AS effectivePromptHash,created_at AS createdAt
     FROM course_prompt_revisions WHERE course_id=? AND id<? ORDER BY id DESC LIMIT 41`).bind(courseId, before).all<{ id: number }>();
-  return { ...state, basePrompt: buildSystemPromptPreview(), basePromptVersion: SYSTEM_PROMPT_VERSION,
+  return { ...state, updatedBy:state.updatedBy?'Course instructor':null, basePrompt: buildSystemPromptPreview(), basePromptVersion: SYSTEM_PROMPT_VERSION,
     effectivePromptHash: await hashSystemPromptFingerprint(state.amendment), basePromptHash: await hashSystemPromptFingerprint(),
     maxChars: 2000, maxChangeNoteChars: 240, history: results.slice(0, 40), historyHasMore: results.length > 40,
     historyNextBeforeId: results.length > 40 ? results[39].id : null };

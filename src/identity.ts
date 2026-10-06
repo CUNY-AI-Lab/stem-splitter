@@ -87,6 +87,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     const routeCourse = /^\/api\/classroom\/courses\/([^/]+)/.exec(path)?.[1];
     const selected = storedCourse?.course_id ?? routeCourse ?? request.headers.get('x-stem-course') ?? courseIds(env)[0];
     const personal = selected === 'personal';
+    if (env.CAIL_CLASSROOM_ENABLED === 'false' && (routeCourse || path === '/api/classroom/courses' || (storedCourse && !['GET','HEAD'].includes(request.method)) || (!storedCourse && !personal && request.headers.has('x-stem-course') && !['GET','HEAD'].includes(request.method)))) throw new CourseError(503,'course_work_paused');
     // Admin/app roles remain separate. They never create a course-owner grant.
     let course: CourseAssignment | null = null;
     try { course = await resolveCourse(env, identity.subject, personal ? courseIds(env)[0] : selected); }
@@ -113,7 +114,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     if (course?.displayNameSource === 'verified_profile') principal.displayName = cleanDisplayName(course.displayName);
     if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);
     if (path.startsWith('/api/admin/') && role !== 'admin') return authFailure('admission_required', 403);
-    if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && role === 'student' && !course?.owner) return authFailure('admission_required', 403);
+    if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && role === 'student') return authFailure('admission_required', 403);
     // Cloudflare amendments belong to a course; the legacy singleton remains Railway-only.
     if (path.startsWith('/api/teacher/prompt')) return Response.json({ error: 'Choose a course in the instructor page.' }, { status: 409 });
     if (jobId) {

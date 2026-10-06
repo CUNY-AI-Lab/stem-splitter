@@ -1,4 +1,5 @@
-/** Private Admission course wire v1, mirrored from admission-contract/src/course.ts.
+/** Private Admission course wire v1, mirrored from admission-contract/src/course.ts
+ * at cail-tools-admission 5f13f332c120c6712aead2a355b3cf5bcc6dae58.
  * Keep runtime validation here dependency-free; never derive authority from a summary. */
 export const COURSE_APP = 'stem-splitter' as const;
 export const STEM_COURSE_ID = 'msh-245-the-american-musical-experience-fall-2026-01';
@@ -19,11 +20,11 @@ export interface AdmissionCourseResolver {
 const classIdPattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 export const validClassId = (value: unknown): value is string => typeof value === 'string' && classIdPattern.test(value) && value !== 'search';
 export const validMemberId = (value: unknown): value is string => typeof value === 'string' && /^stem-member-v1-[0-9a-f]{64}$/.test(value);
-const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v));
+const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 const bounded = (v: unknown, n: number) => typeof v === 'string' && v.trim().length > 0 && v.length <= n && !/[\u0000-\u001f\u007f]/.test(v);
 export function validClock(v: Record<string, unknown>, now = Date.now()): boolean {
   return date(v.checkedAt) && date(v.expiresAt) && Date.parse(v.checkedAt) <= now + 5000 &&
-    now - Date.parse(v.checkedAt) < 30000 && Date.parse(v.expiresAt) > now &&
+    now - Date.parse(v.checkedAt) < 30000 && Date.parse(v.expiresAt) > now && Date.parse(v.checkedAt) < Date.parse(v.expiresAt) &&
     Number.isSafeInteger(v.revision) && Number(v.revision) >= 0;
 }
 function memberFields(v: unknown): v is CourseMember {
@@ -36,14 +37,16 @@ function memberFields(v: unknown): v is CourseMember {
 export function validMember(v: unknown): v is CourseMember {
   return memberFields(v) && Object.keys(v).every(k=>['memberId','displayName','displayNameSource','startsAt','expiresAt'].includes(k));
 }
-export function validAssignment(v: unknown, now = Date.now()): v is CourseAssignment {
+function assignment(v: unknown, now: number, access: boolean): v is CourseAssignment {
   if (!memberFields(v)) return false;
   const r = v as unknown as Record<string, unknown>;
   return validClassId(r.classId) && bounded(r.className, 200) && bounded(r.term, 120) && bounded(r.section, 120) &&
     typeof r.owner === 'boolean' && typeof r.participant === 'boolean' && (r.owner || r.participant) &&
-    Object.keys(r).every(k=>['ok','classId','className','term','section','memberId','displayName','displayNameSource','participant','owner','startsAt','checkedAt','expiresAt','revision'].includes(k)) &&
-    validClock(r,now) && Date.parse(r.startsAt as string) <= Date.parse(r.checkedAt as string);
+    Object.keys(r).every(k=>[...(access?['ok']:[]),'classId','className','term','section','memberId','displayName','displayNameSource','participant','owner','startsAt','checkedAt','expiresAt','revision'].includes(k)) &&
+    (!access || r.ok === true) && validClock(r,now) && Date.parse(r.startsAt as string) <= Date.parse(r.checkedAt as string);
 }
+export const validAssignment = (v: unknown, now=Date.now()): v is CourseAssignment => assignment(v,now,false);
+export const validAccess = (v: unknown, now=Date.now()): v is CourseAssignment & {ok:true} => assignment(v,now,true);
 export function validPage(v: unknown,now = Date.now()): v is CoursePage {
   if (!v || typeof v !== 'object') return false;
   const r = v as Record<string, unknown>;

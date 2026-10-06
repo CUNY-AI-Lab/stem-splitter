@@ -182,6 +182,7 @@ app.use('/api/*', async (c, next) => {
     if (denied) return denied;
     c.header('Cache-Control', 'private, no-store');
     const principal = c.get('principal');
+    if(principal)c.header('X-Stem-Account',principal.subject);
     const scope = c.req.method !== 'POST' ? null : c.req.path === '/api/jobs' ? 'split'
       : !c.env.assistantTransport && /^\/api\/jobs\/[^/]+\/(?:guide|chat)$/.test(c.req.path) ? 'guide' : null;
     if (scope && principal) {
@@ -462,7 +463,7 @@ function ensureTeachersSeeded(c: Context<AppContext>): Promise<void> {
 async function currentTeacher(c: Context<AppContext>) {
   if (c.env.AUTH_MODE === 'cail') {
     const principal = c.get('principal');
-    return principal && (principal.role !== 'student' || principal.course?.owner) ? { username: principal.subject, displayName: principal.displayName } : null;
+    return principal && principal.role !== 'student' ? { username: principal.subject, displayName: principal.displayName } : null;
   }
   await ensureTeachersSeeded(c);
   return resolveSession(c.env, readSessionCookie(c.req.header('Cookie')));
@@ -793,6 +794,7 @@ app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
   const jobId = (parsed.value as { jobId?: unknown } | null)?.jobId;
   if (typeof jobId !== 'string' || !jobId) return c.json({ error: 'A jobId is required.' }, 400);
   const principal = c.get('principal');
+  if (principal && await jobCourse(c.env,jobId)) return c.json({ error:'Use a course folder for this split.' },409);
   if (principal && principal.role !== 'admin' && !(await c.env.DB.prepare('SELECT job_id FROM job_owners WHERE job_id = ? AND subject = ?')
     .bind(jobId, principal.subject).first())) return c.json({ error: 'Job not found' }, 404);
 

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS course_conversations (
   subject TEXT NOT NULL,
   revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0),
   pending_turn TEXT,
+  pending_expires_at TEXT,
   expires_at TEXT NOT NULL,
   PRIMARY KEY(job_id,subject)
 );
@@ -94,8 +95,8 @@ CREATE TABLE IF NOT EXISTS course_messages (
   job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   subject TEXT NOT NULL,
   turn_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK(kind IN ('you','coach','action')),
-  provenance TEXT NOT NULL CHECK(provenance IN ('student','server-assistant','server-tool')),
+  kind TEXT NOT NULL CHECK(kind IN ('you','coach','action','status')),
+  provenance TEXT NOT NULL CHECK(provenance IN ('student','server-assistant','server-tool','server-status')),
   text TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
