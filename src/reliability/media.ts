@@ -33,7 +33,7 @@ export interface PcmDecoder {
  * silence. These are MPEG Layer III syntax constraints, not an audio-quality
  * heuristic: a legitimate silent stem remains valid. */
 export function mp3FrameInfo(data: ArrayBuffer): { frames: number; seconds: number; sampleRate: number } | null {
-  if(data.byteLength>32*1024*1024||!validMp3Frames(data))return null;
+  if(data.byteLength>24*1024*1024||!validMp3Frames(data))return null;
   const bytes=new Uint8Array(data);let offset=0,frames=0,seconds=0,availableMain=0,sampleRate=0;
   if(bytes[0]===73&&bytes[1]===68&&bytes[2]===51)offset=10+((bytes[6]<<21)|(bytes[7]<<14)|(bytes[8]<<7)|bytes[9])+(bytes[5]&16?10:0);
   while(offset+4<=bytes.length) {
@@ -86,7 +86,7 @@ export async function validateMp3Pcm(data: ArrayBuffer,create:()=>PcmDecoder): P
   try {
     decoder=create();await decoder.ready;
     const bytes=new Uint8Array(data);let samples=0;
-    // At most 8192 synchronous chunks, <=131072 samples/channel per chunk.
+    // At most 6144 synchronous chunks, <=131072 samples/channel per chunk.
     // A 15-minute limit bounds work independently of a host's frozen clock.
     for(let offset=0;offset<bytes.length;offset+=4096) {
       const part=decoder.decode(bytes.subarray(offset,offset+4096));

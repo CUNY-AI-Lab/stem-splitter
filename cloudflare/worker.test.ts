@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createTestHarness } from 'wrangler';
 import { setupServer } from 'msw/node';
@@ -51,6 +52,10 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
       const checked=await worker.fetch('/__fixture/validate-audio',{method:'POST',headers:{'x-fixture':'local-only'},body:audio});
       assert.deepEqual(await checked.json(),{valid});
     }
+
+    const silence=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t','2','-c:a','libmp3lame','-b:a','128k','-f','mp3','pipe:1'],{timeout:10000,maxBuffer:1024*1024});
+    assert.equal(silence.status,0,String(silence.stderr));
+    assert.deepEqual(await(await worker.fetch('/__fixture/validate-audio',{method:'POST',headers:{'x-fixture':'local-only'},body:silence.stdout})).json(),{valid:true});
 
     const call = async (path: string, who = 0, init: RequestInit = {}) => {
       const response = await worker.fetch(path, {

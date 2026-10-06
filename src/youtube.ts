@@ -9,6 +9,10 @@ import { retryAt, UpstreamError } from './reliability/retry.ts';
 
 const MAX_DURATION_SECONDS = 15 * 60; // cost/scope guard for class use
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
+// Cloudflare's 128 MiB isolate must also hold JSON/base64 and a split decoder.
+export const CAIL_IMPORT_BYTES=12*1024*1024;
+export const CAIL_INLINE_BYTES=4*1024*1024;
+export const CAIL_PREDICTION_BYTES=Math.ceil(CAIL_INLINE_BYTES*4/3)+256*1024;
 const MIN_AUDIO_BYTES = 1024;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MODEL_NAME_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -449,14 +453,15 @@ async function replicateFetch(
 async function readPrediction(
   response: Response,
   timeoutMs: number,
-  expectedId?: string
+  expectedId?: string,
+  maximumBytes=MAX_PREDICTION_BYTES
 ): Promise<YtPrediction> {
   if (responseMediaType(response) !== 'application/json') {
     await response.body?.cancel().catch(() => undefined);
     throw providerUnavailable();
   }
   const bytes = await readBoundedResponse(response, {
-    maximumBytes: MAX_PREDICTION_BYTES,
+    maximumBytes,
     timeoutMs,
     errors: {
       tooLarge: providerUnavailable,
@@ -606,7 +611,8 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
 async function downloadPredictionFile(
   audio: string,
   apiToken: string,
-  deadline: number
+  deadline: number,
+  maximumBytes=MAX_AUDIO_BYTES,maximumInlineBytes=maximumBytes
 ): Promise<ArrayBuffer> {
   remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS);
   if (audio.startsWith('data:')) {
@@ -620,8 +626,8 @@ async function downloadPredictionFile(
       throw invalidAudioResponse();
     }
     const b64 = audio.slice(comma + 1);
-    if (b64.length > Math.ceil((MAX_AUDIO_BYTES * 4) / 3) + 4) {
-      throw audioTooLarge();
+    if (b64.length > Math.ceil((maximumInlineBytes * 4) / 3) + 4) {
+      throw new YouTubeError(`This import exceeds the ${Math.floor(maximumInlineBytes/1024/1024)} MiB inline audio limit. Try a shorter clip or upload an original or licensed file.`,'audio_too_large');
     }
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length % 4 !== 0) {
       throw invalidAudioResponse();
@@ -632,7 +638,7 @@ async function downloadPredictionFile(
     } catch {
       throw invalidAudioResponse();
     }
-    if (bin.length > MAX_AUDIO_BYTES) throw audioTooLarge();
+    if (bin.length > maximumInlineBytes) throw new YouTubeError(`This import exceeds the ${Math.floor(maximumInlineBytes/1024/1024)} MiB inline audio limit. Try a shorter clip or upload an original or licensed file.`,'audio_too_large');
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes.buffer;
@@ -669,10 +675,10 @@ async function downloadPredictionFile(
     throw invalidAudioResponse();
   }
   return readBoundedResponse(res, {
-    maximumBytes: MAX_AUDIO_BYTES,
+    maximumBytes,
     timeoutMs: remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS),
     errors: {
-      tooLarge: audioTooLarge,
+      tooLarge: () => new YouTubeError(`This import exceeds the ${Math.floor(maximumBytes/1024/1024)} MiB audio limit. Try a shorter clip or upload an original or licensed file.`,'audio_too_large'),
       timedOut: youtubeTimedOut,
       unreadable: invalidAudioResponse,
     },
@@ -788,6 +794,7 @@ function normalizePredictionError(raw: string): YouTubeError {
   if (/extractor_timeout/.test(message)) return new YouTubeError('The audio import timed out. Try a shorter source or upload an original or licensed file.','extractor_timeout',true);
   if (/invalid_audio_response/.test(message)) return new YouTubeError('The source did not produce usable audio. Try another source or upload an original or licensed file.','invalid_audio_response');
   if (/extractor_failed|extractor_response_too_large/.test(message)) return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
+  if (/requested format.*(?:not available|unavailable)|no suitable format/i.test(message)) return new YouTubeError('This source has no supported audio format. Upload an original or licensed file.','youtube_format_unavailable');
   if (/source_denied|sign.?in|log.?in|captcha|challenge|bot|cookie|private|age.?restrict|not available|unavailable|removed|region|geo.?block|copyright|DRM/i.test(message)) return sourceDenied();
   return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
 }
@@ -813,7 +820,7 @@ export async function startYouTubeImport(url: string, env: Env, webhook: string)
     throw new UpstreamError(res.status===429?'provider_capacity':res.status===402?'provider_credit':'import_start_rejected',res.status>=500?'uncertain':'rejected',res.status,
       res.status===429?retryAt(res.headers.get('retry-after')):0);
   }
-  try { return (await readPrediction(res,15000)).id; }
+  try { return (await readPrediction(res,15000,undefined,CAIL_PREDICTION_BYTES)).id; }
   catch { throw new UpstreamError('import_start_response_unreadable','uncertain'); }
 }
 
@@ -826,11 +833,11 @@ export async function pollYouTubeImport(id: string, env: Env): Promise<YouTubeAu
   try {
     const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
     if (!res.ok) { await res.body?.cancel(); throw new UpstreamError('import_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0); }
-    prediction=await readPrediction(res,15000,id);
+    prediction=await readPrediction(res,15000,id,CAIL_PREDICTION_BYTES);
   } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
   if (prediction.status==='starting'||prediction.status==='processing') return null;
   if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
-  const data=await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline);
+  const data=await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES);
   return validateFetchedAudio({data,title:prediction.output.title,durationSec:prediction.output.duration});
 }
 

@@ -97,6 +97,21 @@ test('course chat ignores forged assistant history, saves provenance and runs no
   const page=await(await request(`/api/classroom/courses/${A}/jobs/a/conversation`,'ownerA')).json() as any;
   assert.deepEqual(page.entries.map((m:any)=>m.provenance),['student','server-assistant']);assert.doesNotMatch(JSON.stringify(page),/Forged answer/);assert.equal(calls(),1);
 });
+
+test('reset during an in-flight chat fences late deltas, receipts and notes without retaining a ledger transcript',async()=>{
+ const {env,request,job,db}=await setup();await job('reset-stream');
+ let release!:()=>void,started!:()=>void,calls=0;
+ const waiting=new Promise<void>(resolve=>{release=resolve;});const ready=new Promise<void>(resolve=>{started=resolve;});
+ env.assistantTransport=async(_env,_input,delta)=>{calls++;started();await waiting;await delta('Late private transcript');return {content:'Late private transcript',model:'fixture',toolCalls:[],finishReason:'stop'};};
+ const body={messageId:'reset-stream-message-0001',revision:0,messages:[{role:'user',content:'Private input'}]};
+ const response=await request('/api/jobs/reset-stream/chat','alice','POST',body);const text=response.text();await ready;
+ assert.equal((await request('/api/jobs/reset-stream/listening-conversation','alice','DELETE',{revision:1})).status,200);
+ release();assert.doesNotMatch(await text,/Late private transcript/);
+ const state=await conversationPage(env,'reset-stream',ids.alice);assert.deepEqual(state.entries,[]);
+ const operations=(await db.prepare('SELECT state,result_json,request_json FROM app_operations').all<any>()).results;
+ assert.equal(operations[0].state,'failed');assert.doesNotMatch(JSON.stringify(operations),/Late private|Private input/);
+ assert.equal((await request('/api/jobs/reset-stream/chat','alice','POST',body)).status,409);assert.equal(calls,1);
+});
 test('course prompt writes conflict, preserve immutable history and invalidate only matching caches',async()=>{
   const {env,job,db}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);const empty=await hashSystemPromptFingerprint();
   for(const [id,scope] of [['a',A],['b',B],['personal',null]] as const)assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:scope},{jobId:id,text:'Old guide',model:'fixture',createdAt:new Date().toISOString()},0,empty),true);

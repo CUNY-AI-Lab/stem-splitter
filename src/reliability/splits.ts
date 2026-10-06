@@ -1,7 +1,7 @@
 import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
-import { parseYouTubeVideoId, pollYouTubeImport, startYouTubeImport, replicateConfiguration, YouTubeError } from '../youtube.ts';
+import { parseYouTubeVideoId, pollYouTubeImport, startYouTubeImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
 import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
@@ -102,7 +102,7 @@ async function storeArchive(env: Env,op: Operation,input: SplitInput) {
     const object=await env.AUDIO.get(cached.object_key);
     if (object && object.size<=MAX_BYTES) { await imported(env,op,input,{...JSON.parse(cached.metadata_json),data:await object.arrayBuffer()});return; }
   }
-  const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env);
+  const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES});
   await imported(env,op,input,audio);
   const current=await readOperation(env.DB,op.id);
   if (current?.phase==='split'&&input.key) await env.DB.prepare(`INSERT INTO import_cache(scope,source,operation_id,object_key,metadata_json,expires_at)

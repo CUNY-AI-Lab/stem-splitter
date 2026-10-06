@@ -20,7 +20,7 @@ injection hook. The normal package entry also constructs browser Worker
 helpers, unavailable in workerd. There is no runtime compilation, network
 decoder fetch, browser-supplied validation, external service, or inference.
 The fixed Wasm heap is 16,973,824 bytes and refuses heap growth. Shared
-validation admits at most 32 MiB compressed input and 900.1 seconds, decodes
+validation admits at most 24 MiB compressed input and 900.1 seconds, decodes
 4 KiB chunks, checks finite PCM, and drops each PCM chunk immediately.
 
 mpg123 intentionally conceals some damaged frames. Therefore the application

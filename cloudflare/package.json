@@ -5,7 +5,7 @@
   "packageManager": "bun@1.4.0",
   "scripts": {
     "typecheck": "../node_modules/.bin/tsc -p tsconfig.json --noEmit",
-    "test": "node --import ../node_modules/tsx/dist/loader.mjs --test *.test.ts",
+    "test": "node --import ./test-wasm-register.mjs --import ../node_modules/tsx/dist/loader.mjs --test *.test.ts",
     "db:migrate:19": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0019-listening-conversations.sql",
     "db:migrate:19:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0019-listening-conversations.sql"
   },

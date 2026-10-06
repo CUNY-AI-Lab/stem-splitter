@@ -40,6 +40,8 @@ jobs:
           //npm.pkg.github.com/:_authToken=${CAIL_PACKAGES_TOKEN}
           NPMRC
           bun install --frozen-lockfile
+      - name: Install the local audio validation oracle
+        run: bash .github/scripts/install-media-tools.sh ffmpeg
       - name: Verify private identity and Gateway boundaries in Workerd
         working-directory: cloudflare
         run: bun run typecheck && bun run test

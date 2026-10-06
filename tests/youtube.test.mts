@@ -5,6 +5,7 @@ import {
   createInnertubeFetch,
   fetchViaReplicate,
   parseYouTubeVideoId,
+  pollYouTubeImport, startYouTubeImport, CAIL_IMPORT_BYTES, CAIL_INLINE_BYTES, CAIL_PREDICTION_BYTES,
   YouTubeError,
 } from '../src/youtube.ts';
 
@@ -608,3 +609,49 @@ function makeM4a(size = 2048): Uint8Array {
   bytes.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
   return bytes;
 }
+
+
+test('durable importer bounds prediction and audio copies before reading oversized bodies', async () => {
+  const saved=globalThis.fetch;
+  try {
+    for(const stage of ['prediction','audio']) {
+      let cancelled=false, calls=0;
+      globalThis.fetch=async()=>{
+        calls++;
+        if(stage==='audio'&&calls===1)return Response.json({id:'bounded',status:'succeeded',output:{audio:'https://audio.replicate.delivery/bounded.m4a',title:'Fixture',duration:1}});
+        return new Response(new ReadableStream({pull(){return new Promise(()=>{});},cancel(){cancelled=true;}}),{
+          headers:{'Content-Type':stage==='prediction'?'application/json':'audio/mp4','Content-Length':String((stage==='prediction'?CAIL_PREDICTION_BYTES:CAIL_IMPORT_BYTES)+1)},
+        });
+      };
+      await assert.rejects(()=>pollYouTubeImport('bounded',TEST_ENV as never),(error:any)=>stage==='prediction'?error.code==='import_poll_uncertain':error.code==='audio_too_large');
+      assert.equal(cancelled,true,stage);
+      assert.equal(calls,stage==='prediction'?1:2);
+    }
+    // Unknown acceptance stays uncertain; bounding a response never licenses a second paid POST.
+    globalThis.fetch=async()=>new Response('{}',{headers:{'Content-Type':'application/json','Content-Length':String(CAIL_PREDICTION_BYTES+1)}});
+    await assert.rejects(()=>startYouTubeImport('https://youtu.be/jNQXAC9IVRw',TEST_ENV as never,'https://app.test/callback'),(error:any)=>error.code==='import_start_response_unreadable'&&error.outcome==='uncertain');
+    // The inline limit is independently enforced after a bounded JSON parse.
+    for(const size of [2048,CAIL_INLINE_BYTES+1]) {
+      const audio=Buffer.from(makeM4a(size)).toString('base64');
+      globalThis.fetch=async()=>Response.json({id:'bounded',status:'succeeded',output:{audio:`data:audio/mp4;base64,${audio}`,title:'Fixture',duration:1}});
+      if(size===2048)assert.equal((await pollYouTubeImport('bounded',TEST_ENV as never))?.data.byteLength,size);
+      else await assert.rejects(()=>pollYouTubeImport('bounded',TEST_ENV as never),(error:any)=>error.code==='audio_too_large');
+    }
+  } finally {globalThis.fetch=saved;}
+});
+
+test('durable extractor errors distinguish format, configuration and explicit source restrictions',async()=>{
+  const saved=globalThis.fetch;
+  try {
+    for(const [message,code] of [
+      ['Requested format is not available','youtube_format_unavailable'],
+      ['Unhandled Python internal exception','extractor_failed'],
+      ['Sign in to confirm you are not a bot','youtube_source_denied'],
+      ['This video is private','youtube_source_denied'],
+      ['extractor_dependency_missing','extractor_dependency_missing'],
+    ]) {
+      globalThis.fetch=async()=>Response.json({id:'classified',status:'failed',error:message});
+      await assert.rejects(()=>pollYouTubeImport('classified',TEST_ENV as never),(error:any)=>error.code===code,`${message}: ${code}`);
+    }
+  }finally{globalThis.fetch=saved;}
+});

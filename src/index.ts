@@ -2168,7 +2168,7 @@ async function downloadStem(name: string, url: string, strict = false): Promise<
     if (response.ok) {
       try {
         const audio = await readBoundedResponse(response, {
-          maximumBytes: 32 * 1024 * 1024,
+          maximumBytes: (strict?24:32) * 1024 * 1024,
           timeoutMs: 30000,
           errors: {
             tooLarge: () => new InvalidStemAudioError('The separator returned an oversized track'),
