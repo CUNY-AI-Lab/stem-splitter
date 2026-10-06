@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createTestHarness } from 'wrangler';
-import { createTestIdentityIssuer } from '@cuny-ai-lab/cail-identity/testing';
-import { readFile } from 'node:fs/promises';
+import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
+import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
@@ -19,7 +19,7 @@ function tone(frequency) {
   return wav;
 }
 
-async function fixture(page, names) {
+async function fixture(page, names, { owned = false } = {}) {
   const issuer = await createTestIdentityIssuer();
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
     vars: { TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true' } }] });
@@ -28,9 +28,15 @@ async function fixture(page, names) {
   const sql = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
   sql.push(`INSERT INTO jobs (id, filename, source_key, status, model, stems) VALUES ('remix-fixture', 'Playback review', 'uploads/fixture.wav', 'done', 'htdemucs_ft', '${JSON.stringify(stems)}')`,
     "INSERT INTO public_split_links (job_id) VALUES ('remix-fixture')");
+  if (owned) {
+    sql.push(`INSERT INTO app_users (subject) VALUES ('${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO job_owners (job_id, subject) VALUES ('remix-fixture', '${TEST_SUBJECTS.alice}')`);
+    await page.context().setExtraHTTPHeaders({ 'x-fixture-identity': await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
+  }
   await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) });
-  await page.route('**/api/shared-jobs/remix-fixture/stems/*', route => {
-    const index = Number(new URL(route.request().url()).pathname.split('/').pop());
+  await page.route(owned ? '**/api/files/stems/remix-fixture/*' : '**/api/shared-jobs/remix-fixture/stems/*', route => {
+    const filename = new URL(route.request().url()).pathname.split('/').pop();
+    const index = owned ? names.indexOf(filename.replace(/\.mp3$/, '')) : Number(filename);
     const bytes = tone(180 + index * 100);
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
     const start = range ? Number(range[1]) : 0;
@@ -44,6 +50,62 @@ async function fixture(page, names) {
   await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a => a.duration > 69))).toBe(true);
   return server;
 }
+
+test('note entry clears the speed controls and stays usable on narrow and zoomed layouts', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other'], { owned: true });
+  try {
+    const input = page.getByRole('textbox', { name: 'Note text', exact: true });
+    const receipts = process.env.STEM_SCREENSHOT_DIR;
+    if (receipts) await mkdir(receipts, { recursive: true });
+    for (const [width, zoom] of [[1440, 1], [768, 1], [540, 1], [414, 1], [390, 1], [360, 1], [320, 1], [1280, 2]]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(value => { document.documentElement.style.zoom = value; }, String(zoom));
+      await page.locator('.note-btn').click();
+      await expect(input).toBeFocused();
+      await input.fill('A listening note with enough text to exercise the narrow input');
+      const form = await page.locator('.note-form').boundingBox();
+      const speed = await page.getByRole('group', { name: 'Playback speed' }).boundingBox();
+      const field = await input.boundingBox();
+      const save = await page.locator('.note-form button').boundingBox();
+      const consoleBox = await page.locator('.console').boundingBox();
+      if (receipts) await page.locator('.console').screenshot({ path: `${receipts}/annotation-${process.env.STEM_BROWSER || 'chrome'}-${width}-zoom${zoom}.png` });
+      expect(speed.y, `${width}px at ${zoom}x: speed must clear note form`).toBeGreaterThanOrEqual(form.y + form.height + 4);
+      expect(field.width).toBeGreaterThan(60);
+      expect(field.x + field.width).toBeLessThanOrEqual(save.x - 3);
+      expect(save.x + save.width).toBeLessThan(consoleBox.x + consoleBox.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.note-btn').click();
+      await expect(page.locator('.note-form')).toHaveCount(1);
+      await input.press('Escape');
+      await expect(input).toHaveCount(0);
+    }
+    await page.evaluate(() => { document.documentElement.style.zoom = ''; });
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const text of ['First saved note', 'Second saved note']) {
+      await page.locator('.note-btn').click();
+      await expect(input).toBeFocused();
+      await input.fill(text);
+      await page.locator('.note-form button').click();
+      await expect(input).toHaveCount(0);
+      await expect(page.locator('.notes')).toContainText(text);
+    }
+    await page.reload();
+    await expect(page.locator('.note-row')).toHaveCount(2);
+    await page.locator('.note-btn').click();
+    for (const speed of [.5, .75, 1]) {
+      await page.getByRole('button', { name: `Play at ${speed}× speed`, exact: true }).click();
+      await expect.poll(() => page.evaluate(value => mixers.get('remix-fixture').audios.every(a => a.playbackRate === value), speed)).toBe(true);
+    }
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await input.fill('Typing while listening');
+    await input.press('Escape');
+    await page.locator('.play-btn').click();
+    expect(errors).toEqual([]);
+  } finally { await server.close(); }
+});
 
 async function clockAdvances(page) {
   const start = await page.evaluate(() => mixers.get('remix-fixture').audios[0].currentTime);
