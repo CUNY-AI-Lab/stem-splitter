@@ -200,6 +200,14 @@ test('Account stays simple; administration is deliberate, responsive, and recove
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const consoleIssues = [];
+  const usageConflicts = [];
+  page.on('response', response => {
+    if (response.status() === 409 && new URL(response.url()).pathname === '/api/usage-events') {
+      usageConflicts.push(response.json().then(body => ({url:response.url(),body,
+        requestActor:response.request().headers()['x-stem-usage-actor'],responseActor:response.headers()['x-stem-account']}))
+        .catch(error => ({readError:error.message})));
+    }
+  });
   page.on('console', message => {
     if (['error', 'warning'].includes(message.type())) consoleIssues.push({ text: message.text(), url: message.location().url });
   });
@@ -387,10 +395,22 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-footer')).toBeHidden();
     await expect(page.locator('#account-id')).toBeEmpty();
     expect(errors).toEqual([]);
+    // Deliberate fixture identity changes can race an old pagehide batch.
+    // Accept only a proven actor-fence rejection, never arbitrary409 failures.
+    const verifiedConflictUrls = new Set();
+    for (const conflict of await Promise.all(usageConflicts)) {
+      expect(conflict.readError).toBeUndefined();
+      expect(conflict.body).toEqual({error:'The account changed. Discard these observations.'});
+      expect([TEST_SUBJECTS.alice,TEST_SUBJECTS.carol]).toContain(conflict.requestActor);
+      expect([TEST_SUBJECTS.alice,TEST_SUBJECTS.carol]).toContain(conflict.responseActor);
+      expect(conflict.requestActor).not.toBe(conflict.responseActor);
+      verifiedConflictUrls.add(conflict.url);
+    }
     // Quota fixture has no Gateway JWT (401); the deliberate management outage
     // is 503. Do not allow unrelated console errors to disappear in that noise.
     expect(consoleIssues.filter(message =>
       !(/^Failed to load resource: the server responded with a status of (401|503)\b/.test(message.text) && /\/api\/(account|model-quota|admin\/users)$/.test(message.url)) &&
+      !(message.text === 'Failed to load resource: the server responded with a status of 409 (Conflict)' && verifiedConflictUrls.has(message.url)) &&
       !(message.text === 'Failed to load resource: the server responded with a status of 404 (Not Found)' && message.url.endsWith('/favicon.ico'))
     )).toEqual([]);
   } finally { await server.close(); }
