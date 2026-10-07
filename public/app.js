@@ -6,6 +6,7 @@ const STEM_ORDER = ['vocals', 'instrumental', 'drums', 'bass', 'other', 'guitar'
 let runtime = { authMode: 'class-code', remixer: false, loginUrl: null };
 let jobsStorageKey = 'jobs';
 let accountSubject = null;
+let guestSessionActive = false;
 let accountJobs = [];
 let rackCursor = null;
 let rackLoading = false;
@@ -204,17 +205,28 @@ async function ensureClassCode() {
   }
 }
 
+async function splitRequestKey(body) {
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`${selectedCourse}\0${body || ''}`))),b=>b.toString(16).padStart(2,'0')).join('');
+  const slot=`pendingSplit:${hash}`;
+  let key;
+  try { key=sessionStorage.getItem(slot); } catch {}
+  if(!key) {key=crypto.randomUUID();try {sessionStorage.setItem(slot,key);}catch {}}
+  return {key,slot};
+}
+
 async function api(path, options = {}) {
   if (runtime.authMode === 'cail' && selectedCourse !== 'personal' && options.method === 'POST' && ['/api/uploads','/api/jobs'].includes(path)) {
     if (!document.getElementById('course-consent').checked) throw new Error('Confirm the course visibility notice before creating course work.');
     if (path === '/api/jobs') options = { ...options, body: JSON.stringify({ ...JSON.parse(options.body || '{}'), coursePolicy:'course-work-v1' }) };
   }
+  const pending=path==='/api/jobs' && options.method==='POST' ? await splitRequestKey(options.body) : null;
   const res = await fetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'x-class-code': getClassCode(),
       ...(runtime.authMode==='cail'?{'x-stem-course':selectedCourse}:{}),
+      ...(pending ? {'Idempotency-Key':pending.key} : {}),
       ...(options.headers || {}),
     },
   });
@@ -226,9 +238,10 @@ async function api(path, options = {}) {
     throw new Error('Invalid class code — enter it and retry.');
   }
   const body = await res.json().catch(() => ({}));
+  if(pending && (res.ok || res.status<500 && res.status!==429)) {try{sessionStorage.removeItem(pending.slot);}catch{}}
   if (res.status === 429 && body.code === 'split_daily_limit' && Number.isFinite(Date.parse(body.resetsAt))) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-    throw new Error(`You've used today's runs. You can split again ${reset}.`);
+    throw new Error(`Today's 15 places are completed or in progress. Available places reset ${reset}. Failed splits do not count as completed.`);
   }
   if (!res.ok) throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`),{status:res.status});
   return body;
@@ -238,9 +251,10 @@ async function api(path, options = {}) {
 // each `data:` JSON event. Setup failures are plain JSON with a real status;
 // mid-stream failures arrive as {type:'error'} events, which throw here.
 async function streamApi(path, body, onEvent, signal) {
+  if(path.endsWith('/chat') && !body.messageId) body={...body,messageId:crypto.randomUUID()};
   const res = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode() },
+    headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode(), ...(body.messageId ? {'Idempotency-Key':body.messageId} : {}) },
     body: JSON.stringify(body),
     signal,
   });
@@ -1305,6 +1319,10 @@ function showUploadMessage(message, isError = false) {
 }
 
 function processingMessage(job, noun = 'splits') {
+  if(job.operation?.cancelRequested)return 'Cancellation requested. We are waiting for the provider to stop; this split will not use successful-split allowance.';
+  if(job.status==='queued')return 'Saved to your account and queued. You can close this tab; the split will continue.';
+  if(job.status==='importing')return 'Importing the permitted source audio. Your successful-split allowance has not been charged.';
+  if(job.status==='reconciling')return 'Checking the provider response for this saved request. Please do not submit it again. The successful-split count has not changed.';
   const route = job.autoRouting;
   let prefix = 'PROCESSING';
   const reason = route?.analysis?.decision?.reason;
@@ -1500,6 +1518,7 @@ class Mixer {
     this.toRemixBtn = li.querySelector('.to-remix-btn');
     this.toRemixBtn.addEventListener('click', () => sendJobToRemixer(this.job));
     this.shareBtn = li.querySelector('.share-btn:not(.to-remix-btn):not(.refresh-btn)');
+    if (guestSessionActive && !this.job.readOnlyShared) this.shareBtn.hidden = true;
     this.shareBtn.addEventListener('click', () => this.copyLink());
     this.rateGroup = li.querySelector('.rate');
     this.loopRegion = li.querySelector('.loop-region');
@@ -1599,6 +1618,7 @@ class Mixer {
       const muteBtn = row.querySelector('.mute-btn');
       const soloBtn = row.querySelector('.solo-btn');
       const download = row.querySelector('.dl');
+      download.addEventListener('click',()=>window.StemUsage?.record('download_intent',{jobId:this.job.id}));
       this.channelsByName.set(stem.name, {
         audio,
         row,
@@ -1879,6 +1899,7 @@ class Mixer {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(makeZip(entries));
       a.download = `${fileSafe(this.job.filename) || 'session'}-export.zip`;
+      window.StemUsage?.record('download_intent',{jobId:this.job.id});
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1957,6 +1978,8 @@ class Mixer {
     if (attempt !== this.playAttempt) return;
     this.starting = false;
     this.playing = true;
+    this.usagePlayStarted=performance.now();
+    window.StemUsage?.record('playback_start',{jobId:this.job.id});
     this.playBtn.textContent = '❚❚';
     this.playBtn.classList.add('playing');
     this.el.classList.add('playing');
@@ -1979,6 +2002,7 @@ class Mixer {
   }
 
   stopUi() {
+    if(this.playing)window.StemUsage?.record('playback_stop',{jobId:this.job.id,durationMs:performance.now()-(this.usagePlayStarted||performance.now())});
     this.playAttempt += 1;
     this.startAbort?.abort();
     this.starting = false;
@@ -2068,7 +2092,7 @@ class Mixer {
   tick() {
     this.paint();
     this.paintMeters();
-    if (this.loop && this.audios[0].currentTime >= this.loop.end) this.seekTo(this.loop.start);
+    if (this.loop && this.audios[0].currentTime >= this.loop.end) this.seekTo(this.loop.start, 'loop');
     if (this.playing) this.raf = requestAnimationFrame(() => this.tick());
   }
 
@@ -2348,7 +2372,7 @@ class Mixer {
     else if (!commit) this.paint();
   }
 
-  seekTo(t) {
+  seekTo(t, reason = 'action') {
     if (!Number.isFinite(t)) return;
     this.endScrub(false);
     const duration = this.seekDuration();
@@ -2362,6 +2386,7 @@ class Mixer {
       if (a.preload !== 'auto') a.preload = 'auto';
       a.currentTime = Math.min(t, a.duration);
     }
+    if(reason==='action')window.StemUsage?.record('seek',{jobId:this.job.id,position:t});
     this.paint();
   }
 
@@ -2788,7 +2813,7 @@ class Mixer {
       this.conversationRevision = result.revision;
       if (this.conversationSaveStatus) {
         this.conversationSaveStatus.hidden = false;
-        this.conversationSaveStatus.textContent = 'Saved to your CUNY account.';
+        this.conversationSaveStatus.textContent = guestSessionActive ? 'Saved to this guest session.' : 'Saved to your CUNY account.';
         this.conversationSaveStatus.classList.remove('error');
       }
     }).catch((error) => {
@@ -3479,10 +3504,11 @@ function renderJobs() {
         <span class="badge ${failed ? 'failed' : 'processing'}">${
           failed
             ? 'FAILED'
-            : `SEPARATING<span class="elapsed" data-since="${since}">${fmt(
+            : `${({queued:'QUEUED',importing:'IMPORTING',reconciling:'CHECKING'})[state.status]||'SEPARATING'}<span class="elapsed" data-since="${since}">${fmt(
                 (Date.now() - since) / 1000
               )}</span>`
         }</span>
+        ${!failed && runtime.authMode==='cail' && !state.operation?.cancelRequested ? '<button class="head-btn cancel-job-btn" type="button">Cancel</button>' : ''}
         ${failed ? `<button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit' : 'Remove this failed split from your rack'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>` : ''}
       </div>
       ${
@@ -3490,11 +3516,15 @@ function renderJobs() {
           ? `<p class="job-error">${esc(
               state.error || 'No playable tracks were returned. Run the split again.'
             )}</p>`
-          : `<p class="job-note">Creating ${esc(
-              stemDescription(state.expectedStems || job.expectedStems)
-            )}…</p>`
+          : `<p class="job-note">${esc(processingMessage({...state,savedToAccount:true}))}</p>`
       }
     `;
+    const cancelBtn=li.querySelector('.cancel-job-btn');
+    if(cancelBtn)cancelBtn.addEventListener('click',async()=>{
+      cancelBtn.disabled=true;
+      try{await api(`/api/jobs/${job.id}/cancel`,{method:'POST',body:'{}'});await pollActiveJobs();}
+      catch(error){cancelBtn.disabled=false;li.querySelector('.job-note').textContent=error.message;}
+    });
     const deleteBtn = li.querySelector('.delete-btn');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () =>
@@ -4552,7 +4582,7 @@ async function loadCourseOptions() {
       for(const course of page.courses)select.add(new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId));cursor=page.nextCursor;
     }while(cursor);
     wrapper.hidden=false;
-    select.addEventListener('change',()=>{selectedCourse=select.value;document.getElementById('course-disclosure').hidden=selectedCourse==='personal';document.getElementById('course-consent').checked=false;});
+    select.addEventListener('change',()=>{selectedCourse=select.value;window.StemUsage?.setCourse(selectedCourse);document.getElementById('course-disclosure').hidden=selectedCourse==='personal';document.getElementById('course-consent').checked=false;});
   }catch{wrapper.hidden=true;}
 }
 
@@ -4568,13 +4598,16 @@ async function initialize() {
   }
   if (runtime.authMode === 'cail') {
     jobsStorageKey = null;
+    const importHelp=document.getElementById('import-help');
+    if(importHelp)importHelp.textContent='YouTube imports support up to 15 minutes and 12 MiB of extracted audio. You can also upload an original or licensed audio file.';
     const account = document.createElement('p');
     account.className = 'account-nav';
     let principal = null;
+    let guestState = null;
     let accountNeedsHelp = false;
     try {
       const response = await fetch('/api/account');
-      if (response.ok) principal = (await response.json()).account;
+      if (response.ok) {const result=await response.json();principal=result.account;guestState=result.guest;}
       else if (response.status !== 401) {
         accountNeedsHelp = true;
         rackStatus.hidden = false;
@@ -4585,16 +4618,17 @@ async function initialize() {
       rackStatus.hidden = false;
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
-    if (principal && /^cail-[0-9a-f]{32}$/.test(principal.subject)) {
+    guestSessionActive=principal?.quotaClass==='guest' && principal?.role==='guest' && /^guest-[0-9a-f]{64}$/.test(principal.subject);
+    if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
       window.StemSessionGuard?.start(accountSubject,()=>{for(const mixer of mixers.values()){mixer.pause();mixer.disposeWaveforms();}mixers.clear();jobStates.clear();accountJobs=[];accountSubject=null;selectedCourse='personal';},()=>{for(const mixer of mixers.values()){mixer.pause();mixer.coachAbort?.abort();}});
       const link = document.createElement('a');
       link.className = 'account-button';
       link.href = '/account.html';
-      link.textContent = 'My account';
+      link.textContent = guestSessionActive ? 'My guest session' : 'My account';
       account.append(link);
-      void loadCourseOptions();
+      if (!guestSessionActive) void loadCourseOptions();
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
@@ -4604,6 +4638,8 @@ async function initialize() {
       account.append(link);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead').append(account);
+    if (!accountNeedsHelp && (!principal || guestSessionActive)) window.StemGuest?.mount(document.querySelector('.masthead'),runtime.guest,
+      {active:guestSessionActive,verificationRequired:guestState?.verificationRequired});
   }
   separationOptionsReady = loadSeparationOptions();
   void ensureClassCode();

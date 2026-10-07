@@ -4,9 +4,18 @@ import { AssistantError, COACH_DOWN, COACH_UNCONFIGURED, type OpenRouterParams, 
 import type { WireStreamChunk, WireToolCall } from '../src/assistant/types.ts';
 import type { Env } from '../src/env.ts';
 import { boundedText, cancel, deadline, withSignal } from './bounded.ts';
+import { beginAttempt, finishAttempt, readOperation } from '../src/reliability/ledger.ts';
+import { cooldown, retryAt, setCooldown } from '../src/reliability/retry.ts';
 
 export const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const canonicalModel = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(value);
+export const GATEWAY_MODELS = ['glm-5.2', 'deepseek-v4-flash-0731'] as const;
+export const gatewayModelsConfigured = (primary: unknown, backup: unknown) => primary === GATEWAY_MODELS[0] && backup === GATEWAY_MODELS[1];
+export function eligibleGatewayFallback(error: unknown) {
+  return error instanceof CailError && error.extras.should_retry === true &&
+    (error.code==='upstream_rate_limited' && error.status===429 ||
+      ['upstream_unavailable','model_unavailable'].includes(error.code) && error.status===503);
+}
 const catalog = defineEventCatalog({
   'stem-splitter.gateway.completed': { source: 'tenant', severity: 'outcome', required: ['request_id', 'terminal'], optional: [] },
 });
@@ -22,7 +31,7 @@ function safeFailure(error: unknown, fallback: string): AssistantError {
   return new AssistantError(error instanceof CailError && error.status === 429 ? 503 : 502, message, { requestId, code, shouldRetry });
 }
 
-export function gatewayForRequest(binding: Fetcher | undefined, token: string | null, request: Request, release: string) {
+export function gatewayForRequest(binding: Fetcher | undefined, token: string | null, request: Request, release: string, credentialKind: 'jwt' | 'key' = 'jwt') {
   const headers = new Headers(request.headers);
   const incoming = headers.get('x-cail-request-id') ?? headers.get('x-request-id');
   if (incoming && REQUEST_ID.test(incoming)) headers.set('x-cail-request-id', incoming);
@@ -45,16 +54,27 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
 
   const stream = async (env: Env, params: OpenRouterParams, onDelta: (text: string) => void | Promise<void>): Promise<OpenRouterReply> =>
     deadline(async signal => {
+      if (!binding || !token || !canonicalModel(env.ASSISTANT_MODEL) ||
+        (env.ASSISTANT_FALLBACK_MODELS !== undefined && !gatewayModelsConfigured(env.ASSISTANT_MODEL, env.ASSISTANT_FALLBACK_MODELS))) throw new AssistantError(503,COACH_UNCONFIGURED);
+      const models = env.ASSISTANT_FALLBACK_MODELS ? GATEWAY_MODELS : [env.ASSISTANT_MODEL];
+      for (const [modelIndex, model] of models.entries()) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      let accepted = false, outputStarted = false;
+      let attemptId: string | null = null, usage: unknown;
+      const operation = env.ASSISTANT_OPERATION_ID ? await readOperation(env.DB,env.ASSISTANT_OPERATION_ID) : null;
       let requestId = correlation.request_id;
       let outcome: 'ok' | 'cancelled' | 'error' = 'error';
       try {
-        if (!binding || !token || !canonicalModel(env.ASSISTANT_MODEL)) throw new AssistantError(503, COACH_UNCONFIGURED);
+        if (operation) {
+          if (await cooldown(env.DB,`gateway:${model}`)>Date.now()) throw new AssistantError(503,COACH_DOWN,{code:'model_cooldown',shouldRetry:true});
+          attemptId=await beginAttempt(env.DB,operation,'cail-gateway',model);
+        }
         const response = await client.chatCompletions({
-          model: env.ASSISTANT_MODEL, messages: params.messages.map(({ role, content }) => ({ role, content })),
+          model, messages: params.messages.map(({ role, content }) => ({ role, content })),
           ...(params.tools?.length ? { tools: params.tools.map(tool => ({ type: tool.type, function: { ...tool.function, parameters: JSON.parse(JSON.stringify(tool.function.parameters)) } })), tool_choice: 'auto' } : {}),
           stream: true, stream_options: { include_usage: true }, max_tokens: params.maxTokens, temperature: params.temperature,
-        }, { kind: 'jwt', token }, { signal, correlation });
+        }, { kind: credentialKind, token }, { signal, correlation });
+        accepted = true;
         const responseId = response.headers.get('x-request-id') ?? response.headers.get('x-cail-request-id');
         if (responseId && REQUEST_ID.test(responseId)) requestId = responseId;
         reader = response.body?.getReader();
@@ -71,16 +91,19 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
           if (error) throw error;
           if (!value || typeof value !== 'object' || 'error' in value) throw new AssistantError(502, COACH_DOWN);
           const chunk = value as WireStreamChunk;
+          if ('usage' in value) usage=(value as {usage:unknown}).usage;
           const choice = chunk.choices?.[0];
           if (!choice) return; // Trailing accounting events still get drained.
           if (choice.finish_reason === 'error') throw new AssistantError(502, COACH_DOWN);
           if (choice.finish_reason) finishReason = choice.finish_reason;
           if (choice.delta?.content) {
             if (typeof choice.delta.content !== 'string') throw new AssistantError(502, COACH_DOWN);
+            outputStarted = true;
             content += choice.delta.content;
             await withSignal(Promise.resolve(onDelta(choice.delta.content)), signal);
           }
           for (const delta of choice.delta?.tool_calls ?? []) {
+            outputStarted = true;
             if (!Number.isSafeInteger(delta.index) || delta.index! < 0 || delta.index! >= 32) throw new AssistantError(502, COACH_DOWN);
             const slot = calls.get(delta.index!) ?? { type: 'function', function: { name: '', arguments: '' } };
             if (delta.id) slot.id = delta.id;
@@ -101,9 +124,17 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
         }
         if (buffer.trim()) await consume(buffer);
         if (!finishReason) throw new AssistantError(502, COACH_DOWN);
+        const toolIds=[...calls.values()].map(call=>call.id).filter(Boolean);
+        if (new Set(toolIds).size!==toolIds.length) throw new AssistantError(502,COACH_DOWN,{code:'invalid_tool_calls'});
         outcome = 'ok';
-        return { content: content.trim(), model: env.ASSISTANT_MODEL, toolCalls: [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call), finishReason };
+        if (attemptId) await finishAttempt(env.DB,attemptId,'succeeded',{usage});
+        return { content: content.trim(), model, toolCalls: [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call), finishReason };
       } catch (error) {
+        if (attemptId) await finishAttempt(env.DB,attemptId,outputStarted?'partial':accepted||!(error instanceof CailError)?'uncertain':'rejected',{code:error instanceof CailError?error.code:'gateway_failure',status:error instanceof CailError?error.status:undefined,usage});
+        if (!signal.aborted && !accepted && !outputStarted && modelIndex===0 && models.length===2 && eligibleGatewayFallback(error)) {
+          if (operation) await setCooldown(env.DB,`gateway:${model}`,retryAt(error instanceof CailError ? String(error.extras.retry_after ?? error.extras.retry_after_seconds ?? '30') : '30'));
+          continue;
+        }
         if (signal.aborted) {
           if (signal.reason?.name === 'TimeoutError') throw new AssistantError(503, COACH_DOWN, { requestId, code: 'upstream_timeout', shouldRetry: true });
           outcome = 'cancelled'; throw signal.reason;
@@ -117,8 +148,12 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
             : { outcome: 'error', reason: 'upstream_failure' } as const;
         log.emit('stem-splitter.gateway.completed', { request_id: requestId, terminal });
       }
+      }
+      throw new AssistantError(503,COACH_DOWN);
     }, env.ASSISTANT_ABORT_SIGNAL ?? request.signal, 60000);
   return { stream, quota: () => deadline(async signal => {
+    // Anonymous guests must never inspect the sponsor application's balance.
+    if (credentialKind === 'key') throw new AssistantError(503,COACH_UNCONFIGURED);
     if (!binding || !token) throw new AssistantError(503, COACH_UNCONFIGURED);
     // cail-client validates the bounded quota envelope; it never grants access.
     const quotaClient = createCailClient({ app: 'stem-splitter', fetchImpl: async (input, init) => {

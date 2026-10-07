@@ -451,7 +451,7 @@ historyMoreBtn.addEventListener('click', async () => {
       for(const course of courses)select.add(new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId));
       const requested=new URLSearchParams(location.search).get('course');selectedCourse=courses.some(c=>c.classId===requested)?requested:courses[0].classId;select.value=selectedCourse;
       document.getElementById('teacher-courses').hidden=false;
-      const setRoster=()=>{document.getElementById('teacher-roster').href=`/classroom.html?course=${encodeURIComponent(selectedCourse)}`;};setRoster();
+      const setRoster=()=>{window.StemUsage?.setCourse(selectedCourse);document.getElementById('teacher-roster').href=`/classroom.html?course=${encodeURIComponent(selectedCourse)}`;};setRoster();
       select.addEventListener('change',async()=>{
         if(amendment.value.trim()!==loadedAmendment&&!confirm('Discard unsaved course instructions?')){select.value=selectedCourse;return;}
         selectedCourse=select.value;setRoster();try{await loadPrompt();}catch{/* The current load owns its error state. */}

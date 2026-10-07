@@ -2,10 +2,11 @@ import { courseIds, resolveCourse, jobCourse, jobPermission, cleanDisplayName, C
 import { STEM_COURSE_ID } from './classroom/contract.ts';
 import type { AdmissionCourseResolver, CourseAssignment } from './classroom/contract.ts';
 import type { Env } from './env.ts';
+import { authorizeGuestRequest } from './guest/access.ts';
 
 export const STEM_AUDIENCE = 'cail:stem-splitter';
-export type AppRole = 'student' | 'instructor' | 'admin';
-export interface AppPrincipal { subject: string; role: AppRole; displayName: string; course: CourseAssignment | null; courseId: string | null; }
+export type AppRole = 'student' | 'instructor' | 'admin' | 'guest';
+export interface AppPrincipal { subject: string; role: AppRole; quotaClass?: 'member' | 'guest'; displayName: string; course: CourseAssignment | null; courseId: string | null; }
 export interface AdmissionResolver extends AdmissionCourseResolver {
   resolveMembership(input: { subject: string }): Promise<unknown>;
 }
@@ -47,6 +48,10 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
   if (path === '/api/runtime' || path === '/api/separation-options' || path === '/api/webhooks/separation') return null;
   if (['GET', 'HEAD'].includes(request.method) && /^\/api\/shared-jobs\/[a-zA-Z0-9-]+(?:\/stems\/\d+)?$/.test(path)) return null;
   if (path.startsWith('/api/local-sources/') && request.method === 'GET') return null; // HMAC capability checked by the source route.
+  if (env.guestSession) {
+    if (!validWriteOrigin(request,env)) return authFailure('invalid_credential',403);
+    return authorizeGuestRequest(request,env,authenticated);
+  }
   if (!env.verifyCailIdentity || !env.ADMISSION_RESOLVER) return authFailure('identity_verification_misconfigured', 503);
   const token = request.headers.get('x-cail-identity-jwt');
   if (!token || token.length > 16384) return authFailure('authentication_required', 401);
@@ -108,7 +113,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
       const entry = await resolveCourse(env,identity.subject,STEM_COURSE_ID);
       if (!entry.participant) throw new CourseError(403,'target_course_enrollment_required');
     }
-    const principal: AppPrincipal = { subject: identity.subject, role,
+    const principal: AppPrincipal = { subject: identity.subject, role, quotaClass:'member',
       displayName: cleanDisplayName(identity.name), course,
       courseId: !personal && request.headers.has('x-stem-course') && course ? course.classId : null };
     if (course?.displayNameSource === 'verified_profile') principal.displayName = cleanDisplayName(course.displayName);

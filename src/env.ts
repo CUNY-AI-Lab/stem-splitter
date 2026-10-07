@@ -1,4 +1,4 @@
-export type Env = {
+export type Env = import('./guest/access.ts').GuestSettings & {
   // Bindings
   AUDIO: R2Bucket;
   DB: D1Database;
@@ -10,7 +10,14 @@ export type Env = {
   /** Private adapter dependencies; never accepted from a request body. */
   assistantTransport?: typeof import('./assistant/openrouter.ts').openRouterChatStream;
   assistantQuota?: () => Promise<unknown>;
+  /** Trusted platform-local PCM decoder; never supplied by a browser. */
+  validateStemAudio?: (data: ArrayBuffer) => Promise<boolean>;
   ASSISTANT_ABORT_SIGNAL?: AbortSignal;
+  /** Trusted logical input, bound to authenticated subject/course by the route. */
+  ASSISTANT_OPERATION_ID?: string;
+  assistantEffectIntent?: () => Promise<void>;
+  /** Drain/reconcile existing operations while preventing new paid starts. */
+  SPLIT_STARTS_DISABLED?: string;
   CAIL_BROWSER_ORIGIN?: string;
   CAIL_COURSE_IDS?: string;
   /** Literal false pauses course collaboration while retaining owner-only reads. */

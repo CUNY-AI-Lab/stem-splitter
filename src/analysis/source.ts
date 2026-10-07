@@ -214,10 +214,14 @@ export async function prepareAuthoritativeAutoSource(
     sourceKey: string;
     /** Test seam for the local 30-day retention boundary. */
     nowMs?: number;
+    /** Durable callers fence cleanup and may reuse their own completed snapshot. */
+    isCurrent?: () => Promise<boolean>;
+    allowExisting?: boolean;
   }
 ): Promise<AuthoritativeAutoSourceSnapshot> {
   validateInput(input);
   const snapshotKey = `auto-inputs/v1/${input.jobId}`;
+  const rollback=async()=>{try {if(!input.isCurrent||await input.isCurrent())await rollbackSnapshot(env,snapshotKey);}catch {/* Uncertain ownership never licenses deletion. */}};
 
   let source: R2ObjectBody | null;
   try {
@@ -242,7 +246,12 @@ export async function prepareAuthoritativeAutoSource(
   }
 
   try {
-    if (await env.AUDIO.head(snapshotKey)) {
+    const existing=await env.AUDIO.head(snapshotKey);
+    if(existing&&input.allowExisting&&existing.size===source.size&&existing.customMetadata?.purpose==='authoritative-auto-input-v1'&&existing.customMetadata?.sourceBytes===String(source.size)) {
+      await source.body.cancel().catch(()=>undefined);
+      return {snapshotKey,bytes:existing.size};
+    }
+    if (existing) {
       throw new AuthoritativeAutoSourceError(
         'snapshot_conflict',
         'The immutable Auto source snapshot already exists'
@@ -256,6 +265,7 @@ export async function prepareAuthoritativeAutoSource(
     );
   }
 
+  if(input.isCurrent&&!await input.isCurrent()) {await source.body.cancel().catch(()=>undefined);throw new AuthoritativeAutoSourceError('snapshot_conflict','This source request is being recovered.');}
   const bounded = boundedCopyStream(source.body, source.size);
   const upload = fixedLengthUpload(bounded.stream, source.size);
   let stored: R2Object | null = null;
@@ -275,7 +285,7 @@ export async function prepareAuthoritativeAutoSource(
   } catch {
     await bounded.cancel();
     if (upload.pump) await Promise.allSettled([upload.pump]);
-    await rollbackSnapshot(env, snapshotKey);
+    await rollback();
     throw bounded.failure() ?? new AuthoritativeAutoSourceError(
       'snapshot_failed',
       'The immutable Auto source snapshot could not be stored'
@@ -284,7 +294,7 @@ export async function prepareAuthoritativeAutoSource(
 
   if (!stored || stored.size !== source.size || !bounded.completed()) {
     await bounded.cancel();
-    await rollbackSnapshot(env, snapshotKey);
+    await rollback();
     throw bounded.failure() ?? new AuthoritativeAutoSourceError(
       'snapshot_failed',
       'The immutable Auto source snapshot did not match the uploaded source size'
@@ -295,14 +305,14 @@ export async function prepareAuthoritativeAutoSource(
   try {
     committed = await env.AUDIO.head(snapshotKey);
   } catch {
-    await rollbackSnapshot(env, snapshotKey);
+    await rollback();
     throw new AuthoritativeAutoSourceError(
       'snapshot_failed',
       'The immutable Auto source snapshot could not be verified'
     );
   }
   if (!committed || committed.size !== source.size) {
-    await rollbackSnapshot(env, snapshotKey);
+    await rollback();
     throw new AuthoritativeAutoSourceError(
       'snapshot_failed',
       'The immutable Auto source snapshot could not be verified'
