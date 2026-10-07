@@ -1,0 +1,4 @@
+@import url('./form.css');
+body { display: flex; flex-direction: column; min-height: 100dvh; }
+body > main { width: 100%; flex: 1; padding-bottom: 1.7rem; }
+.bug-report-footer { order: 100; width: min(780px, 100%); padding: 0 1.25rem 1rem; margin: auto auto 0; border: 0; font-size: 1rem; color: var(--ink); --bug-line: var(--ink-dim); --bug-ink: var(--ink); --bug-background: var(--bg); --bug-field: var(--bg-raise); --bug-focus: var(--hot); }

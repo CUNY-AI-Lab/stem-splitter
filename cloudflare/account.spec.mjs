@@ -296,8 +296,8 @@ test('Account stays simple; administration is deliberate, responsive, and recove
       'Model access': 'https://tools.ailab.gc.cuny.edu/model-access',
       'My classes': 'https://tools.ailab.gc.cuny.edu/my-classes',
     })) await expect(resources.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
-    await expect(page.locator('footer')).toContainText('Built through the Critical AI Literacy Institute.');
-    await expect(page.locator('footer')).toContainText('Uploaded files are deleted after 90 days.');
+    await expect(page.locator('main > footer')).toContainText('Built through the Critical AI Literacy Institute.');
+    await expect(page.locator('main > footer')).toContainText('Uploaded files are deleted after 90 days.');
     await expect(page.locator('#account-splits')).toContainText('Splits: 0 completed, 0 in progress, 15 available of 15. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeHidden();

@@ -14,6 +14,7 @@
   "d1_databases": [{ "binding": "DB", "database_name": "cail-stem-splitter-preview", "database_id": "ae01c5db-c19e-48c8-91bd-132876276f22" }],
   "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "cail-stem-splitter-preview-audio" }],
   "services": [
+    { "binding": "BUG_REPORTS", "service": "cail-tools-admission", "entrypoint": "AdmissionBugReports", "props": { "app": "stem-splitter", "origins": ["https://cail-stem-splitter-preview.ailab-452.workers.dev", "https://stem-splitter.ailab-452.workers.dev"] } },
     { "binding": "GATEWAY", "service": "cail-model-api" },
     { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter", "workspace": false } },

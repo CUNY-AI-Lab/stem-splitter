@@ -10,10 +10,11 @@ import { guestConfigured, hasMemberCookie, readGuestSession, revokeGuestSession,
 import { guestFailure } from '../src/guest/access.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
+import { handleBugReport, type BugReportService } from './bug-reports.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> &
-  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string };
+  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -67,6 +68,9 @@ export default {
           youtubeImport: {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
           listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
             transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
+      } else if (url.pathname === '/api/bug-reports') {
+        response = await handleBugReport(request, { app: 'stem-splitter', origin: env.PUBLIC_BASE_URL,
+          service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
       } else if (url.pathname === '/auth/guest') {
