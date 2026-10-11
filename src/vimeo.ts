@@ -18,7 +18,21 @@ const object = (value: unknown): ObjectValue => value !== null && typeof value =
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
 const invalid = () => new YouTubeError('This video did not provide usable audio.', 'invalid_audio_response');
-const denied = () => new YouTubeError('This source does not allow this import. Choose a permitted audio file.', 'youtube_source_denied');
+type VimeoFailureStage = 'player_http' | 'player_redirect' | 'player_privacy' | 'manifest_http' | 'manifest_protection' | 'segment_http' | 'segment_protection';
+interface VimeoFailureDiagnostic { stage: VimeoFailureStage; httpStatus?: number }
+class VimeoImportError extends YouTubeError {
+  readonly diagnostic: Readonly<VimeoFailureDiagnostic>;
+  constructor(message: string, code: string, stage: VimeoFailureStage, httpStatus?: number) {
+    super(message, code);
+    this.diagnostic = Object.freeze({ stage, ...(Number.isInteger(httpStatus) && httpStatus! >= 100 && httpStatus! <= 599 ? { httpStatus } : {}) });
+  }
+}
+/** Internal, fixed fields only. Public responses continue to use YouTubeError.code. */
+export function vimeoFailureDiagnostic(error: unknown): VimeoFailureDiagnostic | undefined {
+  return error instanceof VimeoImportError ? { ...error.diagnostic } : undefined;
+}
+const denied = (stage: VimeoFailureStage, status?: number) => new VimeoImportError(
+  'This source does not allow this import. Choose a permitted audio file.', 'youtube_source_denied', stage, status);
 const tooLarge = () => new YouTubeError('This video’s audio exceeds the import size limit.', 'audio_too_large');
 const timedOut = () => new YouTubeError('This video import timed out. Try again later.', 'youtube_fetch_timeout');
 
@@ -56,16 +70,16 @@ export function vimeoCdnUrl(value: unknown, base?: string): string {
 function rejectProtection(value: ObjectValue): void {
   for (const name of ['drm', 'drm_info', 'is_drm', 'encrypted', 'encryption', 'content_protection', 'widevine', 'fairplay', 'playready', 'license_url']) {
     const flag = value[name];
-    if (flag !== undefined && flag !== null && flag !== false && flag !== '') throw denied();
+    if (flag !== undefined && flag !== null && flag !== false && flag !== '') throw denied('manifest_protection');
   }
 }
 
 export function vimeoPlayerMetadata(config: ObjectValue, videoId: string, unlistedHash?: string) {
   const video = object(config.video), request = object(config.request);
   if (String(video.id) !== videoId) throw invalid();
-  if (config.view !== 1 || !['anybody', ...(unlistedHash ? ['unlisted'] : [])].includes(String(video.privacy))) throw denied();
-  if (unlistedHash && video.unlisted_hash !== unlistedHash) throw denied();
-  if (video.embed_permission !== undefined && video.embed_permission !== 'public') throw denied();
+  if (config.view !== 1 || !['anybody', ...(unlistedHash ? ['unlisted'] : [])].includes(String(video.privacy))) throw denied('player_privacy');
+  if (unlistedHash && video.unlisted_hash !== unlistedHash) throw denied('player_privacy');
+  if (video.embed_permission !== undefined && video.embed_permission !== 'public') throw denied('player_privacy');
   if (video.live_event || video.is_live) throw new YouTubeError('Live streams cannot be imported.', 'live_stream');
   if (!finite(video.duration) || video.duration <= 0) throw invalid();
   if (video.duration > MAX_DURATION) throw new YouTubeError('Choose a video shorter than 15 minutes.', 'video_too_long');
@@ -102,16 +116,16 @@ function one(list: Box[], type: string): Box {
   if (found.length !== 1) throw invalid();
   return found[0];
 }
-function clearBoxes(data: Uint8Array, list: Box[], depth = 0): void {
+function clearBoxes(data: Uint8Array, list: Box[], stage: 'manifest_protection' | 'segment_protection', depth = 0): void {
   if (depth > 12) throw invalid();
   for (const box of list) {
-    if (['pssh', 'sinf', 'tenc', 'senc', 'saiz', 'saio', 'enca', 'encv'].includes(box.type)) throw denied();
-    if (['moov', 'trak', 'mdia', 'minf', 'stbl', 'mvex', 'moof', 'traf'].includes(box.type)) clearBoxes(data, children(data, box), depth + 1);
+    if (['pssh', 'sinf', 'tenc', 'senc', 'saiz', 'saio', 'enca', 'encv'].includes(box.type)) throw denied(stage);
+    if (['moov', 'trak', 'mdia', 'minf', 'stbl', 'mvex', 'moof', 'traf'].includes(box.type)) clearBoxes(data, children(data, box), stage, depth + 1);
   }
 }
 export function validateVimeoInitialization(data: Uint8Array): void {
   if (data.byteLength < 32 || data.byteLength > INIT_LIMIT) throw invalid();
-  const top = boxes(data); clearBoxes(data, top);
+  const top = boxes(data); clearBoxes(data, top, 'manifest_protection');
   if (top[0]?.type !== 'ftyp' || top.some(box => !['ftyp', 'moov', 'free'].includes(box.type))) throw invalid();
   const moov = one(top, 'moov'), trak = one(children(data, moov), 'trak');
   const mdia = one(children(data, trak), 'mdia'), mediaChildren = children(data, mdia);
@@ -122,10 +136,10 @@ export function validateVimeoInitialization(data: Uint8Array): void {
   if (stsd.end - stsd.payload < 8 || new DataView(data.buffer, data.byteOffset).getUint32(stsd.payload + 4) !== 1) throw invalid();
   const entries = boxes(data, stsd.payload + 8, stsd.end), entry = one(entries, 'mp4a');
   if (entries.length !== 1 || entry.end - entry.payload < 28) throw invalid();
-  clearBoxes(data, boxes(data, entry.payload + 28, entry.end));
+  clearBoxes(data, boxes(data, entry.payload + 28, entry.end), 'manifest_protection');
 }
 export function validateVimeoSegment(data: Uint8Array): void {
-  const top = boxes(data); clearBoxes(data, top);
+  const top = boxes(data); clearBoxes(data, top, 'segment_protection');
   if (!top.some(box => box.type === 'moof') || !top.some(box => box.type === 'mdat') ||
       top.some(box => !['styp', 'sidx', 'moof', 'mdat', 'emsg', 'prft', 'free'].includes(box.type))) throw invalid();
 }
@@ -197,14 +211,15 @@ export async function fetchVimeoAudio(url: string, options: VimeoFetchOptions = 
         if (!location || redirects === 2) throw invalid();
         let target: string;
         try { target = new URL(location, address).href; } catch { throw invalid(); }
-        if (kind === 'html') { if (target !== playerUrl) throw denied(); } else target = vimeoCdnUrl(target);
+        if (kind === 'html') { if (target !== playerUrl) throw denied('player_redirect', response.status); } else target = vimeoCdnUrl(target);
         address = target; continue;
       }
       if (response.status !== 200) {
         await response.body?.cancel().catch(() => undefined);
-        if ([401, 403, 451].includes(response.status)) throw denied();
-        if (response.status === 429) throw new YouTubeError('Video import is busy. Try again later.', 'youtube_fetch_busy');
-        throw new YouTubeError('Video import is temporarily unavailable.', 'youtube_fetch_unavailable');
+        const stage = kind === 'html' ? 'player_http' : kind === 'json' ? 'manifest_http' : 'segment_http';
+        if ([401, 403, 451].includes(response.status)) throw denied(stage, response.status);
+        if (response.status === 429) throw new VimeoImportError('Video import is busy. Try again later.', 'youtube_fetch_busy', stage, response.status);
+        throw new VimeoImportError('Video import is temporarily unavailable.', 'youtube_fetch_unavailable', stage, response.status);
       }
       const type = responseMediaType(response), encoding = (response.headers.get('content-encoding') || 'identity').trim().toLowerCase();
       if (!(kind === 'html' ? ['text/html', 'application/xhtml+xml'].includes(type) : kind === 'json' ? ['application/json', 'text/json'].includes(type) : ['audio/mp4', 'video/mp4', 'application/octet-stream'].includes(type)) ||

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchVimeoAudio, parseVimeoPlayerConfig, vimeoPlayerMetadata, vimeoAudioPlan, vimeoCdnUrl, validateVimeoInitialization, validateVimeoSegment } from '../src/vimeo.ts';
+import { fetchVimeoAudio, parseVimeoPlayerConfig, vimeoPlayerMetadata, vimeoAudioPlan, vimeoCdnUrl, validateVimeoInitialization, validateVimeoSegment, vimeoFailureDiagnostic } from '../src/vimeo.ts';
 import { vimeoFixture, joinBytes, mp4Box } from './fixtures/vimeo.ts';
 
 const VIDEO = 'https://vimeo.com/1084537';
@@ -200,4 +200,48 @@ test('actual aggregate bytes stop at12MiB even when manifest estimates fit', asy
     return new Response(media, { headers: { 'Content-Type': 'audio/mp4' } });
   }) as typeof fetch }), code('audio_too_large'));
   assert.ok(signals.every(signal => signal.aborted));
+});
+
+test('internal HTTP diagnostics distinguish player, manifest and segment with public errors unchanged', async () => {
+  const privateText = 'private-cookie=SECRET https://private.invalid/?token=SECRET';
+  for (const [stage, matches] of [
+    ['player_http', (url: string) => url.includes('player.vimeo.com')],
+    ['manifest_http', (url: string) => url.endsWith('master.json')],
+    ['segment_http', (url: string) => url.endsWith('.m4s')],
+  ] as const) {
+    const fixture = vimeoFixture();
+    await assert.rejects(fetchVimeoAudio(VIDEO, { fetchImpl: (async (input, options) => matches(String(input))
+      ? new Response(privateText, { status: 403 }) : fixture.fetchImpl(input, options)) as typeof fetch }), (error: any) => {
+      assert.equal(error.code, 'youtube_source_denied'); assert.equal(error.retryable, false);
+      assert.equal(error.message, 'This source does not allow this import. Choose a permitted audio file.');
+      assert.deepEqual(vimeoFailureDiagnostic(error), { stage, httpStatus: 403 });
+      assert.equal(JSON.stringify(vimeoFailureDiagnostic(error)).includes('SECRET'), false);
+      return true;
+    });
+  }
+  assert.equal(vimeoFailureDiagnostic(new Error(privateText)), undefined);
+  assert.equal(vimeoFailureDiagnostic({ diagnostic: { stage: privateText, httpStatus: 403 } }), undefined);
+});
+
+test('internal denial diagnostics separate redirect, privacy and content protection without URLs or metadata', async () => {
+  for (const stage of ['player_redirect', 'player_privacy', 'manifest_protection', 'segment_protection'] as const) {
+    const fixture = vimeoFixture();
+    if (stage === 'player_privacy') fixture.config.video.privacy = 'password';
+    if (stage === 'manifest_protection') Object.assign(fixture.manifest.audio[0], { drm: { license_url: 'https://private.invalid/SECRET' } });
+    const protectedSegment = joinBytes(mp4Box('moof', mp4Box('traf', mp4Box('senc'))), mp4Box('mdat', new Uint8Array(1200)));
+    await assert.rejects(fetchVimeoAudio(VIDEO, { fetchImpl: (async (input, options) => {
+      const url = String(input);
+      if (url.includes('player.vimeo.com')) return stage === 'player_redirect'
+        ? new Response(null, { status: 302, headers: { Location: 'https://private.invalid/SECRET' } })
+        : new Response(`playerConfig=${JSON.stringify(fixture.config)}`, { headers: { 'Content-Type': 'text/html' } });
+      if (url.endsWith('master.json')) return Response.json(fixture.manifest);
+      if (stage === 'segment_protection') return new Response(protectedSegment, { headers: { 'Content-Type': 'audio/mp4' } });
+      return fixture.fetchImpl(input, options);
+    }) as typeof fetch }), (error: any) => {
+      assert.equal(error.code, 'youtube_source_denied');
+      assert.deepEqual(vimeoFailureDiagnostic(error), { stage, ...(stage === 'player_redirect' ? { httpStatus: 302 } : {}) });
+      assert.equal(JSON.stringify(vimeoFailureDiagnostic(error)).includes('SECRET'), false);
+      return true;
+    });
+  }
 });

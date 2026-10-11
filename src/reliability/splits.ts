@@ -3,7 +3,7 @@ import { parseVideoSource } from '../video-source.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
 import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
-import { fetchVimeoAudio } from '../vimeo.ts';
+import { fetchVimeoAudio, vimeoFailureDiagnostic } from '../vimeo.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
 import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
@@ -138,7 +138,10 @@ async function start(env: Env,op: Operation) {
     // Scheduled drains own this bounded GET under the existing five-minute lease.
     // A crashed fetch can be reclaimed; it has no external paid start to reconcile.
     try {await imported(env,op,input,await fetchVimeoAudio((input.videoUrl??input.youtubeUrl)!,{deadline:op.deadline}));}
-    catch(error) {await fail(env,op,error instanceof YouTubeError?error.code:'vimeo_import_failed',
+    catch(error) {
+      const diagnostic=vimeoFailureDiagnostic(error);
+      if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
+      await fail(env,op,error instanceof YouTubeError?error.code:'vimeo_import_failed',
       error instanceof YouTubeError&&error.code==='audio_too_large'
         ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;
