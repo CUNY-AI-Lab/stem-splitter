@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the reviewed extractor to r8.im/cali-tlc/yt-audio
+        description: Publish the reviewed extractor to r8.im/cali-thinkering/yt-audio
         type: boolean
         required: true
         default: false
@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && 'stem-youtube-publish-cali-tlc-yt-audio' || format('stem-youtube-image-{0}', github.ref) }}
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && 'stem-youtube-publish-cali-thinkering-yt-audio' || format('stem-youtube-image-{0}', github.ref) }}
   cancel-in-progress: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish) }}
 
 jobs:
@@ -113,11 +113,11 @@ jobs:
           import { writeFileSync } from 'node:fs';
           writeFileSync(`${process.env.RUNNER_TEMP}/yt-audio-publication.json`, JSON.stringify({
             schemaVersion: 1, sourceCommit: process.env.EXTRACTOR_SOURCE_COMMIT,
-            target: 'r8.im/cali-tlc/yt-audio', publicationAttempted: true,
+            target: 'r8.im/cali-thinkering/yt-audio', publicationAttempted: true,
             outcome: 'unconfirmed', productionPinChanged: false, predictionCalls: 0,
           }, null, 2) + '\n');
           JS
-          if ! cog --no-color push --json --progress plain r8.im/cali-tlc/yt-audio >"$registry_config/push.json" 2>"$registry_config/push.log"; then
+          if ! cog --no-color push --json --progress plain r8.im/cali-thinkering/yt-audio >"$registry_config/push.json" 2>"$registry_config/push.log"; then
             printf '%s\n' 'Publication did not return a success receipt. Inspect the model before attempting another push.' >&2
             exit 1
           fi
@@ -130,20 +130,20 @@ jobs:
           const pushed = JSON.parse(raw);
           assert.deepEqual(Object.keys(pushed).sort(), ['image', 'version']);
           assert.equal(pushed.version, 1); // Cog JSON schema version, not a model-version ID.
-          assert.match(pushed.image, /^r8\.im\/cali-tlc\/yt-audio@sha256:[a-f0-9]{64}$/);
+          assert.match(pushed.image, /^r8\.im\/cali-thinkering\/yt-audio@sha256:[a-f0-9]{64}$/);
           const candidate = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/yt-audio-candidate-evidence.json`));
           assert.equal(candidate.sourceCommit, process.env.EXTRACTOR_SOURCE_COMMIT);
           writeFileSync(`${process.env.RUNNER_TEMP}/yt-audio-cog-push.json`, JSON.stringify(pushed, null, 2) + '\n');
           writeFileSync(`${process.env.RUNNER_TEMP}/yt-audio-publication.json`, JSON.stringify({
             schemaVersion: 1, sourceCommit: process.env.EXTRACTOR_SOURCE_COMMIT,
-            target: 'r8.im/cali-tlc/yt-audio', publicationAttempted: true, outcome: 'registry_push_confirmed',
+            target: 'r8.im/cali-thinkering/yt-audio', publicationAttempted: true, outcome: 'registry_push_confirmed',
             imageReference: pushed.image, registryDigest: pushed.image.split('@')[1],
             candidateImageId: candidate.imageId, replicateModelVersion: null,
             versionReadbackRequired: true, productionPinChanged: false, predictionCalls: 0,
           }, null, 2) + '\n');
           JS
           # Cog adds run.cog.push_id, so validate its final local image separately.
-          docker tag r8.im/cali-tlc/yt-audio:latest "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
+          docker tag r8.im/cali-thinkering/yt-audio:latest "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
           node verify-image.mjs "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}" "$EXTRACTOR_SOURCE_COMMIT" "$RUNNER_TEMP/yt-audio-published-image-evidence.json"
           node --input-type=module <<'JS'
           import assert from 'node:assert/strict';
