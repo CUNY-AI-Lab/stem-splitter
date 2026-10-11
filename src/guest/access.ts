@@ -15,6 +15,8 @@ export interface GuestSettings {
   GUEST_GATEWAY_API_KEY?: string;
   /** Computed by the private Worker adapter, never taken from browser input. */
   guestRuntimeReady?: boolean;
+  /** Optional Listening Guy readiness, computed by the private Worker adapter. */
+  guestChatReady?: boolean;
   guestStartAllowed?: boolean;
   /** Verified cookie and live server session, set by the private adapter only. */
   guestSession?: GuestSession;
@@ -65,6 +67,9 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
     : job[2] === 'annotations' ? job[3] ? ['PUT','DELETE'].includes(method) : method === 'POST' : false);
   if (!general && !jobAllowed && !(file && read)) return guestFailure('guest_route_forbidden',403,'This feature requires an authorized signed-in account.');
   if ((job || file) && !await guestOwnsJob(env,session.subject,(job ?? file)![1])) return Response.json({error:'Job not found'},{status:404});
+  if (method === 'POST' && job && ['guide','chat'].includes(job[2]) && env.guestChatReady !== true) {
+    return guestFailure('guest_assistant_unavailable',503,'Listening Guy is available with CUNY Login. You can keep splitting and playing audio as a guest.');
+  }
   // A saved guest session can read its work after midnight, but paid starts
   // require a fresh daily server-verified human check.
   const paid = method === 'POST' && (path === '/api/jobs' || job && ['guide','chat'].includes(job[2]));

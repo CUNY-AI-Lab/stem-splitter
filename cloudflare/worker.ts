@@ -6,7 +6,7 @@ import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
 import { gatewayForRequest, canonicalModel, gatewayModelsConfigured } from './gateway.ts';
 import { authenticatedRequest, handleAuth, sanitizedRequest, publicApi, type WorkerIdentity } from './sso.ts';
-import { guestConfigured, hasMemberCookie, readGuestSession, revokeGuestSession, startGuestSession, clearGuestCookie, GUEST_COOKIE } from './guest.ts';
+import { guestConfigured, guestChatConfigured, hasMemberCookie, readGuestSession, revokeGuestSession, startGuestSession, clearGuestCookie, GUEST_COOKIE } from './guest.ts';
 import { guestFailure } from '../src/guest/access.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
@@ -48,7 +48,7 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
 export default {
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
     env = intakeEnvironment(env);
-    ctx.waitUntil(runReliableJobs({...env,guestRuntimeReady:guestConfigured(env),validateStemAudio}));
+    ctx.waitUntil(runReliableJobs({...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },
@@ -61,7 +61,7 @@ export default {
     if (env.CANONICAL_BASE_URL && url.origin === env.CANONICAL_BASE_URL) {
       env = { ...env, PUBLIC_BASE_URL: env.CANONICAL_BASE_URL };
     }
-    env = {...env,guestRuntimeReady:guestConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined};
+    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined};
     let response: Response;
     try {
       const paused = intakePauseResponse(request, env);

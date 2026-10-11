@@ -232,7 +232,8 @@ app.get('/api/runtime', (c) => c.json({
   authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
   loginUrl: c.env.CAIL_LOGIN_URL || null,
   remixer: c.env.REMIXER_ENABLED === 'true',
-  guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,splitLimit:5,chatLimit:25} : null,
+  guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,
+    splitLimit:5,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?25:null} : null,
 }));
 
 // Explicit sharing exposes only finished audio and its title, never account
@@ -287,9 +288,10 @@ app.get('/api/account', async (c) => {
   let allowance = null;
   try { allowance = await splitAllowance(c.env.DB, principal.subject,new Date(),principal.quotaClass ?? 'member'); } catch { /* Report unknown, not zero. */ }
   let chatAllowance = null;
-  try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),principal.quotaClass ?? 'member'); } catch {}
+  const chatAvailable=!guestPrincipal(principal)||c.env.guestChatReady===true;
+  if(chatAvailable)try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),principal.quotaClass ?? 'member'); } catch {}
   return c.json({ account: principal, splitAllowance: allowance, chatAllowance,
-    ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
+    ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
 });
 
 app.get('/api/model-quota', async (c) => {

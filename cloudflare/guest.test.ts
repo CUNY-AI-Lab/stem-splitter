@@ -7,7 +7,7 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
-import { GUEST_COOKIE, guestConfigured, startGuestSession } from './guest.ts';
+import { GUEST_COOKIE, guestConfigured, guestChatConfigured, startGuestSession } from './guest.ts';
 import { readGuestSession } from './guest.ts';
 import { mkdtempSync,readFileSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,12 +21,19 @@ const origin='https://split.test';
 const settings={GUEST_ENABLED:'true',GUEST_COOKIE_SECRET:'fixture-cookie-secret-'.repeat(3),GUEST_TURNSTILE_SITE_KEY:'fixture-site-key',
   GUEST_TURNSTILE_SECRET:'fixture-turnstile-secret-only',GUEST_GATEWAY_API_KEY:'sk-cail-fixture-sponsor-key-only-000000'};
 
-test('guest activation requires every reviewed capability; legacy provider keys never enable it',()=>{
+test('guest splitting requires verification and ingress protection while Listening Guy is optional',()=>{
   const env={...settings,GATEWAY:{},GATEWAY_MODEL:'glm-5.2',GATEWAY_FALLBACK_MODEL:'deepseek-v4-flash-0731',REQUEST_LIMIT:{}} as never;
   assert.equal(guestConfigured(env),true);
-  for(const field of Object.keys(settings))assert.equal(guestConfigured({...env,[field]:undefined,OPENROUTER_API_KEY:'old-provider-key'}),false,field);
+  assert.equal(guestChatConfigured(env),true);
+  for(const field of ['GUEST_COOKIE_SECRET','GUEST_TURNSTILE_SITE_KEY','GUEST_TURNSTILE_SECRET','REQUEST_LIMIT']) {
+    assert.equal(guestConfigured({...env,[field]:undefined,OPENROUTER_API_KEY:'old-provider-key'}),false,field);
+  }
   assert.equal(guestConfigured({...env,GUEST_ENABLED:'false'}),false);
-  assert.equal(guestConfigured({...env,GATEWAY:undefined}),false);
+  for(const field of ['GUEST_GATEWAY_API_KEY','GATEWAY','GATEWAY_MODEL','GATEWAY_FALLBACK_MODEL']) {
+    assert.equal(guestConfigured({...env,[field]:undefined}),true,field);
+    assert.equal(guestChatConfigured({...env,[field]:undefined,OPENROUTER_API_KEY:'old-provider-key'}),false,field);
+  }
+  assert.equal(guestChatConfigured({...env,GUEST_GATEWAY_API_KEY:'invalid'}),false);
 });
 
 test('guest-start rate rejection performs no database, verification or provider work',async t=>{
@@ -42,7 +49,7 @@ test('guest-start rate rejection performs no database, verification or provider 
   assert.deepEqual(ingressKeys,['stem-guest-start:192.0.2.1']);assert.equal(databaseCalls,0);assert.equal(externalCalls,0);
 });
 
-test('workerd guests: verified cookie, split/chat settlement, replay, isolation, proof refresh and logout',async()=>{
+for(const chatAvailable of [true,false])test(`workerd guests: five successful splits, refunds and isolation with Listening Guy ${chatAvailable?'available':'unavailable'}`,async()=>{
   const issuer=await createTestIdentityIssuer();
   const member=TEST_SUBJECTS.alice;
   const jwt=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:member});
@@ -67,7 +74,7 @@ test('workerd guests: verified cookie, split/chat settlement, replay, isolation,
   );
   network.listen({onUnhandledRequest:'error'});
   const harness=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),
-    vars:{TEST_JWKS:issuer.jwksJson,...settings},secrets:{REPLICATE_API_TOKEN:'guest-fixture-token',REPLICATE_MODEL_VERSION:'guest-fixture-pin',WEBHOOK_SECRET:'guest-fixture-webhook'}}]});
+    vars:{TEST_JWKS:issuer.jwksJson,...settings,GUEST_GATEWAY_API_KEY:chatAvailable?settings.GUEST_GATEWAY_API_KEY:''},secrets:{REPLICATE_API_TOKEN:'guest-fixture-token',REPLICATE_MODEL_VERSION:'guest-fixture-pin',WEBHOOK_SECRET:'guest-fixture-webhook'}}]});
   try {
     await harness.listen();const worker=harness.getWorker('stem-preview-contract-test');
     async function sql(statements:string[]){assert.equal((await worker.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status,200);}
@@ -80,13 +87,18 @@ test('workerd guests: verified cookie, split/chat settlement, replay, isolation,
     for(challengeMode of ['failed','wrong-host','wrong-action','expired']){const check=await begin(challengeMode);assert.equal(check.status,403,`${challengeMode}: ${await check.text()}`);}
     challengeMode='ok';
     const first=await begin('unique-guest-token-a');assert.equal(first.status,200,await first.clone().text());
+    assert.equal((await first.clone().json() as any).chatAvailable,chatAvailable);
+    const runtime=await(await call('/api/runtime')).json() as any;
+    assert.equal(runtime.guest.enabled,true);assert.equal(runtime.guest.chatAvailable,chatAvailable);
+    assert.equal(runtime.guest.chatLimit,chatAvailable?25:null);
     assert.match(first.headers.get('set-cookie')!,/Secure; HttpOnly; SameSite=Lax/);
     const cookieA=first.headers.get('set-cookie')!.split(';')[0];
     assert.equal((await begin('unique-guest-token-a')).status,403,'challenge replay');
     const cookieB=(await begin('unique-guest-token-b')).headers.get('set-cookie')!.split(';')[0];
     const account=await(await call('/api/account',cookieA)).json() as any;
     assert.equal(account.account.role,'guest');assert.equal(account.account.quotaClass,'guest');assert.equal(account.account.course,null);
-    assert.equal(account.splitAllowance.limit,5);assert.equal(account.chatAllowance.limit,25);
+    assert.equal(account.splitAllowance.limit,5);assert.equal(account.guest.chatAvailable,chatAvailable);
+    if(chatAvailable)assert.equal(account.chatAllowance.limit,25);else assert.equal(account.chatAllowance,null);
     assert.equal((await(await call('/api/account',cookieA)).json() as any).account.subject,account.account.subject,'resumed guest');
     const macOffset=cookieA.lastIndexOf('.')+1;
     assert.equal((await call('/api/account',cookieA.slice(0,macOffset)+(cookieA[macOffset]==='a'?'b':'a')+cookieA.slice(macOffset+1))).status,401,'tampered MAC');
@@ -141,6 +153,7 @@ test('workerd guests: verified cookie, split/chat settlement, replay, isolation,
     assert.equal((await call(`/api/jobs/${job.id}/listening-conversation`,cookieA,{method:'PUT',body:JSON.stringify({revision:0,entries:[{kind:'you',text:'Only guest A'}]})})).status,200);
     assert.match(await(await call(`/api/jobs/${job.id}/listening-conversation`,cookieA)).text(),/Only guest A/);
     const chat=(key:string,mode='ok')=>call(`/api/jobs/${job.id}/chat`,cookieA,{method:'POST',headers:{'x-fixture-gateway-mode':mode},body:JSON.stringify({messageId:key,messages:[{role:'user',content:'What should I listen for?'}]})});
+    if(chatAvailable){
     response=await chat('guest-chat-empty-0001','empty');await response.text();
     assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.completed,0);
     assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.inProgress,0);
@@ -149,6 +162,21 @@ test('workerd guests: verified cookie, split/chat settlement, replay, isolation,
     assert.equal((await chat('guest-chat-human-0026')).status,429);
     assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.completed,25);
     const stats=await worker.fetch('/__fixture/gateway-stats',{headers:{'x-fixture':'local-only'}});assert.equal((await stats.json() as any).gatewayCalls,26);
+    }else{
+      for(const path of [`/api/jobs/${job.id}/guide`,`/api/jobs/${job.id}/chat`]) {
+        const denied=await call(path,cookieA,{method:'POST',body:'{}'});
+        assert.equal(denied.status,503);assert.equal((await denied.json() as any).error.code,'guest_assistant_unavailable');
+      }
+      const stats=()=>worker.fetch('/__fixture/gateway-stats',{headers:{'x-fixture':'local-only'}}).then(response=>response.json() as any);
+      assert.equal((await stats()).gatewayCalls,0,'unavailable guest chat performs no Gateway request');
+      const operations=await(await worker.fetch('/__fixture/operations',{headers:{'x-fixture':'local-only'}})).json() as Array<{phase:string}>;
+      assert.equal(operations.some(operation=>['chat','guide'].includes(operation.phase)),false,'unavailable guest chat reserves no allowance');
+      const gatewayJwt=await issuer.mintIdentityJwt({audience:'cail:gateway',subject:member});
+      const memberResponse=await call('/api/jobs/member-private/chat','',{method:'POST',headers:{'x-fixture-identity':jwt,'x-fixture-gateway-identity':gatewayJwt},
+        body:JSON.stringify({messageId:'member-chat-without-guest-key',messages:[{role:'user',content:'What should I listen for?'}]})});
+      assert.equal(memberResponse.status,200);assert.match(await memberResponse.text(),/Listen for the bass/);
+      assert.equal((await stats()).gatewayCalls,1,'member chat retains its own Gateway credential');
+    }
     await sql([`UPDATE guest_sessions SET verified_day='2000-01-01' WHERE subject='${account.account.subject}'`]);
     assert.equal((await call('/api/jobs',cookieA)).status,200,'old proof preserves own reads');
     assert.equal((await submit('guest-needs-proof-0001')).status,403);

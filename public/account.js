@@ -151,7 +151,11 @@ el('access-form').addEventListener('submit', async (event) => {
       document.querySelector('h1').textContent='My guest session';
       el('account-quota').hidden=true;
       el('account-login').hidden=false;
-      el('account-allowance-help').textContent='Guests have 5 successful splits and 25 Listening Guy questions per UTC day. Pending work holds a place; failures with no usable result release it. A usable partial reply counts once. Abuse protection also applies.';
+      const chatAvailable=guest.chatAvailable===true;
+      if(!chatAvailable)el('account-chat').textContent='Listening Guy is available with CUNY Login. You can keep splitting and playing audio as a guest.';
+      el('account-allowance-help').textContent=chatAvailable
+        ? 'Guests have 5 successful splits and 25 Listening Guy questions per UTC day. Pending work holds a place; failures with no usable result release it. A usable partial reply counts once. Abuse protection also applies.'
+        : 'Guests have 5 successful splits per UTC day. Pending work holds a place; failed splits release it. Abuse protection also applies.';
       el('account-retention').textContent=`Guest access ends ${new Date(guest.expiresAt).toLocaleString()}. Ending this session or clearing its cookie removes access to saved guest work. Stored files follow the 90-day deletion policy.`;
       el('account-footer').querySelector('button').textContent='End guest session';
       const configuration=await request('/api/runtime');

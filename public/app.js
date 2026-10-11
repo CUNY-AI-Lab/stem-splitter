@@ -7,6 +7,7 @@ let runtime = { authMode: 'class-code', remixer: false, loginUrl: null };
 let jobsStorageKey = 'jobs';
 let accountSubject = null;
 let guestSessionActive = false;
+let guestChatAvailable = false;
 let accountJobs = [];
 let rackCursor = null;
 let rackLoading = false;
@@ -1541,6 +1542,13 @@ class Mixer {
     }
 
     this.coachToggle = li.querySelector('.coach-toggle');
+    if (guestSessionActive && !guestChatAvailable) {
+      li.querySelector('.coach').hidden = true;
+      const notice = document.createElement('p');
+      notice.className = 'account-help guest-coach-notice';
+      notice.textContent = 'Listening Guy is available with CUNY Login. You can keep splitting and playing audio as a guest.';
+      li.querySelector('.coach').after(notice);
+    }
     this.coachLed = li.querySelector('.coach-led');
     this.coachBody = li.querySelector('.coach-body');
     this.coachGuide = li.querySelector('.coach-guide');
@@ -4619,6 +4627,7 @@ async function initialize() {
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
     guestSessionActive=principal?.quotaClass==='guest' && principal?.role==='guest' && /^guest-[0-9a-f]{64}$/.test(principal.subject);
+    guestChatAvailable=guestSessionActive && guestState?.chatAvailable===true;
     if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;

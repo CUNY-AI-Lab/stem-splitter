@@ -19,14 +19,19 @@ export interface GuestAdapterEnv extends Env {
   GATEWAY_FALLBACK_MODEL?: string;
   CANONICAL_BASE_URL?: string;
 }
-/** Presence is a local readiness gate, not proof that Registry granted spend.
- * Every model request still receives live Registry authorization at Gateway. */
+/** Public splitting uses the existing audio provider. Listening Guy has its
+ * own optional credential and must not gate a verified guest session. */
 export function guestConfigured(env: GuestAdapterEnv): boolean {
   return env.GUEST_ENABLED === 'true' && typeof env.GUEST_COOKIE_SECRET === 'string' && env.GUEST_COOKIE_SECRET.length >= 32 && env.GUEST_COOKIE_SECRET.length <= 512
     && /^[A-Za-z0-9_-]{10,128}$/.test(env.GUEST_TURNSTILE_SITE_KEY ?? '')
     && /^[A-Za-z0-9_-]{20,512}$/.test(env.GUEST_TURNSTILE_SECRET ?? '')
-    && /^sk-cail-[A-Za-z0-9_-]{20,256}$/.test(env.GUEST_GATEWAY_API_KEY ?? '')
-    && Boolean(env.GATEWAY && env.REQUEST_LIMIT && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL));
+    && Boolean(env.REQUEST_LIMIT);
+}
+/** Presence enables the guest chat surface; Gateway still checks current
+ * Registry authorization and spending rules for each model request. */
+export function guestChatConfigured(env: GuestAdapterEnv): boolean {
+  return guestConfigured(env) && /^sk-cail-[A-Za-z0-9_-]{20,256}$/.test(env.GUEST_GATEWAY_API_KEY ?? '')
+    && Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL));
 }
 async function signingKey(env: Env) {
   if (!env.GUEST_COOKIE_SECRET || env.GUEST_COOKIE_SECRET.length < 32) throw new Error('Guest signing unavailable');
@@ -92,5 +97,6 @@ export async function startGuestSession(request: Request,env: GuestAdapterEnv): 
     } catch { /* Keep storage failures distinct from rejected verification. */ }
     return guestFailure('guest_session_unavailable',503,'The guest session could not be saved. Try again shortly.');
   }
-  return Response.json({ok:true,expiresAt,splitLimit:5,chatLimit:25},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});
+  const chatAvailable=guestChatConfigured(env);
+  return Response.json({ok:true,expiresAt,splitLimit:5,chatAvailable,chatLimit:chatAvailable?25:null},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});
 }

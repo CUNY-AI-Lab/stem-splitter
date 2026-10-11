@@ -8,7 +8,7 @@ import { http,HttpResponse } from 'msw';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 test.use({ignoreHTTPSErrors:true});
 
-test('guest browser enters through a verified check, resumes own work, conceals pending authority and switches cleanly',async({page,context})=>{
+for(const chatAvailable of [true,false])test(`guest browser splits and resumes with Listening Guy ${chatAvailable?'available':'unavailable'}`,async({page,context})=>{
   let origin='';const issuer=await createTestIdentityIssuer();
   const mp3=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
   let providerStarts=0,courseRequests=0,holdAccount=false,releaseAccount;
@@ -22,7 +22,7 @@ test('guest browser enters through a verified check, resumes own work, conceals 
   const config=JSON.parse(await readFile(new URL('./test-wrangler.jsonc',import.meta.url),'utf8'));
   const harness=createTestHarness({root:fileURLToPath(new URL('./',import.meta.url)),workers:[{config:{...config,dev:{local_protocol:'https'},
     vars:{...config.vars,TEST_BROWSER:'true',TEST_JWKS:issuer.jwksJson,GUEST_ENABLED:'true',GUEST_COOKIE_SECRET:'browser-fixture-cookie-secret-0000000000',GUEST_TURNSTILE_SITE_KEY:'fixture-site-key',
-      GUEST_TURNSTILE_SECRET:'fixture-turnstile-secret-only',GUEST_GATEWAY_API_KEY:'sk-cail-fixture-sponsor-key-only-000000',
+      GUEST_TURNSTILE_SECRET:'fixture-turnstile-secret-only',GUEST_GATEWAY_API_KEY:chatAvailable?'sk-cail-fixture-sponsor-key-only-000000':'',
       REPLICATE_API_TOKEN:'guest-fixture-token',REPLICATE_MODEL_VERSION:'guest-fixture-pin',WEBHOOK_SECRET:'guest-fixture-webhook'},
   }}]});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -48,6 +48,11 @@ test('guest browser enters through a verified check, resumes own work, conceals 
     const upload=await uploaded;expect(upload.status()).toBe(204);
     await expect(page.locator('.console-title')).toHaveText('source.wav',{timeout:20000});
     await expect(page.locator('.badge.ready')).toBeVisible({timeout:20000});
+    if(chatAvailable)await expect(page.locator('.coach-toggle')).toBeVisible();
+    else {
+      await expect(page.locator('.coach')).toBeHidden();
+      await expect(page.locator('.guest-coach-notice')).toContainText('Listening Guy is available with CUNY Login.');
+    }
     expect(providerStarts).toBe(1);
     await expect(page.locator('.share-btn:not(.to-remix-btn):not(.refresh-btn)')).toBeHidden();
     await page.reload();
@@ -55,7 +60,11 @@ test('guest browser enters through a verified check, resumes own work, conceals 
     await page.getByRole('link',{name:'My guest session',exact:true}).click();
     await expect(page.locator('#account-splits')).toContainText('1 completed');
     await expect(page.locator('#account-splits')).toContainText('of 5');
-    await expect(page.locator('#account-chat')).toContainText('of 25');
+    if(chatAvailable)await expect(page.locator('#account-chat')).toContainText('of 25');
+    else {
+      await expect(page.locator('#account-chat')).toContainText('Listening Guy is available with CUNY Login.');
+      await expect(page.locator('body')).not.toContainText('25 Listening Guy questions');
+    }
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.locator('#account-reference')).toBeHidden();
     for(const width of [320,390,768,1280]){await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}

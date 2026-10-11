@@ -22,9 +22,10 @@
       panel.setAttribute('aria-label','Guest access');
       const description=document.createElement('p');
       description.className='account-help';
-      description.textContent=state.active
-        ? 'Guest session: 5 successful splits and 25 Listening Guy questions per UTC day. Failed splits and replies with no usable output return their place.'
-        : 'Try as a guest: 5 successful splits and 25 Listening Guy questions per UTC day. Your guest work stays separate from CUNY accounts and courses.';
+      const allowance=configuration.chatAvailable === true
+        ? '5 successful splits and 25 Listening Guy questions per UTC day.'
+        : '5 successful splits per UTC day. Use CUNY Login for Listening Guy.';
+      description.textContent=(state.active ? 'Guest session: ' : 'Try as a guest: ')+allowance+' Failed splits return their place. Your guest work stays separate from CUNY accounts and courses.';
       const privacy=document.createElement('p');
       privacy.className='account-help';
       privacy.textContent='Guest access lasts 7 days in this browser. Clearing its cookie or ending the session removes access to its saved work. Guest limits are per browser session; abuse protection also applies.';
