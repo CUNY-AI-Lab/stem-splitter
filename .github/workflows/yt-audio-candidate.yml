@@ -1,0 +1,71 @@
+name: YouTube extractor candidate image
+
+on:
+  pull_request:
+    paths:
+      - 'replicate-yt-audio/**'
+      - 'scripts/lib/pin-check.mjs'
+      - '.github/workflows/yt-audio-candidate.yml'
+  push:
+    branches: [codex/stem-reliability-20261006]
+    paths:
+      - 'replicate-yt-audio/**'
+      - 'scripts/lib/pin-check.mjs'
+      - '.github/workflows/yt-audio-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stem-youtube-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: CPU extractor build and offline smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXTRACTOR_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12.13'
+      - name: Verify native runner
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(docker info --format '{{.OSType}}/{{.Architecture}}')" = linux/x86_64
+      - name: Run free extractor fixtures
+        run: python3 -m unittest discover -s replicate-yt-audio -p 'test_*.py'
+      - name: Install pinned Cog without registry authentication
+        uses: replicate/setup-cog@8a5fea3c1818b6950dcf8027285f5a9b447c0c4a # v2
+        with:
+          cog-version: 'v0.23.0'
+          token: ''
+          install-cuda: false
+      - name: Build CPU image locally on the runner
+        working-directory: replicate-yt-audio
+        run: cog build --progress plain -t "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
+      - name: Verify image dependencies, schema and setup without network access
+        run: >-
+          node replicate-yt-audio/verify-image.mjs
+          "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
+          "$EXTRACTOR_SOURCE_COMMIT"
+          "$RUNNER_TEMP/yt-audio-candidate-evidence.json"
+      - name: Preserve sanitized image evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: yt-audio-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/yt-audio-candidate-evidence.json
+          if-no-files-found: error
+          retention-days: 30
