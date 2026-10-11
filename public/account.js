@@ -31,6 +31,7 @@ window.addEventListener('focus', async () => {
 });
 async function request(path, options = {}) {
   const response = await fetch(path, { credentials: 'same-origin', ...options });
+  window.StemSessionGuard?.observe(response);
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
@@ -125,6 +126,7 @@ el('access-form').addEventListener('submit', async (event) => {
   try {
     const { account, splitAllowance } = await request('/api/account');
     subject = account.subject;
+    window.StemSessionGuard?.start(subject,()=>{users=[];subject='';});
     accountRole = account.role;
     el('account-status').textContent = '';
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
@@ -132,7 +134,7 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
     el('account-reference').hidden = false;
-    el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
+    el('account-guidance').hidden = !(['admin', 'instructor'].includes(account.role)||account.course?.owner);
     el('account-admin').hidden = account.role !== 'admin';
     if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&

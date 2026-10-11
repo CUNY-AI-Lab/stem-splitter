@@ -52,7 +52,12 @@ test('Listening Guide preserves the mixer and syncs private CUNY history across 
       await expect(secondPage.locator('.coach-archive-toggle')).toContainText('EARLIER SESSION · 2');
       await secondPage.locator('.coach-form input').fill('And now the drums?');
       await secondPage.locator('.coach-form input').press('Enter');
-      await expect(secondPage.locator('.coach-row.coach')).toContainText('Listen for the bass against the drums.');
+      // The restored archive and the current response both contain coach rows.
+      // Wait for this session's reply rather than matching the earlier one.
+      const currentReply = secondPage.getByRole('log').locator('.coach-row.coach');
+      await expect(currentReply).toHaveCount(1);
+      await expect(currentReply).toHaveText('Listen for the bass against the drums.');
+      await expect(secondPage.locator('.coach-archive .coach-row.coach')).toHaveText('Listen for the bass against the drums.');
       const captured = await server.fetch('/__fixture/gateway-messages', { headers: { 'x-fixture': 'local-only' } }).then(response => response.json());
       expect(captured.messages.map(message => message.content)).toContain('What should I listen for next?');
       expect(captured.messages.map(message => message.content)).toContain('And now the drums?');

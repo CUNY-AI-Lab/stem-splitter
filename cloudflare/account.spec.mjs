@@ -94,11 +94,11 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     available = true;
     await page.getByRole('link', { name: 'Retry', exact: true }).click();
     await expect(page).toHaveURL(url.href);
-    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'My account', exact: true })).toBeVisible();
     await page.goto(expiredLink);
     await expect(page).toHaveURL(url.href);
-    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: /sign.in/i })).toHaveCount(0);
     expect(identityChecks).toBe(3);
     expect((await context.cookies(origin)).find(cookie => cookie.name === SESSION_COOKIE)?.value).toBe(token);
@@ -135,7 +135,7 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
       } else if (path === '/api/model-quota') {
         await route.fulfill({ json: { quota: null } });
       } else if (path === '/') {
-        await route.fulfill({ contentType: 'text/html', body: '<title>STEM Splitter</title><h1>STEM Splitter</h1><a href="/auth/login">CUNY Login</a>' });
+        await route.fulfill({ contentType: 'text/html', body: '<title>Stem Splitter</title><h1>Stem Splitter</h1><a href="/auth/login">CUNY Login</a>' });
       } else {
         const response = await server.fetch(path);
         const headers = Object.fromEntries(response.headers);
@@ -152,7 +152,7 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
     await expect(page).toHaveURL(url.href);
     expect(revoked).toBe(true);
     expect((await context.cookies()).filter(cookie => [SESSION_COOKIE, LOGIN_COOKIE].includes(cookie.name))).toEqual([]);
-    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
   } finally { await server.close(); }
 });
@@ -180,7 +180,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
-    await expect(page).toHaveTitle('STEM Splitter · Account');
+    await expect(page).toHaveTitle('Stem Splitter · Account');
     await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('10 of 10 runs left today. Resets');
@@ -206,22 +206,22 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeHidden();
     await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeHidden();
-    await expect(page.getByLabel('Allow access to STEM Splitter', { exact: true })).toBeChecked();
+    await expect(page.getByLabel('Allow access to Stem Splitter', { exact: true })).toBeChecked();
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('instructor');
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toHaveAttribute('required', '');
     await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
     await page.getByLabel('Instructor access ends', { exact: true }).fill('2026-12-01T12:00');
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('student');
-    await page.getByLabel('Allow access to STEM Splitter', { exact: true }).uncheck();
+    await page.getByLabel('Allow access to Stem Splitter', { exact: true }).uncheck();
     const [update] = await Promise.all([
       page.waitForRequest(request => request.method() === 'PUT'),
       page.getByRole('button', { name: 'Save changes', exact: true }).click(),
     ]);
     expect(update.postDataJSON()).toMatchObject({ role: 'student', disabled: true, expiresAt: null });
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
-    await expect(page.getByLabel('Allow access to STEM Splitter', { exact: true })).not.toBeChecked();
-    await page.getByLabel('Allow access to STEM Splitter', { exact: true }).check();
+    await expect(page.getByLabel('Allow access to Stem Splitter', { exact: true })).not.toBeChecked();
+    await page.getByLabel('Allow access to Stem Splitter', { exact: true }).check();
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect.poll(async () => (await page.request.get(new URL('/api/admin/users', url).href)).json().then(body => body.users.find(user => user.subject === TEST_SUBJECTS.alice).disabled)).toBe(0);
 

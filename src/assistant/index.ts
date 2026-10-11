@@ -1,3 +1,5 @@
+import { coursePrompt } from '../classroom/prompts.ts';
+import { jobCourse } from '../classroom/access.ts';
 // Listening Guy orchestrators: cached guide generation + chat with validated
 // mixer tool calls, both streaming prose through an onDelta sink while the
 // caller owns the transport (SSE). Routes stay thin; everything
@@ -74,6 +76,7 @@ export function contextFromJob(
  * that has not run migration 0004) degrades to no amendment.
  */
 async function loadAmendmentState(env: Env): Promise<AmendmentState> {
+  if (env.AUTH_MODE === 'cail') return coursePrompt(env, env.ASSISTANT_COURSE_ID ?? null);
   try {
     const row = await env.DB.prepare(
       'SELECT amendment, revision FROM assistant_settings WHERE id = 1'
@@ -100,6 +103,13 @@ async function loadAmendment(env: Env): Promise<string> {
 }
 
 export async function getGuide(env: Env, jobId: string): Promise<GuideRecord | null> {
+  if (env.AUTH_MODE === 'cail') {
+    const scope = (await jobCourse(env, jobId))?.course_id ?? '';
+    const state = await coursePrompt(env, scope || null);
+    const row = await env.DB.prepare('SELECT text,model,created_at AS createdAt,fingerprint FROM course_guides WHERE job_id=? AND course_id=? AND base_version=? AND revision=?')
+      .bind(jobId, scope, SYSTEM_PROMPT_VERSION, state.revision).first<GuideRecord & { fingerprint: string }>();
+    return row && row.fingerprint === await hashSystemPromptFingerprint(state.amendment) ? { text: row.text, model: row.model, createdAt: row.createdAt } : null;
+  }
   const row = await env.DB.prepare(
     `SELECT guides.text, guides.model, guides.created_at, guides.prompt_hash,
             assistant_settings.amendment
@@ -138,6 +148,14 @@ export async function cacheGuideIfPromptCurrent(
   expectedPromptHash: string
 ): Promise<boolean> {
   if (expectedRevision === null || !/^[a-f0-9]{64}$/.test(expectedPromptHash)) return false;
+  if (env.AUTH_MODE === 'cail') {
+    const scope = env.ASSISTANT_COURSE_ID ?? '';
+    const result = await env.DB.prepare(`INSERT INTO course_guides(job_id,course_id,text,model,created_at,base_version,revision,fingerprint)
+      SELECT ?,?,?,?,?,?,?,? WHERE (?='' OR COALESCE((SELECT revision FROM course_settings WHERE course_id=?),0)=?)
+      ON CONFLICT(job_id,course_id) DO UPDATE SET text=excluded.text,model=excluded.model,created_at=excluded.created_at,base_version=excluded.base_version,revision=excluded.revision,fingerprint=excluded.fingerprint`)
+      .bind(guide.jobId,scope,guide.text,guide.model,guide.createdAt,SYSTEM_PROMPT_VERSION,expectedRevision,expectedPromptHash,scope,scope,expectedRevision).run();
+    return (result.meta.changes ?? 0)>0;
+  }
   const result = await env.DB.prepare(
     `INSERT INTO guides
        (job_id, text, model, created_at, prompt_version, prompt_revision, prompt_hash)
@@ -178,6 +196,7 @@ export async function streamGuide(
   durationSec: number | undefined,
   onDelta: (text: string) => void | Promise<void>
 ): Promise<{ guide: GuideRecord; cached: boolean }> {
+  if (env.AUTH_MODE === 'cail') env = { ...env, ASSISTANT_COURSE_ID: (await jobCourse(env, row.id))?.course_id ?? null };
   const existing = await getGuide(env, row.id);
   if (existing) return { guide: existing, cached: true };
 
@@ -247,6 +266,7 @@ export async function streamChat(
   durationSec: number | undefined,
   onDelta: (text: string) => void | Promise<void>
 ): Promise<ChatResult> {
+  if (env.AUTH_MODE === 'cail') env = { ...env, ASSISTANT_COURSE_ID: (await jobCourse(env, row.id))?.course_id ?? null };
   const ctx = contextFromJob(row, annotations, durationSec, 'chat', await loadAmendment(env));
   const stemNames = ctx.stems.map((s) => s.name);
   const messages: WireMessage[] = [{ role: 'system', content: buildSystemPrompt(ctx) }, ...turns];

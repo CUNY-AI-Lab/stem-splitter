@@ -27,6 +27,26 @@ function fixture() {
 }
 const pair = (response: Response, name: string) => response.headers.getSetCookie().find(c => c.startsWith(name + '='))!.split(';')[0];
 
+test('classroom sign-in preserves only scoped local destinations through the handoff', async () => {
+  const course = '/classroom.html?course=msh-245-the-american-musical-experience-fall-2026-01';
+  const destinations = ['/classroom.html', course, `${course}&folder=${code}`, `${course}&job=${code}`];
+  for (const next of destinations) {
+    assert.equal(safeNext(next), next);
+    const f = fixture();
+    const start = await handleAuth(f.request('/auth/login?next=' + encodeURIComponent(next)), f.env);
+    const callback = await handleAuth(f.request(`/auth/callback?code=${code}&state=${f.state()}`, {
+      headers: { Cookie: pair(start, LOGIN_COOKIE) },
+    }), f.env);
+    assert.equal(callback.status, 303);
+    assert.equal(callback.headers.get('location'), next);
+  }
+  for (const next of [`${course}&next=//attacker.test`, `${course}&folder=../../auth/logout`,
+    `${course}&folder=${code}&job=${code}`, `${course}#private`, '/classroom.html?course=search',
+    '//attacker.test/classroom.html', '/classroom.html?course=%2f%2fattacker.test', '/classroom.html?course=bad&course=good']) {
+    assert.equal(safeNext(next), '/');
+  }
+});
+
 test('browser sign-in failures offer safe recovery while JSON clients keep the auth contract', async () => {
   const f = fixture();
   const path = '/auth/callback?code=private-code&state=private-state&next=https://attacker.test';

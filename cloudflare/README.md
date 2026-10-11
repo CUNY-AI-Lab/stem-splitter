@@ -1,5 +1,15 @@
 # Cloudflare deployment
 
+## Classroom candidate — October 6, 2026
+
+The prospective course implementation and migration `0021` are described in
+[the classroom access contract](../docs/classroom-access.md). This is source and
+local/test evidence, not a deployment receipt. Historical work stays private;
+production migration, Admission release, and live acceptance require their
+separate release gates. `TODO.md` records the coordinated PR1–PR3 status.
+The [local acceptance record](../docs/acceptance/classroom-2026-10-06.md) lists
+test results, screenshots, migration rehearsal and dependency-audit limits.
+
 ## Current authority — September 29, 2026
 
 The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from

@@ -211,7 +211,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const grantRole = { method: 'PUT', body: JSON.stringify({ role: 'instructor', expiresAt: new Date(Date.now() + 60000).toISOString(), disabled: false, revision: alice.revision }) };
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, grantRole)).status, 200);
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, grantRole)).status, 409);
-    assert.equal((await call('/api/teacher/prompt')).status, 200);
+    assert.equal((await call('/api/teacher/folders')).status, 200);
     const permanentBody = { role: 'instructor', expiresAt: null, disabled: false, revision: alice.revision + 1 };
     for (const expiresAt of [undefined, '', 'invalid', false, 0, new Date(Date.now() - 1000).toISOString()]) {
       assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ ...permanentBody, expiresAt }) })).status, 400);
@@ -226,9 +226,9 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(updated.role_expires_at, null);
     assert.equal(updated.revision, alice.revision + 2);
     assert.equal((await (await call('/api/account')).json()).account.role, 'instructor');
-    assert.equal((await call('/api/teacher/prompt')).status, 200);
+    assert.equal((await call('/api/teacher/folders')).status, 200);
     assert.equal((await call('/api/admin/users')).status, 403);
-    assert.equal((await call('/api/teacher/prompt', 1)).status, 403);
+    assert.equal((await call('/api/teacher/folders', 1)).status, 403);
     // The existing immutable trigger records the explicit permanent grant.
     const audit = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify([
       'CREATE TABLE audit_check (ok INTEGER CHECK (ok = 1))',

@@ -2,11 +2,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor</title>
-<link rel="stylesheet" href="/styles.css?v=20261003-account-links" />
+<link rel="stylesheet" href="/styles.css?v=20261006-classroom" />
 
 <div class="grain" aria-hidden="true"></div>
 
 <main class="teacher-main">
+  <nav class="top-return"><a class="account-button" href="/">Back to Splitter</a></nav>
   <header class="masthead">
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab">
       <img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" />
@@ -30,6 +31,7 @@
     </form>
   </section>
 
+  <section id="teacher-courses" class="course-context" hidden><label>Course <select id="teacher-course"></select></label><a id="teacher-roster" class="account-button" href="/classroom.html">Course roster and conversations</a></section>
   <section id="console-panel" class="teacher-panel" hidden>
     <div class="teacher-bar">
       <span id="teacher-who" class="mono"></span>
@@ -38,7 +40,7 @@
 
     <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="class-guidance-title">
       <p class="account-help">System prompt instructions for Listening Guide.</p>
-      <p class="account-help">Applies across STEM Splitter, not just one class.</p>
+      <p class="account-help">Applies only to the selected course. Personal work uses the fixed system prompt.</p>
       <span id="effective-prompt-meta" hidden></span>
 
       <form id="prompt-form" class="teacher-form">
@@ -68,6 +70,7 @@
         </div>
         <p id="prompt-status" class="mono teacher-status" hidden></p>
       </form>
+      <button type="button" id="prompt-reload" class="account-button" hidden>Retry loading instructions</button>
     </section>
 
     <details id="preview-wrap" class="teacher-preview" hidden>
@@ -126,6 +129,8 @@
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
     <p><a href="/">&larr; Back to Splitter</a></p>
   </footer>
+  <div class="bottom-help"><hr><a href="mailto:ailab@gc.cuny.edu">Having trouble?</a><hr></div>
 </main>
 
-<script src="/teacher.js?v=teacher-20260929-account-gaps"></script>
+<script src="/session-guard.js?v=20261006-classroom"></script>
+<script src="/teacher.js?v=20261006-classroom"></script>

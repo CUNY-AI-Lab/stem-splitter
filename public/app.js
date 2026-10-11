@@ -9,6 +9,7 @@ let accountSubject = null;
 let accountJobs = [];
 let rackCursor = null;
 let rackLoading = false;
+let selectedCourse = 'personal';
 
 // Solo has two stages on purpose, and this is the quiet one: the rest of the
 // band drops back instead of disappearing, so you hear a part in its place
@@ -204,16 +205,22 @@ async function ensureClassCode() {
 }
 
 async function api(path, options = {}) {
+  if (runtime.authMode === 'cail' && selectedCourse !== 'personal' && options.method === 'POST' && ['/api/uploads','/api/jobs'].includes(path)) {
+    if (!document.getElementById('course-consent').checked) throw new Error('Confirm the course visibility notice before creating course work.');
+    if (path === '/api/jobs') options = { ...options, body: JSON.stringify({ ...JSON.parse(options.body || '{}'), coursePolicy:'course-work-v1' }) };
+  }
   const res = await fetch(path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'x-class-code': getClassCode(),
+      ...(runtime.authMode==='cail'?{'x-stem-course':selectedCourse}:{}),
       ...(options.headers || {}),
     },
   });
+  window.StemSessionGuard?.observe(res);
   if (res.status === 401) {
-    if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
+    if (runtime.authMode === 'cail') throw Object.assign(new Error('Sign in with CUNY Login to continue.'),{status:401});
     localStorage.removeItem('classCode');
     void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
@@ -223,7 +230,7 @@ async function api(path, options = {}) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
     throw new Error(`You've used today's runs. You can split again ${reset}.`);
   }
-  if (!res.ok) throw new Error(body.error?.message || body.error || `Request failed (${res.status})`);
+  if (!res.ok) throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`),{status:res.status});
   return body;
 }
 
@@ -237,8 +244,9 @@ async function streamApi(path, body, onEvent, signal) {
     body: JSON.stringify(body),
     signal,
   });
+  window.StemSessionGuard?.observe(res);
   if (res.status === 401) {
-    if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
+    if (runtime.authMode === 'cail') throw Object.assign(new Error('Sign in with CUNY Login to continue.'),{status:401});
     localStorage.removeItem('classCode');
     void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
@@ -1277,7 +1285,8 @@ async function diagnoseUploadFailure(file) {
   }
   try {
     const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
-    if (res.status === 401) {
+    window.StemSessionGuard?.observe(res);
+  if (res.status === 401) {
       if (runtime.authMode === 'cail') return 'Upload failed — sign in with CUNY Login and try again.';
       localStorage.removeItem('classCode');
       void ensureClassCode();
@@ -1377,6 +1386,7 @@ class Mixer {
       </div>
       <div class="console-sub mono">
         <span class="split-meta"></span>
+        <button type="button" class="refresh-btn">Refresh</button><span class="refresh-status" role="status"></span>
         <button class="share-btn to-remix-btn" title="Stack this split's layers on the Remixer deck">SEND TO REMIXER ⤳</button>
         <button class="share-btn" title="Anyone with this link can listen. Notes and conversations stay private.">COPY LINK</button>
       </div>
@@ -1471,6 +1481,7 @@ class Mixer {
       } catch { showUploadMessage('Could not stop sharing. Please try again.', true); }
     });
     this.folderBtn = li.querySelector('.folder-btn');
+    if (this.job.courseId && this.job.permissions?.instructor) this.folderBtn.style.display='inline-block';
     this.folderBtn.addEventListener('click', () => {
       const actionsWereOpen = this.el.classList.contains('actions-open');
       toggleFolderMenu(this);
@@ -1488,7 +1499,7 @@ class Mixer {
     this.splitMetaEl = li.querySelector('.split-meta');
     this.toRemixBtn = li.querySelector('.to-remix-btn');
     this.toRemixBtn.addEventListener('click', () => sendJobToRemixer(this.job));
-    this.shareBtn = li.querySelector('.share-btn:not(.to-remix-btn)');
+    this.shareBtn = li.querySelector('.share-btn:not(.to-remix-btn):not(.refresh-btn)');
     this.shareBtn.addEventListener('click', () => this.copyLink());
     this.rateGroup = li.querySelector('.rate');
     this.loopRegion = li.querySelector('.loop-region');
@@ -1576,7 +1587,9 @@ class Mixer {
       row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
       row.innerHTML = `
         <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
-        <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="meter"><canvas class="waveform" aria-hidden="true"></canvas><i></i><i></i><i></i><i></i><i></i>
+          <input class="waveform-seek" type="range" min="0" max="1000" value="0" disabled aria-label="${esc(this.label(stem.name))} waveform position in ${esc(this.job.filename)}" title="Click or drag to seek all stems" />
+        </span>
         <span class="ch-actions">
           <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
           <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
@@ -1595,6 +1608,7 @@ class Mixer {
         bars: [...row.querySelectorAll('.meter i')],
         levels: new Float32Array(METER_BANDS.length),
         waveform: row.querySelector('.waveform'),
+        seek: row.querySelector('.waveform-seek'),
         waveformStatus: 'idle',
         waveformPeaks: null,
         mixGain: 1,
@@ -1605,7 +1619,9 @@ class Mixer {
       );
       soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
       audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
-      audio.addEventListener('loadedmetadata', () => this.loadWaveforms());
+      audio.addEventListener('loadedmetadata', () => { this.loadWaveforms(); this.paint(); });
+      audio.addEventListener('durationchange', () => this.paint());
+      audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
 
       const nameEl = row.querySelector('.ch-name');
       nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
@@ -1634,57 +1650,25 @@ class Mixer {
 
     this.playBtn.addEventListener('click', () => (this.playing || this.starting ? this.pause() : this.play()));
 
-    // Preview while dragging; seek every stem only when the gesture finishes.
-    // Native range event ordering differs across browsers. A late input or a
-    // missing change must never leave the display permanently in preview mode.
+    // Every waveform and the main slider share the same native-range lifecycle.
     this.scrubbing = false;
-    this.seek.addEventListener('pointerdown', (event) => {
-      this.endScrub(false);
-      this.scrubbing = true;
-      this.scrubPointer = event.pointerId;
-      // Let the native range own pointer capture. Observe releases outside the
-      // element too, without taking capture away from its browser-native thumb.
-      this.scrubEvents = new AbortController();
-      const options = { capture: true, signal: this.scrubEvents.signal };
-      window.addEventListener('pointerup', (e) => {
-        if (e.pointerId === this.scrubPointer) this.queueScrubEnd();
-      }, options);
-      window.addEventListener('pointercancel', (e) => {
-        if (e.pointerId === this.scrubPointer) this.endScrub(false);
-      }, options);
-      window.addEventListener('blur', (event) => {
-        if (event.target === window) this.endScrub(false);
-      }, options);
-    });
-    this.seek.addEventListener('pointerup', () => this.queueScrubEnd());
-    this.seek.addEventListener('pointercancel', () => this.endScrub(false));
-    this.seek.addEventListener('lostpointercapture', () => this.queueScrubEnd());
-    this.seek.addEventListener('blur', () => this.endScrub(true));
-    // Recover a lost release before the next mixer interaction.
-    li.addEventListener('pointerdown', (event) => {
-      if (event.target !== this.seek && this.scrubbing) this.endScrub(true);
-    }, true);
-    this.seek.addEventListener('input', () => {
-      this.scrubbing = true;
-      const t = (this.seek.value / 1000) * (master.duration || 0);
-      this.scrubTarget = t;
-      this.seek.style.setProperty('--fill', `${this.seek.value / 10}%`);
-      this.tcNow.textContent = fmt(t);
-      for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
-      // Keyboard/assistive input has no pointer lifecycle. Give native change
-      // its turn, then commit even if that event is absent.
-      if (this.scrubPointer == null) this.queueScrubEnd();
-    });
-    this.seek.addEventListener('change', () => {
-      this.scrubTarget = (this.seek.value / 1000) * (master.duration || 0);
-      this.endScrub(true);
-    });
+    this.seekControls = [this.seek, ...[...this.channelsByName.values()].map(channel => channel.seek)];
+    for (const control of this.seekControls) this.bindSeekControl(control);
+    this.paint();
 
+    this.refreshBtn=li.querySelector('.refresh-btn');
+    this.refreshStatus=li.querySelector('.refresh-status');
+    this.refreshBtn.addEventListener('click',()=>void this.refresh());
     this.bindKeys(li);
     this.renderSplitMeta();
     this.applyMix();
     this.renderNotes();
     this.renderGuide();
+    if (this.job.permissions && !this.job.permissions.owner) {
+      for(const node of li.querySelectorAll('.coach,.folder-btn,.export-btn,.unshare-btn,.share-btn:not(.refresh-btn),.to-remix-btn')) node.hidden=true;
+      li.querySelector('.note-btn').hidden=!this.job.permissions.comment;
+      this.folderBtn.hidden=!this.job.permissions.instructor;
+    }
     if (this.job.readOnlyShared) {
       li.classList.add('shared');
       const notice = document.createElement('p');
@@ -1816,6 +1800,7 @@ class Mixer {
     // invisible stale menu instead of opening a fresh one.
     if (collapsed) this.el.querySelector('.folder-menu')?.remove();
     if (this.el.classList.contains('collapsed') === collapsed) return;
+    if (collapsed) this.endScrub(false);
     if (collapsed && (this.playing || this.starting)) this.pause();
     this.setActionsOpen(false);
     this.el.classList.toggle('collapsed', collapsed);
@@ -1841,13 +1826,14 @@ class Mixer {
     }
     if (this.annotations.length) {
       lines.push('## Notes', '');
-      for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text}`);
+      for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text} (${note.authorName || 'Author unavailable'})`);
       lines.push('');
     }
     if (runtime.authMode === 'cail' && this.conversationEntries.length) {
       lines.push('## Listening Guy conversation', '');
       for (const entry of this.conversationEntries) {
-        if (entry.kind === 'action') lines.push(`- Mixer action: ${entry.text}`, '');
+        if (entry.kind === 'status') lines.push(`- Conversation status: ${entry.text}`, '');
+        else if (entry.kind === 'action') lines.push(`- Mixer action: ${entry.text}`, '');
         else lines.push(`**${entry.kind === 'you' ? 'You' : 'Listening Guy'}:** ${entry.text}`, '');
       }
     } else if (this.chatHistory.length) {
@@ -1865,7 +1851,16 @@ class Mixer {
     this.exportBtn.textContent = 'PACKING…';
     let saved = false;
     try {
-      if (runtime.authMode === 'cail') await this.loadConversation();
+      if (runtime.authMode === 'cail') {
+        await this.loadConversation();
+        if(this.durableConversation){
+          const all=[];let cursor=null;let revision;
+          do{const page=await api(`/api/jobs/${this.job.id}/listening-conversation`+(cursor?`?cursor=${encodeURIComponent(cursor)}&revision=${revision}`:''));
+            all.push(...page.entries);revision=page.revision;cursor=page.nextCursor;
+          }while(cursor);
+          this.conversationEntries=all;this.conversationRevision=revision;
+        }
+      }
       const entries = [];
       const used = new Set();
       for (const stem of this.job.stems) {
@@ -2130,6 +2125,8 @@ class Mixer {
   }
 
   disposeWaveforms() {
+    this.disposed = true;
+    this.endScrub(false);
     this.waveformAbort.abort();
     this.waveformObserver.disconnect();
     this.waveformResize.disconnect();
@@ -2203,10 +2200,7 @@ class Mixer {
   paint() {
     if (this.scrubbing) return; // don't fight the user's drag
     const master = this.audios[0];
-    const dur = Number.isFinite(master.duration) ? master.duration : 0;
-    const pct = dur ? (master.currentTime / dur) * 1000 : 0;
-    this.seek.value = pct;
-    this.seek.style.setProperty('--fill', `${pct / 10}%`);
+    this.paintSeekControls(master.currentTime);
     this.tcNow.textContent = fmt(master.currentTime);
     for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
   }
@@ -2216,7 +2210,7 @@ class Mixer {
   }
 
   editLabel(stemName, nameEl) {
-    if (this.job.readOnlyShared || this.labelSaving || !nameEl.isConnected) return;
+    if (this.job.readOnlyShared || this.job.permissions?.owner===false || this.labelSaving || !nameEl.isConnected) return;
     const input = document.createElement('input');
     input.className = 'ch-name-input';
     input.maxLength = 40;
@@ -2262,6 +2256,78 @@ class Mixer {
     input.addEventListener('blur', () => done(true));
   }
 
+  seekDuration() {
+    // A displayed/decoded waveform is not proof that each media clock is ready.
+    // Never write NaN/Infinity or start a partial multi-stem seek during loading.
+    if (this.disposed || !this.audios.every(audio => Number.isFinite(audio.duration) && audio.duration > 0 && !audio.error)) return 0;
+    return this.audios[0].duration;
+  }
+
+  paintSeekControls(time) {
+    const duration = this.seekDuration();
+    const bounded = duration && Number.isFinite(time) ? Math.max(0, Math.min(time, duration)) : 0;
+    const value = duration ? bounded / duration * 1000 : 0;
+    for (const control of this.seekControls || []) {
+      control.disabled = !duration;
+      control.value = value;
+      control.setAttribute('aria-valuetext', duration ? `${fmt(bounded)} of ${fmt(duration)}` : 'Audio is loading');
+    }
+    this.seek.style.setProperty('--fill', `${value / 10}%`);
+  }
+
+  bindSeekControl(control) {
+    const active = () => this.scrubControl === control;
+    control.addEventListener('pointerdown', event => {
+      if (control.disabled || event.button !== 0 || (event.pointerType && !event.isPrimary)) return;
+      this.endScrub(false);
+      this.scrubbing = true;
+      this.scrubControl = control;
+      this.scrubPointer = event.pointerId;
+      // The native range retains pointer capture for mouse, pen and touch.
+      // These shared listeners recover outside releases and interrupted gestures.
+      this.scrubEvents = new AbortController();
+      const options = { capture: true, signal: this.scrubEvents.signal };
+      window.addEventListener('pointerup', event => {
+        if (event.pointerId === this.scrubPointer) this.queueScrubEnd();
+      }, options);
+      window.addEventListener('pointercancel', event => {
+        if (event.pointerId === this.scrubPointer) this.endScrub(false);
+      }, options);
+      window.addEventListener('pointerdown', event => {
+        if (event.target !== control) this.endScrub(true);
+      }, options);
+      window.addEventListener('blur', event => {
+        if (event.target === window) this.endScrub(false);
+      }, options);
+    });
+    control.addEventListener('pointerup', () => { if (active()) this.queueScrubEnd(); });
+    control.addEventListener('pointercancel', () => { if (active()) this.endScrub(false); });
+    control.addEventListener('lostpointercapture', () => { if (active()) this.queueScrubEnd(); });
+    control.addEventListener('blur', () => { if (active()) this.endScrub(true); });
+    control.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && active()) { event.preventDefault(); this.endScrub(false); }
+    });
+    const preview = () => {
+      if (control.disabled || (this.scrubControl && !active())) return false;
+      const duration = this.seekDuration();
+      if (!duration) { this.endScrub(false); return false; }
+      this.scrubControl = control;
+      this.scrubbing = true;
+      this.scrubTarget = Number(control.value) / 1000 * duration;
+      this.paintSeekControls(this.scrubTarget);
+      this.tcNow.textContent = fmt(this.scrubTarget);
+      for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
+      return true;
+    };
+    control.addEventListener('input', () => {
+      if (!preview()) return;
+      // Keyboard/assistive input has no pointer lifecycle. Native change gets
+      // its turn before the fallback commit, just as on the main slider.
+      if (this.scrubPointer == null) this.queueScrubEnd();
+    });
+    control.addEventListener('change', () => { if (preview()) this.endScrub(true); });
+  }
+
   queueScrubEnd() {
     clearTimeout(this.scrubTimer);
     // Wait until native range release/change processing has completed before
@@ -2275,6 +2341,7 @@ class Mixer {
     this.scrubEvents?.abort();
     this.scrubEvents = null;
     this.scrubPointer = null;
+    this.scrubControl = null;
     this.scrubTarget = null;
     this.scrubbing = false;
     if (commit && Number.isFinite(target)) this.seekTo(target);
@@ -2284,15 +2351,16 @@ class Mixer {
   seekTo(t) {
     if (!Number.isFinite(t)) return;
     this.endScrub(false);
+    const duration = this.seekDuration();
+    if (!duration) return;
     this.clockProgress = null;
-    const duration = this.audios[0].duration;
-    t = Math.max(0, Number.isFinite(duration) ? Math.min(t, duration) : t);
+    t = Math.max(0, Math.min(t, duration));
     for (const a of this.audios) {
       // Seeks can land while paused (Listening Guide tool calls do this a lot) — start
       // buffering the target region now so play() finds data ready instead of
       // six stems stalling at once.
       if (a.preload !== 'auto') a.preload = 'auto';
-      a.currentTime = t;
+      a.currentTime = Math.min(t, a.duration);
     }
     this.paint();
   }
@@ -2306,7 +2374,7 @@ class Mixer {
       m.className = 'marker';
       m.style.left = `${Math.min(100, (note.atSeconds / dur) * 100)}%`;
       m.setAttribute('aria-label', `Note at ${fmt(note.atSeconds)}: ${note.text}`);
-      m.title = `${fmt(note.atSeconds)} — ${note.text}`;
+      m.title = `${fmt(note.atSeconds)} — ${note.text} (${note.authorName || 'Author unavailable'})`;
       m.addEventListener('click', () => {
         this.seekTo(note.atSeconds);
         this.flashNote(note.id);
@@ -2390,6 +2458,7 @@ class Mixer {
   // Always-visible list of every annotation under the channels — read them
   // all without touching playback; the timecode is the deliberate "jump" act.
   renderNotes() {
+    const edits=new Map([...this.notes.querySelectorAll('.note-edit-form')].map(form=>[form.parentElement.dataset.id,{form,focused:form.contains(document.activeElement)}]));
     this.notes.innerHTML = '';
     this.notes.hidden = this.annotations.length === 0;
     for (const note of this.annotations) {
@@ -2398,16 +2467,33 @@ class Mixer {
       row.dataset.id = note.id;
       row.innerHTML = `
         <button class="note-time mono" title="Jump to this moment">${fmt(note.atSeconds)}</button>
-        <span class="note-text">${esc(note.text)}</span>
+        <span class="note-text">${esc(note.text)}<small class="note-author">${esc(note.authorName || 'Author unavailable')}</small></span>
         <button class="note-loop" data-at="${note.atSeconds}" aria-pressed="false" aria-label="Loop from this note to the next" title="Loop from here to the next note">↻</button>
+        <button class="note-edit" aria-label="Edit note" title="Edit note">Edit</button>
         <button class="note-del" aria-label="Delete note" title="Delete note">✕</button>
       `;
       row.querySelector('.note-time').addEventListener('click', () => this.seekTo(note.atSeconds));
       row.querySelector('.note-loop').addEventListener('click', () => this.loopFromNote(note));
+      row.querySelector('.note-edit').hidden=runtime.authMode!=='cail'||note.canDelete===false;
+      row.querySelector('.note-edit').addEventListener('click',()=>this.editNote(note,row));
+      row.querySelector('.note-del').hidden=note.canDelete===false;
       row.querySelector('.note-del').addEventListener('click', () => this.deleteNote(note));
       this.notes.appendChild(row);
+      const edit=edits.get(note.id);
+      if(edit&&note.canDelete!==false){row.append(edit.form);if(edit.focused)edit.form.querySelector('input').focus({preventScroll:true});}
     }
     this.renderLoop();
+  }
+
+  editNote(note,row) {
+    if(note.canDelete===false||row.querySelector('form'))return;
+    const form=document.createElement('form');form.className='note-edit-form';
+    const input=document.createElement('input');input.maxLength=200;input.value=note.text;input.setAttribute('aria-label','Edit note text');
+    const save=document.createElement('button');save.type='submit';save.textContent='Save';
+    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.addEventListener('click',()=>form.remove());
+    form.append(input,save,cancel);row.append(form);input.focus();
+    input.addEventListener('keydown',event=>{if(event.key==='Escape')form.remove();});
+    form.addEventListener('submit',async event=>{event.preventDefault();save.disabled=true;try{const result=await api(`/api/jobs/${this.job.id}/annotations/${note.id}`,{method:'PUT',body:JSON.stringify({text:input.value})});const current=this.annotations.find(item=>item.id===note.id);if(current)current.text=result.text;form.remove();this.renderNotes();}catch(error){showUploadMessage(error.message,true);save.disabled=false;}});
   }
 
   async deleteNote(note) {
@@ -2435,7 +2521,7 @@ class Mixer {
   }
 
   addNote() {
-    if (this.job.readOnlyShared) return;
+    if (this.job.readOnlyShared || this.job.permissions?.comment===false) return;
     if (this.el.querySelector('.note-form')) return;
     const t = this.audios[0].currentTime;
     const form = document.createElement('form');
@@ -2483,19 +2569,33 @@ class Mixer {
   // Labels, notes, and the guide are class-wide; this pulls in whatever other
   // students have added since the page loaded. Read-only, so no class code.
   async refresh() {
-    if (this.job.readOnlyShared) return;
+    if(this.refreshBusy)return;
+    const sequence=(this.refreshSequence||0)+1;this.refreshSequence=sequence;this.refreshBusy=true;
+    this.refreshBtn.disabled=true;this.refreshStatus.textContent='Refreshing…';
+    const focus=document.activeElement;
     try {
-      const res = await fetch(`/api/jobs/${this.job.id}`);
-      if (!res.ok) return;
-      const state = await res.json();
-      jobStates.set(this.job.id, state);
-      this.merge(state);
-    } catch {
-      // Offline or a blip — the panel keeps whatever it already had.
+      const path=this.job.readOnlyShared?`/api/shared-jobs/${this.job.id}`:`/api/jobs/${this.job.id}`;
+      const state=await api(path,{signal:AbortSignal.timeout(15000),cache:'no-store'});
+      if(sequence!==this.refreshSequence||!this.el.isConnected)return;
+      jobStates.set(this.job.id,state);this.merge(state);
+      this.refreshStatus.textContent=`Updated ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`;
+    } catch(error) {
+      if(sequence!==this.refreshSequence)return;
+      this.refreshStatus.textContent=[401,403,404].includes(error.status)?'Access ended. Sign in or ask your instructor.':'Could not refresh. Your draft and mixer settings are safe.';
+      if([401,403,404].includes(error.status)) {
+        this.pause();this.annotations=[];this.renderNotes();this.renderMarkers();
+        this.job.permissions={owner:false,comment:false};
+        for(const node of this.el.querySelectorAll('.note-btn,.coach,.export-btn,.folder-btn'))node.hidden=true;
+      }
+    } finally {
+      if(sequence===this.refreshSequence){this.refreshBusy=false;this.refreshBtn.disabled=false;}
+      if(focus?.isConnected&&focus!==this.refreshBtn&&document.activeElement===document.body)focus.focus({preventScroll:true});
     }
   }
 
   merge(state) {
+    if(state.permissions){this.job.permissions=state.permissions;this.el.querySelector('.note-btn').hidden=!state.permissions.comment;}
+    if(state.courseId)this.job.courseId=state.courseId;
     if (state.labels) {
       this.job.labels = state.labels;
       this.renderChannelNames();
@@ -2517,6 +2617,7 @@ class Mixer {
       if (!nameEl) continue; // a rename is open in this strip — leave it alone
       nameEl.textContent = this.label(name);
       channel.muteBtn.setAttribute('aria-label', `Mute ${this.label(name)}`);
+      channel.seek.setAttribute('aria-label', `${this.label(name)} waveform position in ${this.job.filename}`);
     }
   }
 
@@ -2620,7 +2721,10 @@ class Mixer {
     this.conversationLoading = (async () => {
       try {
         const result = await api(`/api/jobs/${this.job.id}/listening-conversation`, { signal: AbortSignal.timeout(15000) });
+        this.durableConversation=result.mode==='durable';
         this.conversationEntries = Array.isArray(result.entries) ? result.entries : [];
+        this.conversationNextCursor=result.nextCursor;
+        if(this.durableConversation&&result.nextCursor)this.addConversationMore();
         this.conversationRevision = Number(result.revision) || 0;
         this.conversationLoaded = true;
         this.chatHistory = this.conversationEntries
@@ -2644,9 +2748,23 @@ class Mixer {
     return this.conversationLoading;
   }
 
+  addConversationMore() {
+    if(this.conversationMore)return;
+    const button=document.createElement('button');button.type='button';button.className='account-button';button.textContent='Load more conversation';
+    this.coachArchive.after(button);this.conversationMore=button;
+    button.addEventListener('click',async()=>{
+      button.disabled=true;
+      try{const page=await api(`/api/jobs/${this.job.id}/listening-conversation?cursor=${encodeURIComponent(this.conversationNextCursor)}&revision=${this.conversationRevision}`);
+        this.conversationEntries.push(...page.entries);this.conversationNextCursor=page.nextCursor;this.renderArchive();button.hidden=!page.nextCursor;
+      }catch(error){this.conversationSaveStatus.hidden=false;this.conversationSaveStatus.textContent=error.message;}
+      finally{button.disabled=false;}
+    });
+  }
+
   // Account mode writes the transcript to the signed-in CUNY subject. Legacy
   // class-code mode retains its browser-only archive behavior.
   logChatEntry(kind, text) {
+    if(this.durableConversation)return;
     if (runtime.authMode === 'cail') {
       this.conversationEntries = [...this.conversationEntries, { kind, text }].slice(-60);
       this.queueConversationSave();
@@ -2692,10 +2810,11 @@ class Mixer {
     this.coachArchive.hidden = false;
     this.archiveToggle.innerHTML = `<span class="coach-caret">▾</span>EARLIER SESSION · ${entries.length}`;
     for (const entry of entries) {
-      const kind = entry.kind === 'you' || entry.kind === 'action' ? entry.kind : 'coach';
+      const kind = ['you','action','status'].includes(entry.kind) ? entry.kind : 'coach';
       const row = document.createElement('div');
       row.className = `coach-row ${kind}`;
-      if (kind === 'action') row.innerHTML = `<span class="coach-chip mono">${esc(String(entry.text))}</span>`;
+      if (kind === 'status') row.textContent = `Conversation status: ${entry.text}`;
+      else if (kind === 'action') row.innerHTML = `<span class="coach-chip mono">${esc(String(entry.text))}</span>`;
       else if (kind === 'you') row.textContent = String(entry.text);
       else row.innerHTML = coachHtml(String(entry.text));
       this.archiveLog.appendChild(row);
@@ -2713,7 +2832,7 @@ class Mixer {
       try {
         await this.conversationLoading?.catch(() => {});
         await this.conversationSaveQueue;
-        const reset = await api(`/api/jobs/${this.job.id}/listening-conversation`, { method: 'DELETE', signal: AbortSignal.timeout(15000) });
+        const reset = await api(`/api/jobs/${this.job.id}/listening-conversation`, { method: 'DELETE', signal: AbortSignal.timeout(15000), ...(this.durableConversation?{body:JSON.stringify({revision:this.conversationRevision})}:{}) });
         this.conversationEntries = [];
         this.conversationRevision = reset.revision;
         this.conversationLoaded = true;
@@ -2736,6 +2855,7 @@ class Mixer {
       // Storage blocked — the in-memory reset above still holds for this page.
     }
     this.coachArchive.hidden = true;
+    if(this.conversationMore){this.conversationMore.remove();this.conversationMore=null;}
     this.archiveLog.hidden = true;
     this.archiveLog.innerHTML = '';
     this.archiveToggle.setAttribute('aria-expanded', 'false');
@@ -2781,7 +2901,7 @@ class Mixer {
     try {
       await streamApi(
         `/api/jobs/${this.job.id}/chat`,
-        { messages: this.chatHistory, durationSec: this.duration() },
+        { messages: this.chatHistory, durationSec: this.duration(), ...(this.durableConversation?{messageId:crypto.randomUUID(),revision:this.conversationRevision}:{}) },
         (ev) => {
           if (ev.type === 'delta') {
             if (!row) {
@@ -2796,6 +2916,8 @@ class Mixer {
           } else if (ev.type === 'done') {
             finalText = ev.text || acc;
             finishReason = ev.finishReason || 'stop';
+            if(Number.isSafeInteger(ev.revision))this.conversationRevision=ev.revision;
+            if(ev.notesChanged)void this.refresh();
           }
         }, this.coachAbort.signal
       );
@@ -2820,6 +2942,7 @@ class Mixer {
       typing.remove();
       if (row && !acc) row.remove();
       if (row) row.classList.remove('streaming');
+      if(this.durableConversation)this.conversationLoaded=false;
       this.addChatRow('error', esc(err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message));
       if (runtime.authMode === 'cail') await this.conversationSaveQueue;
     }
@@ -3146,6 +3269,7 @@ async function loadWholeFolder(folder, button) {
 // The "+ FOLDER" popover on a finished console: pick an existing folder or
 // name a new one; either way the split is saved server-side for the teacher.
 function toggleFolderMenu(mixer) {
+  if(runtime.authMode==='cail'&&mixer.job.courseId){location.assign(`/classroom.html?course=${encodeURIComponent(mixer.job.courseId)}&job=${encodeURIComponent(mixer.job.id)}`);return;}
   const existing = mixer.el.querySelector('.folder-menu');
   if (existing) {
     existing.remove();
@@ -3261,6 +3385,7 @@ async function loadAccountJobs(more = false) {
   emptyState.hidden = true;
   try {
     const response = await fetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`);
+    window.StemSessionGuard?.observe(response);
     if (response.status === 401 || response.status === 403) { location.assign('/account.html'); return; }
     if (!response.ok) throw new Error('load');
     const result = await response.json();
@@ -3522,8 +3647,8 @@ function pollSoon() {
 
 const STATIONS = {
   splitter: {
-    word: 'SPLITTER',
-    tagline: 'Split a song apart. Listen one layer at a time. Annotate as you go.',
+    word: 'Splitter',
+    tagline: 'Split apart a song, listen one layer at a time, annotate as you go.',
   },
   remixer: {
     word: 'REMIXER',
@@ -4260,7 +4385,7 @@ async function addTake(chunks, manifest) {
   const ext = type.includes('mp4') ? 'm4a' : 'webm';
   const name = `${fileSafe(manifest.title) || 'remix'}-take-${String(takeNumber).padStart(2, '0')}.${ext}`;
   const url = URL.createObjectURL(blob);
-  const credits = `STEM Splitter remix\n\nLicense: ${manifest.licenseUrl}\n${manifest.nonCommercial ? 'Noncommercial use only.\n' : ''}\n${manifest.sources.map((s) => `${s.title}\n${s.creator}\n${s.sourceUrl}\n${s.licenseUrl}\nFile: ${s.fileName}\n`).join('\n')}\n${manifest.changes}\n`;
+  const credits = `Stem Splitter remix\n\nLicense: ${manifest.licenseUrl}\n${manifest.nonCommercial ? 'Noncommercial use only.\n' : ''}\n${manifest.sources.map((s) => `${s.title}\n${s.creator}\n${s.sourceUrl}\n${s.licenseUrl}\nFile: ${s.fileName}\n`).join('\n')}\n${manifest.changes}\n`;
   const bundle = makeZip([
     { name, data: new Uint8Array(await blob.arrayBuffer()) },
     { name: 'ATTRIBUTION.txt', data: new TextEncoder().encode(credits) },
@@ -4419,6 +4544,18 @@ function fmt(sec) {
 // --- init -------------------------------------------------------------
 window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail') location.reload(); });
 
+async function loadCourseOptions() {
+  const wrapper=document.getElementById('course-context'),select=document.getElementById('course-select');
+  try {
+    let cursor=null;
+    do{const page=await api('/api/classroom/courses'+(cursor?`?cursor=${encodeURIComponent(cursor)}`:''));
+      for(const course of page.courses)select.add(new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId));cursor=page.nextCursor;
+    }while(cursor);
+    wrapper.hidden=false;
+    select.addEventListener('change',()=>{selectedCourse=select.value;document.getElementById('course-disclosure').hidden=selectedCourse==='personal';document.getElementById('course-consent').checked=false;});
+  }catch{wrapper.hidden=true;}
+}
+
 async function initialize() {
   try {
     const response = await fetch('/api/runtime');
@@ -4451,11 +4588,13 @@ async function initialize() {
     if (principal && /^cail-[0-9a-f]{32}$/.test(principal.subject)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
+      window.StemSessionGuard?.start(accountSubject,()=>{for(const mixer of mixers.values()){mixer.pause();mixer.disposeWaveforms();}mixers.clear();jobStates.clear();accountJobs=[];accountSubject=null;selectedCourse='personal';},()=>{for(const mixer of mixers.values()){mixer.pause();mixer.coachAbort?.abort();}});
       const link = document.createElement('a');
       link.className = 'account-button';
       link.href = '/account.html';
       link.textContent = 'My account';
       account.append(link);
+      void loadCourseOptions();
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
@@ -4476,11 +4615,4 @@ async function initialize() {
   else if (runtime.authMode !== 'cail') void pollActiveJobs().then(adoptSharedJob);
   else void adoptSharedJob();
 }
-window.addEventListener('focus', async () => {
-  if (!accountSubject) return;
-  try {
-    const response = await fetch('/api/account');
-    if (response.status === 401 || response.status === 403 || (response.ok && (await response.json()).account?.subject !== accountSubject)) location.reload();
-  } catch { /* An outage is not a new identity. */ }
-});
 void initialize();
