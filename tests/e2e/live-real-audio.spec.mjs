@@ -90,8 +90,8 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
     await page.locator('#file-input').setInputFiles(source);
     await expect(page.locator('#upload-status')).toBeVisible();
   } else {
-    await expect(page.getByLabel('YouTube link')).toBeVisible();
-    await page.getByLabel('YouTube link').fill(youtubeUrl);
+    await expect(page.getByLabel('Video link')).toBeVisible();
+    await page.getByLabel('Video link').fill(youtubeUrl);
     await page.getByRole('button', { name: 'FETCH' }).click();
   }
   screenshots.processing = resolve(artifactDir, '01-processing.png');

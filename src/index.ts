@@ -38,8 +38,8 @@ import {
   resolveAutoRoutingWithSource,
   serverAutoCapability,
   type AudioSourceIdentityV1,
-  type AudioSourceType,
-  type AutoRoutingDecisionV1,
+  type AppAudioSourceType,
+  type AppAutoRoutingDecisionV1,
 } from './analysis';
 import {
   parseAutoRoutingDecision,
@@ -70,7 +70,8 @@ import {
   StemContractError,
   validateAndOrderStems,
 } from './separation/options';
-import { fetchYouTubeAudio, parseYouTubeVideoId, YouTubeError } from './youtube';
+import { fetchVideoAudio, YouTubeError } from './youtube';
+import { parseVideoSource } from './video-source.ts';
 import {
   archiveContentType,
   ArchiveError,
@@ -127,6 +128,7 @@ import {
   normalizeIsolationTarget,
   QueryIsolationContractError,
 } from './isolation/contract.ts';
+import type { QueryIsolationSourceType } from './isolation/types.ts';
 import { audioSepReplicateIdentity } from './isolation/options.ts';
 import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal } from './identity.ts';
 import { readBoundedResponse } from './http/bounded-response.ts';
@@ -958,6 +960,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         coursePolicy?: string;
         key?: string;
         filename?: string;
+        videoUrl?: string;
         youtubeUrl?: string;
         archiveId?: string;
         archiveFile?: string;
@@ -966,6 +969,11 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         browserAnalysis?: unknown;
       }
     | null;
+
+  if (!body || typeof body!=='object' || Array.isArray(body) ||
+      [body.videoUrl,body.youtubeUrl,body.archiveId,body.key].filter(value=>value!==undefined).length!==1) {
+    return c.json({error:'Choose exactly one audio source.',code:'invalid_input'},400);
+  }
 
   if (c.get('principal')?.courseId && body?.coursePolicy !== 'course-work-v1') return c.json({ error: 'Confirm that your instructor can review new course work and Listening Guy conversations.' }, 400);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
@@ -1003,7 +1011,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
 
   let key: string;
   let filename: string;
-  let sourceType: AudioSourceType;
+  let sourceType: AppAudioSourceType;
   let sourceHash: string | null = null;
   let expectedSourceIdentity: AudioSourceIdentityV1 | undefined;
   let expectedSourceBytes: number | undefined;
@@ -1011,30 +1019,31 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let attribution: unknown = null;
   const id = crypto.randomUUID();
 
-  if (body?.youtubeUrl) {
-    sourceType = 'youtube';
+  if (body.videoUrl!==undefined || body.youtubeUrl!==undefined) {
+    const source=parseVideoSource(body.videoUrl!==undefined?body.videoUrl:body.youtubeUrl);
     // Caller error (unrecognizable link) is a 400; upstream failures are 502.
-    if (!parseYouTubeVideoId(body.youtubeUrl)) {
+    if (!source) {
       return c.json(
         {
-          error: 'Paste a full YouTube video link.',
+          error: 'Paste a full YouTube or Vimeo video link.',
           code: 'invalid_youtube_url',
           retryable: false,
         },
         400
       );
     }
-    // In-Worker YouTube fetch: audio lands in R2 first; the job row is only
+    sourceType = source.sourceType;
+    // Video import: audio lands in R2 first; the job row is only
     // created after, so a failed fetch never leaves an orphan/stuck job.
     let audio;
     try {
-      audio = await fetchYouTubeAudio(body.youtubeUrl, c.env);
+      audio = await fetchVideoAudio(source.canonicalUrl, c.env);
     } catch (err) {
       const message =
         err instanceof YouTubeError
           ? err.message
-          : 'YouTube fetch failed — try again, or upload the audio file instead.';
-      console.error('youtube fetch error', err);
+          : 'Video import failed — try again, or upload the audio file instead.';
+      console.error('video import error', {name:err instanceof Error?err.name:'unknown',...(err instanceof YouTubeError?{code:err.code}:{})});
       return c.json(
         {
           error: message,
@@ -1049,7 +1058,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       return c.json({ error: 'Audio too large (max 100 MB)' }, 400);
     }
     key = `uploads/${crypto.randomUUID()}/source.m4a`;
-    filename = sanitizeFilename(audio.title) || 'youtube-audio';
+    filename = sanitizeFilename(audio.title) || 'video-audio';
     sourceHash = await sha256Audio(audio.data);
     expectedSourceIdentity = {
       schemaVersion: '1',
@@ -1150,7 +1159,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
 
   let audioUrl: string;
   let model = currentModel;
-  let autoRouting: AutoRoutingDecisionV1 | undefined;
+  let autoRouting: AppAutoRoutingDecisionV1 | undefined;
   try {
     audioUrl = await presignDownload(c.env, key);
     if (autoRequested && autoCapability) {
@@ -1596,10 +1605,13 @@ app.post('/api/teacher/jobs/:id/isolations', requireTeacher, async (c) => {
   if (job.status !== 'done') {
     return c.json({ error: 'The core split must finish before optional isolation.' }, 409);
   }
+  if (job.source_type === 'vimeo') {
+    return c.json({ error: 'Vimeo supports standard stem splitting. Optional instrument isolation is available for uploads, YouTube, and Archive sources.' }, 409);
+  }
   if (!job.source_type || !['upload', 'youtube', 'archive'].includes(job.source_type)) {
     return c.json({ error: 'This legacy job has no verifiable source type.' }, 409);
   }
-  const sourceType = job.source_type as AudioSourceType;
+  const sourceType = job.source_type as QueryIsolationSourceType;
 
   let sourceHash = job.source_hash;
   if (!sourceHash) {
@@ -2302,7 +2314,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
         url: `/api/files/${s.key}`,
       }))
     : [];
-  let autoRouting: AutoRoutingDecisionV1 | undefined;
+  let autoRouting: AppAutoRoutingDecisionV1 | undefined;
   if (row.analysis) {
     try {
       autoRouting = parseAutoRoutingDecision(JSON.parse(row.analysis), STORED_CORE_MODELS);

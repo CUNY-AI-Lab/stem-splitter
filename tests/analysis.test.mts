@@ -524,6 +524,37 @@ test('server-fetched imports route only when analyzer identity matches exact sto
   }
 });
 
+test('Vimeo Auto preserves source provenance and falls back before calling the verified analyzer', async () => {
+  for (const mode of ['shadow', 'authoritative'] as const) {
+    let calls = 0;
+    const resolution = await resolveAutoRoutingWithSource({
+      sourceUrl: 'https://audio.invalid/stored-vimeo-source',
+      sourceType: 'vimeo',
+      mode,
+      currentModel: 'htdemucs_6s',
+      fallbackModel: 'htdemucs_ft',
+      coreModels: models,
+      expectedSourceIdentity: sourceIdentity,
+      provider: { analyze: async () => {
+        calls += 1;
+        return { ...validAnalysis('htdemucs_6s'), source: sourceIdentity };
+      } },
+      timeoutMs: 15_000,
+      instrumentDiscovery: false,
+    });
+    const stored = parseAutoRoutingDecision(JSON.parse(JSON.stringify(resolution.decision)), models);
+    assert.equal(stored.sourceType, 'vimeo');
+    assert.equal(calls, 0);
+    assert.equal(stored.applied, false);
+    assert.equal(stored.resolvedCoreModel, mode === 'shadow' ? 'htdemucs_6s' : 'htdemucs_ft');
+    assert.equal(stored.analysis.degraded.code, 'audio_unsupported');
+    assert.equal(stored.analysis.roleClassifier.version, 'not-run');
+    assert.equal(resolution.sourceIdentity, null);
+    assert.equal(redactInstrumentDiscovery(stored).sourceType, 'vimeo');
+    assert.doesNotMatch(JSON.stringify(stored), /stored-vimeo-source|sha256/);
+  }
+});
+
 test('immutable upload snapshots route only when analyzer byte count matches the frozen object', async () => {
   const matching = await resolveAutoRoutingWithSource({
     sourceUrl: 'https://audio.invalid/auto-inputs/v1/job',

@@ -1,7 +1,8 @@
 import type { Env } from '../env.ts';
+import { parseVideoSource } from '../video-source.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
-import { parseYouTubeVideoId, pollYouTubeImport, startYouTubeImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
+import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
 import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
@@ -16,7 +17,7 @@ import { activeGuest, ownershipTable } from '../guest/access.ts';
 
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
-  sourceType: 'upload'|'youtube'|'archive'; key?: string; filename: string; youtubeUrl?: string;
+  sourceType: 'upload'|'youtube'|'vimeo'|'archive'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string;
   archiveId?: string; archiveFile?: string; model: string; auto: boolean; browserAnalysis?: unknown;
 }
 type Complete = (env: Env, jobId: string, result: SeparationResult,operation?:Operation) => Promise<void>;
@@ -35,12 +36,15 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !auto||capability?.mode!=='authoritative' : !modelIsAllowed(env.SEPARATION_BACKEND,submitted))) throw new OperationError('invalid_model',400,'Choose an available split model.');
   const input: SplitInput={sourceType:'upload',filename:'Audio',model:submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto};
   if (auto) input.browserAnalysis=parseBrowserAutoSummary(value.browserAnalysis,options.models);
-  if ([value.youtubeUrl,value.archiveId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
-  if (value.youtubeUrl!==undefined) {
-    const id=parseYouTubeVideoId(value.youtubeUrl as string);
-    if (!id) throw new OperationError('invalid_youtube_url',400,'Paste a full YouTube video link.');
-    if(!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'YouTube import is temporarily unavailable. Upload an original or licensed audio file.');
-    input.sourceType='youtube'; input.youtubeUrl=`https://www.youtube.com/watch?v=${id}`; input.filename='YouTube audio';
+  if ([value.videoUrl,value.youtubeUrl,value.archiveId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
+  if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
+    const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
+    if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a full YouTube or Vimeo video link.');
+    if(!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
+    input.sourceType=source.sourceType; input.filename=source.sourceType==='vimeo'?'Vimeo audio':'YouTube audio';
+    // Keep existing YouTube operation fingerprints stable across this release.
+    if(source.sourceType==='youtube')input.youtubeUrl=source.canonicalUrl;
+    else input.videoUrl=source.canonicalUrl;
   } else if (value.archiveId!==undefined) {
     const id=typeof value.archiveId==='string'&&parseArchiveIdentifier(value.archiveId);
     if (!id||value.archiveFile!==undefined&&(typeof value.archiveFile!=='string'||value.archiveFile.length>1024)) throw new OperationError('invalid_archive_id',400,'Choose an available Archive audio file.');
@@ -158,7 +162,7 @@ async function start(env: Env,op: Operation) {
     if (!await transition(env.DB,op,'starting')) return;
     attempt=await beginAttempt(env.DB,op,'replicate',version);
     const providerId=op.phase==='fetch'
-      ? await startYouTubeImport(input.youtubeUrl!,env,operationWebhook(env,op.id,op.phase as 'fetch'|'split'))
+      ? await startVideoImport((input.videoUrl??input.youtubeUrl)!,env,operationWebhook(env,op.id,op.phase as 'fetch'|'split'))
       : (await getBackend(env).start({jobId:op.id,audioUrl:sourceUrl,webhookUrl:operationWebhook(env,op.id,op.phase as 'fetch'|'split'),model})).externalId;
     await finishAttempt(env.DB,attempt,'accepted',{externalId:providerId});
     if (await transition(env.DB,op,'processing',{providerId})) {

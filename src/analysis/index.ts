@@ -3,6 +3,7 @@ import { processingFeatureFlags } from '../features.ts';
 import { httpAudioAnalysisProvider } from './http.ts';
 
 export * from './types.ts';
+export type { AppAudioSourceType, AppAutoRoutingDecisionV1, AppAutoRoutingResolutionV1 } from './app-types.ts';
 export { resolveAutoRouting, resolveAutoRoutingWithSource } from './routing.ts';
 export { redactInstrumentDiscovery } from './redaction.ts';
 export { requestSourceFingerprint } from './fingerprint.ts';

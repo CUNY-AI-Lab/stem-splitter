@@ -21,17 +21,17 @@ for (const remixer of [false, true]) test(`Crate below the workspace, no adversa
     await page.goto(url.href);
     await expect(page).toHaveTitle('Stem Splitter');
     await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
-    await expect(page.getByRole('textbox', { name: 'YouTube link', exact: true })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Video link', exact: true })).toBeVisible();
     await page.locator('#yt-disclosure summary').click();
     await expect(page.locator('#yt-url')).toBeHidden();
     await page.locator('#yt-disclosure summary').click();
     await expect(page.locator('#yt-url')).toBeVisible();
     if (process.env.STEM_SCREENSHOT_DIR && !remixer) {
       await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
-      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/youtube-expanded-desktop.png` });
+      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-desktop.png` });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.locator('#yt-url').scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/youtube-expanded-mobile.png` });
+      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-mobile.png` });
       await page.setViewportSize({ width: 1280, height: 900 });
     }
     if (remixer) await page.getByRole('tab', { name: /REMIXER/ }).click();

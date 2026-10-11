@@ -1,10 +1,10 @@
 # yt-audio — pinned permitted-source importer
 
-This directory maintains the source of the private Replicate audio-import
-model. Changing it does **not** change the deployed model version selected by
-`REPLICATE_YT_MODEL_VERSION`. No image was published or paid canary run for this
-PR. An approved image build, exact new version pin and permitted-source canary
-remain release gates.
+This directory maintains the shared YouTube/Vimeo audio importer published as
+`cali-thinkering/yt-audio`. The existing `REPLICATE_YT_MODEL` and
+`REPLICATE_YT_MODEL_VERSION` settings retain their names for configuration
+compatibility. Source edits take effect after image publication, exact-version
+verification, a successful source canary, and deployment of the new pin.
 
 The image pins `yt-dlp[default,pin]==2026.8.19`, matching
 `yt-dlp-ejs==0.8.0`, and the extractor's pinned supported Deno `2.9.5` runtime.
@@ -12,12 +12,15 @@ These pins were checked against their public package metadata on 2026-10-06.
 The system ffmpeg package must also be recorded in the eventual image digest.
 The previous model image is not evidence that the updated JS/EJS runtime runs.
 
-Only supported YouTube video URLs enter yt-dlp. Authentication, age, region,
-DRM, removed/private video and challenge restrictions stop the request. There
-is no cookie injection, logged-in browser impersonation, proxy rotation,
-mobile-client rotation or challenge bypass. The app offers an original or
-licensed upload, the user's own Studio/Takeout download, and authorized Archive
-sources when importing is unavailable. A valid URL is not a promise of access.
+The importer accepts individual YouTube and Vimeo links on exact supported
+hosts. Vimeo page and player links normalize to the same video ID; an unlisted
+hash is preserved when supplied. Vimeo extraction uses its public player,
+which supplies playback metadata without the account-only API fallback used
+by the pinned library for ordinary Vimeo pages. The player remains responsible
+for enforcing visibility, password and media restrictions.
+
+Authentication, age, region, DRM, removed/private video and challenge
+restrictions stop the request. Each source uses one fixed extraction path.
 
 Each prediction has a unique output directory, a 230-second total deadline,
 a 90-second subprocess ceiling and zero nested yt-dlp retries. Timeout or
@@ -36,7 +39,7 @@ Run the free fault fixtures with:
 python3 -m unittest discover -s replicate-yt-audio -p 'test_*.py'
 ```
 
-The tests use a Cog shim and synthetic subprocesses, not YouTube or Replicate.
+The tests use a Cog shim and synthetic subprocesses, without platform or Replicate requests.
 They cover URL restrictions, dependencies, timeout/process termination,
 metadata-only failure, invalid media, disk failure, concurrent paths and
 restart cleanup. They do not validate a published image, account entitlement,

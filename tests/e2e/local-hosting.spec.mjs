@@ -824,8 +824,8 @@ test('imports authenticated YouTube audio and runs the selected six-track split'
       name: '6 splits: adds plucked strings and keys',
     })
     .check();
-  await expect(page.getByLabel('YouTube link')).toBeVisible();
-  await page.getByLabel('YouTube link').fill(
+  await expect(page.getByLabel('Video link')).toBeVisible();
+  await page.getByLabel('Video link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );
   await page.getByRole('button', { name: 'FETCH' }).click();
@@ -1033,8 +1033,8 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByRole('radio', { name: '2 splits: voice, everything else' }).check();
-  await expect(page.getByLabel('YouTube link')).toBeVisible();
-  await page.getByLabel('YouTube link').fill(
+  await expect(page.getByLabel('Video link')).toBeVisible();
+  await page.getByLabel('Video link').fill(
     `https://www.youtube.com/watch?v=${youtubeVideoId}`
   );
   await page.getByRole('button', { name: 'FETCH' }).click();

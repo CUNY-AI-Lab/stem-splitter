@@ -66,6 +66,38 @@ const PROMPT_HISTORY_TABLE_SQL = `
   );
 `;
 
+test('Vimeo source provenance works with existing and fresh schemas and remains immutable', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stem-splitter-vimeo-source-'));
+  try {
+    for (const [index, schema] of ['cloudflare/fixtures/pre-classroom-schema.sql', 'schema.sql'].entries()) {
+      const db = new SqliteD1(join(directory, `source-${index}.sqlite`));
+      db.applySchema(readFileSync(schema, 'utf8'));
+      for (const sourceType of ['upload', 'youtube', 'vimeo', 'archive']) {
+        await db.prepare(`INSERT INTO jobs(id,filename,source_key,status,source_type,source_hash)
+          VALUES(?,?,?,'done',?,?)`)
+          .bind(sourceType, 'source.m4a', `uploads/${sourceType}/source.m4a`, sourceType, 'a'.repeat(64)).run();
+      }
+      assert.deepEqual((await db.prepare('SELECT id,source_type FROM jobs ORDER BY id').all()).results.map(row=>({...row})),
+        ['archive', 'upload', 'vimeo', 'youtube'].map(sourceType => ({id:sourceType,source_type:sourceType})));
+      await assert.rejects(db.prepare("UPDATE jobs SET source_type='youtube' WHERE id='vimeo'").run(),
+        /jobs source locator is immutable once source_hash is set/);
+      await assert.rejects(db.prepare("UPDATE jobs SET source_hash=? WHERE id='vimeo'").bind('b'.repeat(64)).run(),
+        /jobs\.source_hash is immutable once set/);
+    }
+  } finally {
+    rmSync(directory, {recursive:true, force:true});
+  }
+});
+
+test('Vimeo optional isolation is rejected before database or provider work', async () => {
+  let databaseCalls = 0;
+  const env = {DB:{prepare:()=>{databaseCalls++;throw new Error('Database access was unexpected');}}};
+  await assert.rejects(createInstrumentIsolation(env as never, {
+    ...isolationInput('vimeo-isolation', 'saxophone'), sourceType:'vimeo' as never,
+  }), (error: unknown) => error instanceof InstrumentIsolationResourceError && error.code === 'invalid_request');
+  assert.equal(databaseCalls, 0);
+});
+
 test('Railway and CI use one exact Node runtime for the active SQLite host', () => {
   const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
     engines?: { node?: string };

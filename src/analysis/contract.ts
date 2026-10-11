@@ -15,8 +15,6 @@ import {
   type AudioFingerprintResultV1,
   type AudioAnalysisResultV1,
   type AudioSourceIdentityV1,
-  type AudioSourceType,
-  type AutoRoutingDecisionV1,
   type BrowserAutoSummaryV1,
   type CoreModelContract,
   type CoreSplitChoice,
@@ -24,6 +22,7 @@ import {
   type InstrumentDetectionV1,
   type RoleFeaturesV1,
 } from './types.ts';
+import type { AppAudioSourceType, AppAutoRoutingDecisionV1 } from './app-types.ts';
 import { PINNED_INSTRUMENT_LABELS } from './instrument-vocabulary.ts';
 
 export class AudioAnalysisContractError extends Error {}
@@ -408,7 +407,7 @@ export function parseBrowserAutoSummary(
 export function parseAutoRoutingDecision(
   value: unknown,
   coreModels: readonly CoreModelContract[]
-): AutoRoutingDecisionV1 {
+): AppAutoRoutingDecisionV1 {
   if (!isRecord(value)) {
     throw new AudioAnalysisContractError('stored Auto routing decision is invalid');
   }
@@ -431,6 +430,7 @@ export function parseAutoRoutingDecision(
     value.routingRequest !== AUTO_ROUTING_REQUEST ||
     (value.sourceType !== 'upload' &&
       value.sourceType !== 'youtube' &&
+      value.sourceType !== 'vimeo' &&
       value.sourceType !== 'archive') ||
     (value.mode !== 'shadow' && value.mode !== 'authoritative') ||
     typeof value.applied !== 'boolean' ||
@@ -486,7 +486,7 @@ export function parseAutoRoutingDecision(
   return {
     schemaVersion: AUTO_ROUTING_SCHEMA_VERSION,
     routingRequest: AUTO_ROUTING_REQUEST,
-    sourceType: value.sourceType as AudioSourceType,
+    sourceType: value.sourceType as AppAudioSourceType,
     mode: value.mode,
     applied: value.applied,
     fallbackModel: value.fallbackModel,

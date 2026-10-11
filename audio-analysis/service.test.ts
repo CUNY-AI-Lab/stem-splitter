@@ -219,6 +219,22 @@ test('liveness is separate from decoder readiness and analysis requires bearer a
   assert.equal(fingerprintDenied.headers.get('www-authenticate'), 'Bearer');
 });
 
+test('the verified analyzer rejects Vimeo before reading source bytes', async () => {
+  let fetches = 0;
+  const service = createAudioAnalysisService(config(), {
+    probe: readyProbe,
+    fetchSource: async () => {
+      fetches += 1;
+      throw new Error('unexpected source fetch');
+    },
+  });
+  const analysis = await service.fetch(analyzeRequest({ ...body(), sourceType: 'vimeo' }));
+  const fingerprint = await service.fetch(fingerprintRequest({ ...fingerprintBody(), sourceType: 'vimeo' }));
+  assert.equal(analysis.status, 400);
+  assert.equal(fingerprint.status, 400);
+  assert.equal(fetches, 0);
+});
+
 test('invalid decoder pin leaves readiness false without taking down liveness', async () => {
   const service = createAudioAnalysisService(config(), {
     probe: async () => {

@@ -98,6 +98,10 @@ test('query targets normalize once into a bounded cache/provider form', () => {
 test('query-isolation requests fail closed on transport and identity drift', () => {
   assert.doesNotThrow(() => validateQueryIsolationRequest(REQUEST));
   assert.throws(
+    () => validateQueryIsolationRequest({ ...REQUEST, sourceType: 'vimeo' as never }),
+    /Unsupported isolation source type/
+  );
+  assert.throws(
     () => validateQueryIsolationRequest({ ...REQUEST, normalizedTarget: ' Bass Clarinet ' }),
     /canonical form/
   );

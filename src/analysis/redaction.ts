@@ -1,4 +1,4 @@
-import type { AutoRoutingDecisionV1 } from './types.ts';
+import type { AppAutoRoutingDecisionV1 } from './app-types.ts';
 
 /**
  * Student job responses retain the honest core-routing reason but not candidate
@@ -6,8 +6,8 @@ import type { AutoRoutingDecisionV1 } from './types.ts';
  * persisted decision and is available only through a teacher-authenticated API.
  */
 export function redactInstrumentDiscovery(
-  route: AutoRoutingDecisionV1
-): AutoRoutingDecisionV1 {
+  route: AppAutoRoutingDecisionV1
+): AppAutoRoutingDecisionV1 {
   const { vocabularyClassifier: _vocabulary, ...analysis } = route.analysis;
   return {
     ...route,

@@ -49,7 +49,7 @@ import json
 import platform
 import re
 import subprocess
-from predict import FORMAT_SELECTOR, Predictor
+from predict import FORMAT_SELECTOR, Predictor, canonical_url, extraction_url
 from yt_dlp import YoutubeDL
 
 expected = {"yt-dlp": "2026.8.19", "yt-dlp-ejs": "0.8.0", "deno": "2.9.5"}
@@ -76,6 +76,10 @@ assert executables["ffprobe"].startswith("ffprobe version ")
 
 def forbid_prediction(*args, **kwargs):
     raise AssertionError("the build smoke must not execute predictions")
+
+assert canonical_url("https://player.vimeo.com/video/1084537?h=abcd1234ef") == "https://vimeo.com/1084537/abcd1234ef"
+assert extraction_url("https://vimeo.com/1084537/abcd1234ef") == "https://player.vimeo.com/video/1084537?h=abcd1234ef"
+assert extraction_url("https://youtu.be/abcdefghijk") == "https://www.youtube.com/watch?v=abcdefghijk"
 
 Predictor.predict = forbid_prediction
 Predictor().setup()

@@ -1,4 +1,4 @@
-name: YouTube extractor candidate image
+name: Video audio extractor candidate image
 
 on:
   pull_request:

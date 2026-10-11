@@ -1,7 +1,7 @@
 import { test,expect } from '@playwright/test';
 import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer } from '@cuny-ai-lab/cail-identity/testing';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { setupServer } from 'msw/node';
 import { http,HttpResponse } from 'msw';
@@ -54,6 +54,85 @@ async function completed(page, count) {
   await expect(page.locator('.badge.ready')).toHaveCount(count, { timeout: 25000 });
   await expect.poll(async () => (await account(page)).splitAllowance.completed).toBe(count);
 }
+test('guest submits Vimeo and YouTube through the existing video field with neutral import progress', async ({ page }) => {
+  const f = await setup(page);
+  let pendingSubmission;
+  const submissions = [];
+  const consoleErrors = [];
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push({ text: message.text(), url: message.location().url });
+  });
+  try {
+    await page.goto(f.origin);
+    await expect(page).toHaveURL(f.origin + '/');
+    await expect(page).toHaveTitle('Stem Splitter');
+    await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
+    const before = await account(page);
+    const input = page.getByRole('textbox', { name: 'Video link', exact: true });
+    await expect(input).toHaveAttribute('placeholder', 'YouTube or Vimeo link');
+    await expect(page.locator('#yt-disclosure summary')).toHaveText('Or paste a video link');
+    await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
+    await page.route(/\/api\/jobs$/, route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      submissions.push({ body: route.request().postDataJSON(), headers: route.request().headers() });
+      pendingSubmission = route;
+    });
+    await page.route(/\/api\/jobs\/video-fixture-\d+$/, route => route.fulfill({ json: {
+      id: new URL(route.request().url()).pathname.split('/').at(-1), filename: 'Video fixture',
+      model: 'htdemucs_ft', status: 'importing', stems: [],
+    } }));
+    for (const videoUrl of ['https://vimeo.com/76979871', 'https://www.youtube.com/watch?v=jNQXAC9IVRw']) {
+      pendingSubmission = undefined;
+      await input.fill(videoUrl);
+      await page.locator('#yt-form button').click();
+      await expect.poll(() => Boolean(pendingSubmission)).toBe(true);
+      await expect(page.locator('#upload-message')).toHaveText('IMPORTING AUDIO…');
+      await expect(page.locator('#yt-form')).toHaveAttribute('aria-busy', 'true');
+      await expect(input).toBeDisabled();
+      await expect(page.locator('#yt-form button')).toBeDisabled();
+      expect(submissions.at(-1).body).toEqual({ videoUrl, model: 'htdemucs_ft' });
+      expect(submissions.at(-1).headers['idempotency-key']).toBeTruthy();
+      expect(submissions.at(-1).headers['x-stem-course']).toBe('personal');
+      if (videoUrl.includes('vimeo.com')) {
+        for (const width of [1280, 390]) {
+          await page.setViewportSize({ width, height: 900 });
+          await expect(input).toBeVisible();
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          if (process.env.STEM_SCREENSHOT_DIR) {
+            await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
+            await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-import-${width}.png`, animations: 'disabled' });
+          }
+        }
+      }
+      await pendingSubmission.fulfill({ status: 202, json: {
+        id: `video-fixture-${submissions.length}`, filename: 'Video fixture', model: 'htdemucs_ft', status: 'importing',
+      } });
+      pendingSubmission = undefined;
+      await expect(input).toBeEnabled();
+      await expect(input).toHaveValue('');
+      await expect(page.locator('#yt-form button')).toBeEnabled();
+      await expect(page.locator('#upload-message')).toContainText('PROCESSING');
+      await expect(page.locator('#job-list .console')).toHaveCount(submissions.length);
+    }
+    expect(submissions).toHaveLength(2);
+    const after = await account(page);
+    expect(after.account.subject).toBe(before.account.subject);
+    expect(after.splitAllowance).toEqual(before.splitAllowance);
+    expect(f.counts()).toEqual({ providerStarts: 0, verifications: 0, widgetLoads: 0 });
+    await expect(page.locator('#guest-panel, #guest-session, #session-check, vite-error-overlay, nextjs-portal')).toHaveCount(0);
+    // Initial account discovery and the instructor probe use 401 for this
+    // signed-out guest; every other browser error is unexpected.
+    expect(consoleErrors.filter(error => !(
+      error.text === 'Failed to load resource: the server responded with a status of 401 (Unauthorized)'
+      && ['/api/account', '/api/teacher/me'].includes(new URL(error.url, f.origin).pathname)
+    ))).toEqual([]);
+    expect(f.errors).toEqual([]);
+  } finally {
+    if (pendingSubmission) await pendingSubmission.abort().catch(() => {});
+    await f.close();
+  }
+});
 for (const chatAvailable of [true, false]) test(`guest starts silently, plays and resumes with optional chat ${chatAvailable}`, async ({ page, context }) => {
   const f = await setup(page, chatAvailable);
   try {

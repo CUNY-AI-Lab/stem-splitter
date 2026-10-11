@@ -4,11 +4,13 @@ import test from 'node:test';
 
 import {
   createInnertubeFetch,
+  fetchVideoAudio,
   fetchViaReplicate,
   parseYouTubeVideoId,
   pollYouTubeImport, startYouTubeImport, CAIL_IMPORT_BYTES, CAIL_INLINE_BYTES, CAIL_PREDICTION_BYTES,
   YouTubeError,
 } from '../src/youtube.ts';
+import { parseVideoSource } from '../src/video-source.ts';
 
 const TEST_TOKEN = 'test-replicate-token';
 const TEST_VERSION = 'a'.repeat(64);
@@ -29,6 +31,83 @@ test('YouTube URL parsing accepts video routes and rejects malformed IDs', () =>
   assert.equal(parseYouTubeVideoId(`https://youtube.com.evil/watch?v=${videoId}`), null);
   assert.equal(parseYouTubeVideoId(`https://user:password@youtube.com/watch?v=${videoId}`), null);
   assert.equal(parseYouTubeVideoId(`javascript:alert('${videoId}')`), null);
+});
+
+test('video parsing canonicalizes Vimeo public, player and unlisted links without losing access hashes', () => {
+  for (const [input, canonicalUrl] of [
+    ['http://www.vimeo.com/76979871/?share=copy#t=4s', 'https://vimeo.com/76979871'],
+    ['https://player.vimeo.com/video/76979871?autoplay=1', 'https://vimeo.com/76979871'],
+    ['https://vimeo.com/160743502/abd0e13fb4', 'https://vimeo.com/160743502/abd0e13fb4'],
+    ['https://player.vimeo.com/video/160743502?h=abd0e13fb4&autoplay=1', 'https://vimeo.com/160743502/abd0e13fb4'],
+    ['https://vimeo.com/160743502?h=abd0e13fb4', 'https://vimeo.com/160743502/abd0e13fb4'],
+    ['https://vimeo.com/160743502/abd0e13fb4?h=abd0e13fb4', 'https://vimeo.com/160743502/abd0e13fb4'],
+  ]) {
+    const parsed = parseVideoSource(input);
+    assert.deepEqual(parsed, {sourceType:'vimeo', id:canonicalUrl.split('/')[3], canonicalUrl});
+    assert.equal(parseYouTubeVideoId(input), null);
+  }
+  assert.deepEqual(parseVideoSource('https://youtu.be/jNQXAC9IVRw?feature=shared'), {
+    sourceType:'youtube', id:'jNQXAC9IVRw', canonicalUrl:'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+  });
+});
+
+test('video parsing rejects ambiguous hashes, unrelated hosts, credentials and unsupported routes', () => {
+  for (const input of [undefined, null, 76979871, '', 'https://vimeo.com/0',
+    'https://vimeo.com/76979871/extra/path', 'https://vimeo.com/channels/staffpicks/76979871',
+    'https://vimeo.com/showcase/76979871', 'https://vimeo.com/76979871?h=',
+    'https://vimeo.com/76979871?h=abd0e13fb4&h=abd0e13fb4',
+    'https://vimeo.com/76979871/abd0e13fb4?h=1234567890',
+    'https://player.vimeo.com/video/76979871/abd0e13fb4',
+    'https://vimeo.com/76979871?h=../secret', 'https://vimeo.com/%377979871',
+    'https://vimeo.com.evil/76979871', 'https://evilvimeo.com/76979871',
+    'https://player.vimeo.com.evil/video/76979871', 'https://vimeo.com./76979871',
+    'https://user:secret@vimeo.com/76979871', 'https://vimeo.com:444/76979871',
+    'https://vimeo.com:443/76979871', 'http://vimeo.com:80/76979871',
+    'https://%76imeo.com/76979871', 'https:vimeo.com/76979871',
+    'https://127.0.0.1/76979871', 'file://vimeo.com/76979871',
+    'https://vimeo.com\\76979871', 'https://vimeo.com/76979871\n',
+    'https://youtube.com/watch?v=jNQXAC9IVRw&v=abcdefghijk',
+  ]) assert.equal(parseVideoSource(input), null, String(input));
+});
+
+test('Vimeo selects Replicate directly regardless of YouTube fetch order', async t => {
+  const requests:string[]=[];
+  t.mock.method(globalThis, 'fetch', async (input:RequestInfo|URL, init?:RequestInit) => {
+    requests.push(String(input));
+    assert.equal(String(input), 'https://api.replicate.com/v1/predictions');
+    assert.equal(init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(init?.body)).input, {url:'https://vimeo.com/160743502/abd0e13fb4',max_duration:900});
+    return Response.json({id:'vimeo-fixture',status:'succeeded',output:{
+      audio:`data:audio/mp4;base64,${Buffer.from(makeM4a()).toString('base64')}`,title:'Vimeo fixture',duration:19,
+    }});
+  });
+  const audio=await fetchVideoAudio('https://player.vimeo.com/video/160743502?h=abd0e13fb4', {...TEST_ENV,YOUTUBE_FETCH_ORDER:'innertube-first'} as never);
+  assert.equal(audio.title,'Vimeo fixture');assert.equal(audio.data.byteLength,2048);assert.equal(requests.length,1);
+});
+
+test('Vimeo source denial stays terminal with no YouTube fallback', async t => {
+  let requests=0;
+  t.mock.method(globalThis, 'fetch', async (input:RequestInfo|URL) => {
+    requests++;assert.equal(String(input),'https://api.replicate.com/v1/predictions');
+    return Response.json({id:'denied-vimeo',status:'failed',error:'source_denied_authentication'});
+  });
+  await assert.rejects(()=>fetchVideoAudio('https://vimeo.com/76979871',TEST_ENV as never),
+    (error:any)=>error instanceof YouTubeError&&error.code==='youtube_source_denied'&&!error.retryable);
+  assert.equal(requests,1);
+});
+
+test('durable video start retains the canonical Vimeo URL and exactly one POST', async t => {
+  let requests=0;
+  t.mock.method(globalThis, 'fetch', async (input:RequestInfo|URL, init?:RequestInit) => {
+    requests++;assert.equal(String(input),'https://api.replicate.com/v1/predictions');assert.equal(init?.method,'POST');
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.input.url,'https://vimeo.com/160743502/abd0e13fb4');
+    assert.equal(body.webhook,'https://app.test/callback');assert.equal(body.version,TEST_VERSION);
+    return Response.json({id:'durable-vimeo',status:'starting'});
+  });
+  assert.equal(await startYouTubeImport('https://player.vimeo.com/video/160743502?h=abd0e13fb4',TEST_ENV as never,'https://app.test/callback'),'durable-vimeo');
+  await assert.rejects(()=>startYouTubeImport('https://vimeo.com.evil/76979871',TEST_ENV as never,'https://app.test/callback'));
+  assert.equal(requests,1);
 });
 
 test('Innertube fetch refuses unapproved endpoints before network access', async () => {

@@ -1,4 +1,6 @@
 import { parsePredictionJson } from './reliability/prediction-json.ts';
+import { parseVideoSource, parseYouTubeVideoId } from './video-source.ts';
+export { parseYouTubeVideoId } from './video-source.ts';
 // YouTube audio fetch behind the fetchYouTubeAudio() seam.
 //
 // Strategy: use the configured provider order, with a Replicate-hosted yt-dlp
@@ -15,7 +17,6 @@ export const CAIL_IMPORT_BYTES=12*1024*1024;
 export const CAIL_INLINE_BYTES=12*1024*1024;
 export const CAIL_PREDICTION_BYTES=Math.ceil(CAIL_INLINE_BYTES*4/3)+256*1024;
 const MIN_AUDIO_BYTES = 1024;
-const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MODEL_NAME_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const MODEL_VERSION_PATTERN = /^[0-9a-f]{64}$/;
 const SAFE_TOKEN_PATTERN = /^[^\s\u0000-\u001f\u007f]+$/;
@@ -91,44 +92,22 @@ export function youtubeImportConfiguration(env: Env) {
   return replicateConfiguration(env)?'configured':'invalid';
 }
 
-export function parseYouTubeVideoId(url: string): string | null {
-  if (typeof url !== 'string' || url.length > 2048) return null;
-  let u: URL;
-  try {
-    u = new URL(url.trim());
-  } catch {
-    return null;
-  }
-  if (
-    (u.protocol !== 'https:' && u.protocol !== 'http:') ||
-    u.username ||
-    u.password ||
-    u.port
-  ) return null;
-
-  const host = u.hostname.toLowerCase().replace(/^(www|m)\./, '');
-  let videoId: string | null = null;
-  if (host === 'youtu.be') {
-    videoId = /^\/[A-Za-z0-9_-]{11}\/?$/.test(u.pathname) ? u.pathname.split('/')[1] : null;
-  } else if (
-    host === 'youtube.com' ||
-    host === 'music.youtube.com' ||
-    host === 'youtube-nocookie.com'
-  ) {
-    if (u.pathname === '/watch') {
-      videoId = u.searchParams.getAll('v').length===1 ? u.searchParams.get('v') : null;
-    } else if (/^\/(shorts|embed|live)\/[A-Za-z0-9_-]{11}\/?$/.test(u.pathname)) {
-      videoId = u.pathname.split('/')[2] || null;
-    }
-  }
-  return videoId && VIDEO_ID_PATTERN.test(videoId) ? videoId : null;
+/** Vimeo uses the configured extractor only. YouTube retains its established
+ * provider order and terminal source-denial handling.
+ */
+export async function fetchVideoAudio(url: string, env: Env): Promise<YouTubeAudio> {
+  const source = parseVideoSource(url);
+  if (!source) throw new YouTubeError('Paste a full YouTube or Vimeo video link.', 'invalid_youtube_url');
+  return source.sourceType === 'vimeo'
+    ? fetchViaReplicate(source.canonicalUrl, env)
+    : fetchYouTubeAudio(source.canonicalUrl, env);
 }
 
 export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeAudio> {
   const videoId = parseYouTubeVideoId(url);
   if (!videoId) {
     throw new YouTubeError(
-      'Paste a full YouTube video link.',
+      'Paste a full YouTube or Vimeo video link.',
       'invalid_youtube_url'
     );
   }
@@ -165,7 +144,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
   );
   if (busy) {
     throw new YouTubeError(
-      'YouTube import is busy. Wait a minute and try again.',
+      'Video import is busy. Wait a minute and try again.',
       'youtube_fetch_busy',
       true
     );
@@ -175,7 +154,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
   );
   if (timedOut) throw youtubeTimedOut();
   throw new YouTubeError(
-    'YouTube blocked this import. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
+    'This source could not be imported. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
     'youtube_fetch_blocked',
     false
   );
@@ -538,16 +517,16 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
   const configuration = replicateConfiguration(env);
   if (!configuration) {
     throw new YouTubeError(
-      'YouTube import is unavailable right now. Upload the audio file instead.',
+      'Video import is unavailable right now. Upload the audio file instead.',
       'youtube_fetch_unavailable'
     );
   }
   const { modelVersion, apiToken } = configuration;
-  const videoId = parseYouTubeVideoId(url);
-  if (!videoId) {
-    throw new YouTubeError('Paste a full YouTube video link.', 'invalid_youtube_url');
+  const source = parseVideoSource(url);
+  if (!source) {
+    throw new YouTubeError('Paste a full YouTube or Vimeo video link.', 'invalid_youtube_url');
   }
-  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const canonicalUrl = source.canonicalUrl;
   const deadline = Date.now() + REPLICATE_MAX_WAIT_MS;
 
   const headers = {
@@ -603,7 +582,7 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
   );
   return validateFetchedAudio({
     data,
-    title: prediction.output.title || 'youtube-audio',
+    title: prediction.output.title || 'video-audio',
     durationSec,
   });
 }
@@ -753,7 +732,7 @@ async function replicateResponseError(
   }
   if (response.status === 429) {
     return new YouTubeError(
-      'YouTube import is busy. Wait a minute and try again.',
+      'Video import is busy. Wait a minute and try again.',
       'youtube_fetch_busy',
       true,
       retryAt(response.headers.get('retry-after'))
@@ -761,7 +740,7 @@ async function replicateResponseError(
   }
   console.error(`replicate YouTube ${operation} failed`, { status: response.status, detail });
   return new YouTubeError(
-    'YouTube import is unavailable right now. Upload the audio file instead.',
+    'Video import is unavailable right now. Upload the audio file instead.',
     'youtube_fetch_unavailable',
     response.status >= 500
   );
@@ -769,7 +748,7 @@ async function replicateResponseError(
 
 function providerUnavailable(): YouTubeError {
   return new YouTubeError(
-    'YouTube import is unavailable right now. Upload the audio file instead.',
+    'Video import is unavailable right now. Upload the audio file instead.',
     'youtube_fetch_unavailable',
     true
   );
@@ -777,7 +756,7 @@ function providerUnavailable(): YouTubeError {
 
 function youtubeTimedOut(): YouTubeError {
   return new YouTubeError(
-    'YouTube fetch timed out — try again in a minute.',
+    'Video import timed out — try again in a minute.',
     'youtube_fetch_timeout',
     true
   );
@@ -800,7 +779,7 @@ function normalizePredictionError(raw: string): YouTubeError {
   }
   if (/throttl|rate.?limit|too many requests/i.test(message)) {
     return new YouTubeError(
-      'YouTube import is busy. Wait a minute and try again.',
+      'Video import is busy. Wait a minute and try again.',
       'youtube_fetch_busy',
       true
     );
@@ -815,19 +794,19 @@ function normalizePredictionError(raw: string): YouTubeError {
 }
 
 function sourceDenied(): YouTubeError {
-  return new YouTubeError('This source cannot be imported. Upload an original or licensed audio file, use your own Studio/Takeout download, or choose an openly licensed Archive track.','youtube_source_denied',false);
+  return new YouTubeError('This source cannot be imported. Upload an original or licensed audio file, use a download provided by the video owner, or choose an openly licensed Archive track.','youtube_source_denied',false);
 }
 
 /** Durable coordinator API. Exactly one POST; no polling or client fallbacks
  * are hidden inside it. A lost response cannot be classified as a failed start.
  */
-export async function startYouTubeImport(url: string, env: Env, webhook: string): Promise<string> {
-  const config=replicateConfiguration(env), videoId=parseYouTubeVideoId(url);
-  if (!config || !videoId) throw new UpstreamError('import_configuration','rejected');
+export async function startVideoImport(url: string, env: Env, webhook: string): Promise<string> {
+  const config=replicateConfiguration(env), source=parseVideoSource(url);
+  if (!config || !source) throw new UpstreamError('import_configuration','rejected');
   let res: Response;
   try { res=await fetch(`${REPLICATE_API}/predictions`,{
     method:'POST',headers:{Authorization:`Bearer ${config.apiToken}`,'Content-Type':'application/json','Cancel-After':'4m'},
-    body:JSON.stringify({version:config.modelVersion,input:{url:`https://www.youtube.com/watch?v=${videoId}`,max_duration:MAX_DURATION_SECONDS},webhook,webhook_events_filter:['completed']}),
+    body:JSON.stringify({version:config.modelVersion,input:{url:source.canonicalUrl,max_duration:MAX_DURATION_SECONDS},webhook,webhook_events_filter:['completed']}),
     redirect:'manual',signal:AbortSignal.timeout(20000),
   }); } catch { throw new UpstreamError('import_start_uncertain','uncertain'); }
   if (!res.ok) {
@@ -838,6 +817,9 @@ export async function startYouTubeImport(url: string, env: Env, webhook: string)
   try { return (await readPrediction(res,15000,undefined,CAIL_PREDICTION_BYTES,true)).id; }
   catch { throw new UpstreamError('import_start_response_unreadable','uncertain'); }
 }
+
+/** Compatibility name for existing callers; input validation remains shared. */
+export const startYouTubeImport = startVideoImport;
 
 export async function pollYouTubeImport(id: string, env: Env, operationDeadline = Infinity): Promise<YouTubeAudio | null> {
   if (!PREDICTION_ID_PATTERN.test(id)) throw providerUnavailable();
@@ -873,7 +855,7 @@ export async function pollYouTubeImport(id: string, env: Env, operationDeadline 
 
 function invalidAudioResponse(): YouTubeError {
   return new YouTubeError(
-    'YouTube returned no usable audio. Try another video or upload the audio file.',
+    'The source returned no usable audio. Try another video or upload the audio file.',
     'invalid_audio_response',
     true
   );

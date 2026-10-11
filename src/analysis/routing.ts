@@ -10,16 +10,14 @@ import {
   AUTO_ROUTING_SCHEMA_VERSION,
   type AudioAnalysisProvider,
   type AudioSourceIdentityV1,
-  type AudioSourceType,
-  type AutoRoutingDecisionV1,
-  type AutoRoutingResolutionV1,
   type BrowserAutoSummaryV1,
 } from './types.ts';
+import type { AppAudioSourceType, AppAutoRoutingDecisionV1, AppAutoRoutingResolutionV1 } from './app-types.ts';
 import type { SeparationOptionSummary } from '../separation/options';
 
 export interface ResolveAutoRoutingInput {
   sourceUrl: string;
-  sourceType: AudioSourceType;
+  sourceType: AppAudioSourceType;
   mode: 'shadow' | 'authoritative';
   currentModel: string;
   fallbackModel: string;
@@ -40,12 +38,21 @@ function boundedTimeout(value: number): number {
 
 export async function resolveAutoRoutingWithSource(
   input: ResolveAutoRoutingInput
-): Promise<AutoRoutingResolutionV1> {
+): Promise<AppAutoRoutingResolutionV1> {
   const startedAt = Date.now();
   let analysis;
   let sourceIdentity: AudioSourceIdentityV1 | null = null;
 
-  if (!input.provider) {
+  if (input.sourceType === 'vimeo') {
+    // Vimeo import/splitting is app-owned. Keep the verified analyzer request
+    // contract unchanged until a new analyzer image earns release evidence.
+    analysis = degradedAnalysis(
+      input.fallbackModel,
+      'audio_unsupported',
+      'Vimeo imports use the default split with this analysis service',
+      Date.now() - startedAt
+    );
+  } else if (!input.provider) {
     analysis = degradedAnalysis(
       input.fallbackModel,
       'analysis_unconfigured',
@@ -167,6 +174,6 @@ export async function resolveAutoRoutingWithSource(
 /** Backward-compatible routing helper for callers that do not need content identity. */
 export async function resolveAutoRouting(
   input: ResolveAutoRoutingInput
-): Promise<AutoRoutingDecisionV1> {
+): Promise<AppAutoRoutingDecisionV1> {
   return (await resolveAutoRoutingWithSource(input)).decision;
 }

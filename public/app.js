@@ -799,17 +799,17 @@ ytForm.addEventListener('submit', async (e) => {
   ytFetchButton.disabled = true;
   uploadStatus.hidden = false;
   progressBar.style.width = '0%';
-  showUploadMessage('IMPORTING AUDIO FROM YOUTUBE…');
+  showUploadMessage('IMPORTING AUDIO…');
 
   try {
     const chosen = await requireSelectedModel();
-    const resolved = await resolveModel(chosen, null, 'YouTube audio');
+    const resolved = await resolveModel(chosen, null, 'video audio');
     const { model, note } = resolved;
     if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
-        youtubeUrl: url,
+        videoUrl: url,
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),

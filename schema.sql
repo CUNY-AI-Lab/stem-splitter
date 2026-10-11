@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS jobs (
                                        -- current: vocals_instrumental (2) | htdemucs_ft (4) | htdemucs_6s (6) | bs_roformer_vocals (2, local)
                                        -- NULL on pre-2026-07 rows; read as htdemucs_ft
   routing_request TEXT,                -- NULL for legacy/explicit jobs; "auto" when server analysis was requested
-  source_type TEXT,                    -- upload | youtube | archive for analyzed jobs
+  source_type TEXT,                    -- upload | youtube | vimeo | archive for analyzed jobs
   source_hash TEXT                     -- server-verified lowercase SHA-256 of stored source bytes
     CHECK (source_hash IS NULL OR (
       length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
