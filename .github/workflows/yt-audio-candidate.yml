@@ -51,6 +51,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXTRACTOR_SOURCE_COMMIT"
+          if ! git diff --quiet HEAD --; then
+            printf '%s\n' 'The checked-out source differs from the reviewed commit before the build.' >&2
+            exit 1
+          fi
           if [ "$PUBLISH_REQUEST" = true ]; then
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test "$GITHUB_REPOSITORY" = CUNY-AI-Lab/stem-splitter
@@ -100,7 +104,11 @@ jobs:
           umask 077
           test -n "$STEM_YOUTUBE_CLI_TOKEN" || { printf '%s\n' 'The temporary Stem YouTube CLI token is required.' >&2; exit 1; }
           test "$(git rev-parse HEAD)" = "$EXTRACTOR_SOURCE_COMMIT"
-          git diff --quiet -- . ../scripts/lib/pin-check.mjs
+          # Cog rewrites .cog metadata; Python may refresh tracked bytecode.
+          if ! git diff --quiet HEAD -- cog.yaml predict.py test_predict.py verify-image.mjs README.md ../scripts/lib/pin-check.mjs ../.github/workflows/yt-audio-candidate.yml; then
+            printf '%s\n' 'Reviewed extractor source changed during the build; publication was not attempted.' >&2
+            exit 1
+          fi
           registry_config="$(mktemp -d "$RUNNER_TEMP/stem-youtube-registry.XXXXXX")"
           export DOCKER_CONFIG="$registry_config"
           trap 'unset STEM_YOUTUBE_CLI_TOKEN; rm -rf -- "$registry_config"' EXIT
