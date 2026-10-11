@@ -176,13 +176,18 @@ test('native Vimeo failures release a guest place once and preserve only fixed e
   }
 });
 
-test('durable Vimeo import stores audio and its provenance before starting the selected separator',async t=>{
+test('Vimeo browser import stores audio and its provenance before starting the selected separator',async t=>{
   const {db,env}=await setup(t);
   const {operation}=await submitSplit(env,principal,{videoUrl:'https://player.vimeo.com/video/160743502?h=abd0e13fb4'},'vimeo-pipeline-fixture');
   const fixture=vimeoFixture(),bytes=joinBytes(fixture.init,fixture.segment,fixture.segment);
   const config={...fixture.config,video:{...fixture.config.video,id:160743502,privacy:'unlisted',unlisted_hash:'abd0e13fb4'}};
   const posts:Array<{version:string;input:{url?:string;audio?:string}}>=[];
-  let reads=0;
+  let reads=0,browserReads=0;
+  env.BROWSER={async quickAction(action,options){
+    browserReads++;assert.equal(action,'content');assert.equal(options.url,vimeoPlayer);
+    assert.equal(options.gotoOptions.waitUntil,'domcontentloaded');
+    return Response.json({success:true,result:`<script>const playerConfig=${JSON.stringify(config)};</script>`,meta:{status:200,finalUrl:vimeoPlayer}});
+  }};
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
     if(init?.method==='POST') {
       assert.equal(String(input),'https://api.replicate.com/v1/predictions');
@@ -191,13 +196,13 @@ test('durable Vimeo import stores audio and its provenance before starting the s
       return Response.json({id:'vimeo-split-fixture',status:'starting'});
     }
     reads++;assert.equal(init?.method,'GET');
-    if(String(input)===vimeoPlayer)return new Response(`<script>const playerConfig=${JSON.stringify(config)};</script>`,{headers:{'Content-Type':'text/html'}});
+    assert.notEqual(String(input),vimeoPlayer);
     return fixture.fetchImpl(input,init);
   });
   const complete=async()=>assert.fail('Import does not complete separation');
   await setCooldown(db,'replicate',Date.now()+60_000);
   await resumeOwnedVimeoImport(env,principal,operation);
-  assert.equal(posts.length,0);assert.equal(reads,4);
+  assert.equal(posts.length,0);assert.equal(reads,3);assert.equal(browserReads,1);
   let current=(await readOperation(db,operation.id))!;
   assert.equal(current.phase,'split');assert.equal(current.state,'queued');
   assert.equal(JSON.parse(current.request_json).sourceType,'vimeo');
@@ -211,7 +216,7 @@ test('durable Vimeo import stores audio and its provenance before starting the s
   await db.prepare("UPDATE provider_cooldowns SET until_ms=0 WHERE provider='replicate'").run();
   await drainSplitQueue(env,complete);current=(await readOperation(db,operation.id))!;
   assert.equal(current.phase,'split');assert.equal(current.state,'processing');
-  assert.equal(posts.length,1);assert.equal(posts[0].version,splitVersion);assert.equal(reads,4);
+  assert.equal(posts.length,1);assert.equal(posts[0].version,splitVersion);assert.equal(reads,3);assert.equal(browserReads,1);
   const sourceUrl=new URL(posts[0].input.audio!);
   assert.equal(sourceUrl.origin,'https://split.test');
   assert.equal(sourceUrl.pathname,`/api/local-sources/${job!.source_key}`);

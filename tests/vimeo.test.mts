@@ -245,3 +245,125 @@ test('internal denial diagnostics separate redirect, privacy and content protect
     });
   }
 });
+
+test('Browser Run loads the player once with ordinary navigation before the bounded CDN downloader', async () => {
+  const fixture = vimeoFixture(), calls: string[] = []; let browserCalls = 0;
+  const result = await fetchVimeoAudio(VIDEO, { browser: { async quickAction(action, options) {
+    browserCalls++;
+    assert.equal(action, 'content');
+    assert.deepEqual(options, { url: 'https://player.vimeo.com/video/1084537', gotoOptions: { waitUntil: 'domcontentloaded', timeout: 20_000 } });
+    return Response.json({ success: true, result: fixture.html, meta: { status: 200, finalUrl: options.url, redirectChain: [] } });
+  } }, fetchImpl: (async (input, options) => {
+    calls.push(String(input)); assert.equal(new URL(String(input)).hostname, 'video.vimeocdn.com');
+    return fixture.fetchImpl(input, options);
+  }) as typeof fetch });
+  assert.equal(browserCalls, 1); assert.equal(calls.length, 3);
+  assert.deepEqual(new Uint8Array(result.data), joinBytes(fixture.init, fixture.segment, fixture.segment));
+});
+
+test('Browser Run API failures and source refusals stay distinct and never start a native request', async () => {
+  const fixture = vimeoFixture();
+  for (const [apiStatus, pageStatus, expected, stage] of [
+    [401, 200, 'youtube_fetch_unavailable', 'browser_api'],
+    [500, 200, 'youtube_fetch_unavailable', 'browser_api'],
+    [429, 200, 'youtube_fetch_busy', 'browser_api'],
+    [200, 401, 'youtube_source_denied', 'player_http'],
+    [200, 403, 'youtube_source_denied', 'player_http'],
+    [200, 451, 'youtube_source_denied', 'player_http'],
+    [200, 429, 'youtube_fetch_busy', 'player_http'],
+    [200, 500, 'youtube_fetch_unavailable', 'player_http'],
+  ] as const) {
+    let browserCalls = 0, nativeCalls = 0;
+    await assert.rejects(fetchVimeoAudio(VIDEO, { browser: { async quickAction() {
+      browserCalls++; return Response.json({ success: true, result: fixture.html, meta: { status: pageStatus } }, { status: apiStatus });
+    } }, fetchImpl: (async () => { nativeCalls++; throw new Error('unexpected'); }) as typeof fetch }), (error: any) => {
+      assert.equal(error.code, expected); assert.deepEqual(vimeoFailureDiagnostic(error), { stage, httpStatus: apiStatus === 200 ? pageStatus : apiStatus });
+      return true;
+    });
+    assert.equal(browserCalls, 1); assert.equal(nativeCalls, 0);
+  }
+});
+
+test('Browser Run requires its success envelope, source status and valid redirect metadata', async () => {
+  const fixture = vimeoFixture();
+  for (const body of [
+    { success: false, result: fixture.html, meta: { status: 200 } },
+    { success: true, result: {}, meta: { status: 200 } },
+    { success: true, result: fixture.html },
+    { success: true, result: fixture.html, meta: { status: '200' } },
+    { success: true, result: fixture.html, meta: { status: 200, redirectChain: 'invalid' } },
+  ]) {
+    let calls = 0;
+    await assert.rejects(fetchVimeoAudio(VIDEO, { browser: { async quickAction() { return Response.json(body); } },
+      fetchImpl: (async () => { calls++; throw new Error(); }) as typeof fetch }), code('invalid_audio_response'));
+    assert.equal(calls, 0);
+  }
+  for (const meta of [{ status: 200, finalUrl: 'https://vimeo.com/log_in' }, { status: 200, redirectChain: ['https://vimeo.com/log_in'] }]) {
+    await assert.rejects(fetchVimeoAudio(VIDEO, { browser: { async quickAction() { return Response.json({ success: true, result: fixture.html, meta }); } } }), (error: any) => {
+      assert.equal(error.code, 'youtube_source_denied'); assert.deepEqual(vimeoFailureDiagnostic(error), { stage: 'player_redirect', httpStatus: 200 }); return true;
+    });
+  }
+});
+
+test('Browser Run retains identity, privacy and protection checks before downloading media', async () => {
+  for (const [patch, expected] of [[{ id: 999 }, 'invalid_audio_response'], [{ privacy: 'password' }, 'youtube_source_denied'], [{ drm: true }, 'youtube_source_denied']] as const) {
+    const fixture = vimeoFixture(); Object.assign(fixture.config.video, patch); let calls = 0;
+    await assert.rejects(fetchVimeoAudio(VIDEO, { browser: { async quickAction() {
+      return Response.json({ success: true, result: `playerConfig=${JSON.stringify(fixture.config)}`, meta: { status: 200 } });
+    } }, fetchImpl: (async () => { calls++; throw new Error(); }) as typeof fetch }), code(expected));
+    assert.equal(calls, 0);
+  }
+});
+
+test('Browser Run bounds declared and streamed API bodies and validates JSON type and encoding', async () => {
+  for (const response of [
+    new Response('{}', { headers: { 'Content-Type': 'application/json', 'Content-Length': String(2 * 1024 * 1024 + 1) } }),
+    new Response(new Uint8Array(2 * 1024 * 1024 + 1), { headers: { 'Content-Type': 'application/json' } }),
+    new Response('<html></html>', { headers: { 'Content-Type': 'text/html' } }),
+    new Response(new Uint8Array([0xff]), { headers: { 'Content-Type': 'application/json' } }),
+    new Response('{', { headers: { 'Content-Type': 'application/json' } }),
+  ]) {
+    let calls = 0;
+    await assert.rejects(fetchVimeoAudio(VIDEO, { browser: { async quickAction() { return response; } },
+      fetchImpl: (async () => { calls++; throw new Error(); }) as typeof fetch }));
+    assert.equal(calls, 0);
+  }
+});
+
+test('Browser Run preserves matching unlisted hashes in the navigation and returned metadata', async () => {
+  const fixture = vimeoFixture(); Object.assign(fixture.config.video, { privacy: 'unlisted', unlisted_hash: 'ab12cd34ef' });
+  await fetchVimeoAudio(`${VIDEO}/ab12cd34ef`, { browser: { async quickAction(_action, options) {
+    assert.equal(options.url, 'https://player.vimeo.com/video/1084537?h=ab12cd34ef');
+    return Response.json({ success: true, result: `playerConfig=${JSON.stringify(fixture.config)}`, meta: { status: 200, finalUrl: options.url } });
+  } }, fetchImpl: fixture.fetchImpl });
+});
+
+test('Browser Run action and body share the operation deadline, including late response disposal', async () => {
+  let browserCalls = 0;
+  const browser = { async quickAction() { browserCalls++; return new Response(); } };
+  await assert.rejects(fetchVimeoAudio(VIDEO, { browser, now: () => 100, deadline: 99 }), code('youtube_fetch_timeout'));
+  assert.equal(browserCalls, 0);
+  let resolve!: (response: Response) => void, canceled = false, nativeCalls = 0;
+  await assert.rejects(fetchVimeoAudio(VIDEO, { deadline: Date.now() + 20, browser: { quickAction(_action, options) {
+    assert.ok(options.gotoOptions.timeout <= 20);
+    return new Promise<Response>(done => { resolve = done; });
+  } }, fetchImpl: (async () => { nativeCalls++; throw new Error(); }) as typeof fetch }), code('youtube_fetch_timeout'));
+  resolve(new Response(new ReadableStream({ cancel() { canceled = true; } })));
+  await new Promise(done => setImmediate(done));
+  assert.equal(canceled, true); assert.equal(nativeCalls, 0);
+  let bodyCanceled = false;
+  await assert.rejects(fetchVimeoAudio(VIDEO, { deadline: Date.now() + 20, browser: { async quickAction() {
+    return new Response(new ReadableStream({ cancel() { bodyCanceled = true; } }), { headers: { 'Content-Type': 'application/json' } });
+  } } }), code('youtube_fetch_timeout'));
+  assert.equal(bodyCanceled, true);
+});
+
+test('Browser Run exceptions remain fixed and sanitized without source retries', async () => {
+  let browserCalls = 0, nativeCalls = 0;
+  await assert.rejects(fetchVimeoAudio(VIDEO, { browser: { async quickAction() { browserCalls++; throw new Error('https://private.invalid/?token=SECRET'); } },
+    fetchImpl: (async () => { nativeCalls++; throw new Error(); }) as typeof fetch }), (error: any) => {
+    assert.equal(error.code, 'youtube_fetch_unavailable'); assert.deepEqual(vimeoFailureDiagnostic(error), { stage: 'browser_api' });
+    assert.equal(error.message.includes('SECRET'), false); return true;
+  });
+  assert.equal(browserCalls, 1); assert.equal(nativeCalls, 0);
+});

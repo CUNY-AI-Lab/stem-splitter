@@ -136,8 +136,8 @@ async function start(env: Env,op: Operation) {
   }
   if (op.phase==='fetch'&&input.sourceType==='vimeo') {
     // The owner's HTTP request awaits this GET under the existing five-minute lease.
-    // A crashed fetch can be reclaimed; it has no external paid start to reconcile.
-    try {await imported(env,op,input,await fetchVimeoAudio((input.videoUrl??input.youtubeUrl)!,{deadline:op.deadline}));}
+    // Reclaiming an interrupted source fetch preserves the separate GPU-start fence.
+    try {await imported(env,op,input,await fetchVimeoAudio((input.videoUrl??input.youtubeUrl)!,{deadline:op.deadline,browser:env.AUTH_MODE==='cail'?env.BROWSER:undefined}));}
     catch(error) {
       const diagnostic=vimeoFailureDiagnostic(error);
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));

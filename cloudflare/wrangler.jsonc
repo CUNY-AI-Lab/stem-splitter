@@ -6,6 +6,7 @@
   "alias": { "hono": "hono-cloudflare", "hono/factory": "hono-cloudflare/factory" },
   "compatibility_date": "2026-09-06",
   "compatibility_flags": ["nodejs_compat"],
+  "browser": { "binding": "BROWSER" },
   "workers_dev": true,
   "preview_urls": false,
   "triggers": { "crons": ["* * * * *", "0 8 * * *"] },

@@ -18,7 +18,7 @@ const object = (value: unknown): ObjectValue => value !== null && typeof value =
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
 const invalid = () => new YouTubeError('This video did not provide usable audio.', 'invalid_audio_response');
-type VimeoFailureStage = 'player_http' | 'player_redirect' | 'player_privacy' | 'manifest_http' | 'manifest_protection' | 'segment_http' | 'segment_protection';
+type VimeoFailureStage = 'browser_api' | 'player_http' | 'player_redirect' | 'player_privacy' | 'manifest_http' | 'manifest_protection' | 'segment_http' | 'segment_protection';
 interface VimeoFailureDiagnostic { stage: VimeoFailureStage; httpStatus?: number }
 class VimeoImportError extends YouTubeError {
   readonly diagnostic: Readonly<VimeoFailureDiagnostic>;
@@ -184,7 +184,12 @@ export function vimeoAudioPlan(manifest: unknown, manifestUrl: string, videoDura
   return plans[0];
 }
 
-export interface VimeoFetchOptions { deadline?: number; fetchImpl?: typeof fetch; now?: () => number }
+export interface VimeoBrowser {
+  quickAction(action: 'content', options: {
+    url: string; gotoOptions: { waitUntil: 'domcontentloaded'; timeout: number };
+  }): Promise<Response>;
+}
+export interface VimeoFetchOptions { deadline?: number; fetchImpl?: typeof fetch; now?: () => number; browser?: VimeoBrowser }
 export async function fetchVimeoAudio(url: string, options: VimeoFetchOptions = {}): Promise<YouTubeAudio> {
   const source = parseVideoSource(url);
   if (source?.sourceType !== 'vimeo') throw new YouTubeError('Paste a supported Vimeo video link.', 'invalid_video_url');
@@ -234,8 +239,63 @@ export async function fetchVimeoAudio(url: string, options: VimeoFetchOptions = 
     throw invalid();
   };
   const text = (data: ArrayBuffer) => { try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(data); } catch { throw invalid(); } };
+  const browserHtml = async (browser: VimeoBrowser): Promise<string> => {
+    remaining();
+    let response: Response;
+    let onAbort: (() => void) | undefined;
+    try {
+      // A single ordinary navigation replaces the native player request. The
+      // binding has no abort option, so discard a late response after our deadline.
+      const action = browser.quickAction('content', {
+        url: playerUrl, gotoOptions: { waitUntil: 'domcontentloaded', timeout: Math.min(20_000, remaining()) },
+      }).then(async result => {
+        if (controller.signal.aborted || now() >= deadline) {
+          await result.body?.cancel().catch(() => undefined); throw timedOut();
+        }
+        return result;
+      });
+      response = await Promise.race([action, new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(timedOut());
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+        if (controller.signal.aborted) onAbort();
+      })]);
+    } catch (error) {
+      if (error instanceof YouTubeError) throw error;
+      throw controller.signal.aborted || now() >= deadline ? timedOut()
+        : new VimeoImportError('Video import is temporarily unavailable.', 'youtube_fetch_unavailable', 'browser_api');
+    } finally {
+      if (onAbort) controller.signal.removeEventListener('abort', onAbort);
+    }
+    if (response.status !== 200) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new VimeoImportError(response.status === 429 ? 'Video import is busy. Try again later.' : 'Video import is temporarily unavailable.',
+        response.status === 429 ? 'youtube_fetch_busy' : 'youtube_fetch_unavailable', 'browser_api', response.status);
+    }
+    if (responseMediaType(response) !== 'application/json') {
+      await response.body?.cancel().catch(() => undefined); throw invalid();
+    }
+    const bytes = await readBoundedResponse(response, { maximumBytes: METADATA_LIMIT, timeoutMs: remaining(), errors: { tooLarge, timedOut, unreadable: invalid } });
+    remaining();
+    let body: ObjectValue;
+    try { body = object(JSON.parse(text(bytes))); } catch { throw invalid(); }
+    const meta = object(body.meta);
+    if (body.success !== true || typeof body.result !== 'string' || !integer(meta.status) || meta.status < 100 || meta.status > 599) throw invalid();
+    if (meta.finalUrl !== undefined && meta.finalUrl !== playerUrl) throw denied('player_redirect', meta.status);
+    if (meta.redirectChain !== undefined) {
+      if (!Array.isArray(meta.redirectChain)) throw invalid();
+      if (meta.redirectChain.length) throw denied('player_redirect', meta.status);
+    }
+    if (meta.status !== 200) {
+      if ([401, 403, 451].includes(meta.status)) throw denied('player_http', meta.status);
+      throw new VimeoImportError(meta.status === 429 ? 'Video import is busy. Try again later.' : 'Video import is temporarily unavailable.',
+        meta.status === 429 ? 'youtube_fetch_busy' : 'youtube_fetch_unavailable', 'player_http', meta.status);
+    }
+    if (new TextEncoder().encode(body.result).byteLength > METADATA_LIMIT) throw tooLarge();
+    return body.result;
+  };
   try {
-    const config = parseVimeoPlayerConfig(text((await read(playerUrl, 'html', METADATA_LIMIT)).data));
+    const html = options.browser ? await browserHtml(options.browser) : text((await read(playerUrl, 'html', METADATA_LIMIT)).data);
+    const config = parseVimeoPlayerConfig(html);
     const metadata = vimeoPlayerMetadata(config, source.id, hash);
     const manifestResponse = await read(metadata.manifestUrl, 'json', METADATA_LIMIT);
     let manifest: unknown;

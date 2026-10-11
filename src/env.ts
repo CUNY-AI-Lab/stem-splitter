@@ -3,6 +3,8 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   AUDIO: R2Bucket;
   DB: D1Database;
   ASSETS?: Fetcher;
+  /** Cloudflare browser used to load the ordinary public Vimeo player. */
+  BROWSER?: import('./vimeo.ts').VimeoBrowser;
   AUTH_MODE?: string;
   CAIL_IDENTITY_JWKS?: string;
   /** Set by the Worker adapter, never by browser input or environment JSON. */
