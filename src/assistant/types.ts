@@ -17,6 +17,8 @@ export interface ChatTurn {
 
 /** A validated mixer command the browser executes (fire-and-forget). */
 export interface AssistantToolCall {
+  /** Stable within one provider attempt; never use it without the operation ID. */
+  id?: string;
   name: 'solo' | 'set_mute' | 'seek' | 'add_note';
   args: Record<string, unknown>;
 }

@@ -62,22 +62,28 @@ export async function beginCourseTurn(env: Env, jobId: string, principal: AppPri
   const turns = results.reverse().map(row => ({ role: row.kind === 'you' ? 'user' as const : 'assistant' as const, content: row.text.slice(0,2000) }));
   return { turnId, claimId, replay: null, revision: Number(revision)+1, turns };
 }
-export async function finishCourseTurn(env: Env, jobId: string, subject: string, turnId: string, claimId: string, result: ChatResult, failed = false, displayName = 'Student'): Promise<number | null> {
+export async function finishCourseTurn(env: Env, jobId: string, subject: string, turnId: string, claimId: string, result: ChatResult, failed = false, displayName = 'Student', operationId?: string): Promise<number | null> {
+  // PR3's reservation may expire before the longer conversation recovery lease.
+  // Each effect checks it in the same transaction, so an old runner cannot
+  // restore output or notes after allowance recovery has fenced the operation.
+  const operationGuard=operationId?` AND EXISTS(SELECT 1 FROM app_operations o
+    WHERE o.id=? AND o.subject=? AND o.job_id=? AND o.kind='chat' AND o.state='running' AND o.lease_until>?)`:'';
+  const operationArgs=operationId?[operationId,subject,jobId,Date.now()]:[];
   const statements = [];
   for (const call of result.toolCalls) if (!failed && call.name === 'add_note') {
     statements.push(env.DB.prepare(`INSERT INTO annotations(id,job_id,at_seconds,text,author_subject,author_name,provenance)
-      SELECT ?,job_id,?,?,subject,?,'server-assistant' FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`)
-      .bind(crypto.randomUUID(),Number(call.args.seconds),String(call.args.text).slice(0,200),displayName,jobId,subject,claimId));
+      SELECT ?,job_id,?,?,subject,?,'server-assistant' FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')${operationGuard}`)
+      .bind(crypto.randomUUID(),Number(call.args.seconds),String(call.args.text).slice(0,200),displayName,jobId,subject,claimId,...operationArgs));
   }
 
   if (result.reply) statements.push(env.DB.prepare(`INSERT INTO course_messages(id,job_id,subject,turn_id,kind,provenance,text)
-    SELECT ?,job_id,subject,?,'coach','server-assistant',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`).bind(crypto.randomUUID(),turnId,result.reply,jobId,subject,claimId));
+    SELECT ?,job_id,subject,?,'coach','server-assistant',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')${operationGuard}`).bind(crypto.randomUUID(),turnId,result.reply,jobId,subject,claimId,...operationArgs));
   if (result.toolCalls.length) statements.push(env.DB.prepare(`INSERT INTO course_messages(id,job_id,subject,turn_id,kind,provenance,text)
-    SELECT ?,job_id,subject,?,'action','server-tool',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`).bind(crypto.randomUUID(),turnId,JSON.stringify(result.toolCalls),jobId,subject,claimId));
+    SELECT ?,job_id,subject,?,'action','server-tool',? FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')${operationGuard}`).bind(crypto.randomUUID(),turnId,JSON.stringify(result.toolCalls),jobId,subject,claimId,...operationArgs));
   statements.push(env.DB.prepare(`UPDATE course_turns SET state=?,reply=?,tools=?,finish_reason=?,revision=revision+1
-    WHERE job_id=? AND subject=? AND turn_id=? AND state='pending' AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now'))`)
-    .bind(failed?'failed':'complete',result.reply,JSON.stringify(result.toolCalls),result.finishReason,jobId,subject,turnId,jobId,subject,claimId));
-  statements.push(env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=NULL,pending_expires_at=NULL WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now') RETURNING revision`).bind(jobId,subject,claimId));
+    WHERE job_id=? AND subject=? AND turn_id=? AND state='pending' AND EXISTS(SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now'))${operationGuard}`)
+    .bind(failed?'failed':'complete',result.reply,JSON.stringify(result.toolCalls),result.finishReason,jobId,subject,turnId,jobId,subject,claimId,...operationArgs));
+  statements.push(env.DB.prepare(`UPDATE course_conversations SET revision=revision+1,pending_turn=NULL,pending_expires_at=NULL WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')${operationGuard} RETURNING revision`).bind(jobId,subject,claimId,...operationArgs));
   const saved = await env.DB.batch<{ revision: number }>(statements);
   if(!saved.at(-1)?.meta.changes)return null;
   const completed=await env.DB.prepare('SELECT revision FROM course_turns WHERE job_id=? AND subject=? AND turn_id=?').bind(jobId,subject,turnId).first<{revision:number}>();

@@ -16,8 +16,9 @@
   <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
     <p id="account-splits">Daily split allowance unavailable.</p>
+    <p id="account-chat" class="account-help">Listening Guy allowance unavailable.</p>
     <p id="account-quota">Model usage unavailable.</p>
-    <p class="account-help">Submitted runs count even if they fail. Listening Guy uses your Lab allowance separately.</p>
+    <p id="account-allowance-help" class="account-help">Only finished splits use the daily split allowance. Pending splits reserve a place; failed or cancelled splits return it. Listening Guy allows 50 human inputs per UTC day, separate from estimated Lab model usage.</p>
     <nav class="account-links" aria-label="Stem Splitter">
       <a class="account-button" href="/">← Back to Splitter</a>
       <a id="account-guidance" href="/teacher.html" hidden>Guide instructions</a>
@@ -48,7 +49,7 @@
   </details>
   <p id="account-back" hidden><a href="/">← Back to Splitter</a></p>
   <section id="account-footer" hidden>
-    <p class="account-help">Your splits remain in your account for 90 days.</p>
+    <p id="account-retention" class="account-help">Your splits remain in your account for 90 days.</p>
     <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
   </section>
   <nav class="account-resources" aria-label="CUNY AI Lab resources">
@@ -65,8 +66,12 @@
     <p class="project-credit">Built through the Critical AI Literacy Institute. A continuing project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
   </footer>
-  <div class="bottom-help"><hr><a href="mailto:ailab@gc.cuny.edu">Having trouble?</a><hr></div>
 </main>
+<footer class="bug-report-footer" data-bug-report aria-label="Bug reports"></footer>
+<link rel="stylesheet" href="/bug-report/stem.css?v=20261007">
+<script type="module" src="/bug-report/stem.js?v=20261007"></script>
+<script src="/usage.js?v=20261006-reliability"></script>
 <script src="/session-guard.js?v=20261006-classroom"></script>
-<script src="/account.js?v=20261006-classroom"></script>
+<script src="/guest.js?v=20261006"></script>
+<script src="/account.js?v=20261006-guest"></script>
 </html>

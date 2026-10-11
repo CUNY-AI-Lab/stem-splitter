@@ -1,0 +1,129 @@
+{
+  "recordedAt": "2026-10-06T20:05:26.596782+00:00",
+  "applicationSourceHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+  "finalTestFixtureHead": "cd48cd4233c4da931a59c019625cf7d0cba50426",
+  "baseHead": "f5506597f8fab2196d3f55119242d76210ff553d",
+  "paidProviderCalls": "mocked",
+  "deploymentPerformed": false,
+  "productionDataChanged": false,
+  "independentReview": "pending exact final head; this is not an audit certification",
+  "checks": [
+    {
+      "name": "root",
+      "command": "bun run test",
+      "testedHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+      "result": {
+        "worker": 325,
+        "server": 42,
+        "python": [
+          5,
+          30,
+          9
+        ]
+      },
+      "localLog": "/tmp/stem-pr3-final-root.log",
+      "sha256": "d491040c2a74834203fda5883e24c593e5f5ffc3787a32da546cddcfdece1d14"
+    },
+    {
+      "name": "cloudflare",
+      "command": "cd cloudflare && bun run typecheck && bun run test",
+      "testedHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+      "result": {
+        "passed": 84
+      },
+      "localLog": "/tmp/stem-pr3-final-cloudflare.log",
+      "sha256": "277657e5d8d464e3c35f3e8ba0753d72ae0137593db4304532774e8a1a9ac2de"
+    },
+    {
+      "name": "extractor",
+      "command": "python3 -m unittest discover -s replicate-yt-audio -p 'test_*.py'",
+      "testedHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+      "result": {
+        "passed": 4
+      },
+      "localLog": "/tmp/stem-pr3-final-extractor.log",
+      "sha256": "119eb158af9c8a17b35e94789e871de6f57880473f2db9e480f799d8e7a49d2d"
+    },
+    {
+      "name": "chrome",
+      "command": "playwright test --config cloudflare/playwright.config.mjs",
+      "testedHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+      "result": {
+        "passed": 38
+      },
+      "localLog": "/tmp/stem-pr3-final-chrome.log",
+      "sha256": "17950f98b2a9f0356986cfb4a55049f347c9caaa244cedbf3964e977942707e1"
+    },
+    {
+      "name": "firefox",
+      "command": "STEM_BROWSER=firefox playwright test playback.spec.mjs guest.spec.mjs account.spec.mjs",
+      "testedHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+      "result": {
+        "passed": 23
+      },
+      "localLog": "/tmp/stem-pr3-final-firefox.log",
+      "sha256": "06295bcff0b59a2d1e2bd610d4dee3c26ea6ea5834be610d20158d5d5c4b39c1"
+    },
+    {
+      "name": "webkit",
+      "command": "STEM_BROWSER=webkit playwright test playback.spec.mjs guest.spec.mjs account.spec.mjs gateway.spec.mjs",
+      "testedHead": "cd48cd4233c4da931a59c019625cf7d0cba50426",
+      "result": {
+        "passed": 24
+      },
+      "localLog": "/tmp/stem-pr3-final-webkit.log",
+      "sha256": "08d4615bca23cf729d12c47a23e7a051c279737301cf8b7fbec9f0f784c895de"
+    },
+    {
+      "name": "account-chrome",
+      "command": "playwright test account.spec.mjs",
+      "testedHead": "cd48cd4233c4da931a59c019625cf7d0cba50426",
+      "result": {
+        "passed": 4
+      },
+      "localLog": "/tmp/stem-pr3-final-account-chrome.log",
+      "sha256": "542fae9d1fbed9c4a3fd25d73c7edc999c6865c605d8ad0397ca0c543ad4e42f"
+    },
+    {
+      "name": "account-firefox",
+      "command": "STEM_BROWSER=firefox playwright test account.spec.mjs",
+      "testedHead": "cd48cd4233c4da931a59c019625cf7d0cba50426",
+      "result": {
+        "passed": 4
+      },
+      "localLog": "/tmp/stem-pr3-final-account-firefox.log",
+      "sha256": "96f34892f971482c212a5c75150d5def763813945b84d127e262bb113900ca84"
+    },
+    {
+      "name": "account-webkit",
+      "command": "STEM_BROWSER=webkit playwright test account.spec.mjs",
+      "testedHead": "cd48cd4233c4da931a59c019625cf7d0cba50426",
+      "result": {
+        "passed": 4
+      },
+      "localLog": "/tmp/stem-pr3-final-account-webkit.log",
+      "sha256": "3ec28e70006a70f03b1ce2ce63d09a986f267729bf9b4e7b60fc1db474df486f"
+    },
+    {
+      "name": "adapter-audit",
+      "command": "cd cloudflare && bun audit --production",
+      "testedHead": null,
+      "result": {
+        "vulnerabilities": 0,
+        "packages": 10
+      },
+      "localLog": "/tmp/stem-pr3-integrated-adapter-audit.log",
+      "sha256": "c30e6e9e762a3fed57f1733263d5710c67c6e15c78a2230c1d6ec197d192e885"
+    },
+    {
+      "name": "dry-run",
+      "command": "wrangler deploy --config cloudflare/wrangler.jsonc --dry-run --metafile",
+      "testedHead": "ba752069180e625dfb85f49fe773ca523010fc1e",
+      "result": {
+        "deployed": false
+      },
+      "localLog": "/tmp/stem-pr3-final-dryrun.log",
+      "sha256": "708477e713a216703101770b2a9415d19c9a4117ded3461997b3ab5d54434643"
+    }
+  ]
+}

@@ -111,6 +111,7 @@ async function openFolder(id, scope = context()) {
 async function selectCourse() {
   generation++; ready = false; course = courses.find(entry => entry.classId === el('classroom-course').value); clearCourseView();
   if (!course) return null;
+  window.StemUsage?.setCourse(course.classId);
   const scope = context(); el('classroom-refresh').disabled = true; status('Loading…');
   try {
     await Promise.all([folders(scope), course.owner ? roster(false, scope) : Promise.resolve()]);

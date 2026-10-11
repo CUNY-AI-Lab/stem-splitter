@@ -29,10 +29,10 @@ test('alias preserves denied responses and fails closed without exposing excepti
 
 test('health identifies guide configuration without exposing credentials', async () => {
   const env = { DB: { prepare: () => ({ first: async () => ({ ready: 1 }) }) },
-    GATEWAY: { fetch: async () => new Response() }, GATEWAY_MODEL: 'glm-5.2', OPENROUTER_API_KEY: 'fixture-only' };
+    GATEWAY: { fetch: async () => new Response() }, GATEWAY_MODEL: 'glm-5.2', GATEWAY_FALLBACK_MODEL: 'deepseek-v4-flash-0731', OPENROUTER_API_KEY: 'fixture-only' };
   const health = await worker.fetch(new Request('https://preview.test/healthz'), env, {});
   const body = await health.json();
-  assert.deepEqual(body.listeningGuide, { configured: true, fallbackConfigured: false, transport: 'cail-gateway' });
+  assert.deepEqual(body.listeningGuide, { configured: true, fallbackConfigured: true, transport: 'cail-gateway' });
   assert.doesNotMatch(JSON.stringify(body), /fixture-only|fixture\/model/);
   const unset = await worker.fetch(new Request('https://preview.test/healthz'), { ...env, GATEWAY: undefined }, {});
   assert.equal((await unset.json()).listeningGuide.configured, false);

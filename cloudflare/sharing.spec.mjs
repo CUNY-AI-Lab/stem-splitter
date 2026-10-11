@@ -28,7 +28,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await expect(page.locator('#stem-choice')).not.toContainText(/parts/i);
     await expect(page.getByRole('radio', { name: '4 splits: voice, percussion, low end, the rest', exact: true })).toBeVisible();
     await expect(page.locator('footer .project-credit')).toContainText('Critical AI Literacy Institute');
-    expect(await page.locator('footer').evaluate(el => getComputedStyle(el).borderTopWidth)).toBe('1px');
+    expect(await page.locator('main > footer').evaluate(el => getComputedStyle(el).borderTopWidth)).toBe('1px');
     expect(await page.locator('.project-credit').evaluate(el => getComputedStyle(el).borderBottomWidth)).toBe('1px');
     await page.locator('.share-btn:not(.to-remix-btn)').click();
     await expect.poll(async () => (await server.fetch('/api/shared-jobs/remix-fixture')).status).toBe(200);

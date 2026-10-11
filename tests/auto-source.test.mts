@@ -337,3 +337,22 @@ test('a failed snapshot write rolls back its app-owned key', async () => {
   );
   assert.deepEqual(deleted, ['auto-inputs/v1/auto_job_rollback']);
 });
+
+test('durable Auto recovery reuses its own verified snapshot and stale cleanup cannot delete it',async()=>{
+ await withBucket(async(bucket,env)=>{
+  // The lightweight Node fixture shim omits R2 custom metadata. Preserve the
+  // actual put metadata in this fixture to exercise the native R2 contract.
+  const metadata=new Map<string,Record<string,string>>(),nativePut=bucket.put.bind(bucket),nativeHead=bucket.head.bind(bucket);
+  bucket.put=async(key,body,options)=>{if(options?.customMetadata)metadata.set(key,options.customMetadata);return nativePut(key,body,options);};
+  bucket.head=async(key)=>{const object=await nativeHead(key);if(object)Object.assign(object,{customMetadata:metadata.get(key)});return object;};
+  await bucket.put(SOURCE_KEY,ORIGINAL);
+  const initial=await prepareAuthoritativeAutoSource(env,{jobId:'durable_auto',sourceKey:SOURCE_KEY});
+  const replay=await prepareAuthoritativeAutoSource(env,{jobId:'durable_auto',sourceKey:SOURCE_KEY,allowExisting:true,isCurrent:async()=>true});
+  assert.deepEqual(replay,initial);
+  await assert.rejects(prepareAuthoritativeAutoSource(env,{jobId:'durable_auto',sourceKey:SOURCE_KEY}),/already exists/);
+  const put=bucket.put.bind(bucket);let current=true;
+  bucket.put=async(...args)=>{await put(...args);current=false;throw new Error('old Worker lost acknowledgement');};
+  await assert.rejects(prepareAuthoritativeAutoSource(env,{jobId:'stale_auto',sourceKey:SOURCE_KEY,isCurrent:async()=>current}));
+  assert.deepEqual(await storedBytes(bucket,'auto-inputs/v1/stale_auto'),ORIGINAL);
+ });
+});

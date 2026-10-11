@@ -3,6 +3,7 @@ import { authFailure } from '../src/identity.ts';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
 import { REQUEST_ID } from './gateway.ts';
 import { validClassId } from '../src/classroom/contract.ts';
+import { clearGuestCookie } from './guest.ts';
 
 // Doorway owns CUNY OIDC, one-use PKCE grants, session revocation and Admission.
 // These RPC capabilities have deployment-pinned audiences and callback hosts.
@@ -19,6 +20,8 @@ export interface SsoEnv {
   PREVIEW_IDENTITY?: WorkerIdentity;
   REQUEST_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
   CAIL_IDENTITY_JWKS?: string;
+  /** Private adapter callback; never sent to Doorway or supplied by a browser. */
+  guestSignout?: () => Promise<void>;
 }
 export const SESSION_COOKIE = '__Host-stem-session';
 export const LOGIN_COOKIE = '__Host-stem-login';
@@ -122,9 +125,10 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
   if (request.method !== method) return new Response(null, { status: 405, headers: { Allow: method } });
   if (method === 'POST' && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return denied(403);
   if (url.pathname === '/auth/logout') {
-    const cleared = [cookie(SESSION_COOKIE, '', 0), cookie(LOGIN_COOKIE, '', 0)];
+    const cleared = [cookie(SESSION_COOKIE, '', 0), cookie(LOGIN_COOKIE, '', 0),clearGuestCookie()];
     const token = readCookie(request, SESSION_COOKIE);
     try {
+      await env.guestSignout?.();
       if (TOKEN.test(token)) {
         if (!client) throw new Error('Identity unavailable');
         await boundedRpc(client.revoke(token));
@@ -165,7 +169,8 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
       // A new login replaces this browser's previous app session, not CUNY's.
       const previous = readCookie(request, SESSION_COOKIE);
       if (TOKEN.test(previous) && previous !== result.token) await boundedRpc(client.revoke(previous));
-      return redirect(safeNext(pending.next), [cookie(SESSION_COOKIE, result.token, Math.min(86400, Math.floor((result.expiresAt - Date.now()) / 1000))), cookie(LOGIN_COOKIE, '', 0)]);
+      await env.guestSignout?.();
+      return redirect(safeNext(pending.next), [cookie(SESSION_COOKIE, result.token, Math.min(86400, Math.floor((result.expiresAt - Date.now()) / 1000))), cookie(LOGIN_COOKIE, '', 0),clearGuestCookie()]);
     }
     return new Response('Not found', { status: 404 });
   } catch { return signInFailure(request, 503); }
@@ -178,12 +183,17 @@ export function publicApi(request: Request): boolean {
     (path === '/api/webhooks/separation' && request.method === 'POST');
 }
 
-export async function authenticatedRequest(request: Request, env: SsoEnv): Promise<Request | Response> {
+export function sanitizedRequest(request: Request): Request {
   const headers = new Headers(request.headers);
   const requestId = headers.get('x-cail-request-id') ?? headers.get('x-request-id');
   // Even a valid app JWT submitted by the browser is not authority here.
   for (const name of [...headers.keys()]) if (name === 'cookie' || name === 'authorization' || name.startsWith('x-cail-')) headers.delete(name);
   if (requestId && REQUEST_ID.test(requestId)) headers.set('x-cail-request-id', requestId);
+  return new Request(request.url,{method:request.method,headers,body:request.body,redirect:'manual',signal:request.signal});
+}
+
+export async function authenticatedRequest(request: Request, env: SsoEnv): Promise<Request | Response> {
+  const headers = new Headers(sanitizedRequest(request).headers);
   if (!publicApi(request)) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
         (request.headers.get('origin') !== env.PUBLIC_BASE_URL || request.headers.get('sec-fetch-site') === 'cross-site')) return denied(403);

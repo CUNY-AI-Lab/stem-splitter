@@ -228,6 +228,7 @@ export async function streamGuide(
   // generation made under the current prompt becomes the class-wide cache.
   // Returning this generation also keeps the final SSE event consistent with
   // the deltas this caller received when two generations race.
+  await env.assistantEffectIntent?.();
   await cacheGuideIfPromptCurrent(env, guide, promptState.revision, promptHash);
   return { guide, cached: false };
 }
@@ -281,7 +282,7 @@ export async function streamChat(
     onDelta
   );
   const toolCalls = sanitizeToolCalls(reply.toolCalls, stemNames, durationSec);
-  if (!reply.content && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
+  if (!reply.content.trim() && toolCalls.length === 0) throw new AssistantError(502, COACH_DOWN);
 
   // Tool-calling models often act without narrating, but the narration IS the
   // guiding. One cheap tool-free follow-up turns the console moves into prose;

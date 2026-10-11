@@ -1,5 +1,17 @@
 # Cloudflare deployment
 
+## Reliability and guest candidate — October 6, 2026
+
+The PR3 source replaces historical attempt counting with 15 successful member
+splits and 50 human Listening Guy inputs per UTC submission day, durable
+reservations/recovery, bounded import validation and redacted usage evidence.
+The optional guest path has separate 5/25 allowances and private ownership;
+it remains disabled until separately approved bot verification and Gateway
+sponsor configuration are installed. See [the operation/migration runbook](../docs/reliability-operations.md),
+[guest access gates](../docs/guest-access.md) and [local verification](../docs/evidence/reliability-20261006/verification.md).
+These are candidate source semantics, not a deployment or permission change.
+The dated ten-attempt/visitor-disabled receipts below describe the older release.
+
 ## Classroom candidate — October 6, 2026
 
 The prospective course implementation and migration `0021` are described in

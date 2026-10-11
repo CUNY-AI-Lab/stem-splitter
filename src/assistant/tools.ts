@@ -71,7 +71,10 @@ export function sanitizeToolCalls(
   durationSec?: number
 ): AssistantToolCall[] {
   const out: AssistantToolCall[] = [];
+  const seen = new Set<string>();
   for (const call of raw.slice(0, MAX_TOOL_CALLS)) {
+    if (call.id && (typeof call.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(call.id) || seen.has(call.id))) continue;
+    if (call.id) seen.add(call.id);
     const name = call.function?.name;
     let args: unknown;
     try {
@@ -85,16 +88,16 @@ export function sanitizeToolCalls(
     if (name === 'solo' || name === 'set_mute') {
       if (typeof a.stem !== 'string' || !stemNames.includes(a.stem)) continue;
       if (name === 'set_mute' && typeof a.muted !== 'boolean') continue;
-      out.push({ name, args: name === 'solo' ? { stem: a.stem } : { stem: a.stem, muted: a.muted } });
+      out.push({ ...(call.id ? { id: call.id } : {}), name, args: name === 'solo' ? { stem: a.stem } : { stem: a.stem, muted: a.muted } });
     } else if (name === 'seek' || name === 'add_note') {
       const seconds = clampSeconds(a.seconds, durationSec);
       if (seconds === null) continue;
       if (name === 'add_note') {
         const text = String(a.text ?? '').trim().slice(0, MAX_NOTE_CHARS);
         if (!text) continue;
-        out.push({ name, args: { seconds, text } });
+        out.push({ ...(call.id ? { id: call.id } : {}), name, args: { seconds, text } });
       } else {
-        out.push({ name, args: { seconds } });
+        out.push({ ...(call.id ? { id: call.id } : {}), name, args: { seconds } });
       }
     }
   }

@@ -637,3 +637,30 @@ test('waveforms support native touch input without moving the narrow page or con
     expect(errors).toEqual([]);
   } finally { await server.close(); await context.close(); }
 });
+
+test('usage observations retry once with stable IDs and exclude private content and clock ticks',async({page})=>{
+ const batches=[],actors=[];
+ await page.route('**/api/usage-events',async route=>{batches.push(route.request().postDataJSON());actors.push(route.request().headers()['x-stem-usage-actor']);await route.fulfill({status:batches.length===1?503:200,contentType:'application/json',body:'{"accepted":true}'});});
+ const server=await fixture(page,['vocals','drums','bass','other'],{owned:true});
+ try {
+  await expect.poll(()=>batches.length).toBeGreaterThanOrEqual(2);
+  expect(batches[0]).toEqual(batches[1]);
+  expect(actors[0]).toBe(TEST_SUBJECTS.alice);expect(actors[1]).toBe(actors[0]);
+  await page.locator('.play-btn').click();
+  await expect.poll(()=>page.evaluate(()=>mixers.get('remix-fixture').playing)).toBe(true);
+  await page.evaluate(()=>{const m=mixers.get('remix-fixture');m.seekTo(42);m.seekTo(8,'loop');});
+  await page.locator('.play-btn').click();
+  await page.evaluate(()=>mixers.get('remix-fixture').pause());
+  await expect.poll(()=>batches.flatMap(b=>b.events).filter(e=>e.type==='playback_stop').length).toBe(1);
+  const events=batches.slice(1).flatMap(b=>b.events);
+  expect(events.filter(e=>e.type==='seek')).toHaveLength(1);
+  expect(events.find(e=>e.type==='seek').positionBucket).toBe(4);
+  expect(events.filter(e=>e.type==='playback_start')).toHaveLength(1);
+  expect(JSON.stringify(batches)).not.toContain('Playback review');
+  expect(JSON.stringify(batches)).not.toContain(TEST_SUBJECTS.alice);
+  expect(events.every(e=>Object.keys(e).every(k=>['id','type','jobId','durationMs','positionBucket'].includes(k)))).toBe(true);
+  const before=batches.length;
+  await page.evaluate(()=>{window.StemUsage.record('seek',{jobId:'remix-fixture',position:40});window.StemUsage.clear();});
+  await page.waitForTimeout(1500);expect(batches.length).toBe(before);
+ }finally{await server.close();}
+});

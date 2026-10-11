@@ -429,7 +429,11 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(await page.evaluate((id) => localStorage.getItem(`coachChat:${id}`), jobId)).toBeNull();
   await expect(page.locator('.coach-guide-text')).toBeVisible();
 
-  const storedStemResponse = await server.fetch(`/api/files/stems/${jobId}/vocals.mp3`);
+  const savedJob=await(await server.fetch(`/api/jobs/${jobId}`)).json();
+  expect(savedJob.stems.map(stem=>stem.name)).toEqual(['vocals','drums','bass','other']);
+  for(const stem of savedJob.stems)expect(stem.url).toMatch(new RegExp(`^/api/files/stems/${jobId}/[a-f0-9-]+/${stem.name}\\.mp3$`));
+  const savedVocals=savedJob.stems.find(stem=>stem.name==='vocals');
+  const storedStemResponse = await server.fetch(savedVocals.url);
   expect(storedStemResponse.status).toBe(200);
   expect(storedStemResponse.headers.get('content-length')).toBe(
     String(stemAudio.get('vocals').length)
@@ -440,17 +444,14 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(storedKeysResponse.status).toBe(200);
   const { keys: storedKeys } = await storedKeysResponse.json();
   expect(storedKeys).toEqual([
-    `stems/${jobId}/bass.mp3`,
-    `stems/${jobId}/drums.mp3`,
-    `stems/${jobId}/other.mp3`,
-    `stems/${jobId}/vocals.mp3`,
+    ...savedJob.stems.map(stem=>stem.url.replace('/api/files/','')).sort(),
     expect.stringMatching(/^uploads\/[0-9a-f-]+\/source\.wav$/),
   ]);
   expect(browserErrors).toEqual([]);
 
   await page.screenshot({ path: testInfo.outputPath('local-hosting-ready.png'), fullPage: false });
 
-  await page.route(`**/api/files/stems/${jobId}/vocals.mp3`, (route) =>
+  await page.route(`**${savedVocals.url}`, (route) =>
     route.fulfill({ status: 404, body: 'Not found' })
   );
   await page.reload();
@@ -595,8 +596,10 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
   const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
   const storedKeys = (await storedKeysResponse.json()).keys;
   // Stored under the contract name, so /api/files and the mixer agree.
-  expect(storedKeys).toContain(`stems/${created.id}/instrumental.mp3`);
-  expect(storedKeys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  const instrumental=result.stems.find(stem=>stem.name==='instrumental');
+  expect(instrumental.url).toMatch(new RegExp(`^/api/files/stems/${created.id}/[a-f0-9-]+/instrumental\\.mp3$`));
+  expect(storedKeys).toContain(instrumental.url.replace('/api/files/',''));
+  expect(storedKeys.some(key=>key.startsWith(`stems/${created.id}/`)&&key.endsWith('/no_vocals.mp3'))).toBe(false);
   expect(browserErrors).toEqual([]);
 });
 
@@ -941,7 +944,9 @@ test('completes a six-track split whose guitar and piano tracks are near-silent'
 
   // The quiet tracks were stored verbatim rather than dropped or substituted.
   for (const name of quietNames) {
-    const stored = await server.fetch(`/api/files/stems/${created.id}/${name}.mp3`);
+    const track=result.stems.find(stem=>stem.name===name);
+    expect(track.url).toMatch(new RegExp(`^/api/files/stems/${created.id}/[a-f0-9-]+/${name}\\.mp3$`));
+    const stored = await server.fetch(track.url);
     expect(stored.status).toBe(200);
     expect(Buffer.from(await stored.arrayBuffer()).equals(quietAudio)).toBe(true);
   }
@@ -1045,8 +1050,11 @@ test('imports a YouTube link and renames no_vocals for the two-track split', asy
 
   const storedKeysResponse = await e2eFetch(server, '/__e2e/audio');
   const { keys } = await storedKeysResponse.json();
-  expect(keys).toContain(`stems/${created.id}/instrumental.mp3`);
-  expect(keys).not.toContain(`stems/${created.id}/no_vocals.mp3`);
+  const result=await (await server.fetch(`/api/jobs/${created.id}`)).json();
+  const instrumental=result.stems.find(stem=>stem.name==='instrumental');
+  expect(instrumental.url).toMatch(new RegExp(`^/api/files/stems/${created.id}/[a-f0-9-]+/instrumental\\.mp3$`));
+  expect(keys).toContain(instrumental.url.replace('/api/files/',''));
+  expect(keys.some(key=>key.startsWith(`stems/${created.id}/`)&&key.endsWith('/no_vocals.mp3'))).toBe(false);
   expect(keys.some((key) => /^uploads\/[0-9a-f-]+\/source\.m4a$/.test(key))).toBe(true);
   expect(browserErrors).toEqual([]);
 });
@@ -1833,7 +1841,8 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);
-  expect(await page.locator('link[rel="stylesheet"]').getAttribute('href')).toMatch(/\?v=/);
+  expect(await page.locator('link[rel="stylesheet"][href^="/styles.css"]').getAttribute('href')).toMatch(/\?v=/);
+  expect(await page.locator('link[rel="stylesheet"][href^="/bug-report/stem.css"]').getAttribute('href')).toMatch(/\?v=/);
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'SIGN IN' });
   const signInButtonBox = await signInButton.boundingBox();

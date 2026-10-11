@@ -1,5 +1,6 @@
 import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
+import { guestOwnsJob } from '../guest/access.ts';
 import { COURSE_APP, STEM_COURSE_ID, validAccess, validClassId, validFailure, type CourseAssignment } from './contract.ts';
 
 export class CourseError extends Error {
@@ -50,6 +51,8 @@ export function cleanDisplayName(value: unknown): string {
 }
 export interface JobPermission { owner: boolean; read: boolean; comment: boolean; courseId: string | null; instructor: boolean; administration?: boolean }
 export async function jobPermission(env: Env, principal: AppPrincipal, id: string): Promise<JobPermission | null> {
+  if (principal.quotaClass === 'guest') return await guestOwnsJob(env,principal.subject,id)
+    ? {owner:true,read:true,comment:true,courseId:null,instructor:false} : null;
   const row = await env.DB.prepare(`SELECT o.subject,j.created_at,c.course_id FROM jobs j JOIN job_owners o ON o.job_id=j.id
     LEFT JOIN job_courses c ON c.job_id=j.id WHERE j.id=? AND j.created_at>datetime('now','-90 days')`).bind(id)
     .first<{ subject: string; course_id: string | null }>();
