@@ -1,0 +1,193 @@
+name: Publish reviewed YouTube extractor
+
+on:
+  # Register this workflow from the maintained branch. A push never publishes.
+  push:
+    branches: [codex/stem-reliability-20261006]
+    paths: ['.github/workflows/yt-audio-publish.yml']
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full reviewed commit SHA with a successful extractor candidate run
+        type: string
+        required: true
+      publish:
+        description: Publish the verified image to Replicate
+        type: boolean
+        required: true
+        default: false
+      confirm_model:
+        description: Enter milwrite/yt-audio to authorize publication
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: stem-youtube-publication
+  cancel-in-progress: false
+
+jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'Publication requires a separate manual dispatch with publish=true.'
+
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/codex/stem-reliability-20261006' &&
+      github.repository == 'CUNY-AI-Lab/stem-splitter'
+    name: Build and verify the reviewed image, then publish when requested
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXTRACTOR_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      REQUEST_PUBLICATION: ${{ inputs.publish }}
+      CONFIRM_MODEL: ${{ inputs.confirm_model }}
+      DOCKER_CONFIG: ${{ runner.temp }}/stem-replicate-publish-docker
+    steps:
+      - name: Validate manual request
+        run: |
+          set -euo pipefail
+          [[ "$EXTRACTOR_SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          if [ "$REQUEST_PUBLICATION" = true ]; then
+            test "$CONFIRM_MODEL" = milwrite/yt-audio
+          fi
+          umask 077
+          mkdir -p "$DOCKER_CONFIG"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source belongs to the reviewed branch
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXTRACTOR_SOURCE_COMMIT" HEAD
+          git checkout --detach "$EXTRACTOR_SOURCE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$EXTRACTOR_SOURCE_COMMIT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12.13'
+      - name: Require successful candidate CI for the exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const source = process.env.EXTRACTOR_SOURCE_COMMIT;
+          const query = new URLSearchParams({ head_sha: source, status: 'success', per_page: '100' });
+          const endpoint = `https://api.github.com/repos/CUNY-AI-Lab/stem-splitter/actions/workflows/yt-audio-candidate.yml/runs?${query}`;
+          const response = await fetch(endpoint, {
+            headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+            signal: AbortSignal.timeout(30_000),
+          });
+          assert.equal(response.status, 200, 'candidate CI status must be readable');
+          const body = await response.json();
+          const run = body.workflow_runs?.find(run =>
+            run.head_sha === source && run.conclusion === 'success' &&
+            run.head_branch === 'codex/stem-reliability-20261006' &&
+            ['push', 'workflow_dispatch'].includes(run.event));
+          assert.ok(run, 'this exact source commit requires a successful candidate image run');
+          console.log(`Verified candidate CI run ${run.id} for ${source}.`);
+          NODE
+      - name: Verify native runner and run free extractor fixtures
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(docker info --format '{{.OSType}}/{{.Architecture}}')" = linux/x86_64
+          python3 -m unittest discover -s replicate-yt-audio -p 'test_*.py'
+      - name: Install pinned Cog for the CPU build
+        uses: replicate/setup-cog@8a5fea3c1818b6950dcf8027285f5a9b447c0c4a # v2
+        with:
+          cog-version: 'v0.23.0'
+          token: ''
+          install-cuda: false
+      - name: Build the exact source commit
+        working-directory: replicate-yt-audio
+        run: cog build --progress plain -t "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
+      - name: Verify the built image with network disabled
+        run: >-
+          node replicate-yt-audio/verify-image.mjs
+          "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
+          "$EXTRACTOR_SOURCE_COMMIT"
+          "$RUNNER_TEMP/yt-audio-candidate-evidence.json"
+      - name: Authenticate the publisher using hidden standard input
+        if: inputs.publish
+        env:
+          REPLICATE_CLI_AUTH_TOKEN: ${{ secrets.REPLICATE_CLI_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$REPLICATE_CLI_AUTH_TOKEN" || { echo 'REPLICATE_CLI_AUTH_TOKEN is required.'; exit 1; }
+          if ! login_result="$(printf '%s' "$REPLICATE_CLI_AUTH_TOKEN" | cog --no-color login --token-stdin 2>&1)"; then
+            echo 'Replicate registry authentication failed.'
+            exit 1
+          fi
+          case "$login_result" in
+            *'authenticated as milwrite!'*) echo 'Replicate publisher verified as milwrite.' ;;
+            *) echo 'Publication requires the milwrite account.'; exit 1 ;;
+          esac
+          unset login_result
+      - name: Push the same verified image to milwrite/yt-audio
+        if: inputs.publish
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const directory = process.env.RUNNER_TEMP;
+          const evidence = JSON.parse(readFileSync(`${directory}/yt-audio-candidate-evidence.json`, 'utf8'));
+          const source = process.env.EXTRACTOR_SOURCE_COMMIT;
+          assert.equal(evidence.sourceCommit, source);
+          assert.equal(evidence.platform, 'linux/amd64');
+          assert.equal(evidence.smoke.setupPassed, true);
+          assert.equal(evidence.smoke.predictionCalls, 0);
+          assert.equal(evidence.runtimeNetwork, 'none');
+          assert.match(evidence.imageId, /^sha256:[a-f0-9]{64}$/);
+          const target = 'r8.im/milwrite/yt-audio:latest';
+          const docker = (args, timeout = 30_000) => execFileSync('docker', args, {
+            encoding: 'utf8', timeout, maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+          }).trim();
+          try {
+            docker(['tag', evidence.imageId, target]);
+            assert.equal(docker(['image', 'inspect', '--format', '{{.Id}}', target]), evidence.imageId);
+            const digest = docker(['push', '--quiet', target], 300_000);
+            assert.match(digest, /^sha256:[a-f0-9]{64}$/);
+            assert.equal(docker(['image', 'inspect', '--format', '{{.Id}}', target]), evidence.imageId);
+            const receipt = {
+              schemaVersion: 1, sourceCommit: source, imageId: evidence.imageId,
+              registryReference: `r8.im/milwrite/yt-audio@${digest}`,
+              registryDigest: digest, schemaSha256: evidence.schemaSha256,
+              imagePublished: true, replicateVersionVerified: false,
+              liveImportVerified: false, predictionCalls: 0,
+            };
+            writeFileSync(`${directory}/yt-audio-publication-evidence.json`, `${JSON.stringify(receipt, null, 2)}\n`);
+            console.log(`Published the verified image: ${receipt.registryReference}`);
+          } catch {
+            // Provider errors can contain raw response bodies; preserve only a safe category.
+            console.error('Replicate image publication or digest verification failed. Inspect the model version before retrying.');
+            process.exitCode = 1;
+          }
+          NODE
+      - name: Preserve sanitized verification and publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: yt-audio-publication-${{ inputs.source_commit }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/yt-audio-candidate-evidence.json
+            ${{ runner.temp }}/yt-audio-publication-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove temporary registry authentication
+        if: always()
+        run: rm -f "$DOCKER_CONFIG/config.json"
