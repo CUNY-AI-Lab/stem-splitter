@@ -49,7 +49,8 @@ import json
 import platform
 import re
 import subprocess
-from predict import Predictor
+from predict import FORMAT_SELECTOR, Predictor
+from yt_dlp import YoutubeDL
 
 expected = {"yt-dlp": "2026.8.19", "yt-dlp-ejs": "0.8.0", "deno": "2.9.5"}
 versions = {name: importlib.metadata.version(name) for name in expected}
@@ -78,12 +79,37 @@ def forbid_prediction(*args, **kwargs):
 
 Predictor.predict = forbid_prediction
 Predictor().setup()
+
+# Exercise the image's real yt-dlp selector with synthetic, already-extracted
+# format metadata. No extractor, download, or provider prediction runs here.
+formats = {
+    "audio-m4a": {"format_id": "audio-m4a", "ext": "m4a", "acodec": "mp4a.40.2", "vcodec": "none"},
+    "audio-webm": {"format_id": "audio-webm", "ext": "webm", "acodec": "opus", "vcodec": "none"},
+    "muxed": {"format_id": "muxed", "ext": "mp4", "acodec": "mp4a.40.2", "vcodec": "avc1.42001E"},
+}
+format_selection = {}
+with YoutubeDL({"quiet": True, "no_warnings": True, "cachedir": False, "check_formats": False}) as ydl:
+    ydl.urlopen = forbid_prediction
+    selector = ydl.build_format_selector(FORMAT_SELECTOR)
+    for name, available, expected_id in (
+        ("muxedOnly", ["muxed"], "muxed"),
+        ("audioOnlyPreferred", ["audio-m4a", "audio-webm", "muxed"], "audio-m4a"),
+        ("otherAudioPreferred", ["audio-webm", "muxed"], "audio-webm"),
+    ):
+        selected = ydl._select_formats([formats[key].copy() for key in available], selector)
+        assert len(selected) == 1 and selected[0]["format_id"] == expected_id, name
+        assert selected[0]["acodec"] != "none", name + " must contain audio"
+        format_selection[name] = selected[0]["format_id"]
 print(json.dumps({"python": platform.python_version(), "packages": versions,
-                  "executables": executables, "setupPassed": True, "predictionCalls": 0}))
+                  "executables": executables, "setupPassed": True, "predictionCalls": 0,
+                  "formatSelection": format_selection}))
 `));
 assert.equal(smoke.setupPassed, true);
 assert.equal(smoke.predictionCalls, 0);
-assert.deepEqual(Object.keys(smoke).sort(), ['executables', 'packages', 'predictionCalls', 'python', 'setupPassed']);
+assert.deepEqual(smoke.formatSelection, {
+  muxedOnly: 'muxed', audioOnlyPreferred: 'audio-m4a', otherAudioPreferred: 'audio-webm',
+});
+assert.deepEqual(Object.keys(smoke).sort(), ['executables', 'formatSelection', 'packages', 'predictionCalls', 'python', 'setupPassed']);
 
 const evidence = {
   schemaVersion: 1,

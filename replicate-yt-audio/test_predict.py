@@ -86,4 +86,75 @@ class ExtractorTests(unittest.TestCase):
         with patch.object(m.shutil,'which',return_value=None):
             with self.assertRaisesRegex(RuntimeError,'dependency'):m.Predictor().setup()
 
+    def test_fixed_failure_codes_distinguish_access_from_extractor_compatibility(self):
+        cases = [
+            ("ERROR: Sign in to confirm you’re not a bot", "source_denied_bot_verification"),
+            ("ERROR: CAPTCHA verification required", "source_denied_bot_verification"),
+            ("ERROR: Sign in to watch this video", "source_denied_authentication"),
+            ("ERROR: Authentication is required", "source_denied_authentication"),
+            ("ERROR: Sign in to confirm your age", "source_denied_age_restricted"),
+            ("ERROR: This video is age-restricted", "source_denied_age_restricted"),
+            ("ERROR: Private video. Sign in if you have access", "source_denied_private"),
+            ("ERROR: The uploader has not made this video available in your country", "source_denied_geo_restricted"),
+            ("ERROR: This video has been removed by the uploader", "source_denied_content_restricted"),
+            ("ERROR: This video is DRM protected", "source_denied_content_restricted"),
+            ("ERROR: This video is unavailable", "source_denied_content_restricted"),
+            ("ERROR: HTTP Error 401: Unauthorized", "source_denied_http_401"),
+            ("ERROR: HTTPError 403: Forbidden", "source_denied_http_403"),
+            ("ERROR: HTTP status code: 429 Too Many Requests", "source_rate_limited"),
+            ("ERROR: rate-limited", "source_rate_limited"),
+            ("WARNING: n challenge solving failed: Some formats may be missing", "extractor_failed_js_runtime"),
+            ("WARNING: nsig extraction failed", "extractor_failed_js_runtime"),
+            ("WARNING: No supported JavaScript runtime could be found", "extractor_failed_js_runtime"),
+            ("ERROR: EJS challenge solver failed", "extractor_failed_js_runtime"),
+            ("ERROR: Deno executable not found", "extractor_failed_js_runtime"),
+            ("ERROR: Requested format is not available", "extractor_failed_format_unavailable"),
+            ("ERROR: No suitable audio format", "extractor_failed_format_unavailable"),
+            ("ERROR: Unexpected extractor failure", "extractor_failed"),
+            ("ERROR: unknown challenge at https://example.invalid/private/403?token=401429", "extractor_failed"),
+            ("WARNING: n challenge solving failed\nERROR: Sign in to confirm you’re not a bot", "source_denied_bot_verification"),
+            ("WARNING: No supported JavaScript runtime could be found\nERROR: HTTP Error 403: Forbidden", "source_denied_http_403"),
+            ("WARNING: n challenge solving failed\nERROR: Requested format is not available", "extractor_failed_js_runtime"),
+        ]
+        for stderr, expected in cases:
+            with self.subTest(stderr=stderr):
+                self.assertEqual(m.failure_code(stderr), expected)
+
+    def test_process_failure_exposes_only_fixed_code_and_access_stops_before_download(self):
+        for diagnostic, expected in [
+            ("n challenge solving failed", "extractor_failed_js_runtime"),
+            ("Sign in to confirm you’re not a bot", "source_denied_bot_verification"),
+        ]:
+            stderr = diagnostic + " https://example.invalid/?token=private-fixture-value Authorization: Bearer fixture-secret"
+            command = [sys.executable, '-c', 'import sys;sys.stderr.write(sys.argv[1]);sys.exit(1)', stderr]
+            predictor=m.Predictor()
+            with self.assertRaises(ValueError) as raised:
+                predictor._run(command)
+            self.assertEqual(str(raised.exception), expected)
+            calls=[]
+            def denied(cmd, deadline=None):
+                calls.append(cmd)
+                raise ValueError(expected)
+            with patch.object(predictor,'_run',side_effect=denied):
+                with self.assertRaisesRegex(ValueError,'^'+expected+'$'):
+                    predictor.predict('https://youtu.be/abcdefghijk',900)
+            self.assertEqual(len(calls),1)
+            self.assertIn('-J',calls[0])
+            self.assertEqual(list(m.ROOT.iterdir()),[])
+
+    def test_metadata_restrictions_return_specific_codes_before_download(self):
+        for metadata, expected in [
+            ({'availability':'private'},'source_denied_private'),
+            ({'availability':'premium_only'},'source_denied_content_restricted'),
+            ({'availability':'subscriber_only'},'source_denied_content_restricted'),
+            ({'availability':'needs_auth'},'source_denied_authentication'),
+            ({'age_limit':18},'source_denied_age_restricted'),
+        ]:
+            predictor=m.Predictor()
+            with patch.object(predictor,'_run',return_value=json.dumps({'duration':12,**metadata})) as run:
+                with self.assertRaisesRegex(ValueError,'^'+expected+'$'):
+                    predictor.predict('https://youtu.be/abcdefghijk',900)
+                self.assertEqual(run.call_count,1)
+            self.assertEqual(list(m.ROOT.iterdir()),[])
+
 if __name__=='__main__':unittest.main()

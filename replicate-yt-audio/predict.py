@@ -16,9 +16,47 @@ from cog import BaseModel, BasePredictor, Input, Path
 MAX_BYTES = 100 * 1024 * 1024
 MAX_SECONDS = 900
 TOTAL_SECONDS = 230
+FORMAT_SELECTOR = "bestaudio[ext=m4a]/bestaudio/best"
 ROOT = FilePath(tempfile.gettempdir()) / "stem-youtube-artifacts"
-DENIAL = re.compile(r"private|sign.?in|age.?restrict|not available in your country|region|geo.?restrict|removed|deleted|drm|captcha|confirm.*bot|challenge|403|401", re.I)
+ACCESS_FAILURES = tuple((code, re.compile(pattern, re.I)) for code, pattern in (
+    ("source_denied_bot_verification", r"\b(?:captcha|recaptcha)\b|\b(?:confirm|verify)\b[^\n]{0,120}\b(?:bot|human)\b|\b(?:bot|human)[ -]verification\b"),
+    ("source_denied_age_restricted", r"\bage[ -](?:restricted|restriction|verification)\b|\bconfirm your age\b"),
+    ("source_denied_private", r"\b(?:video|content) is private\b|\bprivate video\b"),
+    ("source_denied_geo_restricted", r"\bnot available in (?:your )?(?:country|region)\b|\bnot made\b[^\n]{0,100}\bavailable in your country\b|\bgeo[ -]?(?:restricted|restriction|blocked)\b|\bblocked in (?:your )?(?:country|region)\b"),
+    ("source_denied_content_restricted", r"\b(?:video|content|account|uploader)\b[^\n]{0,80}\b(?:removed|deleted|terminated|suspended)\b|\b(?:copyright|drm)\b|\b(?:video|content) (?:is )?(?:unavailable|not available)\b|\b(?:members|premium|subscriber)[ -]only\b"),
+    ("source_denied_authentication", r"\b(?:sign[ -]?in|log[ -]?in) (?:to |is required|required|with )|\b(?:authentication|login) (?:is )?required\b|\brequires authentication\b"),
+))
+HTTP_STATUS = re.compile(r"\b(?:HTTP(?:Error|\s+(?:Error|status(?:\s+code)?))?|status(?:_code)?)\s*[:=]?\s*(401|403|429)\b", re.I)
+JS_FAILURE = re.compile(
+    r"\b(?:n|nsig|signature|sig)\s+(?:challenge\s+)?(?:solving|extraction|deciphering)\s+failed\b"
+    r"|\b(?:no supported|missing|unsupported)\s+(?:javascript|js)\s+runtime\b"
+    r"|\b(?:javascript|js)\s+runtime\b[^\n]{0,100}\b(?:missing|not found|unavailable|failed|required)\b"
+    r"|\b(?:deno|ejs)\b[^\n]{0,100}\b(?:not found|missing|failed|unavailable|required)\b"
+    r"|\b(?:challenge solver|challenge solving)\b[^\n]{0,100}\b(?:failed|unavailable|missing)\b", re.I)
+FORMAT_FAILURE = re.compile(r"\brequested formats?\b[^\n]{0,80}\b(?:not available|unavailable)\b|\bno suitable (?:audio )?formats?\b|\bonly images are available\b", re.I)
 _active = set()
+
+
+def failure_code(stderr):
+    """Return fixed diagnostics only; upstream text can contain private values.
+
+    Explicit access failures take precedence over accompanying JS warnings.
+    A challenge-solving warning or incidental HTTP digits alone is not denial.
+    """
+    for code, pattern in ACCESS_FAILURES:
+        if pattern.search(stderr):
+            return code
+    statuses = set(HTTP_STATUS.findall(stderr))
+    for status in ("401", "403"):
+        if status in statuses:
+            return "source_denied_http_" + status
+    if "429" in statuses or re.search(r"\btoo many requests\b|\brate[ -]?limit(?:ed|ing)?\b", stderr, re.I):
+        return "source_rate_limited"
+    if JS_FAILURE.search(stderr):
+        return "extractor_failed_js_runtime"
+    if FORMAT_FAILURE.search(stderr):
+        return "extractor_failed_format_unavailable"
+    return "extractor_failed"
 
 
 def canonical_url(url):
@@ -90,9 +128,13 @@ class Predictor(BasePredictor):
             duration = float(info.get("duration") or 0)
             if not 0 < duration <= ceiling:
                 raise ValueError("Video is longer than 15 minutes or has no usable duration.")
-            if info.get("availability") in ("private", "premium_only", "subscriber_only", "needs_auth") or info.get("age_limit", 0) > 0:
-                raise ValueError("source_denied")
-            self._run(common + ["-f", "bestaudio[ext=m4a]/bestaudio", "-x", "--audio-format", "m4a",
+            availability = info.get("availability")
+            if availability in ("private", "premium_only", "subscriber_only", "needs_auth"):
+                reason = "private" if availability == "private" else "authentication" if availability == "needs_auth" else "content_restricted"
+                raise ValueError("source_denied_" + reason)
+            if info.get("age_limit", 0) > 0:
+                raise ValueError("source_denied_age_restricted")
+            self._run(common + ["-f", FORMAT_SELECTOR, "-x", "--audio-format", "m4a",
                               "--postprocessor-args", "ffmpeg:-fs 104857600", "-o", os.path.join(directory, "audio.%(ext)s"), "--", url], deadline)
             out = os.path.join(directory, "audio.m4a")
             if not os.path.isfile(out) or not 1024 <= os.path.getsize(out) <= MAX_BYTES:
@@ -139,9 +181,5 @@ class Predictor(BasePredictor):
             errors.seek(0)
             stderr = errors.read(64 * 1024).decode("utf-8", errors="replace")
             if proc.returncode:
-                if DENIAL.search(stderr):
-                    raise ValueError("source_denied")
-                if re.search(r"429|too many requests|rate.?limit", stderr, re.I):
-                    raise ValueError("source_rate_limited")
-                raise ValueError("extractor_failed")
+                raise ValueError(failure_code(stderr))
             return stdout
