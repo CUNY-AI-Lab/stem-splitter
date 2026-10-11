@@ -20,7 +20,7 @@ export interface GuestAdapterEnv extends Env {
   CANONICAL_BASE_URL?: string;
 }
 /** Public splitting uses the existing audio provider. Listening Guy has its
- * own optional credential and must not gate a verified guest session. */
+ * own optional credential and must not gate a guest session. */
 export function guestConfigured(env: GuestAdapterEnv): boolean {
   return env.GUEST_ENABLED === 'true' && typeof env.GUEST_COOKIE_SECRET === 'string' && env.GUEST_COOKIE_SECRET.length >= 32 && env.GUEST_COOKIE_SECRET.length <= 512
     && /^[A-Za-z0-9_-]{10,128}$/.test(env.GUEST_TURNSTILE_SITE_KEY ?? '')
@@ -64,38 +64,53 @@ export async function startGuestSession(request: Request,env: GuestAdapterEnv): 
   if (!guestConfigured(env)) return guestFailure('guest_unavailable',503,'Guest access is not available. You can use CUNY Login.');
   const limited=await env.REQUEST_LIMIT!.limit({key:`stem-guest-start:${request.headers.get('cf-connecting-ip') || 'unknown'}`});
   if (!limited.success) return new Response(JSON.stringify({error:{code:'guest_rate_limited',message:'Please wait a minute before trying again.'}}),{status:429,headers:{'Content-Type':'application/json','Retry-After':'60'}});
-  let token: unknown;
-  try { token=(await readBoundedJsonRequest(request,4096) as {token?:unknown})?.token; } catch { return guestFailure('guest_verification_invalid',403,'Complete the guest check and try again.'); }
-  if (typeof token !== 'string' || token.length < 1 || token.length > 2048) return guestFailure('guest_verification_invalid',403,'Complete the guest check and try again.');
-  let result: {success?:unknown;hostname?:unknown;action?:unknown;challenge_ts?:unknown};
+  let body: {token?:unknown};
   try {
-    const response=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({secret:env.GUEST_TURNSTILE_SECRET,response:token}),redirect:'manual',signal:AbortSignal.timeout(5000)});
-    if (!response.ok) throw new Error('Verification unavailable');
-    const failed=()=>new Error('Verification unavailable');
-    result=JSON.parse(new TextDecoder().decode(await readBoundedResponse(response,{maximumBytes:8192,timeoutMs:5000,errors:{tooLarge:failed,timedOut:failed,unreadable:failed}})));
-  } catch { return guestFailure('guest_verification_unavailable',503,'The guest check is temporarily unavailable. Try again shortly.'); }
-  const time=typeof result.challenge_ts==='string'?Date.parse(result.challenge_ts):NaN;
-  if (result.success !== true || result.hostname !== url.hostname || result.action !== 'stem_guest' || !Number.isFinite(time) || time>Date.now()+30000 || time<Date.now()-300000) return guestFailure('guest_verification_invalid',403,'Complete a new guest check and try again.');
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
-  const tokenHash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+    const parsed=await readBoundedJsonRequest(request,4096);
+    if (!parsed || typeof parsed!=='object' || Array.isArray(parsed)) throw new Error('Guest request invalid');
+    body=parsed;
+  } catch { return guestFailure('guest_verification_invalid',403,'Complete the check and try again.'); }
+  const verifying=Object.prototype.hasOwnProperty.call(body,'token');
+  let tokenHash: string | null=null;
+  if (verifying) {
+    const token=body.token;
+    if (typeof token !== 'string' || token.length < 1 || token.length > 2048) return guestFailure('guest_verification_invalid',403,'Complete the check and try again.');
+    let result: {success?:unknown;hostname?:unknown;action?:unknown;challenge_ts?:unknown};
+    try {
+      const response=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({secret:env.GUEST_TURNSTILE_SECRET,response:token}),redirect:'manual',signal:AbortSignal.timeout(5000)});
+      if (!response.ok) throw new Error('Verification unavailable');
+      const failed=()=>new Error('Verification unavailable');
+      result=JSON.parse(new TextDecoder().decode(await readBoundedResponse(response,{maximumBytes:8192,timeoutMs:5000,errors:{tooLarge:failed,timedOut:failed,unreadable:failed}})));
+    } catch { return guestFailure('guest_verification_unavailable',503,'The check is temporarily unavailable. Try again shortly.'); }
+    const time=typeof result.challenge_ts==='string'?Date.parse(result.challenge_ts):NaN;
+    if (result.success !== true || result.hostname !== url.hostname || result.action !== 'stem_guest' || !Number.isFinite(time) || time>Date.now()+30000 || time<Date.now()-300000) return guestFailure('guest_verification_invalid',403,'Complete a new check and try again.');
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
+    tokenHash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+  }
   const now=Date.now(), day=dailyWindow().day;
   const previous=await readGuestSession(request,env);
   const id=previous?.subject.slice(6) ?? Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
   const subject=`guest-${id}`,expiresAt=previous?.expiresAt ?? now+GUEST_SESSION_MS;
   if (!GUEST_SUBJECT.test(subject)) throw new Error('Guest subject invalid');
   const signature=encode(new Uint8Array(await crypto.subtle.sign('HMAC',await signingKey(env),message(url.origin,id,expiresAt))));
+  // An empty request silently resumes the same session. Verification changes
+  // only verified_day, so neither bootstrap nor a challenge resets allowance.
   try {
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO guest_challenges(token_hash,expires_at) VALUES(?,?)').bind(tokenHash,now+600000),
-      previous ? env.DB.prepare('UPDATE guest_sessions SET verified_day=? WHERE subject=? AND revoked_at IS NULL AND expires_at>?').bind(day,subject,now)
-        : env.DB.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)').bind(subject,now,expiresAt,day),
-    ]);
+    const statements: D1PreparedStatement[]=[];
+    if (tokenHash) statements.push(env.DB.prepare('INSERT INTO guest_challenges(token_hash,expires_at) VALUES(?,?)').bind(tokenHash,now+600000));
+    if (previous) {
+      if (verifying) statements.push(env.DB.prepare('UPDATE guest_sessions SET verified_day=? WHERE subject=? AND revoked_at IS NULL AND expires_at>?').bind(day,subject,now));
+    } else {
+      statements.push(env.DB.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
+        .bind(subject,now,expiresAt,verifying?day:'1970-01-01'));
+    }
+    if (statements.length) await env.DB.batch(statements);
   } catch {
     try {
-      if(await env.DB.prepare('SELECT 1 FROM guest_challenges WHERE token_hash=?').bind(tokenHash).first()) return guestFailure('guest_verification_replayed',403,'This guest check was already used. Complete a new check.');
+      if(tokenHash && await env.DB.prepare('SELECT 1 FROM guest_challenges WHERE token_hash=?').bind(tokenHash).first()) return guestFailure('guest_verification_replayed',403,'This check was already used. Complete a new check.');
     } catch { /* Keep storage failures distinct from rejected verification. */ }
-    return guestFailure('guest_session_unavailable',503,'The guest session could not be saved. Try again shortly.');
+    return guestFailure('guest_session_unavailable',503,'The session could not be saved. Try again shortly.');
   }
   const chatAvailable=guestChatConfigured(env);
   return Response.json({ok:true,expiresAt,splitLimit:5,chatAvailable,chatLimit:chatAvailable?25:null},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});

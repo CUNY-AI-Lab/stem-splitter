@@ -103,9 +103,9 @@ async function loadAmendment(env: Env): Promise<string> {
 }
 
 export async function getGuide(env: Env, jobId: string): Promise<GuideRecord | null> {
-  if (env.AUTH_MODE === 'cail') {
-    const scope = (await jobCourse(env, jobId))?.course_id ?? '';
-    const state = await coursePrompt(env, scope || null);
+  const scope = env.AUTH_MODE === 'cail' ? (await jobCourse(env, jobId))?.course_id : null;
+  if (scope) {
+    const state = await coursePrompt(env, scope);
     const row = await env.DB.prepare('SELECT text,model,created_at AS createdAt,fingerprint FROM course_guides WHERE job_id=? AND course_id=? AND base_version=? AND revision=?')
       .bind(jobId, scope, SYSTEM_PROMPT_VERSION, state.revision).first<GuideRecord & { fingerprint: string }>();
     return row && row.fingerprint === await hashSystemPromptFingerprint(state.amendment) ? { text: row.text, model: row.model, createdAt: row.createdAt } : null;
@@ -148,8 +148,8 @@ export async function cacheGuideIfPromptCurrent(
   expectedPromptHash: string
 ): Promise<boolean> {
   if (expectedRevision === null || !/^[a-f0-9]{64}$/.test(expectedPromptHash)) return false;
-  if (env.AUTH_MODE === 'cail') {
-    const scope = env.ASSISTANT_COURSE_ID ?? '';
+  if (env.AUTH_MODE === 'cail' && env.ASSISTANT_COURSE_ID) {
+    const scope = env.ASSISTANT_COURSE_ID;
     const result = await env.DB.prepare(`INSERT INTO course_guides(job_id,course_id,text,model,created_at,base_version,revision,fingerprint)
       SELECT ?,?,?,?,?,?,?,? WHERE (?='' OR COALESCE((SELECT revision FROM course_settings WHERE course_id=?),0)=?)
       ON CONFLICT(job_id,course_id) DO UPDATE SET text=excluded.text,model=excluded.model,created_at=excluded.created_at,base_version=excluded.base_version,revision=excluded.revision,fingerprint=excluded.fingerprint`)

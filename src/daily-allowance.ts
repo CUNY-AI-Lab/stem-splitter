@@ -2,6 +2,7 @@
 export const SIGNED_IN_SPLITS_PER_DAY = 15;
 export const HUMAN_INPUTS_PER_DAY = 50;
 export const GUEST_SPLITS_PER_DAY = 5;
+export const GUEST_UNVERIFIED_SPLITS_PER_DAY = 3;
 export const GUEST_INPUTS_PER_DAY = 25;
 export type QuotaClass = 'member' | 'guest';
 export function allowanceLimit(kind: 'split' | 'chat' | 'guide', quotaClass: QuotaClass) {

@@ -238,6 +238,12 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, grantRole)).status, 200);
     assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, grantRole)).status, 409);
     assert.equal((await call('/api/teacher/folders')).status, 200);
+    const globalPrompt = await call('/api/teacher/prompt');
+    assert.equal(globalPrompt.status,200,'global instructor can open original prompt controls');
+    const promptState=await globalPrompt.json();
+    assert.equal((await call('/api/teacher/prompt',0,{method:'PUT',body:JSON.stringify({amendment:'Listen for the rhythmic contrast.',expectedRevision:promptState.revision,changeNote:'Fixture instructor update'})})).status,200);
+    assert.match((await(await call('/api/teacher/prompt/preview')).json()).prompt,/Listen for the rhythmic contrast/);
+    assert.equal((await call('/api/teacher/prompt',1)).status,403,'student cannot open global prompt controls');
     const permanentBody = { role: 'instructor', expiresAt: null, disabled: false, revision: alice.revision + 1 };
     for (const expiresAt of [undefined, '', 'invalid', false, 0, new Date(Date.now() - 1000).toISOString()]) {
       assert.equal((await call(`/api/admin/users/${subjects[0]}`, 2, { method: 'PUT', body: JSON.stringify({ ...permanentBody, expiresAt }) })).status, 400);

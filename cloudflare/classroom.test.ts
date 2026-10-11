@@ -152,6 +152,48 @@ test('course prompt writes conflict, preserve immutable history and invalidate o
   assert.equal((await db.prepare('SELECT count(*) AS n FROM course_prompt_revisions').first<{n:number}>())!.n,1);
   await assert.rejects(db.prepare('DELETE FROM course_prompt_revisions').run(),/immutable/);
 });
+test('global instructors control personal prompts and caches while course authority stays separate',async()=>{
+  const {env,request,job,db}=await setup();await job('personal','alice',null);await job('course','alice',A);
+  for(const who of ['bob','ownerA','ownerB'] as Person[]) {
+    assert.equal((await request('/api/teacher/prompt',who)).status,403,who);
+    assert.equal((await request('/api/teacher/prompt',who,'PUT',{amendment:'Unauthorized',expectedRevision:0,changeNote:'Unauthorized'})).status,403,who);
+  }
+  assert.equal((await request(`/api/admin/users/${ids.alice}`,'admin','PUT',{role:'instructor',expiresAt:null,disabled:false,revision:0})).status,200);
+  assert.equal((await request('/api/teacher/prompt','admin')).status,200);
+  const initial=await(await request('/api/teacher/prompt')).json() as any;assert.equal(initial.revision,0);
+  const courseText='Course-only rhythm instructions',globalText='Global personal listening instructions';
+  await saveCoursePrompt(env,A,ids.ownerA,{amendment:courseText,changeNote:'Course instructions',expectedRevision:0});
+  const empty=await hashSystemPromptFingerprint(),courseHash=await hashSystemPromptFingerprint(courseText);
+  const personalGuide={jobId:'personal',text:'Old personal guide',model:'fixture',createdAt:new Date().toISOString()};
+  assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,0,empty),true);
+  assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:A},{...personalGuide,jobId:'course',text:'Course guide'},1,courseHash),true);
+  const edit={amendment:globalText,expectedRevision:initial.revision,changeNote:'Restore personal instructions'};
+  const saved=await request('/api/teacher/prompt','alice','PUT',edit);assert.equal(saved.status,200);
+  assert.equal((await saved.json() as any).guidesCleared,1);
+  assert.equal((await request('/api/teacher/prompt','alice','PUT',edit)).status,409,'stale global write retains revision checks');
+  assert.equal(await getGuide(env,'personal'),null);assert.equal((await getGuide(env,'course'))?.text,'Course guide');
+  assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,0,empty),false,'late old personal guide stays fenced');
+  assert.match((await(await request('/api/teacher/prompt/preview')).json() as any).prompt,new RegExp(globalText));
+  const systems:string[]=[];
+  env.assistantTransport=async(_env,input,delta)=>{
+    systems.push(input.messages[0].content);await delta('A useful reply.');
+    return {content:'A useful reply.',model:'fixture',toolCalls:[],finishReason:'stop'};
+  };
+  const guide=await request('/api/jobs/personal/guide','alice','POST',{});assert.equal(guide.status,200);assert.match(await guide.text(),/A useful reply/);
+  const personalChat=await request('/api/jobs/personal/chat','alice','POST',{messageId:'global-personal-chat-0001',messages:[{role:'user',content:'Listen'}]});
+  assert.equal(personalChat.status,200);await personalChat.text();
+  const courseChat=await request('/api/jobs/course/chat','alice','POST',{messageId:'scoped-course-chat-0001',revision:0,messages:[{role:'user',content:'Listen'}]});
+  assert.equal(courseChat.status,200);await courseChat.text();
+  assert.equal(systems.length,3);
+  for(const system of systems.slice(0,2)){assert.match(system,new RegExp(globalText));assert.doesNotMatch(system,new RegExp(courseText));}
+  assert.match(systems[2],new RegExp(courseText));assert.doesNotMatch(systems[2],new RegExp(globalText));
+  assert.equal((await getGuide(env,'personal'))?.text,'A useful reply.');
+  assert.equal((await request('/api/teacher/prompt','admin','PUT',{amendment:'New global instructions',expectedRevision:1,changeNote:'Global update'})).status,200);
+  assert.equal(await getGuide(env,'personal'),null);assert.equal((await getGuide(env,'course'))?.text,'Course guide');
+  assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,1,await hashSystemPromptFingerprint(globalText)),false);
+  await db.prepare("UPDATE app_users SET role_expires_at=datetime('now','-1 day'),revision=revision+1,updated_by=? WHERE subject=?").bind(ids.admin,ids.alice).run();
+  assert.equal((await request('/api/teacher/prompt')).status,403,'expired instructor role cannot edit global policy');
+});
 test('course folders enforce same-course items, grants and author-only notes on every route',async()=>{
   const {request,job,db}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
   const made=await(await request(`/api/classroom/courses/${A}/folders`,'ownerA','POST',{name:'Shared course'})).json() as any;const folder=made.folder.id;

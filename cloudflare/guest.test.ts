@@ -21,7 +21,7 @@ const origin='https://split.test';
 const settings={GUEST_ENABLED:'true',GUEST_COOKIE_SECRET:'fixture-cookie-secret-'.repeat(3),GUEST_TURNSTILE_SITE_KEY:'fixture-site-key',
   GUEST_TURNSTILE_SECRET:'fixture-turnstile-secret-only',GUEST_GATEWAY_API_KEY:'sk-cail-fixture-sponsor-key-only-000000'};
 
-test('guest splitting requires verification and ingress protection while Listening Guy is optional',()=>{
+test('guest splitting has delayed verification and ingress protection while Listening Guy is optional',()=>{
   const env={...settings,GATEWAY:{},GATEWAY_MODEL:'glm-5.2',GATEWAY_FALLBACK_MODEL:'deepseek-v4-flash-0731',REQUEST_LIMIT:{}} as never;
   assert.equal(guestConfigured(env),true);
   assert.equal(guestChatConfigured(env),true);
@@ -80,24 +80,30 @@ for(const chatAvailable of [true,false])test(`workerd guests: five successful sp
     async function sql(statements:string[]){assert.equal((await worker.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status,200);}
     await sql(schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')));
     const call=(path:string,cookie='',init:RequestInit={})=>worker.fetch(origin+path,{redirect:'manual',...init,headers:{Origin:origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{}),...init.headers}});
-    const begin=(token:string,cookie='',headers={})=>call('/auth/guest',cookie,{method:'POST',body:JSON.stringify({token}),headers});
+    const begin=(token:string|undefined,cookie='',headers={})=>call('/auth/guest',cookie,{method:'POST',body:JSON.stringify({token}),headers});
     assert.equal((await call('/api/account')).status,401);
     assert.equal((await begin('cross-site','',{Origin:'https://attacker.test'})).status,403);
     assert.equal(verifications,0);
     for(challengeMode of ['failed','wrong-host','wrong-action','expired']){const check=await begin(challengeMode);assert.equal(check.status,403,`${challengeMode}: ${await check.text()}`);}
     challengeMode='ok';
-    const first=await begin('unique-guest-token-a');assert.equal(first.status,200,await first.clone().text());
+    const checksBeforeBootstrap=verifications;
+    const first=await begin(undefined);assert.equal(first.status,200,await first.clone().text());
+    assert.equal(verifications,checksBeforeBootstrap,'silent bootstrap performs no verification request');
     assert.equal((await first.clone().json() as any).chatAvailable,chatAvailable);
     const runtime=await(await call('/api/runtime')).json() as any;
     assert.equal(runtime.guest.enabled,true);assert.equal(runtime.guest.chatAvailable,chatAvailable);
     assert.equal(runtime.guest.chatLimit,chatAvailable?25:null);
     assert.match(first.headers.get('set-cookie')!,/Secure; HttpOnly; SameSite=Lax/);
     const cookieA=first.headers.get('set-cookie')!.split(';')[0];
-    assert.equal((await begin('unique-guest-token-a')).status,403,'challenge replay');
-    const cookieB=(await begin('unique-guest-token-b')).headers.get('set-cookie')!.split(';')[0];
+    const resumed=await begin(undefined,cookieA);assert.equal(resumed.status,200);
+    assert.equal(resumed.headers.get('set-cookie')!.split(';')[0],cookieA,'bootstrap preserves identity and expiry');
+    const cookieB=(await begin(undefined)).headers.get('set-cookie')!.split(';')[0];
+    assert.equal(verifications,checksBeforeBootstrap,'resuming and second guest are silent');
+    for (const invalid of ['null','[]','{"token":null}','{"token":""}']) assert.equal((await call('/auth/guest',cookieA,{method:'POST',body:invalid})).status,403,'invalid request cannot become bootstrap');
     const account=await(await call('/api/account',cookieA)).json() as any;
     assert.equal(account.account.role,'guest');assert.equal(account.account.quotaClass,'guest');assert.equal(account.account.course,null);
     assert.equal(account.splitAllowance.limit,5);assert.equal(account.guest.chatAvailable,chatAvailable);
+    assert.equal(account.guest.verificationRequired,false,'new guest can split immediately');
     if(chatAvailable)assert.equal(account.chatAllowance.limit,25);else assert.equal(account.chatAllowance,null);
     assert.equal((await(await call('/api/account',cookieA)).json() as any).account.subject,account.account.subject,'resumed guest');
     const macOffset=cookieA.lastIndexOf('.')+1;
@@ -130,7 +136,24 @@ for(const chatAvailable of [true,false])test(`workerd guests: five successful sp
     assert.equal((await(await call('/api/account',cookieA)).json() as any).splitAllowance.remaining,5);
     predictionMode='success';let job:any;
     for(let i=0;i<5;i++){
-      const key=`guest-split-success-${String(i).padStart(4,'0')}`;response=await submit(key);assert.equal(response.status,202,await response.clone().text());
+      const key=`guest-split-success-${String(i).padStart(4,'0')}`;
+      if (i===3) {
+        const before=await(await call('/api/account',cookieA)).json() as any;
+        assert.equal(before.splitAllowance.completed,3);assert.equal(before.guest.verificationRequired,true);
+        assert.equal(verifications,checksBeforeBootstrap,'failed run plus first three successes need no proof');
+        const denied=await submit(key);assert.equal(denied.status,403);assert.equal((await denied.json() as any).error.code,'guest_verification_required');
+        assert.equal(starts,4,'fourth successful place requires proof before a provider starts');
+        assert.equal((await submit('guest-split-success-0000')).status,200,'successful replay remains valid at proof threshold');
+        assert.equal((await begin(undefined,cookieA)).headers.get('set-cookie')!.split(';')[0],cookieA);
+        assert.equal((await submit(key)).status,403,'silent resume preserves the proof threshold');
+        const verified=await begin('unique-guest-token-a',cookieA);assert.equal(verified.status,200);
+        assert.equal(verified.headers.get('set-cookie')!.split(';')[0],cookieA,'proof upgrades the same session');
+        assert.equal((await begin('unique-guest-token-a',cookieA)).status,403,'challenge replay');
+        const after=await(await call('/api/account',cookieA)).json() as any;
+        assert.equal(after.splitAllowance.completed,3);assert.equal(after.account.subject,account.account.subject);
+        assert.equal(after.guest.verificationRequired,false);
+      }
+      response=await submit(key);assert.equal(response.status,202,await response.clone().text());
       const created=await response.json() as any;const repeated=await submit(key);assert.equal(repeated.status,200);assert.equal((await repeated.json() as any).id,created.id);
       job=await finish(created.id);assert.equal(job.status,'done');
     }
@@ -179,13 +202,47 @@ for(const chatAvailable of [true,false])test(`workerd guests: five successful sp
     }
     await sql([`UPDATE guest_sessions SET verified_day='2000-01-01' WHERE subject='${account.account.subject}'`]);
     assert.equal((await call('/api/jobs',cookieA)).status,200,'old proof preserves own reads');
-    assert.equal((await submit('guest-needs-proof-0001')).status,403);
+    assert.equal((await submit('guest-needs-proof-0001')).status,429,'full daily allowance takes priority over an unnecessary proof');
     assert.equal((await begin('guest-proof-refresh',cookieA)).status,200);
     assert.equal((await(await call('/api/account',cookieA)).json() as any).splitAllowance.completed,5,'proof refresh does not reset budget');
     assert.equal((await call('/auth/logout',cookieA,{method:'POST'})).status,303);
     assert.equal((await call(`/api/jobs/${job.id}`,cookieA)).status,401,'logout revokes copied cookie');
     assert.equal((await call('/api/jobs',cookieB)).status,200,'other guest remains isolated and active');
   } finally {await harness.close();network.close();}
+});
+
+test('unverified split reservations stop atomically at three places and refund failed or cancelled work',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'stem-unverified-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  const local=new SqliteD1(join(directory,'db'));local.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+  const db=local as unknown as D1Database,now=Date.now(),subject=`guest-${'b'.repeat(64)}`;
+  await db.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
+    .bind(subject,now,now+7*86400000,'1970-01-01').run();
+  const reserve=(n:number,at=now)=>reserveOperation(db,{subject,quotaClass:'guest',courseId:null,kind:'split',
+    key:`unverified-parallel-${String(n).padStart(4,'0')}`,fingerprint:String(n),phase:'split',now:at});
+  for(let i=0;i<2;i++){const operation=await reserve(i);await settleOperation(db,operation.operation.id,'succeeded');}
+  const parallel=await Promise.allSettled([2,3,4,5].map(n=>reserve(n)));
+  const admitted=parallel.flatMap(result=>result.status==='fulfilled'?[result.value.operation]:[]);
+  assert.equal(admitted.length,1,'pending third place fences concurrent fourth requests');
+  for(const result of parallel)if(result.status==='rejected'){
+    assert.equal(result.reason.status,403);assert.equal(result.reason.code,'guest_verification_required');
+  }
+  assert.equal((await splitAllowance(db,subject,new Date(now),'guest')).inProgress,1);
+  assert.equal((await reserve(0)).created,false,'settled retry preserves its original receipt at the threshold');
+  await settleOperation(db,admitted[0].id,'failed');
+  const replacement=await reserve(6);await settleOperation(db,replacement.operation.id,'cancelled');
+  const third=await reserve(7);await settleOperation(db,third.operation.id,'succeeded');
+  assert.equal((await splitAllowance(db,subject,new Date(now),'guest')).completed,3,'failed and cancelled work release their places');
+  await assert.rejects(reserve(8),{status:403,code:'guest_verification_required'});
+  await db.prepare('UPDATE guest_sessions SET verified_day=? WHERE subject=?').bind(dailyWindow(new Date(now)).day,subject).run();
+  const verified=await Promise.allSettled([8,9,10,11].map(n=>reserve(n)));
+  const remaining=verified.flatMap(result=>result.status==='fulfilled'?[result.value.operation]:[]);
+  assert.equal(remaining.length,2,'proof unlocks only the two remaining daily places');
+  for(const operation of remaining)await settleOperation(db,operation.id,'succeeded');
+  await assert.rejects(reserve(12),{status:429,code:'split_daily_limit'});
+  const tomorrow=now+86400000;
+  for(let i=13;i<16;i++){const operation=await reserve(i,tomorrow);await settleOperation(db,operation.operation.id,'succeeded');}
+  await assert.rejects(reserve(16,tomorrow),{status:403,code:'guest_verification_required'});
+  assert.equal((await splitAllowance(db,subject,new Date(tomorrow),'guest')).completed,3,'next UTC day gets three unverified places');
 });
 
 test('guest expiry, signing scope, immutable quota class, atomic reservations and midnight reset',async t=>{

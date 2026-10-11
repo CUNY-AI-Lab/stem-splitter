@@ -508,7 +508,7 @@ test('a frozen media clock parks every stem rather than leaving a half-playing m
   } finally { await server.close(); }
 });
 
-test('every waveform uses the shared seek commit for mouse, keyboard and playing stems', async ({ page }) => {
+test('main seek control commits once for mouse, keyboard and playing stems at narrow and wide widths', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const names = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
   const server = await fixture(page, names);
@@ -517,31 +517,32 @@ test('every waveform uses the shared seek commit for mouse, keyboard and playing
       const m = mixers.get('remix-fixture'), original = m.seekTo.bind(m);
       m.seekCalls = 0; m.seekTo = time => { m.seekCalls++; return original(time); };
     });
-    for (let index = 0; index < names.length; index++) {
-      await page.setViewportSize({ width: index % 2 ? 320 : 1280, height: 1000 });
-      const range = page.getByRole('slider', { name: `${names[index]} waveform position in Playback review`, exact: true });
+    for (const width of [1280, 320, 390, 768]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const range = page.getByRole('slider', { name: 'Seek', exact: true });
       await expect(range).toBeEnabled();
-      await expect(range).toHaveAccessibleName(`${names[index]} waveform position in Playback review`);
+      await expect(range).toHaveAccessibleName('Seek');
       await range.scrollIntoViewIfNeeded(); const box = await range.boundingBox();
       const before = await page.evaluate(() => { const m = mixers.get('remix-fixture'); return { time: m.audios[0].currentTime, calls: m.seekCalls }; });
       await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2); await page.mouse.down();
       await page.mouse.move(box.x + box.width * .6, box.y + box.height / 2, { steps: 8 });
-      const preview = await page.evaluate(() => { const m = mixers.get('remix-fixture'); return { time: m.audios[0].currentTime, calls: m.seekCalls, scrubbing: m.scrubbing, values: m.seekControls.map(c => c.value) }; });
+      const preview = await page.evaluate(() => { const m = mixers.get('remix-fixture'); return { time: m.audios[0].currentTime, calls: m.seekCalls, scrubbing: m.scrubbing, target: m.scrubTarget }; });
       expect(preview.time).toBeCloseTo(before.time, 2); expect(preview.calls).toBe(before.calls);
-      expect(preview.scrubbing).toBe(true); expect(new Set(preview.values).size).toBe(1);
+      expect(preview.scrubbing).toBe(true);
+      expect(preview.target).toBeGreaterThan(40); expect(preview.target).toBeLessThan(45);
       await page.mouse.up();
       await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').seekCalls)).toBe(before.calls + 1);
-      await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a => Math.abs(a.currentTime - 42) < .5 && a.paused))).toBe(true);
-      await expect(range).toHaveAttribute('aria-valuetext', /0:4[12] of 1:10/);
+      await expect.poll(() => page.evaluate(target => mixers.get('remix-fixture').audios.every(a => Math.abs(a.currentTime - target) < .1 && a.paused), preview.target)).toBe(true);
+      await expect(range).toHaveAttribute('aria-valuetext', /0:4[0-4] of 1:10/);
       await range.press('Home'); await expect(page.locator('.tc-now')).toHaveText('0:00');
       await range.press('ArrowRight');
       await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a => a.currentTime > 0 && a.currentTime < .2))).toBe(true);
     }
-    const range = page.locator('.waveform-seek').last();
+    const range = page.getByRole('slider', { name: 'Seek', exact: true });
     await range.press('End'); await expect(page.locator('.tc-now')).toHaveText('1:10');
     await range.press('Home');
     await mkdir('/tmp/stem-classroom-screenshots', { recursive: true });
-    await page.locator('.console').screenshot({ path: `/tmp/stem-classroom-screenshots/waveform-seek-focus-${process.env.STEM_BROWSER || 'chrome'}.png` });
+    await page.locator('.console').screenshot({ path: `/tmp/stem-classroom-screenshots/main-seek-focus-${process.env.STEM_BROWSER || 'chrome'}.png` });
     await page.locator('.rate-opt[data-rate="0.75"]').click(); await page.locator('.play-btn').click(); await clockAdvances(page);
     const box = await range.boundingBox();
     await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2); await page.mouse.down();
@@ -555,7 +556,7 @@ test('every waveform uses the shared seek commit for mouse, keyboard and playing
   } finally { await server.close(); }
 });
 
-test('waveform seeking fences cancellation, stale track input, missing metadata and disposed songs', async ({ page }) => {
+test('main seeking handles cancellation, stale releases, missing metadata and disposed songs', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
   const preview = async (range, pointerId, value) => {
@@ -563,7 +564,7 @@ test('waveform seeking fences cancellation, stale track input, missing metadata 
     await range.evaluate((control, value) => { control.value = String(value); control.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   };
   try {
-    const first = page.locator('.waveform-seek').first(), second = page.locator('.waveform-seek').nth(1);
+    const first = page.getByRole('slider', { name: 'Seek', exact: true }).first();
     await page.evaluate(() => mixers.get('remix-fixture').seekTo(14));
     for (const event of ['pointercancel', 'blur', 'Escape']) {
       await preview(first, 41, 800);
@@ -577,16 +578,15 @@ test('waveform seeking fences cancellation, stale track input, missing metadata 
     await first.dispatchEvent('lostpointercapture', { pointerId: 41 });
     await expect(page.locator('.tc-now')).toHaveText('0:21');
     await preview(first, 41, 400);
-    await preview(second, 42, 700);
-    // Late change from the former track cannot overwrite the active gesture.
-    await first.evaluate(control => { control.value = '100'; control.dispatchEvent(new Event('change', { bubbles: true })); });
-    await page.locator('body').dispatchEvent('pointerup', { pointerId: 41 });
+    await preview(first, 42, 700);
+    // A release from the previous pointer leaves the active drag in progress.
+    await first.dispatchEvent('pointerup', { pointerId: 41 });
     expect(await page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(true);
     await page.locator('body').dispatchEvent('pointerup', { pointerId: 42 });
     await expect(page.locator('.tc-now')).toHaveText('0:49');
     for (const duration of [0, NaN, Infinity]) {
       await page.evaluate(duration => { const m = mixers.get('remix-fixture'); Object.defineProperty(m.audios[1], 'duration', { configurable: true, value: duration }); m.paint(); m.seekTo(5); }, duration);
-      await expect(first).toBeDisabled(); await expect(page.locator('.seek')).toBeDisabled();
+      await expect(first).toBeDisabled();
       expect(await page.evaluate(() => mixers.get('remix-fixture').audios.every(a => Math.abs(a.currentTime - 49) < .1))).toBe(true);
       await page.evaluate(() => { const m = mixers.get('remix-fixture'); delete m.audios[1].duration; m.paint(); });
     }
@@ -595,7 +595,7 @@ test('waveform seeking fences cancellation, stale track input, missing metadata 
       const old = mixers.get('remix-fixture'), next = new Mixer({ ...old.job, id: 'second-song', filename: 'Second song' });
       mixers.set('second-song', next); jobList.appendChild(next.el);
     });
-    const other = page.locator('.console').last().locator('.waveform-seek').first();
+    const other = page.locator('.console').last().getByRole('slider', { name: 'Seek', exact: true });
     await expect(other).toBeEnabled();
     await preview(first, 51, 200);
     await preview(other, 52, 600);
@@ -612,55 +612,61 @@ test('waveform seeking fences cancellation, stale track input, missing metadata 
   } finally { await server.close(); }
 });
 
-test('waveforms support native touch input without moving the narrow page or controls', async ({ browser, browserName }) => {
+test('main seek control supports native touch input on a narrow page', async ({ browser, browserName }) => {
   const context = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
   const page = await context.newPage(); const errors = []; page.on('pageerror', error => errors.push(error.message));
   const server = await fixture(page, ['vocals', 'instrumental']);
   try {
-    for (const range of await page.locator('.waveform-seek').all()) {
+    const range = page.getByRole('slider', { name: 'Seek', exact: true });
+    {
       await range.scrollIntoViewIfNeeded(); const box = await range.boundingBox();
       await page.touchscreen.tap(box.x + box.width * .5, box.y + box.height / 2);
       await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a => Math.abs(a.currentTime - 35) < .5 && a.paused))).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     if (browserName === 'chromium') {
-      const range = page.locator('.waveform-seek').last(), box = await range.boundingBox();
+      const box = await range.boundingBox();
       const client = await context.newCDPSession(page);
       const touch = x => ({ x, y: box.y + box.height / 2, id: 1 });
       await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touch(box.x + box.width * .5)] });
       for (const fraction of [.55, .6, .7, .8]) await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [touch(box.x + box.width * fraction)] });
       expect(await page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(true);
+      const target = await page.evaluate(() => mixers.get('remix-fixture').scrubTarget);
+      expect(target).toBeGreaterThan(54); expect(target).toBeLessThan(62);
       await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a => Math.abs(a.currentTime - 56) < .5))).toBe(true);
+      await expect.poll(() => page.evaluate(target => mixers.get('remix-fixture').audios.every(a => Math.abs(a.currentTime - target) < .1), target)).toBe(true);
       await client.detach();
     }
     expect(errors).toEqual([]);
   } finally { await server.close(); await context.close(); }
 });
 
-test('usage observations retry once with stable IDs and exclude private content and clock ticks',async({page})=>{
- const batches=[],actors=[];
- await page.route('**/api/usage-events',async route=>{batches.push(route.request().postDataJSON());actors.push(route.request().headers()['x-stem-usage-actor']);await route.fulfill({status:batches.length===1?503:200,contentType:'application/json',body:'{"accepted":true}'});});
- const server=await fixture(page,['vocals','drums','bass','other'],{owned:true});
- try {
-  await expect.poll(()=>batches.length).toBeGreaterThanOrEqual(2);
-  expect(batches[0]).toEqual(batches[1]);
-  expect(actors[0]).toBe(TEST_SUBJECTS.alice);expect(actors[1]).toBe(actors[0]);
-  await page.locator('.play-btn').click();
-  await expect.poll(()=>page.evaluate(()=>mixers.get('remix-fixture').playing)).toBe(true);
-  await page.evaluate(()=>{const m=mixers.get('remix-fixture');m.seekTo(42);m.seekTo(8,'loop');});
-  await page.locator('.play-btn').click();
-  await page.evaluate(()=>mixers.get('remix-fixture').pause());
-  await expect.poll(()=>batches.flatMap(b=>b.events).filter(e=>e.type==='playback_stop').length).toBe(1);
-  const events=batches.slice(1).flatMap(b=>b.events);
-  expect(events.filter(e=>e.type==='seek')).toHaveLength(1);
-  expect(events.find(e=>e.type==='seek').positionBucket).toBe(4);
-  expect(events.filter(e=>e.type==='playback_start')).toHaveLength(1);
-  expect(JSON.stringify(batches)).not.toContain('Playback review');
-  expect(JSON.stringify(batches)).not.toContain(TEST_SUBJECTS.alice);
-  expect(events.every(e=>Object.keys(e).every(k=>['id','type','jobId','durationMs','positionBucket'].includes(k)))).toBe(true);
-  const before=batches.length;
-  await page.evaluate(()=>{window.StemUsage.record('seek',{jobId:'remix-fixture',position:40});window.StemUsage.clear();});
-  await page.waitForTimeout(1500);expect(batches.length).toBe(before);
- }finally{await server.close();}
+test('main seek control and time display follow media events while paused and playing', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other'], { owned: true });
+  try {
+    const range = page.getByRole('slider', { name: 'Seek', exact: true });
+    await page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      for (const audio of m.audios) audio.currentTime = 42;
+      m.audios[0].dispatchEvent(new Event('timeupdate'));
+    });
+    await expect(range).toHaveValue('600');
+    await expect(range).toHaveAttribute('aria-valuetext', '0:42 of 1:10');
+    await expect(page.locator('.tc-now')).toHaveText('0:42');
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await page.locator('.play-btn').click();
+    const paused = await page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      return { time: m.audios[0].currentTime, value: Number(m.seek.value), text: m.tcNow.textContent,
+        expected: fmt(m.audios[0].currentTime), allPaused: m.audios.every(audio => audio.paused) };
+    });
+    expect(paused.allPaused).toBe(true); expect(paused.text).toBe(paused.expected);
+    expect(paused.value).toBeCloseTo(paused.time / 70 * 1000, 0);
+    await range.press('Home');
+    await expect(page.locator('.tc-now')).toHaveText('0:00');
+    expect(await page.evaluate(() => mixers.get('remix-fixture').audios.every(audio => audio.currentTime === 0 && audio.paused))).toBe(true);
+    expect(errors).toEqual([]);
+  } finally { await server.close(); }
 });

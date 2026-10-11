@@ -120,8 +120,6 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);
     if (path.startsWith('/api/admin/') && role !== 'admin') return authFailure('admission_required', 403);
     if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && role === 'student') return authFailure('admission_required', 403);
-    // Cloudflare amendments belong to a course; the legacy singleton remains Railway-only.
-    if (path.startsWith('/api/teacher/prompt')) return Response.json({ error: 'Choose a course in the instructor page.' }, { status: 409 });
     if (jobId) {
       const permission = await jobPermission(env, principal, jobId);
       if (!permission) return Response.json({ error: 'Job not found' }, { status: 404 });

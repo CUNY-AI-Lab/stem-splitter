@@ -138,11 +138,11 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     ]);
     expect(retry.status()).toBe(303); expect(retry.headers().location).toBe('/');
     await expect(page).toHaveURL(origin + '/');
-    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'My account', exact: true })).toBeVisible();
     await page.goto(expiredLink);
     await expect(page).toHaveURL(origin + '/');
-    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: /sign.in/i })).toHaveCount(0);
     expect(identityChecks).toBe(3);
     expect((await context.cookies(origin)).find(cookie => cookie.name === SESSION_COOKIE)?.value).toBe(token);
@@ -184,7 +184,7 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
     await expect(page).toHaveURL(origin + '/');
     expect(revoked).toBe(true);
     expect((await context.cookies()).filter(cookie => [SESSION_COOKIE, LOGIN_COOKIE].includes(cookie.name))).toEqual([]);
-    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
   } finally { await frontend?.close(); await server.close(); }
@@ -221,10 +221,10 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
-    await expect(page).toHaveTitle('Stem Splitter · Account');
+    await expect(page).toHaveTitle('STEM Splitter · Account');
     await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
-    await expect(page.locator('#account-splits')).toContainText('Splits: 0 completed, 0 in progress, 15 available of 15. Resets');
+    await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
@@ -247,22 +247,22 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeHidden();
     await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeHidden();
-    await expect(page.getByLabel('Allow access to Stem Splitter', { exact: true })).toBeChecked();
+    await expect(page.getByLabel('Allow access to STEM Splitter', { exact: true })).toBeChecked();
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('instructor');
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toHaveAttribute('required', '');
     await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
     await page.getByLabel('Instructor access ends', { exact: true }).fill('2026-12-01T12:00');
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('student');
-    await page.getByLabel('Allow access to Stem Splitter', { exact: true }).uncheck();
+    await page.getByLabel('Allow access to STEM Splitter', { exact: true }).uncheck();
     const [update] = await Promise.all([
       page.waitForRequest(request => request.method() === 'PUT'),
       page.getByRole('button', { name: 'Save changes', exact: true }).click(),
     ]);
     expect(update.postDataJSON()).toMatchObject({ role: 'student', disabled: true, expiresAt: null });
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
-    await expect(page.getByLabel('Allow access to Stem Splitter', { exact: true })).not.toBeChecked();
-    await page.getByLabel('Allow access to Stem Splitter', { exact: true }).check();
+    await expect(page.getByLabel('Allow access to STEM Splitter', { exact: true })).not.toBeChecked();
+    await page.getByLabel('Allow access to STEM Splitter', { exact: true }).check();
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect.poll(async () => (await page.request.get(new URL('/api/admin/users', url).href)).json().then(body => body.users.find(user => user.subject === TEST_SUBJECTS.alice).disabled)).toBe(0);
 
@@ -298,7 +298,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     })) await expect(resources.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
     await expect(page.locator('main > footer')).toContainText('Built through the Critical AI Literacy Institute.');
     await expect(page.locator('main > footer')).toContainText('Uploaded files are deleted after 90 days.');
-    await expect(page.locator('#account-splits')).toContainText('Splits: 0 completed, 0 in progress, 15 available of 15. Resets');
+    await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeHidden();
     await page.getByText('Account ID', { exact: true }).click();
@@ -309,12 +309,13 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     const day = new Date().toISOString().slice(0, 10);
     await seed(Array.from({ length: 10 }, (_, index) => `INSERT INTO app_request_reservations (id, subject, scope, day) VALUES ('account-split-${index}', '${TEST_SUBJECTS.alice}', 'split', '${day}')`));
     await page.reload();
-    await expect(page.locator('#account-splits')).toContainText('15 available of 15'); // historical attempts are not manufactured successes
-    await expect(page.locator('#account-chat')).toContainText('50 available of 50');
+    await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today'); // historical attempts are not manufactured successes
+    await expect(page.locator('#account-chat')).toHaveCount(0);
+    expect((await (await page.request.get(new URL('/api/account', url).href)).json()).chatAllowance.remaining).toBe(50);
     const clock=Date.now();
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();
-    await expect(page.locator('#account-splits')).toContainText('Splits: 8 completed, 7 in progress, 0 available of 15. Resets');
+    await expect(page.locator('#account-splits')).toContainText('0 of 15 runs left today. Resets');
     await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toBeVisible();
     if (receipts) await page.screenshot({ path: `${receipts}/account-exhausted-mobile-fixture.png`, fullPage: true });
     // A counter outage is not zero usage, a failed sign-in, or a full allowance.

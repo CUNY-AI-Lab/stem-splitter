@@ -88,7 +88,7 @@ function signInFailure(request: Request, status = 401): Response {
     'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow',
     'Content-Security-Policy': "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
   if (safe === 429) headers.set('Retry-After', '60');
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stem Splitter · Sign in</title><link rel="stylesheet" href="/styles.css?v=20261006-classroom"></head><body><main class="teacher-main signin-recovery"><nav class="top-return"><a class="account-button" href="/">Back to Splitter</a></nav><h1>${title}</h1><p>${message}</p><p class="signin-actions">${action}</p>${access}<p><a href="/">Back to Splitter</a></p><div class="bottom-help"><hr><a href="mailto:ailab@gc.cuny.edu">Having trouble?</a><hr></div></main></body></html>`, { status: safe, headers });
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign in</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>${title}</h1><p>${message}</p><p class="signin-actions">${action}</p>${access}<p><a href="/">Back to Splitter</a></p></main></body></html>`, { status: safe, headers });
 }
 async function existingSessionStatus(request: Request, env: SsoEnv): Promise<200 | 401 | 403 | 503> {
   const token = readCookie(request, SESSION_COOKIE);
@@ -136,7 +136,7 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
       return redirect('/', cleared);
     } catch {
       // Always remove this browser's credentials; do not claim remote revocation.
-      const response = new Response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stem Splitter · Sign out</title><link rel="stylesheet" href="/styles.css?v=20261006-classroom"><main class="teacher-main"><nav class="top-return"><a class="account-button" href="/">Back to Splitter</a></nav><h1>Signed out of this browser</h1><p>We could not confirm that your server session ended. Close any other Stem Splitter tabs on this device.</p><a href="/">Back to Splitter</a><div class="bottom-help"><hr><a href="mailto:ailab@gc.cuny.edu">Having trouble?</a><hr></div></main></html>', { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' } });
+      const response = new Response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign out</title><link rel="stylesheet" href="/styles.css"><main class="teacher-main"><h1>Signed out of this browser</h1><p>We could not confirm that your server session ended. Close any other STEM Splitter tabs on this device.</p><a href="/">Back to Splitter</a></main></html>', { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' } });
       for (const value of cleared) response.headers.append('Set-Cookie', value);
       return response;
     }

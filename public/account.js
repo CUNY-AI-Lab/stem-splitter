@@ -31,7 +31,6 @@ window.addEventListener('focus', async () => {
 });
 async function request(path, options = {}) {
   const response = await fetch(path, { credentials: 'same-origin', ...options });
-  window.StemSessionGuard?.observe(response);
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
@@ -124,43 +123,26 @@ el('access-form').addEventListener('submit', async (event) => {
 });
 (async () => {
   try {
-    const { account, splitAllowance, chatAllowance, guest } = await request('/api/account');
-    const isGuest=account.quotaClass==='guest' && account.role==='guest';
+    const { account, splitAllowance } = await request('/api/account');
+    if (account.quotaClass === 'guest') { location.replace('/'); return; }
     subject = account.subject;
-    window.StemSessionGuard?.start(subject,()=>{users=[];subject='';});
+    window.StemSessionGuard?.start(subject, () => { users = []; subject = ""; });
     accountRole = account.role;
     el('account-status').textContent = '';
-    el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student', guest:'Guest' }[account.role] || 'Student'} access`;
+    el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
     el('account-id').textContent = subject;
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
-    el('account-reference').hidden = isGuest;
-    el('account-guidance').hidden = !(['admin', 'instructor'].includes(account.role)||account.course?.owner);
+    el('account-reference').hidden = false;
+    el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
     el('account-admin').hidden = account.role !== 'admin';
-    if (splitAllowance && Number.isInteger(splitAllowance.completed) && Number.isInteger(splitAllowance.inProgress) && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
+    if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
       const reset = new Date(splitAllowance.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-      el('account-splits').textContent = `Splits: ${splitAllowance.completed} completed, ${splitAllowance.inProgress} in progress, ${splitAllowance.remaining} available of ${splitAllowance.limit}. Resets ${reset}.`;
+      el('account-splits').textContent = `${splitAllowance.remaining} of ${splitAllowance.limit} runs left today. Resets ${reset}.`;
     }
-    if (chatAllowance && Number.isInteger(chatAllowance.completed) && Number.isInteger(chatAllowance.inProgress) && Number.isInteger(chatAllowance.remaining)) {
-      const reset=new Date(chatAllowance.resetsAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
-      el('account-chat').textContent=`Listening Guy: ${chatAllowance.completed} inputs counted, ${chatAllowance.inProgress} in progress, ${chatAllowance.remaining} available of ${chatAllowance.limit}. Partial replies and replies whose delivery could not be confirmed count once. Resets ${reset}.`;
-    }
-    if(isGuest){
-      document.querySelector('h1').textContent='My guest session';
-      el('account-quota').hidden=true;
-      el('account-login').hidden=false;
-      const chatAvailable=guest.chatAvailable===true;
-      if(!chatAvailable)el('account-chat').textContent='Listening Guy is available with CUNY Login. You can keep splitting and playing audio as a guest.';
-      el('account-allowance-help').textContent=chatAvailable
-        ? 'Guests have 5 successful splits and 25 Listening Guy questions per UTC day. Pending work holds a place; failures with no usable result release it. A usable partial reply counts once. Abuse protection also applies.'
-        : 'Guests have 5 successful splits per UTC day. Pending work holds a place; failed splits release it. Abuse protection also applies.';
-      el('account-retention').textContent=`Guest access ends ${new Date(guest.expiresAt).toLocaleString()}. Ending this session or clearing its cookie removes access to saved guest work. Stored files follow the 90-day deletion policy.`;
-      el('account-footer').querySelector('button').textContent='End guest session';
-      const configuration=await request('/api/runtime');
-      window.StemGuest?.mount(el('account-details'),configuration.guest,{active:true,verificationRequired:guest.verificationRequired});
-    } else try {
+    try {
       const { quota } = await request('/api/model-quota');
       if (quota && typeof quota.remaining_percent === 'number') el('account-quota').textContent = `CUNY AI Lab model allowance: ${quota.remaining_percent}% remaining (estimated).`;
     } catch { /* Informational only. Gateway authorizes each model request. */ }
@@ -168,6 +150,5 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-status').textContent = error.message;
     el('account-login').hidden = false;
     el('account-back').hidden = false;
-    try {const configuration=await request('/api/runtime');window.StemGuest?.mount(el('account-back'),configuration.guest);} catch {}
   }
 })();

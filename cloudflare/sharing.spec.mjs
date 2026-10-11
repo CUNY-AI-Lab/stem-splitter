@@ -86,7 +86,8 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await expect(page.locator('.ch-name-input')).toHaveCount(0);
     expect(await page.evaluate(async () => (await fetch('/api/jobs/remix-fixture/labels', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ labels: { vocals: 'Unauthorized' } }) })).status)).toBe(401);
     const refreshRequests=[];page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/'))refreshRequests.push(new URL(request.url()).pathname);});
-    await page.locator('.refresh-btn').click();await expect(page.locator('.refresh-status')).toContainText('Updated');
+    await expect(page.locator('.refresh-btn')).toHaveCount(0);
+    await page.reload(); await expect(page.locator('.console')).toBeVisible();
     expect(refreshRequests.filter(path=>path.includes('/jobs/')||path.includes('conversation'))).toEqual([]);
     expect(refreshRequests).toContain('/api/shared-jobs/remix-fixture');
     await page.locator('.play-btn').click();

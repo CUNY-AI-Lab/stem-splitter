@@ -2,7 +2,11 @@ import type { Env } from '../env.ts';
 import { buildSystemPromptPreview, hashSystemPromptFingerprint, SYSTEM_PROMPT_VERSION } from '../assistant/prompt.ts';
 
 export async function coursePrompt(env: Env, courseId: string | null) {
-  if (!courseId) return { amendment: '', revision: 0, updatedAt: null, updatedBy: null };
+  if (!courseId) {
+    const global = await env.DB.prepare('SELECT amendment,revision,updated_at AS updatedAt,updated_by AS updatedBy FROM assistant_settings WHERE id=1')
+      .first<{ amendment: string; revision: number; updatedAt: string; updatedBy: string | null }>();
+    return global ?? { amendment: '', revision: 0, updatedAt: null, updatedBy: null };
+  }
   const row = await env.DB.prepare('SELECT amendment,revision,updated_at AS updatedAt,updated_by AS updatedBy FROM course_settings WHERE course_id=?')
     .bind(courseId).first<{ amendment: string; revision: number; updatedAt: string; updatedBy: string }>();
   return row ?? { amendment: '', revision: 0, updatedAt: null, updatedBy: null };

@@ -1,4 +1,4 @@
-import { dailyWindow, allowanceLimit, type QuotaClass } from '../daily-allowance.ts';
+import { dailyWindow, allowanceLimit, GUEST_UNVERIFIED_SPLITS_PER_DAY, type QuotaClass } from '../daily-allowance.ts';
 
 export type OperationKind = 'split' | 'chat' | 'guide';
 export type Phase = 'fetch' | 'split' | 'chat' | 'guide';
@@ -16,8 +16,8 @@ export const MAX_SPLIT_ATTEMPTS_PER_DAY = 40;
 export const MAX_CHAT_ATTEMPTS_PER_DAY = 80;
 export const validOperationKey = (key: unknown): key is string => typeof key === 'string' && /^[a-zA-Z0-9_-]{16,80}$/.test(key);
 export class OperationError extends Error {
-  code: string; status: 400|404|409|429|503; retryAfter: number;
-  constructor(code: string, status: 400 | 404 | 409 | 429 | 503, message: string, retryAfter = 0) { super(message);this.code=code;this.status=status;this.retryAfter=retryAfter; }
+  code: string; status: 400|403|404|409|429|503; retryAfter: number;
+  constructor(code: string, status: 400 | 403 | 404 | 409 | 429 | 503, message: string, retryAfter = 0) { super(message);this.code=code;this.status=status;this.retryAfter=retryAfter; }
 }
 export async function fingerprint(value: unknown): Promise<string> {
   const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
@@ -53,14 +53,17 @@ export async function reserveOperation(db: D1Database, input: {
       AND (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=?) < ?
       AND (? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE kind='split' AND state NOT IN (${TERMINAL})) < ?)
       AND (? <> 'guide' OR (SELECT COUNT(*) FROM app_operations WHERE kind='guide' AND day=?) < 200)
-      AND (? <> 'guest' OR EXISTS(SELECT 1 FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL AND verified_day=?))
+      AND (? <> 'guest' OR EXISTS(SELECT 1 FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL
+        AND (verified_day=? OR (?='split' AND (SELECT COUNT(*) FROM app_operations
+          WHERE subject=? AND kind='split' AND day=? AND state NOT IN ('failed','cancelled')) < ?))))
       AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind='split' AND state NOT IN (${TERMINAL})) < 2)
       AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE quota_class='guest' AND kind='split' AND state NOT IN (${TERMINAL})) < 10)
     ON CONFLICT(subject,kind,idempotency_key) DO NOTHING`)
     .bind(id,input.subject,quotaClass,input.courseId,input.kind,input.key,input.fingerprint,day,input.phase,input.jobId ?? null,
       JSON.stringify(input.request ?? {}),now+24*60*60*1000,now,now,input.subject,input.kind,day,limit,
       input.subject,input.kind,day,abuseLimit,input.kind,MAX_QUEUED_SPLITS,input.kind,day,
-      quotaClass,input.subject,now,day,quotaClass,input.kind,input.subject,quotaClass,input.kind);
+      quotaClass,input.subject,now,day,input.kind,input.subject,day,GUEST_UNVERIFIED_SPLITS_PER_DAY,
+      quotaClass,input.kind,input.subject,quotaClass,input.kind);
   await db.batch([insert,...(input.statements?.(id) ?? [])]);
   const operation = await findOperation(db,input.subject,input.kind,input.key);
   if (!operation) {
@@ -72,6 +75,11 @@ export async function reserveOperation(db: D1Database, input: {
         :'Today\'s Listening Guy input allowance is full.',retryAfter);
     if ((counts?.attempts ?? 0)>=abuseLimit || input.kind==='guide') throw new OperationError(`${input.kind}_attempt_limit`,429,
       'Repeated requests have reached the daily protection limit. Failed splits did not use successful-split allowance. Please try again after the reset.',retryAfter);
+    if (quotaClass==='guest' && input.kind==='split' && (counts?.held ?? 0)>=GUEST_UNVERIFIED_SPLITS_PER_DAY) {
+      const session=await db.prepare('SELECT verified_day FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL')
+        .bind(input.subject,now).first<{verified_day:string}>();
+      if (session && session.verified_day!==day) throw new OperationError('guest_verification_required',403,'Complete the check to continue splitting today.');
+    }
     throw new OperationError('split_queue_full',429,'The audio queue is full. Wait a minute and submit the same request again.',60);
   }
   if (operation.fingerprint !== input.fingerprint || operation.course_id !== input.courseId || operation.quota_class !== quotaClass) {

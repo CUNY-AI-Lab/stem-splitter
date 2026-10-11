@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
-import { splitAllowance, operationAllowance, dailyWindow } from './daily-allowance.ts';
+import { splitAllowance, operationAllowance, dailyWindow, GUEST_UNVERIFIED_SPLITS_PER_DAY } from './daily-allowance.ts';
 import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback } from './reliability/splits.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation } from './reliability/queue.ts';
@@ -130,7 +130,7 @@ import {
 import { audioSepReplicateIdentity } from './isolation/options.ts';
 import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal } from './identity.ts';
 import { readBoundedResponse } from './http/bounded-response.ts';
-import { guestPrincipal, ownershipTable, conversationTable } from './guest/access.ts';
+import { guestPrincipal, ownershipTable, conversationTable, guestFailure } from './guest/access.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -291,7 +291,9 @@ app.get('/api/account', async (c) => {
   const chatAvailable=!guestPrincipal(principal)||c.env.guestChatReady===true;
   if(chatAvailable)try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),principal.quotaClass ?? 'member'); } catch {}
   return c.json({ account: principal, splitAllowance: allowance, chatAllowance,
-    ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
+    ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,
+      verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day
+        && (allowance===null || allowance.completed+allowance.inProgress>=GUEST_UNVERIFIED_SPLITS_PER_DAY)}}:{}) });
 });
 
 app.get('/api/model-quota', async (c) => {
@@ -2076,6 +2078,7 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((_error, c) => {
   if(_error instanceof CourseError)return courseErrorResponse(_error);
   if (_error instanceof OperationError) {
+    if(_error.code==='guest_verification_required')return guestFailure(_error.code,403,_error.message);
     if(_error.retryAfter)c.header('Retry-After',String(_error.retryAfter));
     return c.json({error:_error.message,code:_error.code,resetsAt:dailyWindow().resetsAt},_error.status);
   }

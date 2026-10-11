@@ -70,10 +70,11 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
   if (method === 'POST' && job && ['guide','chat'].includes(job[2]) && env.guestChatReady !== true) {
     return guestFailure('guest_assistant_unavailable',503,'Listening Guy is available with CUNY Login. You can keep splitting and playing audio as a guest.');
   }
-  // A saved guest session can read its work after midnight, but paid starts
-  // require a fresh daily server-verified human check.
-  const paid = method === 'POST' && (path === '/api/jobs' || job && ['guide','chat'].includes(job[2]));
-  if (paid && session.verifiedDay !== dailyWindow().day) return guestFailure('guest_verification_required',403,'Complete the guest check again to continue today. Your saved work is still available.');
+  // Split verification is checked in the atomic reservation, where successful
+  // and pending work jointly reserve the first three places. Assistant requests
+  // retain their daily verification requirement.
+  const assistant = method === 'POST' && job && ['guide','chat'].includes(job[2]);
+  if (assistant && session.verifiedDay !== dailyWindow().day) return guestFailure('guest_verification_required',403,'Complete the check to use Listening Guy today.');
   authenticated({ subject:session.subject,role:'guest',quotaClass:'guest',displayName:'Guest',course:null,courseId:null });
   return null;
 }
