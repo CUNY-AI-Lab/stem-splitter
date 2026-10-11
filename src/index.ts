@@ -2099,7 +2099,7 @@ app.onError((_error, c) => {
 });
 
 export default app;
-export async function runReliableJobs(env: Env) { return drainSplitQueue(env,ingestResult); }
+export async function runReliableJobs(env: Env,options:{scheduled?:boolean}={}) { return drainSplitQueue(env,ingestResult,options); }
 
 // --- helpers ------------------------------------------------------------
 

@@ -3,6 +3,7 @@ import { parseVideoSource } from '../video-source.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
 import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
+import { fetchVimeoAudio } from '../vimeo.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
 import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
@@ -40,7 +41,11 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
     if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a full YouTube or Vimeo video link.');
-    if(!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
+    if(source.sourceType==='youtube'&&!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
+    if(source.sourceType==='vimeo') {
+      const runner=getReplicateRunner(input.model);
+      if(!runner||!env.REPLICATE_API_TOKEN||!replicateVersion(env,runner))throw new OperationError('provider_configuration',503,'Audio separation is temporarily unavailable.');
+    }
     input.sourceType=source.sourceType; input.filename=source.sourceType==='vimeo'?'Vimeo audio':'YouTube audio';
     // Keep existing YouTube operation fingerprints stable across this release.
     if(source.sourceType==='youtube')input.youtubeUrl=source.canonicalUrl;
@@ -128,6 +133,15 @@ async function start(env: Env,op: Operation) {
   if (op.cancel_requested) {await fail(env,op,'cancelled');return;}
   if (op.phase==='fetch'&&input.sourceType==='archive') {
     try {await storeArchive(env,op,input);} catch {await fail(env,op,'archive_import_failed');}return;
+  }
+  if (op.phase==='fetch'&&input.sourceType==='vimeo') {
+    // Scheduled drains own this bounded GET under the existing five-minute lease.
+    // A crashed fetch can be reclaimed; it has no external paid start to reconcile.
+    try {await imported(env,op,input,await fetchVimeoAudio((input.videoUrl??input.youtubeUrl)!,{deadline:op.deadline}));}
+    catch(error) {await fail(env,op,error instanceof YouTubeError?error.code:'vimeo_import_failed',
+      error instanceof YouTubeError&&error.code==='audio_too_large'
+        ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
+    return;
   }
   let attempt: string | null=null;
   try {
@@ -231,14 +245,14 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       .bind(Math.min(Math.max(now+5000,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
   }
 }
-export async function drainSplitQueue(env: Env,complete: Complete) {
+export async function drainSplitQueue(env: Env,complete: Complete,options:{scheduled?:boolean}={}) {
   if(env.AUTH_MODE!=='cail')return;
   await recoverExpired(env.DB);
   const active=await env.DB.prepare("SELECT * FROM app_operations WHERE kind='split' AND state IN ('processing','reconciling') AND provider_id IS NOT NULL AND not_before<=? ORDER BY updated_at LIMIT 4")
     .bind(Date.now()).all<Operation>();
   for(const op of active.results)await reconcileSplit(env,op,complete);
   if(env.SPLIT_STARTS_DISABLED==='true')return;
-  for(const phase of ['fetch','split'] as const) {const op=await claimNext(env.DB,phase);if(op)await start(env,op);}
+  for(const phase of ['fetch','split'] as const) {const op=await claimNext(env.DB,phase,Date.now(),options);if(op)await start(env,op);}
 }
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {

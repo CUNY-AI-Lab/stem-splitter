@@ -5,7 +5,7 @@ import { type Operation, type Phase, TERMINAL, readOperation } from './ledger.ts
 export const QUEUE_CAPS = { fetch: 1, split: 1, perSubject: 1 } as const;
 export const WORK_LEASE_MS = 5*60*1000;
 
-export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Date.now()): Promise<Operation | null> {
+export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Date.now(),options:{scheduled?:boolean}={}): Promise<Operation | null> {
   const owner=crypto.randomUUID();
   // D1 serializes this statement. The subquery plus compare-and-set cannot
   // oversubscribe even when unrelated Worker instances claim simultaneously.
@@ -13,12 +13,14 @@ export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Da
     WHERE id=(SELECT q.id FROM app_operations q
       LEFT JOIN operation_fairness f ON f.subject=q.subject AND f.phase=q.phase
       WHERE q.kind='split' AND q.phase=? AND q.state='queued' AND q.not_before<=? AND q.deadline>?
-      AND COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=?
+      AND (? OR q.phase<>'fetch' OR COALESCE(json_extract(q.request_json,'$.sourceType'),'')<>'vimeo')
+      AND ((q.phase='fetch' AND json_extract(q.request_json,'$.sourceType')='vimeo')
+        OR COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=?)
       AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
       AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.subject=q.subject AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
       ORDER BY COALESCE(f.last_started,0),q.created_at,q.id LIMIT 1)
     AND state='queued' RETURNING *`)
-    .bind(owner,now+WORK_LEASE_MS,now,phase,now,now,now,QUEUE_CAPS[phase],QUEUE_CAPS.perSubject).first<Operation>();
+    .bind(owner,now+WORK_LEASE_MS,now,phase,now,now,options.scheduled?1:0,now,QUEUE_CAPS[phase],QUEUE_CAPS.perSubject).first<Operation>();
   if (row) await db.prepare(`INSERT INTO operation_fairness(subject,phase,last_started) VALUES(?,?,?)
     ON CONFLICT(subject,phase) DO UPDATE SET last_started=excluded.last_started`).bind(row.subject,phase,now).run();
   return row;

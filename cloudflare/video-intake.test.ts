@@ -8,14 +8,18 @@ import { FsR2Bucket } from '../server/r2.ts';
 import type { Env } from '../src/env.ts';
 import type { AppPrincipal } from '../src/identity.ts';
 import app from '../src/index.ts';
-import { drainSplitQueue, reconcileSplit, submitSplit } from '../src/reliability/splits.ts';
+import { drainSplitQueue, submitSplit } from '../src/reliability/splits.ts';
 import { fingerprint, OperationError, readOperation } from '../src/reliability/ledger.ts';
+import { cancelOperation, claimNext, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
+import { setCooldown } from '../src/reliability/retry.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { courseFixture } from './course-fixture.ts';
+import { joinBytes, vimeoFixture } from '../tests/fixtures/vimeo.ts';
 
 const subject='cail-'+ 'e'.repeat(32);
 const principal:AppPrincipal={subject,role:'student',displayName:'Fixture',course:null,courseId:null};
 const vimeo='https://vimeo.com/160743502/abd0e13fb4';
+const vimeoPlayer='https://player.vimeo.com/video/160743502?h=abd0e13fb4';
 const youtube='https://www.youtube.com/watch?v=jNQXAC9IVRw';
 const importVersion='a'.repeat(64), splitVersion='b'.repeat(64);
 
@@ -80,42 +84,137 @@ test('durable and legacy intake reject multiple sources and invalid URLs before 
   assert.equal((await splitAllowance(db,subject)).inProgress,0);
 });
 
+test('native Vimeo intake needs no extractor pin, and HTTP drains leave its lease for scheduled execution',async t=>{
+  const {db,env}=await setup(t);
+  env.REPLICATE_YT_MODEL=undefined;env.REPLICATE_YT_MODEL_VERSION=undefined;
+  t.mock.method(globalThis,'fetch',async()=>assert.fail('Request drains must leave native Vimeo for cron'));
+  const {operation}=await submitSplit(env,principal,{videoUrl:vimeo},'vimeo-native-scheduled');
+  await assert.rejects(()=>submitSplit(env,principal,{videoUrl:youtube},'youtube-needs-extractor'),
+    (error:unknown)=>error instanceof OperationError&&error.code==='youtube_unconfigured');
+  await drainSplitQueue(env,async()=>{});
+  const queued=(await readOperation(db,operation.id))!;
+  assert.equal(queued.state,'queued');assert.equal(queued.fence,0);assert.equal(queued.lease_owner,null);
+  await setCooldown(db,'replicate',Date.now()+60_000);
+  const now=Date.now(),claimed=(await claimNext(db,'fetch',now,{scheduled:true}))!;
+  assert.equal(claimed.id,operation.id);assert.equal(claimed.lease_until,now+WORK_LEASE_MS);
+  assert.equal(await claimNext(db,'fetch',now,{scheduled:true}),null);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
+  await recoverExpired(db,claimed.lease_until+1);
+  const recovered=(await readOperation(db,operation.id))!;
+  assert.equal(recovered.state,'queued');assert.equal(recovered.provider_id,null);assert.ok(recovered.fence>claimed.fence);
+  assert.equal(await claimNext(db,'fetch',claimed.lease_until+2),null);
+  const restarted=(await claimNext(db,'fetch',claimed.lease_until+2,{scheduled:true}))!;
+  assert.equal(restarted.id,operation.id);assert.ok(restarted.fence>recovered.fence);
+});
+
+test('queued Vimeo does not block an HTTP YouTube claim and cancelled or expired Vimeo releases its place',async t=>{
+  const {db,env}=await setup(t);
+  const native=(await submitSplit(env,principal,{videoUrl:vimeo},'vimeo-waits-for-cron')).operation;
+  const remote=(await submitSplit(env,principal,{videoUrl:youtube},'youtube-http-starts')).operation;
+  assert.equal((await claimNext(db,'fetch'))!.id,remote.id);
+  await cancelOperation(db,native.id,subject);
+  assert.equal((await readOperation(db,native.id))!.state,'cancelled');
+  assert.equal((await splitAllowance(db,subject)).inProgress,1);
+  const expired=(await submitSplit(env,principal,{videoUrl:vimeo},'vimeo-expired-fixture')).operation;
+  await db.prepare('UPDATE app_operations SET deadline=? WHERE id=?').bind(Date.now()-1,expired.id).run();
+  await recoverExpired(db);
+  assert.equal((await readOperation(db,expired.id))!.state,'failed');
+  assert.equal((await splitAllowance(db,subject)).inProgress,1);
+});
+
+test('native Vimeo failures release a guest place once and preserve only fixed error codes',async t=>{
+  for(const [status,code] of [[403,'youtube_source_denied'],[429,'youtube_fetch_busy'],[0,'youtube_fetch_unavailable']] as const) {
+    const {db,env}=await setup(t),now=Date.now(),guestSubject=`guest-${'f'.repeat(64)}`;
+    await db.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
+      .bind(guestSubject,now,now+86400000,'1970-01-01').run();
+    env.guestRuntimeReady=true;
+    const guest:AppPrincipal={subject:guestSubject,role:'guest',quotaClass:'guest',displayName:'Guest',course:null,courseId:null};
+    let reads=0;
+    const mock=t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+      assert.equal(String(input),vimeoPlayer);assert.notEqual(init?.method,'POST');reads++;
+      if(!status)throw new Error('private transport detail https://private.invalid/?credential=fixture');
+      return new Response('private upstream failure',{status});
+    });
+    const first=await submitSplit(env,guest,{videoUrl:vimeo},`vimeo-guest-failure-${status}`);
+    await drainSplitQueue(env,async()=>assert.fail('Failure cannot reach the separator'),{scheduled:true});
+    const failed=(await readOperation(db,first.operation.id))!;
+    assert.equal(failed.state,'failed');assert.equal(failed.error_code,code);assert.equal(failed.provider_id,null);
+    assert.equal((await splitAllowance(db,guestSubject,new Date(),'guest')).remaining,5);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
+    const job=await db.prepare('SELECT source_type,error FROM jobs WHERE id=?').bind(first.operation.id).first<{source_type:string;error:string}>();
+    assert.equal(job!.source_type,'vimeo');assert.doesNotMatch(job!.error,/private|credential|https:/);
+    assert.equal((await submitSplit(env,guest,{videoUrl:vimeo},`vimeo-guest-failure-${status}`)).created,false);
+    await drainSplitQueue(env,async()=>{}, {scheduled:true});assert.equal(reads,1);
+    mock.mock.restore();
+  }
+});
+
 test('durable Vimeo import stores audio and its provenance before starting the selected separator',async t=>{
   const {db,env}=await setup(t);
   const {operation}=await submitSplit(env,principal,{videoUrl:'https://player.vimeo.com/video/160743502?h=abd0e13fb4'},'vimeo-pipeline-fixture');
-  const bytes=new Uint8Array(2048);bytes.set([0,0,0,24,102,116,121,112]);
+  const fixture=vimeoFixture(),bytes=joinBytes(fixture.init,fixture.segment,fixture.segment);
+  const config={...fixture.config,video:{...fixture.config.video,id:160743502,privacy:'unlisted',unlisted_hash:'abd0e13fb4'}};
   const posts:Array<{version:string;input:{url?:string;audio?:string}}>=[];
+  let reads=0;
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
     if(init?.method==='POST') {
       assert.equal(String(input),'https://api.replicate.com/v1/predictions');
       const body=JSON.parse(String(init.body));posts.push(body);
-      return Response.json({id:body.version===importVersion?'vimeo-import-fixture':'vimeo-split-fixture',status:'starting'});
+      assert.equal(body.version,splitVersion);
+      return Response.json({id:'vimeo-split-fixture',status:'starting'});
     }
-    assert.equal(String(input),'https://api.replicate.com/v1/predictions/vimeo-import-fixture');
-    return Response.json({id:'vimeo-import-fixture',status:'succeeded',output:{
-      title:'Vimeo fixture',duration:19,audio:`data:audio/mp4;base64,${Buffer.from(bytes).toString('base64')}`,
-    }});
+    reads++;assert.equal(init?.method,'GET');
+    if(String(input)===vimeoPlayer)return new Response(`<script>const playerConfig=${JSON.stringify(config)};</script>`,{headers:{'Content-Type':'text/html'}});
+    return fixture.fetchImpl(input,init);
   });
   const complete=async()=>assert.fail('Import does not complete separation');
-  await drainSplitQueue(env,complete);
-  assert.equal(posts.length,1);assert.equal(posts[0].version,importVersion);assert.equal(posts[0].input.url,vimeo);
-  await reconcileSplit(env,(await readOperation(db,operation.id))!,complete);
+  await setCooldown(db,'replicate',Date.now()+60_000);
+  await drainSplitQueue(env,complete,{scheduled:true});
+  assert.equal(posts.length,0);assert.equal(reads,4);
   let current=(await readOperation(db,operation.id))!;
   assert.equal(current.phase,'split');assert.equal(current.state,'queued');
   assert.equal(JSON.parse(current.request_json).sourceType,'vimeo');
+  assert.equal(JSON.parse(current.request_json).videoUrl,vimeo);
   const job=await db.prepare('SELECT source_type,source_key,source_hash FROM jobs WHERE id=?').bind(operation.job_id)
     .first<{source_type:string;source_key:string;source_hash:string}>();
   assert.equal(job!.source_type,'vimeo');
   assert.equal(job!.source_hash,Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex'));
   assert.deepEqual(new Uint8Array(await new Response((await env.AUDIO.get(job!.source_key))!.body).arrayBuffer()),bytes);
-  const nextPoll=current.not_before+1;t.mock.method(Date,'now',()=>nextPoll);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
+  await db.prepare("UPDATE provider_cooldowns SET until_ms=0 WHERE provider='replicate'").run();
   await drainSplitQueue(env,complete);current=(await readOperation(db,operation.id))!;
   assert.equal(current.phase,'split');assert.equal(current.state,'processing');
-  assert.equal(posts.length,2);assert.equal(posts[1].version,splitVersion);
-  const sourceUrl=new URL(posts[1].input.audio!);
+  assert.equal(posts.length,1);assert.equal(posts[0].version,splitVersion);assert.equal(reads,4);
+  const sourceUrl=new URL(posts[0].input.audio!);
   assert.equal(sourceUrl.origin,'https://split.test');
   assert.equal(sourceUrl.pathname,`/api/local-sources/${job!.source_key}`);
   assert.equal((await splitAllowance(db,subject)).inProgress,1);
+});
+
+test('native Vimeo late storage is fenced after cancellation or expired lease, and storage failure refunds',async t=>{
+  for(const mode of ['cancel','expire','storage'] as const) {
+    const {db,env}=await setup(t),fixture=vimeoFixture();
+    const {operation}=await submitSplit(env,principal,{videoUrl:'https://vimeo.com/1084537'},`vimeo-storage-${mode}`);
+    t.mock.method(globalThis,'fetch',fixture.fetchImpl);
+    const put=env.AUDIO.put.bind(env.AUDIO);let writtenKey='';
+    t.mock.method(env.AUDIO,'put',async(...args:Parameters<R2Bucket['put']>)=>{
+      if(mode==='storage')throw new Error('private storage configuration detail');
+      const result=await put(...args);writtenKey=args[0];
+      if(mode==='cancel')await cancelOperation(db,operation.id,subject);
+      else await recoverExpired(db,(await readOperation(db,operation.id))!.lease_until+1);
+      return result;
+    });
+    await drainSplitQueue(env,async()=>assert.fail('Stale or failed import must not start separation'),{scheduled:true});
+    const current=(await readOperation(db,operation.id))!;
+    assert.equal(current.phase,'fetch');assert.equal(current.state,mode==='expire'?'queued':mode==='cancel'?'cancelled':'failed');
+    assert.equal(current.provider_id,null);
+    if(writtenKey)assert.equal(await env.AUDIO.head(writtenKey),null);
+    const job=await db.prepare('SELECT source_hash FROM jobs WHERE id=?').bind(operation.id).first<{source_hash:string|null}>();
+    assert.equal(job!.source_hash,null);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
+    assert.equal((await splitAllowance(db,subject)).inProgress,mode==='expire'?1:0);
+    t.mock.restoreAll();
+  }
 });
 
 test('legacy job endpoint imports Vimeo through either request alias',async t=>{
