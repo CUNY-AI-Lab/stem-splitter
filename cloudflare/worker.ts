@@ -12,6 +12,7 @@ import { purgeExpiredListeningConversations } from './retention.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
 import { handleBugReport, type BugReportService } from './bug-reports.ts';
 import { intakeEnvironment, intakePauseResponse, type IntakePauseEnv } from './intake-pause.ts';
+import { youtubeBrowserLoader } from './youtube-browser.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
@@ -42,7 +43,8 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
   const gateway = gatewayForRequest(env.GATEWAY, guest ? env.GUEST_GATEWAY_API_KEY ?? null : request.headers.get('x-cail-gateway-identity-jwt'), request, env.RELEASE || 'candidate',guest?'key':'jwt');
   return app.fetch(request, { ...env, ASSISTANT_MODEL: env.GATEWAY_MODEL,
     ASSISTANT_FALLBACK_MODELS: env.GATEWAY_FALLBACK_MODEL ?? '',
-    assistantTransport: gateway.stream, assistantQuota: guest ? undefined : gateway.quota, verifyCailIdentity, validateStemAudio }, ctx);
+    assistantTransport: gateway.stream, assistantQuota: guest ? undefined : gateway.quota, verifyCailIdentity, validateStemAudio,
+    fetchYouTubeBrowserAudio: youtubeBrowserLoader(env.BROWSER) }, ctx);
 }
 
 export default {
@@ -73,7 +75,9 @@ export default {
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
           remixer: env.REMIXER_ENABLED === 'true', production: false, intakePaused: env.INTAKE_PAUSED === 'true',
           courseAccess: courseSchema?.present === 2 && env.CAIL_CLASSROOM_ENABLED !== 'false' ? { contract: 'stem-course-v1' } : null,
-          youtubeImport: {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
+          youtubeImport: youtubeBrowserLoader(env.BROWSER)
+            ? {configuration:'configured',strategy:'cloudflare-browser'}
+            : {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
           listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
             transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
       } else if (url.pathname === '/api/bug-reports') {

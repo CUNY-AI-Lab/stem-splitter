@@ -12,7 +12,7 @@ import { parseBrowserAutoSummary } from '../analysis/contract.ts';
 import { processingFeatureFlags } from '../features.ts';
 import { authorizeStoredCourseWork, courseAssignmentStatement } from '../classroom/access.ts';
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation, reserveOperation, TERMINAL, type Operation } from './ledger.ts';
-import { claimNext, claimVimeoImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
+import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
 import { cooldown, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
 
@@ -20,6 +20,8 @@ const MAX_BYTES=100*1024*1024;
 interface SplitInput {
   sourceType: 'upload'|'youtube'|'vimeo'|'archive'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string;
   archiveId?: string; archiveFile?: string; model: string; auto: boolean; browserAnalysis?: unknown;
+  /** Selected by the trusted adapter when reserving a new operation. */
+  browserAudio?: true;
 }
 type Complete = (env: Env, jobId: string, result: SeparationResult,operation?:Operation) => Promise<void>;
 const title=(value: unknown) => typeof value==='string' ? value.replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().slice(0,200) : '';
@@ -41,8 +43,9 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
     if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a full YouTube or Vimeo video link.');
-    if(source.sourceType==='youtube'&&!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
-    if(source.sourceType==='vimeo') {
+    const browserYouTube=source.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function';
+    if(source.sourceType==='youtube'&&!browserYouTube&&!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
+    if(source.sourceType==='vimeo'||browserYouTube) {
       const runner=getReplicateRunner(input.model);
       if(!runner||!env.REPLICATE_API_TOKEN||!replicateVersion(env,runner))throw new OperationError('provider_configuration',503,'Audio separation is temporarily unavailable.');
     }
@@ -63,8 +66,10 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     if (source.size<=0||source.size>MAX_BYTES) throw new OperationError('invalid_upload',400,'The upload is empty or too large. Upload it again.');
     input.key=value.key;input.filename=title(value.filename);
   }
+  const requestFingerprint=await fingerprint(input);
+  if(input.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function')input.browserAudio=true;
   const id=crypto.randomUUID();
-  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',courseId,kind:'split',key:key ?? '',fingerprint:await fingerprint(input),phase:input.sourceType==='upload'?'split':'fetch',jobId:id,request:input,
+  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
       const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type)
         SELECT id,?,?,'queued',?,? FROM app_operations WHERE id=?`)
@@ -82,13 +87,13 @@ async function fail(env: Env, op: Operation, code: string, message='This split c
     env.DB.prepare(`UPDATE jobs SET status='failed',error=? WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL}))`).bind(message,op.job_id,op.id,op.fence),
   ]);
 }
-async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;attribution?:unknown}) {
+async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:'audio/webm'|'audio/mp4';attribution?:unknown}) {
   if (!audio.data.byteLength||audio.data.byteLength>MAX_BYTES) throw new YouTubeError('Audio is empty or too large.','invalid_audio_response');
   const hash=await crypto.subtle.digest('SHA-256',audio.data);
   const sha=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
   const extension=audio.fileName?.match(/\.[a-zA-Z0-9]+$/)?.[0] ?? '.m4a';
   const key=`uploads/${op.id}/source-${op.fence}${extension}`;
-  await env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:audio.fileName?archiveContentType(audio.fileName):'audio/mp4'}});
+  await env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:audio.contentType??(audio.fileName?archiveContentType(audio.fileName):'audio/mp4')}});
   const current=await readOperation(env.DB,op.id);
   if (!current||current.fence!==op.fence||current.cancel_requested||['failed','cancelled'].includes(current.state)) {
     await env.AUDIO.delete(key);
@@ -134,14 +139,20 @@ async function start(env: Env,op: Operation) {
   if (op.phase==='fetch'&&input.sourceType==='archive') {
     try {await storeArchive(env,op,input);} catch {await fail(env,op,'archive_import_failed');}return;
   }
-  if (op.phase==='fetch'&&input.sourceType==='vimeo') {
-    // The owner's HTTP request awaits this GET under the existing five-minute lease.
+  if (op.phase==='fetch'&&isOwnedSourceImport(input)) {
+    // The owner's HTTP request awaits this import under the existing five-minute lease.
     // Reclaiming an interrupted source fetch preserves the separate GPU-start fence.
-    try {await imported(env,op,input,await fetchVimeoAudio((input.videoUrl??input.youtubeUrl)!,{deadline:op.deadline,browser:env.AUTH_MODE==='cail'?env.BROWSER:undefined}));}
+    try {
+      const url=(input.videoUrl??input.youtubeUrl)!;
+      if(input.sourceType==='youtube') {
+        if(typeof env.fetchYouTubeBrowserAudio!=='function')throw new YouTubeError('Video import is temporarily unavailable.','youtube_fetch_unavailable');
+        await imported(env,op,input,await env.fetchYouTubeBrowserAudio(url,{deadline:op.deadline}));
+      } else await imported(env,op,input,await fetchVimeoAudio(url,{deadline:op.deadline,browser:env.AUTH_MODE==='cail'?env.BROWSER:undefined}));
+    }
     catch(error) {
       const diagnostic=vimeoFailureDiagnostic(error);
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
-      await fail(env,op,error instanceof YouTubeError?error.code:'vimeo_import_failed',
+      await fail(env,op,error instanceof YouTubeError?error.code:input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
       error instanceof YouTubeError&&error.code==='audio_too_large'
         ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;
@@ -248,10 +259,10 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       .bind(Math.min(Math.max(now+5000,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
   }
 }
-export async function resumeOwnedVimeoImport(env:Env,principal:AppPrincipal,operation:Operation) {
+export async function resumeOwnedSourceImport(env:Env,principal:AppPrincipal,operation:Operation) {
   if(env.AUTH_MODE!=='cail'||env.SPLIT_STARTS_DISABLED==='true'||operation.subject!==principal.subject
     ||operation.quota_class!==(principal.quotaClass??'member')||operation.phase!=='fetch'
-    ||!['queued','running'].includes(operation.state)||JSON.parse(operation.request_json).sourceType!=='vimeo')return;
+    ||!['queued','running'].includes(operation.state)||!isOwnedSourceImport(JSON.parse(operation.request_json)))return;
   await recoverExpired(env.DB);
   const current=await readOperation(env.DB,operation.id);
   if(current?.subject!==principal.subject||current.phase!=='fetch'||!['queued','running'].includes(current.state))return;
@@ -259,9 +270,10 @@ export async function resumeOwnedVimeoImport(env:Env,principal:AppPrincipal,oper
     if(current.state==='queued')await fail(env,current,'cancelled');
     return;
   }
-  const claimed=await claimVimeoImport(env.DB,operation.id,principal.subject);
+  const claimed=await claimNativeImport(env.DB,operation.id,principal.subject);
   if(claimed)await start(env,claimed);
 }
+export const resumeOwnedVimeoImport=resumeOwnedSourceImport;
 
 export async function drainSplitQueue(env: Env,complete: Complete) {
   if(env.AUTH_MODE!=='cail')return;

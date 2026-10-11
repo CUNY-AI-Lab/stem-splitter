@@ -9,10 +9,18 @@ export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Da
   return claimQueuedSplit(db,phase,now);
 }
 
+export const isOwnedSourceImport=(request:{sourceType?:unknown;browserAudio?:unknown})=>
+  request.sourceType==='vimeo'||request.sourceType==='youtube'&&request.browserAudio===true;
+// Keep absent legacy markers false in SQL, including when this predicate is negated.
+const nativeSourceSql=(row:'q'|'app_operations')=>`(COALESCE(json_extract(${row}.request_json,'$.sourceType'),'')='vimeo'
+  OR (COALESCE(json_extract(${row}.request_json,'$.sourceType'),'')='youtube'
+    AND COALESCE(json_type(${row}.request_json,'$.browserAudio'),'')='true'))`;
+
 /** Native downloads run only while an authenticated owner's HTTP request awaits them. */
-export async function claimVimeoImport(db:D1Database,id:string,subject:string,now=Date.now()):Promise<Operation|null> {
+export async function claimNativeImport(db:D1Database,id:string,subject:string,now=Date.now()):Promise<Operation|null> {
   return claimQueuedSplit(db,'fetch',now,{id,subject});
 }
+export const claimVimeoImport=claimNativeImport;
 
 async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,native?:{id:string;subject:string}):Promise<Operation|null> {
   const owner=crypto.randomUUID();
@@ -22,9 +30,9 @@ async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,n
     WHERE id=(SELECT q.id FROM app_operations q
       LEFT JOIN operation_fairness f ON f.subject=q.subject AND f.phase=q.phase
       WHERE q.kind='split' AND q.phase=? AND q.state='queued' AND q.not_before<=? AND q.deadline>?
-      AND ((? IS NULL AND (q.phase<>'fetch' OR COALESCE(json_extract(q.request_json,'$.sourceType'),'')<>'vimeo'))
-        OR (q.phase='fetch' AND json_extract(q.request_json,'$.sourceType')='vimeo' AND q.cancel_requested=0 AND q.id=? AND q.subject=?))
-      AND ((q.phase='fetch' AND json_extract(q.request_json,'$.sourceType')='vimeo')
+      AND ((? IS NULL AND (q.phase<>'fetch' OR NOT ${nativeSourceSql('q')}))
+        OR (q.phase='fetch' AND ${nativeSourceSql('q')} AND q.cancel_requested=0 AND q.id=? AND q.subject=?))
+      AND ((q.phase='fetch' AND ${nativeSourceSql('q')})
         OR COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=?)
       AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
       AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.subject=q.subject AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
@@ -69,7 +77,7 @@ export async function recoverExpired(db: D1Database, now=Date.now()) {
     WHERE kind='split' AND state IN ('running','starting') AND lease_until<?`).bind(now,now).run();
   await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No successful-split allowance was used.'
     WHERE id IN(SELECT job_id FROM app_operations WHERE kind='split' AND phase='fetch' AND state='queued'
-      AND cancel_requested=1 AND json_extract(request_json,'$.sourceType')='vimeo')`).run();
+      AND cancel_requested=1 AND ${nativeSourceSql('app_operations')})`).run();
   await db.prepare(`UPDATE jobs SET status='failed',error='This request expired before it started. Submit it again.'
     WHERE id IN(SELECT job_id FROM app_operations WHERE kind='split' AND state='queued' AND deadline<=?)`).bind(now).run();
   // A late known response is safe evidence even when its old Worker lost the

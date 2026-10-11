@@ -5,6 +5,10 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   ASSETS?: Fetcher;
   /** Cloudflare browser used to load the ordinary public Vimeo player. */
   BROWSER?: import('./vimeo.ts').VimeoBrowser;
+  /** Trusted Cloudflare adapter only; never accepted from a request or environment JSON. */
+  fetchYouTubeBrowserAudio?: (url: string, options: { deadline: number }) => Promise<{
+    data: ArrayBuffer; title: string; durationSec: number; fileName: string; contentType: 'audio/webm' | 'audio/mp4';
+  }>;
   AUTH_MODE?: string;
   CAIL_IDENTITY_JWKS?: string;
   /** Set by the Worker adapter, never by browser input or environment JSON. */

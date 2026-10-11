@@ -14,7 +14,9 @@
     "@cuny-ai-lab/cail-identity": "5.2.6",
     "@cuny-ai-lab/cail-log": "0.6.4",
     "hono-cloudflare": "npm:hono@4.13.11",
-    "mpg123-decoder": "1.0.3"
+    "mpg123-decoder": "1.0.3",
+    "@cloudflare/puppeteer": "1.1.0",
+    "googlevideo": "4.1.1"
   },
   "devDependencies": {
     "wrangler": "4.129.0"

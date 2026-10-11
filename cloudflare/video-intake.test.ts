@@ -8,9 +8,10 @@ import { FsR2Bucket } from '../server/r2.ts';
 import type { Env } from '../src/env.ts';
 import type { AppPrincipal } from '../src/identity.ts';
 import app from '../src/index.ts';
-import { drainSplitQueue, resumeOwnedVimeoImport, submitSplit } from '../src/reliability/splits.ts';
-import { fingerprint, OperationError, readOperation } from '../src/reliability/ledger.ts';
-import { cancelOperation, claimNext, claimVimeoImport, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
+import { drainSplitQueue, resumeOwnedSourceImport, resumeOwnedVimeoImport, submitSplit } from '../src/reliability/splits.ts';
+import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation } from '../src/reliability/ledger.ts';
+import { cancelOperation, claimNext, claimNativeImport, claimVimeoImport, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
+import { YouTubeError } from '../src/youtube.ts';
 import { setCooldown } from '../src/reliability/retry.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { courseFixture } from './course-fixture.ts';
@@ -22,6 +23,10 @@ const vimeo='https://vimeo.com/160743502/abd0e13fb4';
 const vimeoPlayer='https://player.vimeo.com/video/160743502?h=abd0e13fb4';
 const youtube='https://www.youtube.com/watch?v=jNQXAC9IVRw';
 const importVersion='a'.repeat(64), splitVersion='b'.repeat(64);
+const browserAudio=()=>{
+  const bytes=new Uint8Array(2048);bytes.set([0x1a,0x45,0xdf,0xa3]);
+  return {data:bytes.buffer,title:'Browser audio fixture',durationSec:19,fileName:'source.webm',contentType:'audio/webm' as const};
+};
 
 async function setup(t:{after:(f:()=>void)=>void}) {
   const directory=mkdtempSync(join(tmpdir(),'stem-video-intake-'));
@@ -138,9 +143,10 @@ test('queued Vimeo does not block an HTTP YouTube claim and cancelled or expired
 test('cancelled abandoned native and YouTube imports refund without another source request',async t=>{
   const {db,env}=await setup(t);
   t.mock.method(globalThis,'fetch',async()=>assert.fail('Cancelled recovery must not fetch a source'));
-  for(const [source,url] of [['vimeo',vimeo],['youtube',youtube]]) {
+  for(const [source,url] of [['vimeo',vimeo],['youtube',youtube],['browser-youtube',youtube]]) {
+    env.fetchYouTubeBrowserAudio=source==='browser-youtube'?async()=>assert.fail('Cancelled browser work must not resume'):undefined;
     const operation=(await submitSplit(env,principal,{videoUrl:url},`cancelled-abandoned-${source}`)).operation;
-    const claimed=(source==='vimeo'?await claimVimeoImport(db,operation.id,subject):await claimNext(db,'fetch'))!;
+    const claimed=(source!=='youtube'?await claimNativeImport(db,operation.id,subject):await claimNext(db,'fetch'))!;
     await cancelOperation(db,operation.id,subject);
     await recoverExpired(db,claimed.lease_until+1);
     await drainSplitQueue(env,async()=>{});
@@ -301,6 +307,147 @@ test('busy Vimeo work resumes only through its owner GET, including an expired d
   const polled=await owner.request(`/api/jobs/${body.id}`);assert.equal(polled.status,200);await owner.flush();
   assert.equal(reads,4);assert.equal(posts,1);
   const current=(await readOperation(db,body.id))!;assert.equal(current.phase,'split');assert.equal(current.state,'processing');
+});
+
+test('trusted browser routing keeps the original fingerprint and preserves old YouTube replays',async t=>{
+  const {db,env}=await setup(t);
+  const old=(await submitSplit(env,principal,{videoUrl:youtube,browserAudio:true},'youtube-pre-browser')).operation;
+  assert.equal(JSON.parse(old.request_json).browserAudio,undefined);
+  env.fetchYouTubeBrowserAudio=async()=>assert.fail('Old work must retain its provider route');
+  const replay=await submitSplit(env,principal,{youtubeUrl:youtube,browserAudio:false},'youtube-pre-browser');
+  assert.equal(replay.created,false);assert.equal(replay.operation.id,old.id);
+  assert.equal(replay.operation.request_json,old.request_json);
+  const fresh=(await submitSplit(env,principal,{videoUrl:youtube,browserAudio:false},'youtube-browser-new')).operation;
+  assert.equal(JSON.parse(fresh.request_json).browserAudio,true);
+  assert.equal(fresh.fingerprint,old.fingerprint);
+  const posts:Array<{version:string;input:{url:string}}>=[];
+  t.mock.method(globalThis,'fetch',async(_input:RequestInfo|URL,init?:RequestInit)=>{
+    assert.equal(init?.method,'POST');posts.push(JSON.parse(String(init.body)));
+    return Response.json({id:'old-import-retained',status:'starting'});
+  });
+  await resumeOwnedSourceImport(env,principal,replay.operation);
+  assert.equal(posts.length,0);
+  await drainSplitQueue(env,async()=>{});
+  assert.equal(posts.length,1);assert.equal(posts[0].version,importVersion);assert.equal(posts[0].input.url,youtube);
+  const processing=(await readOperation(db,old.id))!;
+  assert.equal(processing.provider_id,'old-import-retained');assert.equal(processing.phase,'fetch');assert.equal(processing.state,'processing');
+  assert.equal((await readOperation(db,fresh.id))!.state,'queued');
+  const again=await submitSplit(env,principal,{videoUrl:youtube},'youtube-pre-browser');
+  assert.equal(again.operation.provider_id,processing.provider_id);assert.equal(again.operation.request_json,old.request_json);
+});
+
+test('browser YouTube intake needs the selected GPU configuration and ignores forged loader input',async t=>{
+  const {db,env}=await setup(t);
+  env.REPLICATE_YT_MODEL=undefined;env.REPLICATE_YT_MODEL_VERSION=undefined;
+  await assert.rejects(submitSplit(env,principal,{videoUrl:youtube,browserAudio:true,fetchYouTubeBrowserAudio:'forged'},'youtube-forged-route'),
+    (error:unknown)=>error instanceof OperationError&&error.code==='youtube_unconfigured');
+  env.fetchYouTubeBrowserAudio=async()=>browserAudio();
+  env.REPLICATE_MODEL_VERSION=undefined;
+  await assert.rejects(submitSplit(env,principal,{videoUrl:youtube},'youtube-missing-gpu'),
+    (error:unknown)=>error instanceof OperationError&&error.code==='provider_configuration');
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<{n:number}>())!.n,0);
+  env.REPLICATE_MODEL_VERSION=splitVersion;
+  const {operation}=await submitSplit(env,principal,{videoUrl:youtube},'youtube-browser-no-pin');
+  assert.equal(JSON.parse(operation.request_json).browserAudio,true);
+  assert.equal(await claimNext(db,'fetch'),null);
+  assert.equal((await claimNativeImport(db,operation.id,subject))!.id,operation.id);
+});
+
+test('an old uncertain provider start stays in reconciliation after browser routing is available',async t=>{
+  const {db,env}=await setup(t);
+  const original=(await submitSplit(env,principal,{videoUrl:youtube},'youtube-old-uncertain')).operation;
+  const claimed=(await claimNext(db,'fetch'))!;
+  const attempt=await beginAttempt(db,claimed,'replicate',importVersion);
+  await finishAttempt(db,attempt,'uncertain');
+  await db.prepare("UPDATE app_operations SET state='starting',lease_until=? WHERE id=?").bind(Date.now()-1,original.id).run();
+  env.fetchYouTubeBrowserAudio=async()=>assert.fail('An ambiguous provider start must retain its existing route');
+  t.mock.method(globalThis,'fetch',async()=>assert.fail('An ambiguous start must not submit another prediction'));
+  const replay=await submitSplit(env,principal,{youtubeUrl:youtube},'youtube-old-uncertain');
+  assert.equal(replay.created,false);assert.equal(replay.operation.request_json,original.request_json);
+  await resumeOwnedSourceImport(env,principal,replay.operation);
+  await drainSplitQueue(env,async()=>{});
+  const current=(await readOperation(db,original.id))!;
+  assert.equal(current.state,'reconciling');assert.equal(current.provider_id,null);
+  assert.equal(JSON.parse(current.request_json).browserAudio,undefined);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts WHERE operation_id=?').bind(original.id).first<{n:number}>())!.n,1);
+  assert.equal((await splitAllowance(db,subject)).inProgress,1);
+});
+
+test('YouTube POST awaits its trusted browser loader, preserves WebM metadata, and replays once',async t=>{
+  const {db,env}=await setup(t);
+  let release!:()=>void,started!:()=>void,loads=0,posts=0;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),sourceStarted=new Promise<void>(resolve=>{started=resolve;});
+  env.fetchYouTubeBrowserAudio=async(url,options)=>{
+    loads++;assert.equal(url,youtube);assert.ok(options.deadline>Date.now());started();await gate;return browserAudio();
+  };
+  const guest=await guestRequests(db,env,'d');
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    assert.ok(String(input).startsWith('https://api.replicate.com/'));
+    if(init?.method==='POST'){
+      posts++;const body=JSON.parse(String(init.body));assert.equal(body.version,splitVersion);assert.match(body.input.audio,/\.webm$/);
+    }
+    return Response.json({id:'browser-youtube-split',status:'processing'});
+  });
+  const submit=()=>guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'youtube-browser-owned'},body:JSON.stringify({videoUrl:youtube,browserAudio:false})});
+  let resolved=false;
+  const pending=submit().then(response=>{resolved=true;return response;});await sourceStarted;
+  const replay=await submit(),replayed=await replay.json() as {id:string;replay:boolean};
+  assert.equal(resolved,false);assert.equal(replay.status,200);assert.equal(replayed.replay,true);assert.equal(loads,1);assert.equal(posts,0);
+  release();const response=await pending,body=await response.json() as {id:string;savedToAccount:boolean};await guest.flush();
+  assert.equal(response.status,202);assert.equal(body.id,replayed.id);assert.equal(body.savedToAccount,false);assert.equal(posts,1);assert.equal(loads,1);
+  const job=await db.prepare('SELECT source_key,source_hash,source_type FROM jobs WHERE id=?').bind(body.id).first<{source_key:string;source_hash:string;source_type:string}>();
+  assert.equal(job!.source_type,'youtube');assert.match(job!.source_key,/\.webm$/);
+  const stored=(await env.AUDIO.get(job!.source_key))!;
+  assert.equal(stored.httpMetadata!.contentType,'audio/webm');
+  assert.deepEqual(new Uint8Array(await new Response(stored.body).arrayBuffer()),new Uint8Array(browserAudio().data));
+  assert.equal(job!.source_hash,Buffer.from(await crypto.subtle.digest('SHA-256',browserAudio().data)).toString('hex'));
+  const attempts=await db.prepare('SELECT phase,model FROM operation_attempts WHERE operation_id=?').bind(body.id).all<{phase:string;model:string}>();
+  assert.deepEqual(attempts.results.map(({phase,model})=>({phase,model})),[{phase:'split',model:splitVersion}]);
+  await submit();await guest.flush();assert.equal(loads,1);assert.equal(posts,1);
+});
+
+test('marked YouTube queue recovery remains owner-only and independent of provider cooldown',async t=>{
+  const {db,env}=await setup(t);let loads=0,posts=0;
+  env.fetchYouTubeBrowserAudio=async()=>{loads++;return browserAudio();};
+  const owner=await guestRequests(db,env,'e'),other=await guestRequests(db,env,'f');
+  const blocker=(await submitSplit(env,principal,{videoUrl:vimeo},'browser-capacity-block')).operation;
+  assert.ok(await claimNativeImport(db,blocker.id,subject));
+  t.mock.method(globalThis,'fetch',async(_input:RequestInfo|URL,init?:RequestInit)=>{
+    if(init?.method==='POST'){posts++;assert.equal(JSON.parse(String(init.body)).version,splitVersion);}
+    return Response.json({id:'resumed-browser-split',status:'processing'});
+  });
+  const response=await owner.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'browser-youtube-busy'},body:JSON.stringify({videoUrl:youtube})});
+  const body=await response.json() as {id:string};await owner.flush();assert.equal(response.status,202);assert.equal(loads,0);
+  assert.equal((await other.request(`/api/jobs/${body.id}`)).status,404);
+  await resumeOwnedSourceImport(other.env,other.principal,(await readOperation(db,body.id))!);assert.equal(loads,0);
+  await db.prepare("UPDATE jobs SET status='failed' WHERE id=?").bind(blocker.id).run();
+  await setCooldown(db,'replicate',Date.now()+60_000);
+  const claimed=(await claimNativeImport(db,body.id,owner.principal.subject))!;assert.ok(claimed);
+  await db.prepare('UPDATE app_operations SET lease_until=? WHERE id=?').bind(Date.now()-1,body.id).run();
+  await drainSplitQueue(owner.env,async()=>{});assert.equal(loads,0);
+  const queued=(await readOperation(db,body.id))!;assert.equal(queued.state,'queued');assert.ok(queued.fence>claimed.fence);
+  const poll=await owner.request(`/api/jobs/${body.id}`);await owner.flush();assert.equal(poll.status,200);assert.equal(loads,1);assert.equal(posts,0);
+  assert.equal((await readOperation(db,body.id))!.phase,'split');
+  await db.prepare("UPDATE provider_cooldowns SET until_ms=0 WHERE provider='replicate'").run();
+  await drainSplitQueue(owner.env,async()=>{});assert.equal(posts,1);assert.equal(loads,1);
+});
+
+test('failed or unavailable browser loaders refund marked YouTube work without provider fallback',async t=>{
+  for(const mode of ['denied','missing'] as const){
+    const {db,env}=await setup(t);let loads=0;
+    env.fetchYouTubeBrowserAudio=async()=>{loads++;throw new YouTubeError('Fixed refusal','youtube_source_denied');};
+    const guest=await guestRequests(db,env,mode==='denied'?'a':'b');
+    const {operation}=await submitSplit(guest.env,guest.principal,{videoUrl:youtube},`browser-failed-${mode}`);
+    if(mode==='missing')guest.env.fetchYouTubeBrowserAudio=undefined;
+    t.mock.method(globalThis,'fetch',async()=>assert.fail('Marked browser failure must not start a provider request'));
+    await resumeOwnedSourceImport(guest.env,guest.principal,operation);
+    const failed=(await readOperation(db,operation.id))!;
+    assert.equal(failed.state,'failed');assert.equal(failed.error_code,mode==='denied'?'youtube_source_denied':'youtube_fetch_unavailable');
+    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
+    await resumeOwnedSourceImport(guest.env,guest.principal,failed);await drainSplitQueue(guest.env,async()=>{});
+    assert.equal(loads,mode==='denied'?1:0);t.mock.restoreAll();
+  }
 });
 
 test('legacy job endpoint imports Vimeo through either request alias',async t=>{
