@@ -11,9 +11,10 @@ import { guestFailure } from '../src/guest/access.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
 import { handleBugReport, type BugReportService } from './bug-reports.ts';
+import { intakeEnvironment, intakePauseResponse, type IntakePauseEnv } from './intake-pause.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
-  Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> &
+  Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
   { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService };
 
 const HEADERS = {
@@ -46,11 +47,13 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
 
 export default {
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+    env = intakeEnvironment(env);
     ctx.waitUntil(runReliableJobs({...env,guestRuntimeReady:guestConfigured(env),validateStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+    env = intakeEnvironment(env);
     const url = new URL(request.url);
     // The explicit alias shares this runtime through a service binding. Keep
     // browser writes and signed provider URLs on its origin without trusting
@@ -61,10 +64,13 @@ export default {
     env = {...env,guestRuntimeReady:guestConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined};
     let response: Response;
     try {
-      if (url.pathname === '/healthz') {
+      const paused = intakePauseResponse(request, env);
+      if (paused) {
+        response = paused;
+      } else if (url.pathname === '/healthz') {
         const db = await env.DB.prepare('SELECT 1 AS ready').first();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
-          remixer: env.REMIXER_ENABLED === 'true', production: false,
+          remixer: env.REMIXER_ENABLED === 'true', production: false, intakePaused: env.INTAKE_PAUSED === 'true',
           youtubeImport: {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
           listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
             transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
