@@ -27,7 +27,9 @@ test('Workerd maintenance blocks starts before an application schema exists and 
     }
     const health = await runtime.fetch('/healthz');
     assert.equal(health.status, 200);
-    assert.equal((await health.json() as { intakePaused: boolean }).intakePaused, true);
+    const healthBody = await health.json() as { intakePaused: boolean; courseAccess: unknown };
+    assert.equal(healthBody.intakePaused, true);
+    assert.equal(healthBody.courseAccess, null);
     assert.equal((await runtime.fetch('/app.js')).status, 200);
   } finally {
     await server.close();
@@ -93,4 +95,16 @@ test('health exposes the pause state while static playback assets remain availab
   assert.equal(health.status, 200); assert.equal((await health.json() as any).intakePaused, true);
   const script = await worker.fetch(new Request(origins[0] + '/app.js'), env as never, ctx as never);
   assert.equal(script.status, 200); assert.equal(await script.text(), 'existing playback UI');
+});
+
+test('Doorway course readiness follows the classroom pause independently of the intake pause', async () => {
+  const DB = { prepare: (sql: string) => ({ first: async () => sql.includes('sqlite_master') ? { present: 2 } : { ready: 1 } }) };
+  for (const classroom of [undefined, 'true', 'false']) {
+    const response = await worker.fetch(new Request(origins[0] + '/healthz'), {
+      DB, AUTH_MODE: 'cail', CAIL_CLASSROOM_ENABLED: classroom,
+    } as never, {} as never);
+    const body = await response.json() as { courseAccess: unknown; intakePaused: boolean };
+    assert.equal(body.intakePaused, false);
+    assert.deepEqual(body.courseAccess, classroom === 'false' ? null : { contract: 'stem-course-v1' });
+  }
 });

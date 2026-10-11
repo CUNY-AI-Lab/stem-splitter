@@ -44,9 +44,13 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     // Direct Worker dispatch avoids the development reload proxy; the actual
     // production entrypoint, private bindings, D1 and R2 still run in Workerd.
     const worker = server.getWorker('stem-preview-contract-test');
+    assert.equal((await (await worker.fetch('/healthz')).json()).courseAccess, null, 'Doorway keeps course launch unavailable before migration');
     const schema = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
     const setup = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });
     assert.equal(setup.status, 200);
+    const readyHealth = await (await worker.fetch('/healthz')).json();
+    assert.deepEqual(readyHealth.courseAccess, { contract: 'stem-course-v1' });
+    assert.equal(readyHealth.intakePaused, false);
     // Real locally bundled Wasm runs in Workerd, with no inference/media service.
     for(const valid of [true,false]) {
       const audio=valid?mp3:Buffer.alloc(417*8,255);

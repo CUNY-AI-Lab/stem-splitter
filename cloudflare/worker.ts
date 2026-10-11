@@ -69,8 +69,10 @@ export default {
         response = paused;
       } else if (url.pathname === '/healthz') {
         const db = await env.DB.prepare('SELECT 1 AS ready').first();
+        const courseSchema = await env.DB.prepare("SELECT COUNT(*) AS present FROM sqlite_master WHERE type='table' AND name IN ('job_courses','app_operations')").first<{ present: number }>();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
           remixer: env.REMIXER_ENABLED === 'true', production: false, intakePaused: env.INTAKE_PAUSED === 'true',
+          courseAccess: courseSchema?.present === 2 && env.CAIL_CLASSROOM_ENABLED !== 'false' ? { contract: 'stem-course-v1' } : null,
           youtubeImport: {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
           listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
             transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
