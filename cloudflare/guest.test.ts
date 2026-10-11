@@ -132,7 +132,8 @@ for(const chatAvailable of [true,false])test(`workerd guests: five successful sp
     const submit=(key:string)=>call('/api/jobs',cookieA,{method:'POST',headers:{'Idempotency-Key':key},body});
     async function finish(id:string){for(let i=0;i<50;i++){const response=await call(`/api/jobs/${id}`,cookieA);assert.equal(response.status,200,await response.clone().text());const job=await response.json() as any;if(['done','failed'].includes(job.status))return job;await new Promise(resolve=>setTimeout(resolve,20));}assert.fail('fixture job did not settle');}
     predictionMode='failed';let response=await submit('guest-split-failed-0001');assert.equal(response.status,202,await response.clone().text());
-    const failed=await response.json() as any;assert.equal((await finish(failed.id)).status,'failed');
+    const failed=await response.json() as any;assert.equal(failed.savedToAccount,false,'guest submission stays separate from a signed-in account');
+    assert.equal((await finish(failed.id)).status,'failed');
     assert.equal((await(await call('/api/account',cookieA)).json() as any).splitAllowance.remaining,5);
     predictionMode='success';let job:any;
     for(let i=0;i<5;i++){
@@ -154,7 +155,9 @@ for(const chatAvailable of [true,false])test(`workerd guests: five successful sp
         assert.equal(after.guest.verificationRequired,false);
       }
       response=await submit(key);assert.equal(response.status,202,await response.clone().text());
-      const created=await response.json() as any;const repeated=await submit(key);assert.equal(repeated.status,200);assert.equal((await repeated.json() as any).id,created.id);
+      const created=await response.json() as any;assert.equal(created.savedToAccount,false,'guest submission stays separate before and after verification');
+      const repeated=await submit(key);assert.equal(repeated.status,200);const replayed=await repeated.json() as any;
+      assert.equal(replayed.id,created.id);assert.equal(replayed.savedToAccount,false,'guest replay preserves the account distinction');
       job=await finish(created.id);assert.equal(job.status,'done');
     }
     assert.equal(starts,6,'failed plus five successful predictions, no replay start');

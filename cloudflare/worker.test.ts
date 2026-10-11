@@ -230,7 +230,8 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(allowance.limit,15);assert.equal(allowance.completed,1);assert.equal(allowance.inProgress,0);assert.equal(allowance.remaining,14);
     const chatCount=(await(await call('/api/account')).json()).chatAllowance;
     assert.equal(chatCount.limit,50);assert.equal(chatCount.completed,1);assert.equal(chatCount.inProgress,0);assert.equal(chatCount.remaining,49);
-    const replay=await call('/api/jobs',0,jobRequest);assert.equal(replay.status,200);assert.equal((await replay.json()).id,created.id);
+    const replay=await call('/api/jobs',0,jobRequest);assert.equal(replay.status,200);const replayed=await replay.json();
+    assert.equal(replayed.id,created.id);assert.equal(replayed.savedToAccount,true,'signed-in member replay preserves account saving');
     assert.equal(providerStarts,1);
     const users = await (await call('/api/admin/users', 2)).json();
     const alice = users.users.find((user: { subject: string }) => user.subject === subjects[0]);

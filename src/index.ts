@@ -951,7 +951,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     const result=await submitSplit(c.env,c.get('principal')!,parsed.value,c.req.header('Idempotency-Key'));
     try { c.executionCtx.waitUntil(runReliableJobs(c.env)); } catch { await runReliableJobs(c.env); }
     const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(result.operation.job_id).first<JobRow>();
-    return c.json({...jobResponse(row!), savedToAccount:true, operationId:result.operation.id, replay:!result.created}, result.created?202:200);
+    return c.json({...jobResponse(row!), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
   }
   const body = parsed.value as
     | {
@@ -1229,7 +1229,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   return c.json({
     id,
     status: 'processing',
-    savedToAccount: Boolean(c.get('principal')),
+    savedToAccount: Boolean(c.get('principal')) && !guestPrincipal(c.get('principal')),
     filename,
     model,
     expectedStems: getSeparationOption(model)?.stems ?? [],
