@@ -13,19 +13,30 @@ on:
       - 'scripts/lib/pin-check.mjs'
       - '.github/workflows/yt-audio-candidate.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the reviewed extractor to r8.im/cali-tlc/yt-audio
+        type: boolean
+        required: true
+        default: false
+      reviewed_commit:
+        description: Exact 40-character workflow/source commit reviewed for publication
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: stem-youtube-image-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && 'stem-youtube-publish-cali-tlc-yt-audio' || format('stem-youtube-image-{0}', github.ref) }}
+  cancel-in-progress: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish) }}
 
 jobs:
   build:
     name: CPU extractor build and offline smoke
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       EXTRACTOR_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -33,6 +44,20 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Validate the selected source and explicit publication request
+        env:
+          PUBLISH_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && 'true' || 'false' }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXTRACTOR_SOURCE_COMMIT"
+          if [ "$PUBLISH_REQUEST" = true ]; then
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$GITHUB_REPOSITORY" = CUNY-AI-Lab/stem-splitter
+            [[ "$REVIEWED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+            test "$REVIEWED_COMMIT" = "$EXTRACTOR_SOURCE_COMMIT"
+            test "$REVIEWED_COMMIT" = "$GITHUB_SHA"
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.23.1'
@@ -62,10 +87,88 @@ jobs:
           "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
           "$EXTRACTOR_SOURCE_COMMIT"
           "$RUNNER_TEMP/yt-audio-candidate-evidence.json"
-      - name: Preserve sanitized image evidence
+      # Manual publication is the only step receiving the temporary CLI secret.
+      # Cog reuses the runner's existing build cache; it still rebuilds final labels.
+      - name: Publish the reviewed image to the fixed Replicate model
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'CUNY-AI-Lab/stem-splitter' }}
+        timeout-minutes: 15
+        working-directory: replicate-yt-audio
+        env:
+          STEM_YOUTUBE_CLI_TOKEN: ${{ secrets.STEM_YOUTUBE_CLI_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$STEM_YOUTUBE_CLI_TOKEN" || { printf '%s\n' 'The temporary Stem YouTube CLI token is required.' >&2; exit 1; }
+          test "$(git rev-parse HEAD)" = "$EXTRACTOR_SOURCE_COMMIT"
+          git diff --quiet -- . ../scripts/lib/pin-check.mjs
+          registry_config="$(mktemp -d "$RUNNER_TEMP/stem-youtube-registry.XXXXXX")"
+          export DOCKER_CONFIG="$registry_config"
+          trap 'unset STEM_YOUTUBE_CLI_TOKEN; rm -rf -- "$registry_config"' EXIT
+          if ! printf '%s' "$STEM_YOUTUBE_CLI_TOKEN" | cog --no-color login --token-stdin >"$registry_config/login.log" 2>&1; then
+            printf '%s\n' 'Replicate CLI sign-in failed; publication was not attempted.' >&2
+            exit 1
+          fi
+          unset STEM_YOUTUBE_CLI_TOKEN
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync(`${process.env.RUNNER_TEMP}/yt-audio-publication.json`, JSON.stringify({
+            schemaVersion: 1, sourceCommit: process.env.EXTRACTOR_SOURCE_COMMIT,
+            target: 'r8.im/cali-tlc/yt-audio', publicationAttempted: true,
+            outcome: 'unconfirmed', productionPinChanged: false, predictionCalls: 0,
+          }, null, 2) + '\n');
+          JS
+          if ! cog --no-color push --json --progress plain r8.im/cali-tlc/yt-audio >"$registry_config/push.json" 2>"$registry_config/push.log"; then
+            printf '%s\n' 'Publication did not return a success receipt. Inspect the model before attempting another push.' >&2
+            exit 1
+          fi
+          export STEM_PUSH_RECEIPT="$registry_config/push.json"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const raw = readFileSync(process.env.STEM_PUSH_RECEIPT);
+          assert.ok(raw.length <= 16384, 'publication receipt exceeds its bound');
+          const pushed = JSON.parse(raw);
+          assert.deepEqual(Object.keys(pushed).sort(), ['image', 'version']);
+          assert.equal(pushed.version, 1); // Cog JSON schema version, not a model-version ID.
+          assert.match(pushed.image, /^r8\.im\/cali-tlc\/yt-audio@sha256:[a-f0-9]{64}$/);
+          const candidate = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/yt-audio-candidate-evidence.json`));
+          assert.equal(candidate.sourceCommit, process.env.EXTRACTOR_SOURCE_COMMIT);
+          writeFileSync(`${process.env.RUNNER_TEMP}/yt-audio-cog-push.json`, JSON.stringify(pushed, null, 2) + '\n');
+          writeFileSync(`${process.env.RUNNER_TEMP}/yt-audio-publication.json`, JSON.stringify({
+            schemaVersion: 1, sourceCommit: process.env.EXTRACTOR_SOURCE_COMMIT,
+            target: 'r8.im/cali-tlc/yt-audio', publicationAttempted: true, outcome: 'registry_push_confirmed',
+            imageReference: pushed.image, registryDigest: pushed.image.split('@')[1],
+            candidateImageId: candidate.imageId, replicateModelVersion: null,
+            versionReadbackRequired: true, productionPinChanged: false, predictionCalls: 0,
+          }, null, 2) + '\n');
+          JS
+          # Cog adds run.cog.push_id, so validate its final local image separately.
+          docker tag r8.im/cali-tlc/yt-audio:latest "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}"
+          node verify-image.mjs "stem-youtube-candidate:${EXTRACTOR_SOURCE_COMMIT}" "$EXTRACTOR_SOURCE_COMMIT" "$RUNNER_TEMP/yt-audio-published-image-evidence.json"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = `${process.env.RUNNER_TEMP}/yt-audio-publication.json`;
+          const receipt = JSON.parse(readFileSync(path));
+          const final = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/yt-audio-published-image-evidence.json`));
+          const candidate = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/yt-audio-candidate-evidence.json`));
+          assert.equal(final.sourceCommit, candidate.sourceCommit);
+          assert.equal(final.schemaSha256, candidate.schemaSha256);
+          assert.deepEqual(final.smoke, candidate.smoke);
+          receipt.publishedImageId = final.imageId;
+          receipt.publishedImageSmokePassed = true;
+          writeFileSync(path, JSON.stringify(receipt, null, 2) + '\n');
+          console.log(`Published ${receipt.imageReference}; model-version readback remains separate.`);
+          JS
+      - name: Preserve sanitized image and publication evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: yt-audio-candidate-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/yt-audio-candidate-evidence.json
+          path: |
+            ${{ runner.temp }}/yt-audio-candidate-evidence.json
+            ${{ runner.temp }}/yt-audio-cog-push.json
+            ${{ runner.temp }}/yt-audio-publication.json
+            ${{ runner.temp }}/yt-audio-published-image-evidence.json
           if-no-files-found: error
           retention-days: 30
