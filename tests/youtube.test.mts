@@ -657,6 +657,39 @@ test('durable extractor errors distinguish format, configuration and explicit so
   }finally{globalThis.fetch=saved;}
 });
 
+test('durable importer enforces the duration limit before downloading output',async t=>{
+  let duration=901,downloads=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    if(String(input).startsWith('https://api.replicate.com/'))return Response.json({id:'duration-fixture',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/source.m4a',title:'Fixture',duration}});
+    downloads++;return new Response(makeM4a(),{headers:{'Content-Type':'audio/mp4'}});
+  });
+  for(duration of [901,0,-1]) {
+    await assert.rejects(()=>pollYouTubeImport('duration-fixture',TEST_ENV as never),(error:any)=>error.code===(duration>900?'video_too_long':'invalid_audio_response'));
+    assert.equal(downloads,0);
+  }
+  duration=900;
+  assert.equal((await pollYouTubeImport('duration-fixture',TEST_ENV as never))?.durationSec,900);
+  assert.equal(downloads,1);
+});
+
+test('durable delivery timeouts retain the accepted prediction until its operation deadline',async t=>{
+  const now=Date.now(),deadline=now+300000;
+  let expired=false,downloads=0;
+  const timeout=AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal,'timeout',(milliseconds:number)=>milliseconds>15000?AbortSignal.abort():timeout(milliseconds));
+  t.mock.method(Date,'now',()=>expired?deadline:now);
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    assert.notEqual(init?.method,'POST');
+    if(String(input).startsWith('https://api.replicate.com/'))return Response.json({id:'timeout-fixture',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/source.m4a',title:'Fixture',duration:19}});
+    downloads++;assert.equal(init?.signal?.aborted,true);throw new DOMException('Timed out','TimeoutError');
+  });
+  await assert.rejects(()=>pollYouTubeImport('timeout-fixture',TEST_ENV as never,deadline),(error:any)=>error.code==='import_delivery_unavailable'&&error.outcome==='uncertain');
+  assert.equal(downloads,1);
+  expired=true;
+  await assert.rejects(()=>pollYouTubeImport('timeout-fixture',TEST_ENV as never,deadline),(error:any)=>error instanceof YouTubeError&&error.code==='youtube_fetch_timeout');
+  assert.equal(downloads,1);
+});
+
 test('bounded inline parsing validates metadata location, escapes, base64 and duplicate audio fields',()=>{
   const parse=(text:string)=>parsePredictionJson(new TextEncoder().encode(text).buffer,32);
   const payload='data:audio/mp4;base64,AQIDBA==';

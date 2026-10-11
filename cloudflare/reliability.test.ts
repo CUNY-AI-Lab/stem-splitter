@@ -242,3 +242,100 @@ test('a confirmed oversize import releases its allowance and shows the supported
  assert.equal(job!.status,'failed');assert.match(job!.error,/12 MiB/);assert.match(job!.error,/upload an original or licensed file/);
  assert.equal((await splitAllowance(db,subject)).completed,0);assert.equal((await splitAllowance(db,subject)).inProgress,0);
 });
+
+for(const failure of ['503','network','stream-reset','429'])test(`accepted YouTube output recovers from ${failure} using GETs of the same prediction`,async t=>{
+ const {db,env,split}=await setup(t),op=await split(`delivery-recovery-${failure}`,'fetch');
+ Object.assign(env,{REPLICATE_API_TOKEN:'fixture-replicate-token',REPLICATE_YT_MODEL:'test/importer',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='delivery-fixture' WHERE id=?").bind(op.id).run();
+ await db.prepare("UPDATE jobs SET status='importing' WHERE id=?").bind(op.id).run();
+ const data=new Uint8Array(2048);data.set([0,0,0,24,102,116,121,112]);
+ let now=Date.now(),reads=0,downloads=0;
+ t.mock.method(Date,'now',()=>now);t.mock.method(console,'error',()=>{});
+ t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+  assert.equal(init?.method??'GET','GET');
+  if(String(input).startsWith('https://api.replicate.com/')) {
+   assert.equal(String(input),'https://api.replicate.com/v1/predictions/delivery-fixture');reads++;
+   return Response.json({id:'delivery-fixture',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/source.m4a',title:'Fixture',duration:19}});
+  }
+  assert.equal(String(input),'https://fixtures.replicate.delivery/source.m4a');downloads++;
+  if(downloads===1) {
+   if(failure==='network')throw new Error('Temporary connection failure');
+   if(failure==='stream-reset')return new Response(new ReadableStream({start(controller){controller.error(new TypeError('Connection reset'));}}),{headers:{'Content-Type':'audio/mp4'}});
+   return new Response('',{status:Number(failure),headers:{'Retry-After':'90'}});
+  }
+  return new Response(data,{headers:{'Content-Type':'audio/mp4'}});
+ });
+ const complete=async()=>assert.fail('An import cannot complete separation');
+ await reconcileSplit(env,(await readOperation(db,op.id))!,complete);
+ let current=(await readOperation(db,op.id))!;
+ assert.equal(current.state,'processing');assert.equal(current.phase,'fetch');assert.equal(current.provider_id,'delivery-fixture');
+ assert.equal(current.error_code,'import_delivery_unavailable');
+ assert.equal(current.deadline,op.deadline);assert.equal((await splitAllowance(db,subject)).inProgress,1);
+ assert.ok(current.not_before>=now+(failure==='429'?90000:5000));
+ await reconcileSplit(env,current,complete);assert.equal(reads,1);assert.equal(downloads,1);
+ now=current.not_before+1;
+ await reconcileSplit(env,(await readOperation(db,op.id))!,complete);
+ current=(await readOperation(db,op.id))!;
+ assert.equal(current.state,'queued');assert.equal(current.phase,'split');assert.equal(current.provider_id,null);
+ assert.equal(current.error_code,null);
+ assert.equal(current.deadline,op.deadline);assert.equal(reads,2);assert.equal(downloads,2);
+ const job=await db.prepare('SELECT source_key,source_hash FROM jobs WHERE id=?').bind(op.id).first<{source_key:string;source_hash:string}>();
+ const stored=await env.AUDIO.get(job!.source_key);
+ assert.deepEqual(new Uint8Array(await new Response(stored!.body).arrayBuffer()),data);
+ const digest=await crypto.subtle.digest('SHA-256',data);
+ assert.equal(job!.source_hash,Buffer.from(digest).toString('hex'));
+ assert.equal((await splitAllowance(db,subject)).inProgress,1);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts WHERE operation_id=?').bind(op.id).first<{n:number}>())!.n,0);
+});
+
+for(const failure of ['denied','delivery-403','invalid-audio','invalid-length','expired'])test(`YouTube ${failure} ends the import without another paid start`,async t=>{
+ const {db,env,split}=await setup(t),op=await split(`delivery-terminal-${failure}`,'fetch');
+ Object.assign(env,{REPLICATE_API_TOKEN:'fixture-replicate-token',REPLICATE_YT_MODEL:'test/importer',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='terminal-fixture',deadline=? WHERE id=?").bind(failure==='expired'?Date.now()-1:op.deadline,op.id).run();
+ let reads=0,downloads=0;t.mock.method(console,'error',()=>{});
+ t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+  assert.equal(init?.method??'GET','GET');
+  if(String(input).startsWith('https://api.replicate.com/')) {
+   reads++;return Response.json(failure==='denied'?{id:'terminal-fixture',status:'failed',error:'source_denied_bot_verification'}
+    :{id:'terminal-fixture',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/source.m4a',title:'Fixture',duration:19}});
+  }
+  downloads++;return failure==='delivery-403'?new Response('',{status:403}):new Response(new Uint8Array(2048),{headers:{'Content-Type':'audio/mp4',...(failure==='invalid-length'?{'Content-Length':'invalid'}:{})}});
+ });
+ const complete=async()=>assert.fail('Import must not reach separation');
+ await reconcileSplit(env,(await readOperation(db,op.id))!,complete);
+ const current=(await readOperation(db,op.id))!;
+ assert.equal(current.state,'failed');
+ assert.equal(current.error_code,{denied:'youtube_source_denied','delivery-403':'youtube_fetch_unavailable','invalid-audio':'invalid_audio_response','invalid-length':'invalid_audio_response',expired:'youtube_fetch_timeout'}[failure]);
+ await reconcileSplit(env,current,complete);
+ assert.equal(reads,1);assert.equal(downloads,['denied','expired'].includes(failure)?0:1);
+ assert.equal((await splitAllowance(db,subject)).completed,0);assert.equal((await splitAllowance(db,subject)).inProgress,0);
+});
+
+for(const failure of ['status-outage','cooldown'])test(`completed extraction expires locally through a later ${failure}`,async t=>{
+ const {db,env,split}=await setup(t),op=await split(`delivery-expiry-${failure}`,'fetch');
+ Object.assign(env,{REPLICATE_API_TOKEN:'fixture-replicate-token',REPLICATE_YT_MODEL:'test/importer',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64),SPLIT_STARTS_DISABLED:'true'});
+ let now=Date.now(),reads=0,downloads=0;const deadline=now+12000;
+ t.mock.method(Date,'now',()=>now);t.mock.method(console,'error',()=>{});
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='expiry-fixture',deadline=? WHERE id=?").bind(deadline,op.id).run();
+ t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+  assert.equal(init?.method??'GET','GET');assert.ok(now<deadline,'Expiration must settle locally');
+  if(String(input).startsWith('https://api.replicate.com/')) {
+   reads++;
+   if(reads>1)throw new Error('Temporary status outage');
+   return Response.json({id:'expiry-fixture',status:'succeeded',output:{audio:'https://fixtures.replicate.delivery/source.m4a',title:'Fixture',duration:19}});
+  }
+  downloads++;return new Response('',{status:failure==='cooldown'?429:503,headers:{'Retry-After':'90'}});
+ });
+ const complete=async()=>assert.fail('Import must not reach separation');
+ await drainSplitQueue(env,complete);
+ let current=(await readOperation(db,op.id))!;
+ assert.equal(current.error_code,'import_delivery_unavailable');assert.ok(current.not_before<=deadline);
+ now+=5001;await drainSplitQueue(env,complete);
+ assert.equal(reads,failure==='cooldown'?1:2);assert.equal(downloads,1);
+ current=(await readOperation(db,op.id))!;assert.equal(current.state,'processing');assert.equal(current.error_code,'import_delivery_unavailable');
+ const requests=reads+downloads;now=deadline;
+ await drainSplitQueue(env,complete);
+ current=(await readOperation(db,op.id))!;
+ assert.equal(current.state,'failed');assert.equal(current.error_code,'youtube_fetch_timeout');
+ assert.equal(reads+downloads,requests);assert.equal((await splitAllowance(db,subject)).inProgress,0);
+});

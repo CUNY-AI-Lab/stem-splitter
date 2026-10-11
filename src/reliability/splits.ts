@@ -89,7 +89,7 @@ async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:Ar
   input.key=key;input.filename=title(audio.title)||input.filename;
   await env.DB.batch([
     env.DB.prepare(`UPDATE jobs SET source_key=?,source_hash=?,filename=?,status='queued' WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(key,sha,input.filename,op.job_id,op.id,op.fence),
-    env.DB.prepare(`UPDATE app_operations SET request_json=?,provider_id=NULL,phase='split',state='queued',lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL})`).bind(JSON.stringify(input),Date.now(),op.id,op.fence),
+    env.DB.prepare(`UPDATE app_operations SET request_json=?,provider_id=NULL,phase='split',state='queued',error_code=NULL,lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL})`).bind(JSON.stringify(input),Date.now(),op.id,op.fence),
     ...(audio.attribution?[env.DB.prepare(`INSERT OR REPLACE INTO job_attributions(job_id,attribution) SELECT ?,? WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(op.job_id,JSON.stringify(audio.attribution),op.id,op.fence)]:[]),
   ]);
   const saved=await env.DB.prepare('SELECT source_key FROM jobs WHERE id=?').bind(op.job_id).first<{source_key:string}>();
@@ -189,12 +189,17 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
   const now=Date.now(),owner=crypto.randomUUID();
   const claimed=await env.DB.prepare(`UPDATE app_operations SET lease_owner=?,lease_until=?,fence=fence+1,updated_at=?
     WHERE id=? AND fence=? AND lease_until<=? AND not_before<=? AND state IN ('processing','reconciling')
-    AND COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=? RETURNING *`)
-    .bind(owner,now+WORK_LEASE_MS,now,op.id,op.fence,now,now,now).first<Operation>();
+    AND (COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=?
+      OR (phase='fetch' AND error_code='import_delivery_unavailable' AND deadline<=?)) RETURNING *`)
+    .bind(owner,now+WORK_LEASE_MS,now,op.id,op.fence,now,now,now,now).first<Operation>();
   if(!claimed)return;
+  let deliveryAccepted=claimed.phase==='fetch'&&claimed.error_code==='import_delivery_unavailable';
   try {
     if (claimed.phase==='fetch') {
-      const audio=await pollYouTubeImport(claimed.provider_id!,env);
+      // A prior delivery failure proves extraction finished. Its allowance can
+      // expire locally even if subsequent status reads or provider cooldowns stall.
+      if(deliveryAccepted&&now>=claimed.deadline) {await fail(env,claimed,'youtube_fetch_timeout');return;}
+      const audio=await pollYouTubeImport(claimed.provider_id!,env,claimed.deadline);
       if(audio)await imported(env,claimed,JSON.parse(claimed.request_json),audio);
     } else {
       const result=await getBackend(env).fetchStatus(claimed.provider_id!);
@@ -208,11 +213,18 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
   } catch(error) {
     if(error instanceof YouTubeError||error instanceof ArchiveError) await fail(env,claimed,error.code,
       error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
-    else if(error instanceof UpstreamError&&error.notBefore) await setCooldown(env.DB,'replicate',error.notBefore);
+    else if(error instanceof UpstreamError) {
+      if(error.code==='import_delivery_unavailable') {
+        deliveryAccepted=true;
+        await env.DB.prepare(`UPDATE app_operations SET error_code='import_delivery_unavailable'
+          WHERE id=? AND fence=? AND state NOT IN (${TERMINAL})`).bind(claimed.id,claimed.fence).run();
+      }
+      if(error.notBefore)await setCooldown(env.DB,'replicate',error.notBefore);
+    }
     // Provider/storage outage retains the exact prediction, never creates another.
   } finally {
     await env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0,not_before=? WHERE id=? AND fence=?')
-      .bind(Math.max(now+5000,await cooldown(env.DB,'replicate')),claimed.id,claimed.fence).run();
+      .bind(Math.min(Math.max(now+5000,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
   }
 }
 export async function drainSplitQueue(env: Env,complete: Complete) {

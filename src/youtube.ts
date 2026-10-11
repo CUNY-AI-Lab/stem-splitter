@@ -50,12 +50,14 @@ const PREDICTION_STATUSES = new Set([
 export class YouTubeError extends Error {
   readonly code: string;
   readonly retryable: boolean;
+  readonly notBefore: number;
 
-  constructor(message: string, code = 'youtube_fetch_failed', retryable = false) {
+  constructor(message: string, code = 'youtube_fetch_failed', retryable = false, notBefore = 0) {
     super(message);
     this.name = 'YouTubeError';
     this.code = code;
     this.retryable = retryable;
+    this.notBefore = notBefore;
   }
 }
 
@@ -592,13 +594,7 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
     throw normalizePredictionError(raw);
   }
 
-  const durationSec = Number(prediction.output.duration ?? 0);
-  if (durationSec > MAX_DURATION_SECONDS) {
-    throw new YouTubeError(
-      'Video is longer than 15 minutes — pick a shorter one.',
-      'video_too_long'
-    );
-  }
+  const durationSec = validateDuration(prediction.output.duration);
 
   const data = await downloadPredictionFile(
     prediction.output.audio,
@@ -679,13 +675,18 @@ async function downloadPredictionFile(
     await res.body?.cancel().catch(() => undefined);
     throw invalidAudioResponse();
   }
+  const length=res.headers.get('content-length');
+  if(length!==null&&(!/^\d+$/.test(length)||!Number.isSafeInteger(Number(length)))) {
+    await res.body?.cancel().catch(()=>undefined);
+    throw invalidAudioResponse();
+  }
   return readBoundedResponse(res, {
     maximumBytes,
     timeoutMs: remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS),
     errors: {
       tooLarge: () => new YouTubeError(`This import exceeds the ${Math.floor(maximumBytes/1024/1024)} MiB audio limit. Try a shorter clip or upload an original or licensed file.`,'audio_too_large'),
       timedOut: youtubeTimedOut,
-      unreadable: invalidAudioResponse,
+      unreadable: providerUnavailable,
     },
   });
 }
@@ -704,8 +705,7 @@ function validateFetchedAudio(audio: YouTubeAudio): YouTubeAudio {
     bytes[7] === 0x70;
   if (!isIsoBaseMedia) throw invalidAudioResponse();
 
-  const durationSec = Number(audio.durationSec);
-  if (!Number.isFinite(durationSec) || durationSec <= 0) throw invalidAudioResponse();
+  const durationSec = validateDuration(audio.durationSec);
 
   return {
     data,
@@ -714,6 +714,15 @@ function validateFetchedAudio(audio: YouTubeAudio): YouTubeAudio {
       'youtube-audio',
     durationSec,
   };
+}
+
+function validateDuration(value: number): number {
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration <= 0) throw invalidAudioResponse();
+  if (duration > MAX_DURATION_SECONDS) {
+    throw new YouTubeError('Video is longer than 15 minutes — pick a shorter one.', 'video_too_long');
+  }
+  return duration;
 }
 
 async function replicateResponseError(
@@ -746,7 +755,8 @@ async function replicateResponseError(
     return new YouTubeError(
       'YouTube import is busy. Wait a minute and try again.',
       'youtube_fetch_busy',
-      true
+      true,
+      retryAt(response.headers.get('retry-after'))
     );
   }
   console.error(`replicate YouTube ${operation} failed`, { status: response.status, detail });
@@ -829,11 +839,11 @@ export async function startYouTubeImport(url: string, env: Env, webhook: string)
   catch { throw new UpstreamError('import_start_response_unreadable','uncertain'); }
 }
 
-export async function pollYouTubeImport(id: string, env: Env): Promise<YouTubeAudio | null> {
+export async function pollYouTubeImport(id: string, env: Env, operationDeadline = Infinity): Promise<YouTubeAudio | null> {
   if (!PREDICTION_ID_PATTERN.test(id)) throw providerUnavailable();
   const config=replicateConfiguration(env);
   if (!config) throw providerUnavailable();
-  const deadline=Date.now()+AUDIO_DOWNLOAD_TIMEOUT_MS;
+  const deadline=Math.min(Date.now()+AUDIO_DOWNLOAD_TIMEOUT_MS,operationDeadline);
   let prediction: YtPrediction;
   try {
     const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
@@ -842,9 +852,23 @@ export async function pollYouTubeImport(id: string, env: Env): Promise<YouTubeAu
   } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
   if (prediction.status==='starting'||prediction.status==='processing') return null;
   if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
+  const durationSec=validateDuration(prediction.output.duration);
   if(prediction.inlineTooLarge)throw new YouTubeError('This import exceeds the 12 MiB audio limit. Try a shorter clip or upload an original or licensed file.','audio_too_large');
-  const data=prediction.inlineAudio??await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES);
-  return validateFetchedAudio({data,title:prediction.output.title,durationSec:prediction.output.duration});
+  if(Date.now()>=operationDeadline)throw youtubeTimedOut();
+  let data: ArrayBuffer;
+  try {
+    data=prediction.inlineAudio??await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES);
+  } catch(error) {
+    // Extraction already succeeded. Recover only transient delivery failures by
+    // reading this same prediction again; invalid media and access refusals end it.
+    if(error instanceof YouTubeError&&error.retryable&&Date.now()<operationDeadline&&
+      ['youtube_fetch_unavailable','youtube_fetch_timeout','youtube_fetch_busy'].includes(error.code)) {
+      throw new UpstreamError('import_delivery_unavailable','uncertain',0,error.notBefore);
+    }
+    throw error;
+  }
+  if(Date.now()>=operationDeadline)throw youtubeTimedOut();
+  return validateFetchedAudio({data,title:prediction.output.title,durationSec});
 }
 
 function invalidAudioResponse(): YouTubeError {
