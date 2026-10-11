@@ -9,7 +9,7 @@ import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { splitAllowance, operationAllowance, dailyWindow, GUEST_UNVERIFIED_SPLITS_PER_DAY } from './daily-allowance.ts';
-import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback } from './reliability/splits.ts';
+import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedVimeoImport } from './reliability/splits.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt } from './reliability/assistant.ts';
@@ -951,6 +951,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   if ('response' in parsed) return parsed.response;
   if (c.env.AUTH_MODE === 'cail' && c.get('principal')) {
     const result=await submitSplit(c.env,c.get('principal')!,parsed.value,c.req.header('Idempotency-Key'));
+    await resumeOwnedVimeoImport(c.env,c.get('principal')!,result.operation);
     try { c.executionCtx.waitUntil(runReliableJobs(c.env)); } catch { await runReliableJobs(c.env); }
     const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(result.operation.job_id).first<JobRow>();
     return c.json({...jobResponse(row!), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
@@ -1295,7 +1296,11 @@ app.get('/api/jobs/:id', async (c) => {
   const id = c.req.param('id');
   if(c.env.AUTH_MODE==='cail') {
     const operation=await readOperation(c.env.DB,id);
-    if(operation) { await reconcileSplit(c.env,operation,ingestResult); try {c.executionCtx.waitUntil(runReliableJobs(c.env));} catch {} }
+    if(operation) {
+      const principal=c.get('principal');
+      if(principal)await resumeOwnedVimeoImport(c.env,principal,operation);
+      await reconcileSplit(c.env,operation,ingestResult); try {c.executionCtx.waitUntil(runReliableJobs(c.env));} catch {}
+    }
   }
   let row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>();
   if (!row) return c.json({ error: 'Job not found' }, 404);
@@ -2099,7 +2104,7 @@ app.onError((_error, c) => {
 });
 
 export default app;
-export async function runReliableJobs(env: Env,options:{scheduled?:boolean}={}) { return drainSplitQueue(env,ingestResult,options); }
+export async function runReliableJobs(env: Env) { return drainSplitQueue(env,ingestResult); }
 
 // --- helpers ------------------------------------------------------------
 

@@ -12,7 +12,7 @@ import { parseBrowserAutoSummary } from '../analysis/contract.ts';
 import { processingFeatureFlags } from '../features.ts';
 import { authorizeStoredCourseWork, courseAssignmentStatement } from '../classroom/access.ts';
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation, reserveOperation, TERMINAL, type Operation } from './ledger.ts';
-import { claimNext, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
+import { claimNext, claimVimeoImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
 import { cooldown, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
 
@@ -135,7 +135,7 @@ async function start(env: Env,op: Operation) {
     try {await storeArchive(env,op,input);} catch {await fail(env,op,'archive_import_failed');}return;
   }
   if (op.phase==='fetch'&&input.sourceType==='vimeo') {
-    // Scheduled drains own this bounded GET under the existing five-minute lease.
+    // The owner's HTTP request awaits this GET under the existing five-minute lease.
     // A crashed fetch can be reclaimed; it has no external paid start to reconcile.
     try {await imported(env,op,input,await fetchVimeoAudio((input.videoUrl??input.youtubeUrl)!,{deadline:op.deadline}));}
     catch(error) {
@@ -248,14 +248,29 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       .bind(Math.min(Math.max(now+5000,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
   }
 }
-export async function drainSplitQueue(env: Env,complete: Complete,options:{scheduled?:boolean}={}) {
+export async function resumeOwnedVimeoImport(env:Env,principal:AppPrincipal,operation:Operation) {
+  if(env.AUTH_MODE!=='cail'||env.SPLIT_STARTS_DISABLED==='true'||operation.subject!==principal.subject
+    ||operation.quota_class!==(principal.quotaClass??'member')||operation.phase!=='fetch'
+    ||!['queued','running'].includes(operation.state)||JSON.parse(operation.request_json).sourceType!=='vimeo')return;
+  await recoverExpired(env.DB);
+  const current=await readOperation(env.DB,operation.id);
+  if(current?.subject!==principal.subject||current.phase!=='fetch'||!['queued','running'].includes(current.state))return;
+  if(current.cancel_requested) {
+    if(current.state==='queued')await fail(env,current,'cancelled');
+    return;
+  }
+  const claimed=await claimVimeoImport(env.DB,operation.id,principal.subject);
+  if(claimed)await start(env,claimed);
+}
+
+export async function drainSplitQueue(env: Env,complete: Complete) {
   if(env.AUTH_MODE!=='cail')return;
   await recoverExpired(env.DB);
   const active=await env.DB.prepare("SELECT * FROM app_operations WHERE kind='split' AND state IN ('processing','reconciling') AND provider_id IS NOT NULL AND not_before<=? ORDER BY updated_at LIMIT 4")
     .bind(Date.now()).all<Operation>();
   for(const op of active.results)await reconcileSplit(env,op,complete);
   if(env.SPLIT_STARTS_DISABLED==='true')return;
-  for(const phase of ['fetch','split'] as const) {const op=await claimNext(env.DB,phase,Date.now(),options);if(op)await start(env,op);}
+  for(const phase of ['fetch','split'] as const) {const op=await claimNext(env.DB,phase);if(op)await start(env,op);}
 }
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {

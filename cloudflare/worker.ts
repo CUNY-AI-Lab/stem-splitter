@@ -48,7 +48,7 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
 export default {
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
     env = intakeEnvironment(env);
-    ctx.waitUntil(runReliableJobs({...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio},{scheduled:true}));
+    ctx.waitUntil(runReliableJobs({...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },

@@ -8,9 +8,9 @@ import { FsR2Bucket } from '../server/r2.ts';
 import type { Env } from '../src/env.ts';
 import type { AppPrincipal } from '../src/identity.ts';
 import app from '../src/index.ts';
-import { drainSplitQueue, submitSplit } from '../src/reliability/splits.ts';
+import { drainSplitQueue, resumeOwnedVimeoImport, submitSplit } from '../src/reliability/splits.ts';
 import { fingerprint, OperationError, readOperation } from '../src/reliability/ledger.ts';
-import { cancelOperation, claimNext, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
+import { cancelOperation, claimNext, claimVimeoImport, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
 import { setCooldown } from '../src/reliability/retry.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { courseFixture } from './course-fixture.ts';
@@ -40,6 +40,19 @@ async function setup(t:{after:(f:()=>void)=>void}) {
     method:'POST',headers:{'x-class-code':'intake-fixture','Content-Type':'application/json'},body:JSON.stringify(body),
   }),{...env,AUTH_MODE:undefined});
   return {db,env,api};
+}
+
+async function guestRequests(db:D1Database,env:Env,hex:string) {
+  const now=Date.now(),guestSubject=`guest-${hex.repeat(64)}`,expiresAt=now+86400000;
+  await db.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
+    .bind(guestSubject,now,expiresAt,'1970-01-01').run();
+  const guestEnv={...env,guestRuntimeReady:true,guestSession:{subject:guestSubject,expiresAt,verifiedDay:'1970-01-01'}};
+  const pending:Promise<unknown>[]=[];
+  const request=(path:string,init:RequestInit={})=>app.fetch(new Request('https://split.test'+path,{...init,
+    headers:{Origin:'https://split.test','Content-Type':'application/json',...init.headers}}),guestEnv,
+    {waitUntil:(promise:Promise<unknown>)=>pending.push(promise),passThroughOnException:()=>{}} as ExecutionContext);
+  const principal:AppPrincipal={subject:guestSubject,role:'guest',quotaClass:'guest',displayName:'Guest',course:null,courseId:null};
+  return {env:guestEnv,principal,request,flush:async()=>{while(pending.length)await Promise.all(pending.splice(0));}};
 }
 
 test('both video aliases preserve source provenance and replay one durable reservation',async t=>{
@@ -84,10 +97,10 @@ test('durable and legacy intake reject multiple sources and invalid URLs before 
   assert.equal((await splitAllowance(db,subject)).inProgress,0);
 });
 
-test('native Vimeo intake needs no extractor pin, and HTTP drains leave its lease for scheduled execution',async t=>{
+test('native Vimeo intake needs no extractor pin, and background drains leave its lease for its owner',async t=>{
   const {db,env}=await setup(t);
   env.REPLICATE_YT_MODEL=undefined;env.REPLICATE_YT_MODEL_VERSION=undefined;
-  t.mock.method(globalThis,'fetch',async()=>assert.fail('Request drains must leave native Vimeo for cron'));
+  t.mock.method(globalThis,'fetch',async()=>assert.fail('Background drains must leave native Vimeo for its owner'));
   const {operation}=await submitSplit(env,principal,{videoUrl:vimeo},'vimeo-native-scheduled');
   await assert.rejects(()=>submitSplit(env,principal,{videoUrl:youtube},'youtube-needs-extractor'),
     (error:unknown)=>error instanceof OperationError&&error.code==='youtube_unconfigured');
@@ -95,15 +108,15 @@ test('native Vimeo intake needs no extractor pin, and HTTP drains leave its leas
   const queued=(await readOperation(db,operation.id))!;
   assert.equal(queued.state,'queued');assert.equal(queued.fence,0);assert.equal(queued.lease_owner,null);
   await setCooldown(db,'replicate',Date.now()+60_000);
-  const now=Date.now(),claimed=(await claimNext(db,'fetch',now,{scheduled:true}))!;
+  const now=Date.now(),claimed=(await claimVimeoImport(db,operation.id,subject,now))!;
   assert.equal(claimed.id,operation.id);assert.equal(claimed.lease_until,now+WORK_LEASE_MS);
-  assert.equal(await claimNext(db,'fetch',now,{scheduled:true}),null);
+  assert.equal(await claimVimeoImport(db,operation.id,subject,now),null);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
   await recoverExpired(db,claimed.lease_until+1);
   const recovered=(await readOperation(db,operation.id))!;
   assert.equal(recovered.state,'queued');assert.equal(recovered.provider_id,null);assert.ok(recovered.fence>claimed.fence);
   assert.equal(await claimNext(db,'fetch',claimed.lease_until+2),null);
-  const restarted=(await claimNext(db,'fetch',claimed.lease_until+2,{scheduled:true}))!;
+  const restarted=(await claimVimeoImport(db,operation.id,subject,claimed.lease_until+2))!;
   assert.equal(restarted.id,operation.id);assert.ok(restarted.fence>recovered.fence);
 });
 
@@ -122,6 +135,20 @@ test('queued Vimeo does not block an HTTP YouTube claim and cancelled or expired
   assert.equal((await splitAllowance(db,subject)).inProgress,1);
 });
 
+test('cancelled abandoned native and YouTube imports refund without another source request',async t=>{
+  const {db,env}=await setup(t);
+  t.mock.method(globalThis,'fetch',async()=>assert.fail('Cancelled recovery must not fetch a source'));
+  for(const [source,url] of [['vimeo',vimeo],['youtube',youtube]]) {
+    const operation=(await submitSplit(env,principal,{videoUrl:url},`cancelled-abandoned-${source}`)).operation;
+    const claimed=(source==='vimeo'?await claimVimeoImport(db,operation.id,subject):await claimNext(db,'fetch'))!;
+    await cancelOperation(db,operation.id,subject);
+    await recoverExpired(db,claimed.lease_until+1);
+    await drainSplitQueue(env,async()=>{});
+    assert.equal((await readOperation(db,operation.id))!.state,'cancelled');
+    assert.equal((await splitAllowance(db,subject)).inProgress,0);
+  }
+});
+
 test('native Vimeo failures release a guest place once and preserve only fixed error codes',async t=>{
   for(const [status,code] of [[403,'youtube_source_denied'],[429,'youtube_fetch_busy'],[0,'youtube_fetch_unavailable']] as const) {
     const {db,env}=await setup(t),now=Date.now(),guestSubject=`guest-${'f'.repeat(64)}`;
@@ -136,7 +163,7 @@ test('native Vimeo failures release a guest place once and preserve only fixed e
       return new Response('private upstream failure',{status});
     });
     const first=await submitSplit(env,guest,{videoUrl:vimeo},`vimeo-guest-failure-${status}`);
-    await drainSplitQueue(env,async()=>assert.fail('Failure cannot reach the separator'),{scheduled:true});
+    await resumeOwnedVimeoImport(env,guest,first.operation);
     const failed=(await readOperation(db,first.operation.id))!;
     assert.equal(failed.state,'failed');assert.equal(failed.error_code,code);assert.equal(failed.provider_id,null);
     assert.equal((await splitAllowance(db,guestSubject,new Date(),'guest')).remaining,5);
@@ -144,7 +171,7 @@ test('native Vimeo failures release a guest place once and preserve only fixed e
     const job=await db.prepare('SELECT source_type,error FROM jobs WHERE id=?').bind(first.operation.id).first<{source_type:string;error:string}>();
     assert.equal(job!.source_type,'vimeo');assert.doesNotMatch(job!.error,/private|credential|https:/);
     assert.equal((await submitSplit(env,guest,{videoUrl:vimeo},`vimeo-guest-failure-${status}`)).created,false);
-    await drainSplitQueue(env,async()=>{}, {scheduled:true});assert.equal(reads,1);
+    await resumeOwnedVimeoImport(env,guest,failed);await drainSplitQueue(env,async()=>{});assert.equal(reads,1);
     mock.mock.restore();
   }
 });
@@ -169,7 +196,7 @@ test('durable Vimeo import stores audio and its provenance before starting the s
   });
   const complete=async()=>assert.fail('Import does not complete separation');
   await setCooldown(db,'replicate',Date.now()+60_000);
-  await drainSplitQueue(env,complete,{scheduled:true});
+  await resumeOwnedVimeoImport(env,principal,operation);
   assert.equal(posts.length,0);assert.equal(reads,4);
   let current=(await readOperation(db,operation.id))!;
   assert.equal(current.phase,'split');assert.equal(current.state,'queued');
@@ -204,7 +231,7 @@ test('native Vimeo late storage is fenced after cancellation or expired lease, a
       else await recoverExpired(db,(await readOperation(db,operation.id))!.lease_until+1);
       return result;
     });
-    await drainSplitQueue(env,async()=>assert.fail('Stale or failed import must not start separation'),{scheduled:true});
+    await resumeOwnedVimeoImport(env,principal,operation);
     const current=(await readOperation(db,operation.id))!;
     assert.equal(current.phase,'fetch');assert.equal(current.state,mode==='expire'?'queued':mode==='cancel'?'cancelled':'failed');
     assert.equal(current.provider_id,null);
@@ -215,6 +242,60 @@ test('native Vimeo late storage is fenced after cancellation or expired lease, a
     assert.equal((await splitAllowance(db,subject)).inProgress,mode==='expire'?1:0);
     t.mock.restoreAll();
   }
+});
+
+test('Vimeo POST awaits its own source while simultaneous replay preserves one download and GPU start',async t=>{
+  const {db,env}=await setup(t),guest=await guestRequests(db,env,'a'),fixture=vimeoFixture();
+  let release!:()=>void,started!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),sourceStarted=new Promise<void>(resolve=>{started=resolve;});
+  let reads=0,posts=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    if(String(input).startsWith('https://api.replicate.com/')) {
+      if(init?.method==='POST'){posts++;assert.equal(JSON.parse(String(init.body)).version,splitVersion);}
+      return Response.json({id:'owned-http-split',status:'processing'});
+    }
+    reads++;
+    if(String(input)==='https://player.vimeo.com/video/1084537'){started();await gate;}
+    return fixture.fetchImpl(input,init);
+  });
+  const submit=()=>guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'native-http-same-key'},body:JSON.stringify({videoUrl:'https://vimeo.com/1084537'})});
+  let resolved=false;
+  const first=submit().then(response=>{resolved=true;return response;});await sourceStarted;
+  const replay=await submit(),replayed=await replay.json() as {id:string;replay:boolean;model:string};
+  assert.equal(resolved,false);assert.equal(replay.status,200);assert.equal(replayed.replay,true);assert.equal(replayed.model,'htdemucs_ft');
+  assert.equal(reads,1);assert.equal(posts,0);
+  release();const response=await first,created=await response.json() as {id:string;savedToAccount:boolean;replay:boolean};await guest.flush();
+  assert.equal(response.status,202);assert.equal(created.id,replayed.id);assert.equal(created.replay,false);assert.equal(created.savedToAccount,false);
+  assert.equal(reads,4);assert.equal(posts,1);
+  const current=(await readOperation(db,created.id))!;assert.equal(current.phase,'split');assert.equal(current.state,'processing');
+  await submit();await guest.flush();assert.equal(reads,4);assert.equal(posts,1);
+});
+
+test('busy Vimeo work resumes only through its owner GET, including an expired download lease',async t=>{
+  const {db,env}=await setup(t),owner=await guestRequests(db,env,'b'),other=await guestRequests(db,env,'c'),fixture=vimeoFixture();
+  const blocker=(await submitSplit(env,principal,{videoUrl:'https://vimeo.com/1084537'},'native-capacity-blocker')).operation;
+  assert.ok(await claimVimeoImport(db,blocker.id,principal.subject));
+  let reads=0,posts=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    if(String(input).startsWith('https://api.replicate.com/')) {
+      if(init?.method==='POST')posts++;
+      return Response.json({id:'resumed-http-split',status:'processing'});
+    }
+    reads++;return fixture.fetchImpl(input,init);
+  });
+  const response=await owner.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'native-http-cap-busy'},body:JSON.stringify({videoUrl:'https://vimeo.com/1084537'})});
+  const body=await response.json() as {id:string;status:string};await owner.flush();
+  assert.equal(response.status,202);assert.equal(body.status,'queued');assert.equal(reads,0);
+  assert.equal((await other.request(`/api/jobs/${body.id}`)).status,404);assert.equal(reads,0);
+  await resumeOwnedVimeoImport(other.env,other.principal,(await readOperation(db,body.id))!);assert.equal(reads,0);
+  await db.prepare("UPDATE jobs SET status='failed' WHERE id=?").bind(blocker.id).run();
+  const abandoned=(await claimVimeoImport(db,body.id,owner.principal.subject))!;
+  await db.prepare('UPDATE app_operations SET lease_until=? WHERE id=?').bind(Date.now()-1,body.id).run();
+  await drainSplitQueue(owner.env,async()=>{});assert.equal(reads,0);
+  const recovered=(await readOperation(db,body.id))!;assert.equal(recovered.state,'queued');assert.ok(recovered.fence>abandoned.fence);
+  const polled=await owner.request(`/api/jobs/${body.id}`);assert.equal(polled.status,200);await owner.flush();
+  assert.equal(reads,4);assert.equal(posts,1);
+  const current=(await readOperation(db,body.id))!;assert.equal(current.phase,'split');assert.equal(current.state,'processing');
 });
 
 test('legacy job endpoint imports Vimeo through either request alias',async t=>{
