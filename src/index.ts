@@ -1308,6 +1308,10 @@ app.get('/api/jobs', async (c) => {
 app.post('/api/jobs/:id/cancel', requireClassCode, async (c) => {
   const principal=c.get('principal');
   if (!principal || !await cancelOperation(c.env.DB,c.req.param('id'),principal.subject)) return c.json({error:'Split not found.'},404);
+  const operation=await readOperation(c.env.DB,c.req.param('id'));
+  // Reconcile this operation only; cancelling must not start unrelated paid work.
+  // A busy/unknown start is recovered by the existing cron on its same provider ID.
+  if(operation)await reconcileSplit(c.env,operation,ingestResult);
   return c.json({ok:true});
 });
 

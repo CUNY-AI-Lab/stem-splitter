@@ -5,7 +5,7 @@ import { readBoundedResponse } from '../http/bounded-response.ts';
 import { retryAt, UpstreamError } from '../reliability/retry.ts';
 
 // Replicate-hosted Demucs (ryan5453/demucs), running the htdemucs_ft
-// fine-tuned model with MP3 output. ~$0.04–0.05/song on A40.
+// fine-tuned model with MP3 output. Cost depends on the deployed pin/hardware.
 //
 // REPLICATE_MODEL_VERSION must be set to an exact, reviewed version hash:
 //   curl -s https://api.replicate.com/v1/models/ryan5453/demucs \
@@ -21,6 +21,43 @@ interface ReplicatePrediction {
 }
 
 const API = 'https://api.replicate.com/v1';
+
+/** Cancel only a known prediction, then require an authoritative terminal read.
+ * An acknowledgement, timeout, malformed response or 404 never releases quota.
+ * No create/retry operation is hidden in this helper. */
+export async function cancelReplicatePrediction(env: Env, externalId: string): Promise<boolean> {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(externalId)) throw new Error('Invalid prediction identifier');
+  const url = `${API}/predictions/${externalId}`;
+  const headers = { Authorization: `Bearer ${env.REPLICATE_API_TOKEN}` };
+  const terminal = async () => {
+    let response: Response;
+    try { response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
+    catch { throw new UpstreamError('provider_cancel_uncertain', 'uncertain'); }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new UpstreamError('provider_cancel_unavailable', 'uncertain', response.status,
+        response.status === 429 ? retryAt(response.headers.get('retry-after')) : 0);
+    }
+    const prediction = await predictionJson(response);
+    if (prediction.id !== externalId || !['starting','processing','succeeded','failed','canceled'].includes(prediction.status)) {
+      throw new UpstreamError('provider_cancel_identity', 'uncertain');
+    }
+    return ['succeeded','failed','canceled'].includes(prediction.status);
+  };
+  // A completion that beat cancellation needs no cancel POST or output download.
+  if (await terminal()) return true;
+  let response: Response;
+  try { response = await fetch(`${url}/cancel`, { method: 'POST', headers,
+    redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
+  catch { throw new UpstreamError('provider_cancel_uncertain', 'uncertain'); }
+  await response.body?.cancel().catch(() => undefined);
+  // Conflict/validation refusal may mean completion won the race. Verify it.
+  if (!response.ok && response.status !== 409 && response.status !== 422) {
+    throw new UpstreamError('provider_cancel_unavailable', 'uncertain', response.status,
+      response.status === 429 ? retryAt(response.headers.get('retry-after')) : 0);
+  }
+  return terminal();
+}
 
 async function predictionJson(response: Response): Promise<ReplicatePrediction> {
   const data = await readBoundedResponse(response, {

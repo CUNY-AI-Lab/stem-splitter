@@ -97,8 +97,9 @@ export async function settleOperation(db: D1Database, id: string, state: 'succee
 export async function beginAttempt(db: D1Database, operation: Operation, provider: string, model?: string) {
   const id=crypto.randomUUID(), now=Date.now();
   const inserted=await db.prepare(`INSERT INTO operation_attempts(id,operation_id,phase,provider,model,outcome,created_at,updated_at)
-    SELECT ?,id,phase,?,?,'starting',?,? FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL})`)
-    .bind(id,provider,model ?? null,now,now,operation.id,operation.fence).run();
+    SELECT ?,id,phase,?,?,'starting',?,? FROM app_operations WHERE id=? AND fence=? AND state=CASE WHEN kind='split' THEN 'starting' ELSE 'running' END
+      AND lease_owner IS ? AND lease_until>? AND deadline>? AND cancel_requested=0`)
+    .bind(id,provider,model ?? null,now,now,operation.id,operation.fence,operation.lease_owner,now,now).run();
   if(!inserted.meta.changes)throw new OperationError('operation_fenced',409,'This request is being recovered.');
   return id;
 }

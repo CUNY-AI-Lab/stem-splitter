@@ -1,4 +1,5 @@
 import type { Env } from '../env.ts';
+import { cancelReplicatePrediction } from '../separation/replicate.ts';
 import { parseVideoSource } from '../video-source.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { archiveAudioMetadata, archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
@@ -243,6 +244,13 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
   if(!claimed)return;
   let deliveryAccepted=claimed.phase==='fetch'&&claimed.error_code==='import_delivery_unavailable';
   try {
+    const canCancelProvider = claimed.phase === 'fetch' || (env.SEPARATION_BACKEND ?? 'replicate') === 'replicate';
+    if (claimed.cancel_requested && canCancelProvider) {
+      if (await cancelReplicatePrediction(env, claimed.provider_id!)) {
+        await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
+      }
+      return;
+    }
     if (claimed.phase==='fetch') {
       // A prior delivery failure proves extraction finished. Its allowance can
       // expire locally even if subsequent status reads or provider cooldowns stall.
@@ -254,8 +262,12 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       const current=await readOperation(env.DB,claimed.id);
       if(current?.fence!==claimed.fence||current.lease_owner!==claimed.lease_owner)return;
       if(result.status!=='processing') {
-        if(claimed.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
+        if(current.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
         else await complete(env,claimed.job_id!,result,claimed);
+      } else if (current.cancel_requested && canCancelProvider) {
+        if (await cancelReplicatePrediction(env, claimed.provider_id!)) {
+          await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
+        }
       }
     }
   } catch(error) {

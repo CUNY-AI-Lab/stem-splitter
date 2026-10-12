@@ -350,6 +350,7 @@ test('an old uncertain provider start stays in reconciliation after browser rout
   const {db,env}=await setup(t);
   const original=(await submitSplit(env,principal,{videoUrl:youtube},'youtube-old-uncertain')).operation;
   const claimed=(await claimNext(db,'fetch'))!;
+  await db.prepare("UPDATE app_operations SET state='starting' WHERE id=?").bind(claimed.id).run();
   const attempt=await beginAttempt(db,claimed,'replicate',importVersion);
   await finishAttempt(db,attempt,'uncertain');
   await db.prepare("UPDATE app_operations SET state='starting',lease_until=? WHERE id=?").bind(Date.now()-1,original.id).run();

@@ -102,7 +102,10 @@ export async function recoverExpired(db: D1Database, now=Date.now()) {
 export async function cancelOperation(db: D1Database, id: string, subject: string) {
   const operation=await readOperation(db,id);
   if (!operation || operation.subject!==subject) return false;
-  await db.prepare(`UPDATE app_operations SET cancel_requested=1,updated_at=? WHERE id=? AND state NOT IN (${TERMINAL})`).bind(Date.now(),id).run();
+  const now=Date.now();
+  // Make cancellation promptly eligible without bypassing the provider cooldown
+  // or an active reconciliation lease.
+  await db.prepare(`UPDATE app_operations SET cancel_requested=1,not_before=MIN(not_before,?),updated_at=? WHERE id=? AND state NOT IN (${TERMINAL})`).bind(now,now,id).run();
   // An unstarted queued request has no external effects. An accepted/unknown
   // one keeps its reservation and capacity until the provider becomes terminal.
   await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No successful-split allowance was used.'
