@@ -277,16 +277,24 @@ test('direct licensed Archive imports retain content checks when the search mark
 });
 
 test('artist-qualified discovery retains credited songs among many filenames containing the whole query',async t=>{
-  const docs=[...Array.from({length:20},(_,index)=>({identifier:`uncredited-${index}`,title:'Signal Orchestra Midnight Motion'})),{identifier:'credited',title:'Midnight Motion',creator:'Signal Orchestra'}];
+  const uncredited=Array.from({length:16},(_,index)=>({identifier:`uncredited-${index}`,title:'Signal Orchestra Midnight Motion'}));
+  let catalogs=0,inspected=0;
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
     const url=new URL(String(input));
-    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs}});
-    if(url.pathname.startsWith('/metadata/'))return url.pathname.endsWith('/credited')
+    if(url.pathname==='/advancedsearch.php'){
+      catalogs++;assert.equal(url.searchParams.get('rows'),'16');
+      assert.equal(url.searchParams.get('sort[]'),'downloads desc');
+      const docs=url.searchParams.get('q')?.includes('creator:[* TO *]')
+        ? [{identifier:'credited',title:'Midnight Motion',creator:'Signal Orchestra'}] : uncredited;
+      return Response.json({response:{docs}});
+    }
+    if(url.pathname.startsWith('/metadata/')){inspected++;return url.pathname.endsWith('/credited')
       ? metadata({title:'Midnight Motion',creator:'Signal Orchestra'},[file({title:'Midnight Motion',artist:'Signal Orchestra'})])
-      : metadata({creator:''},[file({title:'Signal Orchestra Midnight Motion'})]);
+      : metadata({creator:''},[file({title:'Signal Orchestra Midnight Motion'})]);}
     return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
   });
   assert.deepEqual((await searchArchiveSongs('Signal Orchestra Midnight Motion')).results.map(song=>song.archiveId),['credited']);
+  assert.equal(catalogs,3);assert.equal(inspected,16);
 });
 
 test('temporary delivery failures retry with the same byte range and never cache a false empty result',async t=>{
