@@ -13,11 +13,13 @@ async function setup(page, chatAvailable = false) {
   let origin = '', providerStarts = 0, verifications = 0, widgetLoads = 0;
   const issuer = await createTestIdentityIssuer();
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
-  const music={id:'4zxjE',title:'Song fixture',user:{name:'Artist'},duration:Math.round(mp3FrameInfo(new Uint8Array(mp3).buffer).seconds),permalink:'/artist/song',license:'CC BY',is_available:true,is_streamable:true,is_stream_gated:false,access:{stream:true},stream:{url:'https://node.audius.co/full.mp3'}};
+  const music={identifier:'song-fixture',title:'Song fixture',creator:'Artist'};
   const network = setupServer(
-    http.get('https://api.audius.co/v1/tracks/search',()=>HttpResponse.json({data:[music]})),
-    http.get('https://api.audius.co/v1/tracks/4zxjE',()=>HttpResponse.json({data:music})),
-    http.get('https://node.audius.co/full.mp3',()=>new HttpResponse(mp3,{headers:{'content-type':'audio/mpeg'}})),
+    http.get('https://archive.org/advancedsearch.php',()=>HttpResponse.json({response:{docs:[music]}})),
+    http.get('https://archive.org/metadata/song-fixture',()=>HttpResponse.json({metadata:music,files:[{name:'song.mp3',title:'Song fixture',size:String(mp3.length),length:String(mp3FrameInfo(new Uint8Array(mp3).buffer).seconds)}]})),
+    http.get('https://archive.org/download/song-fixture/song.mp3',({request})=>request.headers.has('range')
+      ? new HttpResponse(mp3.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,mp3.length-1)}/${mp3.length}`}})
+      : new HttpResponse(mp3,{headers:{'content-type':'audio/mpeg','content-length':String(mp3.length)}})),
     http.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', () => {
       verifications++;
       return HttpResponse.json({ success: true, hostname: new URL(origin).hostname, action: 'stem_guest', challenge_ts: new Date().toISOString() });
@@ -259,7 +261,7 @@ test('guest searches and imports a complete song through the existing field',asy
     await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
     const submission=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
     await page.locator('#yt-form button').click();const response=await submission;
-    expect(response.status()).toBe(202);expect(response.request().postDataJSON().audiusId).toBe('4zxjE');
+    expect(response.status()).toBe(202);expect(response.request().postDataJSON()).toMatchObject({archiveId:'song-fixture',archiveFile:'song.mp3',archiveSearch:true});
     expect((await response.json()).savedToAccount).toBe(false);
     await completed(page,1);expect(f.counts().providerStarts).toBe(1);
     await expect(page.locator('#upload-message')).not.toContainText('Saved to your account');

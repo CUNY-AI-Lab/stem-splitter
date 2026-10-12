@@ -1,18 +1,20 @@
-// Internet Archive open-audio import, behind the fetchArchiveAudio() seam.
+// Internet Archive search and audio import, behind the fetchArchiveAudio() seam.
 //
 // Unlike the YouTube path this needs no third-party fetcher: archive.org serves
 // public audio over HTTPS without a bot-check, so a direct provider fetch is
 // the whole story (and costs nothing per import).
 //
-// The important boundaries are enforced here rather than in the routes:
+// Public song search verifies downloadable MP3s; the separate Crate and remix
+// paths retain their open-license floor. Boundaries are enforced here:
 //   - the search query is assembled server-side so students can never widen it
 //     past open-licensed audio (see buildQuery), and
-//   - direct item imports repeat that open-license check and exclude
+//   - Crate imports repeat that open-license check and exclude
 //     NoDerivatives (ND), because stems are a derivative work; and
 //   - provider redirects, response sizes, read times, and audio signatures are
 //     bounded before any bytes are stored.
 import type { Env } from './env';
 import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
+import { mp3FrameInfo } from './reliability/media.ts';
 
 // Crate-specific cap, tighter than the 15-minute YouTube/upload limit: the
 // browse list only offers songs, and nothing over 5 minutes is shown or
@@ -21,6 +23,8 @@ import { readBoundedResponse, responseMediaType } from './http/bounded-response.
 const MAX_DURATION_SECONDS = 5 * 60;
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const MIN_AUDIO_BYTES = 1024;
+export const ARCHIVE_SEARCH_MAX_BYTES = 12 * 1024 * 1024;
+const PUBLIC_AUDIO_MAX_SECONDS = 15 * 60;
 const SEARCH_ROWS = 24;
 const MAX_SEARCH_PAGE = 20;
 const MAX_TERM_LENGTH = 120;
@@ -135,6 +139,7 @@ export interface ArchiveTrack {
   title: string;
   durationSec: number;
   bytes: number;
+  artist?: string;
   /** False when the track breaks the duration or size cap; UI greys these out. */
   importable: boolean;
 }
@@ -278,7 +283,8 @@ function approvedArchiveUrl(raw: string | URL): URL | null {
 
 async function fetchArchiveOnce(
   rawUrl: string,
-  timeoutMs: number
+  timeoutMs: number,
+  headers: Record<string, string> = {}
 ): Promise<Response> {
   let url = approvedArchiveUrl(rawUrl);
   if (!url) {
@@ -290,7 +296,7 @@ async function fetchArchiveOnce(
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) throw new DOMException('Archive fetch timed out', 'TimeoutError');
     const response = await fetch(url, {
-      headers: { Accept: '*/*' },
+      headers: { Accept: '*/*', ...headers },
       redirect: 'manual',
       signal: AbortSignal.timeout(remainingMs),
     });
@@ -392,11 +398,11 @@ async function remainingArchiveBodyBudget(
   throw timedOut();
 }
 
-async function fetchJson(url: string, label: string): Promise<unknown> {
+async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIMEOUT_MS): Promise<unknown> {
   const { response: res, deadline } = await fetchWithBusyRetry(
     url,
     label,
-    JSON_FETCH_TIMEOUT_MS
+    timeoutMs
   );
   if (!res.ok) {
     await res.body?.cancel().catch(() => undefined);
@@ -499,6 +505,156 @@ export async function searchArchive(
   };
 }
 
+export interface ArchiveSong {
+  id: string;
+  archiveId: string;
+  archiveFile: string;
+  title: string;
+  artist: string;
+  durationSec: number;
+  bytes: number;
+  sourceUrl: string;
+  itemTitle: string;
+}
+
+function songTitle(item: ArchiveItem, track: ArchiveTrack): string {
+  return item.tracks.length === 1 && /^(?:file|track|audio)[\s._-]*\d*$/i.test(track.title) ? item.title : track.title;
+}
+function songArtist(item: ArchiveItem, track: ArchiveTrack): string {
+  return (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? track.artist : item.creator) || '';
+}
+
+const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const alternateRecording = /\b(cover|covers|tribute|karaoke|remix|mash\s?up|instrumental|isolated|acappella|acapella|recreation|multitracks?)\b/;
+const searchCache = new Map<string, { expires: number; songs: Promise<{ results: ArchiveSong[] }> }>();
+
+/** Check public file delivery before exposing a choice; import repeats metadata and reads the complete file. */
+async function downloadableSong(song: ArchiveSong): Promise<boolean> {
+  const res = await fetchArchiveOnce(
+    `${DOWNLOAD_BASE}/${encodeURIComponent(song.archiveId)}/${encodeURIComponent(song.archiveFile)}`,
+    7000, { Range: 'bytes=0-65535' }
+  );
+  const mediaType = responseMediaType(res);
+  const range = /^bytes 0-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') || '');
+  const fullSize = res.status === 206 && range ? Number(range[2]) : Number(res.headers.get('content-length'));
+  if (![200, 206].includes(res.status) || fullSize !== song.bytes ||
+      (res.status === 206 && (!range || Number(range[1]) !== Math.min(65535, song.bytes - 1))) ||
+      !['audio/mpeg', 'audio/mp3', 'application/octet-stream'].includes(mediaType) || !res.body) {
+    await res.body?.cancel().catch(() => undefined);
+    return false;
+  }
+  const reader = res.body.getReader(), prefix = new Uint8Array(Math.min(65536, song.bytes));
+  let read = 0;
+  try {
+    while (read < prefix.length) {
+      const part = await reader.read();
+      if (part.done) break;
+      const take = Math.min(part.value.length, prefix.length - read);
+      prefix.set(part.value.subarray(0, take), read); read += take;
+    }
+  } finally { await reader.cancel().catch(() => undefined); }
+  if (read !== prefix.length) return false;
+  // Some MP3s begin with an embedded cover larger than the probe. The full
+  // import validates the complete MPEG frame sequence and decodes the audio.
+  return matchesAudioSignature(song.archiveFile, prefix) ||
+    (asciiAt(prefix, 0, 'ID3') && prefix.length >= 10 &&
+      [prefix[6], prefix[7], prefix[8], prefix[9]].every(byte => byte < 128) &&
+      10 + (prefix[6] << 21 | prefix[7] << 14 | prefix[8] << 7 | prefix[9]) < song.bytes);
+}
+
+async function mapLimited<T, R>(values: T[], width: number, fn: (value: T) => Promise<R>): Promise<R[]> {
+  let next = 0;
+  const results = new Array<R>(values.length);
+  await Promise.all(Array.from({ length: Math.min(width, values.length) }, async () => {
+    while (next < values.length) { const index = next++; results[index] = await fn(values[index]); }
+  }));
+  return results;
+}
+
+/** The main field searches public downloads. The separate open-license Crate keeps its existing scope. */
+export async function searchArchiveSongs(query: string): Promise<{ results: ArchiveSong[] }> {
+  const term = displayText(query, '', MAX_TERM_LENGTH), normalized = searchableText(term);
+  const tokens = normalized.split(' ').filter(Boolean).slice(0, 8);
+  if (normalized.length < 2 || !tokens.length) return { results: [] };
+  const now = Date.now();
+  for (const [key, value] of searchCache) if (value.expires <= now) searchCache.delete(key);
+  const cached = searchCache.get(normalized);
+  if (cached) return cached.songs;
+  const songs = findArchiveSongs(tokens);
+  if (searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
+  searchCache.set(normalized, { expires: now + 60000, songs });
+  try { return await songs; } catch (error) { searchCache.delete(normalized); throw error; }
+}
+
+async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSong[] }> {
+  const base = 'mediatype:audio AND NOT access-restricted-item:true';
+  const queries = [
+    `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
+    `${base} AND (${tokens.map(token => `"${token}"`).join(' AND ')})`,
+  ];
+  const searches = await Promise.allSettled(queries.map(async q => {
+    const url = new URL(SEARCH_API);
+    url.searchParams.set('q', q);
+    for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
+    url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
+    const data = await fetchJson(url.toString(), 'search', 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
+    if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
+    return data.response.docs;
+  }));
+  if (searches.every(result => result.status === 'rejected')) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
+  const docs = searches.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+  const docScore = (doc: { title?: unknown; creator?: unknown }) => {
+    const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
+    return tokens.filter(token => title.includes(token)).length * 3 + tokens.filter(token => artist.includes(token)).length * 5 - (title + artist).length / 200;
+  };
+  docs.sort((a,b) => docScore(b) - docScore(a));
+  const ids = [...new Set(docs.filter(doc => alternateRecording.test(tokens.join(' ')) || !alternateRecording.test(searchableText(displayText(doc.title))))
+    .map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
+  const metadataDeadline = Date.now() + 18000;
+  let metadataFailures = 0;
+  const items = await mapLimited(ids, 4, async id => {
+    if (Date.now() >= metadataDeadline) { metadataFailures++; return null; }
+    try { return await fetchArchiveItem(id, { publicAudio: true, timeoutMs: Math.max(1, Math.min(9000, metadataDeadline - Date.now())) }); }
+    catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; return null; }
+  });
+  const candidates: (ArchiveSong & { score: number })[] = [];
+  for (const item of items) {
+    if (!item) continue;
+    for (const track of item.tracks) {
+      if (!track.importable) continue;
+      const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
+      if (!alternateRecording.test(tokens.join(' ')) && alternateRecording.test(versions)) continue;
+      const title = songTitle(item, track);
+      const artist = songArtist(item, track);
+      const text = searchableText(`${title} ${artist}`);
+      // Matching only the album description would return unrelated tracks.
+      if (!tokens.every(token => text.includes(token))) continue;
+      const titleText = searchableText(title), artistText = searchableText(artist);
+      const score = tokens.filter(token => titleText.includes(token)).length * 3 + tokens.filter(token => artistText.includes(token)).length * 5
+        + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
+        - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
+        - Math.abs(text.split(' ').length - tokens.length) * 0.2;
+      candidates.push({ id: `${item.identifier}/${track.name}`, archiveId: item.identifier, archiveFile: track.name,
+        title, artist: artist || 'Internet Archive', durationSec: track.durationSec, bytes: track.bytes, sourceUrl: item.detailsUrl, itemTitle: item.title, score });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  const results: ArchiveSong[] = [], seen = new Set<string>();
+  for (let offset = 0; offset < Math.min(candidates.length, 24) && results.length < 8; offset += 6) {
+    const batch = candidates.slice(offset, offset + 6);
+    const available = await mapLimited(batch, 6, async song => {
+      try { return await downloadableSong(song); } catch { return false; }
+    });
+    for (let i = 0; i < batch.length && results.length < 8; i++) {
+      const { score: _score, ...song } = batch[i];
+      const identity = `${searchableText(song.title)}|${searchableText(song.artist)}|${Math.round(song.durationSec)}`;
+      if (available[i] && !seen.has(identity)) { seen.add(identity); results.push(song); }
+    }
+  }
+  if (!results.length && metadataFailures) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
+  return { results };
+}
+
 const AUDIO_EXTENSIONS = ['.mp3', '.ogg', '.m4a', '.flac', '.wav', '.aiff', '.aif'];
 
 /** MP3 first: smallest for the same job, and the separator takes it as-is. */
@@ -520,16 +676,23 @@ interface ArchiveFile {
   format?: string;
   size?: string;
   length?: string;
+  creator?: string;
+  artist?: string;
+  private?: boolean | string;
 }
 
-export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem> {
+function archiveFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
 
   const payload = await fetchJson(
     `${METADATA_API}/${encodeURIComponent(identifier)}`,
-    'metadata'
+    'metadata', options.timeoutMs
   );
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ArchiveError('That Internet Archive item returned unreadable metadata.');
@@ -554,14 +717,17 @@ export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem>
       Boolean(file) && typeof file === 'object' && !Array.isArray(file)
   );
 
+  if ([rawPayload.is_dark, metadata.is_dark, metadata['access-restricted-item'], metadata['no-download'], metadata.nodownload].some(archiveFlag)) {
+    throw new ArchiveError('This recording is unavailable for public download.', 'archive_download_restricted');
+  }
   const licenseUrl = firstString(metadata.licenseurl);
-  if (!licenseUrl) {
+  if (!options.publicAudio && !licenseUrl) {
     throw new ArchiveError(
       'That item has no open licence, so it cannot be split here.',
       'license_missing'
     );
   }
-  if (!isOpenLicenseUrl(licenseUrl)) {
+  if (!options.publicAudio && !isOpenLicenseUrl(licenseUrl)) {
     throw new ArchiveError(
       'That item does not have a supported open licence, so it cannot be split here.',
       'license_not_open'
@@ -581,7 +747,8 @@ export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem>
       !name ||
       name.length > MAX_FILE_NAME_LENGTH ||
       /[\u0000-\u001f\u007f]/.test(name) ||
-      !isAudioFile(name)
+      !isAudioFile(name) || archiveFlag(file.private) ||
+      (options.publicAudio && !name.toLowerCase().endsWith('.mp3'))
     ) continue;
 
     // Items carry several derivatives of one track; keep the best-ranked file
@@ -593,13 +760,14 @@ export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem>
     const candidate: ArchiveTrack = {
       name,
       title: displayText(file.title, base.replace(/^\d+[\s._-]*/, '') || base),
+      artist: displayText(file.artist || file.creator),
       durationSec,
       bytes,
       importable:
         bytes > 0 &&
-        bytes <= MAX_AUDIO_BYTES &&
+        bytes <= (options.publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES) &&
         durationSec > 0 &&
-        durationSec <= MAX_DURATION_SECONDS,
+        durationSec <= (options.publicAudio ? PUBLIC_AUDIO_MAX_SECONDS : MAX_DURATION_SECONDS),
     };
     const previous = tracksByBase.get(base);
     if (
@@ -628,7 +796,7 @@ export async function fetchArchiveItem(identifier: string): Promise<ArchiveItem>
     title: displayText(metadata.title, identifier),
     creator: displayText(metadata.creator),
     year: toYear(metadata.year ?? metadata.date),
-    license: licenseLabel(licenseUrl),
+    license: options.publicAudio && !isOpenLicenseUrl(licenseUrl) ? '' : licenseLabel(licenseUrl),
     licenseUrl,
     detailsUrl: `https://archive.org/details/${encodeURIComponent(identifier)}`,
     tracks,
@@ -643,10 +811,13 @@ export async function fetchArchiveAudio(
   identifier: string,
   fileName: string | undefined,
   _env: Env,
-  options: { maximumBytes?: number; remix?: boolean } = {}
+  options: { maximumBytes?: number; remix?: boolean; publicAudio?: boolean } = {}
 ): Promise<ArchiveAudio & { fileName: string }> {
-  const item = await fetchArchiveItem(identifier);
-  const maximumBytes = Math.min(options.maximumBytes ?? MAX_AUDIO_BYTES, MAX_AUDIO_BYTES);
+  const publicAudio = options.publicAudio === true && !options.remix;
+  const item = await fetchArchiveItem(identifier, { publicAudio });
+  const limit = publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES;
+  const durationLimit = publicAudio ? PUBLIC_AUDIO_MAX_SECONDS : MAX_DURATION_SECONDS;
+  const maximumBytes = Math.min(options.maximumBytes ?? limit, limit);
   if (options.remix) {
     const license = new URL(item.licenseUrl);
     if (license.port || license.search || license.hash || !/^\/(?:licenses\/(?:by|by-sa|by-nc|by-nc-sa)\/(?:2\.0|2\.5|3\.0|4\.0)|publicdomain\/(?:zero|mark)\/1\.0)\/?$/.test(license.pathname)) {
@@ -662,7 +833,7 @@ export async function fetchArchiveAudio(
     throw new ArchiveError(
       fileName
         ? 'That track is not part of this Internet Archive item.'
-        : 'No track on this item is short enough to split (5 minute limit).',
+        : `Choose a downloadable track under ${durationLimit / 60} minutes.`,
       'track_not_found'
     );
   }
@@ -672,8 +843,8 @@ export async function fetchArchiveAudio(
       'track_metadata_incomplete'
     );
   }
-  if (track.durationSec > MAX_DURATION_SECONDS) {
-    throw new ArchiveError('That track is longer than 5 minutes.', 'track_too_long');
+  if (track.durationSec > durationLimit) {
+    throw new ArchiveError(`Choose a track under ${durationLimit / 60} minutes.`, 'track_too_long');
   }
   if (track.bytes > maximumBytes) {
     throw new ArchiveError(`That track is larger than ${Math.floor(maximumBytes / 1024 / 1024)} MB.`, 'track_too_large');
@@ -686,9 +857,9 @@ export async function fetchArchiveAudio(
     'download',
     AUDIO_FETCH_TIMEOUT_MS
   );
-  if (!res.ok) {
+  if (res.status !== 200 || res.headers.has('content-range')) {
     await res.body?.cancel().catch(() => undefined);
-    throw new ArchiveError(`Could not download that track (${res.status}).`);
+    throw new ArchiveError(`Could not download that track (${res.status}).`, 'archive_download_unavailable');
   }
 
   const mediaType = responseMediaType(res);
@@ -702,7 +873,7 @@ export async function fetchArchiveAudio(
   }
   const timedOut = () =>
     new ArchiveError('The Internet Archive download timed out.', 'archive_busy', true);
-  const data = await readBoundedResponse(res, {
+  let data = await readBoundedResponse(res, {
     maximumBytes,
     timeoutMs: await remainingArchiveBodyBudget(res, deadline, timedOut),
     errors: {
@@ -719,8 +890,8 @@ export async function fetchArchiveAudio(
   if (data.byteLength < MIN_AUDIO_BYTES) {
     throw new ArchiveError('That track came back empty from the Internet Archive.');
   }
-  if (options.remix && data.byteLength !== track.bytes) {
-    throw new ArchiveError('This track changed while loading. Reload the Crate and try again.', 'archive_source_changed', true);
+  if ((options.remix || publicAudio) && data.byteLength !== track.bytes) {
+    throw new ArchiveError('This recording changed while loading. Search again to refresh its file.', 'archive_source_changed', true);
   }
   if (!matchesAudioSignature(track.name, new Uint8Array(data))) {
     throw new ArchiveError(
@@ -730,14 +901,30 @@ export async function fetchArchiveAudio(
     );
   }
 
+  if (publicAudio) {
+    // Some Archive MP3 exports append an empty JSON object after the complete
+    // MPEG stream. These two nonaudio bytes are separate from the recording;
+    // retain every frame and still require full duration and PCM validation.
+    const bytes = new Uint8Array(data);
+    if (bytes[bytes.length - 2] === 0x7b && bytes[bytes.length - 1] === 0x7d) {
+      const framesOnly = data.slice(0, -2);
+      if (mp3FrameInfo(framesOnly)) data = framesOnly;
+    }
+    const frames = mp3FrameInfo(data);
+    if (!frames || Math.abs(frames.seconds - track.durationSec) > 2 ||
+        (_env.validateStemAudio && !await _env.validateStemAudio(data))) {
+      throw new ArchiveError('This recording returned incomplete audio. Choose another result.', 'archive_audio_incomplete');
+    }
+  }
+
   return {
     data,
     // Plain hyphen, not an em dash: sanitizeFilename() flattens punctuation it
     // does not recognise to "_", which reads badly in the mixer title.
-    title: `${item.creator ? `${item.creator} - ` : ''}${track.title}`,
+    title: `${(publicAudio ? songArtist(item,track) : item.creator) ? `${publicAudio ? songArtist(item,track) : item.creator} - ` : ''}${publicAudio ? songTitle(item,track) : track.title}`,
     durationSec: track.durationSec,
     fileName: track.name,
-    attribution: { title: track.title, creator: item.creator, sourceUrl: item.detailsUrl, licenseUrl: item.licenseUrl, fileName: track.name },
+    attribution: { title: publicAudio ? songTitle(item,track) : track.title, creator: publicAudio ? songArtist(item,track) : item.creator, sourceUrl: item.detailsUrl, licenseUrl: item.licenseUrl, fileName: track.name },
   };
 }
 

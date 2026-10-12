@@ -72,7 +72,6 @@ import {
 } from './separation/options';
 import { fetchVideoAudio, YouTubeError } from './youtube';
 import { parseVideoSource } from './video-source.ts';
-import { AudiusError, fetchAudiusAudio, searchAudius, validAudiusId } from './audius.ts';
 import {
   archiveContentType,
   ArchiveError,
@@ -82,6 +81,7 @@ import {
   isArchiveScope,
   parseArchiveIdentifier,
   searchArchive,
+  searchArchiveSongs,
 } from './archive';
 import {
   AssistantError,
@@ -948,8 +948,8 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 // --- jobs -------------------------------------------------------------
 
 app.get('/api/music/search', requireClassCode, async (c) => {
-  try { return c.json(await searchAudius(c.req.query('q') ?? '')); }
-  catch (error) { return c.json({ error: error instanceof AudiusError ? error.message : 'Song search is temporarily unavailable.' }, 502); }
+  try { return c.json(await searchArchiveSongs(c.req.query('q') ?? '')); }
+  catch (error) { return c.json({ error: error instanceof ArchiveError ? error.message : 'Song search is temporarily unavailable.' }, 502); }
 });
 
 app.post('/api/jobs', requireClassCode, async (c) => {
@@ -960,6 +960,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   const input=parsed.value;
   if(input&&typeof input==='object'&&!Array.isArray(input)) {
     const value=input as Record<string,unknown>;
+    if (value.audiusId !== undefined && [value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1) return c.json({error:'Search again to choose an Internet Archive recording.',code:'unsupported_source',retryable:false},400);
     if([value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1
       &&parseVideoSource(value.videoUrl??value.youtubeUrl)?.sourceType==='vimeo') {
       return c.json({error:'Choose a supported video link or upload an audio file.',code:'unsupported_source',retryable:false},400);
@@ -982,6 +983,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         audiusId?: string;
         archiveId?: string;
         archiveFile?: string;
+        archiveSearch?: boolean;
         model?: string;
         routingRequest?: string;
         browserAnalysis?: unknown;
@@ -1084,18 +1086,6 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       bytes: audio.data.byteLength,
     };
     await c.env.AUDIO.put(key, audio.data, { httpMetadata: { contentType: 'audio/mp4' } });
-  } else if (body.audiusId!==undefined) {
-    if (!validAudiusId(body.audiusId)) return c.json({error:'Choose a song from the search results.',code:'invalid_music_id'},400);
-    sourceType='audius';
-    let audio;
-    try { audio=await fetchAudiusAudio(body.audiusId,{deadline:Date.now()+90000,validate:c.env.validateStemAudio}); }
-    catch (error) { return c.json({error:error instanceof AudiusError?error.message:'Song import is temporarily unavailable.',code:error instanceof AudiusError?error.code:'music_unavailable'},502); }
-    attribution=audio.attribution;
-    key=`uploads/${crypto.randomUUID()}/source.mp3`;
-    filename=sanitizeFilename(audio.title)||'Audio';
-    sourceHash=await sha256Audio(audio.data);
-    expectedSourceIdentity={schemaVersion:'1',sha256:sourceHash,bytes:audio.data.byteLength};
-    await c.env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:'audio/mpeg'}});
   } else if (body?.archiveId) {
     sourceType = 'archive';
     const identifier = parseArchiveIdentifier(body.archiveId);
@@ -1113,7 +1103,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     // job row is only created after, so a failed fetch leaves no stuck job.
     let audio;
     try {
-      audio = await fetchArchiveAudio(identifier, body.archiveFile, c.env);
+      audio = await fetchArchiveAudio(identifier, body.archiveFile, c.env, { publicAudio: body.archiveSearch === true });
       attribution = audio.attribution;
     } catch (err) {
       const message =

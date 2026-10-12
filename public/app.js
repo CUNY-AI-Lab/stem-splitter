@@ -368,7 +368,7 @@ const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
 const ytFetchButton = ytForm.querySelector('button[type="submit"]');
 const sourceSongs = document.getElementById('source-songs');
-let songResults = new Map(), songSearchTimer, songSearchSequence = 0;
+let songResults = new Map(), songSearchTimer, songSearchSequence = 0, songSearchAbort;
 let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
 function closeSongSuggestions() {
@@ -421,6 +421,9 @@ function selectSong(value) {
   closeSongSuggestions();
 }
 async function searchSourceSongs(term, sequence) {
+  songSearchAbort?.abort();
+  const controller = new AbortController();
+  songSearchAbort = controller;
   const current = () => sequence === songSearchSequence && ytUrlInput.value.trim() === term;
   clearSongSuggestions();
   songQuery = term;
@@ -428,13 +431,14 @@ async function searchSourceSongs(term, sequence) {
   sourceSongs.setAttribute('aria-busy', 'true');
   showSongSearchStatus('Searching…');
   try {
-    const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`);
+    const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, { signal: controller.signal });
     if (!current()) return;
     sourceSongs.replaceChildren();
     for (const track of data.results || []) {
       const label = `${track.title} — ${track.artist}`;
       // Keep the provider's matches, including punctuation and word-order matches.
-      const value = songResults.has(label) ? `${label} (${track.id})` : label;
+      let value = label;
+      for (let version = 2; songResults.has(value); version++) value = `${label} (${version})`;
       songResults.set(value, track);
       const option = document.createElement('li'), duration = document.createElement('small');
       option.id = `source-song-${sequence}-${songResults.size}`;
@@ -442,8 +446,9 @@ async function searchSourceSongs(term, sequence) {
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', 'false');
       option.dataset.value = value;
+      option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Audius`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Internet Archive${track.itemTitle && track.itemTitle !== track.title ? ` · ${track.itemTitle}` : ''}`;
       option.appendChild(duration);
       sourceSongs.appendChild(option);
     }
@@ -960,7 +965,7 @@ ytForm.addEventListener('submit', async (e) => {
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
-        ...(song ? { audiusId: song.id } : { videoUrl: url }),
+        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),

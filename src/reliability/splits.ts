@@ -15,12 +15,11 @@ import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation
 import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
 import { cooldown, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
-import { AudiusError, fetchAudiusAudio, validAudiusId } from '../audius.ts';
 
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
   sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
-  archiveId?: string; archiveFile?: string; model: string; auto: boolean; browserAnalysis?: unknown;
+  archiveId?: string; archiveFile?: string; archiveSearch?: boolean; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: true;
 }
@@ -55,14 +54,15 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     if(source.sourceType==='youtube')input.youtubeUrl=source.canonicalUrl;
     else input.videoUrl=source.canonicalUrl;
   } else if (value.audiusId!==undefined) {
-    if (!validAudiusId(value.audiusId)) throw new OperationError('invalid_music_id',400,'Choose a song from the search results.');
-    const runner=getReplicateRunner(input.model);
-    if(!runner||!env.REPLICATE_API_TOKEN||!replicateVersion(env,runner))throw new OperationError('provider_configuration',503,'Audio separation is temporarily unavailable.');
-    input.sourceType='audius';input.audiusId=value.audiusId;input.filename='Audio';
+    throw new OperationError('unsupported_source',400,'Search again to choose an Internet Archive recording.');
   } else if (value.archiveId!==undefined) {
     const id=typeof value.archiveId==='string'&&parseArchiveIdentifier(value.archiveId);
     if (!id||value.archiveFile!==undefined&&(typeof value.archiveFile!=='string'||value.archiveFile.length>1024)) throw new OperationError('invalid_archive_id',400,'Choose an available Archive audio file.');
     input.sourceType='archive';input.archiveId=id;input.archiveFile=value.archiveFile as string|undefined;input.filename='Archive audio';
+    if(value.archiveSearch===true) {
+      if(!input.archiveFile)throw new OperationError('invalid_archive_id',400,'Choose an available Archive audio file.');
+      input.archiveSearch=true;
+    }
   } else {
     if (typeof value.key!=='string'||!/^uploads\/[a-zA-Z0-9-]+\/[^/]+$/.test(value.key)||!title(value.filename)) throw new OperationError('invalid_upload',400,'Choose and upload an audio file.');
     const owned=await env.DB.prepare(`SELECT 1 FROM ${ownershipTable(principal,'upload')} WHERE object_key=? AND subject=? AND state='ready' AND expires_at>?`)
@@ -116,16 +116,18 @@ async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:Ar
   if(saved?.source_key!==key)await env.AUDIO.delete(key);
 }
 async function storeArchive(env: Env,op: Operation,input: SplitInput) {
-  const scope=await fingerprint([op.subject,op.course_id]),source=await fingerprint([input.archiveId,input.archiveFile]);
+  const scope=await fingerprint([op.subject,op.course_id]),source=await fingerprint([input.archiveId,input.archiveFile,input.archiveSearch===true]);
   // Every cache hit revalidates the public rights floor with Archive metadata.
-  await fetchArchiveItem(input.archiveId!);
+  const item=await fetchArchiveItem(input.archiveId!,{publicAudio:input.archiveSearch===true});
+  const track=input.archiveFile?item.tracks.find(track=>track.name===input.archiveFile):item.tracks.find(track=>track.importable);
+  if(!track?.importable||track.bytes>CAIL_IMPORT_BYTES)throw new ArchiveError('Choose an available Archive audio file.', 'archive_file_unavailable');
   const cached=await env.DB.prepare('SELECT object_key,metadata_json FROM import_cache WHERE scope=? AND source=? AND expires_at>? AND object_key IS NOT NULL')
     .bind(scope,source,Date.now()).first<{object_key:string;metadata_json:string}>();
   if (cached) {
     const object=await env.AUDIO.get(cached.object_key);
-    if (object && object.size<=MAX_BYTES) { await imported(env,op,input,{...JSON.parse(cached.metadata_json),data:await object.arrayBuffer()});return; }
+    if (object && object.size===track.bytes && object.size<=CAIL_IMPORT_BYTES) { await imported(env,op,input,{...JSON.parse(cached.metadata_json),data:await object.arrayBuffer()});return; }
   }
-  const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES});
+  const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES,publicAudio:input.archiveSearch===true});
   await imported(env,op,input,audio);
   const current=await readOperation(env.DB,op.id);
   if (current?.fence===op.fence&&current.phase==='split'&&input.key) await env.DB.prepare(`INSERT INTO import_cache(scope,source,operation_id,object_key,metadata_json,expires_at)
@@ -143,7 +145,10 @@ async function start(env: Env,op: Operation) {
   catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No successful-split allowance was used.');return; }
   if (op.cancel_requested) {await fail(env,op,'cancelled');return;}
   if (op.phase==='fetch'&&input.sourceType==='archive') {
-    try {await storeArchive(env,op,input);} catch {await fail(env,op,'archive_import_failed');}return;
+    try {await storeArchive(env,op,input);} catch(error) {
+      await fail(env,op,error instanceof ArchiveError?error.code:'archive_import_failed',
+        error instanceof ArchiveError?`${error.message} No successful-split allowance was used.`:undefined);
+    }return;
   }
   if (op.phase==='fetch'&&isOwnedSourceImport(input)) {
     // The owner's HTTP request awaits this import under the existing five-minute lease.
@@ -151,7 +156,7 @@ async function start(env: Env,op: Operation) {
     try {
       const url=(input.videoUrl??input.youtubeUrl)!;
       if(input.sourceType==='audius') {
-        await imported(env,op,input,await fetchAudiusAudio(input.audiusId!,{deadline:op.deadline,validate:env.validateStemAudio}));
+        await fail(env,op,'unsupported_source','Search again to choose an Internet Archive recording. No successful-split allowance was used.');
       } else if(input.sourceType==='youtube') {
         if(typeof env.fetchYouTubeBrowserAudio!=='function')throw new YouTubeError('Video import is temporarily unavailable.','youtube_fetch_unavailable');
         await imported(env,op,input,await env.fetchYouTubeBrowserAudio(url,{deadline:op.deadline}));
@@ -160,7 +165,7 @@ async function start(env: Env,op: Operation) {
     catch(error) {
       const diagnostic=vimeoFailureDiagnostic(error);
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
-      await fail(env,op,error instanceof YouTubeError||error instanceof AudiusError?error.code:input.sourceType==='audius'?'music_unavailable':input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
+      await fail(env,op,error instanceof YouTubeError?error.code:input.sourceType==='audius'?'music_unavailable':input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
       error instanceof YouTubeError&&error.code==='audio_too_large'
         ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;
