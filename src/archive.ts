@@ -567,6 +567,7 @@ export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, pub
 
 const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const alternateRecording = /\b(cover|covers|tribute|karaoke|remix|mash\s?up|instrumental|isolated|acappella|acapella|recreation|multitracks?)\b/;
+const alternateDescription = /\b(cover version|cover of|my cover|karaoke|isolated vocals|multitracks?|recreation|remix of)\b/;
 const searchCache = new Map<string, { expires: number; songs: Promise<{ results: ArchiveSong[] }> }>();
 
 /** Check public file delivery before exposing a choice; import repeats metadata and reads the complete file. */
@@ -630,13 +631,14 @@ export async function searchArchiveSongs(query: string): Promise<{ results: Arch
 async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSong[] }> {
   const base = 'mediatype:audio AND NOT access-restricted-item:true';
   const queries = [
-    `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
+    `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
     `${base} AND (${tokens.map(token => `"${token}"`).join(' AND ')})`,
   ];
-  const searches = await Promise.allSettled(queries.map(async q => {
+  const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
     url.searchParams.set('q', q);
     for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
+    if (index === 0) url.searchParams.append('sort[]', 'downloads desc');
     url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
     const data = await fetchJson(url.toString(), 'search', 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
@@ -649,7 +651,7 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
   const docs = searches.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   const docScore = (doc: { title?: unknown; creator?: unknown }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
-    return tokens.filter(token => title.includes(token)).length * 3 + tokens.filter(token => artist.includes(token)).length * 5 - (title + artist).length / 200;
+    return tokens.filter(token => title.includes(token)).length * 5 + tokens.filter(token => artist.includes(token)).length * 2 - (title + artist).length / 200;
   };
   docs.sort((a,b) => docScore(b) - docScore(a));
   const ids = [...new Set(docs.filter(doc => alternateRecording.test(tokens.join(' ')) || !alternateRecording.test(searchableText(displayText(doc.title))))
@@ -667,7 +669,8 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
     for (const track of item.tracks) {
       if (!track.importable) continue;
       const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
-      if (!alternateRecording.test(tokens.join(' ')) && alternateRecording.test(versions)) continue;
+      if (!alternateRecording.test(tokens.join(' ')) &&
+          (alternateRecording.test(versions) || alternateDescription.test(searchableText(item.description || '')))) continue;
       const title = songTitle(item, track);
       const artist = recordingCredit(track.artist), fileCreator = recordingCredit(track.creator);
       // Item creator remains useful for finding a song, but never becomes its artist tag.
@@ -675,7 +678,12 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
       // Matching only the album description would return unrelated tracks.
       if (!tokens.every(token => text.includes(token))) continue;
       const titleText = searchableText(title), artistText = searchableText(`${artist} ${fileCreator} ${item.creator}`);
-      const score = tokens.filter(token => titleText.includes(token)).length * 3 + tokens.filter(token => artistText.includes(token)).length * 5
+      // A partial creator-name match alone is not a match for the requested song.
+      // An exact artist query still returns that artist's available tracks.
+      if (!tokens.some(token => titleText.includes(token)) &&
+          ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
+      const score = tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
+        + (titleText === tokens.join(' ') ? 6 : 0)
         + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
         - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
         - Math.abs(text.split(' ').length - tokens.length) * 0.2;

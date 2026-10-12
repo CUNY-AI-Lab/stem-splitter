@@ -111,3 +111,24 @@ test('failed searches log only response diagnostics and preserve upstream retrya
   await assert.rejects(()=>searchArchiveSongs('private search content type fixture'),(error:unknown)=>error instanceof ArchiveError&&!error.retryable);
   for(const [,details] of events)assert.deepEqual(details,{stage:'search',reason:'unexpected_content_type',status:200,contentType:'other'});
 });
+
+test('song-title queries prefer title matches while exact artist queries retain artist search',async t=>{
+  const requests:URL[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      requests.push(url);
+      return Response.json({response:{docs:[{identifier:'song',title:'white rabbit',creator:'Jefferson Airplane'},{identifier:'artist',title:'Moonlight',creator:'White Rabbit Project'},{identifier:'alternate',title:'white rabbit'}]}});
+    }
+    if(url.pathname==='/metadata/song')return metadata({title:'white rabbit',creator:'Jefferson Airplane'},[file({title:'white rabbit'})]);
+    if(url.pathname==='/metadata/artist')return metadata({title:'Moonlight',creator:'White Rabbit Project'},[file({title:'Moonlight'})]);
+    if(url.pathname==='/metadata/alternate')return metadata({title:'white rabbit',description:'December 17, 2015 cover version of the Jefferson Airplane song'},[file({title:'white rabbit'})]);
+    return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
+  });
+  const titleSearch=await searchArchiveSongs('white rabbit');
+  assert.deepEqual(titleSearch.results.map(song=>song.archiveId),['song']);
+  assert.match(requests[0].searchParams.get('q')!,/title:"white" AND title:"rabbit"/);
+  assert.equal(requests[0].searchParams.get('sort[]'),'downloads desc');
+  const artistSearch=await searchArchiveSongs('White Rabbit Project');
+  assert.deepEqual(artistSearch.results.map(song=>song.archiveId),['artist']);
+});
