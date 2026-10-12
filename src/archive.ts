@@ -664,10 +664,11 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
   const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
   const metadataDeadline = Date.now() + 18000;
   let metadataFailures = 0;
+  let metadataRejected = 0;
   const items = await mapLimited(ids, 4, async id => {
     if (Date.now() >= metadataDeadline) { metadataFailures++; return null; }
     try { return await fetchArchiveItem(id, { publicAudio: true, timeoutMs: Math.max(1, Math.min(9000, metadataDeadline - Date.now())) }); }
-    catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; return null; }
+    catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; else metadataRejected++; return null; }
   });
   const candidates: (ArchiveSong & { score: number })[] = [];
   for (const item of items) {
@@ -717,6 +718,11 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
       if (available[i] && !seen.has(identity)) { seen.add(identity); results.push(song); }
     }
   }
+  if (!results.length) console.warn('archive_song_selection_diagnostic', {
+    catalogs: searches.filter(result => result.status === 'fulfilled').length,
+    documents: docs.length, inspected: ids.length, metadataLoaded: items.filter(Boolean).length,
+    metadataRejected, metadataFailures, candidates: candidates.length, deliveryFailures,
+  });
   if (!results.length && (metadataFailures || deliveryFailures)) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
   return { results };
 }
