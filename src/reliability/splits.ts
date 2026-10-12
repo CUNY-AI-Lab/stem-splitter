@@ -2,7 +2,7 @@ import type { Env } from '../env.ts';
 import { cancelReplicatePrediction } from '../separation/replicate.ts';
 import { parseVideoSource } from '../video-source.ts';
 import type { AppPrincipal } from '../identity.ts';
-import { archiveAudioMetadata, archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier } from '../archive.ts';
+import { archiveAudioMetadata, archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier, validateArchiveSongFrames } from '../archive.ts';
 import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
 import { fetchVimeoAudio, vimeoFailureDiagnostic } from '../vimeo.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
@@ -128,7 +128,9 @@ async function storeArchive(env: Env,op: Operation,input: SplitInput) {
     const object=await env.AUDIO.get(cached.object_key);
     if (object && object.size===track.bytes && object.size<=CAIL_IMPORT_BYTES) {
       // Fresh metadata also corrects titles and credits cached before attribution was separated.
-      await imported(env,op,input,{...archiveAudioMetadata(item,track,input.archiveSearch===true),data:await new Response(object.body).arrayBuffer()});return;
+      const data=await new Response(object.body).arrayBuffer();
+      validateArchiveSongFrames(data,track.durationSec);
+      await imported(env,op,input,{...archiveAudioMetadata(item,track,input.archiveSearch===true),data});return;
     }
   }
   const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES,publicAudio:input.archiveSearch===true});

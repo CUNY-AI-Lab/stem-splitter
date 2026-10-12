@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {readFileSync} from 'node:fs';
+import {mp3FrameInfo} from '../src/reliability/media.ts';
 
 import {
   ArchiveError,
@@ -51,6 +53,8 @@ function metadataResponse(
     metadata: {
       title: 'Open item',
       creator: 'Classroom artist',
+      mediatype: 'audio',
+      subject: 'Music',
       licenseurl: OPEN_LICENSE,
       ...overrides,
     },
@@ -92,7 +96,7 @@ test('Archive direct import enforces the same open-license floor as search', asy
 
 test('Archive import follows only bounded HTTPS redirects inside archive.org', async () => {
   const originalFetch = globalThis.fetch;
-  const audio = makeMp3();
+  const audio = new Uint8Array(readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url)));
   const requests: string[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -100,7 +104,7 @@ test('Archive import follows only bounded HTTPS redirects inside archive.org', a
     assert.equal(init?.redirect, 'manual');
     assert.ok(init?.signal instanceof AbortSignal);
     if (url === `https://archive.org/metadata/${IDENTIFIER}`) {
-      return metadataResponse();
+      return metadataResponse({},[{name:FILE_NAME,title:'Track',size:String(audio.length),length:String(mp3FrameInfo(audio.buffer)!.seconds)}]);
     }
     if (url === `https://archive.org/download/${IDENTIFIER}/${FILE_NAME}`) {
       return new Response(null, {
@@ -282,7 +286,7 @@ test('Archive metadata picks the best-ranked derivative independent of API order
   }
 });
 
-test('Archive metadata does not let an incomplete preferred format hide a usable derivative', async () => {
+test('remix metadata does not let an incomplete preferred format hide a usable derivative', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     metadataResponse({}, [
@@ -291,7 +295,7 @@ test('Archive metadata does not let an incomplete preferred format hide a usable
     ]);
 
   try {
-    const item = await fetchArchiveItem(IDENTIFIER);
+    const item = await fetchArchiveItem(IDENTIFIER,{songPolicy:false});
     assert.equal(item.tracks.length, 1);
     assert.equal(item.tracks[0].name, 'track.ogg');
     assert.equal(item.tracks[0].importable, true);

@@ -1,0 +1,11 @@
+# Live Archive song search
+
+The existing source field queries Internet Archive at request time. It ranks title and performer matches, expands items into exact audio files, and tests public delivery before offering a result. Source item and filename remain attached to the selection and import.
+
+Song eligibility requires affirmative music genre/subject information or meaningful artist, album and track tags, plus an attributable source credit. Collection membership alone is insufficient. Full metadata arrays and HTML entities are normalized before contextual cover and spoken-audio checks. Recording qualifiers and descriptions identify covers; legitimate titles, artist names, instrumentals and remixes remain eligible. File comments identify spoken introductions within music albums. File artist, file creator and item creator remain separate throughout search and storage.
+
+Each file needs a positive finite duration of at most 300 seconds. Parsing accepts complete decimal seconds or valid MM:SS / HH:MM:SS values. Item runtime never substitutes for file duration. Import repeats the source checks against current metadata; cached MP3s also pass the current frame-duration check. Complete downloaded MPEG duration must remain at or below 300 seconds. Public results use downloadable MP3 files within the existing 12 MiB limit. Archive split imports apply these checks independently of the browser's search marker; the separately gated remix path retains its own reviewed license and format rules. Upload and video limits retain their existing behavior.
+
+These filters use source evidence to reject known covers, speech and ambiguous records. Metadata does not authenticate a recording's performer or establish permission to reuse it. Result labels preserve that distinction. Catalog and file availability depend on Internet Archive; transient upstream failures remain retryable.
+
+Validation covers live song discovery, exact source selection and complete local retrieval/decoding. Mocked regression tests cover the 300-second boundary, invalid and missing duration, actual duration longer than rounded metadata, raw arrays and encoded descriptions, legitimate titles and instrumentals, conflicting query credits, direct imports, stale cached metadata and successful-split refunds. Production GPU separation is a distinct paid check.

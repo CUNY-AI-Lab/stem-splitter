@@ -460,11 +460,11 @@ test('Archive search and import keep guest ownership, full audio, attribution an
   const {db,env}=await setup(t),guest=await guestRequests(db,env,'c');
   const audio=new Uint8Array(readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url)));
   const duration=mp3FrameInfo(audio.buffer)!.seconds;
-  let sourceReads=0,posts=0;
+  let sourceReads=0,posts=0,creditsPresent=true;
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
     const url=String(input);
     if(url.includes('/advancedsearch.php?'))return Response.json({response:{docs:[{identifier:'song-fixture'}]}});
-    if(url==='https://archive.org/metadata/song-fixture')return Response.json({metadata:{title:'Song fixture',creator:'Artist'},files:[{name:'song.mp3',title:'Song fixture',size:String(audio.length),length:String(duration)}]});
+    if(url==='https://archive.org/metadata/song-fixture')return Response.json({metadata:{title:'Song fixture',creator:creditsPresent?'Fixture Musician':'',mediatype:'audio',subject:'Music',licenseurl:'https://creativecommons.org/licenses/by/4.0/'},files:[{name:'song.mp3',title:'Song fixture',size:String(audio.length),length:String(duration)}]});
     if(url==='https://archive.org/download/song-fixture/song.mp3'){
       if(new Headers(init?.headers).has('range'))return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
       sourceReads++;return new Response(audio,{headers:{'content-type':'audio/mpeg'}});
@@ -485,7 +485,7 @@ test('Archive search and import keep guest ownership, full audio, attribution an
   assert.equal(job.source_hash,Buffer.from(await crypto.subtle.digest('SHA-256',audio)).toString('hex'));
   const provenance=(await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(body.id).first<{attribution:string}>())!;
   assert.equal(JSON.parse(provenance.attribution).creator,'');
-  assert.equal(JSON.parse(provenance.attribution).itemCreator,'Artist');
+  assert.equal(JSON.parse(provenance.attribution).itemCreator,'Fixture Musician');
   assert.equal(JSON.parse(provenance.attribution).fileName,'song.mp3');
   await submit();await guest.flush();assert.equal(posts,1);assert.equal(sourceReads,1);
   // Release the fixture's processing slot before selecting the same source again.
@@ -496,7 +496,17 @@ test('Archive search and import keep guest ownership, full audio, attribution an
   assert.equal(cachedResponse.status,202);assert.equal(sourceReads,1);
   assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind(cachedJob.id).first<{filename:string}>())!.filename,'Song fixture');
   const refreshed=JSON.parse((await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(cachedJob.id).first<{attribution:string}>())!.attribution);
-  assert.equal(refreshed.creator,'');assert.equal(refreshed.itemCreator,'Artist');assert.equal(refreshed.fileName,'song.mp3');
+  assert.equal(refreshed.creator,'');assert.equal(refreshed.itemCreator,'Fixture Musician');assert.equal(refreshed.fileName,'song.mp3');
+  await db.prepare("UPDATE app_operations SET state='succeeded',lease_until=0 WHERE job_id=?").bind(cachedJob.id).run();
+  creditsPresent=false;const previousPosts=posts;
+  for(const archiveSearch of [true,false]){
+    const stale=await guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':`archive-stale-credit-${archiveSearch}`},body:JSON.stringify({archiveId:'song-fixture',archiveFile:'song.mp3',archiveSearch})});
+    const staleJob=await stale.json() as {id:string};await guest.flush();
+    const operation=(await readOperation(db,staleJob.id))!;
+    assert.equal(operation.state,'failed');assert.equal(operation.error_code,'no_audio_files');
+    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,3);
+  }
+  assert.equal(sourceReads,1);assert.equal(posts,previousPosts,'stale credits stop cached and direct imports before GPU submission');
   const other=await guestRequests(db,env,'d');assert.equal((await other.request('/api/jobs/'+body.id)).status,404);
 });
 

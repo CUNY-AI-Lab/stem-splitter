@@ -24,7 +24,7 @@ const MAX_DURATION_SECONDS = 5 * 60;
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const MIN_AUDIO_BYTES = 1024;
 export const ARCHIVE_SEARCH_MAX_BYTES = 12 * 1024 * 1024;
-const PUBLIC_AUDIO_MAX_SECONDS = 15 * 60;
+const PUBLIC_AUDIO_MAX_SECONDS = 5 * 60;
 const SEARCH_ROWS = 24;
 const MAX_SEARCH_PAGE = 20;
 const MAX_TERM_LENGTH = 120;
@@ -247,15 +247,8 @@ function toYear(value: unknown): number | null {
 /** IA `length` is usually seconds ("540.03") but sometimes "MM:SS" / "HH:MM:SS". */
 function parseLength(value: unknown): number {
   const raw = String(value ?? '').trim();
-  if (!raw) return 0;
-
-  if (raw.includes(':')) {
-    const parts = raw.split(':').map((part) => Number.parseFloat(part));
-    if (parts.some((part) => !Number.isFinite(part))) return 0;
-    return parts.reduce((total, part) => total * 60 + part, 0);
-  }
-
-  const seconds = Number.parseFloat(raw);
+  if (!/^\d+(?:\.\d+)?$/.test(raw) && !/^\d+(?::[0-5]?\d){1,2}(?:\.\d+)?$/.test(raw)) return 0;
+  const seconds = raw.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
   return Number.isFinite(seconds) ? seconds : 0;
 }
 
@@ -569,8 +562,6 @@ export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, pub
 }
 
 const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const alternateRecording = /\b(cover|covers|tribute|karaoke|remix|mash\s?up|instrumental|isolated|acappella|acapella|recreation|multitracks?)\b/;
-const alternateDescription = /\b(cover version|cover of|my cover|karaoke|isolated vocals|multitracks?|recreation|remix of)\b/;
 const searchCache = new Map<string, { expires: number; songs: Promise<{ results: ArchiveSong[] }> }>();
 
 /** Check public file delivery before exposing a choice; import repeats metadata and reads the complete file. */
@@ -638,31 +629,34 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
   const base = 'mediatype:audio AND NOT access-restricted-item:true';
   const queries = [
     `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
-    `${base} AND (${tokens.map(token => `"${token}"`).join(' AND ')})`,
+    `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')}) AND subject:(music OR rock OR pop OR jazz OR blues OR classical OR folk OR soul OR electronic OR hiphop)`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
   ];
   const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
     url.searchParams.set('q', q);
     for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
-    if (index === 2) url.searchParams.append('sort[]', 'downloads desc');
+    if (index > 0) url.searchParams.append('sort[]', 'downloads desc');
     url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
     const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
-    return data.response.docs;
+    return data.response.docs.map(doc => ({...doc, musicQuery: index === 1}));
   }));
   if (searches.every(result => result.status === 'rejected')) {
     const transient = searches.some(result => result.status === 'rejected' && result.reason instanceof ArchiveError && result.reason.retryable);
     throw new ArchiveError('Internet Archive search is temporarily unavailable.', transient ? 'archive_busy' : 'archive_fetch_failed', transient);
   }
   const docs = searches.flatMap(result => result.status === 'fulfilled' ? result.value : []);
-  const docScore = (doc: { title?: unknown; creator?: unknown }) => {
+  const docScore = (doc: { title?: unknown; creator?: unknown; musicQuery?: boolean }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
-    return tokens.filter(token => title.includes(token)).length * 5 + tokens.filter(token => artist.includes(token)).length * 2 - (title + artist).length / 200;
+    // A title plus its credited performer covers an artist-qualified query as
+    // well as a filename containing every word. Prefer useful source credits.
+    return tokens.filter(token => title.includes(token)).length * 4
+      + tokens.filter(token => !title.includes(token) && artist.includes(token)).length * 4
+      + (recordingCredit(displayText(doc.creator)) ? 6 : 0) + (doc.musicQuery ? 4 : 0) - (title + artist).length / 200;
   };
   docs.sort((a,b) => docScore(b) - docScore(a));
-  const ids = [...new Set(docs.filter(doc => alternateRecording.test(tokens.join(' ')) || !alternateRecording.test(searchableText(displayText(doc.title))))
-    .map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
+  const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
   const metadataDeadline = Date.now() + 18000;
   let metadataFailures = 0;
   const items = await mapLimited(ids, 4, async id => {
@@ -676,15 +670,17 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
     for (const track of item.tracks) {
       if (!track.importable) continue;
       const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
-      if (!alternateRecording.test(tokens.join(' ')) &&
-          (alternateRecording.test(versions) || alternateDescription.test(searchableText(item.description || '')))) continue;
       const title = songTitle(item, track);
       const artist = recordingCredit(track.artist), fileCreator = recordingCredit(track.creator);
+      if (!artist && !fileCreator && !recordingCredit(item.creator)) continue;
       // Item creator remains useful for finding a song, but never becomes its artist tag.
       const text = searchableText(`${title} ${artist} ${fileCreator} ${item.creator}`);
       // Matching only the album description would return unrelated tracks.
       if (!tokens.every(token => text.includes(token))) continue;
       const titleText = searchableText(title), artistText = searchableText(`${artist} ${fileCreator} ${item.creator}`);
+      const artistTokens = tokens.filter(token => !titleText.includes(token));
+      if (artistTokens.length && (artist || fileCreator) &&
+          ![artist, fileCreator].some(credit => artistTokens.every(token => searchableText(credit).includes(token)))) continue;
       // A partial creator-name match alone is not a match for the requested song.
       // An exact artist query still returns that artist's available tracks.
       if (!tokens.some(token => titleText.includes(token)) &&
@@ -739,14 +735,70 @@ interface ArchiveFile {
   length?: string;
   creator?: string;
   artist?: string;
+  album?: string;
+  genre?: string;
+  track?: string;
+  description?: string;
+  comment?: string;
   private?: boolean | string;
+}
+
+const metadataText = (value: unknown): string => {
+  let text = (Array.isArray(value) ? value : [value]).filter((part): part is string => typeof part === 'string').join(' ');
+  const entities: Record<string, string> = {nbsp:' ',amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'};
+  for (let pass=0;pass<2;pass++) text=text.replace(/&(nbsp|amp|quot|apos|lt|gt|#x[0-9a-f]+|#\d+);/gi, (_match, entity:string) => {
+    if (entity[0] !== '#') return entities[entity.toLowerCase()];
+    const point = entity[1].toLowerCase() === 'x' ? Number.parseInt(entity.slice(2),16) : Number(entity.slice(1));
+    return point>0 && point<=0x10ffff ? String.fromCodePoint(point) : ' ';
+  });
+  return text.replace(/<[^>]*>/g, ' ').replace(/\s+/gu, ' ').trim();
+};
+const spokenAudio = /\b(podcasts?|audiobooks?|audio books?|spoken word|speeches|speech|interviews?|lectures?|sermons?|oral history|radio shows?|radio programs?|news broadcasts?|sound effects?)\b/i;
+const musicCategory = /\b(music|songs?|rock|pop|jazz|blues|soul|funk|disco|reggae|reggaeton|hip hop|hiphop|rap|r&b|rhythm and blues|classical|orchestral|opera|folk|country|bluegrass|gospel|metal|punk|electronic|electronica|techno|house|trance|ambient|instrumental|soundtrack|salsa|samba|bossa nova|flamenco|cumbia|afrobeat|kpop|k pop|triphop|trip hop)\b/i;
+
+/** Search admits affirmative music metadata and an individual file, with speech exclusions taking priority. */
+function isMusicFile(metadata: Record<string, unknown>, file: ArchiveFile): boolean {
+  if (firstString(metadata.mediatype).toLowerCase() !== 'audio') return false;
+  if (![file.artist,file.creator,metadata.creator].some(credit => recordingCredit(displayText(credit)))) return false;
+  const collections = metadataText(metadata.collection).toLowerCase().split(/\s+/);
+  if (collections.some(collection => /librivox|podcast|oldtimeradio|audio_book|audiobook|radio_news/.test(collection))) return false;
+  const categories = `${metadataText(metadata.subject)} ${metadataText(metadata.genre)} ${metadataText(file.genre)}`;
+  const fileLabel = `${metadataText(file.title)} ${metadataText(file.name)}`;
+  const coverLabels = [metadata.title, metadata.subject, metadata.genre, file.title, file.name,
+    file.album, file.artist, file.creator, file.genre].map(metadataText).join(' ');
+  const descriptions = [metadata.description, file.description, file.comment].map(metadataText).join(' ')
+    .replace(/<[^>]*>/g, ' ').replace(/\bcover (?:art|image|photo|design|scan)s?\b/gi, '');
+  const coverContext = /\b(cover(?:ed)? (?:of|by)|cover version|my cover|tribute to|karaoke version|rendition of|studio recreation|recreation of|originally (?:recorded|performed) by)\b/i;
+  const coverQualifier = /(?:^|[-–—:]\s*|[([])(?:[\w ]{0,40}\s+)?(?:cover|karaoke|tribute)(?:\s+version)?\s*(?:[)\]]|\.mp3$|$)/i;
+  const coverTags = [metadata.subject, metadata.genre, file.genre].flatMap(value => Array.isArray(value) ? value : [value]);
+  if (coverContext.test(`${coverLabels} ${descriptions}`) || coverTags.some(tag => typeof tag === 'string' && /^(covers?|karaoke|tribute)$/i.test(tag.trim()))
+      || [metadata.title, file.title, file.name].map(metadataText).some(label => coverQualifier.test(label))
+      || (/\bmy (best effort|version|performance|rendition)\b/i.test(descriptions) && !recordingCredit(displayText(file.artist)) && !recordingCredit(displayText(file.creator)))) return false;
+  if (/\b(news|politics|non[ -]?music|poetry|educational|radio drama|talk radio|field recordings?)\b/i.test(categories)) return false;
+  if (spokenAudio.test(`${categories} ${descriptions}`) || /\b(spoken (?:intro(?:duction)?|interlude)|stage announcements?)\b/i.test(descriptions)) return false;
+  const wholeRecording = /\b(full|complete|entire)\s+(album|concert|collection|discography|show|set)\b|\b(dj mix|megamix|side [ab12])\b|^(?:\d+[ ._-]*)?(?:album|compilation|collection)(?:\.mp3)?$/i;
+  if ([metadataText(file.title), metadataText(file.name)].some(label => wholeRecording.test(label.trim()))) return false;
+  const album = displayText(file.album), artist = recordingCredit(displayText(file.artist));
+  const taggedTrack = !!artist && !!album && !/^(album|unknown|unknown album)$/i.test(album) && /^\d+(?:\/\d+)?$/.test(String(file.track || ''));
+  return musicCategory.test(categories) || taggedTrack;
+}
+
+/** Fresh downloads and existing cached audio share the current song-duration boundary. */
+export function validateArchiveSongFrames(data: ArrayBuffer, expectedSeconds: number): void {
+  const frames = mp3FrameInfo(data);
+  if (frames && frames.seconds > PUBLIC_AUDIO_MAX_SECONDS) {
+    throw new ArchiveError('Choose a song of five minutes or less.', 'track_too_long');
+  }
+  if (!frames || Math.abs(frames.seconds - expectedSeconds) > 2) {
+    throw new ArchiveError('This recording returned incomplete audio. Choose another result.', 'archive_audio_incomplete');
+  }
 }
 
 function archiveFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number } = {}): Promise<ArchiveItem> {
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
@@ -802,14 +854,16 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
   }
 
   const tracksByBase = new Map<string, ArchiveTrack>();
+  const songPolicy = options.songPolicy !== false;
   for (const file of files) {
     const name = file.name;
     if (
-      !name ||
+      typeof name !== 'string' || !name ||
       name.length > MAX_FILE_NAME_LENGTH ||
       /[\u0000-\u001f\u007f]/.test(name) ||
       !isAudioFile(name) || archiveFlag(file.private) ||
-      (options.publicAudio && !name.toLowerCase().endsWith('.mp3'))
+      (options.publicAudio && !name.toLowerCase().endsWith('.mp3')) ||
+      (songPolicy && !isMusicFile(metadata, file))
     ) continue;
 
     // Items carry several derivatives of one track; keep the best-ranked file
@@ -826,6 +880,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
       durationSec,
       bytes,
       importable:
+        (!songPolicy || name.toLowerCase().endsWith('.mp3')) &&
         bytes > 0 &&
         bytes <= (options.publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES) &&
         durationSec > 0 &&
@@ -877,7 +932,7 @@ export async function fetchArchiveAudio(
   options: { maximumBytes?: number; remix?: boolean; publicAudio?: boolean } = {}
 ): Promise<ArchiveAudio & { fileName: string }> {
   const publicAudio = options.publicAudio === true && !options.remix;
-  const item = await fetchArchiveItem(identifier, { publicAudio });
+  const item = await fetchArchiveItem(identifier, { publicAudio, songPolicy: !options.remix });
   const limit = publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES;
   const durationLimit = publicAudio ? PUBLIC_AUDIO_MAX_SECONDS : MAX_DURATION_SECONDS;
   const maximumBytes = Math.min(options.maximumBytes ?? limit, limit);
@@ -911,6 +966,9 @@ export async function fetchArchiveAudio(
   }
   if (track.bytes > maximumBytes) {
     throw new ArchiveError(`That track is larger than ${Math.floor(maximumBytes / 1024 / 1024)} MB.`, 'track_too_large');
+  }
+  if (!options.remix && !track.name.toLowerCase().endsWith('.mp3')) {
+    throw new ArchiveError('Choose an available MP3 recording from the search results.', 'archive_file_unavailable');
   }
 
   const url = `${DOWNLOAD_BASE}/${encodeURIComponent(identifier)}/${encodeURIComponent(track.name)}`;
@@ -964,7 +1022,7 @@ export async function fetchArchiveAudio(
     );
   }
 
-  if (publicAudio) {
+  if (!options.remix) {
     // Some Archive MP3 exports append an empty JSON object after the complete
     // MPEG stream. These two nonaudio bytes are separate from the recording;
     // retain every frame and still require full duration and PCM validation.
@@ -973,9 +1031,8 @@ export async function fetchArchiveAudio(
       const framesOnly = data.slice(0, -2);
       if (mp3FrameInfo(framesOnly)) data = framesOnly;
     }
-    const frames = mp3FrameInfo(data);
-    if (!frames || Math.abs(frames.seconds - track.durationSec) > 2 ||
-        (_env.validateStemAudio && !await _env.validateStemAudio(data))) {
+    validateArchiveSongFrames(data, track.durationSec);
+    if (_env.validateStemAudio && !await _env.validateStemAudio(data)) {
       throw new ArchiveError('This recording returned incomplete audio. Choose another result.', 'archive_audio_incomplete');
     }
   }
