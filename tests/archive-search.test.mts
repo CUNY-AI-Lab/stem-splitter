@@ -9,7 +9,7 @@ const file=(extra:Record<string,unknown>={})=>({name:'song.mp3',title:'Song fixt
 const metadata=(extra:Record<string,unknown>={},files=[file()])=>Response.json({metadata:{title:'Song fixture',creator:'Artist',...extra},files});
 
 test('search returns matching downloadable files and filters restricted, private, oversized and unavailable recordings',async t=>{
-  const ids=['good','denied','html','restricted','private','large','unrelated'];
+  const ids=['good','denied','html','disguised','restricted','private','large','unrelated'];
   const downloadRequests:string[]=[];
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
     const url=new URL(String(input));assert.equal(init?.redirect,'manual');
@@ -25,13 +25,17 @@ test('search returns matching downloadable files and filters restricted, private
     downloadRequests.push(id);assert.equal(new Headers(init?.headers).get('range'),'bytes=0-65535');
     if(id==='denied')return new Response('',{status:403});
     if(id==='html')return new Response('<html>Unavailable</html>',{headers:{'content-type':'text/html','content-length':String(audio.length)}});
+    if(id==='disguised'){
+      const prefix=audio.slice(0,65536);prefix.set([0x4f,0x67,0x67,0x53]);
+      return new Response(prefix,{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
+    }
     return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
   });
   const result=await searchArchiveSongs('Artist Song fixture');
   assert.equal(result.results.length,1);assert.equal(result.results[0].archiveId,'good');
   assert.equal(result.results[0].archiveFile,'song.mp3');assert.equal(result.results[0].artist,'');
   assert.equal(result.results[0].itemCreator,'Artist');
-  assert.deepEqual(downloadRequests.sort(),['denied','good','html']);
+  assert.deepEqual(downloadRequests.sort(),['denied','disguised','good','html']);
 });
 
 test('public Archive import accepts downloadable metadata, checks complete bytes and rejects partial audio',async t=>{

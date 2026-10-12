@@ -600,10 +600,13 @@ async function downloadableSong(song: ArchiveSong): Promise<boolean> {
   if (read !== prefix.length) return false;
   // Some MP3s begin with an embedded cover larger than the probe. The full
   // import validates the complete MPEG frame sequence and decodes the audio.
-  return matchesAudioSignature(song.archiveFile, prefix) ||
+  return hasMpegAudioFrame(prefix, true) ||
     (asciiAt(prefix, 0, 'ID3') && prefix.length >= 10 &&
       [prefix[6], prefix[7], prefix[8], prefix[9]].every(byte => byte < 128) &&
-      10 + (prefix[6] << 21 | prefix[7] << 14 | prefix[8] << 7 | prefix[9]) < song.bytes);
+      (() => {
+        const start = 10 + (prefix[6] << 21 | prefix[7] << 14 | prefix[8] << 7 | prefix[9]) + (prefix[5] & 16 ? 10 : 0);
+        return start >= prefix.length && start <= 256 * 1024 && start + 8 < song.bytes;
+      })());
 }
 
 async function mapLimited<T, R>(values: T[], width: number, fn: (value: T) => Promise<R>): Promise<R[]> {
@@ -1019,7 +1022,7 @@ function asciiAt(bytes: Uint8Array, offset: number, text: string): boolean {
   return true;
 }
 
-function hasMpegAudioFrame(bytes: Uint8Array): boolean {
+function hasMpegAudioFrame(bytes: Uint8Array, requireStart = false): boolean {
   let offset = 0;
   if (asciiAt(bytes, 0, 'ID3')) {
     if (
@@ -1030,11 +1033,12 @@ function hasMpegAudioFrame(bytes: Uint8Array): boolean {
     offset = 10 + tagSize + (bytes[5] & 0x10 ? 10 : 0);
     if (offset >= bytes.length) return false;
   }
-  const limit = Math.min(bytes.length - 3, offset + 64 * 1024);
+  const limit = Math.min(bytes.length - 3, offset + (requireStart ? 1 : 64 * 1024));
   for (let index = offset; index < limit; index += 1) {
     if (bytes[index] !== 0xff || (bytes[index + 1] & 0xe0) !== 0xe0) continue;
     const version = (bytes[index + 1] >> 3) & 0x03;
     const layer = (bytes[index + 1] >> 1) & 0x03;
+    if (requireStart && layer !== 1) continue;
     const bitrate = (bytes[index + 2] >> 4) & 0x0f;
     const sampleRate = (bytes[index + 2] >> 2) & 0x03;
     if (
