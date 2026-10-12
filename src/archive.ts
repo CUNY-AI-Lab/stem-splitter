@@ -551,7 +551,8 @@ function recordingCredit(value: string | undefined): string {
 
 function itemDescription(value: unknown): string {
   const plain = firstString(value).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
-  return plain.length > 120 ? `${plain.slice(0, 117)}…` : plain;
+  const context = plain.length > 120 ? `${plain.slice(0, 117)}…` : plain;
+  return /\b(cover|version|remix|live|isolated|vocals|instrumental|demo|acoustic|recording|recorded|pressing|single|multitracks?)\b|my best effort|full song/i.test(context) ? context : '';
 }
 
 export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, publicAudio = false): Pick<ArchiveAudio, 'title' | 'attribution'> & { fileName: string } {

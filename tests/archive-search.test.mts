@@ -63,7 +63,7 @@ test('Archive metadata keeps item creators separate from file credits and preser
     LostAndFound_929:metadata({title:'white rabbit',creator:'Jefferson Airplane',description:'<p>my best effort</p>'},[file({name:'1456.mp3',title:'white rabbit',artist:'Artist',creator:'Artist'})]),
     compilation:metadata({title:'Under The Influence Of Alice',creator:'Collection uploader'},[file({name:'01 White Rabbit.mp3',title:'white rabbit',artist:'Jefferson Airplane'})]),
     concert:metadata({title:'Live at the Fillmore',creator:'Jefferson Airplane',description:'Live concert recording'},[file({name:'white-rabbit-live.mp3',title:'white rabbit',artist:'Jefferson Airplane'})]),
-    file_credit:metadata({title:'Another collection',creator:'Collection uploader'},[file({name:'white-rabbit.mp3',title:'white rabbit',creator:'Jefferson Airplane'})]),
+    file_credit:metadata({title:'Another collection',creator:'Collection uploader',description:'gfgfkfj'},[file({name:'white-rabbit.mp3',title:'white rabbit',creator:'Jefferson Airplane'})]),
   };
   const requested:string[]=[];
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -86,6 +86,7 @@ test('Archive metadata keeps item creators separate from file credits and preser
   assert.equal(results.find(song=>song.archiveId==='concert')?.itemTitle,'Live at the Fillmore');
   assert.equal(results.find(song=>song.archiveId==='file_credit')?.artist,'');
   assert.equal(results.find(song=>song.archiveId==='file_credit')?.fileCreator,'Jefferson Airplane');
+  assert.equal(results.find(song=>song.archiveId==='file_credit')?.itemDescription,'');
   const loaded=await fetchArchiveAudio(personal.archiveId,personal.archiveFile,{} as never,{publicAudio:true});
   assert.equal(loaded.title,'white rabbit');assert.equal(loaded.attribution.creator,'');
   assert.equal(loaded.attribution.itemCreator,'Jefferson Airplane');assert.equal(loaded.attribution.fileName,'1456.mp3');
