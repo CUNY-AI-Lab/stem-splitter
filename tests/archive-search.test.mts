@@ -97,3 +97,17 @@ test('public download options preserve remix licensing and exclude private audio
   await assert.rejects(()=>fetchArchiveAudio('good','visible.mp3',{} as never,{publicAudio:true,remix:true}),
     (error:unknown)=>error instanceof ArchiveError&&error.code==='license_missing');
 });
+
+test('failed searches log only response diagnostics and preserve upstream retryability',async t=>{
+  const events:unknown[][]=[];
+  t.mock.method(console,'warn',(...values:unknown[])=>events.push(values));
+  t.mock.method(globalThis,'fetch',async()=>new Response('upstream body must stay private',{status:503,headers:{'content-type':'text/html'}}));
+  await assert.rejects(()=>searchArchiveSongs('private search retry fixture'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
+  assert.equal(events.length,2);
+  for(const [name,details] of events){assert.equal(name,'archive_fetch_diagnostic');assert.deepEqual(details,{stage:'search',reason:'upstream_busy',status:503,contentType:'text/html'});}
+  assert.doesNotMatch(JSON.stringify(events),/private|fixture|upstream body|https:/);
+  events.length=0;
+  t.mock.method(globalThis,'fetch',async()=>new Response('another private body',{headers:{'content-type':'text/plain'}}));
+  await assert.rejects(()=>searchArchiveSongs('private search content type fixture'),(error:unknown)=>error instanceof ArchiveError&&!error.retryable);
+  for(const [,details] of events)assert.deepEqual(details,{stage:'search',reason:'unexpected_content_type',status:200,contentType:'other'});
+});

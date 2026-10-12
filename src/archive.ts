@@ -345,6 +345,7 @@ async function fetchWithBusyRetry(
 ): Promise<{ response: Response; deadline: number }> {
   let lastNetworkError: unknown;
   let sawBusy = false;
+  let lastStatus = 0, lastContentType = '';
   const deadline = Date.now() + timeoutMs;
 
   for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt++) {
@@ -359,6 +360,7 @@ async function fetchWithBusyRetry(
       const res = await fetchArchiveOnce(url, remainingMs);
       if (res.status === 429 || res.status >= 500) {
         sawBusy = true;
+        lastStatus = res.status; lastContentType = responseMediaType(res);
         await res.body?.cancel().catch(() => undefined);
         continue;
       }
@@ -373,6 +375,7 @@ async function fetchWithBusyRetry(
   }
 
   if (sawBusy) {
+    archiveFailure(label, 'upstream_busy', lastStatus, lastContentType);
     throw new ArchiveError(
       'The Internet Archive is busy. Try again in a moment.',
       'archive_busy',
@@ -387,6 +390,15 @@ async function fetchWithBusyRetry(
     'archive_unreachable',
     true
   );
+}
+
+function archiveFailure(stage: string, reason: string, status?: number, contentType?: string) {
+  console.warn('archive_fetch_diagnostic', {
+    stage: ['search', 'metadata', 'audio'].includes(stage) ? stage : 'source',
+    reason, status,
+    contentType: contentType === undefined ? undefined
+      : ['application/json', 'text/html', 'audio/mpeg', 'application/octet-stream'].includes(contentType) ? contentType : 'other',
+  });
 }
 
 async function remainingArchiveBodyBudget(
@@ -407,10 +419,12 @@ async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIME
     timeoutMs
   );
   if (!res.ok) {
+    archiveFailure(label, 'http_error', res.status, responseMediaType(res));
     await res.body?.cancel().catch(() => undefined);
     throw new ArchiveError(`Internet Archive ${label} failed (${res.status}).`);
   }
   if (responseMediaType(res) !== 'application/json') {
+    archiveFailure(label, 'unexpected_content_type', res.status, responseMediaType(res));
     await res.body?.cancel().catch(() => undefined);
     throw new ArchiveError(`Internet Archive ${label} returned an unreadable response.`);
   }
@@ -426,12 +440,16 @@ async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIME
       timedOut,
       unreadable,
     },
+  }).catch(error => {
+    archiveFailure(label, error instanceof ArchiveError && error.retryable ? 'body_timeout' : 'unreadable_body', res.status, responseMediaType(res));
+    throw error;
   });
   try {
     return JSON.parse(
       new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)
     );
   } catch {
+    archiveFailure(label, 'invalid_json', res.status, responseMediaType(res));
     throw unreadable();
   }
 }
@@ -624,7 +642,10 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
     return data.response.docs;
   }));
-  if (searches.every(result => result.status === 'rejected')) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
+  if (searches.every(result => result.status === 'rejected')) {
+    const transient = searches.some(result => result.status === 'rejected' && result.reason instanceof ArchiveError && result.reason.retryable);
+    throw new ArchiveError('Internet Archive search is temporarily unavailable.', transient ? 'archive_busy' : 'archive_fetch_failed', transient);
+  }
   const docs = searches.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   const docScore = (doc: { title?: unknown; creator?: unknown }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
