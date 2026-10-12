@@ -367,6 +367,33 @@ const ytDisclosure = document.getElementById('yt-disclosure');
 const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
 const ytFetchButton = ytForm.querySelector('button[type="submit"]');
+const sourceSongs = document.getElementById('source-songs');
+let songResults = new Map(), songSearchTimer, songSearchSequence = 0;
+const sourceIsLink = value => /^https?:\/\//i.test(value);
+async function searchSourceSongs(term, sequence) {
+  const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`);
+  if (sequence !== songSearchSequence || ytUrlInput.value.trim() !== term) return;
+  songResults = new Map();
+  sourceSongs.replaceChildren();
+  for (const track of data.results || []) {
+    const label = `${track.title} — ${track.artist}`;
+    // Distinct recordings with the same title and artist remain selectable.
+    const value = songResults.has(label) ? `${label} (${track.id})` : label;
+    songResults.set(value, track);
+    const option = document.createElement('option');
+    option.value = value;
+    option.label = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Audius`;
+    sourceSongs.appendChild(option);
+  }
+}
+ytUrlInput.addEventListener('input', () => {
+  clearTimeout(songSearchTimer);
+  const term = ytUrlInput.value.trim(), sequence = ++songSearchSequence;
+  if (songResults.has(term)) return;
+  songResults = new Map(); sourceSongs.replaceChildren();
+  if (sourceIsLink(term) || term.length < 2 || youtubeFetchInProgress) return;
+  songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence).catch(() => {}); }, 450);
+});
 
 // Opening the disclosure is a statement of intent — land the caret in the field
 // so the next thing you do is paste.
@@ -792,6 +819,16 @@ ytForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = ytUrlInput.value.trim();
   if (!url || youtubeFetchInProgress) return;
+  const song = songResults.get(url);
+  if (!sourceIsLink(url) && !song) {
+    clearTimeout(songSearchTimer);
+    try {
+      await searchSourceSongs(url, ++songSearchSequence);
+      uploadStatus.hidden = false;
+      showUploadMessage(songResults.size ? 'Choose a song from the field, then fetch it.' : 'Try another song or artist.');
+    } catch (error) { uploadStatus.hidden = false; showUploadMessage(error.message, true); }
+    return;
+  }
 
   youtubeFetchInProgress = true;
   ytForm.setAttribute('aria-busy', 'true');
@@ -803,19 +840,20 @@ ytForm.addEventListener('submit', async (e) => {
 
   try {
     const chosen = await requireSelectedModel();
-    const resolved = await resolveModel(chosen, null, 'video audio');
+    const resolved = await resolveModel(chosen, null, song ? 'song audio' : 'video audio');
     const { model, note } = resolved;
     if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
-        videoUrl: url,
+        ...(song ? { audiusId: song.id } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
       }),
     });
     ytUrlInput.value = '';
+    songResults = new Map(); sourceSongs.replaceChildren(); ++songSearchSequence;
     addJob(job);
     showUploadMessage(processingMessage(job));
     renderJobs();

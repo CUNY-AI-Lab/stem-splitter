@@ -15,10 +15,11 @@ import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation
 import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
 import { cooldown, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
+import { AudiusError, fetchAudiusAudio, validAudiusId } from '../audius.ts';
 
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
-  sourceType: 'upload'|'youtube'|'vimeo'|'archive'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string;
+  sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
   archiveId?: string; archiveFile?: string; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: true;
@@ -39,7 +40,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !auto||capability?.mode!=='authoritative' : !modelIsAllowed(env.SEPARATION_BACKEND,submitted))) throw new OperationError('invalid_model',400,'Choose an available split model.');
   const input: SplitInput={sourceType:'upload',filename:'Audio',model:submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto};
   if (auto) input.browserAnalysis=parseBrowserAutoSummary(value.browserAnalysis,options.models);
-  if ([value.videoUrl,value.youtubeUrl,value.archiveId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
+  if ([value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
   if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
     if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a supported video link.');
@@ -53,6 +54,11 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     // Keep existing YouTube operation fingerprints stable across this release.
     if(source.sourceType==='youtube')input.youtubeUrl=source.canonicalUrl;
     else input.videoUrl=source.canonicalUrl;
+  } else if (value.audiusId!==undefined) {
+    if (!validAudiusId(value.audiusId)) throw new OperationError('invalid_music_id',400,'Choose a song from the search results.');
+    const runner=getReplicateRunner(input.model);
+    if(!runner||!env.REPLICATE_API_TOKEN||!replicateVersion(env,runner))throw new OperationError('provider_configuration',503,'Audio separation is temporarily unavailable.');
+    input.sourceType='audius';input.audiusId=value.audiusId;input.filename='Audio';
   } else if (value.archiveId!==undefined) {
     const id=typeof value.archiveId==='string'&&parseArchiveIdentifier(value.archiveId);
     if (!id||value.archiveFile!==undefined&&(typeof value.archiveFile!=='string'||value.archiveFile.length>1024)) throw new OperationError('invalid_archive_id',400,'Choose an available Archive audio file.');
@@ -144,7 +150,9 @@ async function start(env: Env,op: Operation) {
     // Reclaiming an interrupted source fetch preserves the separate GPU-start fence.
     try {
       const url=(input.videoUrl??input.youtubeUrl)!;
-      if(input.sourceType==='youtube') {
+      if(input.sourceType==='audius') {
+        await imported(env,op,input,await fetchAudiusAudio(input.audiusId!,{deadline:op.deadline,validate:env.validateStemAudio}));
+      } else if(input.sourceType==='youtube') {
         if(typeof env.fetchYouTubeBrowserAudio!=='function')throw new YouTubeError('Video import is temporarily unavailable.','youtube_fetch_unavailable');
         await imported(env,op,input,await env.fetchYouTubeBrowserAudio(url,{deadline:op.deadline}));
       } else await imported(env,op,input,await fetchVimeoAudio(url,{deadline:op.deadline,browser:env.AUTH_MODE==='cail'?env.BROWSER:undefined}));
@@ -152,7 +160,7 @@ async function start(env: Env,op: Operation) {
     catch(error) {
       const diagnostic=vimeoFailureDiagnostic(error);
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
-      await fail(env,op,error instanceof YouTubeError?error.code:input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
+      await fail(env,op,error instanceof YouTubeError||error instanceof AudiusError?error.code:input.sourceType==='audius'?'music_unavailable':input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
       error instanceof YouTubeError&&error.code==='audio_too_large'
         ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;

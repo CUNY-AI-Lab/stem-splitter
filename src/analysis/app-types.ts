@@ -5,7 +5,7 @@ import type {
 } from './types.ts';
 
 /** App provenance can expand independently of the verified analyzer image. */
-export type AppAudioSourceType = AudioSourceType | 'vimeo';
+export type AppAudioSourceType = AudioSourceType | 'vimeo' | 'audius';
 
 export type AppAutoRoutingDecisionV1 = Omit<AutoRoutingDecisionV1, 'sourceType'> & {
   sourceType: AppAudioSourceType;

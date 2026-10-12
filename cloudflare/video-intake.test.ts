@@ -12,6 +12,7 @@ import { drainSplitQueue, resumeOwnedSourceImport, resumeOwnedVimeoImport, submi
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation } from '../src/reliability/ledger.ts';
 import { cancelOperation, claimNext, claimNativeImport, claimVimeoImport, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
 import { YouTubeError } from '../src/youtube.ts';
+import { mp3FrameInfo } from '../src/reliability/media.ts';
 import { setCooldown } from '../src/reliability/retry.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { courseFixture } from './course-fixture.ts';
@@ -85,6 +86,7 @@ test('durable and legacy intake reject multiple sources and invalid URLs before 
     {videoUrl:vimeo,youtubeUrl:youtube},{videoUrl:vimeo,youtubeUrl:vimeo},
     {videoUrl:vimeo,key:'uploads/fixture/source.wav',filename:'Fixture'},
     {youtubeUrl:youtube,archiveId:'fixture'},{archiveId:'fixture',key:'uploads/fixture/source.wav'},
+    {audiusId:'4zxjE',videoUrl:youtube},{audiusId:'4zxjE',archiveId:'fixture'},
     {videoUrl:'',youtubeUrl:youtube},{},null,[],
   ]) {
     await assert.rejects(()=>submitSplit(env,principal,body,'invalid-source-fixture'),
@@ -450,4 +452,51 @@ test('saved Vimeo jobs remain readable with their stored source type',async t=>{
   const job=await response.json() as {id:string;status:string};
   assert.equal(job.id,existing.operation.job_id);assert.equal(job.status,'done');
   assert.equal((await db.prepare('SELECT source_type FROM jobs WHERE id=?').bind(job.id).first<{source_type:string}>())!.source_type,'vimeo');
+});
+
+
+test('Audius search and import keep guest ownership, full audio, attribution and a single GPU start',async t=>{
+  const {db,env}=await setup(t),guest=await guestRequests(db,env,'c');
+  const audio=new Uint8Array(readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url)));
+  const duration=Math.round(mp3FrameInfo(audio.buffer)!.seconds);
+  const track={id:'4zxjE',title:'Song fixture',user:{name:'Artist'},duration,permalink:'/artist/song',license:'CC BY',
+    is_available:true,is_streamable:true,is_stream_gated:false,access:{stream:true},stream:{url:'https://node.audius.co/full.mp3'}};
+  let sourceReads=0,posts=0,metadataReads=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=String(input);
+    if(url.includes('/tracks/search?'))return Response.json({data:[track]});
+    if(url==='https://api.audius.co/v1/tracks/4zxjE'){metadataReads++;return Response.json({data:track});}
+    if(url==='https://node.audius.co/full.mp3'){sourceReads++;return new Response(audio,{headers:{'content-type':'audio/mpeg'}});}
+    assert.ok(url.startsWith('https://api.replicate.com/'));
+    if(init?.method==='POST'){posts++;const body=JSON.parse(String(init.body));assert.equal(body.version,splitVersion);assert.match(body.input.audio,/\.mp3$/);}
+    return Response.json({id:'audius-split-fixture',status:'processing'});
+  });
+  const search=await guest.request('/api/music/search?q=Song');assert.equal(search.status,200);
+  assert.equal(((await search.json()) as {results:{id:string}[]}).results[0].id,'4zxjE');
+  const submit=()=>guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'audius-guest-fixture'},body:JSON.stringify({audiusId:'4zxjE'})});
+  const response=await submit();const body=await response.json() as {id:string;savedToAccount:boolean};await guest.flush();
+  assert.equal(response.status,202);assert.equal(body.savedToAccount,false);assert.equal(posts,1);assert.equal(sourceReads,1);
+  const job=(await db.prepare('SELECT source_type,source_key,filename,source_hash FROM jobs WHERE id=?').bind(body.id).first<{source_type:string;source_key:string;filename:string;source_hash:string}>())!;
+  assert.equal(job.source_type,'audius');assert.equal(job.filename,'Song fixture — Artist');assert.match(job.source_key,/\.mp3$/);
+  const stored=(await env.AUDIO.get(job.source_key))!;assert.equal(stored.httpMetadata!.contentType,'audio/mpeg');
+  assert.deepEqual(new Uint8Array(await new Response(stored.body).arrayBuffer()),audio);
+  assert.equal(job.source_hash,Buffer.from(await crypto.subtle.digest('SHA-256',audio)).toString('hex'));
+  const provenance=(await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(body.id).first<{attribution:string}>())!;
+  assert.equal(JSON.parse(provenance.attribution).creator,'Artist');
+  await submit();await guest.flush();assert.equal(posts,1);assert.equal(sourceReads,1);assert.equal(metadataReads,1);
+  const other=await guestRequests(db,env,'d');assert.equal((await other.request('/api/jobs/'+body.id)).status,404);
+});
+
+test('Audius native fetch remains owner-only and gated songs refund a guest place',async t=>{
+  const {db,env}=await setup(t),guest=await guestRequests(db,env,'e');let reads=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    reads++;assert.equal(String(input),'https://api.audius.co/v1/tracks/4zxjE');return Response.json({data:{id:'4zxjE',is_stream_gated:true}});
+  });
+  const {operation}=await submitSplit(guest.env,guest.principal,{audiusId:'4zxjE'},'audius-refund-fixture');
+  assert.equal(await claimNext(db,'fetch'),null);await drainSplitQueue(guest.env,async()=>{});assert.equal(reads,0);
+  await resumeOwnedSourceImport(guest.env,guest.principal,operation);
+  const failed=(await readOperation(db,operation.id))!;assert.equal(failed.state,'failed');assert.equal(failed.provider_id,null);
+  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+  await resumeOwnedSourceImport(guest.env,guest.principal,failed);assert.equal(reads,1);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
 });

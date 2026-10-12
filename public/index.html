@@ -40,9 +40,10 @@
       </section>
 
       <details id="yt-disclosure" class="yt-disclosure" open>
-        <summary class="yt-summary mono">Or paste a video link</summary>
+        <summary class="yt-summary mono">Or search for a song or paste a link</summary>
         <form id="yt-form" class="yt-form">
-          <input id="yt-url" type="url" placeholder="Video link" aria-label="Video link" />
+          <input id="yt-url" type="text" placeholder="Search songs or paste a link" aria-label="Song or link" list="source-songs" autocomplete="off" />
+          <datalist id="source-songs"></datalist>
           <button type="submit" class="yt-go">FETCH</button>
         </form>
       </details>

@@ -43,13 +43,13 @@ export async function resolveAutoRoutingWithSource(
   let analysis;
   let sourceIdentity: AudioSourceIdentityV1 | null = null;
 
-  if (input.sourceType === 'vimeo') {
-    // Vimeo import/splitting is app-owned. Keep the verified analyzer request
+  if (input.sourceType === 'vimeo' || input.sourceType === 'audius') {
+    // These imports and splits are owned by the app. Keep the verified analyzer request
     // contract unchanged until a new analyzer image earns release evidence.
     analysis = degradedAnalysis(
       input.fallbackModel,
       'audio_unsupported',
-      'Vimeo imports use the default split with this analysis service',
+      'This source uses the default split with this analysis service',
       Date.now() - startedAt
     );
   } else if (!input.provider) {

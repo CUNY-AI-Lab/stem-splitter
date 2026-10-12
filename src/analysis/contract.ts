@@ -431,6 +431,7 @@ export function parseAutoRoutingDecision(
     (value.sourceType !== 'upload' &&
       value.sourceType !== 'youtube' &&
       value.sourceType !== 'vimeo' &&
+      value.sourceType !== 'audius' &&
       value.sourceType !== 'archive') ||
     (value.mode !== 'shadow' && value.mode !== 'authoritative') ||
     typeof value.applied !== 'boolean' ||

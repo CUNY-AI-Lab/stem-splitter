@@ -10,9 +10,9 @@ export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Da
 }
 
 export const isOwnedSourceImport=(request:{sourceType?:unknown;browserAudio?:unknown})=>
-  request.sourceType==='vimeo'||request.sourceType==='youtube'&&request.browserAudio===true;
+  request.sourceType==='audius'||request.sourceType==='vimeo'||request.sourceType==='youtube'&&request.browserAudio===true;
 // Keep absent legacy markers false in SQL, including when this predicate is negated.
-const nativeSourceSql=(row:'q'|'app_operations')=>`(COALESCE(json_extract(${row}.request_json,'$.sourceType'),'')='vimeo'
+const nativeSourceSql=(row:'q'|'app_operations')=>`(COALESCE(json_extract(${row}.request_json,'$.sourceType'),'') IN ('vimeo','audius')
   OR (COALESCE(json_extract(${row}.request_json,'$.sourceType'),'')='youtube'
     AND COALESCE(json_type(${row}.request_json,'$.browserAudio'),'')='true'))`;
 

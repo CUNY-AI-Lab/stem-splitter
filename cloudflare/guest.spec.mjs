@@ -5,6 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { setupServer } from 'msw/node';
 import { http,HttpResponse } from 'msw';
+import { mp3FrameInfo } from '../src/reliability/media.ts';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 test.use({ignoreHTTPSErrors:true});
 
@@ -12,7 +13,11 @@ async function setup(page, chatAvailable = false) {
   let origin = '', providerStarts = 0, verifications = 0, widgetLoads = 0;
   const issuer = await createTestIdentityIssuer();
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
+  const music={id:'4zxjE',title:'Song fixture',user:{name:'Artist'},duration:Math.round(mp3FrameInfo(new Uint8Array(mp3).buffer).seconds),permalink:'/artist/song',license:'CC BY',is_available:true,is_streamable:true,is_stream_gated:false,access:{stream:true},stream:{url:'https://node.audius.co/full.mp3'}};
   const network = setupServer(
+    http.get('https://api.audius.co/v1/tracks/search',()=>HttpResponse.json({data:[music]})),
+    http.get('https://api.audius.co/v1/tracks/4zxjE',()=>HttpResponse.json({data:music})),
+    http.get('https://node.audius.co/full.mp3',()=>new HttpResponse(mp3,{headers:{'content-type':'audio/mpeg'}})),
     http.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', () => {
       verifications++;
       return HttpResponse.json({ success: true, hostname: new URL(origin).hostname, action: 'stem_guest', challenge_ts: new Date().toISOString() });
@@ -69,9 +74,9 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
-    const input = page.getByRole('textbox', { name: 'Video link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'Video link');
-    await expect(page.locator('#yt-disclosure summary')).toHaveText('Or paste a video link');
+    const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste a link');
+    await expect(page.locator('#yt-disclosure summary')).toHaveText('Or search for a song or paste a link');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
     await input.fill('https://vimeo.com/76979871');
@@ -235,4 +240,46 @@ test('guest completes three splits before the fourth requests verification and r
     await expect(page.getByRole('button', { name: 'Complete fixture guest check' })).toHaveCount(0);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
+});
+
+
+test('guest searches and imports a complete song through the existing field',async({page})=>{
+  const f=await setup(page);
+  try {
+    await page.goto(f.origin);await expect(page).toHaveTitle('Stem Splitter');
+    await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});
+    await input.fill('Song');
+    await expect(page.locator('#source-songs option')).toHaveCount(1);
+    await expect(page.locator('#source-songs option')).toHaveAttribute('value','Song fixture — Artist');
+    await input.fill('Song fixture — Artist');
+    const submission=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
+    await page.locator('#yt-form button').click();const response=await submission;
+    expect(response.status()).toBe(202);expect(response.request().postDataJSON().audiusId).toBe('4zxjE');
+    expect((await response.json()).savedToAccount).toBe(false);
+    await completed(page,1);expect(f.counts().providerStarts).toBe(1);
+    await expect(page.locator('#upload-message')).not.toContainText('Saved to your account');
+    await expect(page.locator('#yt-url')).toHaveValue('');
+    for(const width of [1280,390]) {
+      await page.setViewportSize({width,height:900});await expect(input).toBeVisible();
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-import-${width}.png`,animations:'disabled'});}
+    }
+    expect((await account(page)).splitAllowance.remaining).toBe(4);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
+test('a delayed song search cannot replace a newer query or a pasted link',async({page})=>{
+  const f=await setup(page);let delayed;
+  try {
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    await page.route('**/api/music/search?q=Slow',route=>{delayed=route;});
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});
+    await input.fill('Slow');await expect.poll(()=>Boolean(delayed)).toBe(true);
+    await input.fill('https://www.youtube.com/watch?v=jNQXAC9IVRw');
+    await delayed.fulfill({json:{results:[{id:'4zxjE',title:'Stale result',artist:'Artist',durationSec:200}]}});delayed=undefined;
+    await expect(page.locator('#source-songs option')).toHaveCount(0);await expect(input).toHaveValue('https://www.youtube.com/watch?v=jNQXAC9IVRw');
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{if(delayed)await delayed.abort().catch(()=>{});await f.close();}
 });
