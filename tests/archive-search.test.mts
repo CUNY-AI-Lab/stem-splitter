@@ -288,3 +288,20 @@ test('artist-qualified discovery retains credited songs among many filenames con
   });
   assert.deepEqual((await searchArchiveSongs('Signal Orchestra Midnight Motion')).results.map(song=>song.archiveId),['credited']);
 });
+
+test('temporary delivery failures retry with the same byte range and never cache a false empty result',async t=>{
+  let available=false,probes=0,searches=0;
+  t.mock.method(console,'warn',()=>{});
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){searches++;return Response.json({response:{docs:[{identifier:'delivery-recovery'}]}});}
+    if(url.pathname.startsWith('/metadata/'))return metadata({title:'Delivery recovery melody'},[file({title:'Delivery recovery melody'})]);
+    probes++;assert.equal(new Headers(init?.headers).get('range'),'bytes=0-65535');
+    if(!available || probes===4)return new Response('upstream busy',{status:503});
+    return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
+  });
+  await assert.rejects(()=>searchArchiveSongs('Delivery recovery melody'),(error:unknown)=>error instanceof ArchiveError&&error.retryable);
+  assert.equal(probes,3);available=true;
+  const recovered=await searchArchiveSongs('Delivery recovery melody');
+  assert.equal(recovered.results[0]?.archiveId,'delivery-recovery');assert.equal(probes,5);assert.equal(searches,6);
+});

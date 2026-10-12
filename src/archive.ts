@@ -335,7 +335,8 @@ async function fetchWithBusyRetry(
   url: string,
   label: string,
   timeoutMs: number,
-  attemptTimeoutMs = timeoutMs
+  attemptTimeoutMs = timeoutMs,
+  headers: Record<string, string> = {}
 ): Promise<{ response: Response; deadline: number }> {
   let lastNetworkError: unknown;
   let sawBusy = false;
@@ -351,7 +352,7 @@ async function fetchWithBusyRetry(
     try {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) break;
-      const res = await fetchArchiveOnce(url, Math.min(remainingMs, attemptTimeoutMs));
+      const res = await fetchArchiveOnce(url, Math.min(remainingMs, attemptTimeoutMs), headers);
       if (res.status === 429 || res.status >= 500) {
         sawBusy = true;
         lastStatus = res.status; lastContentType = responseMediaType(res);
@@ -566,9 +567,9 @@ const searchCache = new Map<string, { expires: number; songs: Promise<{ results:
 
 /** Check public file delivery before exposing a choice; import repeats metadata and reads the complete file. */
 async function downloadableSong(song: ArchiveSong): Promise<boolean> {
-  const res = await fetchArchiveOnce(
+  const {response: res} = await fetchWithBusyRetry(
     `${DOWNLOAD_BASE}/${encodeURIComponent(song.archiveId)}/${encodeURIComponent(song.archiveFile)}`,
-    7000, { Range: 'bytes=0-65535' }
+    'audio', 12000, 5000, { Range: 'bytes=0-65535' }
   );
   const mediaType = responseMediaType(res);
   const range = /^bytes 0-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') || '');
@@ -576,6 +577,7 @@ async function downloadableSong(song: ArchiveSong): Promise<boolean> {
   if (![200, 206].includes(res.status) || fullSize !== song.bytes ||
       (res.status === 206 && (!range || Number(range[1]) !== Math.min(65535, song.bytes - 1))) ||
       !['audio/mpeg', 'audio/mp3', 'application/octet-stream'].includes(mediaType) || !res.body) {
+    archiveFailure('audio', 'probe_response', res.status, mediaType);
     await res.body?.cancel().catch(() => undefined);
     return false;
   }
@@ -589,7 +591,10 @@ async function downloadableSong(song: ArchiveSong): Promise<boolean> {
       prefix.set(part.value.subarray(0, take), read); read += take;
     }
   } finally { await reader.cancel().catch(() => undefined); }
-  if (read !== prefix.length) return false;
+  if (read !== prefix.length) {
+    archiveFailure('audio', 'probe_incomplete', res.status, mediaType);
+    throw new ArchiveError('Internet Archive returned an incomplete availability check. Try again.', 'archive_busy', true);
+  }
   // Some MP3s begin with an embedded cover larger than the probe. The full
   // import validates the complete MPEG frame sequence and decodes the audio.
   return hasMpegAudioFrame(prefix, true) ||
@@ -697,10 +702,14 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
   }
   candidates.sort((a, b) => b.score - a.score);
   const results: ArchiveSong[] = [], seen = new Set<string>();
+  let deliveryFailures = 0;
   for (let offset = 0; offset < Math.min(candidates.length, 24) && results.length < 8; offset += 6) {
     const batch = candidates.slice(offset, offset + 6);
     const available = await mapLimited(batch, 6, async song => {
-      try { return await downloadableSong(song); } catch { return false; }
+      try { return await downloadableSong(song); } catch (error) {
+        if (!(error instanceof ArchiveError) || error.retryable) deliveryFailures++;
+        return false;
+      }
     });
     for (let i = 0; i < batch.length && results.length < 8; i++) {
       const { score: _score, ...song } = batch[i];
@@ -708,7 +717,7 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
       if (available[i] && !seen.has(identity)) { seen.add(identity); results.push(song); }
     }
   }
-  if (!results.length && metadataFailures) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
+  if (!results.length && (metadataFailures || deliveryFailures)) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
   return { results };
 }
 
