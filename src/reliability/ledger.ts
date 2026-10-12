@@ -54,6 +54,7 @@ export async function reserveOperation(db: D1Database, input: {
       AND (? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE kind='split' AND state NOT IN (${TERMINAL})) < ?)
       AND (? <> 'guide' OR (SELECT COUNT(*) FROM app_operations WHERE kind='guide' AND day=?) < 200)
       AND (? <> 'guest' OR EXISTS(SELECT 1 FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM guest_account_claims WHERE guest_subject=guest_sessions.subject)
         AND (verified_day=? OR (?='split' AND (SELECT COUNT(*) FROM app_operations
           WHERE subject=? AND kind='split' AND day=? AND state NOT IN ('failed','cancelled')) < ?))))
       AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind='split' AND state NOT IN (${TERMINAL})) < 2)
@@ -67,6 +68,9 @@ export async function reserveOperation(db: D1Database, input: {
   await db.batch([insert,...(input.statements?.(id) ?? [])]);
   const operation = await findOperation(db,input.subject,input.kind,input.key);
   if (!operation) {
+    if (quotaClass==='guest' && await db.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(input.subject).first()) {
+      throw new OperationError('guest_session_claimed',403,'Your guest splits have been saved. Continue with your signed-in account.');
+    }
     const counts=await db.prepare(`SELECT COUNT(*) AS attempts,
       SUM(CASE WHEN state NOT IN ('failed','cancelled') THEN 1 ELSE 0 END) AS held
       FROM app_operations WHERE subject=? AND kind=? AND day=?`).bind(input.subject,input.kind,day).first<{attempts:number;held:number}>();

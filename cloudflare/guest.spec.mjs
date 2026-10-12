@@ -1,6 +1,6 @@
 import { test,expect } from '@playwright/test';
 import { createTestHarness } from 'wrangler';
-import { createTestIdentityIssuer } from '@cuny-ai-lab/cail-identity/testing';
+import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { setupServer } from 'msw/node';
@@ -13,7 +13,7 @@ async function setup(page, chatAvailable = false) {
   let origin = '', providerStarts = 0, verifications = 0, widgetLoads = 0;
   const issuer = await createTestIdentityIssuer();
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
-  const music={identifier:'song-fixture',title:'Song fixture',creator:'Artist'};
+  const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble',mediatype:'audio',subject:['Music','Rock']};
   const network = setupServer(
     http.get('https://archive.org/advancedsearch.php',()=>HttpResponse.json({response:{docs:[music]}})),
     http.get('https://archive.org/metadata/song-fixture',()=>HttpResponse.json({metadata:music,files:[{name:'song.mp3',title:'Song fixture',size:String(mp3.length),length:String(mp3FrameInfo(new Uint8Array(mp3).buffer).seconds)}]})),
@@ -48,10 +48,38 @@ async function setup(page, chatAvailable = false) {
     widgetLoads++;
     return route.fulfill({ contentType: 'text/javascript', body: `window.turnstile={render(root,options){if(options.appearance!=='interaction-only')throw new Error('Unexpected widget appearance');const button=document.createElement('button');button.textContent='Complete fixture guest check';button.onclick=()=>options.callback('browser-fixture-'+crypto.randomUUID());root.append(button);return 'fixture';},remove(){}};` });
   });
-  return { origin, errors, requests, counts: () => ({ providerStarts, verifications, widgetLoads }),
+  return { origin, errors, requests, issuer, counts: () => ({ providerStarts, verifications, widgetLoads }),
     close: async () => { await page.unrouteAll({ behavior: 'wait' }); await page.close(); await harness.close(); network.close(); } };
 }
 const account = page => page.evaluate(async () => (await fetch('/api/account')).json());
+test('guest upload and notes survive eligible sign-in, interrupted claim and repeated reloads',async({page})=>{
+ const f=await setup(page);
+ try {
+  await page.goto(f.origin);
+  await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+  const guest=(await account(page)).account.subject;
+  await startUpload(page);await completed(page,1);
+  const id=await page.evaluate(()=>getJobs()[0].id);
+  expect(await page.evaluate(async id=>(await fetch(`/api/jobs/${id}/annotations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({atSeconds:1,text:'My guest note'})})).status,id)).toBe(200);
+  const original=await page.evaluate(key=>localStorage.getItem(key),`jobs:${guest}`);
+  const jwt=await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+  await page.setExtraHTTPHeaders({'x-fixture-identity':jwt});
+  await page.route('**/api/account/claim-guest',route=>route.fulfill({status:503,json:{error:'Local fixture interruption'}}));
+  await page.reload();await expect(page.locator('#upload-message')).toContainText('originals are preserved');
+  expect(await page.evaluate(key=>localStorage.getItem(key),`jobs:${guest}`)).toBe(original);
+  await page.unroute('**/api/account/claim-guest');await page.reload();
+  await expect(page.locator('.console-title')).toHaveText('source.wav');
+  await expect(page.locator('.badge.ready')).toHaveCount(1);
+  const saved=await page.evaluate(async id=>(await fetch(`/api/jobs/${id}`)).json(),id);
+  expect(saved.annotations[0].text).toBe('My guest note');
+  expect(saved.annotations[0].canDelete).toBe(true);
+  expect((await account(page)).splitAllowance.remaining).toBe(15);
+  await page.reload();await expect(page.locator('.badge.ready')).toHaveCount(1);
+  expect(f.counts().providerStarts).toBe(1);
+  expect(await page.evaluate(key=>localStorage.getItem(key),`jobs:${guest}`)).toBe(original);
+  expect(f.errors).toEqual([]);
+ } finally {await f.close();}
+});
 async function startUpload(page) {
   const uploaded = page.waitForResponse(response => response.url().includes('/api/local-uploads/'));
   await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav', import.meta.url)));
@@ -252,12 +280,12 @@ test('guest searches and imports a complete song through the existing field',asy
     await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const input=page.getByRole('combobox',{name:'Song or link',exact:true});
-    await input.pressSequentially('Artist song');
-    const suggestion=page.getByRole('option',{name:'Song fixture — Item creator: Artist',exact:false});
+    await input.pressSequentially('Fixture Ensemble song');
+    const suggestion=page.getByRole('option',{name:'Song fixture — Item creator: Fixture Ensemble',exact:false});
     await expect(suggestion).toBeVisible();
     await expect(input).toHaveAttribute('aria-expanded','true');
     await suggestion.click();
-    await expect(input).toHaveValue('Song fixture — Item creator: Artist');
+    await expect(input).toHaveValue('Song fixture — Item creator: Fixture Ensemble');
     await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
     const submission=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
     await page.locator('#yt-form button').click();const response=await submission;
@@ -355,12 +383,12 @@ test.describe('song search on touch screens',()=>{
       await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
       const input=page.getByRole('combobox',{name:'Song or link',exact:true});
       const before=await page.locator('#stem-choice').boundingBox();
-      await input.fill('Artist song');
-      const suggestion=page.getByRole('option',{name:/Song fixture — Item creator: Artist/});await expect(suggestion).toBeVisible();
+      await input.fill('Fixture Ensemble song');
+      const suggestion=page.getByRole('option',{name:/Song fixture — Item creator: Fixture Ensemble/});await expect(suggestion).toBeVisible();
       expect(await page.locator('#stem-choice').boundingBox()).toEqual(before);
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-search-touch.png`,animations:'disabled'});}
-      await suggestion.tap();await expect(input).toHaveValue('Song fixture — Item creator: Artist');
+      await suggestion.tap();await expect(input).toHaveValue('Song fixture — Item creator: Fixture Ensemble');
       await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
       expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
     }finally{await f.close();}

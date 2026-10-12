@@ -63,7 +63,7 @@ export default {
     if (env.CANONICAL_BASE_URL && url.origin === env.CANONICAL_BASE_URL) {
       env = { ...env, PUBLIC_BASE_URL: env.CANONICAL_BASE_URL };
     }
-    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined};
+    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined,guestClaimSession:undefined};
     let response: Response;
     try {
       const paused = intakePauseResponse(request, env);
@@ -101,6 +101,9 @@ export default {
             internal.headers.append('Set-Cookie',clearGuestCookie());
           } else internal=await authenticatedRequest(request,env);
         } else internal=await authenticatedRequest(request,env);
+        if (!(internal instanceof Response) && hasMemberCookie(request) && request.method==='POST' && url.pathname==='/api/account/claim-guest') {
+          env={...env,guestClaimSession:(await readGuestSession(request,env))??undefined};
+        }
         if(internal instanceof Response)ctx.waitUntil(recordServerUse(env,request,internal,undefined,Date.now()));
         response = internal instanceof Response ? internal : await serveApi(internal, { ...env, CAIL_LOGIN_URL: '/auth/login' }, ctx);
       } else {

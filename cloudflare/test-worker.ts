@@ -44,7 +44,8 @@ export default {
     };
     if (jwt) {
       const headers = new Headers(request.headers);
-      headers.set('Cookie', `${SESSION_COOKIE}=${fixtureToken}`);
+      const otherCookies=(headers.get('Cookie') || '').split(';').map(value=>value.trim()).filter(value=>value && !value.startsWith(`${SESSION_COOKIE}=`));
+      headers.set('Cookie', [...otherCookies,`${SESSION_COOKIE}=${fixtureToken}`].join('; '));
       headers.delete('x-fixture-identity');
       request = new Request(request.url, { method: request.method, headers, body: request.body, redirect: 'manual', signal: request.signal });
     }

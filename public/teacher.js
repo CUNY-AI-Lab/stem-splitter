@@ -449,6 +449,7 @@ historyMoreBtn.addEventListener('click', async () => {
     if (cail) {
       const { account } = await api('/api/account');
       window.StemSessionGuard?.start(account.subject, () => { amendment.value = ''; changeNote.value = ''; fixedPromptBody.replaceChildren(); previewBody.replaceChildren(); historyList.replaceChildren(); });
+      try { await window.StemGuestClaim.run(account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
     }
     await loadPrompt();
     showPanel(true, teacher);

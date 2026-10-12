@@ -169,8 +169,9 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
       // A new login replaces this browser's previous app session, not CUNY's.
       const previous = readCookie(request, SESSION_COOKIE);
       if (TOKEN.test(previous) && previous !== result.token) await boundedRpc(client.revoke(previous));
-      await env.guestSignout?.();
-      return redirect(safeNext(pending.next), [cookie(SESSION_COOKIE, result.token, Math.min(86400, Math.floor((result.expiresAt - Date.now()) / 1000))), cookie(LOGIN_COOKIE, '', 0),clearGuestCookie()]);
+      // Retain guest proof until the separately authorized, atomic account claim
+      // succeeds. A failed or interrupted sign-in must not orphan guest work.
+      return redirect(safeNext(pending.next), [cookie(SESSION_COOKIE, result.token, Math.min(86400, Math.floor((result.expiresAt - Date.now()) / 1000))), cookie(LOGIN_COOKIE, '', 0)]);
     }
     return new Response('Not found', { status: 404 });
   } catch { return signInFailure(request, 503); }

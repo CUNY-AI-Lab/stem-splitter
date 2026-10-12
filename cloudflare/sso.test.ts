@@ -184,6 +184,7 @@ test('expired sessions offer login, revoked access offers help, and unverified s
 
 test('CUNY handoff: S256 proof, host-only cookies, clean return, private JWT forwarding and logout', async () => {
   const f = fixture();
+  let guestRevocations=0;f.env.guestSignout=async()=>{guestRevocations++;};
   const start = await handleAuth(f.request('/auth/login?next=/teacher.html'), f.env);
   assert.equal(start.status, 303);
   assert.match(start.headers.get('location')!, /^https:\/\/tools\.ailab\.gc\.cuny\.edu\/worker-login/);
@@ -191,6 +192,8 @@ test('CUNY handoff: S256 proof, host-only cookies, clean return, private JWT for
   assert.match(start.headers.get('set-cookie')!, /Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=600/);
   const callback = await handleAuth(f.request(`/auth/callback?code=${code}&state=${f.state()}`, { headers: { Cookie: pending } }), f.env);
   assert.equal(callback.status, 303);
+  assert.equal(guestRevocations,0,'sign-in preserves guest proof until account persistence');
+  assert.doesNotMatch(callback.headers.get('set-cookie')??'',/__Host-stem-guest=/);
   assert.equal(callback.headers.get('location'), '/teacher.html');
   assert.match(callback.headers.get('cache-control')!, /no-store/);
   assert.equal(callback.headers.get('referrer-policy'), 'no-referrer');

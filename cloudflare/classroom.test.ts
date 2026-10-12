@@ -224,6 +224,7 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const reliability=readFileSync(new URL('../migrations/0022-reliable-operations.sql',import.meta.url),'utf8');db.applySchema(reliability);db.applySchema(reliability);
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM app_request_reservations WHERE id='historical-attempt'").first<any>()).n,1);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<any>()).n,0);
+  const claims=readFileSync(new URL('../migrations/0023-guest-account-claims.sql',import.meta.url),'utf8');db.applySchema(claims);db.applySchema(claims);
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);

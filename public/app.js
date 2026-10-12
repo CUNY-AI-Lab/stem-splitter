@@ -3494,7 +3494,9 @@ async function loadAccountJobs(more = false) {
     if (!response.ok) throw new Error('load');
     const result = await response.json();
     if (!Array.isArray(result.jobs)) throw new Error('load');
-    const existing = new Map(getJobs().map(job => [job.id, job]));
+    let cached = [];
+    try { const value = JSON.parse(localStorage.getItem(jobsStorageKey) || '[]'); if(Array.isArray(value)) cached = value.filter(job=>job&&typeof job.id==='string'); } catch {}
+    const existing = new Map([...cached, ...getJobs()].map(job => [job.id, job]));
     const recovered = result.jobs.map((job, index) => ({ ...job,
       startedAt: serverTime(job.createdAt), collapsed: existing.get(job.id)?.collapsed ?? (more || index > 0) }));
     // New submissions that finish during this request must not disappear.
@@ -4691,6 +4693,8 @@ async function initialize() {
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
     if (accountSubject && !guestSessionActive) {
+      try { await window.StemGuestClaim.run(principal); }
+      catch (error) { showUploadMessage(error.message, true); }
       const link = document.createElement('a');
       link.className = 'account-button';
       link.href = '/account.html';

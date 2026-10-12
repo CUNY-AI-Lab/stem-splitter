@@ -129,6 +129,8 @@ el('access-form').addEventListener('submit', async (event) => {
     window.StemSessionGuard?.start(subject, () => { users = []; subject = ""; });
     accountRole = account.role;
     el('account-status').textContent = '';
+    try { await window.StemGuestClaim.run(account); }
+    catch (error) { el('account-status').textContent = error.message; }
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
     el('account-id').textContent = subject;
     el('account-details').hidden = false;

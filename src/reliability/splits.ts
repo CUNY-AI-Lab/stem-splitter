@@ -16,6 +16,7 @@ import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation
 import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
 import { cooldown, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
+import { claimedOperationOwner, ownsClaimedOperation } from '../guest/claim.ts';
 
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
@@ -145,7 +146,9 @@ async function start(env: Env,op: Operation) {
   const input=JSON.parse(op.request_json) as SplitInput;
   try {
     if (op.quota_class === 'guest') {
-      if (!env.guestRuntimeReady || op.course_id !== null || !await activeGuest(env.DB,op.subject)) throw new Error('Guest access ended');
+      const owner = await claimedOperationOwner(env,op);
+      if (owner) await authorizeStoredCourseWork(env,owner,null);
+      else if (!env.guestRuntimeReady || op.course_id !== null || !await activeGuest(env.DB,op.subject)) throw new Error('Guest access ended');
     } else await authorizeStoredCourseWork(env,op.subject,op.course_id);
   }
   catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No successful-split allowance was used.');return; }
@@ -290,17 +293,18 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
   }
 }
 export async function resumeOwnedSourceImport(env:Env,principal:AppPrincipal,operation:Operation) {
-  if(env.AUTH_MODE!=='cail'||env.SPLIT_STARTS_DISABLED==='true'||operation.subject!==principal.subject
-    ||operation.quota_class!==(principal.quotaClass??'member')||operation.phase!=='fetch'
+  const claimedOwner=await ownsClaimedOperation(env,principal,operation);
+  if(env.AUTH_MODE!=='cail'||env.SPLIT_STARTS_DISABLED==='true'||(!claimedOwner&&(operation.subject!==principal.subject
+    ||operation.quota_class!==(principal.quotaClass??'member')))||operation.phase!=='fetch'
     ||!['queued','running'].includes(operation.state)||!isOwnedSourceImport(JSON.parse(operation.request_json)))return;
   await recoverExpired(env.DB);
   const current=await readOperation(env.DB,operation.id);
-  if(current?.subject!==principal.subject||current.phase!=='fetch'||!['queued','running'].includes(current.state))return;
+  if(current?.subject!==operation.subject||current.phase!=='fetch'||!['queued','running'].includes(current.state))return;
   if(current.cancel_requested) {
     if(current.state==='queued')await fail(env,current,'cancelled');
     return;
   }
-  const claimed=await claimNativeImport(env.DB,operation.id,principal.subject);
+  const claimed=await claimNativeImport(env.DB,operation.id,operation.subject);
   if(claimed)await start(env,claimed);
 }
 export const resumeOwnedVimeoImport=resumeOwnedSourceImport;

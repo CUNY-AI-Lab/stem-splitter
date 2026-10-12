@@ -134,6 +134,7 @@ import { audioSepReplicateIdentity } from './isolation/options.ts';
 import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal } from './identity.ts';
 import { readBoundedResponse } from './http/bounded-response.ts';
 import { guestPrincipal, ownershipTable, conversationTable, guestFailure } from './guest/access.ts';
+import { claimGuestWork, ownsClaimedOperation } from './guest/claim.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -297,6 +298,14 @@ app.get('/api/account', async (c) => {
     ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,
       verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day
         && (allowance===null || allowance.completed+allowance.inProgress>=GUEST_UNVERIFIED_SPLITS_PER_DAY)}}:{}) });
+});
+
+app.post('/api/account/claim-guest', async (c) => {
+  const principal=c.get('principal');
+  if(c.env.AUTH_MODE!=='cail'||!principal||principal.quotaClass!=='member')return c.json({error:'Sign in to save guest splits.'},403);
+  // An expected account is a consistency fence, never ownership authority.
+  if(c.req.header('X-Stem-Claim-Actor')!==principal.subject)return c.json({error:'Your account changed. Reload before saving guest splits.'},409);
+  return c.json(await claimGuestWork(c.env,principal));
 });
 
 app.get('/api/model-quota', async (c) => {
@@ -1307,7 +1316,9 @@ app.get('/api/jobs', async (c) => {
 
 app.post('/api/jobs/:id/cancel', requireClassCode, async (c) => {
   const principal=c.get('principal');
-  if (!principal || !await cancelOperation(c.env.DB,c.req.param('id'),principal.subject)) return c.json({error:'Split not found.'},404);
+  const prior=principal?await readOperation(c.env.DB,c.req.param('id')):null;
+  const subject=principal&&prior&&await ownsClaimedOperation(c.env,principal,prior)?prior.subject:principal?.subject;
+  if (!subject || !await cancelOperation(c.env.DB,c.req.param('id'),subject)) return c.json({error:'Split not found.'},404);
   const operation=await readOperation(c.env.DB,c.req.param('id'));
   // Reconcile this operation only; cancelling must not start unrelated paid work.
   // A busy/unknown start is recovered by the existing cron on its same provider ID.

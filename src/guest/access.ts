@@ -20,6 +20,8 @@ export interface GuestSettings {
   guestStartAllowed?: boolean;
   /** Verified cookie and live server session, set by the private adapter only. */
   guestSession?: GuestSession;
+  /** Verified guest cookie alongside a member session; never selects guest authority. */
+  guestClaimSession?: GuestSession;
 }
 export const GUEST_SESSION_MS = 7 * 86400000;
 export const GUEST_SUBJECT = /^guest-[0-9a-f]{64}$/;
@@ -51,6 +53,7 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
   const supplied = env.guestSession;
   const session = env.guestRuntimeReady && supplied && await activeGuest(env.DB,supplied.subject);
   if (!session || session.expiresAt !== supplied?.expiresAt) return guestFailure('guest_session_expired',401,'This guest session has ended. Start a new guest session or sign in.');
+  if (await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(session.subject).first()) return guestFailure('guest_session_claimed',403,'These splits are saved to a CUNY account. Sign in to continue.');
   const path = new URL(request.url).pathname, method = request.method;
   const read = method === 'GET' || method === 'HEAD';
   if (!read && (request.headers.get('origin') !== new URL(request.url).origin || request.headers.get('sec-fetch-site') === 'cross-site')) return guestFailure('guest_origin_invalid',403,'Open Stem Splitter directly to continue.');

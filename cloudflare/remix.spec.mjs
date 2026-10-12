@@ -15,7 +15,7 @@ test('Crate audio -> multi-source arrangement -> recorded song with credits, wit
   let predictions = 0;
   const network = setupServer(
     http.get('https://archive.org/advancedsearch.php', () => HttpResponse.json({ response: { numFound: 1, docs: [{ identifier: 'remix-test', title: 'Open recordings', creator: 'Fixture ensemble', licenseurl: 'https://creativecommons.org/licenses/by/4.0/' }] } })),
-    http.get('https://archive.org/metadata/remix-test', () => HttpResponse.json({ metadata: { title: 'Open recordings', creator: 'Fixture ensemble', licenseurl: 'https://creativecommons.org/licenses/by/4.0/' }, files: ['one.mp3', 'two.mp3'].map(name => ({ name, title: name, size: String(mp3.length), length: '3' })) })),
+    http.get('https://archive.org/metadata/remix-test', () => HttpResponse.json({ metadata: { mediatype: 'audio', subject: ['Music','Rock'], title: 'Open recordings', creator: 'Fixture ensemble', licenseurl: 'https://creativecommons.org/licenses/by/4.0/' }, files: ['one.mp3', 'two.mp3'].map(name => ({ name, title: name, size: String(mp3.length), length: '3' })) })),
     http.get('https://archive.org/download/remix-test/:file', () => { downloads++; return new HttpResponse(mp3, { headers: { 'Content-Type': 'audio/mpeg', 'Content-Length': String(mp3.length) } }); }),
     http.post('https://api.replicate.com/v1/predictions', () => { predictions++; return HttpResponse.json({}, { status: 500 }); }),
   );

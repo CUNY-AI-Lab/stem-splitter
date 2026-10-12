@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {SqliteD1} from '../server/d1.ts';
 import {parseClientUses,recordClientUses,recordServerUse,usageSummary} from '../src/reliability/observability.ts';
 import {reserveOperation,beginAttempt,finishAttempt,settleOperation} from '../src/reliability/ledger.ts';
+import {reserveAssistant} from '../src/reliability/assistant.ts';
 import {purgeOperationContent} from '../src/reliability/retention.ts';
 import type {AppPrincipal} from '../src/identity.ts';
 import type {Env} from '../src/env.ts';
@@ -24,7 +25,7 @@ test('content-free usage validation, deduplication, bounded volume and retention
 });
 test('operation attempts, fallback and settlement emit one durable receipt without arbitrary usage strings',async()=>{
  const db=setup();await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(principal.subject).run();
- const {operation}=await reserveOperation(db,{subject:principal.subject,courseId:null,kind:'chat',phase:'chat',key:'durable-observed-001',fingerprint:'hash'});
+ const {operation}=await reserveAssistant({DB:db} as Env,principal.subject,null,'chat','durable-observed-001','fixture-job',{fixture:true});
  const first=await beginAttempt(db,operation,'cail-gateway','glm-5.2');
  await finishAttempt(db,first,'rejected',{status:503,code:'upstream_unavailable',usage:{total_tokens:4,private_text:'never retain'}});
  const backup=await beginAttempt(db,operation,'cail-gateway','deepseek-v4-flash-0731');
