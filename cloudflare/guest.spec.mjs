@@ -250,10 +250,13 @@ test('guest searches and imports a complete song through the existing field',asy
     await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const input=page.getByRole('combobox',{name:'Song or link',exact:true});
-    await input.fill('Song');
-    await expect(page.locator('#source-songs option')).toHaveCount(1);
-    await expect(page.locator('#source-songs option')).toHaveAttribute('value','Song fixture — Artist');
-    await input.fill('Song fixture — Artist');
+    await input.pressSequentially('Artist song');
+    const suggestion=page.getByRole('option',{name:'Song fixture — Artist',exact:false});
+    await expect(suggestion).toBeVisible();
+    await expect(input).toHaveAttribute('aria-expanded','true');
+    await suggestion.click();
+    await expect(input).toHaveValue('Song fixture — Artist');
+    await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
     const submission=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
     await page.locator('#yt-form button').click();const response=await submission;
     expect(response.status()).toBe(202);expect(response.request().postDataJSON().audiusId).toBe('4zxjE');
@@ -279,7 +282,85 @@ test('a delayed song search cannot replace a newer query or a pasted link',async
     await input.fill('Slow');await expect.poll(()=>Boolean(delayed)).toBe(true);
     await input.fill('https://www.youtube.com/watch?v=jNQXAC9IVRw');
     await delayed.fulfill({json:{results:[{id:'4zxjE',title:'Stale result',artist:'Artist',durationSec:200}]}});delayed=undefined;
-    await expect(page.locator('#source-songs option')).toHaveCount(0);await expect(input).toHaveValue('https://www.youtube.com/watch?v=jNQXAC9IVRw');
+    await expect(page.locator('#source-songs [role="option"]')).toHaveCount(0);
+    await expect(page.locator('#source-songs')).toBeHidden();await expect(input).toHaveValue('https://www.youtube.com/watch?v=jNQXAC9IVRw');
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{if(delayed)await delayed.abort().catch(()=>{});await f.close();}
+});
+
+test('song suggestions support keyboard selection and stay closed after Escape or blur',async({page})=>{
+  const f=await setup(page);let delayed;
+  const tracks=[
+    {id:'4zxjE',title:"Huntin' Koch",artist:'De köchunterzZ',durationSec:274},
+    {id:'second',title:"Huntin' Koch (remix)",artist:'De köchunterzZ',durationSec:205},
+  ];
+  try {
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    await page.route('**/api/music/search?*',route=>{delayed=route;});
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true}),list=page.getByRole('listbox',{name:'Songs'});
+    await input.fill('Huntin Koch');await expect.poll(()=>Boolean(delayed)).toBe(true);
+    await expect(list).toContainText('Searching…');
+    await input.press('Escape');await expect(list).toBeHidden();
+    await delayed.fulfill({json:{results:tracks}});delayed=undefined;
+    await expect(page.locator('#source-songs [role="option"]')).toHaveCount(2);await expect(list).toBeHidden();
+    await input.press('ArrowDown');await expect(list).toBeVisible();
+    await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');
+    await expect(input).toHaveAttribute('aria-activedescendant',await page.getByRole('option').first().getAttribute('id'));
+    await input.press('ArrowDown');await expect(page.getByRole('option').nth(1)).toHaveAttribute('aria-selected','true');
+    await input.press('Enter');await expect(input).toHaveValue("Huntin' Koch (remix) — De köchunterzZ");
+    await expect(list).toBeHidden();
+    expect(f.requests.filter(r=>r.path==='/api/jobs'&&r.method==='POST')).toHaveLength(0);
+    await input.fill('Later');await expect.poll(()=>Boolean(delayed)).toBe(true);
+    await input.press('Tab');await expect(list).toBeHidden();
+    await delayed.fulfill({json:{results:tracks}});delayed=undefined;
+    await expect(page.locator('#source-songs [role="option"]')).toHaveCount(2);await expect(list).toBeHidden();
+    await input.focus();await expect(list).toBeVisible();
+    await input.fill('');await expect(list).toBeHidden();
+    expect(f.errors).toEqual([]);
+  }finally{if(delayed)await delayed.abort().catch(()=>{});await f.close();}
+});
+
+test('song search shows empty and failed searches and ignores stale responses',async({page})=>{
+  const f=await setup(page);let slow,latest,latestRequests=0;
+  try {
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    await page.route('**/api/music/search?*',route=>{
+      const query=new URL(route.request().url()).searchParams.get('q');
+      if(query==='Slow'){slow=route;return;}
+      if(query==='Latest'){latestRequests++;latest=route;return;}
+      return route.fulfill(query==='Empty'?{json:{results:[]}}:{status:502,json:{error:'Provider unavailable'}});
+    });
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true}),list=page.getByRole('listbox',{name:'Songs'});
+    await input.fill('Empty');await expect(list).toContainText('Try another song or artist.');
+    await input.fill('Failure');await expect(list).toContainText('Search is temporarily unavailable. Try again.');
+    await input.fill('Slow');await expect.poll(()=>Boolean(slow)).toBe(true);
+    await input.fill('Latest');await expect.poll(()=>Boolean(latest)).toBe(true);
+    await input.press('Enter');expect(latestRequests).toBe(1);
+    await latest.fulfill({json:{results:[{id:'4zxjE',title:'Current match',artist:'Artist',durationSec:274}]}});latest=undefined;
+    await expect(page.getByRole('option',{name:/Current match/})).toBeVisible();
+    await slow.fulfill({status:502,json:{error:'Old failure'}});slow=undefined;
+    await expect(page.getByRole('option',{name:/Current match/})).toBeVisible();
+    await expect(list).not.toContainText('unavailable');
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{if(slow)await slow.abort().catch(()=>{});if(latest)await latest.abort().catch(()=>{});await f.close();}
+});
+
+test.describe('song search on touch screens',()=>{
+  test.use({hasTouch:true,viewport:{width:390,height:844}});
+  test('song suggestions select with a tap while preserving the field layout',async({page})=>{
+    const f=await setup(page);
+    try {
+      await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+      const input=page.getByRole('combobox',{name:'Song or link',exact:true});
+      const before=await page.locator('#stem-choice').boundingBox();
+      await input.fill('Artist song');
+      const suggestion=page.getByRole('option',{name:/Song fixture — Artist/});await expect(suggestion).toBeVisible();
+      expect(await page.locator('#stem-choice').boundingBox()).toEqual(before);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-search-touch.png`,animations:'disabled'});}
+      await suggestion.tap();await expect(input).toHaveValue('Song fixture — Artist');
+      await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
+      expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+    }finally{await f.close();}
+  });
 });

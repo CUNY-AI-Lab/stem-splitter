@@ -199,9 +199,12 @@ h1 span {
 .yt-summary:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; border-radius: 3px; }
 
 .yt-form { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
+.source-field { position: relative; display: flex; flex: 1; min-width: 0; }
 
 #yt-url {
   flex: 1;
+  min-width: 0;
+  width: 100%;
   background: var(--bg-raise);
   border: 1px solid var(--panel-edge);
   border-radius: 6px;
@@ -212,6 +215,31 @@ h1 span {
 }
 #yt-url::placeholder { color: var(--ink-faint); }
 #yt-url:focus { outline: none; border-color: var(--hot); }
+
+#source-songs {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  max-height: min(20rem, 40vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--bg-raise);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  box-shadow: 0 0.5rem 1.5rem #0006;
+  font: 0.8rem/1.45 var(--font-mono);
+}
+#source-songs.above-field { top: auto; bottom: calc(100% + 0.3rem); }
+.source-song, .source-search-status { padding: 0.55rem 0.45rem; overflow-wrap: anywhere; }
+.source-song { border-radius: 3px; cursor: pointer; }
+.source-song:hover, .source-song[aria-selected="true"] { background: var(--hot-soft); }
+.source-song small { display: block; margin-top: 0.15rem; color: var(--ink-dim); font-size: 0.7rem; }
+.source-search-status { color: var(--ink-dim); }
 
 .yt-go {
   background: var(--hot-soft);

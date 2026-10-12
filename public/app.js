@@ -369,31 +369,143 @@ const ytUrlInput = document.getElementById('yt-url');
 const ytFetchButton = ytForm.querySelector('button[type="submit"]');
 const sourceSongs = document.getElementById('source-songs');
 let songResults = new Map(), songSearchTimer, songSearchSequence = 0;
+let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
-async function searchSourceSongs(term, sequence) {
-  const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`);
-  if (sequence !== songSearchSequence || ytUrlInput.value.trim() !== term) return;
+function closeSongSuggestions() {
+  sourceSongs.hidden = true;
+  ytUrlInput.setAttribute('aria-expanded', 'false');
+  ytUrlInput.removeAttribute('aria-activedescendant');
+  activeSongIndex = -1;
+  for (const option of sourceSongs.querySelectorAll('[role="option"]')) option.setAttribute('aria-selected', 'false');
+}
+function openSongSuggestions() {
+  if (!sourceSongs.childElementCount || songSuggestionsDismissed || document.activeElement !== ytUrlInput) return;
+  sourceSongs.hidden = false;
+  ytUrlInput.setAttribute('aria-expanded', 'true');
+  positionSongSuggestions();
+}
+function positionSongSuggestions() {
+  if (sourceSongs.hidden) return;
+  const field = ytUrlInput.getBoundingClientRect(), viewport = window.visualViewport;
+  const top = viewport?.offsetTop || 0, bottom = top + (viewport?.height || innerHeight);
+  const above = field.top - top - 8, below = bottom - field.bottom - 8;
+  const openAbove = below < Math.min(240, sourceSongs.scrollHeight) && above > below;
+  sourceSongs.classList.toggle('above-field', openAbove);
+  sourceSongs.style.maxHeight = `${Math.max(48, Math.min(320, openAbove ? above : below))}px`;
+}
+function clearSongSuggestions() {
+  closeSongSuggestions();
   songResults = new Map();
+  songQuery = '';
+  songSearchStatus = 'idle';
   sourceSongs.replaceChildren();
-  for (const track of data.results || []) {
-    const label = `${track.title} — ${track.artist}`;
-    // Distinct recordings with the same title and artist remain selectable.
-    const value = songResults.has(label) ? `${label} (${track.id})` : label;
-    songResults.set(value, track);
-    const option = document.createElement('option');
-    option.value = value;
-    option.label = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Audius`;
-    sourceSongs.appendChild(option);
+  sourceSongs.removeAttribute('aria-busy');
+}
+function showSongSearchStatus(message) {
+  sourceSongs.replaceChildren();
+  const item = document.createElement('li'), status = document.createElement('span');
+  item.className = 'source-search-status';
+  item.setAttribute('role', 'presentation');
+  status.setAttribute('role', 'status');
+  status.textContent = message;
+  item.appendChild(status);
+  sourceSongs.appendChild(item);
+  openSongSuggestions();
+}
+function selectSong(value) {
+  if (!songResults.has(value)) return;
+  clearTimeout(songSearchTimer);
+  ++songSearchSequence;
+  ytUrlInput.value = value;
+  ytUrlInput.focus();
+  closeSongSuggestions();
+}
+async function searchSourceSongs(term, sequence) {
+  const current = () => sequence === songSearchSequence && ytUrlInput.value.trim() === term;
+  clearSongSuggestions();
+  songQuery = term;
+  songSearchStatus = 'loading';
+  sourceSongs.setAttribute('aria-busy', 'true');
+  showSongSearchStatus('Searching…');
+  try {
+    const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`);
+    if (!current()) return;
+    sourceSongs.replaceChildren();
+    for (const track of data.results || []) {
+      const label = `${track.title} — ${track.artist}`;
+      // Keep the provider's matches, including punctuation and word-order matches.
+      const value = songResults.has(label) ? `${label} (${track.id})` : label;
+      songResults.set(value, track);
+      const option = document.createElement('li'), duration = document.createElement('small');
+      option.id = `source-song-${sequence}-${songResults.size}`;
+      option.className = 'source-song';
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+      option.dataset.value = value;
+      option.appendChild(document.createTextNode(value));
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Audius`;
+      option.appendChild(duration);
+      sourceSongs.appendChild(option);
+    }
+    songSearchStatus = 'ready';
+    if (songResults.size) openSongSuggestions();
+    else showSongSearchStatus('Try another song or artist.');
+  } catch {
+    if (!current()) return;
+    songSearchStatus = 'error';
+    showSongSearchStatus('Search is temporarily unavailable. Try again.');
+  } finally {
+    if (current()) sourceSongs.removeAttribute('aria-busy');
   }
 }
-ytUrlInput.addEventListener('input', () => {
+ytUrlInput.addEventListener('input', (event) => {
   clearTimeout(songSearchTimer);
   const term = ytUrlInput.value.trim(), sequence = ++songSearchSequence;
-  if (songResults.has(term)) return;
-  songResults = new Map(); sourceSongs.replaceChildren();
-  if (sourceIsLink(term) || term.length < 2 || youtubeFetchInProgress) return;
-  songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence).catch(() => {}); }, 450);
+  songSuggestionsDismissed = false;
+  if (songResults.has(term)) { closeSongSuggestions(); return; }
+  clearSongSuggestions();
+  if (event.isComposing || sourceIsLink(term) || term.length < 2 || youtubeFetchInProgress) return;
+  songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence); }, 450);
 });
+ytUrlInput.addEventListener('focus', () => {
+  songSuggestionsDismissed = false;
+  if (!songResults.has(ytUrlInput.value.trim())) openSongSuggestions();
+});
+ytUrlInput.addEventListener('blur', () => {
+  songSuggestionsDismissed = true;
+  closeSongSuggestions();
+});
+ytUrlInput.addEventListener('keydown', (event) => {
+  if (event.isComposing) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    songSuggestionsDismissed = true;
+    closeSongSuggestions();
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    const options = [...sourceSongs.querySelectorAll('[role="option"]')];
+    if (!options.length) return;
+    event.preventDefault();
+    songSuggestionsDismissed = false;
+    openSongSuggestions();
+    activeSongIndex = activeSongIndex < 0 ? (event.key === 'ArrowDown' ? 0 : options.length - 1)
+      : (activeSongIndex + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options.forEach((option, index) => option.setAttribute('aria-selected', String(index === activeSongIndex)));
+    ytUrlInput.setAttribute('aria-activedescendant', options[activeSongIndex].id);
+    options[activeSongIndex].scrollIntoView({ block: 'nearest' });
+  } else if (event.key === 'Enter' && !sourceSongs.hidden && activeSongIndex >= 0) {
+    event.preventDefault();
+    selectSong(sourceSongs.querySelectorAll('[role="option"]')[activeSongIndex].dataset.value);
+  }
+});
+sourceSongs.addEventListener('pointerdown', event => event.preventDefault());
+sourceSongs.addEventListener('click', (event) => {
+  const option = event.target.closest('[role="option"]');
+  if (option) selectSong(option.dataset.value);
+});
+window.addEventListener('resize', positionSongSuggestions);
+window.addEventListener('scroll', positionSongSuggestions, { passive: true });
+window.visualViewport?.addEventListener('resize', positionSongSuggestions);
+window.visualViewport?.addEventListener('scroll', positionSongSuggestions);
 
 // Opening the disclosure is a statement of intent — land the caret in the field
 // so the next thing you do is paste.
@@ -822,14 +934,16 @@ ytForm.addEventListener('submit', async (e) => {
   const song = songResults.get(url);
   if (!sourceIsLink(url) && !song) {
     clearTimeout(songSearchTimer);
-    try {
-      await searchSourceSongs(url, ++songSearchSequence);
-      uploadStatus.hidden = false;
-      showUploadMessage(songResults.size ? 'Choose a song from the field, then fetch it.' : 'Try another song or artist.');
-    } catch (error) { uploadStatus.hidden = false; showUploadMessage(error.message, true); }
+    ytUrlInput.focus();
+    songSuggestionsDismissed = false;
+    if (songQuery === url && ['loading', 'ready'].includes(songSearchStatus)) openSongSuggestions();
+    else await searchSourceSongs(url, ++songSearchSequence);
     return;
   }
 
+  closeSongSuggestions();
+  clearTimeout(songSearchTimer);
+  ++songSearchSequence;
   youtubeFetchInProgress = true;
   ytForm.setAttribute('aria-busy', 'true');
   ytUrlInput.disabled = true;
@@ -853,7 +967,7 @@ ytForm.addEventListener('submit', async (e) => {
       }),
     });
     ytUrlInput.value = '';
-    songResults = new Map(); sourceSongs.replaceChildren(); ++songSearchSequence;
+    clearSongSuggestions();
     addJob(job);
     showUploadMessage(processingMessage(job));
     renderJobs();
