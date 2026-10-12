@@ -42,7 +42,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if ([value.videoUrl,value.youtubeUrl,value.archiveId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
   if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
-    if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a full YouTube or Vimeo video link.');
+    if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a supported video link.');
     const browserYouTube=source.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function';
     if(source.sourceType==='youtube'&&!browserYouTube&&!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
     if(source.sourceType==='vimeo'||browserYouTube) {

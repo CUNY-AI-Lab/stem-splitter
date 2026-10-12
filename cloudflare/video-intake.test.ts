@@ -255,34 +255,25 @@ test('native Vimeo late storage is fenced after cancellation or expired lease, a
   }
 });
 
-test('Vimeo POST awaits its own source while simultaneous replay preserves one download and GPU start',async t=>{
-  const {db,env}=await setup(t),guest=await guestRequests(db,env,'a'),fixture=vimeoFixture();
-  let release!:()=>void,started!:()=>void;
-  const gate=new Promise<void>(resolve=>{release=resolve;}),sourceStarted=new Promise<void>(resolve=>{started=resolve;});
-  let reads=0,posts=0;
-  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
-    if(String(input).startsWith('https://api.replicate.com/')) {
-      if(init?.method==='POST'){posts++;assert.equal(JSON.parse(String(init.body)).version,splitVersion);}
-      return Response.json({id:'owned-http-split',status:'processing'});
+test('retired Vimeo submissions stop before quota, source fetches or provider starts',async t=>{
+  const {db,env,api}=await setup(t),guest=await guestRequests(db,env,'a');
+  let outbound=0;
+  t.mock.method(globalThis,'fetch',async()=>{outbound++;throw new Error('retired source reached the network');});
+  for(const source of [vimeo,vimeoPlayer,'https://vimeo.com/1084537'])for(const field of ['videoUrl','youtubeUrl']) {
+    const payload={[field]:source};
+    const responses=[await api(payload),await guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':`retired-${field}-source`},body:JSON.stringify(payload)})];
+    for(const response of responses) {
+      assert.equal(response.status,400);
+      assert.deepEqual(await response.json(),{error:'Choose a supported video link or upload an audio file.',code:'unsupported_source',retryable:false});
     }
-    reads++;
-    if(String(input)==='https://player.vimeo.com/video/1084537'){started();await gate;}
-    return fixture.fetchImpl(input,init);
-  });
-  const submit=()=>guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'native-http-same-key'},body:JSON.stringify({videoUrl:'https://vimeo.com/1084537'})});
-  let resolved=false;
-  const first=submit().then(response=>{resolved=true;return response;});await sourceStarted;
-  const replay=await submit(),replayed=await replay.json() as {id:string;replay:boolean;model:string};
-  assert.equal(resolved,false);assert.equal(replay.status,200);assert.equal(replayed.replay,true);assert.equal(replayed.model,'htdemucs_ft');
-  assert.equal(reads,1);assert.equal(posts,0);
-  release();const response=await first,created=await response.json() as {id:string;savedToAccount:boolean;replay:boolean};await guest.flush();
-  assert.equal(response.status,202);assert.equal(created.id,replayed.id);assert.equal(created.replay,false);assert.equal(created.savedToAccount,false);
-  assert.equal(reads,4);assert.equal(posts,1);
-  const current=(await readOperation(db,created.id))!;assert.equal(current.phase,'split');assert.equal(current.state,'processing');
-  await submit();await guest.flush();assert.equal(reads,4);assert.equal(posts,1);
+  }
+  await guest.flush();assert.equal(outbound,0);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM jobs').first<{n:number}>())!.n,0);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<{n:number}>())!.n,0);
+  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).inProgress,0);
 });
 
-test('busy Vimeo work resumes only through its owner GET, including an expired download lease',async t=>{
+test('previously queued Vimeo work resumes only through its owner GET, including an expired download lease',async t=>{
   const {db,env}=await setup(t),owner=await guestRequests(db,env,'b'),other=await guestRequests(db,env,'c'),fixture=vimeoFixture();
   const blocker=(await submitSplit(env,principal,{videoUrl:'https://vimeo.com/1084537'},'native-capacity-blocker')).operation;
   assert.ok(await claimVimeoImport(db,blocker.id,principal.subject));
@@ -294,9 +285,9 @@ test('busy Vimeo work resumes only through its owner GET, including an expired d
     }
     reads++;return fixture.fetchImpl(input,init);
   });
-  const response=await owner.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'native-http-cap-busy'},body:JSON.stringify({videoUrl:'https://vimeo.com/1084537'})});
-  const body=await response.json() as {id:string;status:string};await owner.flush();
-  assert.equal(response.status,202);assert.equal(body.status,'queued');assert.equal(reads,0);
+  // Seed an operation reserved by the previous release; new HTTP submissions are retired.
+  const existing=await submitSplit(owner.env,owner.principal,{videoUrl:'https://vimeo.com/1084537'},'native-http-cap-busy');
+  const body={id:existing.operation.job_id};assert.equal(existing.operation.state,'queued');assert.equal(reads,0);
   assert.equal((await other.request(`/api/jobs/${body.id}`)).status,404);assert.equal(reads,0);
   await resumeOwnedVimeoImport(other.env,other.principal,(await readOperation(db,body.id))!);assert.equal(reads,0);
   await db.prepare("UPDATE jobs SET status='failed' WHERE id=?").bind(blocker.id).run();
@@ -450,25 +441,13 @@ test('failed or unavailable browser loaders refund marked YouTube work without p
   }
 });
 
-test('legacy job endpoint imports Vimeo through either request alias',async t=>{
-  const {db,api}=await setup(t);
-  const bytes=new Uint8Array(2048);bytes.set([0,0,0,24,102,116,121,112]);
-  let imports=0,splits=0;
-  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
-    assert.equal(String(input),'https://api.replicate.com/v1/predictions');assert.equal(init?.method,'POST');
-    const body=JSON.parse(String(init?.body));
-    if(body.version===importVersion) {
-      imports++;assert.equal(body.input.url,vimeo);
-      return Response.json({id:'legacy-vimeo-import',status:'succeeded',output:{title:'Vimeo fixture',duration:19,
-        audio:`data:audio/mp4;base64,${Buffer.from(bytes).toString('base64')}`}});
-    }
-    splits++;assert.equal(body.version,splitVersion);
-    return Response.json({id:`legacy-vimeo-split-${splits}`,status:'starting'});
-  });
-  for(const field of ['videoUrl','youtubeUrl']) {
-    const response=await api({[field]:vimeo});assert.equal(response.status,200);
-    const body=await response.json() as {id:string;status:string};assert.equal(body.status,'processing');
-    assert.equal((await db.prepare('SELECT source_type FROM jobs WHERE id=?').bind(body.id).first<{source_type:string}>())!.source_type,'vimeo');
-  }
-  assert.equal(imports,2);assert.equal(splits,2);
+test('saved Vimeo jobs remain readable with their stored source type',async t=>{
+  const {db,env}=await setup(t),owner=await guestRequests(db,env,'d');
+  const existing=await submitSplit(owner.env,owner.principal,{videoUrl:vimeo},'saved-vimeo-existing');
+  await db.prepare("UPDATE jobs SET status='done' WHERE id=?").bind(existing.operation.job_id).run();
+  const response=await owner.request(`/api/jobs/${existing.operation.job_id}`);await owner.flush();
+  assert.equal(response.status,200);
+  const job=await response.json() as {id:string;status:string};
+  assert.equal(job.id,existing.operation.job_id);assert.equal(job.status,'done');
+  assert.equal((await db.prepare('SELECT source_type FROM jobs WHERE id=?').bind(job.id).first<{source_type:string}>())!.source_type,'vimeo');
 });

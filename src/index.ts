@@ -949,6 +949,16 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 app.post('/api/jobs', requireClassCode, async (c) => {
   const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
   if ('response' in parsed) return parsed.response;
+  // Retired sources remain readable for saved jobs, while new submissions stop
+  // before reserving a daily place or starting any source/provider request.
+  const input=parsed.value;
+  if(input&&typeof input==='object'&&!Array.isArray(input)) {
+    const value=input as Record<string,unknown>;
+    if([value.videoUrl,value.youtubeUrl,value.archiveId,value.key].filter(v=>v!==undefined).length===1
+      &&parseVideoSource(value.videoUrl??value.youtubeUrl)?.sourceType==='vimeo') {
+      return c.json({error:'Choose a supported video link or upload an audio file.',code:'unsupported_source',retryable:false},400);
+    }
+  }
   if (c.env.AUTH_MODE === 'cail' && c.get('principal')) {
     const result=await submitSplit(c.env,c.get('principal')!,parsed.value,c.req.header('Idempotency-Key'));
     await resumeOwnedSourceImport(c.env,c.get('principal')!,result.operation);
@@ -1026,7 +1036,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     if (!source) {
       return c.json(
         {
-          error: 'Paste a full YouTube or Vimeo video link.',
+          error: 'Paste a supported video link.',
           code: 'invalid_youtube_url',
           retryable: false,
         },

@@ -54,7 +54,7 @@ async function completed(page, count) {
   await expect(page.locator('.badge.ready')).toHaveCount(count, { timeout: 25000 });
   await expect.poll(async () => (await account(page)).splitAllowance.completed).toBe(count);
 }
-test('guest submits Vimeo and YouTube through the existing video field with neutral import progress', async ({ page }) => {
+test('guest rejects retired Vimeo and submits YouTube through the existing video field', async ({ page }) => {
   const f = await setup(page);
   let pendingSubmission;
   const submissions = [];
@@ -70,9 +70,17 @@ test('guest submits Vimeo and YouTube through the existing video field with neut
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('textbox', { name: 'Video link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'YouTube or Vimeo link');
+    await expect(input).toHaveAttribute('placeholder', 'Video link');
     await expect(page.locator('#yt-disclosure summary')).toHaveText('Or paste a video link');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
+    const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
+    await input.fill('https://vimeo.com/76979871');
+    await page.locator('#yt-form button').click();
+    expect((await retiredResponse).status()).toBe(400);
+    await expect(page.locator('#upload-message')).toHaveText('Choose a supported video link or upload an audio file.');
+    await expect(input).toBeEnabled();
+    await expect(page.locator('#job-list .console')).toHaveCount(0);
+    expect((await account(page)).splitAllowance).toEqual(before.splitAllowance);
     await page.route(/\/api\/jobs$/, route => {
       if (route.request().method() !== 'POST') return route.continue();
       submissions.push({ body: route.request().postDataJSON(), headers: route.request().headers() });
@@ -82,7 +90,7 @@ test('guest submits Vimeo and YouTube through the existing video field with neut
       id: new URL(route.request().url()).pathname.split('/').at(-1), filename: 'Video fixture',
       model: 'htdemucs_ft', status: 'importing', stems: [],
     } }));
-    for (const videoUrl of ['https://vimeo.com/76979871', 'https://www.youtube.com/watch?v=jNQXAC9IVRw']) {
+    for (const videoUrl of ['https://www.youtube.com/watch?v=jNQXAC9IVRw']) {
       pendingSubmission = undefined;
       await input.fill(videoUrl);
       await page.locator('#yt-form button').click();
@@ -94,7 +102,7 @@ test('guest submits Vimeo and YouTube through the existing video field with neut
       expect(submissions.at(-1).body).toEqual({ videoUrl, model: 'htdemucs_ft' });
       expect(submissions.at(-1).headers['idempotency-key']).toBeTruthy();
       expect(submissions.at(-1).headers['x-stem-course']).toBe('personal');
-      if (videoUrl.includes('vimeo.com')) {
+      {
         for (const width of [1280, 390]) {
           await page.setViewportSize({ width, height: 900 });
           await expect(input).toBeVisible();
@@ -115,17 +123,19 @@ test('guest submits Vimeo and YouTube through the existing video field with neut
       await expect(page.locator('#upload-message')).toContainText('PROCESSING');
       await expect(page.locator('#job-list .console')).toHaveCount(submissions.length);
     }
-    expect(submissions).toHaveLength(2);
+    expect(submissions).toHaveLength(1);
     const after = await account(page);
     expect(after.account.subject).toBe(before.account.subject);
     expect(after.splitAllowance).toEqual(before.splitAllowance);
     expect(f.counts()).toEqual({ providerStarts: 0, verifications: 0, widgetLoads: 0 });
     await expect(page.locator('#guest-panel, #guest-session, #session-check, vite-error-overlay, nextjs-portal')).toHaveCount(0);
-    // Initial account discovery and the instructor probe use 401 for this
-    // signed-out guest; every other browser error is unexpected.
+    // Account discovery uses 401 and the retired source returns 400;
+    // other browser errors are unexpected.
     expect(consoleErrors.filter(error => !(
-      error.text === 'Failed to load resource: the server responded with a status of 401 (Unauthorized)'
-      && ['/api/account', '/api/teacher/me'].includes(new URL(error.url, f.origin).pathname)
+      (error.text === 'Failed to load resource: the server responded with a status of 401 (Unauthorized)'
+        && ['/api/account', '/api/teacher/me'].includes(new URL(error.url, f.origin).pathname))
+      || (error.text === 'Failed to load resource: the server responded with a status of 400 (Bad Request)'
+        && new URL(error.url, f.origin).pathname === '/api/jobs')
     ))).toEqual([]);
     expect(f.errors).toEqual([]);
   } finally {
