@@ -633,14 +633,15 @@ export async function searchArchiveSongs(query: string): Promise<{ results: Arch
 async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSong[] }> {
   const base = 'mediatype:audio AND NOT access-restricted-item:true';
   const queries = [
-    `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
+    `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
     `${base} AND (${tokens.map(token => `"${token}"`).join(' AND ')})`,
+    `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
   ];
   const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
     url.searchParams.set('q', q);
     for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
-    if (index === 0) url.searchParams.append('sort[]', 'downloads desc');
+    if (index === 2) url.searchParams.append('sort[]', 'downloads desc');
     url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
     const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');

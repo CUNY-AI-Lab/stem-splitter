@@ -103,7 +103,7 @@ test('failed searches log only response diagnostics and preserve upstream retrya
   t.mock.method(console,'warn',(...values:unknown[])=>events.push(values));
   t.mock.method(globalThis,'fetch',async()=>new Response('upstream body must stay private',{status:503,headers:{'content-type':'text/html'}}));
   await assert.rejects(()=>searchArchiveSongs('private search retry fixture'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
-  assert.equal(events.length,2);
+  assert.equal(events.length,3);
   for(const [name,details] of events){assert.equal(name,'archive_fetch_diagnostic');assert.deepEqual(details,{stage:'search',reason:'upstream_busy',status:503,contentType:'text/html'});}
   assert.doesNotMatch(JSON.stringify(events),/private|fixture|upstream body|https:/);
   events.length=0;
@@ -127,8 +127,9 @@ test('song-title queries prefer title matches while exact artist queries retain 
   });
   const titleSearch=await searchArchiveSongs('white rabbit');
   assert.deepEqual(titleSearch.results.map(song=>song.archiveId),['song']);
-  assert.match(requests[0].searchParams.get('q')!,/title:"white" AND title:"rabbit"/);
-  assert.equal(requests[0].searchParams.get('sort[]'),'downloads desc');
+  assert.match(requests[0].searchParams.get('q')!,/title:"white" OR creator:"white"/);
+  assert.match(requests[2].searchParams.get('q')!,/title:"white" AND title:"rabbit"/);
+  assert.equal(requests[2].searchParams.get('sort[]'),'downloads desc');
   const artistSearch=await searchArchiveSongs('White Rabbit Project');
   assert.deepEqual(artistSearch.results.map(song=>song.archiveId),['artist']);
 });
@@ -149,5 +150,5 @@ test('a catalog request that exhausts its first attempt still has time for a bou
   });
   const result=await searchArchiveSongs('timed catalog recovery');
   assert.equal(result.results[0]?.archiveId,'slow-catalog');
-  assert.deepEqual([...attempts.values()],[2,2]);
+  assert.deepEqual([...attempts.values()],[2,2,2]);
 });
