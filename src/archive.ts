@@ -121,7 +121,7 @@ export interface ArchiveAudio {
   data: ArrayBuffer;
   title: string;
   durationSec: number;
-  attribution: { title: string; creator: string; sourceUrl: string; licenseUrl: string; fileName: string };
+  attribution: { title: string; creator: string; sourceUrl: string; licenseUrl: string; fileName: string; itemTitle?: string; itemCreator?: string; fileCreator?: string };
 }
 
 export interface ArchiveSearchResult {
@@ -140,6 +140,7 @@ export interface ArchiveTrack {
   durationSec: number;
   bytes: number;
   artist?: string;
+  creator?: string;
   /** False when the track breaks the duration or size cap; UI greys these out. */
   importable: boolean;
 }
@@ -148,6 +149,7 @@ export interface ArchiveItem {
   identifier: string;
   title: string;
   creator: string;
+  description?: string;
   year: number | null;
   license: string;
   licenseUrl: string;
@@ -511,6 +513,9 @@ export interface ArchiveSong {
   archiveFile: string;
   title: string;
   artist: string;
+  fileCreator: string;
+  itemCreator: string;
+  itemDescription: string;
   durationSec: number;
   bytes: number;
   sourceUrl: string;
@@ -520,8 +525,26 @@ export interface ArchiveSong {
 function songTitle(item: ArchiveItem, track: ArchiveTrack): string {
   return item.tracks.length === 1 && /^(?:file|track|audio)[\s._-]*\d*$/i.test(track.title) ? item.title : track.title;
 }
-function songArtist(item: ArchiveItem, track: ArchiveTrack): string {
-  return (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? track.artist : item.creator) || '';
+function recordingCredit(value: string | undefined): string {
+  return value && !/^(artist|unknown|unknown artist|various artists)$/i.test(value) ? value : '';
+}
+
+function itemDescription(value: unknown): string {
+  const plain = firstString(value).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
+  return plain.length > 120 ? `${plain.slice(0, 117)}…` : plain;
+}
+
+export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, publicAudio = false): Pick<ArchiveAudio, 'title' | 'attribution'> & { fileName: string } {
+  const trackTitle = publicAudio ? songTitle(item, track) : track.title;
+  return {
+    title: publicAudio
+      ? `${trackTitle}${item.title !== trackTitle ? ` - Archive item: ${item.title}` : ''}`
+      : `${item.creator ? `${item.creator} - ` : ''}${trackTitle}`,
+    fileName: track.name,
+    attribution: { title: trackTitle, creator: publicAudio ? recordingCredit(track.artist) : item.creator,
+      ...(publicAudio ? { itemTitle: item.title, itemCreator: item.creator, fileCreator: recordingCredit(track.creator) } : {}),
+      sourceUrl: item.detailsUrl, licenseUrl: item.licenseUrl, fileName: track.name },
+  };
 }
 
 const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -625,17 +648,19 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
       const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
       if (!alternateRecording.test(tokens.join(' ')) && alternateRecording.test(versions)) continue;
       const title = songTitle(item, track);
-      const artist = songArtist(item, track);
-      const text = searchableText(`${title} ${artist}`);
+      const artist = recordingCredit(track.artist), fileCreator = recordingCredit(track.creator);
+      // Item creator remains useful for finding a song, but never becomes its artist tag.
+      const text = searchableText(`${title} ${artist} ${fileCreator} ${item.creator}`);
       // Matching only the album description would return unrelated tracks.
       if (!tokens.every(token => text.includes(token))) continue;
-      const titleText = searchableText(title), artistText = searchableText(artist);
+      const titleText = searchableText(title), artistText = searchableText(`${artist} ${fileCreator} ${item.creator}`);
       const score = tokens.filter(token => titleText.includes(token)).length * 3 + tokens.filter(token => artistText.includes(token)).length * 5
         + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
         - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
         - Math.abs(text.split(' ').length - tokens.length) * 0.2;
       candidates.push({ id: `${item.identifier}/${track.name}`, archiveId: item.identifier, archiveFile: track.name,
-        title, artist: artist || 'Internet Archive', durationSec: track.durationSec, bytes: track.bytes, sourceUrl: item.detailsUrl, itemTitle: item.title, score });
+        title, artist, fileCreator, itemCreator: item.creator, itemDescription: item.description || '',
+        durationSec: track.durationSec, bytes: track.bytes, sourceUrl: item.detailsUrl, itemTitle: item.title, score });
     }
   }
   candidates.sort((a, b) => b.score - a.score);
@@ -647,7 +672,7 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
     });
     for (let i = 0; i < batch.length && results.length < 8; i++) {
       const { score: _score, ...song } = batch[i];
-      const identity = `${searchableText(song.title)}|${searchableText(song.artist)}|${Math.round(song.durationSec)}`;
+      const identity = song.id;
       if (available[i] && !seen.has(identity)) { seen.add(identity); results.push(song); }
     }
   }
@@ -760,7 +785,8 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
     const candidate: ArchiveTrack = {
       name,
       title: displayText(file.title, base.replace(/^\d+[\s._-]*/, '') || base),
-      artist: displayText(file.artist || file.creator),
+      artist: displayText(file.artist),
+      creator: displayText(file.creator),
       durationSec,
       bytes,
       importable:
@@ -795,6 +821,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
     identifier,
     title: displayText(metadata.title, identifier),
     creator: displayText(metadata.creator),
+    description: itemDescription(metadata.description),
     year: toYear(metadata.year ?? metadata.date),
     license: options.publicAudio && !isOpenLicenseUrl(licenseUrl) ? '' : licenseLabel(licenseUrl),
     licenseUrl,
@@ -919,12 +946,8 @@ export async function fetchArchiveAudio(
 
   return {
     data,
-    // Plain hyphen, not an em dash: sanitizeFilename() flattens punctuation it
-    // does not recognise to "_", which reads badly in the mixer title.
-    title: `${(publicAudio ? songArtist(item,track) : item.creator) ? `${publicAudio ? songArtist(item,track) : item.creator} - ` : ''}${publicAudio ? songTitle(item,track) : track.title}`,
+    ...archiveAudioMetadata(item, track, publicAudio),
     durationSec: track.durationSec,
-    fileName: track.name,
-    attribution: { title: publicAudio ? songTitle(item,track) : track.title, creator: publicAudio ? songArtist(item,track) : item.creator, sourceUrl: item.detailsUrl, licenseUrl: item.licenseUrl, fileName: track.name },
   };
 }
 

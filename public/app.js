@@ -435,7 +435,10 @@ async function searchSourceSongs(term, sequence) {
     if (!current()) return;
     sourceSongs.replaceChildren();
     for (const track of data.results || []) {
-      const label = `${track.title} — ${track.artist}`;
+      const credit = track.artist ? `File artist: ${track.artist}`
+        : track.fileCreator ? `File creator: ${track.fileCreator}`
+        : track.itemCreator ? `Item creator: ${track.itemCreator}` : '';
+      const label = `${track.title}${credit ? ` — ${credit}` : ''}`;
       // Keep the provider's matches, including punctuation and word-order matches.
       let value = label;
       for (let version = 2; songResults.has(value); version++) value = `${label} (${version})`;
@@ -448,7 +451,7 @@ async function searchSourceSongs(term, sequence) {
       option.dataset.value = value;
       option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Internet Archive${track.itemTitle && track.itemTitle !== track.title ? ` · ${track.itemTitle}` : ''}`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Internet Archive: ${track.itemTitle || track.title}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
       sourceSongs.appendChild(option);
     }

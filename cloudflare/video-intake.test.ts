@@ -478,13 +478,24 @@ test('Archive search and import keep guest ownership, full audio, attribution an
   const response=await submit();const body=await response.json() as {id:string;savedToAccount:boolean};await guest.flush();
   assert.equal(response.status,202);assert.equal(body.savedToAccount,false);assert.equal(posts,1);assert.equal(sourceReads,1);
   const job=(await db.prepare('SELECT source_type,source_key,filename,source_hash FROM jobs WHERE id=?').bind(body.id).first<{source_type:string;source_key:string;filename:string;source_hash:string}>())!;
-  assert.equal(job.source_type,'archive');assert.equal(job.filename,'Artist - Song fixture');assert.match(job.source_key,/\.mp3$/);
+  assert.equal(job.source_type,'archive');assert.equal(job.filename,'Song fixture');assert.match(job.source_key,/\.mp3$/);
   const stored=(await env.AUDIO.get(job.source_key))!;assert.equal(stored.httpMetadata!.contentType,'audio/mpeg');
   assert.deepEqual(new Uint8Array(await new Response(stored.body).arrayBuffer()),audio);
   assert.equal(job.source_hash,Buffer.from(await crypto.subtle.digest('SHA-256',audio)).toString('hex'));
   const provenance=(await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(body.id).first<{attribution:string}>())!;
-  assert.equal(JSON.parse(provenance.attribution).creator,'Artist');
+  assert.equal(JSON.parse(provenance.attribution).creator,'');
+  assert.equal(JSON.parse(provenance.attribution).itemCreator,'Artist');
+  assert.equal(JSON.parse(provenance.attribution).fileName,'song.mp3');
   await submit();await guest.flush();assert.equal(posts,1);assert.equal(sourceReads,1);
+  // Release the fixture's processing slot before selecting the same source again.
+  await db.prepare("UPDATE app_operations SET state='succeeded',lease_until=0 WHERE job_id=?").bind(body.id).run();
+  await db.prepare('UPDATE import_cache SET metadata_json=?').bind(JSON.stringify({title:'Artist - Song fixture',fileName:'song.mp3',attribution:{creator:'Artist'}})).run();
+  const cachedResponse=await guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':'archive-cache-fixture'},body:JSON.stringify({archiveId:'song-fixture',archiveFile:'song.mp3',archiveSearch:true})});
+  const cachedJob=await cachedResponse.json() as {id:string};await guest.flush();
+  assert.equal(cachedResponse.status,202);assert.equal(sourceReads,1);
+  assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind(cachedJob.id).first<{filename:string}>())!.filename,'Song fixture');
+  const refreshed=JSON.parse((await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(cachedJob.id).first<{attribution:string}>())!.attribution);
+  assert.equal(refreshed.creator,'');assert.equal(refreshed.itemCreator,'Artist');assert.equal(refreshed.fileName,'song.mp3');
   const other=await guestRequests(db,env,'d');assert.equal((await other.request('/api/jobs/'+body.id)).status,404);
 });
 

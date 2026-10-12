@@ -253,11 +253,11 @@ test('guest searches and imports a complete song through the existing field',asy
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const input=page.getByRole('combobox',{name:'Song or link',exact:true});
     await input.pressSequentially('Artist song');
-    const suggestion=page.getByRole('option',{name:'Song fixture — Artist',exact:false});
+    const suggestion=page.getByRole('option',{name:'Song fixture — Item creator: Artist',exact:false});
     await expect(suggestion).toBeVisible();
     await expect(input).toHaveAttribute('aria-expanded','true');
     await suggestion.click();
-    await expect(input).toHaveValue('Song fixture — Artist');
+    await expect(input).toHaveValue('Song fixture — Item creator: Artist');
     await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
     const submission=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
     await page.locator('#yt-form button').click();const response=await submission;
@@ -309,7 +309,7 @@ test('song suggestions support keyboard selection and stay closed after Escape o
     await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');
     await expect(input).toHaveAttribute('aria-activedescendant',await page.getByRole('option').first().getAttribute('id'));
     await input.press('ArrowDown');await expect(page.getByRole('option').nth(1)).toHaveAttribute('aria-selected','true');
-    await input.press('Enter');await expect(input).toHaveValue("Huntin' Koch (remix) — De köchunterzZ");
+    await input.press('Enter');await expect(input).toHaveValue("Huntin' Koch (remix) — File artist: De köchunterzZ");
     await expect(list).toBeHidden();
     expect(f.requests.filter(r=>r.path==='/api/jobs'&&r.method==='POST')).toHaveLength(0);
     await input.fill('Later');await expect.poll(()=>Boolean(delayed)).toBe(true);
@@ -356,13 +356,57 @@ test.describe('song search on touch screens',()=>{
       const input=page.getByRole('combobox',{name:'Song or link',exact:true});
       const before=await page.locator('#stem-choice').boundingBox();
       await input.fill('Artist song');
-      const suggestion=page.getByRole('option',{name:/Song fixture — Artist/});await expect(suggestion).toBeVisible();
+      const suggestion=page.getByRole('option',{name:/Song fixture — Item creator: Artist/});await expect(suggestion).toBeVisible();
       expect(await page.locator('#stem-choice').boundingBox()).toEqual(before);
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-search-touch.png`,animations:'disabled'});}
-      await suggestion.tap();await expect(input).toHaveValue('Song fixture — Artist');
+      await suggestion.tap();await expect(input).toHaveValue('Song fixture — Item creator: Artist');
       await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
       expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
     }finally{await f.close();}
   });
+});
+
+test('Archive results distinguish source credits and submit the exact choice on desktop and mobile',async({page})=>{
+  const f=await setup(page),submissions=[];
+  const tracks=[
+    {id:'LostAndFound_929/1456.mp3',archiveId:'LostAndFound_929',archiveFile:'1456.mp3',title:'white rabbit',artist:'',itemCreator:'Jefferson Airplane',itemTitle:'white rabbit',itemDescription:'my best effort',durationSec:131},
+    {id:'compilation/01 White Rabbit.mp3',archiveId:'compilation',archiveFile:'01 White Rabbit.mp3',title:'white rabbit',artist:'Jefferson Airplane',itemCreator:'Collection uploader',itemTitle:'Under The Influence Of Alice',durationSec:152},
+    {id:'concert/white-rabbit-live.mp3',archiveId:'concert',archiveFile:'white-rabbit-live.mp3',title:'white rabbit',artist:'Jefferson Airplane',itemCreator:'Jefferson Airplane',itemTitle:'Live at the Fillmore',durationSec:152},
+  ];
+  try {
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:tracks}}));
+    await page.route(/\/api\/jobs$/,route=>{
+      if(route.request().method()!=='POST')return route.continue();
+      submissions.push(route.request().postDataJSON());
+      return route.fulfill({status:400,json:{error:'Submission intercepted by test'}});
+    });
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});
+    for(const width of [1280,390]) {
+      await page.setViewportSize({width,height:900});
+      for(let index=0;index<tracks.length;index++) {
+        const before=await page.locator('#stem-choice').boundingBox();
+        await input.fill('Jefferson Airplane white rabbit');
+        const options=page.getByRole('option');await expect(options).toHaveCount(3);
+        await expect(options.nth(0)).toContainText('Item creator: Jefferson Airplane');
+        await expect(options.nth(0)).toContainText('Item note: my best effort');
+        await expect(options.nth(0)).not.toContainText('File artist:');
+        await expect(options.nth(1)).toContainText('File artist: Jefferson Airplane');
+        await expect(options.nth(1)).toContainText('Under The Influence Of Alice');
+        await expect(options.nth(2)).toContainText('Live at the Fillmore');
+        expect(await page.locator('#stem-choice').boundingBox()).toEqual(before);
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+        if(index===0&&process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/archive-credits-${width}.png`,animations:'disabled'});}
+        if(width===1280){for(let step=0;step<=index;step++)await input.press('ArrowDown');await input.press('Enter');}
+        else await options.nth(index).click();
+        await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
+        const count=submissions.length;await page.locator('#yt-form button').click();
+        await expect.poll(()=>submissions.length).toBe(count+1);
+        expect(submissions.at(-1)).toMatchObject({archiveId:tracks[index].archiveId,archiveFile:tracks[index].archiveFile,archiveSearch:true});
+        await expect(input).toBeEnabled();
+      }
+    }
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
 });

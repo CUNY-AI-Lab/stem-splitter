@@ -29,7 +29,8 @@ test('search returns matching downloadable files and filters restricted, private
   });
   const result=await searchArchiveSongs('Artist Song fixture');
   assert.equal(result.results.length,1);assert.equal(result.results[0].archiveId,'good');
-  assert.equal(result.results[0].archiveFile,'song.mp3');assert.equal(result.results[0].artist,'Artist');
+  assert.equal(result.results[0].archiveFile,'song.mp3');assert.equal(result.results[0].artist,'');
+  assert.equal(result.results[0].itemCreator,'Artist');
   assert.deepEqual(downloadRequests.sort(),['denied','good','html']);
 });
 
@@ -45,11 +46,49 @@ test('public Archive import accepts downloadable metadata, checks complete bytes
   });
   const load=()=>fetchArchiveAudio('good','song.mp3',{} as never,{publicAudio:true});
   const loaded=await load();assert.equal(loaded.data.byteLength,audio.length);assert.equal(loaded.durationSec,duration);
-  assert.equal(loaded.attribution.creator,'Artist');assert.equal(loaded.attribution.licenseUrl,'');
+  assert.equal(loaded.attribution.creator,'');assert.equal(loaded.attribution.itemCreator,'Artist');assert.equal(loaded.attribution.licenseUrl,'');
+  assert.equal(loaded.title,'Song fixture');
   mode='suffix';assert.deepEqual(new Uint8Array((await load()).data),audio);
   mode='partial';await assert.rejects(load,(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_source_changed');
   mode='range';await assert.rejects(load,(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_download_unavailable');
   assert.equal(calls,8);
+});
+
+test('Archive metadata keeps item creators separate from file credits and preserves distinct sources',async t=>{
+  const records:Record<string,Response>={
+    LostAndFound_929:metadata({title:'white rabbit',creator:'Jefferson Airplane',description:'<p>my best effort</p>'},[file({name:'1456.mp3',title:'white rabbit',artist:'Artist',creator:'Artist'})]),
+    compilation:metadata({title:'Under The Influence Of Alice',creator:'Collection uploader'},[file({name:'01 White Rabbit.mp3',title:'white rabbit',artist:'Jefferson Airplane'})]),
+    concert:metadata({title:'Live at the Fillmore',creator:'Jefferson Airplane',description:'Live concert recording'},[file({name:'white-rabbit-live.mp3',title:'white rabbit',artist:'Jefferson Airplane'})]),
+    file_credit:metadata({title:'Another collection',creator:'Collection uploader'},[file({name:'white-rabbit.mp3',title:'white rabbit',creator:'Jefferson Airplane'})]),
+  };
+  const requested:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:Object.keys(records).map(identifier=>({identifier}))}});
+    if(url.pathname.startsWith('/metadata/'))return records[url.pathname.split('/')[2]].clone();
+    requested.push(decodeURIComponent(url.pathname));
+    return new Headers(init?.headers).has('range')
+      ? new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}})
+      : new Response(audio,{headers:{'content-type':'audio/mpeg'}});
+  });
+  const {results}=await searchArchiveSongs('Jefferson Airplane white rabbit');
+  assert.equal(results.length,4);
+  const personal=results.find(song=>song.archiveId==='LostAndFound_929')!;
+  assert.equal(personal.artist,'');assert.equal(personal.fileCreator,'');
+  assert.equal(personal.itemCreator,'Jefferson Airplane');assert.equal(personal.itemDescription,'my best effort');
+  const compilation=results.find(song=>song.archiveId==='compilation')!;
+  assert.equal(compilation.artist,'Jefferson Airplane');assert.equal(compilation.itemCreator,'Collection uploader');
+  assert.equal(compilation.itemTitle,'Under The Influence Of Alice');
+  assert.equal(results.find(song=>song.archiveId==='concert')?.itemTitle,'Live at the Fillmore');
+  assert.equal(results.find(song=>song.archiveId==='file_credit')?.artist,'');
+  assert.equal(results.find(song=>song.archiveId==='file_credit')?.fileCreator,'Jefferson Airplane');
+  const loaded=await fetchArchiveAudio(personal.archiveId,personal.archiveFile,{} as never,{publicAudio:true});
+  assert.equal(loaded.title,'white rabbit');assert.equal(loaded.attribution.creator,'');
+  assert.equal(loaded.attribution.itemCreator,'Jefferson Airplane');assert.equal(loaded.attribution.fileName,'1456.mp3');
+  assert.equal(requested.at(-1),'/download/LostAndFound_929/1456.mp3');
+  const album=await fetchArchiveAudio(compilation.archiveId,compilation.archiveFile,{} as never,{publicAudio:true});
+  assert.equal(album.title,'white rabbit - Archive item: Under The Influence Of Alice');
+  assert.equal(album.attribution.creator,'Jefferson Airplane');assert.equal(album.attribution.itemCreator,'Collection uploader');
 });
 
 test('public download options preserve remix licensing and exclude private audio files',async t=>{
