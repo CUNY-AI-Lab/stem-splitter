@@ -132,3 +132,22 @@ test('song-title queries prefer title matches while exact artist queries retain 
   const artistSearch=await searchArchiveSongs('White Rabbit Project');
   assert.deepEqual(artistSearch.results.map(song=>song.archiveId),['artist']);
 });
+
+test('a catalog request that exhausts its first attempt still has time for a bounded retry',async t=>{
+  let now=0;const attempts=new Map<string,number>();
+  t.mock.method(Date,'now',()=>now);
+  t.mock.method(console,'error',()=>{});
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const count=(attempts.get(url.search)||0)+1;attempts.set(url.search,count);
+      if(count===1){await Promise.resolve();now=10001;throw new DOMException('Fixture request timed out','TimeoutError');}
+      return Response.json({response:{docs:[{identifier:'slow-catalog',title:'timed catalog recovery'}]}});
+    }
+    if(url.pathname.startsWith('/metadata/'))return metadata({title:'timed catalog recovery'},[file({title:'timed catalog recovery'})]);
+    return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
+  });
+  const result=await searchArchiveSongs('timed catalog recovery');
+  assert.equal(result.results[0]?.archiveId,'slow-catalog');
+  assert.deepEqual([...attempts.values()],[2,2]);
+});

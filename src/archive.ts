@@ -341,7 +341,8 @@ async function fetchArchiveOnce(
 async function fetchWithBusyRetry(
   url: string,
   label: string,
-  timeoutMs: number
+  timeoutMs: number,
+  attemptTimeoutMs = timeoutMs
 ): Promise<{ response: Response; deadline: number }> {
   let lastNetworkError: unknown;
   let sawBusy = false;
@@ -357,7 +358,7 @@ async function fetchWithBusyRetry(
     try {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) break;
-      const res = await fetchArchiveOnce(url, remainingMs);
+      const res = await fetchArchiveOnce(url, Math.min(remainingMs, attemptTimeoutMs));
       if (res.status === 429 || res.status >= 500) {
         sawBusy = true;
         lastStatus = res.status; lastContentType = responseMediaType(res);
@@ -412,11 +413,12 @@ async function remainingArchiveBodyBudget(
   throw timedOut();
 }
 
-async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIMEOUT_MS): Promise<unknown> {
+async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIMEOUT_MS, attemptTimeoutMs = timeoutMs): Promise<unknown> {
   const { response: res, deadline } = await fetchWithBusyRetry(
     url,
     label,
-    timeoutMs
+    timeoutMs,
+    attemptTimeoutMs
   );
   if (!res.ok) {
     archiveFailure(label, 'http_error', res.status, responseMediaType(res));
@@ -640,7 +642,7 @@ async function findArchiveSongs(tokens: string[]): Promise<{ results: ArchiveSon
     for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
     if (index === 0) url.searchParams.append('sort[]', 'downloads desc');
     url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
-    const data = await fetchJson(url.toString(), 'search', 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
+    const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
     return data.response.docs;
   }));
