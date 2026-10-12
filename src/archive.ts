@@ -769,8 +769,8 @@ function isMusicFile(metadata: Record<string, unknown>, file: ArchiveFile): bool
   const descriptions = [metadata.description, file.description, file.comment].map(metadataText).join(' ')
     .replace(/<[^>]*>/g, ' ').replace(/\bcover (?:art|image|photo|design|scan)s?\b/gi, '');
   const coverContext = /\b(cover(?:ed)? (?:of|by)|cover version|my cover|tribute to|karaoke version|rendition of|studio recreation|recreation of|originally (?:recorded|performed) by)\b/i;
-  const coverQualifier = /(?:^|[-–—:]\s*|[([])(?:[\w ]{0,40}\s+)?(?:cover|karaoke|tribute)(?:\s+version)?\s*(?:[)\]]|\.mp3$|$)/i;
-  const coverTags = [metadata.subject, metadata.genre, file.genre].flatMap(value => Array.isArray(value) ? value : [value]);
+  const coverQualifier = /(?:[-–—:]\s*|[([])(?:[\w ]{0,40}\s+)?(?:cover|karaoke|tribute)(?:\s+version)?\s*(?:[)\]]|\.mp3$|$)/i;
+  const coverTags = [metadata.genre, file.genre].flatMap(value => Array.isArray(value) ? value : [value]);
   if (coverContext.test(`${coverLabels} ${descriptions}`) || coverTags.some(tag => typeof tag === 'string' && /^(covers?|karaoke|tribute)$/i.test(tag.trim()))
       || [metadata.title, file.title, file.name].map(metadataText).some(label => coverQualifier.test(label))
       || (/\bmy (best effort|version|performance|rendition)\b/i.test(descriptions) && !recordingCredit(displayText(file.artist)) && !recordingCredit(displayText(file.creator)))) return false;

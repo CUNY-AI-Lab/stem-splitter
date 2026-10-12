@@ -232,7 +232,7 @@ test('complete audio duration also enforces five minutes when file metadata roun
 test('cover exclusions inspect complete metadata arrays and apply even when the query requests covers',async t=>{
   const records:Record<string,Response>={
     original:metadata({title:'Original melody'},[file({title:'Original melody'})]),
-    cover:metadata({title:'Original melody cover'},[file({title:'Original melody cover'})]),
+    cover:metadata({title:'Original melody cover',description:'A cover version of another song'},[file({title:'Original melody cover'})]),
     late:metadata({title:'Original melody',description:['Album notes '.repeat(2000),'A cover of the original recording']},[file({title:'Original melody'})]),
     rendition:metadata({title:'Original melody',description:'Originally recorded by another performer'},[file({title:'Original melody'})]),
     file_note:metadata({title:'Original melody'},[file({title:'Original melody',comment:'My cover version'})]),
@@ -257,7 +257,7 @@ test('cover exclusions inspect complete metadata arrays and apply even when the 
 });
 
 test('contextual filtering retains song titles, artists, instrumentals and remixes with music evidence',async t=>{
-  const titles=['Cover Me','Original Instrumental','Interview','Speech','Original melody (Remix)'];
+  const titles=['Cover Me','Cover','Tribute','Original Instrumental','Interview','Speech','Original melody (Remix)'];
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
     const url=new URL(String(input));
     if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'real-songs'}]}});
