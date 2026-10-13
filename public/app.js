@@ -215,9 +215,10 @@ async function splitRequestKey(body) {
 
 async function api(path, options = {}) {
   await appReady;
+  const { onResults, ...requestOptions } = options;
   const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(options.body) : null;
   const send = () => fetch(path, {
-    ...options,
+    ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
       'x-class-code': getClassCode(),
@@ -227,6 +228,9 @@ async function api(path, options = {}) {
     },
   });
   let res = await send();
+  if (res.ok && onResults && res.headers.get('content-type')?.includes('application/x-ndjson')) {
+    return readSongSearch(res, onResults);
+  }
   let body = await res.json().catch(() => ({}));
   if (res.status === 403 && body.error?.code === 'guest_verification_required' && guestSessionActive) {
     await window.StemGuest.verify(runtime.guest, document.getElementById('upload-status'));
@@ -248,6 +252,30 @@ async function api(path, options = {}) {
   }
   if (!res.ok) throw new Error(body.error?.message || body.error || `Request failed (${res.status})`);
   return body;
+}
+
+async function readSongSearch(response, onResults) {
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let pending = '', final, bytes = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 1024 * 1024) throw new Error('Search response is too large.');
+      pending += decoder.decode(value, { stream: true });
+      let newline;
+      while ((newline = pending.indexOf('\n')) >= 0) {
+        const data = JSON.parse(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+        if (data.error) throw new Error(data.error);
+        if (data.results?.length) onResults(data);
+        if (data.done) final = data;
+      }
+    }
+    if (!final) throw new Error('Search response was interrupted.');
+    return final;
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
 // POST to a Listening Guide endpoint and consume its SSE stream, calling onEvent for
@@ -416,6 +444,8 @@ function selectSong(value) {
   if (!songResults.has(value)) return;
   clearTimeout(songSearchTimer);
   ++songSearchSequence;
+  songSearchAbort?.abort();
+  sourceSongs.removeAttribute('aria-busy');
   ytUrlInput.value = value;
   ytUrlInput.focus();
   closeSongSuggestions();
@@ -430,11 +460,14 @@ async function searchSourceSongs(term, sequence) {
   songSearchStatus = 'loading';
   sourceSongs.setAttribute('aria-busy', 'true');
   showSongSearchStatus('Searching…');
-  try {
-    const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, { signal: controller.signal });
+  const seen = new Set();
+  const render = data => {
     if (!current()) return;
-    sourceSongs.replaceChildren();
+    if (!songResults.size && data.results?.length) sourceSongs.replaceChildren();
     for (const track of data.results || []) {
+      // Keep existing choices in place while more verified matches arrive.
+      if (seen.has(track.id) || songResults.size >= 8) continue;
+      seen.add(track.id);
       const credit = track.artist ? `File artist: ${track.artist}`
         : track.fileCreator ? `File creator: ${track.fileCreator}`
         : track.itemCreator ? `Item creator: ${track.itemCreator}` : '';
@@ -455,13 +488,20 @@ async function searchSourceSongs(term, sequence) {
       option.appendChild(duration);
       sourceSongs.appendChild(option);
     }
-    songSearchStatus = 'ready';
     if (songResults.size) openSongSuggestions();
-    else showSongSearchStatus('Try another song or artist.');
+  };
+  try {
+    const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
+      signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
+    });
+    if (!current()) return;
+    render(data);
+    songSearchStatus = 'ready';
+    if (!songResults.size) showSongSearchStatus('Try another song or artist.');
   } catch {
     if (!current()) return;
-    songSearchStatus = 'error';
-    showSongSearchStatus('Search is temporarily unavailable. Try again.');
+    songSearchStatus = songResults.size ? 'ready' : 'error';
+    if (!songResults.size) showSongSearchStatus('Search is temporarily unavailable. Try again.');
   } finally {
     if (current()) sourceSongs.removeAttribute('aria-busy');
   }
@@ -469,6 +509,7 @@ async function searchSourceSongs(term, sequence) {
 ytUrlInput.addEventListener('input', (event) => {
   clearTimeout(songSearchTimer);
   const term = ytUrlInput.value.trim(), sequence = ++songSearchSequence;
+  songSearchAbort?.abort();
   songSuggestionsDismissed = false;
   if (songResults.has(term)) { closeSongSuggestions(); return; }
   clearSongSuggestions();

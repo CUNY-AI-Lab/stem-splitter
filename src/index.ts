@@ -5,6 +5,7 @@ import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, cours
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
 import { coursePrompt } from './classroom/prompts.ts';
 import { Hono } from 'hono';
+import { archiveSongSearchResponse } from './archive-search-response.ts';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
@@ -81,7 +82,6 @@ import {
   isArchiveScope,
   parseArchiveIdentifier,
   searchArchive,
-  searchArchiveSongs,
 } from './archive';
 import {
   AssistantError,
@@ -957,8 +957,7 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 // --- jobs -------------------------------------------------------------
 
 app.get('/api/music/search', requireClassCode, async (c) => {
-  try { return c.json(await searchArchiveSongs(c.req.query('q') ?? '')); }
-  catch (error) { return c.json({ error: error instanceof ArchiveError ? error.message : 'Song search is temporarily unavailable.' }, 502); }
+  return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson');
 });
 
 app.post('/api/jobs', requireClassCode, async (c) => {

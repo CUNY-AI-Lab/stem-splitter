@@ -48,7 +48,7 @@ async function setup(page, chatAvailable = false) {
     widgetLoads++;
     return route.fulfill({ contentType: 'text/javascript', body: `window.turnstile={render(root,options){if(options.appearance!=='interaction-only')throw new Error('Unexpected widget appearance');const button=document.createElement('button');button.textContent='Complete fixture guest check';button.onclick=()=>options.callback('browser-fixture-'+crypto.randomUUID());root.append(button);return 'fixture';},remove(){}};` });
   });
-  return { origin, errors, requests, issuer, counts: () => ({ providerStarts, verifications, widgetLoads }),
+  return { origin, errors, requests, issuer, network, counts: () => ({ providerStarts, verifications, widgetLoads }),
     close: async () => { await page.unrouteAll({ behavior: 'wait' }); await page.close(); await harness.close(); network.close(); } };
 }
 const account = page => page.evaluate(async () => (await fetch('/api/account')).json());
@@ -435,6 +435,68 @@ test('Archive results distinguish source credits and submit the exact choice on 
         await expect(input).toBeEnabled();
       }
     }
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
+
+test('streamed song choices are usable before discovery finishes and stay in place as matches arrive',async({page})=>{
+  const f=await setup(page);
+  let release;
+  const catalog=new Promise(resolve=>{release=resolve;});
+  const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble'};
+  f.network.use(http.get('https://archive.org/advancedsearch.php',async({request})=>{
+    if(new URL(request.url).searchParams.get('q').includes('creator:[* TO *]'))await catalog;
+    return HttpResponse.json({response:{docs:[music]}});
+  }));
+  try {
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});
+    await input.fill('Song fixture');
+    const option=page.getByRole('option').first();
+    await expect(option).toBeVisible();
+    await expect(page.locator('#source-songs')).toHaveAttribute('aria-busy','true');
+    await input.press('ArrowDown');const selected=await input.getAttribute('aria-activedescendant');
+    release();
+    await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
+    await expect(input).toHaveAttribute('aria-activedescendant',selected);
+    await expect(option).toHaveAttribute('aria-selected','true');
+    await input.press('Enter');await expect(input).toHaveValue('Song fixture — Item creator: Fixture Ensemble');
+    await expect(page.locator('#source-songs')).toBeHidden();
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{release();await f.close();}
+});
+
+test('partial song streams preserve visible choices through later updates and interruptions',async({page})=>{
+  const f=await setup(page);
+  try {
+    await page.addInitScript(()=>{
+      const original=window.fetch;
+      window.fetch=(input,options)=>{
+        if(!String(input).startsWith('/api/music/search?'))return original(input,options);
+        const encoder=new TextEncoder();
+        return Promise.resolve(new Response(new ReadableStream({start(controller){
+          window.pushSearch=packet=>controller.enqueue(encoder.encode(JSON.stringify(packet)+'\n'));
+          window.endSearch=()=>controller.close();
+        }}),{headers:{'Content-Type':'application/x-ndjson'}}));
+      };
+    });
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});await input.fill('Streaming fixture');
+    await page.waitForFunction(()=>Boolean(window.pushSearch));
+    const first={id:'first',title:'First song',artist:'Musician',durationSec:150};
+    const second={id:'second',title:'Second song',artist:'Musician',durationSec:160};
+    await page.evaluate(song=>window.pushSearch({results:[song],done:false}),first);
+    await expect(page.getByRole('option')).toHaveCount(1);await input.press('ArrowDown');
+    const selected=await input.getAttribute('aria-activedescendant');
+    await page.evaluate(songs=>window.pushSearch({results:songs,done:false}),[second,first]);
+    await expect(page.getByRole('option')).toHaveCount(2);
+    await expect(page.getByRole('option').first()).toContainText('First song');
+    await expect(input).toHaveAttribute('aria-activedescendant',selected);
+    await page.evaluate(()=>window.endSearch());
+    await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
+    await expect(page.getByRole('option')).toHaveCount(2);
+    await input.press('Enter');await expect(input).toHaveValue('First song — File artist: Musician');
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{await f.close();}
 });
