@@ -279,7 +279,8 @@ function approvedArchiveUrl(raw: string | URL): URL | null {
 async function fetchArchiveOnce(
   rawUrl: string,
   timeoutMs: number,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<Response> {
   let url = approvedArchiveUrl(rawUrl);
   if (!url) {
@@ -293,7 +294,7 @@ async function fetchArchiveOnce(
     const response = await fetch(url, {
       headers: { Accept: '*/*', ...headers },
       redirect: 'manual',
-      signal: AbortSignal.timeout(remainingMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(remainingMs)]) : AbortSignal.timeout(remainingMs),
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
 
@@ -584,6 +585,8 @@ function requestPool(width: number) {
 // successful public discovery work; imports always fetch fresh metadata/audio.
 type DiscoveryEntry<T> = { expires: number; promise: Promise<T> };
 const songMetadataCache = new Map<string, DiscoveryEntry<ArchiveItem>>();
+// Provider locations stay server-side and expire with their metadata object.
+const songDeliveryLocations = new WeakMap<ArchiveItem, string[]>();
 const songDeliveryCache = new Map<string, DiscoveryEntry<boolean>>();
 const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
 function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
@@ -606,12 +609,31 @@ function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, l
   return entry.promise;
 }
 
-/** Check public file delivery before exposing a choice; import repeats metadata and reads the complete file. */
-async function downloadableSong(song: ArchiveSong): Promise<boolean> {
+/** Check public file delivery before exposing a choice; imports still read the complete file. */
+async function downloadableSong(song: ArchiveSong, locations: string[] = []): Promise<boolean> {
+  // MDAPI supplies redundant storage nodes. Race at most two verified locations:
+  // a busy disk must not hold the first result behind a five-second retry.
+  // If both fail, the canonical resolver handles moved items and stale metadata.
+  if (locations.length) {
+    const cancel = new AbortController();
+    try {
+      return await Promise.any(locations.map(async base => {
+        const res = await fetchArchiveOnce(`${base}/${encodeURIComponent(song.archiveFile)}`, 2500,
+          { Range: 'bytes=0-65535' }, cancel.signal);
+        if (!await verifiedSongResponse(song, res)) throw new Error('Archive mirror unavailable');
+        return true;
+      }));
+    } catch { /* Fall back to the canonical resolver, with its bounded retries. */ }
+    finally { cancel.abort(); }
+  }
   const {response: res} = await fetchWithBusyRetry(
     `${DOWNLOAD_BASE}/${encodeURIComponent(song.archiveId)}/${encodeURIComponent(song.archiveFile)}`,
     'audio', 12000, 5000, { Range: 'bytes=0-65535' }
   );
+  return verifiedSongResponse(song, res);
+}
+
+async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<boolean> {
   const mediaType = responseMediaType(res);
   const range = /^bytes 0-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') || '');
   const fullSize = res.status === 206 && range ? Number(range[2]) : Number(res.headers.get('content-length'));
@@ -724,6 +746,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener): Pr
   const metadata = new Map<string, Promise<ArchiveItem | null>>();
   const probes = new Map<string, Promise<boolean>>();
   const candidates = new Map<string, ArchiveSong & { score: number }>();
+  const locations = new Map<string, string[]>();
   const verified = new Set<string>();
   const earlyChecks: Promise<void>[] = [];
   let metadataFailures = 0, metadataRejected = 0, deliveryFailures = 0, earlyProbes = 0;
@@ -753,7 +776,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener): Pr
       pending = (async () => {
         try {
           const available = await reuseDiscovery(songDeliveryCache, JSON.stringify([song.id, song.bytes, song.durationSec]), 160,
-            () => songDeliveryPool(() => downloadableSong(song)), available => available);
+            () => songDeliveryPool(() => downloadableSong(song, locations.get(song.archiveId))), available => available);
           if (available) { verified.add(song.id); onResults(results()); }
           return available;
         } catch (error) {
@@ -768,6 +791,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener): Pr
   const inspectMatches = async (id: string, deadline: number) => {
     const item = await inspect(id, deadline);
     if (!item) return null;
+    locations.set(id, songDeliveryLocations.get(item) || []);
     const checks: Promise<boolean>[] = [];
     for (const song of matchingSongs(item, tokens).sort((a,b) => b.score-a.score)) {
       candidates.set(song.id,song);
@@ -776,8 +800,10 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener): Pr
     await Promise.all(checks);
     return item;
   };
-  // Inspect up to sixteen promising items while slower catalogs are still running.
-  // The complete merged catalog retains its sixteen-item discovery pass below.
+  // Reserve discovery work for each catalog. A fast broad catalog must not
+  // consume every early slot and delay music matches until the slowest catalog
+  // finishes. Inspect all sixteen music hits plus four from each other catalog;
+  // the final relevance pass still considers its full sixteen (forty items max).
   const earlyIds = new Set<string>();
   const base = 'mediatype:audio AND NOT access-restricted-item:true';
   const queries = [
@@ -798,9 +824,9 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener): Pr
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
     const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1}));
     const deadline = Date.now()+18000;
-    for (const doc of [...found].sort((a,b) => docScore(b)-docScore(a)).slice(0,16)) {
+    for (const doc of [...found].sort((a,b) => docScore(b)-docScore(a)).slice(0,index === 1 ? 16 : 4)) {
       const id = doc.identifier;
-      if (typeof id !== 'string' || !IDENTIFIER_PATTERN.test(id) || earlyIds.has(id) || earlyIds.size >= 16) continue;
+      if (typeof id !== 'string' || !IDENTIFIER_PATTERN.test(id) || earlyIds.has(id)) continue;
       earlyIds.add(id);
       earlyChecks.push(inspectMatches(id, deadline).then(() => undefined));
     }
@@ -1030,7 +1056,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
     throw new ArchiveError('That item has no audio files to split.', 'no_audio_files');
   }
 
-  return {
+  const item: ArchiveItem = {
     identifier,
     title: displayText(metadata.title, identifier),
     creator: displayText(metadata.creator),
@@ -1041,6 +1067,14 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
     detailsUrl: `https://archive.org/details/${encodeURIComponent(identifier)}`,
     tracks,
   };
+  if (options.publicAudio && typeof rawPayload.dir === 'string' &&
+      /^\/[0-9]+\/items\/[^/]+$/.test(rawPayload.dir) && rawPayload.dir.endsWith(`/items/${identifier}`)) {
+    const servers = [rawPayload.server, ...(Array.isArray(rawPayload.workable_servers) ? rawPayload.workable_servers : [])];
+    const trusted = [...new Set(servers.filter((server): server is string =>
+      typeof server === 'string' && /^ia[0-9]+\.(?:us|eu)\.archive\.org$/.test(server)))].slice(0, 2);
+    songDeliveryLocations.set(item, trusted.map(server => `https://${server}${rawPayload.dir}`));
+  }
+  return item;
 }
 
 /**

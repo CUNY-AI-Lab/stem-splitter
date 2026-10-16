@@ -99,7 +99,7 @@ test('overlapping discovery stays bounded and the complete credited catalog rema
     await new Promise(resolve=>setTimeout(resolve,1));activeProbes--;return probe();
   });
   const result=await searchArchiveSongs('Bounded melody');
-  assert.equal(result.results.length,8);assert.ok(metadataIds.size<=32);assert.ok(probeIds.size<=32);
+  assert.equal(result.results.length,8);assert.ok(metadataIds.size<=40);assert.ok(probeIds.size<=32);
   assert.ok(maxMetadata<=6);assert.ok(maxProbes<=4);
   // The music query sorts first; the early credited query also receives inspection.
   for(let i=0;i<16;i++)assert.ok(metadataIds.has(`bounded-2-${i}`));
@@ -161,4 +161,65 @@ test('the edge cache serves verified matches across requests without exposing br
   assert.equal(hit.headers.get('cache-control'),'private, no-store');
   assert.equal(packets.at(-1).results[0].archiveId,'edge-lantern-song');
   assert.equal(calls,before);assert.equal(writes,1);
+});
+
+test('a full fast broad catalog cannot starve the music catalog behind a stalled credited search', {timeout:5000}, async t => {
+  const credited = deferred(), broadInspected = deferred(), firstResult = deferred();
+  let firstId = '';
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;
+      if(q.includes('creator:[* TO *]')){await credited.promise;return Response.json({response:{docs:[]}});}
+      if(q.includes('subject:')){await broadInspected.promise;return Response.json({response:{docs:Array.from({length:16},(_,i)=>({identifier:`cold-music-${i}`}))}});}
+      return Response.json({response:{docs:Array.from({length:16},(_,i)=>({identifier:`cold-broad-${i}`}))}});
+    }
+    if(url.pathname.startsWith('/metadata/')){
+      if(url.pathname.includes('cold-broad'))broadInspected.resolve();
+      return url.pathname.endsWith('cold-music-15') ? metadata('Cold catalog melody') : metadata('Unrelated recording');
+    }
+    return probe();
+  });
+  const search=searchArchiveSongs('Cold catalog melody',r=>{if(r.results.length){firstId=r.results[0].archiveId;firstResult.resolve();}});
+  try { await firstResult.promise; assert.equal(firstId,'cold-music-15'); }
+  finally { credited.resolve(); await search; }
+});
+
+test('cold delivery uses the responsive metadata mirror and cancels a stalled sibling', {timeout:5000}, async t => {
+  let stalledAborted=false;const requested:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));requested.push(url.href);
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'cold-mirror'}]}});
+    if(url.pathname.startsWith('/metadata/')){
+      const data=await metadata('Cold mirror melody').json();
+      return Response.json({...data,server:'ia800001.us.archive.org',workable_servers:['ia800001.us.archive.org','ia600001.us.archive.org'],dir:'/12/items/cold-mirror'});
+    }
+    if(url.hostname==='ia800001.us.archive.org')return await new Promise<Response>((_resolve,reject)=>{
+      init!.signal!.addEventListener('abort',()=>{stalledAborted=true;reject(new DOMException('Aborted','AbortError'));},{once:true});
+    });
+    assert.equal(url.hostname,'ia600001.us.archive.org');assert.equal(url.pathname,'/12/items/cold-mirror/song.mp3');
+    assert.equal(new Headers(init?.headers).get('range'),'bytes=0-65535');return probe();
+  });
+  const result=await searchArchiveSongs('Cold mirror melody');
+  assert.equal(result.results.length,1);assert.equal(stalledAborted,true);
+  assert.equal(requested.filter(url=>url.includes('/download/')).length,0,'no resolver round trip is needed');
+  assert.equal(JSON.stringify(result).includes('ia600001'),false,'storage locations are not exposed to clients');
+});
+
+test('failed mirrors fall back to canonical delivery and untrusted locations are never requested',async t=>{
+  for(const mode of ['offline','wrong-item','external']){
+    const id=`mirror-fallback-${mode}`,title=`Mirror fallback ${mode}`;const requests:string[]=[];
+    t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+      const url=new URL(String(input));requests.push(url.href);
+      if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:id}]}});
+      if(url.pathname.startsWith('/metadata/'))return Response.json({...await metadata(title).json(),
+        server:mode==='external'?'attacker.example':'ia800002.us.archive.org',dir:`/12/items/${mode==='wrong-item'?'another-item':id}`});
+      if(url.hostname==='ia800002.us.archive.org')return new Response('unavailable',{status:404});
+      assert.equal(url.hostname,'archive.org');assert.equal(url.pathname,`/download/${id}/song.mp3`);return probe();
+    });
+    assert.equal((await searchArchiveSongs(title)).results.length,1);
+    assert.equal(requests.filter(url=>url.includes('ia800002')).length,mode==='offline'?1:0);
+    assert.equal(requests.some(url=>url.includes('attacker.example')),false);
+    t.mock.restoreAll();
+  }
 });
