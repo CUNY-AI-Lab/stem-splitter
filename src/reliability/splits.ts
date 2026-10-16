@@ -103,7 +103,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     }});
 }
 
-async function fail(env: Env, op: Operation, code: string, message='This split could not finish. No successful-split allowance was used. Try another source or upload an original or licensed audio file.') {
+async function fail(env: Env, op: Operation, code: string, message='This split could not finish. No allowance was used. Try another source or upload an original or licensed audio file.') {
   await env.DB.batch([
     env.DB.prepare(`UPDATE app_operations SET error_code=? WHERE id=? AND fence=? AND state NOT IN (${TERMINAL})`).bind(code,op.id,op.fence),
     env.DB.prepare(`UPDATE jobs SET status='failed',error=? WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL}))`).bind(message,op.job_id,op.id,op.fence),
@@ -167,12 +167,12 @@ async function start(env: Env,op: Operation) {
       else if (!env.guestRuntimeReady || op.course_id !== null || !await activeGuest(env.DB,op.subject)) throw new Error('Guest access ended');
     } else await authorizeStoredCourseWork(env,op.subject,op.course_id);
   }
-  catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No successful-split allowance was used.');return; }
+  catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No allowance was used.');return; }
   if (op.cancel_requested) {await fail(env,op,'cancelled');return;}
   if (op.phase==='fetch'&&input.sourceType==='archive') {
     try {await storeArchive(env,op,input);} catch(error) {
       await fail(env,op,error instanceof ArchiveError?error.code:'archive_import_failed',
-        error instanceof ArchiveError?`${error.message} No successful-split allowance was used.`:undefined);
+        error instanceof ArchiveError?`${error.message} No allowance was used.`:undefined);
     }return;
   }
   if (op.phase==='fetch'&&isOwnedSourceImport(input)) {
@@ -181,7 +181,7 @@ async function start(env: Env,op: Operation) {
     try {
       const url=(input.videoUrl??input.youtubeUrl)!;
       if(input.sourceType==='audius') {
-        await fail(env,op,'unsupported_source','Search again to choose an Internet Archive recording. No successful-split allowance was used.');
+        await fail(env,op,'unsupported_source','Search again to choose an Internet Archive recording. No allowance was used.');
       } else if(input.sourceType==='youtube') {
         if(typeof env.fetchYouTubeBrowserAudio!=='function')throw new YouTubeError('Video import is temporarily unavailable.','youtube_fetch_unavailable');
         await imported(env,op,input,await env.fetchYouTubeBrowserAudio(url,{deadline:op.deadline}));
@@ -200,7 +200,7 @@ async function start(env: Env,op: Operation) {
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
       await fail(env,op,error instanceof YouTubeError?error.code:input.sourceType==='audius'?'music_unavailable':input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
       error instanceof YouTubeError&&error.code==='source_too_long' ? error.message : error instanceof YouTubeError&&error.code==='audio_too_large'
-        ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
+        ?'This import exceeds the 12 MiB audio limit. No allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;
   }
   let attempt: string | null=null;
@@ -231,7 +231,7 @@ async function start(env: Env,op: Operation) {
     }
     const runner=getReplicateRunner(model);
     const version=op.phase==='fetch'?env.REPLICATE_YT_MODEL_VERSION:runner?replicateVersion(env,runner):undefined;
-    if(!version||!env.REPLICATE_API_TOKEN) {await fail(env,op,'provider_configuration','Audio separation is temporarily unavailable. No successful-split allowance was used.');return;}
+    if(!version||!env.REPLICATE_API_TOKEN) {await fail(env,op,'provider_configuration','Audio separation is temporarily unavailable. No allowance was used.');return;}
     // This write precedes every paid POST. A crash from here reconciles, never retries.
     if (!await transition(env.DB,op,'starting')) return;
     attempt=await beginAttempt(env.DB,op,'replicate',version);
@@ -277,7 +277,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
     const canCancelProvider = claimed.phase === 'fetch' || (env.SEPARATION_BACKEND ?? 'replicate') === 'replicate';
     if (claimed.cancel_requested && canCancelProvider) {
       if (await cancelReplicatePrediction(env, claimed.provider_id!)) {
-        await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
+        await fail(env,claimed,'cancelled','Split cancelled. No allowance was used.');
       }
       return;
     }
@@ -292,11 +292,11 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       const current=await readOperation(env.DB,claimed.id);
       if(current?.fence!==claimed.fence||current.lease_owner!==claimed.lease_owner)return;
       if(result.status!=='processing') {
-        if(current.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
+        if(current.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No allowance was used.');
         else await complete(env,claimed.job_id!,result,claimed);
       } else if (current.cancel_requested && canCancelProvider) {
         if (await cancelReplicatePrediction(env, claimed.provider_id!)) {
-          await fail(env,claimed,'cancelled','Split cancelled. No successful-split allowance was used.');
+          await fail(env,claimed,'cancelled','Split cancelled. No allowance was used.');
         }
       }
     }
@@ -316,7 +316,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       }
     }
     if(error instanceof YouTubeError||error instanceof ArchiveError) await fail(env,claimed,error.code,
-      error.code==='source_too_long'?error.message:error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
+      error.code==='source_too_long'?error.message:error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
     else if(error instanceof UpstreamError) {
       if(error.code==='import_delivery_unavailable') {
         deliveryAccepted=true;

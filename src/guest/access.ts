@@ -64,7 +64,7 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
     || read && /^\/api\/archive\/items\/[a-zA-Z0-9_.-]+$/.test(path)
     || method === 'POST' && ['/api/uploads','/api/jobs','/api/usage-events'].includes(path)
     || method === 'PUT' && path.startsWith('/api/local-uploads/');
-  const jobAllowed = job && (!job[2] ? read : job[2] === 'labels' ? method === 'PUT'
+  const jobAllowed = job && (!job[2] ? read || method === 'DELETE' : job[2] === 'labels' ? method === 'PUT'
     : ['guide','chat','cancel'].includes(job[2]) ? method === 'POST' && !job[3]
     : job[2] === 'listening-conversation' ? ['GET','PUT','DELETE'].includes(method) && !job[3]
     : job[2] === 'annotations' ? job[3] ? ['PUT','DELETE'].includes(method) : method === 'POST' : false);

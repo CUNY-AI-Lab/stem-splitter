@@ -76,7 +76,7 @@ export async function recoverExpired(db: D1Database, now=Date.now()) {
       THEN 'reconciling' ELSE 'queued' END,
     fence=fence+1,lease_owner=NULL,lease_until=0,updated_at=?
     WHERE kind='split' AND state IN ('running','starting') AND lease_until<?`).bind(now,now).run();
-  await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No successful-split allowance was used.'
+  await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No allowance was used.'
     WHERE id IN(SELECT job_id FROM app_operations WHERE kind='split' AND phase='fetch' AND state='queued'
       AND cancel_requested=1 AND ${nativeSourceSql('app_operations')})`).run();
   await db.prepare(`UPDATE jobs SET status='failed',error='This request expired before it started. Submit it again.'
@@ -108,7 +108,7 @@ export async function cancelOperation(db: D1Database, id: string, subject: strin
   await db.prepare(`UPDATE app_operations SET cancel_requested=1,not_before=MIN(not_before,?),updated_at=? WHERE id=? AND state NOT IN (${TERMINAL})`).bind(now,now,id).run();
   // An unstarted queued request has no external effects. An accepted/unknown
   // one keeps its reservation and capacity until the provider becomes terminal.
-  await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No successful-split allowance was used.'
+  await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No allowance was used.'
     WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND state='queued' AND cancel_requested=1)`)
     .bind(operation.job_id,id).run();
   return true;

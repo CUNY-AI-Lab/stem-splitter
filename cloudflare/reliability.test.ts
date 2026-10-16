@@ -371,3 +371,20 @@ test('a retired fetch callback cannot adopt the next uncertain retry',async t=>{
  assert.equal(current.state,'starting');assert.equal(current.provider_id,null);assert.equal(requests,0);
  assert.equal((await db.prepare("SELECT outcome FROM operation_attempts WHERE id='new-attempt'").first<{outcome:string}>())!.outcome,'uncertain');
 });
+
+test('deleting a completed run preserves its charged allowance; uncertain work remains fenced',async t=>{
+ const {deleteOwnedRun,purgeDeletedRuns}=await import('../src/run-deletion.ts');
+ const {db,env,split}=await setup(t);env.RUN_DELETION_ENABLED='true';
+ const principal={subject,role:'student',displayName:'Fixture',course:null,courseId:null} as const;
+ const completed=await split();await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind(completed.id,subject).run();
+ await db.prepare("UPDATE jobs SET status='done' WHERE id=?").bind(completed.id).run();
+ const before=await splitAllowance(db,subject);assert.equal(before.completed,1);
+ assert.equal(await deleteOwnedRun(env,principal,completed.id),true);await purgeDeletedRuns(env);
+ assert.deepEqual(await splitAllowance(db,subject),before);
+ const uncertain=await split('deletion-uncertain-0001');await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind(uncertain.id,subject).run();
+ const lease=(await claimNext(db,'split'))!;await transition(db,lease,'starting');await beginAttempt(db,lease,'replicate','separator-pin');
+ await recoverExpired(db,lease.lease_until+1);
+ assert.equal(await deleteOwnedRun(env,principal,uncertain.id),true);await purgeDeletedRuns(env);
+ assert.ok(await db.prepare('SELECT 1 FROM jobs WHERE id=?').bind(uncertain.id).first());
+ assert.equal((await splitAllowance(db,subject)).inProgress,1);assert.equal(await claimNext(db,'split'),null);
+});

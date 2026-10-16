@@ -2252,3 +2252,37 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     )
   ).toEqual([]);
 });
+
+test('a hosted source denial keeps the link, reports a code and offers a real local file picker',async({page})=>{
+ await page.addInitScript(code=>localStorage.setItem('classCode',code),CLASS_CODE);
+ await page.route('**/api/jobs',route=>route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'The hosted YouTube importer was refused access. No successful-split allowance was used.',code:'source_denied',retryable:false})}));
+ await page.goto('/',{waitUntil:'domcontentloaded'});
+ const input=page.getByLabel('Song or link');await input.fill('https://www.youtube.com/watch?v=abcdefghijk');
+ await page.getByRole('button',{name:'FETCH',exact:true}).click();
+ await expect(page.locator('#upload-message')).toContainText('Code: source_denied.');
+ await expect(page.locator('#upload-message')).toContainText('No allowance was used.');
+ await expect(page.locator('#upload-message')).not.toContainText('successful-split');
+ await expect(input).toHaveValue('https://www.youtube.com/watch?v=abcdefghijk');
+ await expect(input).toBeEnabled();
+ const action=page.getByRole('button',{name:'Choose a local audio file',exact:true});await expect(action).toBeVisible();
+ const chooserPromise=page.waitForEvent('filechooser');await action.click();expect(await chooserPromise).toBeTruthy();
+ await expect(page.locator('.console')).toHaveCount(0);
+});
+
+test('old saved runs never show invented elapsed time and one slow status does not block the rack',async({page})=>{
+ const old=Date.now()-3*86400000;
+ await page.addInitScript(({code,old})=>{localStorage.setItem('classCode',code);localStorage.setItem('jobs',JSON.stringify([{id:'slow-saved',filename:'Slow saved run',startedAt:old},{id:'failed-saved',filename:'Failed saved run',startedAt:old}]));},{code:CLASS_CODE,old});
+ let release;const gate=new Promise(resolve=>{release=resolve;});
+ await page.route('**/api/jobs/slow-saved',async route=>{await gate;await route.fulfill({json:{id:'slow-saved',status:'failed',error:'Stopped',stems:[]}});});
+ await page.route('**/api/jobs/failed-saved',route=>route.fulfill({json:{id:'failed-saved',status:'failed',error:'No successful-split allowance was used.',stems:[]}}));
+ try {
+  await page.goto('/',{waitUntil:'domcontentloaded'});
+  const slow=page.locator('.console').filter({hasText:'Slow saved run'});
+  const failed=page.locator('.console').filter({hasText:'Failed saved run'});
+  await expect(failed.locator('.badge')).toHaveText('FAILED');
+  await expect(failed).toContainText('No allowance was used.');
+  await expect(slow.locator('.badge')).toHaveText('CHECKING STATUS');
+  await expect(page.locator('.elapsed')).toHaveCount(0);
+  await expect(page.locator('#job-list')).not.toContainText('SEPARATING');
+ } finally {release();}
+});

@@ -10,6 +10,7 @@ export type Env = import('./guest/access.ts').GuestSettings & {
     data: ArrayBuffer; title: string; durationSec: number; fileName: string; contentType: 'audio/webm' | 'audio/mp4';
   }>;
   AUTH_MODE?: string;
+  RUN_DELETION_ENABLED?: string;
   CAIL_IDENTITY_JWKS?: string;
   /** Set by the Worker adapter, never by browser input or environment JSON. */
   verifyCailIdentity?: (token: string, jwks: string | undefined) => Promise<{ subject: string; name?: string } | null | 'unavailable'>;
