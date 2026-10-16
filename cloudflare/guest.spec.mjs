@@ -106,7 +106,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
     await expect(input).toHaveAttribute('placeholder', 'jazz piano');
-    await expect(page.locator('#yt-disclosure summary')).toHaveText('Or search for a song or paste a link');
+    await expect(page.locator('#yt-disclosure summary')).toHaveText('Search for songs via Internet Archive');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
     await input.fill('https://vimeo.com/76979871');
