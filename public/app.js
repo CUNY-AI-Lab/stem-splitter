@@ -4939,7 +4939,7 @@ async function initialize() {
       help.textContent = 'Trouble signing in?';
       account.append(help);
     } else account.textContent = 'CUNY Login will be available here soon.';
-    document.querySelector('.masthead').append(account);
+    document.querySelector('.masthead-meta').append(account);
   }
   separationOptionsReady = loadSeparationOptions();
   void ensureClassCode();
