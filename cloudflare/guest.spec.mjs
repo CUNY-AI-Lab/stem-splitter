@@ -112,7 +112,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await input.fill('https://vimeo.com/76979871');
     await page.locator('#yt-form button').click();
     expect((await retiredResponse).status()).toBe(400);
-    await expect(page.locator('#upload-message')).toHaveText('Choose a supported video link or upload an audio file.');
+    await expect(page.locator('#upload-message')).toHaveText('Choose a supported video link or upload an audio file. Code: unsupported_source.');
     await expect(input).toBeEnabled();
     await expect(page.locator('#job-list .console')).toHaveCount(0);
     expect((await account(page)).splitAllowance).toEqual(before.splitAllowance);
