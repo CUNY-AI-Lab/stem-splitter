@@ -90,7 +90,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
     await page.unroute('**/api/jobs');
     await page.getByRole('link', { name: 'My account', exact: true }).click();
     await expect(page.locator('#account-role')).toHaveText('Student access');
-    await page.getByRole('link', { name: '← Back to Splitter', exact: true }).click();
+    await page.getByRole('link', { name: '← Back to Stem Splitter', exact: true }).click();
     await expect(page.locator('.badge.ready')).toBeVisible();
     await page.evaluate(() => localStorage.clear());
     await page.reload();

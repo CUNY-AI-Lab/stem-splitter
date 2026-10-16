@@ -1844,7 +1844,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);
   expect(await page.locator('link[rel="stylesheet"][href^="/styles.css"]').getAttribute('href')).toMatch(/\?v=/);
-  await expect(page.getByRole('link', { name: 'Back to Splitter' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('link', { name: 'Back to Stem Splitter' })).toHaveAttribute('href', '/');
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'SIGN IN' });
   const signInButtonBox = await signInButton.boundingBox();

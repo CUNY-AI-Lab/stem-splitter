@@ -236,7 +236,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toHaveAttribute('href', '/');
+    await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
     await expect(page.locator('#account-id')).toBeHidden();
     expect(memberReads).toBe(0);
@@ -326,7 +326,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();
     await expect(page.locator('#account-splits')).toContainText('0 of 15 runs left today. Resets');
-    await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toBeVisible();
     if (receipts) await page.screenshot({ path: `${receipts}/account-exhausted-mobile-fixture.png`, fullPage: true });
     // A counter outage is not zero usage, a failed sign-in, or a full allowance.
     await page.route('**/api/account', async route => {
@@ -447,7 +447,7 @@ test('students can reach sign-in help during an outage and retry their intended 
       await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
       await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('href','/auth/login?next=%2Fteacher.html');
       await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('rel','noopener noreferrer');
-      await expect(page.getByRole('link',{name:'Back to Splitter'})).toHaveAttribute('href','/');
+      await expect(page.getByRole('link',{name:'Back to Stem Splitter'})).toHaveAttribute('href','/');
       await expect(page.locator('body')).toContainText('Guest work stays in the browser');
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       if(process.env.STEM_SCREENSHOT_DIR){
@@ -500,13 +500,13 @@ test('a simulated external CUNY dead end leaves the student recovery tab availab
    await signin.setViewportSize({width,height:900});
    await expect(signin).toHaveURL(provider.origin+'/error');await expect(signin.getByRole('heading',{name:'Login Failed'})).toBeVisible();
    expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
-   await expect(page).toHaveURL(app.origin+'/auth/help?next=/classroom.html');await expect(page.getByRole('link',{name:'Back to Splitter'})).toBeVisible();
+   await expect(page).toHaveURL(app.origin+'/auth/help?next=/classroom.html');await expect(page.getByRole('link',{name:'Back to Stem Splitter'})).toBeVisible();
    if(process.env.STEM_SCREENSHOT_DIR){
     await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
     await signin.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/simulated-provider-error-${width}.png`,fullPage:true,animations:'disabled'});
     await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/recovery-retained-${width}.png`,fullPage:true,animations:'disabled'});
    }
-   await signin.close();await page.getByRole('link',{name:'Back to Splitter'}).click();await expect(page).toHaveURL(app.origin+'/');
+   await signin.close();await page.getByRole('link',{name:'Back to Stem Splitter'}).click();await expect(page).toHaveURL(app.origin+'/');
    await expect(page.locator('h1')).toContainText('Splitter');
   }
   expect(starts).toBe(2);expect(app.errors).toEqual([]);expect(provider.errors).toEqual([]);
