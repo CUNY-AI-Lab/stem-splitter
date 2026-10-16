@@ -162,3 +162,31 @@ test('the edge cache serves verified matches across requests without exposing br
   assert.equal(packets.at(-1).results[0].archiveId,'edge-lantern-song');
   assert.equal(calls,before);assert.equal(writes,1);
 });
+
+test('edge and metadata caches keep student durations separate from visitor results', async t => {
+  const stored = new Map<string, Response>();
+  const storage = {
+    match: async (request: Request) => stored.get(request.url)?.clone(),
+    put: async (request: Request, response: Response) => { stored.set(request.url, response.clone()); },
+  } as unknown as Cache;
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/advancedsearch.php') return Response.json({response:{docs:[{identifier:'duration-cache-song'}]}});
+    if (url.pathname.startsWith('/metadata/')) {
+      const item = await metadata('Duration cache melody').json() as { files: {length:string}[] };
+      item.files[0].length = '600';
+      return Response.json(item);
+    }
+    return probe();
+  });
+  const cache = {storage, origin:'https://stem.example'};
+  const student = await archiveSongSearchResponse('Duration cache melody', false, cache, 900);
+  assert.equal((await student.json() as {results:unknown[]}).results.length, 1);
+  const visitor = await archiveSongSearchResponse('Duration cache melody', false, cache, 300);
+  assert.equal(visitor.headers.get('x-stem-search-cache'), 'miss');
+  assert.equal((await visitor.json() as {results:unknown[]}).results.length, 0);
+  const repeated = await archiveSongSearchResponse('Duration cache melody', false, cache, 900);
+  assert.equal(repeated.headers.get('x-stem-search-cache'), 'hit');
+  assert.equal((await repeated.json() as {results:unknown[]}).results.length, 1);
+  assert.ok([...stored.keys()].every(key => key.includes('/v2?seconds=900&')));
+});

@@ -134,9 +134,10 @@ async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:Ar
   if(saved?.source_key!==key)await env.AUDIO.delete(key);
 }
 async function storeArchive(env: Env,op: Operation,input: SplitInput) {
+  const maximumSeconds=op.quota_class==='guest'?300:900;
   const scope=await fingerprint([op.subject,op.course_id]),source=await fingerprint([input.archiveId,input.archiveFile,input.archiveSearch===true]);
   // Every cache hit revalidates the public rights floor with Archive metadata.
-  const item=await fetchArchiveItem(input.archiveId!,{publicAudio:input.archiveSearch===true});
+  const item=await fetchArchiveItem(input.archiveId!,{publicAudio:input.archiveSearch===true,maximumSeconds});
   const track=input.archiveFile?item.tracks.find(track=>track.name===input.archiveFile):item.tracks.find(track=>track.importable);
   if(!track?.importable||track.bytes>CAIL_IMPORT_BYTES)throw new ArchiveError('Choose an available Archive audio file.', 'archive_file_unavailable');
   const cached=await env.DB.prepare('SELECT object_key,metadata_json FROM import_cache WHERE scope=? AND source=? AND expires_at>? AND object_key IS NOT NULL')
@@ -146,11 +147,11 @@ async function storeArchive(env: Env,op: Operation,input: SplitInput) {
     if (object && object.size===track.bytes && object.size<=CAIL_IMPORT_BYTES) {
       // Fresh metadata also corrects titles and credits cached before attribution was separated.
       const data=await new Response(object.body).arrayBuffer();
-      validateArchiveSongFrames(data,track.durationSec);
+      validateArchiveSongFrames(data,track.durationSec,maximumSeconds);
       await imported(env,op,input,{...archiveAudioMetadata(item,track,input.archiveSearch===true),durationSec:track.durationSec,data});return;
     }
   }
-  const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES,publicAudio:input.archiveSearch===true});
+  const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES,publicAudio:input.archiveSearch===true,maximumSeconds});
   await imported(env,op,input,audio);
   const current=await readOperation(env.DB,op.id);
   if (current?.fence===op.fence&&current.phase==='split'&&input.key) await env.DB.prepare(`INSERT INTO import_cache(scope,source,operation_id,object_key,metadata_json,expires_at)

@@ -16,15 +16,13 @@ import type { Env } from './env';
 import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
 import { mp3FrameInfo } from './reliability/media.ts';
 
-// Crate-specific cap, tighter than the 15-minute YouTube/upload limit: the
-// browse list only offers songs, and nothing over 5 minutes is shown or
-// importable through it. Enforced here (not just in the UI) so a crafted API
-// call cannot import past it.
-const MAX_DURATION_SECONDS = 5 * 60;
+// Five minutes by default; verified members may import up to fifteen minutes.
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const MIN_AUDIO_BYTES = 1024;
 export const ARCHIVE_SEARCH_MAX_BYTES = 12 * 1024 * 1024;
 const PUBLIC_AUDIO_MAX_SECONDS = 5 * 60;
+// Callers derive this from verified identity, never a client-supplied role.
+const archiveDurationLimit = (maximumSeconds?: number) => maximumSeconds === 900 ? 900 : PUBLIC_AUDIO_MAX_SECONDS;
 const SEARCH_ROWS = 24;
 const MAX_SEARCH_PAGE = 20;
 const MAX_TERM_LENGTH = 120;
@@ -648,27 +646,29 @@ async function downloadableSong(song: ArchiveSong): Promise<boolean> {
 }
 
 /** The main field searches public downloads. The separate open-license Crate keeps its existing scope. */
-export async function searchArchiveSongs(query: string, onResults?: SearchListener): Promise<SongResults> {
+export async function searchArchiveSongs(query: string, onResults?: SearchListener, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
   const normalized = archiveSongSearchKey(query);
   const tokens = normalized.split(' ').filter(Boolean).slice(0, 8);
   if (normalized.length < 2 || !tokens.length) return { results: [] };
+  const durationLimit = archiveDurationLimit(maximumSeconds);
+  const cacheKey = `${durationLimit}:${normalized}`;
   const now = Date.now();
   for (const [key, value] of searchCache) if (value.expires <= now) searchCache.delete(key);
-  let entry = searchCache.get(normalized);
+  let entry = searchCache.get(cacheKey);
   if (!entry) {
     entry = { expires: Infinity, songs: Promise.resolve({ results: [] }), latest: { results: [] }, listeners: new Set() };
     const current = entry;
     if (searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
-    searchCache.set(normalized, current);
+    searchCache.set(cacheKey, current);
     current.songs = findArchiveSongs(tokens, results => {
       current.latest = results;
       for (const listener of current.listeners) listener(results);
-    }).then(results => {
+    }, durationLimit).then(results => {
       current.latest = results;
       current.expires = Date.now() + 60000;
       return results;
     }, error => {
-      if (searchCache.get(normalized) === current) searchCache.delete(normalized);
+      if (searchCache.get(cacheKey) === current) searchCache.delete(cacheKey);
       throw error;
     });
   }
@@ -712,7 +712,7 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
   return candidates;
 }
 
-async function findArchiveSongs(tokens: string[], onResults: SearchListener): Promise<SongResults> {
+async function findArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number): Promise<SongResults> {
   const docScore = (doc: { title?: unknown; creator?: unknown; musicQuery?: boolean }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
     // A title plus its credited performer covers an artist-qualified query as
@@ -735,10 +735,10 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener): Pr
     if (!pending) {
       pending = (async () => {
         if (Date.now() >= deadline) { metadataFailures++; return null; }
-        try { return await reuseDiscovery(songMetadataCache, id, 80,
+        try { return await reuseDiscovery(songMetadataCache, `${maximumSeconds}:${id}`, 80,
           () => songMetadataPool(() => {
             if (Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
-            return fetchArchiveItem(id, { publicAudio: true, timeoutMs: Math.min(9000, deadline-Date.now()) });
+            return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()) });
           }),
           item => item.tracks.length <= 256); }
         catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; else metadataRejected++; return null; }
@@ -906,10 +906,10 @@ function isMusicFile(metadata: Record<string, unknown>, file: ArchiveFile): bool
 }
 
 /** Fresh downloads and existing cached audio share the current song-duration boundary. */
-export function validateArchiveSongFrames(data: ArrayBuffer, expectedSeconds: number): void {
+export function validateArchiveSongFrames(data: ArrayBuffer, expectedSeconds: number, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): void {
   const frames = mp3FrameInfo(data);
-  if (frames && frames.seconds > PUBLIC_AUDIO_MAX_SECONDS) {
-    throw new ArchiveError('Choose a song of five minutes or less.', 'track_too_long');
+  if (frames && frames.seconds > archiveDurationLimit(maximumSeconds)) {
+    throw new ArchiveError(`Choose a song of ${archiveDurationLimit(maximumSeconds) / 60} minutes or less.`, 'track_too_long');
   }
   if (!frames || Math.abs(frames.seconds - expectedSeconds) > 2) {
     throw new ArchiveError('This recording returned incomplete audio. Choose another result.', 'archive_audio_incomplete');
@@ -920,7 +920,7 @@ function archiveFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean } = {}): Promise<ArchiveItem> {
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
@@ -1006,7 +1006,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
         bytes > 0 &&
         bytes <= (options.publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES) &&
         durationSec > 0 &&
-        durationSec <= (options.publicAudio ? PUBLIC_AUDIO_MAX_SECONDS : MAX_DURATION_SECONDS),
+        durationSec <= archiveDurationLimit(options.maximumSeconds),
     };
     const previous = tracksByBase.get(base);
     if (
@@ -1051,12 +1051,12 @@ export async function fetchArchiveAudio(
   identifier: string,
   fileName: string | undefined,
   _env: Env,
-  options: { maximumBytes?: number; remix?: boolean; publicAudio?: boolean } = {}
+  options: { maximumBytes?: number; remix?: boolean; publicAudio?: boolean; maximumSeconds?: number } = {}
 ): Promise<ArchiveAudio & { fileName: string }> {
   const publicAudio = options.publicAudio === true && !options.remix;
-  const item = await fetchArchiveItem(identifier, { publicAudio, songPolicy: !options.remix });
+  const item = await fetchArchiveItem(identifier, { publicAudio, songPolicy: !options.remix, maximumSeconds: options.maximumSeconds });
   const limit = publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES;
-  const durationLimit = publicAudio ? PUBLIC_AUDIO_MAX_SECONDS : MAX_DURATION_SECONDS;
+  const durationLimit = archiveDurationLimit(options.maximumSeconds);
   const maximumBytes = Math.min(options.maximumBytes ?? limit, limit);
   if (options.remix) {
     const license = new URL(item.licenseUrl);
@@ -1153,7 +1153,7 @@ export async function fetchArchiveAudio(
       const framesOnly = data.slice(0, -2);
       if (mp3FrameInfo(framesOnly)) data = framesOnly;
     }
-    validateArchiveSongFrames(data, track.durationSec);
+    validateArchiveSongFrames(data, track.durationSec, durationLimit);
     if (_env.validateStemAudio && !await _env.validateStemAudio(data)) {
       throw new ArchiveError('This recording returned incomplete audio. Choose another result.', 'archive_audio_incomplete');
     }
