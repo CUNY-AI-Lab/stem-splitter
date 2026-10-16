@@ -618,3 +618,25 @@ test('accepting a partial sample preload reveals cached choices and keeps stream
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{await f.close();}
 });
+
+
+test('returning to a recent song query uses browser results without another request', async ({page}) => {
+  const f=await setup(page); const queries=[];
+  try {
+    await page.route('**/api/music/search?*',route=>{
+      const query=new URL(route.request().url()).searchParams.get('q'); queries.push(query);
+      return route.fulfill({json:{results:[{...sampleTrack,title:query,id:query}]}});
+    });
+    await page.goto(f.origin);
+    const input=page.locator('#yt-url');
+    await expect(page.locator('#source-sample-hint')).toBeVisible();
+    await input.fill('recent piano');
+    await expect(page.getByRole('option',{name:/recent piano/})).toBeVisible();
+    await input.fill('recent strings');
+    await expect(page.getByRole('option',{name:/recent strings/})).toBeVisible();
+    await input.fill('RECENT  PIANO');
+    await expect(page.getByRole('option',{name:/recent piano/})).toBeVisible();
+    expect(queries.filter(query=>query?.toLowerCase().includes('piano') && query!=='jazz piano')).toEqual(['recent piano']);
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});

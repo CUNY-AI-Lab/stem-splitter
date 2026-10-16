@@ -561,7 +561,8 @@ export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, pub
 }
 
 const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-type SongResults = { results: ArchiveSong[] };
+export type SongResults = { results: ArchiveSong[] };
+export const archiveSongSearchKey = (query: string) => searchableText(displayText(query, '', MAX_TERM_LENGTH));
 type SearchListener = (results: SongResults) => void;
 const searchCache = new Map<string, { expires: number; songs: Promise<SongResults>; latest: SongResults; listeners: Set<SearchListener> }>();
 
@@ -575,6 +576,32 @@ function requestPool(width: number) {
     try { return await work(); }
     finally { const next = waiting.shift(); if (next) next(); else active--; }
   };
+}
+
+// Related queries often rediscover the same albums and tracks. Share only
+// successful public discovery work; imports always fetch fresh metadata/audio.
+type DiscoveryEntry<T> = { expires: number; promise: Promise<T> };
+const songMetadataCache = new Map<string, DiscoveryEntry<ArchiveItem>>();
+const songDeliveryCache = new Map<string, DiscoveryEntry<boolean>>();
+const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
+function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
+  work: () => Promise<T>, reusable: (value: T) => boolean): Promise<T> {
+  const now = Date.now();
+  for (const [id, entry] of cache) if (entry.expires <= now) cache.delete(id);
+  const hit = cache.get(key);
+  if (hit) return hit.promise;
+  if (cache.size >= limit) cache.delete(cache.keys().next().value!);
+  const entry: DiscoveryEntry<T> = { expires: Infinity, promise: Promise.resolve().then(work) };
+  cache.set(key, entry);
+  entry.promise = entry.promise.then(value => {
+    if (reusable(value)) entry.expires = Date.now() + 60000;
+    else if (cache.get(key) === entry) cache.delete(key);
+    return value;
+  }, error => {
+    if (cache.get(key) === entry) cache.delete(key);
+    throw error;
+  });
+  return entry.promise;
 }
 
 /** Check public file delivery before exposing a choice; import repeats metadata and reads the complete file. */
@@ -620,7 +647,7 @@ async function downloadableSong(song: ArchiveSong): Promise<boolean> {
 
 /** The main field searches public downloads. The separate open-license Crate keeps its existing scope. */
 export async function searchArchiveSongs(query: string, onResults?: SearchListener, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
-  const term = displayText(query, '', MAX_TERM_LENGTH), normalized = searchableText(term);
+  const normalized = archiveSongSearchKey(query);
   const tokens = normalized.split(' ').filter(Boolean).slice(0, 8);
   if (normalized.length < 2 || !tokens.length) return { results: [] };
   const durationLimit = archiveDurationLimit(maximumSeconds);
@@ -694,7 +721,6 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
       + tokens.filter(token => !title.includes(token) && artist.includes(token)).length * 4
       + (recordingCredit(displayText(doc.creator)) ? 6 : 0) + (doc.musicQuery ? 4 : 0) - (title + artist).length / 200;
   };
-  const metadataPool = requestPool(4), probePool = requestPool(2);
   const metadata = new Map<string, Promise<ArchiveItem | null>>();
   const probes = new Map<string, Promise<boolean>>();
   const candidates = new Map<string, ArchiveSong & { score: number }>();
@@ -707,11 +733,16 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   const inspect = (id: string, deadline: number): Promise<ArchiveItem | null> => {
     let pending = metadata.get(id);
     if (!pending) {
-      pending = metadataPool(async () => {
+      pending = (async () => {
         if (Date.now() >= deadline) { metadataFailures++; return null; }
-        try { return await fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.max(1, Math.min(9000, deadline-Date.now())) }); }
+        try { return await reuseDiscovery(songMetadataCache, `${maximumSeconds}:${id}`, 80,
+          () => songMetadataPool(() => {
+            if (Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
+            return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()) });
+          }),
+          item => item.tracks.length <= 256); }
         catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; else metadataRejected++; return null; }
-      });
+      })();
       metadata.set(id, pending);
     }
     return pending;
@@ -719,16 +750,17 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   const check = (song: ArchiveSong & { score: number }): Promise<boolean> => {
     let pending = probes.get(song.id);
     if (!pending) {
-      pending = probePool(async () => {
+      pending = (async () => {
         try {
-          const available = await downloadableSong(song);
+          const available = await reuseDiscovery(songDeliveryCache, JSON.stringify([song.id, song.bytes, song.durationSec]), 160,
+            () => songDeliveryPool(() => downloadableSong(song)), available => available);
           if (available) { verified.add(song.id); onResults(results()); }
           return available;
         } catch (error) {
           if (!(error instanceof ArchiveError) || error.retryable) deliveryFailures++;
           return false;
         }
-      });
+      })();
       probes.set(song.id, pending);
     }
     return pending;

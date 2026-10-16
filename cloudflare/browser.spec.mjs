@@ -25,15 +25,30 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
       `INSERT INTO job_attributions (job_id, attribution) VALUES ('remix-fixture', '${JSON.stringify(attribution)}')`);
     expect((await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) })).status).toBe(200);
     await server.fetch('/__fixture/audio', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url)) });
+    for (const path of ['/', '/account.html', '/teacher.html']) {
+      await page.goto(new URL(path, url).href);
+      const home = page.getByRole('link', {name:'Stem Splitter home',exact:true});
+      await expect(home).toBeVisible(); await expect(home).toHaveAttribute('href','/');
+      await expect(page.locator('.masthead .lab-logo')).toBeVisible();
+      for (const width of [1280,390]) {
+        await page.setViewportSize({width,height:900});
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      }
+      await home.click(); await expect(page).toHaveURL(url.href);
+    }
+    await page.setViewportSize({width:1280,height:900});
+    await page.goto(url.href);
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveCount(0);
     await page.goto(new URL('/teacher.html', url).href);
     await expect(page.locator('#signin-panel')).toBeVisible();
     await expect(page.getByLabel('PASSWORD')).toBeHidden();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/login?next=/teacher.html');
-    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveAttribute('href', '/auth/help?next=/teacher.html');
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveCount(0);
     await page.goto(new URL('/account.html', url).href);
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect(page.locator('#account-details')).toBeHidden();
-    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveAttribute('href', '/auth/help?next=/account.html');
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveCount(0);
     await page.goto(new URL('/teacher.html', url).href);
     if (receipts) await page.screenshot({ path: `${receipts}/01-instructor-signed-out.png`, fullPage: true, animations: 'disabled' });
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice });
