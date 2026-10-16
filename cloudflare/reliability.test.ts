@@ -358,3 +358,16 @@ for(const code of ['transient','denied','unknown'])test(`terminal YouTube ${code
  }
  assert.equal((await splitAllowance(db,subject)).completed,0);
 });
+
+test('a retired fetch callback cannot adopt the next uncertain retry',async t=>{
+ const {db,env,split}=await setup(t),op=await split('fetch-retry-stale-callback','fetch');
+ await db.prepare("UPDATE app_operations SET state='starting' WHERE id=?").bind(op.id).run();
+ const now=Date.now();
+ for(const [id,external,outcome] of [['old-attempt','retired-prediction','failed'],['new-attempt',null,'uncertain']])
+  await db.prepare("INSERT INTO operation_attempts(id,operation_id,phase,provider,model,external_id,outcome,created_at,updated_at) VALUES(?,?,'fetch','replicate','same-model',?,?,?,?)").bind(id,op.id,external,outcome,now,now).run();
+ let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;throw new Error('Old prediction must not be inspected or adopted');});
+ await recoverCallback(env,(await readOperation(db,op.id))!,'retired-prediction');
+ const current=(await readOperation(db,op.id))!;
+ assert.equal(current.state,'starting');assert.equal(current.provider_id,null);assert.equal(requests,0);
+ assert.equal((await db.prepare("SELECT outcome FROM operation_attempts WHERE id='new-attempt'").first<{outcome:string}>())!.outcome,'uncertain');
+});

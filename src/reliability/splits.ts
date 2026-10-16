@@ -360,6 +360,9 @@ export async function drainSplitQueue(env: Env,complete: Complete) {
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {
   if(operation.provider_id||!['starting','reconciling'].includes(operation.state))return;
+  // A delayed callback from a retired fetch must not claim a later uncertain start.
+  if(await env.DB.prepare("SELECT 1 FROM operation_attempts WHERE operation_id=? AND phase=? AND external_id=? AND outcome='failed'")
+    .bind(operation.id,operation.phase,externalId).first())return;
   // A capability is unique to the operation AND phase. The accepted prediction
   // must also match the exact model version recorded before its paid POST.
   const attempt=await env.DB.prepare(`SELECT id,model FROM operation_attempts WHERE operation_id=? AND phase=?
