@@ -4791,6 +4791,11 @@ async function initialize() {
       link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
+      const help = document.createElement('a');
+      help.href = '/auth/help' + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      help.className = 'signin-help-link';
+      help.textContent = 'Trouble signing in?';
+      account.append(help);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead').append(account);
   }

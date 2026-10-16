@@ -416,3 +416,48 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     )).toEqual([]);
   } finally { await server.close(); }
 });
+
+test('students can reach sign-in help during an outage and retry their intended page', async ({ page }) => {
+  const origin='https://stem-signin-help.test';
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  try {
+    await server.listen();
+    await page.route(origin+'/**',async route=>{
+      const request=route.request(),url=new URL(request.url());
+      const response=url.pathname.startsWith('/auth/')
+        ? await handleAuth(new Request(request.url(),{headers:await request.allHeaders()}),{PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin})
+        : await server.fetch(url.pathname);
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+    });
+    for(const width of [1280,390]){
+      await page.setViewportSize({width,height:900});
+      const response=await page.goto(origin+'/auth/help?next=/teacher.html');
+      expect(response.status()).toBe(200);
+      await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
+      await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('href','/auth/login?next=%2Fteacher.html');
+      await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('rel','noopener noreferrer');
+      await expect(page.getByRole('link',{name:'Back to Splitter'})).toHaveAttribute('href','/');
+      await expect(page.locator('body')).toContainText('Guest work stays in the browser');
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      if(process.env.STEM_SCREENSHOT_DIR){
+        await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
+        await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/signin-help-${width}.png`,fullPage:true});
+      }
+    }
+    // Route at the context level so the new sign-in tab receives the same
+    // outage fixture; it cannot accidentally navigate to a live identity site.
+    await page.context().route(origin+'/auth/**',async route=>{
+      const response=await handleAuth(new Request(route.request().url(),{headers:await route.request().allHeaders()}),{PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin});
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+    });
+    const [signin]=await Promise.all([page.context().waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
+    await expect(signin).toHaveURL(origin+'/auth/login?next=%2Fteacher.html');
+    await expect(signin.getByRole('heading',{name:'Sign-in is temporarily unavailable'})).toBeVisible();
+    expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
+    await expect(page).toHaveURL(origin+'/auth/help?next=/teacher.html');
+    await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
+    await signin.close();
+    expect(errors).toEqual([]);
+  }finally {await server.close();}
+});
