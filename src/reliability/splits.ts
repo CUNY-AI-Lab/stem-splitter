@@ -1,3 +1,5 @@
+import { parseMediaUrl } from '../url-source.ts';
+import { durationIsAllowed } from '../import-policy.ts';
 import type { Env } from '../env.ts';
 import { cancelReplicatePrediction } from '../separation/replicate.ts';
 import { parseVideoSource } from '../video-source.ts';
@@ -24,6 +26,8 @@ interface SplitInput {
   archiveId?: string; archiveFile?: string; archiveSearch?: boolean; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: true;
+  /** Server-validated remote source; acquired as an app-owned upload snapshot. */
+  remoteUrl?: string;
 }
 type Complete = (env: Env, jobId: string, result: SeparationResult,operation?:Operation) => Promise<void>;
 const title=(value: unknown) => typeof value==='string' ? value.replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().slice(0,200) : '';
@@ -41,8 +45,14 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !auto||capability?.mode!=='authoritative' : !modelIsAllowed(env.SEPARATION_BACKEND,submitted))) throw new OperationError('invalid_model',400,'Choose an available split model.');
   const input: SplitInput={sourceType:'upload',filename:'Audio',model:submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto};
   if (auto) input.browserAnalysis=parseBrowserAutoSummary(value.browserAnalysis,options.models);
-  if ([value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
-  if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
+  if ([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
+  if (value.sourceUrl !== undefined) {
+    const url = parseMediaUrl(value.sourceUrl);
+    if (!url) throw new OperationError('invalid_source_url',400,'Paste a public HTTPS media link.');
+    if (env.URL_IMPORT_ENABLED !== 'true' || !replicateConfiguration(env)) throw new OperationError('url_import_unavailable',503,'URL import is temporarily unavailable. Upload an audio file.');
+    input.remoteUrl = url;
+    input.filename = 'Imported audio';
+  } else if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
     if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a supported video link.');
     const browserYouTube=source.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function';
@@ -77,7 +87,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const requestFingerprint=await fingerprint(input);
   if(input.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function')input.browserAudio=true;
   const id=crypto.randomUUID();
-  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'?'split':'fetch',jobId:id,request:input,
+  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
       const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type)
         SELECT id,?,?,'queued',?,? FROM app_operations WHERE id=?`)
@@ -95,7 +105,9 @@ async function fail(env: Env, op: Operation, code: string, message='This split c
     env.DB.prepare(`UPDATE jobs SET status='failed',error=? WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL}))`).bind(message,op.job_id,op.id,op.fence),
   ]);
 }
-async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:'audio/webm'|'audio/mp4';attribution?:unknown}) {
+async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:'audio/webm'|'audio/mp4';attribution?:unknown;durationSec?:number}) {
+  const maximum = op.quota_class === 'guest' ? 300 : 900;
+  if (!durationIsAllowed(audio.durationSec,maximum)) throw new YouTubeError(`Audio exceeds your ${maximum/60}-minute import limit or has no valid duration.`, 'source_too_long');
   if (!audio.data.byteLength||audio.data.byteLength>MAX_BYTES) throw new YouTubeError('Audio is empty or too large.','invalid_audio_response');
   const hash=await crypto.subtle.digest('SHA-256',audio.data);
   const sha=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
@@ -131,7 +143,7 @@ async function storeArchive(env: Env,op: Operation,input: SplitInput) {
       // Fresh metadata also corrects titles and credits cached before attribution was separated.
       const data=await new Response(object.body).arrayBuffer();
       validateArchiveSongFrames(data,track.durationSec);
-      await imported(env,op,input,{...archiveAudioMetadata(item,track,input.archiveSearch===true),data});return;
+      await imported(env,op,input,{...archiveAudioMetadata(item,track,input.archiveSearch===true),durationSec:track.durationSec,data});return;
     }
   }
   const audio=await fetchArchiveAudio(input.archiveId!,input.archiveFile,env,{maximumBytes:CAIL_IMPORT_BYTES,publicAudio:input.archiveSearch===true});
@@ -175,7 +187,7 @@ async function start(env: Env,op: Operation) {
       const diagnostic=vimeoFailureDiagnostic(error);
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
       await fail(env,op,error instanceof YouTubeError?error.code:input.sourceType==='audius'?'music_unavailable':input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
-      error instanceof YouTubeError&&error.code==='audio_too_large'
+      error instanceof YouTubeError&&error.code==='source_too_long' ? error.message : error instanceof YouTubeError&&error.code==='audio_too_large'
         ?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;
   }
@@ -212,7 +224,7 @@ async function start(env: Env,op: Operation) {
     if (!await transition(env.DB,op,'starting')) return;
     attempt=await beginAttempt(env.DB,op,'replicate',version);
     const providerId=op.phase==='fetch'
-      ? await startVideoImport((input.videoUrl??input.youtubeUrl)!,env,operationWebhook(env,op.id,op.phase as 'fetch'|'split'))
+      ? await startVideoImport((input.remoteUrl??input.videoUrl??input.youtubeUrl)!,env,operationWebhook(env,op.id,op.phase as 'fetch'|'split'), { generalUrl: Boolean(input.remoteUrl), maximumDurationSeconds: op.quota_class === 'guest' ? 300 : 900 })
       : (await getBackend(env).start({jobId:op.id,audioUrl:sourceUrl,webhookUrl:operationWebhook(env,op.id,op.phase as 'fetch'|'split'),model})).externalId;
     await finishAttempt(env.DB,attempt,'accepted',{externalId:providerId});
     if (await transition(env.DB,op,'processing',{providerId})) {
@@ -277,7 +289,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
     }
   } catch(error) {
     if(error instanceof YouTubeError||error instanceof ArchiveError) await fail(env,claimed,error.code,
-      error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
+      error.code==='source_too_long'?error.message:error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
     else if(error instanceof UpstreamError) {
       if(error.code==='import_delivery_unavailable') {
         deliveryAccepted=true;

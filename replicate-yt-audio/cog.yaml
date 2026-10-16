@@ -1,11 +1,16 @@
-# Source maintenance only. A new image/version requires a separately approved canary.
+# Shared CPU fetcher. App rollout still requires an exact tested version pin.
 build:
   gpu: false
   python_version: "3.11"
   system_packages:
     - ffmpeg
+    - unzip
+    - curl
   python_packages:
-    - "yt-dlp[default,pin]==2026.8.19"
-    - "yt-dlp-ejs==0.8.0"
-    - "deno==2.9.5"
+    - "yt-dlp[default]==2026.8.19"
+  run:
+    - curl -fsSLo /tmp/deno.zip https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip
+    - curl -fsSLo /tmp/deno.zip.sha256sum https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip.sha256sum
+    - cd /tmp && sed 's/deno-x86_64-unknown-linux-gnu.zip/deno.zip/' deno.zip.sha256sum | sha256sum -c - && unzip deno.zip -d /usr/local/bin && rm deno.zip deno.zip.sha256sum
+    - deno --version && yt-dlp --version
 predict: "predict.py:Predictor"

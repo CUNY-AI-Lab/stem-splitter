@@ -1006,10 +1006,11 @@ ytForm.addEventListener('submit', async (e) => {
     const resolved = await resolveModel(chosen, null, song ? 'song audio' : 'video audio');
     const { model, note } = resolved;
     if (note) showUploadMessage(note);
+    const imports = song ? null : await api('/api/import-options');
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
-        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : { videoUrl: url }),
+        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),

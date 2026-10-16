@@ -56,6 +56,8 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   REPLICATE_YT_MODEL_VERSION?: string;
   /** "replicate-first" in production; defaults to the free in-Worker fetch first. */
   YOUTUBE_FETCH_ORDER?: string;
+  /** Requires the canaried public-address-only general URL fetch model. */
+  URL_IMPORT_ENABLED?: string;
   /** OpenRouter model slug for the Listening Guy; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
   /** Comma-separated OpenRouter model slugs used after the primary model fails. */

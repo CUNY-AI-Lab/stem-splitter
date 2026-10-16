@@ -196,7 +196,22 @@ class Predictor(BasePredictor):
             shutil.rmtree(directory, ignore_errors=True)
 
     def predict(self, url: str = Input(description="Permitted YouTube or Vimeo video URL"),
-                max_duration: int = Input(description="Duration ceiling", default=900)) -> Output:
+                max_duration: int = Input(description="Duration ceiling", default=900),
+                general_url: bool = Input(description="Use the public HTTPS URL importer", default=False)) -> Output:
+        if general_url is True:
+            from fetch_audio import fetch_audio
+            cleanup_stale()
+            directory = tempfile.mkdtemp(prefix="url-", dir=ROOT)
+            _active.add(directory)
+            try:
+                audio, title, duration = fetch_audio(url, directory, max_duration,
+                    progress=lambda stage: print(json.dumps({"event": "url_import_stage", "stage": stage}), flush=True))
+                return Output(audio=Path(audio), title=title, duration=duration)
+            except BaseException:
+                shutil.rmtree(directory, ignore_errors=True)
+                raise
+            finally:
+                _active.discard(directory)
         url = extraction_url(url)
         ceiling = min(MAX_SECONDS, max(1, int(max_duration)))
         cleanup_stale()

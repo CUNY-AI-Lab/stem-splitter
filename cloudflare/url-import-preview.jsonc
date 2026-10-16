@@ -1,0 +1,34 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "stem-url-preview-20261015",
+  "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
+  "main": "../src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "../public"
+  },
+  "r2_buckets": [
+    {
+      "binding": "AUDIO",
+      "bucket_name": "stem-url-preview-20261015"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "stem-url-preview-20261015",
+      "database_id": "6eb17ba3-975a-4d81-b72f-682dd4bc225c"
+    }
+  ],
+  "vars": {
+    "R2_BUCKET_NAME": "stem-url-preview-20261015",
+    "CF_ACCOUNT_ID": "452c33847cf5cb1e46f391fca32fd1b5",
+    "PUBLIC_BASE_URL": "https://stem-url-preview-20261015.ailab-452.workers.dev",
+    "LOCAL_HOSTING": "true",
+    "SEPARATION_BACKEND": "replicate",
+    "REPLICATE_YT_MODEL": "cali-tlc/yt-audio",
+    "REPLICATE_YT_MODEL_VERSION": "c9781f737c6ff15effe998698332fe51a9622fdeae6068850d1dcfe5c7418c96",
+    "YOUTUBE_FETCH_ORDER": "replicate-first",
+    "URL_IMPORT_ENABLED": "true"
+  }
+}

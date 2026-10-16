@@ -1,3 +1,5 @@
+import { fetchUrlAudio, parseMediaUrl, UrlImportError } from './url-import.ts';
+import { importDurationLimit } from './import-policy.ts';
 import { retryAt } from './reliability/retry.ts';
 import { parseClientUses, recordClientUses, recordServerUse, usageSummary } from './reliability/observability.ts';
 import classroomRoutes from './classroom/routes.ts';
@@ -960,6 +962,8 @@ app.get('/api/music/search', requireClassCode, async (c) => {
   return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson');
 });
 
+app.get('/api/import-options', requireClassCode, (c) => c.json({urlImport:c.env.URL_IMPORT_ENABLED==='true',maxDurationSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):900}));
+
 app.post('/api/jobs', requireClassCode, async (c) => {
   const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
   if ('response' in parsed) return parsed.response;
@@ -968,8 +972,8 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   const input=parsed.value;
   if(input&&typeof input==='object'&&!Array.isArray(input)) {
     const value=input as Record<string,unknown>;
-    if (value.audiusId !== undefined && [value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1) return c.json({error:'Search again to choose an Internet Archive recording.',code:'unsupported_source',retryable:false},400);
-    if([value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1
+    if (value.audiusId !== undefined && [value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1) return c.json({error:'Search again to choose an Internet Archive recording.',code:'unsupported_source',retryable:false},400);
+    if([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1
       &&parseVideoSource(value.videoUrl??value.youtubeUrl)?.sourceType==='vimeo') {
       return c.json({error:'Choose a supported video link or upload an audio file.',code:'unsupported_source',retryable:false},400);
     }
@@ -988,6 +992,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         filename?: string;
         videoUrl?: string;
         youtubeUrl?: string;
+        sourceUrl?: string;
         audiusId?: string;
         archiveId?: string;
         archiveFile?: string;
@@ -999,7 +1004,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     | null;
 
   if (!body || typeof body!=='object' || Array.isArray(body) ||
-      [body.videoUrl,body.youtubeUrl,body.archiveId,body.audiusId,body.key].filter(value=>value!==undefined).length!==1) {
+      [body.sourceUrl,body.videoUrl,body.youtubeUrl,body.archiveId,body.audiusId,body.key].filter(value=>value!==undefined).length!==1) {
     return c.json({error:'Choose exactly one audio source.',code:'invalid_input'},400);
   }
 
@@ -1047,7 +1052,20 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let attribution: unknown = null;
   const id = crypto.randomUUID();
 
-  if (body.videoUrl!==undefined || body.youtubeUrl!==undefined) {
+  if (body.sourceUrl !== undefined) {
+    let audio;
+    try { audio = await fetchUrlAudio(body.sourceUrl, c.env, 900); }
+    catch (error) {
+      if (error instanceof UrlImportError) return c.json({ error:error.message,code:error.code,retryable:error.retryable },error.status);
+      throw error;
+    }
+    sourceType = 'upload';
+    key = `uploads/${crypto.randomUUID()}/source.m4a`;
+    filename = sanitizeFilename(audio.title) || 'Imported audio';
+    sourceHash = await sha256Audio(audio.data);
+    expectedSourceIdentity = { schemaVersion:'1',sha256:sourceHash,bytes:audio.data.byteLength };
+    await c.env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:'audio/mp4'}});
+  } else if (body.videoUrl!==undefined || body.youtubeUrl!==undefined) {
     const source=parseVideoSource(body.videoUrl!==undefined?body.videoUrl:body.youtubeUrl);
     // Caller error (unrecognizable link) is a 400; upstream failures are 502.
     if (!source) {
