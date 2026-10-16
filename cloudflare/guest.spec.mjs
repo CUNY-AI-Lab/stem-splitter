@@ -105,12 +105,12 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste a link');
+    await expect(input).toHaveAttribute('placeholder', 'jazz piano');
     await expect(page.locator('#yt-disclosure summary')).toHaveText('Or search for a song or paste a link');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
     await input.fill('https://vimeo.com/76979871');
-    await page.locator('#yt-form button').click();
+    await page.locator('#yt-form button[type=submit]').click();
     expect((await retiredResponse).status()).toBe(400);
     await expect(page.locator('#upload-message')).toHaveText('Choose a supported video link or upload an audio file. Code: unsupported_source.');
     await expect(input).toBeEnabled();
@@ -128,12 +128,12 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     for (const videoUrl of ['https://www.youtube.com/watch?v=jNQXAC9IVRw']) {
       pendingSubmission = undefined;
       await input.fill(videoUrl);
-      await page.locator('#yt-form button').click();
+      await page.locator('#yt-form button[type=submit]').click();
       await expect.poll(() => Boolean(pendingSubmission)).toBe(true);
       await expect(page.locator('#upload-message')).toHaveText('IMPORTING AUDIO…');
       await expect(page.locator('#yt-form')).toHaveAttribute('aria-busy', 'true');
       await expect(input).toBeDisabled();
-      await expect(page.locator('#yt-form button')).toBeDisabled();
+      await expect(page.locator('#yt-form button[type=submit]')).toBeDisabled();
       expect(submissions.at(-1).body).toEqual({ videoUrl, model: 'htdemucs_ft' });
       expect(submissions.at(-1).headers['idempotency-key']).toBeTruthy();
       expect(submissions.at(-1).headers['x-stem-course']).toBe('personal');
@@ -154,7 +154,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
       pendingSubmission = undefined;
       await expect(input).toBeEnabled();
       await expect(input).toHaveValue('');
-      await expect(page.locator('#yt-form button')).toBeEnabled();
+      await expect(page.locator('#yt-form button[type=submit]')).toBeEnabled();
       await expect(page.locator('#upload-message')).toContainText('PROCESSING');
       await expect(page.locator('#job-list .console')).toHaveCount(submissions.length);
     }
@@ -288,7 +288,7 @@ test('guest searches and imports a complete song through the existing field',asy
     await expect(input).toHaveValue('Song fixture — Item creator: Fixture Ensemble');
     await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
     const submission=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/jobs'&&r.request().method()==='POST');
-    await page.locator('#yt-form button').click();const response=await submission;
+    await page.locator('#yt-form button[type=submit]').click();const response=await submission;
     expect(response.status()).toBe(202);expect(response.request().postDataJSON()).toMatchObject({archiveId:'song-fixture',archiveFile:'song.mp3',archiveSearch:true});
     expect((await response.json()).savedToAccount).toBe(false);
     await completed(page,1);expect(f.counts().providerStarts).toBe(1);
@@ -429,7 +429,7 @@ test('Archive results distinguish source credits and submit the exact choice on 
         if(width===1280){for(let step=0;step<=index;step++)await input.press('ArrowDown');await input.press('Enter');}
         else await options.nth(index).click();
         await expect(page.getByRole('listbox',{name:'Songs'})).toBeHidden();
-        const count=submissions.length;await page.locator('#yt-form button').click();
+        const count=submissions.length;await page.locator('#yt-form button[type=submit]').click();
         await expect.poll(()=>submissions.length).toBe(count+1);
         expect(submissions.at(-1)).toMatchObject({archiveId:tracks[index].archiveId,archiveFile:tracks[index].archiveFile,archiveSearch:true});
         await expect(input).toBeEnabled();
@@ -473,7 +473,7 @@ test('partial song streams preserve visible choices through later updates and in
     await page.addInitScript(()=>{
       const original=window.fetch;
       window.fetch=(input,options)=>{
-        if(!String(input).startsWith('/api/music/search?'))return original(input,options);
+        if(!String(input).startsWith('/api/music/search?q=Streaming%20fixture'))return original(input,options);
         const encoder=new TextEncoder();
         return Promise.resolve(new Response(new ReadableStream({start(controller){
           window.pushSearch=packet=>controller.enqueue(encoder.encode(JSON.stringify(packet)+'\n'));
@@ -497,6 +497,124 @@ test('partial song streams preserve visible choices through later updates and in
     await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
     await expect(page.getByRole('option')).toHaveCount(2);
     await input.press('Enter');await expect(input).toHaveValue('First song — File artist: Musician');
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
+const sampleTrack = { id: 'sample-jazz', title: 'Piano sample', artist: 'Fixture ensemble', durationSec: 120, archiveId: 'sample', archiveFile: 'sample.mp3' };
+
+test('sample query streams translucently and Tab reveals preloaded results without another request', async ({page}) => {
+  const f = await setup(page); let searches = 0;
+  try {
+    await page.route('**/api/music/search?*', route => { searches++; return route.fulfill({json: {results: [sampleTrack]}}); });
+    await page.goto(f.origin);
+    const input = page.locator('#yt-url'), hint = page.locator('#source-sample-hint');
+    await expect(hint).toBeVisible();
+    await expect.poll(() => searches).toBe(1);
+    await expect(input).toHaveValue('');
+    await expect(input).toHaveAttribute('placeholder', 'jazz piano');
+    expect(await input.evaluate(el => getComputedStyle(el, '::placeholder').opacity)).toBe('0.5');
+    await expect(page.locator('#source-songs')).toBeHidden();
+    await input.focus();
+    if (process.env.STEM_SCREENSHOT_DIR) await page.screenshot({path: `${process.env.STEM_SCREENSHOT_DIR}/search-sample-desktop.png`,animations:'disabled'});
+    await input.press('Tab');
+    await expect(input).toHaveValue('jazz piano');
+    await expect(input).toBeFocused();
+    await expect(page.getByRole('option', {name: /Piano sample/})).toBeVisible();
+    await expect(hint).toBeHidden();
+    expect(searches).toBe(1);
+    expect(f.requests.filter(r => r.path === '/api/jobs' && r.method === 'POST')).toHaveLength(0);
+    await input.press('ArrowDown'); await input.press('Enter');
+    await expect(input).toHaveValue('Piano sample — File artist: Fixture ensemble');
+    await input.press('Tab'); await expect(page.locator('#yt-form button[type=submit]')).toBeFocused();
+    expect(f.counts().providerStarts).toBe(0); expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});
+
+test('Tab during sample animation reuses an in-flight preload; later typing rejects stale results', async ({page}) => {
+  const f = await setup(page); let delayed, searches = 0;
+  try {
+    await page.route('**/api/music/search?*', route => { searches++; delayed = route; });
+    await page.goto(f.origin);
+    await expect.poll(() => Boolean(delayed)).toBe(true);
+    const input = page.locator('#yt-url'); await input.focus(); await input.press('Tab');
+    await expect(input).toHaveValue('jazz piano');
+    expect(searches).toBe(1);
+    await input.fill('https://example.com/song.mp3');
+    await delayed.fulfill({json: {results: [sampleTrack]}}).catch(() => {}); delayed = null;
+    await expect(page.locator('#source-songs')).toBeHidden();
+    await expect(page.locator('#source-songs [role=option]')).toHaveCount(0);
+    await expect(input).toHaveValue('https://example.com/song.mp3');
+    await expect(page.locator('#source-sample-hint')).toBeHidden();
+    expect(f.counts().providerStarts).toBe(0); expect(f.errors).toEqual([]);
+  } finally { if(delayed) await delayed.abort().catch(()=>{}); await f.close(); }
+});
+
+test('failed background search stays silent and acceptance retries through normal search', async ({page}) => {
+  const f = await setup(page); let searches = 0;
+  try {
+    await page.route('**/api/music/search?*', route => ++searches === 1
+      ? route.fulfill({status:403,json:{error:{code:'guest_verification_required'}}})
+      : route.fulfill({json:{results:[sampleTrack]}}));
+    await page.goto(f.origin); await expect.poll(()=>searches).toBe(1);
+    await expect.poll(()=>page.evaluate(()=>sampleCache === null)).toBe(true);
+    await expect(page.locator('#source-songs')).toBeHidden();
+    expect(f.counts().widgetLoads).toBe(0);
+    const input=page.locator('#yt-url'); await input.focus(); await input.press('Tab');
+    await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
+    expect(searches).toBe(2);expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
+test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', async ({page}) => {
+  const f = await setup(page);
+  try {
+    await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:390,height:844});
+    await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[sampleTrack]}}));
+    await page.goto(f.origin);
+    const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint');
+    await expect(hint).toBeVisible();await expect(input).toHaveAttribute('placeholder','jazz piano');
+    await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});
+    await hint.click();await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
+    if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-results-mobile.png`,animations:'disabled'});
+    await input.fill('');await expect(hint).toBeVisible();await input.press('Escape');await expect(hint).toBeHidden();
+    await input.press('Tab');await expect(page.locator('#yt-form button[type=submit]')).toBeFocused();
+    expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
+test('accepting a partial sample preload reveals cached choices and keeps streaming without duplication', async ({page}) => {
+  const f=await setup(page);
+  try {
+    await page.addInitScript(()=>{
+      const original=window.fetch;
+      window.sampleSearches=0;
+      window.fetch=(input,options)=>{
+        if(!String(input).startsWith('/api/music/search?q=jazz%20piano'))return original(input,options);
+        window.sampleSearches++;
+        const encoder=new TextEncoder();
+        return Promise.resolve(new Response(new ReadableStream({start(controller){
+          window.pushSample=packet=>controller.enqueue(encoder.encode(JSON.stringify(packet)+'\n'));
+          window.endSample=()=>controller.close();
+          options.signal.addEventListener('abort',()=>controller.error(new DOMException('Aborted','AbortError')),{once:true});
+        }}),{headers:{'Content-Type':'application/x-ndjson'}}));
+      };
+    });
+    await page.goto(f.origin);await page.waitForFunction(()=>Boolean(window.pushSample));
+    await page.evaluate(track=>window.pushSample({results:[track],done:false}),sampleTrack);
+    await page.waitForFunction(()=>sampleCache.batches.length===1);
+    await expect(page.locator('#source-songs')).toBeHidden();
+    const input=page.locator('#yt-url');await input.focus();await input.press('Tab');
+    await expect(page.getByRole('option')).toHaveCount(1);await expect(page.locator('#source-songs')).toHaveAttribute('aria-busy','true');
+    await input.press('ArrowDown');const selected=await input.getAttribute('aria-activedescendant');
+    await page.evaluate(track=>{
+      window.pushSample({results:[track,{...track,id:'sample-2',title:'Another piano sample'}],done:true});window.endSample();
+    },sampleTrack);
+    await expect(page.getByRole('option')).toHaveCount(2);await expect(input).toHaveAttribute('aria-activedescendant',selected);
+    await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
+    expect(await page.evaluate(()=>window.sampleSearches)).toBe(1);
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{await f.close();}
 });

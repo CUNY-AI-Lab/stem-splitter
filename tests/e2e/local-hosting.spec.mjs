@@ -47,7 +47,16 @@ const quietAudio = await readFile(
 const test = base.extend({
   network: [
     async ({}, use) => {
-      const network = setupServer();
+      const network = setupServer(
+        http.get('https://archive.org/advancedsearch.php', ({ request }) => {
+          const query = new URL(request.url).searchParams.get('q') || '';
+          // The landing page speculates only this sample; dedicated Archive
+          // tests install their own handlers ahead of this empty response.
+          if (query.includes('"jazz"') && query.includes('"piano"')) {
+            return HttpResponse.json({ response: { docs: [] } });
+          }
+        }),
+      );
       network.listen({ onUnhandledRequest: 'error' });
       await use(network);
       network.close();
