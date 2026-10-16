@@ -9,6 +9,7 @@ import type {AppPrincipal} from '../src/identity.ts';
 import {verifyCailIdentity} from './verify.ts';
 import {courseFixture} from './course-fixture.ts';
 import {recordClientUses} from '../src/reliability/observability.ts';
+import {namedUsers} from '../src/teacher-activity.ts';
 const issuer=await createTestIdentityIssuer();
 const [alice,bob,teacher,admin]=[TEST_SUBJECTS.alice,TEST_SUBJECTS.bob,TEST_SUBJECTS.carol,'cail-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'];
 const tokens=new Map(await Promise.all([alice,bob,teacher,admin].map(async subject=>[subject,await issuer.mintIdentityJwt({subject,audience:'cail:stem-splitter'})] as const)));
@@ -47,4 +48,19 @@ test('student review uses names, counts visits and runs, and confines audio to t
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM public_split_links').first<any>())!.n,0);
  const accounts=await call('/api/admin/users',admin);assert.equal(accounts.status,200);
  assert.ok((await accounts.json() as any).users.some((user:any)=>user.displayName==='Alice Rivera'));
+});
+
+test('verified names from another current course fill historical accounts without changing instructor scope',async()=>{
+ const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ await db.prepare('INSERT INTO app_users(subject,role) VALUES(?,?)').bind(bob,'student').run();
+ const {ok,...assignment}=await courseFixture(bob,'another-current-course');
+ let invalid=false;
+ const env={DB:db,ADMISSION_RESOLVER:{resolveCourseAccess:async()=>({ok:false,code:'not_enrolled',retryable:false}),
+  listCourseAssignments:async()=>({ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:assignment.revision,nextCursor:null,
+   assignments:[{...assignment,displayName:'Bob Morgan',...(invalid?{expiresAt:'2020-01-01T00:00:00.000Z'}:{})}]})}} as unknown as Env;
+ const actor={subject:admin,role:'admin'} as AppPrincipal;
+ invalid=true;assert.equal((await namedUsers(env,actor))[0].displayName,'Name unavailable');
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM account_display_names').first<any>())!.n,0);
+ invalid=false;assert.equal((await namedUsers(env,actor))[0].displayName,'Bob Morgan');
+ assert.equal((await namedUsers(env,{subject:teacher,role:'instructor'} as AppPrincipal,true)).length,0);
 });
