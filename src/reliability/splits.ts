@@ -25,7 +25,7 @@ interface SplitInput {
   sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
   archiveId?: string; archiveFile?: string; archiveSearch?: boolean; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
-  browserAudio?: true;
+  browserAudio?: boolean;
   /** Server-validated remote source; acquired as an app-owned upload snapshot. */
   remoteUrl?: string;
 }
