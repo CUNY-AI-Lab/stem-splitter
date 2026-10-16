@@ -1060,11 +1060,11 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       throw error;
     }
     sourceType = 'upload';
-    key = `uploads/${crypto.randomUUID()}/source.m4a`;
+    key = `uploads/${crypto.randomUUID()}/${audio.fileName ?? 'source.m4a'}`;
     filename = sanitizeFilename(audio.title) || 'Imported audio';
     sourceHash = await sha256Audio(audio.data);
     expectedSourceIdentity = { schemaVersion:'1',sha256:sourceHash,bytes:audio.data.byteLength };
-    await c.env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:'audio/mp4'}});
+    await c.env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:audio.contentType ?? 'audio/mp4'}});
   } else if (body.videoUrl!==undefined || body.youtubeUrl!==undefined) {
     const source=parseVideoSource(body.videoUrl!==undefined?body.videoUrl:body.youtubeUrl);
     // Caller error (unrecognizable link) is a 400; upstream failures are 502.

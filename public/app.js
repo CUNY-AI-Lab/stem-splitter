@@ -250,7 +250,12 @@ async function api(path, options = {}) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
     throw new Error(`You've used today's runs. You can split again ${reset}.`);
   }
-  if (!res.ok) throw new Error(body.error?.message || body.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const error = new Error(body.error?.message || body.error || `Request failed (${res.status})`);
+    error.code = body.code || body.error?.code;
+    error.retryable = body.retryable === true;
+    throw error;
+  }
   return body;
 }
 
@@ -1023,7 +1028,13 @@ ytForm.addEventListener('submit', async (e) => {
     renderJobs();
     pollSoon();
   } catch (err) {
-    showUploadMessage(err.message, true);
+    showUploadMessage(`${err.message}${err.code ? ` Code: ${err.code}.` : ''}`, true);
+    if (/source_(denied|restricted)|youtube_source_denied/.test(err.code || '')) {
+      const action = document.createElement('button');
+      action.type = 'button'; action.className = 'head-btn'; action.textContent = 'Choose a local audio file';
+      action.addEventListener('click', () => document.getElementById('file-input').click());
+      action.dataset.localImportFallback = 'true'; uploadStatus.appendChild(action);
+    }
   } finally {
     youtubeFetchInProgress = false;
     ytForm.removeAttribute('aria-busy');
@@ -1517,6 +1528,7 @@ async function diagnoseUploadFailure(file) {
 }
 
 function showUploadMessage(message, isError = false) {
+  uploadStatus.querySelectorAll('[data-local-import-fallback]').forEach(button => button.remove());
   uploadStatus.hidden = false;
   uploadMessage.textContent = message;
   uploadMessage.classList.toggle('error', isError);

@@ -2,7 +2,7 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "stem-url-preview-20261015",
   "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
-  "main": "../src/index.ts",
+  "main": "url-import-preview.ts",
   "compatibility_date": "2026-06-01",
   "assets": {
     "directory": "../public"
@@ -30,5 +30,11 @@
     "REPLICATE_YT_MODEL_VERSION": "c9781f737c6ff15effe998698332fe51a9622fdeae6068850d1dcfe5c7418c96",
     "YOUTUBE_FETCH_ORDER": "replicate-first",
     "URL_IMPORT_ENABLED": "true"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "browser": {
+    "binding": "BROWSER"
   }
 }
