@@ -177,8 +177,8 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
   await expect(labLink.locator('img')).toHaveCSS('height', '44px');
-  await expect(page.locator('.tagline')).toHaveText('Split a song apart. Listen one layer at a time. Annotate as you go.');
-  await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+  await expect(page.locator('.tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.');
+  await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
     page.getByRole('radio', { name: '4 splits: voice, percussion, low end, the rest' })

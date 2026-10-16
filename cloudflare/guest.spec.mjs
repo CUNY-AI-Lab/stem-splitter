@@ -101,7 +101,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await page.goto(f.origin);
     await expect(page).toHaveURL(f.origin + '/');
     await expect(page).toHaveTitle('Stem Splitter');
-    await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    await expect(page.locator('#split-summary')).toBeHidden();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });

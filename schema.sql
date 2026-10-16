@@ -937,3 +937,8 @@ CREATE TABLE IF NOT EXISTS failed_run_sessions (
   PRIMARY KEY(job_id,subject,session_id)
 );
 CREATE INDEX IF NOT EXISTS run_deletions_cleanup ON run_deletions(content_purged,deleted_at);
+CREATE TABLE IF NOT EXISTS account_display_names (
+  subject TEXT PRIMARY KEY REFERENCES app_users(subject),
+  display_name TEXT NOT NULL CHECK(length(display_name) BETWEEN 1 AND 160),
+  updated_at INTEGER NOT NULL
+);

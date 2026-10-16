@@ -41,7 +41,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.goto(url.href);
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.locator('#crate')).toHaveCount(1);
-    await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    await expect(page.locator('#split-summary')).toBeHidden();
     // Screenshot capture can outlast the short fixture. Keep it playing until
     // the explicit pause click, rather than accidentally toggling Play again.
     await page.evaluate(() => {
