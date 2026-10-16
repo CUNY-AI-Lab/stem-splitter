@@ -313,3 +313,28 @@ test('temporary delivery failures retry with the same byte range and never cache
   const recovered=await searchArchiveSongs('Delivery recovery melody');
   assert.equal(recovered.results[0]?.archiveId,'delivery-recovery');assert.equal(probes,5);assert.equal(searches,6);
 });
+
+test('verified duration limits partition search caches and apply at metadata and audio boundaries',async t=>{
+  let seconds=900;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'student-boundary',title:'Extended classroom melody',creator:'Fixture Musician'}]}});
+    if(url.pathname.startsWith('/metadata/'))return metadata({},[file({title:'Extended classroom melody',length:String(seconds)})]);
+    return new Response(audio,{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${audio.length-1}/${audio.length}`}});
+  });
+  const student=await searchArchiveSongs('Extended classroom melody',undefined,900);
+  assert.equal(student.results.length,1);
+  assert.equal((await searchArchiveSongs('Extended classroom melody',undefined,300)).results.length,0,'a guest must not inherit the student cache');
+  assert.equal((await searchArchiveSongs('Extended classroom melody',undefined,900)).results.length,1);
+  for(const maximumSeconds of [300,900])for(const delta of [0,0.01]){
+    seconds=maximumSeconds+delta;
+    const item=await fetchArchiveItem('student-boundary',{publicAudio:true,maximumSeconds});
+    assert.equal(item.tracks[0].importable,delta===0,`${maximumSeconds}s limit, ${seconds}s track`);
+    if(delta)await assert.rejects(()=>fetchArchiveAudio('student-boundary','song.mp3',{} as never,{publicAudio:true,maximumSeconds}),e=>e instanceof ArchiveError&&e.code==='track_too_long');
+    const frames=Math.floor(maximumSeconds*44100/1152)+(delta?1:0);
+    const bytes=new Uint8Array(frames*417);
+    for(let offset=0;offset<bytes.length;offset+=417)bytes.set([0xff,0xfb,0x90,0x64],offset);
+    if(delta)assert.throws(()=>validateArchiveSongFrames(bytes.buffer,maximumSeconds,maximumSeconds),e=>e instanceof ArchiveError&&e.code==='track_too_long');
+    else assert.doesNotThrow(()=>validateArchiveSongFrames(bytes.buffer,maximumSeconds,maximumSeconds));
+  }
+});

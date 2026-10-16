@@ -536,7 +536,7 @@ test('retired Audius submissions stop before source access or quota reservation'
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<{n:number}>())!.n,0);
 });
 
-for (const [kind,seconds,allowed] of [['guest',300,true],['guest',301,false],['student',899,true],['instructor',900,true],['student',901,false]] as const) {
+for (const [kind,seconds,allowed] of [['guest',300,true],['guest',301,false],['student',899,true],['student',900,true],['student',900.01,false],['instructor',900,true],['student',901,false]] as const) {
  test(`verified ${kind} import limit checks ${seconds}s before storage`,async t=>{
   const {db,env}=await setup(t);
   let identity:AppPrincipal={...principal,role:kind==='instructor'?'instructor':'student'};
@@ -546,7 +546,7 @@ for (const [kind,seconds,allowed] of [['guest',300,true],['guest',301,false],['s
   const put=scoped.AUDIO.put.bind(scoped.AUDIO);
   scoped={...scoped,AUDIO:{...scoped.AUDIO,put:async(...args:any[])=>{writes++;return (put as any)(...args);},delete:scoped.AUDIO.delete.bind(scoped.AUDIO)} as any,
     fetchYouTubeBrowserAudio:async()=>({...browserAudio(),durationSec:seconds})};
-  const reserved=await submitSplit(scoped,identity,{youtubeUrl:youtube,role:'instructor'},`duration-limit-${kind}-${seconds}`);
+  const reserved=await submitSplit(scoped,identity,{youtubeUrl:youtube,role:'instructor'},`duration-limit-${kind}-${String(seconds).replace(".", "-")}`);
   await resumeOwnedSourceImport(scoped,identity,reserved.operation);
   const op=(await readOperation(db,reserved.operation.id))!;
   assert.equal(op.phase,allowed?'split':'fetch');
@@ -580,4 +580,38 @@ test('general YouTube links retain browser acquisition and persist a transient p
  assert.equal(current.state,'queued');assert.equal(current.error_code,'browser_import_fallback');
  assert.equal(JSON.parse(current.request_json).browserAudio,false);
  assert.equal(current.provider_id,null);
+});
+
+for (const kind of ['student','guest'] as const) test(`Archive ten-minute import and cache obey verified ${kind} permissions`,async t=>{
+  const {db,env}=await setup(t);
+  const guest=kind==='guest'?await guestRequests(db,env,'f'):null;
+  const identity=guest?.principal??principal, scoped=guest?.env??env;
+  // MPEG frame fixture exercises duration/storage accounting; playback is checked with real songs separately.
+  const count=Math.floor(600*44100/1152),bytes=new Uint8Array(count*417);
+  for(let offset=0;offset<bytes.length;offset+=417)bytes.set([255,251,144,100],offset);
+  const seconds=mp3FrameInfo(bytes.buffer)!.seconds;
+  let downloads=0,starts=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=String(input);
+    if(url.includes('/metadata/'))return Response.json({metadata:{title:'Long classroom song',creator:'Fixture musician',mediatype:'audio',subject:'Music'},files:[{name:'long.mp3',title:'Long classroom song',size:String(bytes.length),length:String(seconds)}]});
+    if(url.includes('archive.org/download/')){downloads++;return new Response(bytes,{headers:{'content-type':'audio/mpeg'}});}
+    assert.ok(url.startsWith('https://api.replicate.com/'));
+    if(init?.method==='POST')starts++;
+    return Response.json({id:`long-archive-${starts}`,status:'processing'});
+  });
+  const input={archiveId:'long-classroom-song',archiveFile:'long.mp3',archiveSearch:true,role:'instructor',maximumSeconds:900};
+  const first=await submitSplit(scoped,identity,input,`long-archive-${kind}`);
+  await resumeOwnedSourceImport(scoped,identity,first.operation);
+  if(kind==='guest'){
+    assert.equal((await readOperation(db,first.operation.id))!.state,'failed');
+    assert.equal(downloads,0);assert.equal(starts,0);
+    assert.equal((await splitAllowance(db,identity.subject,new Date(),'guest')).remaining,5);
+  }else{
+    assert.equal((await readOperation(db,first.operation.id))!.phase,'split');assert.equal(downloads,1);
+    await drainSplitQueue(scoped,async()=>{});assert.equal(starts,1);
+    await db.prepare("UPDATE app_operations SET state='succeeded',lease_until=0 WHERE id=?").bind(first.operation.id).run();
+    const cached=await submitSplit(scoped,identity,input,'long-archive-student-cached');
+    await resumeOwnedSourceImport(scoped,identity,cached.operation);
+    assert.equal((await readOperation(db,cached.operation.id))!.phase,'split');assert.equal(downloads,1,'the cached ten-minute recording stays available to its student owner');
+  }
 });

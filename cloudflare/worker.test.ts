@@ -48,6 +48,12 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     const schema = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
     const setup = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });
     assert.equal(setup.status, 200);
+    for (const path of ['/sound-stations', '/sound-stations.html']) {
+      const page = await worker.fetch(path);
+      assert.equal(page.status, 200);
+      assert.match(page.headers.get('content-security-policy') || '', /media-src 'self' blob: https:\/\/archive\.org https:\/\/\*\.archive\.org;/);
+    }
+    assert.doesNotMatch((await worker.fetch('/account.html')).headers.get('content-security-policy') || '', /https:\/\/\*\.archive\.org/);
     const readyHealth = await (await worker.fetch('/healthz')).json();
     assert.deepEqual(readyHealth.courseAccess, { contract: 'stem-course-v1' });
     assert.equal(readyHealth.intakePaused, false);

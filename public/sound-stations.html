@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sound Stations · Stem Splitter</title>
+  <link rel="stylesheet" href="/styles.css?v=20261016-sound-stations">
+</head>
+<body>
+  <main class="sound-stations">
+    <a class="account-button" href="/">← Back to Stem Splitter</a>
+    <header class="masthead">
+      <p class="kicker">Art of Noise · Listening selections</p>
+      <h1>Sound<br>Stations</h1>
+      <p class="tagline">Songs from the exhibition playlists, matched to their artists and albums on Internet Archive.</p>
+    </header>
+    <section class="station-player" aria-label="Music player">
+      <p id="station-now-playing" aria-live="polite">Choose a song to listen.</p>
+      <audio id="station-audio" controls preload="none" aria-label="Selected song"></audio>
+      <p id="station-playback-status" role="status"></p>
+    </section>
+    <p id="station-loading" role="status">Loading playlists…</p>
+    <div id="station-playlists"></div>
+    <footer><p>Audio streams from Internet Archive. Each song links to its source recording. Availability can change.</p></footer>
+  </main>
+  <script src="/sound-stations.js"></script>
+</body>
+</html>

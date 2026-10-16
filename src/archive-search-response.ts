@@ -3,10 +3,11 @@ import { ArchiveError, archiveSongSearchKey, searchArchiveSongs, type SongResult
 type SearchCache = { storage: Pick<Cache, 'match' | 'put'>; origin: string };
 
 /** Called after access checks. Cache only public, verified results, never an account response. */
-export async function archiveSongSearchResponse(query: string, streaming: boolean, cache?: SearchCache): Promise<Response> {
+export async function archiveSongSearchResponse(query: string, streaming: boolean, cache?: SearchCache, maximumSeconds = 300): Promise<Response> {
   const message = (error: unknown) => error instanceof ArchiveError ? error.message : 'Song search is temporarily unavailable.';
   // Bump this path when result eligibility changes; imports always revalidate.
-  const key = cache && new Request(new URL('/__stem-search-cache/v1?q=' + encodeURIComponent(archiveSongSearchKey(query)), cache.origin));
+  const durationLimit = maximumSeconds === 900 ? 900 : 300;
+  const key = cache && new Request(new URL(`/__stem-search-cache/v2?seconds=${durationLimit}&q=` + encodeURIComponent(archiveSongSearchKey(query)), cache.origin));
   let cached: SongResults | undefined;
   if (cache && key) {
     try {
@@ -20,7 +21,7 @@ export async function archiveSongSearchResponse(query: string, streaming: boolea
   const headers = { 'Cache-Control': 'private, no-store', 'X-Stem-Search-Cache': cached ? 'hit' : cache ? 'miss' : 'bypass' };
   const search = async (onResults?: (results: SongResults) => void) => {
     if (cached) return cached;
-    const result = await searchArchiveSongs(query, onResults);
+    const result = await searchArchiveSongs(query, onResults, durationLimit);
     if (cache && key && result.results.length) {
       try { await cache.storage.put(key, Response.json(result, { headers: { 'Cache-Control': 'public, max-age=60' } })); }
       catch { /* Results remain usable when cache writes fail. */ }

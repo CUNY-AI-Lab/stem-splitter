@@ -1025,7 +1025,8 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 app.get('/api/music/search', requireClassCode, async (c) => {
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson',
-    storage ? { storage, origin: new URL(c.req.url).origin } : undefined);
+    storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
+    c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300);
 });
 
 app.get('/api/import-options', requireClassCode, (c) => c.json({urlImport:c.env.URL_IMPORT_ENABLED==='true',maxDurationSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):900}));
