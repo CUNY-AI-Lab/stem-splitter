@@ -53,14 +53,8 @@
     <p id="access-status" role="status"></p>
     <button id="access-retry" type="button" class="crate-page-btn" hidden>Try again</button>
   </details>
-  <details id="account-reference" class="account-disclosure" hidden>
-    <summary>Account ID</summary>
-    <p class="account-help">Share this with a Stem Splitter administrator if you need instructor access.</p>
-    <code id="account-id"></code>
-  </details>
   <p id="account-back" hidden><a href="/">← Back to Stem Splitter</a></p>
   <section id="account-footer" hidden>
-    <p class="account-help">Your splits remain in your account for 90 days.</p>
     <form action="/auth/logout" method="post"><button type="submit" class="account-button">Sign out</button></form>
   </section>
   <nav class="account-resources" aria-label="CUNY AI Lab resources">
@@ -80,5 +74,5 @@
 </main>
 <script src="/session-guard.js?v=20261016-student-review"></script>
 <script src="/guest-claim.js?v=20261012-carryover"></script>
-<script src="/account.js?v=20261016-student-review"></script>
+<script src="/account.js?v=20261016-account-cleanup"></script>
 </html>

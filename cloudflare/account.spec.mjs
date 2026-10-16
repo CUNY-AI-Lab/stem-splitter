@@ -238,7 +238,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
-    await expect(page.locator('#account-id')).toBeHidden();
+    await expect(page.locator('#account-id')).toHaveCount(0);
     expect(memberReads).toBe(0);
     await expect(page.locator('body')).not.toContainText(/Workspace ID|back to the mixer|Manage CUNY sign-in/);
     if (receipts) {
@@ -311,10 +311,8 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeHidden();
-    await page.getByText('Account ID', { exact: true }).click();
-    await expect(page.locator('#account-id')).toHaveText(TEST_SUBJECTS.alice);
+    await expect(page.getByText('Account ID', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.getByText('Account ID', { exact: true }).click();
     if (receipts) await page.screenshot({ path: `${receipts}/account-student-mobile-fixture.png`, fullPage: true });
     const day = new Date().toISOString().slice(0, 10);
     await seed(Array.from({ length: 10 }, (_, index) => `INSERT INTO app_request_reservations (id, subject, scope, day) VALUES ('account-split-${index}', '${TEST_SUBJECTS.alice}', 'split', '${day}')`));
@@ -396,7 +394,8 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
     await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.locator('#account-footer')).toContainText('Your splits remain in your account for 90 days.');
+    await expect(page.locator('body')).not.toContainText('Your splits remain in your account for 90 days.');
+    await expect(page.getByRole('button', {name: 'Sign out', exact: true})).toBeVisible();
     await expect(page.locator('body')).not.toContainText('open them on any browser');
     // Account details must not survive a sign-out from another tab.
     await context.setExtraHTTPHeaders({});
@@ -404,7 +403,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-login')).toBeVisible();
     await expect(page.locator('#account-details')).toBeHidden();
     await expect(page.locator('#account-footer')).toBeHidden();
-    await expect(page.locator('#account-id')).toBeEmpty();
+    await expect(page.locator('#account-id')).toHaveCount(0);
     expect(errors).toEqual([]);
     // Deliberate fixture identity changes can race an old pagehide batch.
     // Accept only a proven actor-fence rejection, never arbitrary409 failures.

@@ -13,16 +13,15 @@ window.addEventListener('focus', async () => {
   try {
     const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
     if (response.status === 401 || response.status === 403) {
-      for (const id of ['account-details', 'account-reference', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
+      for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
       users = [];
-      el('account-id').textContent = '';
       el('access-member').replaceChildren();
       subject = '';
       location.reload();
     } else if (response.ok) {
       const { account } = await response.json();
       if (account?.subject !== subject || account?.role !== accountRole) {
-        for (const id of ['account-details', 'account-reference', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
+        for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
         location.reload();
       }
     }
@@ -132,10 +131,8 @@ el('access-form').addEventListener('submit', async (event) => {
     try { await window.StemGuestClaim.run(account); }
     catch (error) { el('account-status').textContent = error.message; }
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
-    el('account-id').textContent = subject;
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
-    el('account-reference').hidden = false;
     el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
     el('account-admin').hidden = account.role !== 'admin';
     el('student-review').hidden = !['admin', 'instructor'].includes(account.role);
