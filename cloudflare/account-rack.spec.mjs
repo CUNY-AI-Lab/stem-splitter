@@ -5,6 +5,47 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
+test('failed attempts leave the rack on the next session while successful runs remain', async ({ page, context }) => {
+  const issuer = await createTestIdentityIssuer();
+  const token = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+  const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
+    vars: { TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true', RUN_DELETION_ENABLED: 'true' } }] });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    const { url } = await server.listen();
+    const seed = async statements => expect((await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(statements) })).status).toBe(200);
+    await seed(schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8')));
+    await seed([
+      `INSERT INTO app_users (subject) VALUES ('${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO jobs (id, filename, source_key, status, model, stems) VALUES ('remix-fixture', 'Successful recording', 'uploads/success.wav', 'done', 'htdemucs_ft', '[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+      `INSERT INTO jobs (id, filename, source_key, status) VALUES ('failed-attempt', 'Failed attempt', 'uploads/failure.wav', 'failed')`,
+      ...['remix-fixture', 'failed-attempt'].map(id => `INSERT INTO job_owners (job_id, subject) VALUES ('${id}', '${TEST_SUBJECTS.alice}')`),
+    ]);
+    await server.fetch('/__fixture/audio', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url)) });
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': token });
+    await page.goto(url.href);
+    await expect(page.locator('#job-list')).toContainText('Failed attempt');
+    await expect(page.locator('.badge.ready')).toHaveText('READY');
+    await page.reload();
+    await expect(page.locator('#job-list')).toContainText('Failed attempt');
+    await expect(page.locator('.badge.ready')).toHaveText('READY');
+    await page.close();
+
+    const next = await context.newPage();
+    next.on('pageerror', error => errors.push(error.message));
+    await next.goto(url.href);
+    await expect(next.locator('#job-list .console')).toHaveCount(1);
+    await expect(next.locator('#job-list')).toContainText('Successful recording');
+    await expect(next.locator('#job-list')).not.toContainText('Failed attempt');
+    await expect(next.locator('.badge.ready')).toHaveText('READY');
+    await next.reload();
+    await expect(next.locator('#job-list .console')).toHaveCount(1);
+    await expect(next.locator('.badge.ready')).toHaveText('READY');
+    expect(errors).toEqual([]);
+  } finally { await server.close(); }
+});
+
 test('account rack recovers on a new browser; isolates people; handles paging, import and outages', async ({ page, context, browser }) => {
   const issuer = await createTestIdentityIssuer();
   const tokens = Object.fromEntries(await Promise.all(['alice', 'bob'].map(async name => [name,

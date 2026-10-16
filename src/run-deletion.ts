@@ -26,7 +26,7 @@ export async function deleteOwnedRun(env:Env,principal:AppPrincipal,id:string) {
  return Boolean(await runWasDeleted(env,id));
 }
 
-/** One tab/browser session ID is stable across reloads; the third distinct session removes failures. */
+/** Keep failures for the current tab/browser session; a new session removes them. Reloads keep the same ID. */
 export async function recordFailedRunSession(env:Env,principal:AppPrincipal,session:string|null,id:string|null=null) {
  if(!runDeletionEnabled(env)||!session||!/^[-a-zA-Z0-9_]{16,80}$/.test(session))return;
  await env.DB.batch([
@@ -38,7 +38,7 @@ export async function recordFailedRunSession(env:Env,principal:AppPrincipal,sess
   env.DB.prepare(`INSERT INTO run_deletions(job_id,subject,deleted_at,reason)
     SELECT f.job_id,f.subject,?,'failed_session_expiry' FROM failed_run_sessions f JOIN jobs j ON j.id=f.job_id
     JOIN ${ownershipTable(principal,'job')} o ON o.job_id=j.id AND o.subject=f.subject
-    WHERE f.subject=? AND j.status='failed' GROUP BY f.job_id,f.subject HAVING COUNT(*)>2 ON CONFLICT(job_id) DO NOTHING`).bind(Date.now(),principal.subject),
+    WHERE f.subject=? AND j.status='failed' GROUP BY f.job_id,f.subject HAVING COUNT(*)>1 ON CONFLICT(job_id) DO NOTHING`).bind(Date.now(),principal.subject),
  ]);
 }
 
