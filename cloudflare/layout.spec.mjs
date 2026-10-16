@@ -20,7 +20,7 @@ for (const remixer of [false, true]) test(`Crate below the workspace, no adversa
       body: JSON.stringify(schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'))) });
     await page.goto(url.href);
     await expect(page).toHaveTitle('Stem Splitter');
-    await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    await expect(page.locator('#split-summary')).toBeHidden();
     await expect(page.getByRole('combobox', { name: 'Song or link', exact: true })).toBeVisible();
     await page.locator('#yt-disclosure summary').click();
     await expect(page.locator('#yt-url')).toBeHidden();

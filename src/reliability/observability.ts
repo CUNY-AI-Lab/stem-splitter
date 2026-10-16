@@ -87,3 +87,27 @@ export async function recordPageUse(env:Env,response:Response) {
   try {await persist(env.DB,undefined,[{id:crypto.randomUUID(),type:'page_response',source:'server',outcome:response.ok?'accepted':'failed',status:response.status}]);}
   catch {console.warn(JSON.stringify({event:'usage_record_failed',type:'page_response'}));}
 }
+
+/** Counts app sign-in requests and observed outcomes, independent of page views.
+ * Only fixed categories enter storage; callback URLs and credentials stay private. */
+export async function recordSignInUse(env:Env,request:Request,response:Response,started:number) {
+  if(env.AUTH_MODE!=='cail'||request.method!=='GET')return;
+  const url=new URL(request.url);
+  if(url.protocol!=='https:'||url.origin!==env.PUBLIC_BASE_URL)return;
+  const login=url.pathname==='/auth/login',callback=url.pathname==='/auth/callback';
+  if(!login&&!callback)return;
+  const status=response.status,id=crypto.randomUUID(),durationMs=Math.max(0,Math.min(86400000,Date.now()-started));
+  const events:Use[]=[];
+  const add=(type:string,outcome:string,code:string)=>events.push({id,type,source:'server',outcome,code,status,durationMs});
+  if(login)add('signin_attempt','observed','login_requested');
+  if(status>=400) {
+    const reason=status===401?'authentication_required':status===403?'admission_required':status===429?'rate_limited':'sign_in_unavailable';
+    add('signin_failure','failed',`${login?'login':'callback'}_${reason}`);
+  } else if(status===303) {
+    const newSession=callback&&response.headers.getSetCookie().some(value=>value.startsWith('__Host-stem-session=')&&!value.includes('Max-Age=0'));
+    if(newSession)add('signin_success','succeeded','session_created');
+    else if(response.headers.get('location')?.startsWith('/'))add('signin_session_reused','accepted',callback?'callback_recovered':'existing_session');
+  }
+  try {if(events.length)await persist(env.DB,undefined,events);}
+  catch {console.warn(JSON.stringify({event:'usage_record_failed',type:'signin'}));}
+}

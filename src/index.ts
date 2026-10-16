@@ -1,3 +1,4 @@
+import { namedUsers, studentActivity, requireStudentReview } from './teacher-activity.ts';
 import { runDeletionEnabled, runWasDeleted, deleteOwnedRun, recordFailedRunSession, purgeDeletedRuns } from './run-deletion.ts';
 import { fetchUrlAudio, parseMediaUrl, UrlImportError } from './url-import.ts';
 import { importDurationLimit } from './import-policy.ts';
@@ -326,8 +327,60 @@ app.get('/api/model-quota', async (c) => {
 
 app.get('/api/admin/users', async (c) => {
   if (c.get('principal')?.role !== 'admin') return c.json({ error: 'Not found' }, 404);
-  const { results } = await c.env.DB.prepare('SELECT subject, role, disabled, role_expires_at, revision FROM app_users ORDER BY created_at DESC, subject LIMIT 200').all();
-  return c.json({ users: results });
+  return c.json({ users: await namedUsers(c.env, c.get('principal')!) });
+});
+
+app.get('/api/teacher/students', async c=>{
+  try {return c.json({students:await studentActivity(c.env,c.get('principal')!),visitsDays:30});}
+  catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
+});
+app.get('/api/teacher/students/:subject/jobs', async c=>{
+  try {
+    const subject=c.req.param('subject'),person=await requireStudentReview(c.env,c.get('principal')!,subject);
+    let before:{id:string;createdAt:string}|null=null;
+    const cursor=c.req.query('cursor');
+    if(cursor!==undefined) {
+      try {
+        if(cursor.length>512)throw new Error();
+        before=JSON.parse(atob(cursor));
+        if(!before||typeof before.id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(before.id)||
+          typeof before.createdAt!=='string'||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(before.createdAt))throw new Error();
+      }catch{return c.json({error:'Invalid page.'},400);}
+    }
+    const {results}=await c.env.DB.prepare(`SELECT j.id,j.filename,j.model,j.status,j.created_at AS createdAt,j.stems
+      FROM job_owners o JOIN jobs j ON j.id=o.job_id WHERE o.subject=? AND j.created_at>datetime('now','-90 days')
+      AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)
+      AND (? IS NULL OR j.created_at<? OR (j.created_at=? AND j.id<?))
+      ORDER BY j.created_at DESC,j.id DESC LIMIT 41`).bind(subject,before?.createdAt??null,before?.createdAt??null,before?.createdAt??null,before?.id??null)
+      .all<{id:string;filename:string;model:string;status:string;createdAt:string;stems:string|null}>();
+    return c.json({displayName:person.displayName,jobs:results.slice(0,40).map(({stems,...row})=>({...row,stemCount:JSON.parse(stems||'[]').length})),
+      nextCursor:results.length>40?btoa(JSON.stringify({id:results[39].id,createdAt:results[39].createdAt})):null});
+  }catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
+});
+async function reviewedJob(env:Env,actor:AppPrincipal,subject:string,id:string) {
+  await requireStudentReview(env,actor,subject);
+  return env.DB.prepare(`SELECT j.* FROM job_owners o JOIN jobs j ON j.id=o.job_id WHERE o.subject=? AND j.id=?
+    AND j.status='done' AND j.created_at>datetime('now','-90 days')
+    AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)`).bind(subject,id).first<JobRow>();
+}
+app.get('/api/teacher/students/:subject/jobs/:id',async c=>{
+  try {
+    const row=await reviewedJob(c.env,c.get('principal')!,c.req.param('subject'),c.req.param('id'));
+    if(!row)return c.json({error:'Split unavailable.'},404);
+    const stems=JSON.parse(row.stems||'[]') as Array<{name:string;key:string}>;
+    return c.json({id:row.id,filename:row.filename,model:row.model,status:'done',readOnlyShared:true,instructorReview:true,
+      labels:{},annotations:[],guide:null,stems:stems.map((stem,index)=>({name:stem.name,url:`/api/teacher/students/${c.req.param('subject')}/jobs/${row.id}/stems/${index}`}))});
+  }catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
+});
+app.get('/api/teacher/students/:subject/jobs/:id/stems/:index',async c=>{
+  try {
+    const row=await reviewedJob(c.env,c.get('principal')!,c.req.param('subject'),c.req.param('id'));
+    if(!row)return c.text('Not found',404);
+    const index=c.req.param('index');if(!/^\d+$/.test(index))return c.text('Not found',404);
+    const key=JSON.parse(row.stems||'[]')[Number(index)]?.key;
+    if(typeof key!=='string'||!key.startsWith(`stems/${row.id}/`))return c.text('Not found',404);
+    return serveStemAudio(c.env,key,c.req.raw);
+  }catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 
 app.put('/api/admin/users/:subject', async (c) => {
@@ -843,9 +896,9 @@ app.delete('/api/teacher/folders/:id', requireTeacher, async (c) => {
 app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
   const teacher = (await currentTeacher(c))!;
   const folderId = c.req.param('id');
-  const folder = await c.env.DB.prepare('SELECT id FROM folders WHERE id = ?')
+  const folder = await c.env.DB.prepare('SELECT id, created_by FROM folders WHERE id = ?')
     .bind(folderId)
-    .first<{ id: string }>();
+    .first<{ id: string; created_by: string }>();
   if (!folder) return c.json({ error: 'Folder not found' }, 404);
 
   const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
@@ -865,13 +918,16 @@ app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
     return c.json({ error: 'Only finished splits can be saved to a folder.' }, 409);
   }
 
-  const insert = await c.env.DB.prepare(
+  const [, insert] = await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM folder_items WHERE job_id = ? AND folder_id <> ?
+      AND folder_id IN (SELECT id FROM folders WHERE created_by = ?)`).bind(jobId, folderId, folder.created_by),
+    c.env.DB.prepare(
     `INSERT INTO folder_items (folder_id, job_id, filename, model, added_by)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(folder_id, job_id) DO NOTHING`
   )
     .bind(folderId, jobId, job.filename, job.model ?? DEFAULT_DEMUCS_MODEL, teacher.username)
-    .run();
+  ]);
   return c.json({ ok: true, already: (insert.meta?.changes ?? 0) === 0 });
 });
 
@@ -1329,6 +1385,8 @@ app.get('/api/jobs', async (c) => {
     SELECT j.id, j.filename, j.model, j.created_at
     FROM ${ownershipTable(principal,'job')} o JOIN jobs j ON j.id = o.job_id
     WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
+      AND NOT EXISTS (SELECT 1 FROM folder_items i JOIN folders f ON f.id = i.folder_id
+        WHERE i.job_id = j.id AND f.created_by = o.subject)
       ${runDeletionEnabled(c.env)?'AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)':''}
       AND (? IS NULL OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41

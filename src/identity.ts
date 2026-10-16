@@ -1,3 +1,4 @@
+import { rememberDisplayName } from './teacher-activity.ts';
 import { courseIds, resolveCourse, jobCourse, jobPermission, cleanDisplayName, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { STEM_COURSE_ID } from './classroom/contract.ts';
 import type { AdmissionCourseResolver, CourseAssignment } from './classroom/contract.ts';
@@ -117,6 +118,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
       displayName: cleanDisplayName(identity.name), course,
       courseId: !personal && request.headers.has('x-stem-course') && course ? course.classId : null };
     if (course?.displayNameSource === 'verified_profile') principal.displayName = cleanDisplayName(course.displayName);
+    try { await rememberDisplayName(env, identity.subject, principal.displayName); } catch { /* Profile availability is independent of sign-in authority. */ }
     if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);
     if (path.startsWith('/api/admin/') && role !== 'admin') return authFailure('admission_required', 403);
     if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && role === 'student') return authFailure('admission_required', 403);

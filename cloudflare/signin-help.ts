@@ -1,9 +1,9 @@
 /** Recovery stays available even when the identity service is unreachable. */
 export function signInHelp(next: string): Response {
   const retry = '/auth/login?next=' + encodeURIComponent(next);
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign-in help</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>Trouble signing in?</h1>
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stem Splitter · Sign-in help</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>Trouble signing in?</h1>
 <p>If CUNY shows “Login Failed,” a blank page, or a screen that never finishes loading, close that failed sign-in tab, then try again here.</p>
-<p class="signin-actions"><a class="account-button" href="${retry}" target="_blank" rel="noopener noreferrer">Try CUNY Login again (new tab)</a><a class="account-button" href="/">Back to Splitter</a></p>
+<p class="signin-actions"><a class="account-button" href="${retry}" target="_blank" rel="noopener noreferrer">Try CUNY Login again (new tab)</a><a class="account-button" href="/">Back to Stem Splitter</a></p>
 <p>Sign-in opens in a new tab so this help page stays available. If it fails again, close that sign-in tab and return here.</p>
 <ol class="signin-steps">
 <li>If it fails again, open Stem Splitter in a private or incognito window and start sign-in there. Use the tool address, not the failed CUNY page’s address.</li>

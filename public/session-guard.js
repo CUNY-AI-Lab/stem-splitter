@@ -1,7 +1,7 @@
 /* Private results belong to the active browser session. Revalidation keeps
  * the original page controls in place while private regions stay concealed. */
 (() => {
-  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #account-reference, #account-footer, #console-panel';
+  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel';
   const originalFetch = window.fetch.bind(window);
   let subject = null, clearing = false, checking = null, suspended = false;
   let cleanup = () => {}, pause = () => {};

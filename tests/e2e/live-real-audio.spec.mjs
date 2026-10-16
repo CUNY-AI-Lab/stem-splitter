@@ -82,7 +82,7 @@ test(`real ${model || 'audio'} browser pipeline`, async ({ page }) => {
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
-  await expect(page.getByRole('heading', { name: /STEM SPLITTER/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Stem Splitter/ })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(/Internal Server Error|Application Error/);
 
   await page.getByRole('radio', { name: liveCase.radio }).check();

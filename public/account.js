@@ -13,16 +13,15 @@ window.addEventListener('focus', async () => {
   try {
     const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
     if (response.status === 401 || response.status === 403) {
-      for (const id of ['account-details', 'account-reference', 'account-admin', 'account-footer']) el(id).hidden = true;
+      for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
       users = [];
-      el('account-id').textContent = '';
       el('access-member').replaceChildren();
       subject = '';
       location.reload();
     } else if (response.ok) {
       const { account } = await response.json();
       if (account?.subject !== subject || account?.role !== accountRole) {
-        for (const id of ['account-details', 'account-reference', 'account-admin', 'account-footer']) el(id).hidden = true;
+        for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
         location.reload();
       }
     }
@@ -35,7 +34,7 @@ async function request(path, options = {}) {
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
 }
-function selectMember() {
+function selectMember(event) {
   const user = users.find((user) => user.subject === el('access-member').value);
   el('access-editor').hidden = !user;
   el('access-editor').disabled = !user || saving;
@@ -46,6 +45,11 @@ function selectMember() {
   const date = user.role_expires_at ? new Date(user.role_expires_at) : null;
   el('access-expiry').value = date ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   showExpiry();
+  if (event?.type === 'change') {
+    requestAnimationFrame(() => {
+      el('access-editor').scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    });
+  }
 }
 function showExpiry() {
   const instructor = el('access-role').value === 'instructor';
@@ -66,7 +70,7 @@ async function loadMembers() {
     const placeholder = new Option('Choose an account', '');
     placeholder.disabled = true;
     placeholder.selected = true;
-    el('access-member').replaceChildren(placeholder, ...users.map((user) => new Option(user.subject, user.subject)));
+    el('access-member').replaceChildren(placeholder, ...users.map((user) => new Option(user.displayName || 'Name unavailable', user.subject)));
     if (users.some((user) => user.subject === previous)) el('access-member').value = previous;
     el('access-form').hidden = !users.length;
     el('access-empty').hidden = users.length > 0;
@@ -132,12 +136,11 @@ el('access-form').addEventListener('submit', async (event) => {
     try { await window.StemGuestClaim.run(account); }
     catch (error) { el('account-status').textContent = error.message; }
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
-    el('account-id').textContent = subject;
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
-    el('account-reference').hidden = false;
     el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
     el('account-admin').hidden = account.role !== 'admin';
+    el('student-review').hidden = !['admin', 'instructor'].includes(account.role);
     if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
@@ -154,3 +157,62 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-back').hidden = false;
   }
 })();
+
+let studentSelection = '', studentCursor = null, studentRequest = 0;
+let studentRows = [];
+async function loadStudents() {
+  el('student-status').textContent = 'Loading students…';
+  el('student-retry').hidden = true;
+  try {
+    const result = await request('/api/teacher/students');
+    studentRows = result.students;
+    el('student-list').replaceChildren(...studentRows.map(student => {
+      const row = document.createElement('li'), button = document.createElement('button'), count = document.createElement('span');
+      button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName;
+      button.addEventListener('click', () => void loadStudentJobs(student));
+      count.className = 'student-count';
+      count.textContent = `${student.runs} ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} ${student.recordedVisits === 1 ? "visit" : "visits"}`;
+      row.append(button, count); return row;
+    }));
+    el('student-status').textContent = studentRows.length ? '' : 'Students appear here after they use Stem Splitter.';
+  } catch (error) { el('student-status').textContent = error.message; el('student-retry').hidden = false; }
+}
+async function loadStudentJobs(student, more = false) {
+  const requestId = ++studentRequest;
+  studentSelection = student.subject;
+  el('student-detail').hidden = false;
+  el('student-name').textContent = student.displayName;
+  el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} recorded ${student.recordedVisits === 1 ? "visit" : "visits"} in 30 days`;
+  el('student-more').hidden = true;
+  el('student-more').disabled = true;
+  if (!more) el('student-jobs').replaceChildren();
+  el('student-status').textContent = 'Loading splits…';
+  try {
+    const result = await request(`/api/teacher/students/${encodeURIComponent(student.subject)}/jobs${more && studentCursor ? '?cursor=' + encodeURIComponent(studentCursor) : ''}`);
+    if (requestId !== studentRequest) return;
+    for (const job of result.jobs) {
+      const row = document.createElement('li'), text = document.createElement('div'), title = document.createElement('span'), detail = document.createElement('small');
+      title.textContent = job.filename;
+      detail.textContent = `${new Date(job.createdAt.replace(' ', 'T') + 'Z').toLocaleDateString()} · ${job.status === 'done' ? job.stemCount + (job.stemCount === 1 ? ' stem' : ' stems') : job.status}`;
+      text.append(title, detail); row.append(text);
+      if (job.status === 'done' && job.stemCount) {
+        const load = document.createElement('a'); load.className = 'account-button'; load.textContent = 'Load';
+        load.href = `/?student=${encodeURIComponent(student.subject)}&job=${encodeURIComponent(job.id)}`;
+        row.append(load);
+      }
+      el('student-jobs').append(row);
+    }
+    studentCursor = result.nextCursor;
+    el('student-more').hidden = !studentCursor;
+    el('student-status').textContent = el('student-jobs').children.length ? '' : 'No saved splits in the past 90 days.';
+  } catch (error) { if (requestId === studentRequest) el('student-status').textContent = error.message; }
+  finally { if (requestId === studentRequest) el('student-more').disabled = false; }
+}
+el('student-review').addEventListener('toggle', () => {
+  if (el('student-review').open && !studentRows.length) void loadStudents();
+});
+el('student-retry').addEventListener('click', () => void loadStudents());
+el('student-more').addEventListener('click', () => {
+  const student = studentRows.find(row => row.subject === studentSelection);
+  if (student) void loadStudentJobs(student, true);
+});
