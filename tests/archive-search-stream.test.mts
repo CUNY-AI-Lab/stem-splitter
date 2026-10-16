@@ -100,8 +100,65 @@ test('overlapping discovery stays bounded and the complete credited catalog rema
   });
   const result=await searchArchiveSongs('Bounded melody');
   assert.equal(result.results.length,8);assert.ok(metadataIds.size<=32);assert.ok(probeIds.size<=32);
-  assert.ok(maxMetadata<=4);assert.ok(maxProbes<=2);
+  assert.ok(maxMetadata<=6);assert.ok(maxProbes<=4);
   // The music query sorts first; the early credited query also receives inspection.
   for(let i=0;i<16;i++)assert.ok(metadataIds.has(`bounded-2-${i}`));
   assert.ok(metadataIds.has('bounded-1-0'));
+});
+
+
+test('related searches share metadata and verified delivery while imports still read fresh metadata', async t => {
+  let metadataCalls = 0, probes = 0;
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/advancedsearch.php') return Response.json({response:{docs:[{identifier:'reuse-lantern-song'}]}});
+    if (url.pathname.startsWith('/metadata/')) { metadataCalls++; return metadata('Reuse lantern song'); }
+    probes++; return probe();
+  });
+  const first = await searchArchiveSongs('Reuse lantern');
+  const refined = await searchArchiveSongs('Reuse lantern song');
+  assert.equal(first.results.length, 1); assert.deepEqual(refined.results, first.results);
+  assert.equal(metadataCalls, 1); assert.equal(probes, 1);
+  const { fetchArchiveItem } = await import('../src/archive.ts');
+  await fetchArchiveItem('reuse-lantern-song', {publicAudio:true});
+  assert.equal(metadataCalls, 2, 'search cache must never bypass the import metadata check');
+});
+
+test('a slow pair of audio probes does not block other verified matches', {timeout:5000}, async t => {
+  const slow = deferred(), firstResult = deferred(); let firstId = '';
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/advancedsearch.php') return Response.json({response:{docs:[0,1,2,3].map(n=>({identifier:`parallel-lantern-${n}`}))}});
+    if (url.pathname.startsWith('/metadata/')) return metadata('Parallel lantern');
+    if (/parallel-lantern-[01]\//.test(url.pathname)) await slow.promise;
+    return probe();
+  });
+  const search = searchArchiveSongs('Parallel lantern', result => { if (!firstId && result.results.length) { firstId=result.results[0].archiveId; firstResult.resolve(); } });
+  try { await firstResult.promise; assert.match(firstId,/parallel-lantern-[23]/); }
+  finally { slow.resolve(); await search; }
+});
+
+test('the edge cache serves verified matches across requests without exposing browser caching', async t => {
+  const stored = new Map<string,Response>(); let calls=0, writes=0;
+  const storage = {
+    match: async (request: Request) => stored.get(request.url)?.clone(),
+    put: async (request: Request, response: Response) => { writes++; assert.equal(response.headers.get('cache-control'),'public, max-age=60'); stored.set(request.url,response.clone()); },
+  } as unknown as Cache;
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    calls++; const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'edge-lantern-song'}]}});
+    if(url.pathname.startsWith('/metadata/'))return metadata('Edge lantern song');
+    return probe();
+  });
+  const cache={storage,origin:'https://stem.example'};
+  const fresh=await archiveSongSearchResponse('Edge lantern song',false,cache);
+  assert.equal(fresh.headers.get('x-stem-search-cache'),'miss');
+  assert.equal((await fresh.json()).results.length,1);assert.equal(writes,1);
+  const before=calls;
+  const hit=await archiveSongSearchResponse('EDGE  LANTERN SONG',true,cache);
+  const packets=(await hit.text()).trim().split('\n').map(line=>JSON.parse(line));
+  assert.equal(hit.headers.get('x-stem-search-cache'),'hit');
+  assert.equal(hit.headers.get('cache-control'),'private, no-store');
+  assert.equal(packets.at(-1).results[0].archiveId,'edge-lantern-song');
+  assert.equal(calls,before);assert.equal(writes,1);
 });
