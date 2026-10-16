@@ -10,6 +10,8 @@ let guestSessionActive = false;
 let accountJobs = [];
 let rackCursor = null;
 let rackLoading = false;
+let rackSessionId = null;
+const rackRequestHeaders = () => rackSessionId ? {'X-Stem-Rack-Session':rackSessionId} : {};
 
 // Solo has two stages on purpose, and this is the quiet one: the rest of the
 // band drops back instead of disappearing, so you hear a part in its place
@@ -250,7 +252,13 @@ async function api(path, options = {}) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
     throw new Error(`You've used today's runs. You can split again ${reset}.`);
   }
-  if (!res.ok) throw new Error(body.error?.message || body.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const error = new Error(body.error?.message || body.error || `Request failed (${res.status})`);
+    error.status = res.status;
+    error.code = body.code || body.error?.code;
+    error.retryable = body.retryable === true;
+    throw error;
+  }
   return body;
 }
 
@@ -1006,10 +1014,11 @@ ytForm.addEventListener('submit', async (e) => {
     const resolved = await resolveModel(chosen, null, song ? 'song audio' : 'video audio');
     const { model, note } = resolved;
     if (note) showUploadMessage(note);
+    const imports = song ? null : await api('/api/import-options');
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
-        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : { videoUrl: url }),
+        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
@@ -1022,7 +1031,13 @@ ytForm.addEventListener('submit', async (e) => {
     renderJobs();
     pollSoon();
   } catch (err) {
-    showUploadMessage(err.message, true);
+    showUploadMessage(`${err.message}${err.code ? ` Code: ${err.code}.` : ''}`, true);
+    if (/source_(denied|restricted)|youtube_source_denied/.test(err.code || '')) {
+      const action = document.createElement('button');
+      action.type = 'button'; action.className = 'head-btn'; action.textContent = 'Choose a local audio file';
+      action.addEventListener('click', () => document.getElementById('file-input').click());
+      action.dataset.localImportFallback = 'true'; uploadStatus.appendChild(action);
+    }
   } finally {
     youtubeFetchInProgress = false;
     ytForm.removeAttribute('aria-busy');
@@ -1515,9 +1530,14 @@ async function diagnoseUploadFailure(file) {
   }
 }
 
+function readableAllowanceMessage(message) {
+  return String(message || '').replaceAll('No successful-split allowance was used.', 'No allowance was used.').replaceAll('Your successful-split allowance has not been used.', 'No allowance was used.');
+}
+
 function showUploadMessage(message, isError = false) {
+  uploadStatus.querySelectorAll('[data-local-import-fallback]').forEach(button => button.remove());
   uploadStatus.hidden = false;
-  uploadMessage.textContent = message;
+  uploadMessage.textContent = readableAllowanceMessage(message);
   uploadMessage.classList.toggle('error', isError);
 }
 
@@ -1596,7 +1616,7 @@ class Mixer {
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
             <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
             <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
-            <button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit. Your split stays saved to your account.' : 'Remove this split from your rack — the class copy stays, and a shared link can bring it back'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>
+            <button class="head-btn delete-btn" title="${canDeleteRun(this.job) ? 'Delete this run from your account' : runtime.authMode === 'cail' ? 'Hide until your next visit. This run belongs to another account.' : 'Remove this split from your rack'}">${canDeleteRun(this.job) || runtime.authMode !== 'cail' ? 'DELETE' : 'HIDE'}</button>
             <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
           </div>
         </div>
@@ -3515,6 +3535,7 @@ function toggleFolderMenu(mixer) {
 const jobList = document.getElementById('job-list');
 const emptyState = document.getElementById('empty-state');
 const jobStates = new Map(); // id -> latest server response
+const unavailableJobStates = new Set();
 const mixers = new Map(); // id -> Mixer (persists across re-renders)
 const rackStatus = document.getElementById('rack-status');
 const rackRetry = document.getElementById('rack-retry');
@@ -3530,7 +3551,7 @@ async function loadAccountJobs(more = false) {
   rackStatus.textContent = 'Loading your saved splits…';
   emptyState.hidden = true;
   try {
-    const response = await fetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`);
+    const response = await fetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`, {headers:rackRequestHeaders()});
     if (response.status === 401 || response.status === 403) { location.assign('/account.html'); return; }
     if (!response.ok) throw new Error('load');
     const result = await response.json();
@@ -3572,9 +3593,15 @@ document.addEventListener('pointerdown', (event) => {
   }
 });
 
-// Removing a split is local: the class copy (stems, names, notes, guide) stays
-// on the server, so a shared link — or a teacher folder — can bring it back.
-function deleteJob(id) {
+// Owners delete the server copy before removing the local rack entry.
+// Viewers can only hide a shared run until the next account refresh.
+function canDeleteRun(state) { return runtime.authMode === 'cail' && runtime.runDeletion === true && state?.permissions?.owner === true; }
+
+async function deleteJob(id) {
+  if(canDeleteRun(jobStates.get(id))) {
+    try {await api(`/api/jobs/${encodeURIComponent(id)}`,{method:'DELETE'});}
+    catch(error) {if(error.status!==404){showUploadMessage(error.message || 'The run could not be deleted. Try again.',true);return;}}
+  }
   const mixer = mixers.get(id);
   if (mixer?.playing || mixer?.starting) mixer.pause();
   mixer?.disposeWaveforms();
@@ -3596,7 +3623,7 @@ function renderJobs() {
 
   for (const job of jobs) {
     const state = jobStates.get(job.id) || {
-      status: 'processing',
+      status: 'checking',
       stems: [],
       model: job.model,
       expectedStems: job.expectedStems || [],
@@ -3617,6 +3644,12 @@ function renderJobs() {
     const li = document.createElement('li');
     li.className = 'console';
     const failed = state.status === 'failed' || state.status === 'done';
+    const checking = state.status === 'checking' || unavailableJobStates.has(job.id);
+    const operation = state.operation;
+    const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(operation?.stage);
+    const importing = operation?.phase === 'fetch';
+    const progressLabel = checking ? 'CHECKING STATUS' : queued ? 'QUEUED' : importing ? 'IMPORTING' : 'SEPARATING';
+    const progressNote = checking ? 'Checking the saved run’s current status…' : queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
     // A silent wait reads as a hung wait. The clock is the server's own start
     // time once polling has one, and the local one until then.
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();
@@ -3626,20 +3659,18 @@ function renderJobs() {
         <span class="badge ${failed ? 'failed' : 'processing'}">${
           failed
             ? 'FAILED'
-            : `SEPARATING<span class="elapsed" data-since="${since}">${fmt(
+            : checking ? progressLabel : `${progressLabel}<span class="elapsed" data-since="${since}">${fmt(
                 (Date.now() - since) / 1000
               )}</span>`
         }</span>
-        ${failed ? `<button class="head-btn delete-btn" title="${runtime.authMode === 'cail' ? 'Hide until your next visit' : 'Remove this failed split from your rack'}">${runtime.authMode === 'cail' ? 'HIDE' : 'DELETE'}</button>` : ''}
+        ${failed || canDeleteRun(state) ? `<button class="head-btn delete-btn" title="${canDeleteRun(state) ? 'Delete this run from your account' : runtime.authMode === 'cail' ? 'Hide until your next visit' : 'Remove this failed split from your rack'}">${canDeleteRun(state) || runtime.authMode !== 'cail' ? 'DELETE' : 'HIDE'}</button>` : ''}
       </div>
       ${
         failed
           ? `<p class="job-error">${esc(
-              state.error || 'No playable tracks were returned. Run the split again.'
-            )}</p>`
-          : `<p class="job-note">Creating ${esc(
-              stemDescription(state.expectedStems || job.expectedStems)
-            )}…</p>`
+              readableAllowanceMessage(state.error || 'No playable tracks were returned. Run the split again.')
+            )}</p>${operation?.errorCode ? `<p class="job-note">Code: ${esc(operation.errorCode)} · Support ID: ${esc(operation.supportId)}</p>` : ''}`
+          : `<p class="job-note" role="status">${esc(progressNote)}</p>`
       }
     `;
     const deleteBtn = li.querySelector('.delete-btn');
@@ -3739,17 +3770,22 @@ let pollTimer = null;
 
 async function pollActiveJobs() {
   const jobs = getJobs();
+  const pollOwner = accountSubject;
   let anyActive = false;
 
-  for (const job of jobs) {
+  let next = 0;
+  const refresh = async () => { while (next < jobs.length) {
+    if(accountSubject!==pollOwner)return;
+    const job = jobs[next++];
     const cached = jobStates.get(job.id);
     if (cached && (cached.status === 'done' || cached.status === 'failed')) continue;
 
     try {
-      const res = await fetch(`/api/jobs/${job.id}`);
+      const res = await fetch(`/api/jobs/${job.id}`, { signal: AbortSignal.timeout(150000), headers:rackRequestHeaders() });
       if (runtime.authMode === 'cail' && (res.status === 401 || res.status === 403)) {
         for (const mixer of mixers.values()) if (mixer.playing || mixer.starting) mixer.pause();
         accountJobs = [];
+        accountSubject = null;
         jobStates.clear();
         renderJobs();
         location.assign('/account.html');
@@ -3762,12 +3798,18 @@ async function pollActiveJobs() {
       }
       if (!res.ok) throw new Error('Split could not be loaded');
       const state = await res.json();
+      if(accountSubject!==pollOwner)return;
       jobStates.set(job.id, state);
+      unavailableJobStates.delete(job.id);
+      renderJobs();
       if (state.status !== 'done' && state.status !== 'failed') anyActive = true;
     } catch {
-      anyActive = true; // network blip — keep polling
+      unavailableJobStates.add(job.id);
+      anyActive = true; // network blip — keep polling, without inventing progress
+      renderJobs();
     }
-  }
+  }};
+  await Promise.all(Array.from({length: Math.min(3, jobs.length)}, refresh));
 
   renderJobs();
   const states = jobs.map((job) => jobStates.get(job.id));
@@ -4728,6 +4770,7 @@ async function initialize() {
     if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
+      try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null;
@@ -4748,6 +4791,11 @@ async function initialize() {
       link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
+      const help = document.createElement('a');
+      help.href = '/auth/help' + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      help.className = 'signin-help-link';
+      help.textContent = 'Trouble signing in?';
+      account.append(help);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead').append(account);
   }

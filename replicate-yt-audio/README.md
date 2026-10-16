@@ -7,7 +7,7 @@ compatibility. Source edits take effect after image publication, exact-version
 verification, a successful source canary, and deployment of the new pin.
 
 The image pins `yt-dlp[default,pin]==2026.8.19`, matching
-`yt-dlp-ejs==0.8.0`, and the extractor's pinned supported Deno `2.9.5` runtime.
+`yt-dlp-ejs==0.8.0`, and the extractor's pinned supported Deno `2.9.7` runtime.
 These pins were checked against their public package metadata on 2026-10-06.
 The system ffmpeg package must also be recorded in the eventual image digest.
 The previous model image is not evidence that the updated JS/EJS runtime runs.
@@ -44,3 +44,15 @@ They cover URL restrictions, dependencies, timeout/process termination,
 metadata-only failure, invalid media, disk failure, concurrent paths and
 restart cleanup. They do not validate a published image, account entitlement,
 or live source availability. See [the operations runbook](../docs/reliability-operations.md).
+
+## Optional broader URL acquisition
+
+The optional `general_url=true` input selects a bounded public HTTPS importer, including direct audio files and yt-dlp-supported webpages. The default permitted-source path remains in place. Generic sources use native HTTPS/HLS/DASH downloading through an address-pinning proxy, a 180-second deadline and 100 MiB source ceiling. FFmpeg reads only completed local files and normalizes to AAC M4A at 96 kbps with faststart, followed by a second duration check. The lower bitrate keeps 15-minute imports within the application response ceiling. No cookies, browser sessions, or PO-token providers are loaded. Hosted limits are 300 seconds for guests and 900 for verified students/instructors.
+
+### Local first import
+
+Run `python3 replicate-yt-audio/local_import.py HTTPS_URL --output-dir /path/to/empty-folder --limit-minutes 5` from the repository root. Install FFmpeg/ffprobe locally; webpage extraction additionally requires the pinned yt-dlp default extras and Deno from cog.yaml. Direct media URLs use the bounded HTTPS downloader. This command needs no cloud account or provider token. The 15-minute setting is for local operators; hosted imports derive their limit from verified identity.
+
+The command emits JSON stage events with elapsed time: validating source, reading metadata when needed, downloading, validating the downloaded file, converting, validating output, ready, and complete or failed. It excludes source URLs and credentials. Audio is downloaded to a temporary file before conversion; FFmpeg reads local media only. This avoids depending on seekable MP4 input over a pipe. Output is validated AAC M4A with faststart. Existing output is protected from overwrite.
+
+Commercial handling: do not fetch playback advertisement manifests as audio inputs. Embedded sponsorships remain part of the source recording. yt-dlp's optional SponsorBlock integration is a candidate for explicit user-selected cuts, not enabled by default: community annotations may be absent or wrong and cuts change timestamps. Preserve the original recording for alignment and review. No browser cookies or personal login sessions are read by this importer.

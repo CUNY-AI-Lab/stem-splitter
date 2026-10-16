@@ -29,9 +29,11 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await expect(page.locator('#signin-panel')).toBeVisible();
     await expect(page.getByLabel('PASSWORD')).toBeHidden();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/login?next=/teacher.html');
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveAttribute('href', '/auth/help?next=/teacher.html');
     await page.goto(new URL('/account.html', url).href);
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect(page.locator('#account-details')).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveAttribute('href', '/auth/help?next=/account.html');
     await page.goto(new URL('/teacher.html', url).href);
     if (receipts) await page.screenshot({ path: `${receipts}/01-instructor-signed-out.png`, fullPage: true, animations: 'disabled' });
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice });

@@ -78,7 +78,7 @@ export async function reserveOperation(db: D1Database, input: {
       input.kind==='split'?`Completed and in-progress splits fill today's ${limit} places. Failed splits do not count as completed.`
         :'Today\'s Listening Guy input allowance is full.',retryAfter);
     if ((counts?.attempts ?? 0)>=abuseLimit || input.kind==='guide') throw new OperationError(`${input.kind}_attempt_limit`,429,
-      'Repeated requests have reached the daily protection limit. Failed splits did not use successful-split allowance. Please try again after the reset.',retryAfter);
+      'Repeated requests have reached the daily protection limit. No allowance was used. Please try again after the reset.',retryAfter);
     if (quotaClass==='guest' && input.kind==='split' && (counts?.held ?? 0)>=GUEST_UNVERIFIED_SPLITS_PER_DAY) {
       const session=await db.prepare('SELECT verified_day FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL')
         .bind(input.subject,now).first<{verified_day:string}>();

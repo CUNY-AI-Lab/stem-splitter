@@ -76,7 +76,8 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
   const sourceAudio = await readFile(SOURCE_PATH);
   const youtubeAudio = transcodeSourceToM4a();
   const archiveId = 'real-analyzer-open-audio';
-  const archiveFile = 'fixture.wav';
+  const archiveFile = 'fixture.mp3';
+  const archiveAudio = execFileSync('ffmpeg',['-nostdin','-v','error','-i',SOURCE_PATH,'-c:a','libmp3lame','-b:a','128k','-f','mp3','pipe:1'],{maxBuffer:4*1024*1024});
   const harness = createTestHarness({
     workers: [
       {
@@ -230,6 +231,7 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
         metadata: {
           identifier: archiveId,
           title: 'Real Analyzer Archive Fixture',
+          mediatype: 'audio', subject: ['music'],
           creator: 'Fixture Collective',
           licenseurl: 'https://creativecommons.org/licenses/by/4.0/',
         },
@@ -237,18 +239,18 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
           {
             name: archiveFile,
             title: 'Fixture',
-            format: 'WAVE',
-            size: String(sourceAudio.byteLength),
+            format: 'VBR MP3',
+            size: String(archiveAudio.byteLength),
             length: '2',
           },
         ],
       })
     ),
     http.get(`https://archive.org/download/${archiveId}/${archiveFile}`, () =>
-      new HttpResponse(sourceAudio, {
+      new HttpResponse(archiveAudio, {
         headers: {
-          'Content-Type': 'audio/wav',
-          'Content-Length': String(sourceAudio.byteLength),
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': String(archiveAudio.byteLength),
         },
       })
     ),
@@ -337,7 +339,7 @@ test('the real analyzer routes stored upload, YouTube, and Archive bytes before 
     );
     assert.match(
       new URL(analysisCalls[2].sourceUrl).pathname,
-      /^\/api\/local-sources\/uploads\/[^/]+\/source\.wav$/
+      /^\/api\/local-sources\/uploads\/[^/]+\/source\.mp3$/
     );
     assert.equal(separatorInputs.length, 3);
     assert.deepEqual(

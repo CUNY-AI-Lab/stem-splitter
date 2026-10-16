@@ -106,7 +106,7 @@ test('failed membership, course eligibility, cross-origin requests and expired g
 test('claimed pending import can resume once with its original guest accounting and without a second reservation',async t=>{
  const {db,env,seed,post}=await fixture();const operation=await seed('pending',guest,false);let loads=0;
  env.AUDIO={put:async()=>{},delete:async()=>{}} as any;
- env.fetchYouTubeBrowserAudio=async()=>{loads++;return {data:new Uint8Array([1,2,3]).buffer,title:'Fixture',fileName:'source.webm',contentType:'audio/webm'};};
+ env.fetchYouTubeBrowserAudio=async()=>{loads++;return {data:new Uint8Array([1,2,3]).buffer,title:'Fixture',durationSec:19,fileName:'source.webm',contentType:'audio/webm'};};
  t.mock.method(globalThis,'fetch',async()=>assert.fail('Claim must not start a new paid request'));
  assert.equal((await post()).status,200);
  await resumeOwnedSourceImport(env,member(bob),operation);assert.equal(loads,0);
@@ -241,7 +241,7 @@ for (const lifecycle of ['logout','expiry','member-disabled','access-revoked'] a
  test(`claimed pending import follows member authorization after ${lifecycle}`,async t=>{
   const {db,env,seed,post,flags}=await fixture(1000);const operation=await seed('pending-lifecycle',guest,false);let loads=0;
   env.AUDIO={put:async()=>{},delete:async()=>{}} as any;
-  env.fetchYouTubeBrowserAudio=async()=>{loads++;return {data:new Uint8Array([1,2,3]).buffer,title:'Fixture',fileName:'source.webm',contentType:'audio/webm'};};
+  env.fetchYouTubeBrowserAudio=async()=>{loads++;return {data:new Uint8Array([1,2,3]).buffer,title:'Fixture',durationSec:19,fileName:'source.webm',contentType:'audio/webm'};};
   t.mock.method(globalThis,'fetch',async()=>assert.fail('No paid provider request is allowed'));
   assert.equal((await post()).status,200);
   if(lifecycle==='expiry'){const expiredNow=env.guestClaimSession!.expiresAt+1;t.mock.method(Date,'now',()=>expiredNow);}

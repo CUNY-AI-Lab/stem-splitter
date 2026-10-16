@@ -304,3 +304,19 @@ test('model actions require exact same-subject app and Gateway legs before forwa
   assert.equal(misconfigured.status, 503);
   assert.equal((await misconfigured.json()).error.code, 'identity_unavailable');
 });
+
+test('sign-in help is public during outages, preserves safe destinations and never starts or changes a session', async () => {
+  const f=fixture();let calls=0;
+  const unavailable={...f.env, IDENTITY:{...f.client,begin:async()=>{calls++;throw new Error('offline');}}};
+  for(const next of ['/account.html','/teacher.html',`/?job=${code}`,'https://attacker.test/"<script>','/auth/logout']){
+    const response=await handleAuth(f.request('/auth/help?next='+encodeURIComponent(next)+'&state=private-state&code=private-code'),unavailable);
+    assert.equal(response.status,200);assert.equal(response.headers.getSetCookie().length,0);
+    assert.match(response.headers.get('cache-control')!,/no-store/);
+    const html=await response.text();assert.ok(html.includes('/auth/login?next='+encodeURIComponent(safeNext(next))));
+    assert.match(html,/private or incognito/);assert.match(html,/Guest work stays in the browser/);
+    assert.doesNotMatch(html,/attacker|<script>|private-state|private-code/);
+  }
+  assert.equal(calls,0);assert.equal(f.calls(),0);
+  assert.equal((await handleAuth(f.request('/auth/help'),{...f.env,IDENTITY:undefined})).status,200);
+  assert.equal((await handleAuth(f.request('/auth/help',{method:'POST'}),f.env)).status,405);
+});

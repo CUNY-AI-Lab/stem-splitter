@@ -60,11 +60,11 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
   if (request.headers.has('x-stem-course') && request.headers.get('x-stem-course') !== 'personal') return guestFailure('guest_course_forbidden',403,'Sign in with an enrolled account to use course work.');
   const job = /^\/api\/jobs\/([a-zA-Z0-9-]+)(?:\/(labels|annotations|guide|chat|cancel|listening-conversation)(?:\/([a-zA-Z0-9-]+))?)?$/.exec(path);
   const file = /^\/api\/files\/stems\/([a-zA-Z0-9-]+)\/(?:[a-zA-Z0-9_-]+\/)?[a-zA-Z0-9_.-]+$/.exec(path);
-  const general = read && ['/api/account','/api/auth-check','/api/jobs','/api/teacher/me','/api/archive/scopes','/api/archive/search','/api/music/search'].includes(path)
+  const general = read && ['/api/import-options','/api/account','/api/auth-check','/api/jobs','/api/teacher/me','/api/archive/scopes','/api/archive/search','/api/music/search'].includes(path)
     || read && /^\/api\/archive\/items\/[a-zA-Z0-9_.-]+$/.test(path)
     || method === 'POST' && ['/api/uploads','/api/jobs','/api/usage-events'].includes(path)
     || method === 'PUT' && path.startsWith('/api/local-uploads/');
-  const jobAllowed = job && (!job[2] ? read : job[2] === 'labels' ? method === 'PUT'
+  const jobAllowed = job && (!job[2] ? read || method === 'DELETE' : job[2] === 'labels' ? method === 'PUT'
     : ['guide','chat','cancel'].includes(job[2]) ? method === 'POST' && !job[3]
     : job[2] === 'listening-conversation' ? ['GET','PUT','DELETE'].includes(method) && !job[3]
     : job[2] === 'annotations' ? job[3] ? ['PUT','DELETE'].includes(method) : method === 'POST' : false);

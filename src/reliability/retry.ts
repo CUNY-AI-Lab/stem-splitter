@@ -14,7 +14,7 @@ export class UpstreamError extends Error {
   code: string; outcome: 'rejected' | 'uncertain' | 'terminal'; status: number; notBefore: number;
   constructor(code: string, outcome: 'rejected' | 'uncertain' | 'terminal', status = 0, notBefore = 0) {
     super(outcome === 'uncertain' ? 'The provider may have accepted this request. We are checking its status; do not submit it again.'
-      : 'The audio service could not complete this request. Your successful-split allowance has not been used.');
+      : 'The audio service could not complete this request. No allowance was used.');
     this.code=code;this.outcome=outcome;this.status=status;this.notBefore=notBefore;
   }
 }

@@ -1,3 +1,4 @@
+import { signInHelp } from './signin-help.ts';
 import { uniqueCookie, parseLoginTransaction } from './session-contract/session.js';
 import { authFailure } from '../src/identity.ts';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
@@ -88,7 +89,7 @@ function signInFailure(request: Request, status = 401): Response {
     'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow',
     'Content-Security-Policy': "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
   if (safe === 429) headers.set('Retry-After', '60');
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign in</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>${title}</h1><p>${message}</p><p class="signin-actions">${action}</p>${access}<p><a href="/">Back to Splitter</a></p></main></body></html>`, { status: safe, headers });
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>STEM Splitter · Sign in</title><link rel="stylesheet" href="/styles.css"></head><body><main class="teacher-main signin-recovery"><h1>${title}</h1><p>${message}</p><p class="signin-actions">${action}</p>${access}<p><a href="/auth/help">Trouble signing in?</a></p><p><a href="/">Back to Splitter</a></p></main></body></html>`, { status: safe, headers });
 }
 async function existingSessionStatus(request: Request, env: SsoEnv): Promise<200 | 401 | 403 | 503> {
   const token = readCookie(request, SESSION_COOKIE);
@@ -120,10 +121,11 @@ export async function handleAuth(request: Request, env: SsoEnv): Promise<Respons
   const url = new URL(request.url);
   if (url.protocol !== 'https:' || ![env.PUBLIC_BASE_URL, env.CANONICAL_BASE_URL].includes(url.origin)) return denied(403);
   const client = identityClient(request, env);
-  if (!['/auth/login', '/auth/callback', '/auth/logout'].includes(url.pathname)) return new Response('Not found', { status: 404 });
+  if (!['/auth/login', '/auth/callback', '/auth/logout', '/auth/help'].includes(url.pathname)) return new Response('Not found', { status: 404 });
   const method = url.pathname === '/auth/logout' ? 'POST' : 'GET';
   if (request.method !== method) return new Response(null, { status: 405, headers: { Allow: method } });
   if (method === 'POST' && (request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site')) return denied(403);
+  if (url.pathname === '/auth/help') return signInHelp(safeNext(url.searchParams.get('next')));
   if (url.pathname === '/auth/logout') {
     const cleared = [cookie(SESSION_COOKIE, '', 0), cookie(LOGIN_COOKIE, '', 0),clearGuestCookie()];
     const token = readCookie(request, SESSION_COOKIE);

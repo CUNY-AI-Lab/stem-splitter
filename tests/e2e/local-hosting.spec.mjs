@@ -171,13 +171,13 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
-  await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^stem\s*splitter$/i })).toBeVisible();
   const labLink = page.locator('.masthead').getByRole('link', { name: 'CUNY AI Lab' });
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  await expect(labLink.locator('img')).toHaveCSS('width', '150px');
-  await expect(page.locator('.tagline')).toHaveText('Split apart a song, listen one layer at a time, annotate as you go.');
+  await expect(labLink.locator('img')).toHaveCSS('height', '44px');
+  await expect(page.locator('.tagline')).toHaveText('Split a song apart. Listen one layer at a time. Annotate as you go.');
   await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -195,7 +195,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // controls stay behind the downward caret instead of squeezing the title
   // down to a one-letter ellipsis.
   await page.setViewportSize({ width: 390, height: 844 });
-  expect((await labLink.locator('img').boundingBox()).width).toBeLessThanOrEqual(150);
+  await expect(labLink.locator('img')).toHaveCSS('height', '36px');
   expect((await labLink.boundingBox()).height).toBeGreaterThanOrEqual(44);
   const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
     element.getBoundingClientRect().width
@@ -1081,6 +1081,7 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
             {
               identifier,
               title: 'Fixture Netlabel Release',
+          mediatype: 'audio', subject: ['music'],
               creator: 'Fixture Collective',
               licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
               year: '2019',
@@ -1095,14 +1096,15 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
         metadata: {
           identifier,
           title: 'Fixture Netlabel Release',
+          mediatype: 'audio', subject: ['music'],
           creator: 'Fixture Collective',
           licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
           year: '2019',
         },
         files: [
-          { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '21.5' },
+          { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '2' },
           // A derivative of the same track: the picker must collapse it away.
-          { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '21.5' },
+          { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '2' },
           // Over the 5-minute cap: excluded from the picker entirely.
           { name: '02-long-set.mp3', format: 'VBR MP3', size: '8192', length: '3600' },
           { name: 'cover.jpg', format: 'JPEG', size: '2048' },
@@ -1167,7 +1169,7 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
   await page.locator('.crate-item-head').click();
   // One row: the ogg derivative collapses away and the hour-long set is hidden.
   await expect(page.locator('.crate-track')).toHaveCount(1);
-  await expect(page.locator('.crate-track-len').first()).toHaveText('0:21');
+  await expect(page.locator('.crate-track-len').first()).toHaveText('0:02');
   await expect(page.locator('.crate-credit')).toContainText('1 track over 5:00 not shown');
   if (process.env.ARCHIVE_QA_SCREENSHOT) {
     await page.screenshot({ path: process.env.ARCHIVE_QA_SCREENSHOT, fullPage: true });
@@ -2249,4 +2251,38 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
         !/^404 \/api\/teacher\/folders\//.test(entry)
     )
   ).toEqual([]);
+});
+
+test('a hosted source denial keeps the link, reports a code and offers a real local file picker',async({page})=>{
+ await page.addInitScript(code=>localStorage.setItem('classCode',code),CLASS_CODE);
+ await page.route('**/api/jobs',route=>route.fulfill({status:502,contentType:'application/json',body:JSON.stringify({error:'The hosted YouTube importer was refused access. No successful-split allowance was used.',code:'source_denied',retryable:false})}));
+ await page.goto('/',{waitUntil:'domcontentloaded'});
+ const input=page.getByLabel('Song or link');await input.fill('https://www.youtube.com/watch?v=abcdefghijk');
+ await page.getByRole('button',{name:'FETCH',exact:true}).click();
+ await expect(page.locator('#upload-message')).toContainText('Code: source_denied.');
+ await expect(page.locator('#upload-message')).toContainText('No allowance was used.');
+ await expect(page.locator('#upload-message')).not.toContainText('successful-split');
+ await expect(input).toHaveValue('https://www.youtube.com/watch?v=abcdefghijk');
+ await expect(input).toBeEnabled();
+ const action=page.getByRole('button',{name:'Choose a local audio file',exact:true});await expect(action).toBeVisible();
+ const chooserPromise=page.waitForEvent('filechooser');await action.click();expect(await chooserPromise).toBeTruthy();
+ await expect(page.locator('.console')).toHaveCount(0);
+});
+
+test('old saved runs never show invented elapsed time and one slow status does not block the rack',async({page})=>{
+ const old=Date.now()-3*86400000;
+ await page.addInitScript(({code,old})=>{localStorage.setItem('classCode',code);localStorage.setItem('jobs',JSON.stringify([{id:'slow-saved',filename:'Slow saved run',startedAt:old},{id:'failed-saved',filename:'Failed saved run',startedAt:old}]));},{code:CLASS_CODE,old});
+ let release;const gate=new Promise(resolve=>{release=resolve;});
+ await page.route('**/api/jobs/slow-saved',async route=>{await gate;await route.fulfill({json:{id:'slow-saved',status:'failed',error:'Stopped',stems:[]}});});
+ await page.route('**/api/jobs/failed-saved',route=>route.fulfill({json:{id:'failed-saved',status:'failed',error:'No successful-split allowance was used.',stems:[]}}));
+ try {
+  await page.goto('/',{waitUntil:'domcontentloaded'});
+  const slow=page.locator('.console').filter({hasText:'Slow saved run'});
+  const failed=page.locator('.console').filter({hasText:'Failed saved run'});
+  await expect(failed.locator('.badge')).toHaveText('FAILED');
+  await expect(failed).toContainText('No allowance was used.');
+  await expect(slow.locator('.badge')).toHaveText('CHECKING STATUS');
+  await expect(page.locator('.elapsed')).toHaveCount(0);
+  await expect(page.locator('#job-list')).not.toContainText('SEPARATING');
+ } finally {release();}
 });

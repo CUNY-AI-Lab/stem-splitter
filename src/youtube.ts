@@ -1,3 +1,4 @@
+import { parseMediaUrl } from './url-source.ts';
 import { parsePredictionJson } from './reliability/prediction-json.ts';
 import { parseVideoSource, parseYouTubeVideoId } from './video-source.ts';
 export { parseYouTubeVideoId } from './video-source.ts';
@@ -52,6 +53,8 @@ export class YouTubeError extends Error {
   readonly code: string;
   readonly retryable: boolean;
   readonly notBefore: number;
+  /** Set only after a provider status read proves this prediction ended. */
+  terminalPrediction = false;
 
   constructor(message: string, code = 'youtube_fetch_failed', retryable = false, notBefore = 0) {
     super(message);
@@ -513,7 +516,7 @@ async function readPrediction(
   };
 }
 
-export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeAudio> {
+export async function fetchViaReplicate(url: string, env: Env, options: { generalUrl?: boolean; maximumDurationSeconds?: 300 | 900 } = {}): Promise<YouTubeAudio> {
   const configuration = replicateConfiguration(env);
   if (!configuration) {
     throw new YouTubeError(
@@ -523,10 +526,10 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
   }
   const { modelVersion, apiToken } = configuration;
   const source = parseVideoSource(url);
-  if (!source) {
-    throw new YouTubeError('Paste a full YouTube or Vimeo video link.', 'invalid_youtube_url');
+  if (!source && !(options.generalUrl && parseMediaUrl(url))) {
+    throw new YouTubeError('Paste a public HTTPS media link.', 'invalid_source_url');
   }
-  const canonicalUrl = source.canonicalUrl;
+  const canonicalUrl = source?.canonicalUrl ?? url;
   const deadline = Date.now() + REPLICATE_MAX_WAIT_MS;
 
   const headers = {
@@ -539,7 +542,7 @@ export async function fetchViaReplicate(url: string, env: Env): Promise<YouTubeA
     headers: { ...headers, Prefer: 'wait=60', 'Cancel-After': '4m' },
     body: JSON.stringify({
       version: modelVersion,
-      input: { url: canonicalUrl, max_duration: MAX_DURATION_SECONDS },
+      input: { url: canonicalUrl, max_duration: options.maximumDurationSeconds ?? MAX_DURATION_SECONDS, ...(options.generalUrl ? { general_url: true } : {}) },
     }),
   }, remainingTimeout(deadline, REPLICATE_START_TIMEOUT_MS));
   if (!res.ok) {
@@ -768,13 +771,15 @@ function audioTooLarge(): YouTubeError {
 
 function normalizePredictionError(raw: string): YouTubeError {
   const message = raw.replace(/^ValueError:\s*/, '').slice(0, 300);
+  if (/not supported|unsupported/i.test(message)) return new YouTubeError('This source or format is not supported. Use a direct audio link or upload a file.', 'unsupported_source');
+  if (/temporarily unavailable/i.test(message)) return new YouTubeError('Source download is temporarily unavailable.', 'source_fetch_unavailable', true);
   if (/live stream/i.test(message)) {
     return new YouTubeError('Live streams cannot be imported.', 'live_stream');
   }
   if (/longer than \d+ minutes/i.test(message)) {
     return new YouTubeError(
-      'Video is longer than 15 minutes — pick a shorter one.',
-      'video_too_long'
+      `Audio exceeds the ${/longer than (\d+) minutes/i.exec(message)?.[1] ?? '15'}-minute import limit.`,
+      'source_too_long'
     );
   }
   if (/throttl|rate.?limit|too many requests/i.test(message)) {
@@ -789,7 +794,7 @@ function normalizePredictionError(raw: string): YouTubeError {
   if (/invalid_audio_response/.test(message)) return new YouTubeError('The source did not produce usable audio. Try another source or upload an original or licensed file.','invalid_audio_response');
   if (/extractor_failed|extractor_response_too_large/.test(message)) return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
   if (/requested format.*(?:not available|unavailable)|no suitable format/i.test(message)) return new YouTubeError('This source has no supported audio format. Upload an original or licensed file.','youtube_format_unavailable');
-  if (/source_denied|sign.?in|log.?in|captcha|challenge|bot|cookie|private|age.?restrict|not available|unavailable|removed|region|geo.?block|copyright|DRM/i.test(message)) return sourceDenied();
+  if (/source blocked|source_denied|sign.?in|log.?in|captcha|challenge|bot|cookie|private|age.?restrict|not available|unavailable|removed|region|geo.?block|copyright|DRM/i.test(message)) return sourceDenied();
   return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
 }
 
@@ -800,13 +805,13 @@ function sourceDenied(): YouTubeError {
 /** Durable coordinator API. Exactly one POST; no polling or client fallbacks
  * are hidden inside it. A lost response cannot be classified as a failed start.
  */
-export async function startVideoImport(url: string, env: Env, webhook: string): Promise<string> {
+export async function startVideoImport(url: string, env: Env, webhook: string, options: { generalUrl?: boolean; maximumDurationSeconds?: 300 | 900 } = {}): Promise<string> {
   const config=replicateConfiguration(env), source=parseVideoSource(url);
-  if (!config || !source) throw new UpstreamError('import_configuration','rejected');
+  if (!config || (!source && !(options.generalUrl && parseMediaUrl(url)))) throw new UpstreamError('import_configuration','rejected');
   let res: Response;
   try { res=await fetch(`${REPLICATE_API}/predictions`,{
     method:'POST',headers:{Authorization:`Bearer ${config.apiToken}`,'Content-Type':'application/json','Cancel-After':'4m'},
-    body:JSON.stringify({version:config.modelVersion,input:{url:source.canonicalUrl,max_duration:MAX_DURATION_SECONDS},webhook,webhook_events_filter:['completed']}),
+    body:JSON.stringify({version:config.modelVersion,input:{url:source?.canonicalUrl ?? url,max_duration:options.maximumDurationSeconds ?? MAX_DURATION_SECONDS,...(options.generalUrl?{general_url:true}:{})},webhook,webhook_events_filter:['completed']}),
     redirect:'manual',signal:AbortSignal.timeout(20000),
   }); } catch { throw new UpstreamError('import_start_uncertain','uncertain'); }
   if (!res.ok) {
@@ -833,7 +838,11 @@ export async function pollYouTubeImport(id: string, env: Env, operationDeadline 
     prediction=await readPrediction(res,15000,id,CAIL_PREDICTION_BYTES,true);
   } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
   if (prediction.status==='starting'||prediction.status==='processing') return null;
-  if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
+  if (prediction.status!=='succeeded'||!prediction.output) {
+    const error=normalizePredictionError(prediction.error ?? '');
+    error.terminalPrediction=prediction.status==='failed'||prediction.status==='canceled';
+    throw error;
+  }
   const durationSec=validateDuration(prediction.output.duration);
   if(prediction.inlineTooLarge)throw new YouTubeError('This import exceeds the 12 MiB audio limit. Try a shorter clip or upload an original or licensed file.','audio_too_large');
   if(Date.now()>=operationDeadline)throw youtubeTimedOut();

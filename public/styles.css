@@ -2773,3 +2773,9 @@ body.instructor .folder-btn { display: inline-block; }
 /* Feature visibility is authoritative even where component rules set display. */
 [hidden] { display: none !important; }
 body:not(.remixer-enabled) .to-remix-btn { display: none; }
+
+.signin-help-link { display: inline-block; color: var(--ink-dim); font-size: .8rem; padding: .5rem; text-underline-offset: .2em; }
+.signin-help-link:hover { color: var(--hot); }
+.signin-help-link:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+.signin-steps { color: var(--ink-dim); line-height: 1.6; padding-left: 1.4rem; }
+.signin-steps li + li { margin-top: .8rem; }

@@ -535,3 +535,49 @@ test('retired Audius submissions stop before source access or quota reservation'
   assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<{n:number}>())!.n,0);
 });
+
+for (const [kind,seconds,allowed] of [['guest',300,true],['guest',301,false],['student',899,true],['instructor',900,true],['student',901,false]] as const) {
+ test(`verified ${kind} import limit checks ${seconds}s before storage`,async t=>{
+  const {db,env}=await setup(t);
+  let identity:AppPrincipal={...principal,role:kind==='instructor'?'instructor':'student'};
+  let scoped=env;
+  if(kind==='guest') {const guest=await guestRequests(db,env,'b');identity=guest.principal;scoped=guest.env;}
+  let writes=0;
+  const put=scoped.AUDIO.put.bind(scoped.AUDIO);
+  scoped={...scoped,AUDIO:{...scoped.AUDIO,put:async(...args:any[])=>{writes++;return (put as any)(...args);},delete:scoped.AUDIO.delete.bind(scoped.AUDIO)} as any,
+    fetchYouTubeBrowserAudio:async()=>({...browserAudio(),durationSec:seconds})};
+  const reserved=await submitSplit(scoped,identity,{youtubeUrl:youtube,role:'instructor'},`duration-limit-${kind}-${seconds}`);
+  await resumeOwnedSourceImport(scoped,identity,reserved.operation);
+  const op=(await readOperation(db,reserved.operation.id))!;
+  assert.equal(op.phase,allowed?'split':'fetch');
+  if(!allowed) {assert.equal(op.error_code,'source_too_long');assert.equal(writes,0);}
+  else assert.equal(writes,1);
+ });
+}
+
+for(const kind of ['guest','student','instructor'] as const)test(`generic URL uses the verified ${kind} duration in one durable provider start`,async t=>{
+ const {db,env}=await setup(t);
+ let identity:AppPrincipal={...principal,role:kind==='instructor'?'instructor':'student'};
+ let scoped={...env,URL_IMPORT_ENABLED:'true'};
+ if(kind==='guest'){const guest=await guestRequests(db,env,'c');identity=guest.principal;scoped={...guest.env,URL_IMPORT_ENABLED:'true'};}
+ const bodies:any[]=[];
+ t.mock.method(globalThis,'fetch',async(_url,init)=>{bodies.push(JSON.parse(String(init?.body)));return Response.json({id:'url-provider',status:'starting'});});
+ const reservation=await submitSplit(scoped,identity,{sourceUrl:'https://media.example.org/source.mp3',role:'instructor'},'url-duration-policy');
+ await drainSplitQueue(scoped,async()=>{});
+ assert.equal(bodies.length,1);
+ assert.equal(bodies[0].input.max_duration,kind==='guest'?300:900);
+ assert.equal(bodies[0].input.general_url,true);
+ assert.equal((await readOperation(db,reservation.operation.id))!.provider_id,'url-provider');
+});
+
+test('general YouTube links retain browser acquisition and persist a transient provider fallback',async t=>{
+ const {db,env}=await setup(t);
+ Object.assign(env,{URL_IMPORT_ENABLED:'true',fetchYouTubeBrowserAudio:async()=>{throw new YouTubeError('Temporary browser outage','youtube_fetch_unavailable');}});
+ const result=await submitSplit(env,principal,{sourceUrl:youtube},'browser-fallback-source-url');
+ assert.equal(JSON.parse(result.operation.request_json).browserAudio,true);
+ await resumeOwnedSourceImport(env,principal,result.operation);
+ const current=(await readOperation(db,result.operation.id))!;
+ assert.equal(current.state,'queued');assert.equal(current.error_code,'browser_import_fallback');
+ assert.equal(JSON.parse(current.request_json).browserAudio,false);
+ assert.equal(current.provider_id,null);
+});

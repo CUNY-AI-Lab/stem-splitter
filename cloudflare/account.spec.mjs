@@ -22,13 +22,13 @@ async function fixtureFetch(server, request) {
 async function localHttpsFixture(handler) {
   const directory = await mkdtemp(join(tmpdir(), 'stem-account-browser-'));
   let server, origin;
-  const errors = [];
+  const errors = [], pending = new Set();
   try {
     const key = join(directory, 'key.pem'), cert = join(directory, 'cert.pem');
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
       '-subj', '/CN=localhost', '-keyout', key, '-out', cert], { stdio: 'ignore' });
-    server = createServer({ key: await readFile(key), cert: await readFile(cert) }, async (incoming, outgoing) => {
-      try {
+    server = createServer({ key: await readFile(key), cert: await readFile(cert) }, (incoming, outgoing) => {
+      const task = (async () => { try {
         const headers = new Headers();
         for (let index = 0; index < incoming.rawHeaders.length; index += 2) headers.append(incoming.rawHeaders[index], incoming.rawHeaders[index + 1]);
         const chunks = []; for await (const chunk of incoming) chunks.push(chunk);
@@ -36,16 +36,26 @@ async function localHttpsFixture(handler) {
         const request = new Request(new URL(incoming.url, origin), { method: incoming.method, headers,
           ...(body.length ? { body } : {}) });
         const response = await handler(request);
+        const responseBody = Buffer.from(await response.arrayBuffer());
+        if (outgoing.destroyed) return;
         for (const [name, value] of response.headers) if (name !== 'set-cookie') outgoing.setHeader(name, value);
         const cookies = response.headers.getSetCookie();
         if (cookies.length) outgoing.setHeader('set-cookie', cookies);
-        outgoing.writeHead(response.status); outgoing.end(Buffer.from(await response.arrayBuffer()));
-      } catch (error) { errors.push(error.message); outgoing.writeHead(500); outgoing.end('Local fixture request failed'); }
+        outgoing.writeHead(response.status); outgoing.end(responseBody);
+      } catch (error) {
+        errors.push(error.message);
+        if (!outgoing.destroyed) {
+          if (!outgoing.headersSent) outgoing.writeHead(500);
+          outgoing.end('Local fixture request failed');
+        }
+      } })();
+      pending.add(task); void task.finally(() => pending.delete(task));
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     origin = `https://127.0.0.1:${server.address().port}`;
     return { origin, errors, async close() {
       server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+      await Promise.all(pending);
       await rm(directory, { recursive: true, force: true });
     } };
   } catch (error) {
@@ -147,7 +157,7 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     expect(identityChecks).toBe(3);
     expect((await context.cookies(origin)).find(cookie => cookie.name === SESSION_COOKIE)?.value).toBe(token);
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
-  } finally { await frontend?.close(); await server.close(); }
+  } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
 test('Sign out submits a trusted origin, clears cookies and returns to Splitter', async ({ page, context }) => {
@@ -187,7 +197,7 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
     await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
-  } finally { await frontend?.close(); await server.close(); }
+  } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
 test('Account stays simple; administration is deliberate, responsive, and recoverable', async ({ page, context }) => {
@@ -415,4 +425,90 @@ test('Account stays simple; administration is deliberate, responsive, and recove
       !(message.text === 'Failed to load resource: the server responded with a status of 404 (Not Found)' && message.url.endsWith('/favicon.ico'))
     )).toEqual([]);
   } finally { await server.close(); }
+});
+
+test('students can reach sign-in help during an outage and retry their intended page', async ({ page }) => {
+  const origin='https://stem-signin-help.test';
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  try {
+    await server.listen();
+    await page.route(origin+'/**',async route=>{
+      const request=route.request(),url=new URL(request.url());
+      const response=url.pathname.startsWith('/auth/')
+        ? await handleAuth(new Request(request.url(),{headers:await request.allHeaders()}),{PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin})
+        : await server.fetch(url.pathname);
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+    });
+    for(const width of [1280,390]){
+      await page.setViewportSize({width,height:900});
+      const response=await page.goto(origin+'/auth/help?next=/teacher.html');
+      expect(response.status()).toBe(200);
+      await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
+      await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('href','/auth/login?next=%2Fteacher.html');
+      await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('rel','noopener noreferrer');
+      await expect(page.getByRole('link',{name:'Back to Splitter'})).toHaveAttribute('href','/');
+      await expect(page.locator('body')).toContainText('Guest work stays in the browser');
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      if(process.env.STEM_SCREENSHOT_DIR){
+        await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
+        await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/signin-help-${width}.png`,fullPage:true});
+      }
+    }
+    // Route at the context level so the new sign-in tab receives the same
+    // outage fixture; it cannot accidentally navigate to a live identity site.
+    await page.context().route(origin+'/auth/**',async route=>{
+      const response=await handleAuth(new Request(route.request().url(),{headers:await route.request().allHeaders()}),{PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin});
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+    });
+    const [signin]=await Promise.all([page.context().waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
+    await expect(signin).toHaveURL(origin+'/auth/login?next=%2Fteacher.html');
+    await expect(signin.getByRole('heading',{name:'Sign-in is temporarily unavailable'})).toBeVisible();
+    expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
+    await expect(page).toHaveURL(origin+'/auth/help?next=/teacher.html');
+    await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
+    await signin.close();
+    expect(errors).toEqual([]);
+  }finally {await server.close();}
+});
+
+test('a simulated external CUNY dead end leaves the student recovery tab available',async({page,context})=>{
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
+ let starts=0,app,provider;
+ try {
+  await server.listen();
+  provider=await localHttpsFixture(async()=>new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider failure fixture</title><main><p>LOCAL TEST · simulated external provider failure</p><h1>Login Failed</h1><p>Unable to load Domain/Client profile</p></main></html>',{status:500,headers:{'Content-Type':'text/html'}}));
+  app=await localHttpsFixture(async request=>{
+   const url=new URL(request.url);
+   if(!url.pathname.startsWith('/auth/'))return fixtureFetch(server,request);
+   const response=await handleAuth(request,{
+    PUBLIC_BASE_URL:app.origin,CANONICAL_BASE_URL:app.origin,REQUEST_LIMIT:{limit:async()=>({success:true})},
+    IDENTITY:{begin:async()=>{starts++;return {url:'https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture'};}}
+   });
+   if(url.pathname!=='/auth/login')return response;
+   expect(response.status).toBe(303);
+   expect(response.headers.get('location')).toBe('https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture');
+   // Verify the real app response, then substitute only the external destination.
+   // The browser follows an actual HTTPS 303 with the app's cookie headers;
+   // no live identity service is contacted by this local failure fixture.
+   const headers=new Headers(response.headers);headers.set('location',provider.origin+'/error');
+   return new Response(null,{status:response.status,headers});
+  });
+  for(const width of [1280,390]){
+   await page.setViewportSize({width,height:900});await page.goto(app.origin+'/auth/help?next=/classroom.html');
+   const [signin]=await Promise.all([context.waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
+   await signin.setViewportSize({width,height:900});
+   await expect(signin).toHaveURL(provider.origin+'/error');await expect(signin.getByRole('heading',{name:'Login Failed'})).toBeVisible();
+   expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
+   await expect(page).toHaveURL(app.origin+'/auth/help?next=/classroom.html');await expect(page.getByRole('link',{name:'Back to Splitter'})).toBeVisible();
+   if(process.env.STEM_SCREENSHOT_DIR){
+    await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
+    await signin.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/simulated-provider-error-${width}.png`,fullPage:true});
+    await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/recovery-retained-${width}.png`,fullPage:true});
+   }
+   await signin.close();await page.getByRole('link',{name:'Back to Splitter'}).click();await expect(page).toHaveURL(app.origin+'/');
+   await expect(page.locator('h1')).toContainText('SPLITTER');
+  }
+  expect(starts).toBe(2);expect(app.errors).toEqual([]);expect(provider.errors).toEqual([]);
+ }finally{await page.close();await app?.close();await provider?.close();await server.close();}
 });

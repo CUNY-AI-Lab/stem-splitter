@@ -1,3 +1,6 @@
+import { runDeletionEnabled, runWasDeleted, deleteOwnedRun, recordFailedRunSession, purgeDeletedRuns } from './run-deletion.ts';
+import { fetchUrlAudio, parseMediaUrl, UrlImportError } from './url-import.ts';
+import { importDurationLimit } from './import-policy.ts';
 import { retryAt } from './reliability/retry.ts';
 import { parseClientUses, recordClientUses, recordServerUse, usageSummary } from './reliability/observability.ts';
 import classroomRoutes from './classroom/routes.ts';
@@ -208,6 +211,12 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
+app.use('/api/*', async(c,next)=>{
+  const match=/^\/api\/(?:jobs|shared-jobs)\/([a-zA-Z0-9-]+)(?:\/|$)/.exec(c.req.path)||/^\/api\/files\/stems\/([a-zA-Z0-9-]+)\//.exec(c.req.path);
+  if(match&&!(c.req.method==='DELETE'&&c.req.path===`/api/jobs/${match[1]}`)&&await runWasDeleted(c.env,match[1]))return c.json({error:'Run not found.'},404);
+  await next();
+});
+
 app.route('/api/classroom', classroomRoutes);
 
 app.post('/api/usage-events',async c=>{
@@ -236,6 +245,7 @@ app.get('/api/runtime', (c) => c.json({
   authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
   loginUrl: c.env.CAIL_LOGIN_URL || null,
   remixer: c.env.REMIXER_ENABLED === 'true',
+  runDeletion: runDeletionEnabled(c.env),
   guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,
     splitLimit:5,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?25:null} : null,
 }));
@@ -960,6 +970,8 @@ app.get('/api/music/search', requireClassCode, async (c) => {
   return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson');
 });
 
+app.get('/api/import-options', requireClassCode, (c) => c.json({urlImport:c.env.URL_IMPORT_ENABLED==='true',maxDurationSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):900}));
+
 app.post('/api/jobs', requireClassCode, async (c) => {
   const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
   if ('response' in parsed) return parsed.response;
@@ -968,8 +980,8 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   const input=parsed.value;
   if(input&&typeof input==='object'&&!Array.isArray(input)) {
     const value=input as Record<string,unknown>;
-    if (value.audiusId !== undefined && [value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1) return c.json({error:'Search again to choose an Internet Archive recording.',code:'unsupported_source',retryable:false},400);
-    if([value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1
+    if (value.audiusId !== undefined && [value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1) return c.json({error:'Search again to choose an Internet Archive recording.',code:'unsupported_source',retryable:false},400);
+    if([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1
       &&parseVideoSource(value.videoUrl??value.youtubeUrl)?.sourceType==='vimeo') {
       return c.json({error:'Choose a supported video link or upload an audio file.',code:'unsupported_source',retryable:false},400);
     }
@@ -988,6 +1000,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         filename?: string;
         videoUrl?: string;
         youtubeUrl?: string;
+        sourceUrl?: string;
         audiusId?: string;
         archiveId?: string;
         archiveFile?: string;
@@ -999,7 +1012,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     | null;
 
   if (!body || typeof body!=='object' || Array.isArray(body) ||
-      [body.videoUrl,body.youtubeUrl,body.archiveId,body.audiusId,body.key].filter(value=>value!==undefined).length!==1) {
+      [body.sourceUrl,body.videoUrl,body.youtubeUrl,body.archiveId,body.audiusId,body.key].filter(value=>value!==undefined).length!==1) {
     return c.json({error:'Choose exactly one audio source.',code:'invalid_input'},400);
   }
 
@@ -1047,7 +1060,20 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let attribution: unknown = null;
   const id = crypto.randomUUID();
 
-  if (body.videoUrl!==undefined || body.youtubeUrl!==undefined) {
+  if (body.sourceUrl !== undefined) {
+    let audio;
+    try { audio = await fetchUrlAudio(body.sourceUrl, c.env, 900); }
+    catch (error) {
+      if (error instanceof UrlImportError) return c.json({ error:error.message,code:error.code,retryable:error.retryable },error.status);
+      throw error;
+    }
+    sourceType = 'upload';
+    key = `uploads/${crypto.randomUUID()}/${audio.fileName ?? 'source.m4a'}`;
+    filename = sanitizeFilename(audio.title) || 'Imported audio';
+    sourceHash = await sha256Audio(audio.data);
+    expectedSourceIdentity = { schemaVersion:'1',sha256:sourceHash,bytes:audio.data.byteLength };
+    await c.env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:audio.contentType ?? 'audio/mp4'}});
+  } else if (body.videoUrl!==undefined || body.youtubeUrl!==undefined) {
     const source=parseVideoSource(body.videoUrl!==undefined?body.videoUrl:body.youtubeUrl);
     // Caller error (unrecognizable link) is a 400; upstream failures are 502.
     if (!source) {
@@ -1286,6 +1312,8 @@ app.get('/api/jobs', async (c) => {
   c.header('Cache-Control', 'private, no-store');
   const principal = c.get('principal');
   if (!principal || c.env.AUTH_MODE !== 'cail') return c.json({ error: 'Sign in to view your splits.' }, 401);
+  await recordFailedRunSession(c.env,principal,c.req.header('X-Stem-Rack-Session')??null);
+  if(runDeletionEnabled(c.env))try{c.executionCtx.waitUntil(purgeDeletedRuns(c.env));}catch{}
   let before: { createdAt: string; id: string } | null = null;
   const cursor = c.req.query('cursor');
   if (cursor !== undefined) {
@@ -1301,6 +1329,7 @@ app.get('/api/jobs', async (c) => {
     SELECT j.id, j.filename, j.model, j.created_at
     FROM ${ownershipTable(principal,'job')} o JOIN jobs j ON j.id = o.job_id
     WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
+      ${runDeletionEnabled(c.env)?'AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)':''}
       AND (? IS NULL OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41
   `).bind(principal.subject, before?.createdAt ?? null, before?.createdAt ?? null,
@@ -1311,6 +1340,14 @@ app.get('/api/jobs', async (c) => {
   return c.json({ jobs: rows.map(row => ({ id: row.id, filename: row.filename,
     model: row.model ?? DEFAULT_DEMUCS_MODEL, createdAt: row.created_at })),
     nextCursor: results.length > 40 && last ? btoa(JSON.stringify({ createdAt: last.created_at, id: last.id })) : null });
+});
+
+app.delete('/api/jobs/:id', requireClassCode, async c=>{
+  const principal=c.get('principal');
+  if(!principal||!runDeletionEnabled(c.env))return c.json({error:'Sign in to delete your runs.'},401);
+  if(!await deleteOwnedRun(c.env,principal,c.req.param('id')))return c.json({error:'Run not found.'},404);
+  try {c.executionCtx.waitUntil(purgeDeletedRuns(c.env));}catch {await purgeDeletedRuns(c.env);}
+  return c.json({deleted:true});
 });
 
 app.post('/api/jobs/:id/cancel', requireClassCode, async (c) => {
@@ -1375,8 +1412,9 @@ app.get('/api/jobs/:id', async (c) => {
   const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
   const principal = c.get('principal');
   const permission = principal ? await jobPermission(c.env, principal, id) : null;
+  if(principal&&row.status==='failed'){await recordFailedRunSession(c.env,principal,c.req.header('X-Stem-Rack-Session')??null,id);if(await runWasDeleted(c.env,id))return c.json({error:'Run not found.'},404);}
   const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
-  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
     courseId:permission?.courseId??null, permissions:permission, publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
@@ -2137,7 +2175,7 @@ app.onError((_error, c) => {
 });
 
 export default app;
-export async function runReliableJobs(env: Env) { return drainSplitQueue(env,ingestResult); }
+export async function runReliableJobs(env: Env) { await drainSplitQueue(env,ingestResult); await purgeDeletedRuns(env); }
 
 // --- helpers ------------------------------------------------------------
 
@@ -2199,7 +2237,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
         }
       }
       const audio = await downloadStem(stem.name, stem.url,env.AUTH_MODE==='cail');
-      if(env.AUTH_MODE==='cail' && (!env.validateStemAudio || !await env.validateStemAudio(audio))) throw new InvalidStemAudioError('The separator returned audio that could not be decoded. No successful-split allowance was used.');
+      if(env.AUTH_MODE==='cail' && (!env.validateStemAudio || !await env.validateStemAudio(audio))) throw new InvalidStemAudioError('The separator returned audio that could not be decoded. No allowance was used.');
       const key = `stems/${jobId}/${lease.split(':').at(-1)}/${stem.name}.mp3`;
       await env.AUDIO.put(key, audio, {
         httpMetadata: { contentType: 'audio/mpeg' },
@@ -2222,7 +2260,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       const snapshot=await env.DB.prepare('SELECT status,stems,error FROM jobs WHERE id=?').bind(jobId).first<{status:string;stems:string|null;error:string|null}>();
       const referenced=(row:typeof snapshot)=>new Set(row?.stems?JSON.parse(row.stems).map((stem:{key:string})=>stem.key):[]);
       if(stored.some(({key})=>referenced(snapshot).has(key)))return;
-      const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No successful-split allowance was used.';
+      const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No allowance was used.';
       const terminal=error instanceof InvalidStemAudioError||env.AUTH_MODE==='cail';
       await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?
         AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`)
@@ -2364,7 +2402,7 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     id: row.id,
     filename: row.filename,
     status: row.status,
-    error: row.status === 'failed' ? row.error : null,
+    error: row.status === 'failed' ? row.error?.replaceAll('No successful-split allowance was used.', 'No allowance was used.').replaceAll('Your successful-split allowance has not been used.', 'No allowance was used.') ?? null : null,
     model: row.model ?? DEFAULT_DEMUCS_MODEL,
     expectedStems: getSeparationOption(row.model ?? DEFAULT_DEMUCS_MODEL)?.stems ?? [],
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},

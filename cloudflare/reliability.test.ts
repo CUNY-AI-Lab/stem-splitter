@@ -339,3 +339,52 @@ for(const failure of ['status-outage','cooldown'])test(`completed extraction exp
  assert.equal(current.state,'failed');assert.equal(current.error_code,'youtube_fetch_timeout');
  assert.equal(reads+downloads,requests);assert.equal((await splitAllowance(db,subject)).inProgress,0);
 });
+
+for(const code of ['transient','denied','unknown'])test(`terminal YouTube ${code} obeys bounded durable retry policy`,async t=>{
+ const {db,env,split}=await setup(t),op=await split(`fetch-retry-policy-${code}`,'fetch');
+ Object.assign(env,{REPLICATE_API_TOKEN:'fixture-replicate-token',REPLICATE_YT_MODEL:'test/importer',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});
+ let now=Date.now();t.mock.method(Date,'now',()=>now);t.mock.method(Math,'random',()=>0);
+ t.mock.method(globalThis,'fetch',async()=>Response.json({id:'retry-fixture',status:'failed',error:code==='transient'?'Source download is temporarily unavailable.':code==='denied'?'Source blocked this import.':'Unknown failure'}));
+ for(let attempt=1;attempt<=3;attempt++) {
+  await db.prepare("UPDATE app_operations SET state='processing',provider_id='retry-fixture',lease_owner=NULL,lease_until=0,not_before=0 WHERE id=?").bind(op.id).run();
+  await db.prepare("INSERT INTO operation_attempts(id,operation_id,phase,provider,model,external_id,outcome,created_at,updated_at) VALUES(?,?,'fetch','replicate','fixture','retry-fixture','accepted',?,?)").bind(crypto.randomUUID(),op.id,now,now).run();
+  await reconcileSplit(env,(await readOperation(db,op.id))!,async()=>assert.fail('No split before a source exists'));
+  const current=(await readOperation(db,op.id))!;
+  if(code!=='transient'||attempt===3) {assert.equal(current.state,'failed');break;}
+  assert.equal(current.state,'queued',JSON.stringify({attempt,current}));assert.equal(current.provider_id,null);
+  assert.ok(current.not_before>=now+16000);assert.equal(current.error_code,'source_fetch_unavailable');
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM operation_attempts WHERE operation_id=? AND outcome='accepted'").bind(op.id).first<{n:number}>())!.n,0);
+  now=current.not_before+1;
+ }
+ assert.equal((await splitAllowance(db,subject)).completed,0);
+});
+
+test('a retired fetch callback cannot adopt the next uncertain retry',async t=>{
+ const {db,env,split}=await setup(t),op=await split('fetch-retry-stale-callback','fetch');
+ await db.prepare("UPDATE app_operations SET state='starting' WHERE id=?").bind(op.id).run();
+ const now=Date.now();
+ for(const [id,external,outcome] of [['old-attempt','retired-prediction','failed'],['new-attempt',null,'uncertain']])
+  await db.prepare("INSERT INTO operation_attempts(id,operation_id,phase,provider,model,external_id,outcome,created_at,updated_at) VALUES(?,?,'fetch','replicate','same-model',?,?,?,?)").bind(id,op.id,external,outcome,now,now).run();
+ let requests=0;t.mock.method(globalThis,'fetch',async()=>{requests++;throw new Error('Old prediction must not be inspected or adopted');});
+ await recoverCallback(env,(await readOperation(db,op.id))!,'retired-prediction');
+ const current=(await readOperation(db,op.id))!;
+ assert.equal(current.state,'starting');assert.equal(current.provider_id,null);assert.equal(requests,0);
+ assert.equal((await db.prepare("SELECT outcome FROM operation_attempts WHERE id='new-attempt'").first<{outcome:string}>())!.outcome,'uncertain');
+});
+
+test('deleting a completed run preserves its charged allowance; uncertain work remains fenced',async t=>{
+ const {deleteOwnedRun,purgeDeletedRuns}=await import('../src/run-deletion.ts');
+ const {db,env,split}=await setup(t);env.RUN_DELETION_ENABLED='true';
+ const principal={subject,role:'student',displayName:'Fixture',course:null,courseId:null} as const;
+ const completed=await split();await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind(completed.id,subject).run();
+ await db.prepare("UPDATE jobs SET status='done' WHERE id=?").bind(completed.id).run();
+ const before=await splitAllowance(db,subject);assert.equal(before.completed,1);
+ assert.equal(await deleteOwnedRun(env,principal,completed.id),true);await purgeDeletedRuns(env);
+ assert.deepEqual(await splitAllowance(db,subject),before);
+ const uncertain=await split('deletion-uncertain-0001');await db.prepare('INSERT INTO job_owners VALUES(?,?)').bind(uncertain.id,subject).run();
+ const lease=(await claimNext(db,'split'))!;await transition(db,lease,'starting');await beginAttempt(db,lease,'replicate','separator-pin');
+ await recoverExpired(db,lease.lease_until+1);
+ assert.equal(await deleteOwnedRun(env,principal,uncertain.id),true);await purgeDeletedRuns(env);
+ assert.ok(await db.prepare('SELECT 1 FROM jobs WHERE id=?').bind(uncertain.id).first());
+ assert.equal((await splitAllowance(db,subject)).inProgress,1);assert.equal(await claimNext(db,'split'),null);
+});
