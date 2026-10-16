@@ -22,13 +22,13 @@ async function fixtureFetch(server, request) {
 async function localHttpsFixture(handler) {
   const directory = await mkdtemp(join(tmpdir(), 'stem-account-browser-'));
   let server, origin;
-  const errors = [];
+  const errors = [], pending = new Set();
   try {
     const key = join(directory, 'key.pem'), cert = join(directory, 'cert.pem');
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
       '-subj', '/CN=localhost', '-keyout', key, '-out', cert], { stdio: 'ignore' });
-    server = createServer({ key: await readFile(key), cert: await readFile(cert) }, async (incoming, outgoing) => {
-      try {
+    server = createServer({ key: await readFile(key), cert: await readFile(cert) }, (incoming, outgoing) => {
+      const task = (async () => { try {
         const headers = new Headers();
         for (let index = 0; index < incoming.rawHeaders.length; index += 2) headers.append(incoming.rawHeaders[index], incoming.rawHeaders[index + 1]);
         const chunks = []; for await (const chunk of incoming) chunks.push(chunk);
@@ -36,16 +36,26 @@ async function localHttpsFixture(handler) {
         const request = new Request(new URL(incoming.url, origin), { method: incoming.method, headers,
           ...(body.length ? { body } : {}) });
         const response = await handler(request);
+        const responseBody = Buffer.from(await response.arrayBuffer());
+        if (outgoing.destroyed) return;
         for (const [name, value] of response.headers) if (name !== 'set-cookie') outgoing.setHeader(name, value);
         const cookies = response.headers.getSetCookie();
         if (cookies.length) outgoing.setHeader('set-cookie', cookies);
-        outgoing.writeHead(response.status); outgoing.end(Buffer.from(await response.arrayBuffer()));
-      } catch (error) { errors.push(error.message); outgoing.writeHead(500); outgoing.end('Local fixture request failed'); }
+        outgoing.writeHead(response.status); outgoing.end(responseBody);
+      } catch (error) {
+        errors.push(error.message);
+        if (!outgoing.destroyed) {
+          if (!outgoing.headersSent) outgoing.writeHead(500);
+          outgoing.end('Local fixture request failed');
+        }
+      } })();
+      pending.add(task); void task.finally(() => pending.delete(task));
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     origin = `https://127.0.0.1:${server.address().port}`;
     return { origin, errors, async close() {
       server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+      await Promise.all(pending);
       await rm(directory, { recursive: true, force: true });
     } };
   } catch (error) {
@@ -147,7 +157,7 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     expect(identityChecks).toBe(3);
     expect((await context.cookies(origin)).find(cookie => cookie.name === SESSION_COOKIE)?.value).toBe(token);
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
-  } finally { await frontend?.close(); await server.close(); }
+  } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
 test('Sign out submits a trusted origin, clears cookies and returns to Splitter', async ({ page, context }) => {
@@ -187,7 +197,7 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
     await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
-  } finally { await frontend?.close(); await server.close(); }
+  } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
 test('Account stays simple; administration is deliberate, responsive, and recoverable', async ({ page, context }) => {
