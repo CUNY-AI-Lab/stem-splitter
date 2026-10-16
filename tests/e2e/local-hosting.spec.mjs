@@ -193,7 +193,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
   })).toBe(true);
   await expectAlignedBrand();
-  await expect(page.locator('.tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.');
+  await expect(page.locator('.tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate waveforms as you go and query the Listening Guy to help guide your analysis.');
   await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(

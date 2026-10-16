@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Stem Splitter Brand";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("/fonts/bricolage-grotesque-800.ttf") format("truetype");
+}
+
 /* ─── Stem Splitter · studio console ──────────────────────────────── */
 
 :root {
@@ -117,7 +125,10 @@ h1 span {
   justify-content: space-between;
   gap: clamp(.75rem, 2vw, 1.5rem);
 }
-.masthead-title h1 { flex: 0 0 auto; font-size: var(--title-size); }
+.masthead-title h1 { flex: 0 0 auto; font-family: "Stem Splitter Brand", var(--font-display); font-size: var(--title-size); }
+.masthead-title .home-brand { display: inline-block; color: var(--ink); text-decoration: none; }
+.home-brand:focus-visible { outline: 2px solid var(--hot); outline-offset: 5px; }
+.page-title { font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; margin: 0 0 1.5rem; }
 .masthead-title .lab-brand { flex: 0 1 auto; min-width: 0; margin: 0; }
 .masthead-title .lab-logo { height: calc(var(--title-size) * .92); max-width: 100%; object-fit: contain; }
 
@@ -661,10 +672,10 @@ h1 span {
 
 .rack-title {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 1rem;
   font-weight: 600;
-  letter-spacing: 0.2em;
-  color: var(--ink-faint);
+  letter-spacing: 0.14em;
+  color: var(--ink-dim);
   display: flex;
   align-items: center;
   gap: 0.9rem;
@@ -677,7 +688,7 @@ h1 span {
   flex: 1;
 }
 
-.empty { color: var(--ink-faint); font-size: 0.78rem; text-align: center; padding: 1.5rem 0; }
+.empty { color: var(--ink-dim); font-size: 1rem; text-align: center; padding: 1.5rem 0; }
 .rack > .empty { margin: 0; padding: 0.5rem 0; }
 
 .job-list {
@@ -940,8 +951,8 @@ footer {
   margin-top: 4rem;
   border-top: 1px solid var(--panel-edge);
   padding-top: 1.2rem;
-  color: var(--ink-faint);
-  font-size: 0.8rem;
+  color: var(--ink-dim);
+  font-size: 1rem;
 }
 footer a { color: var(--ink-dim); text-underline-offset: .2em; }
 footer a:hover { color: var(--hot); }
@@ -1017,12 +1028,14 @@ footer a:hover { color: var(--hot); }
   font: 600 .72rem var(--font-mono);
   letter-spacing: .08em;
 }
-.footer-sig { font-size: 0.62rem; letter-spacing: 0.14em; margin-top: 0.6rem; }
+.footer-sig { font-size: 0.9rem; letter-spacing: 0.14em; margin-top: 0.6rem; }
 .footer-teacher-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   margin-top: 0.7rem;
-  color: var(--ink-faint);
-  font-size: 0.62rem;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
   letter-spacing: 0.14em;
   text-decoration-color: var(--panel-edge);
   text-underline-offset: 0.2em;
@@ -1730,13 +1743,11 @@ footer a:hover { color: var(--hot); }
 .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
 .account-button:disabled { opacity: .5; cursor: wait; }
 .account-button[hidden] { display: none; }
-.signin-recovery { max-width: 38rem; }
-.signin-recovery h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); letter-spacing: -.03em; animation: none; }
+.signin-recovery { max-width: 780px; }
 .signin-recovery p { color: var(--ink-dim); line-height: 1.6; }
-.signin-recovery a:not(.account-button) { color: var(--hot); text-underline-offset: .2em; }
+.signin-recovery a:not(.account-button):not(.home-brand) { color: var(--hot); text-underline-offset: .2em; }
 .signin-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
-.account-main { max-width: 680px; }
-main.account-main .masthead h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.04em; }
+.account-main { max-width: 780px; }
 .account-main .masthead h1, .account-main .lab-brand { animation: none; }
 .account-main .crate-page-btn { min-height: 44px; }
 .account-main a { color: var(--hot); text-underline-offset: .2em; }
@@ -1771,7 +1782,6 @@ main.account-main .masthead h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spaci
   border: 0;
 }
 .teacher-main .masthead { margin-bottom: 1.6rem; }
-.teacher-main .masthead h1 { font-size: clamp(2.5rem, 7vw, 4rem); }
 .teacher-main .tagline { font-size: 0.95rem; margin-top: 0.75rem; max-width: 38ch; }
 .teacher-panel { margin-top: 0.8rem; }
 
