@@ -35,6 +35,7 @@ const schema = JSON.parse(schemaText);
 assert.deepEqual(findYouTubePinViolations(schema), []);
 assert.ok(!schema.components.schemas.Input.required.includes('max_duration'));
 assert.equal(schema.components.schemas.Input.properties.max_duration.default, 900);
+assert.equal(schema.components.schemas.Input.properties.general_url.default, false);
 assert.equal(schema.components.schemas.Output.properties.audio.format, 'uri');
 
 const smoke = JSON.parse(docker([
@@ -52,7 +53,7 @@ import subprocess
 from predict import FORMAT_SELECTOR, Predictor, canonical_url, extraction_url
 from yt_dlp import YoutubeDL
 
-expected = {"yt-dlp": "2026.8.19", "yt-dlp-ejs": "0.8.0", "deno": "2.9.5"}
+expected = {"yt-dlp": "2026.8.19", "yt-dlp-ejs": "0.8.0"}
 versions = {name: importlib.metadata.version(name) for name in expected}
 assert versions == expected, "extractor package versions differ from the reviewed pins"
 assert platform.python_version_tuple()[:2] == ("3", "11")
@@ -70,7 +71,7 @@ executables = {
     "ffprobe": version(["ffprobe", "-version"]),
 }
 assert executables["yt-dlp"] == "2026.08.19"
-assert executables["deno"].startswith("deno 2.9.5 ")
+assert executables["deno"].startswith("deno 2.9.7 ")
 assert executables["ffmpeg"].startswith("ffmpeg version ")
 assert executables["ffprobe"].startswith("ffprobe version ")
 
@@ -123,7 +124,7 @@ const evidence = {
   cogVersion,
   schemaSha256: createHash('sha256').update(schemaText).digest('hex'),
   contract: {
-    requiredInputs: ['url'], optionalInputs: ['max_duration'], maximumDurationDefault: 900,
+    requiredInputs: ['url'], optionalInputs: ['max_duration', 'general_url'], maximumDurationDefault: 900,
     requiredOutputs: ['audio', 'title', 'duration'], audioFormat: 'uri',
   },
   smoke,
