@@ -843,9 +843,9 @@ app.delete('/api/teacher/folders/:id', requireTeacher, async (c) => {
 app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
   const teacher = (await currentTeacher(c))!;
   const folderId = c.req.param('id');
-  const folder = await c.env.DB.prepare('SELECT id FROM folders WHERE id = ?')
+  const folder = await c.env.DB.prepare('SELECT id, created_by FROM folders WHERE id = ?')
     .bind(folderId)
-    .first<{ id: string }>();
+    .first<{ id: string; created_by: string }>();
   if (!folder) return c.json({ error: 'Folder not found' }, 404);
 
   const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
@@ -865,13 +865,16 @@ app.post('/api/teacher/folders/:id/items', requireTeacher, async (c) => {
     return c.json({ error: 'Only finished splits can be saved to a folder.' }, 409);
   }
 
-  const insert = await c.env.DB.prepare(
+  const [, insert] = await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM folder_items WHERE job_id = ? AND folder_id <> ?
+      AND folder_id IN (SELECT id FROM folders WHERE created_by = ?)`).bind(jobId, folderId, folder.created_by),
+    c.env.DB.prepare(
     `INSERT INTO folder_items (folder_id, job_id, filename, model, added_by)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(folder_id, job_id) DO NOTHING`
   )
     .bind(folderId, jobId, job.filename, job.model ?? DEFAULT_DEMUCS_MODEL, teacher.username)
-    .run();
+  ]);
   return c.json({ ok: true, already: (insert.meta?.changes ?? 0) === 0 });
 });
 
@@ -1329,6 +1332,8 @@ app.get('/api/jobs', async (c) => {
     SELECT j.id, j.filename, j.model, j.created_at
     FROM ${ownershipTable(principal,'job')} o JOIN jobs j ON j.id = o.job_id
     WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
+      AND NOT EXISTS (SELECT 1 FROM folder_items i JOIN folders f ON f.id = i.folder_id
+        WHERE i.job_id = j.id AND f.created_by = o.subject)
       ${runDeletionEnabled(c.env)?'AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)':''}
       AND (? IS NULL OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41

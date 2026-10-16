@@ -3340,6 +3340,7 @@ function renderFolders() {
           // The refresh below shows whichever state the server really holds.
         }
         await refreshFolders();
+        if (accountSubject) await loadAccountJobs();
       })
     );
     folderList.appendChild(li);
@@ -3400,6 +3401,7 @@ async function loadFolderItems(folder, container) {
           // Row stays; the next open re-reads the folder from the server.
         }
         await refreshFolders();
+        if (accountSubject) await loadAccountJobs();
       })
     );
     container.appendChild(li);
@@ -3489,6 +3491,7 @@ function toggleFolderMenu(mixer) {
       if (!res.ok) throw new Error('save failed');
       const body = await res.json();
       row.textContent = body.already ? 'ALREADY SAVED ✓' : 'SAVED ✓';
+      removeFromRack(mixer.job.id);
       await refreshFolders();
       setTimeout(() => menu.remove(), 900);
     } catch {
@@ -3537,6 +3540,7 @@ const emptyState = document.getElementById('empty-state');
 const jobStates = new Map(); // id -> latest server response
 const unavailableJobStates = new Set();
 const mixers = new Map(); // id -> Mixer (persists across re-renders)
+const pendingRenderStates = new WeakMap();
 const rackStatus = document.getElementById('rack-status');
 const rackRetry = document.getElementById('rack-retry');
 const rackMore = document.getElementById('rack-more');
@@ -3602,24 +3606,30 @@ async function deleteJob(id) {
     try {await api(`/api/jobs/${encodeURIComponent(id)}`,{method:'DELETE'});}
     catch(error) {if(error.status!==404){showUploadMessage(error.message || 'The run could not be deleted. Try again.',true);return;}}
   }
+  removeFromRack(id);
+  try {
+    localStorage.removeItem(`coachChat:${id}`);
+  } catch {
+    // Storage blocked — the rack entry is gone either way.
+  }
+}
+
+// Folder moves remove the visible session while keeping its saved audio and notes.
+function removeFromRack(id) {
   const mixer = mixers.get(id);
   if (mixer?.playing || mixer?.starting) mixer.pause();
   mixer?.disposeWaveforms();
   mixers.delete(id);
   jobStates.delete(id);
   saveJobs(getJobs().filter((j) => j.id !== id));
-  try {
-    localStorage.removeItem(`coachChat:${id}`);
-  } catch {
-    // Storage blocked — the rack entry is gone either way.
-  }
   renderJobs();
 }
 
 function renderJobs() {
   const jobs = getJobs();
   emptyState.hidden = jobs.length > 0;
-  jobList.innerHTML = '';
+  const previous = new Map([...jobList.children].map(el => [el.dataset.jobId, el]));
+  const cards = [];
 
   for (const job of jobs) {
     const state = jobStates.get(job.id) || {
@@ -3637,12 +3647,18 @@ function renderJobs() {
         mixers.set(job.id, mixer);
       }
       mixer.setCollapsed(!!job.collapsed);
-      jobList.appendChild(mixer.el);
+      mixer.el.dataset.jobId = job.id;
+      cards.push(mixer.el);
       continue;
     }
 
-    const li = document.createElement('li');
-    li.className = 'console';
+    const li = previous.get(job.id) || document.createElement('li');
+    li.dataset.jobId = job.id;
+    li.className = `console${job.collapsed && state.status === 'checking' ? ' collapsed' : ''}`;
+    cards.push(li);
+    const signature = JSON.stringify([job.filename, job.collapsed, state, unavailableJobStates.has(job.id)]);
+    if (pendingRenderStates.get(li) === signature) continue;
+    pendingRenderStates.set(li, signature);
     const failed = state.status === 'failed' || state.status === 'done';
     const checking = state.status === 'checking' || unavailableJobStates.has(job.id);
     const operation = state.operation;
@@ -3679,8 +3695,15 @@ function renderJobs() {
         armThenRun(deleteBtn, 'SURE?', () => deleteJob(job.id))
       );
     }
-    jobList.appendChild(li);
   }
+
+  // Keep settled cards attached: detaching them restarts their CSS entrance
+  // animation and interrupts media while other saved runs are still loading.
+  const retained = new Set(cards);
+  for (const el of [...jobList.children]) if (!retained.has(el)) el.remove();
+  cards.forEach((el, index) => {
+    if (jobList.children[index] !== el) jobList.insertBefore(el, jobList.children[index] || null);
+  });
 
   runElapsedClock();
   renderShelf();
