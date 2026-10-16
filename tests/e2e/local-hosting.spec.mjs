@@ -189,7 +189,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     const row = document.querySelector('.masthead-title').getBoundingClientRect();
     const title = document.querySelector('.masthead-title h1').getBoundingClientRect();
     const logo = document.querySelector('.masthead-title .lab-logo').getBoundingClientRect();
-    return Math.abs(title.height - logo.height) < 1
+    return Math.abs(title.height / 2 - logo.height) < 1
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
   })).toBe(true);
   await expectAlignedBrand();

@@ -119,7 +119,7 @@ h1 span {
 }
 .masthead-title h1 { flex: 0 0 auto; font-size: var(--title-size); }
 .masthead-title .lab-brand { flex: 0 1 auto; min-width: 0; margin: 0; }
-.masthead-title .lab-logo { height: calc(var(--title-size) * 1.84); max-width: 100%; object-fit: contain; }
+.masthead-title .lab-logo { height: calc(var(--title-size) * .92); max-width: 100%; object-fit: contain; }
 
 .masthead-meta {
   display: flex;
