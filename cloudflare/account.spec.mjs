@@ -463,44 +463,42 @@ test('students can reach sign-in help during an outage and retry their intended 
 });
 
 test('a simulated external CUNY dead end leaves the student recovery tab available',async({page,context})=>{
- const origin='https://stem-signin-lifeline.test';
- const provider='https://cuny-signin-fixture.test';
  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
- let starts=0;
+ let starts=0,app,provider;
  try {
   await server.listen();
-  // Reject any unhandled network traffic: this provider failure is a local fixture.
-  await context.route('**/*',route=>route.abort());
-  await context.route(origin+'/**',async route=>{
-   const request=route.request(),url=new URL(request.url());
-   const response=url.pathname.startsWith('/auth/')?await handleAuth(new Request(request.url(),{headers:await request.allHeaders()}),{
-    PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin,REQUEST_LIMIT:{limit:async()=>({success:true})},
+  provider=await localHttpsFixture(async()=>new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider failure fixture</title><main><p>LOCAL TEST · simulated external provider failure</p><h1>Login Failed</h1><p>Unable to load Domain/Client profile</p></main></html>',{status:500,headers:{'Content-Type':'text/html'}}));
+  app=await localHttpsFixture(async request=>{
+   const url=new URL(request.url);
+   if(!url.pathname.startsWith('/auth/'))return fixtureFetch(server,request);
+   const response=await handleAuth(request,{
+    PUBLIC_BASE_URL:app.origin,CANONICAL_BASE_URL:app.origin,REQUEST_LIMIT:{limit:async()=>({success:true})},
     IDENTITY:{begin:async()=>{starts++;return {url:'https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture'};}}
-   }):await server.fetch(url.pathname);
-   if(url.pathname==='/auth/login'){
-    expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe('https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture');
-    // Playwright does not route subsequent requests in a server redirect chain.
-    // Check the real app redirect above, then navigate to the synthetic provider
-    // with a local bridge so this test never contacts the live identity service.
-    await route.fulfill({status:200,contentType:'text/html',body:`<!doctype html><meta http-equiv="refresh" content="0;url=${provider}/error"><title>Local sign-in fixture bridge</title>`});
-   }else await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+   });
+   if(url.pathname!=='/auth/login')return response;
+   expect(response.status).toBe(303);
+   expect(response.headers.get('location')).toBe('https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture');
+   // Verify the real app response, then substitute only the external destination.
+   // The browser follows an actual HTTPS 303 with the app's cookie headers;
+   // no live identity service is contacted by this local failure fixture.
+   const headers=new Headers(response.headers);headers.set('location',provider.origin+'/error');
+   return new Response(null,{status:response.status,headers});
   });
-  await context.route(provider+'/**',route=>route.fulfill({status:500,contentType:'text/html',body:'<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider failure fixture</title><main><p>LOCAL TEST · simulated external provider failure</p><h1>Login Failed</h1><p>Unable to load Domain/Client profile</p></main></html>'}));
   for(const width of [1280,390]){
-   await page.setViewportSize({width,height:900});await page.goto(origin+'/auth/help?next=/classroom.html');
+   await page.setViewportSize({width,height:900});await page.goto(app.origin+'/auth/help?next=/classroom.html');
    const [signin]=await Promise.all([context.waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
    await signin.setViewportSize({width,height:900});
-   await expect(signin).toHaveURL(provider+'/error');await expect(signin.getByRole('heading',{name:'Login Failed'})).toBeVisible();
+   await expect(signin).toHaveURL(provider.origin+'/error');await expect(signin.getByRole('heading',{name:'Login Failed'})).toBeVisible();
    expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
-   await expect(page).toHaveURL(origin+'/auth/help?next=/classroom.html');await expect(page.getByRole('link',{name:'Back to Splitter'})).toBeVisible();
+   await expect(page).toHaveURL(app.origin+'/auth/help?next=/classroom.html');await expect(page.getByRole('link',{name:'Back to Splitter'})).toBeVisible();
    if(process.env.STEM_SCREENSHOT_DIR){
     await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
     await signin.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/simulated-provider-error-${width}.png`,fullPage:true});
     await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/recovery-retained-${width}.png`,fullPage:true});
    }
-   await signin.close();await page.getByRole('link',{name:'Back to Splitter'}).click();await expect(page).toHaveURL(origin+'/');
+   await signin.close();await page.getByRole('link',{name:'Back to Splitter'}).click();await expect(page).toHaveURL(app.origin+'/');
+   await expect(page.locator('h1')).toContainText('SPLITTER');
   }
-  expect(starts).toBe(2);
- }finally{await server.close();}
+  expect(starts).toBe(2);expect(app.errors).toEqual([]);expect(provider.errors).toEqual([]);
+ }finally{await page.close();await app?.close();await provider?.close();await server.close();}
 });

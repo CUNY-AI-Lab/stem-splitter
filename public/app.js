@@ -3593,8 +3593,8 @@ document.addEventListener('pointerdown', (event) => {
   }
 });
 
-// Removing a split is local: the class copy (stems, names, notes, guide) stays
-// on the server, so a shared link — or a teacher folder — can bring it back.
+// Owners delete the server copy before removing the local rack entry.
+// Viewers can only hide a shared run until the next account refresh.
 function canDeleteRun(state) { return runtime.authMode === 'cail' && runtime.runDeletion === true && state?.permissions?.owner === true; }
 
 async function deleteJob(id) {
