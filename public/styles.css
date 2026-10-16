@@ -657,7 +657,7 @@ h1 span {
 
 /* ─── session rack ────────────────────────────────────────────────── */
 
-.rack { margin-top: 3.5rem; }
+.rack { margin-top: 2rem; }
 
 .rack-title {
   font-family: var(--font-mono);
@@ -668,7 +668,7 @@ h1 span {
   display: flex;
   align-items: center;
   gap: 0.9rem;
-  margin: 0 0 1.1rem;
+  margin: 0 0 0.65rem;
 }
 .rack-title::before, .rack-title::after {
   content: "";
@@ -678,6 +678,7 @@ h1 span {
 }
 
 .empty { color: var(--ink-faint); font-size: 0.78rem; text-align: center; padding: 1.5rem 0; }
+.rack > .empty { margin: 0; padding: 0.5rem 0; }
 
 .job-list {
   list-style: none;
@@ -2345,7 +2346,7 @@ body.instructor .folder-btn { display: inline-block; }
 
 /* ─── class folders rack (instructor only) ──────────────────────────── */
 
-.folders { margin-top: 2.2rem; }
+.folders { margin-top: 1.25rem; }
 .folder-list {
   list-style: none;
   margin: 0;
