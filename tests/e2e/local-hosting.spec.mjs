@@ -1870,11 +1870,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'GUIDE INSTRUCTIONS' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'System Prompt' })).toBeVisible();
   await expect(page.getByText('More', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
-  await expect(page.getByLabel('Guide instructions')).not.toHaveAttribute('placeholder');
+  await expect(page.getByLabel('System Prompt')).not.toHaveAttribute('placeholder');
   const instructorSurfaceText = await page.locator('body').innerText();
   expect(instructorSurfaceText).not.toMatch(
     /\b(?:e2e|end-to-end|authorized testing|advisory|classifier|routing|training eligible|job id|shadow mode)\b/i
