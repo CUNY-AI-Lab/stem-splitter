@@ -444,6 +444,7 @@ test('students can reach sign-in help during an outage and retry their intended 
     await expect(page.getByRole('link',{name:'Trouble signing in?',exact:true})).toHaveCount(0);
     await page.getByRole('link',{name:'CUNY Login',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Sign-in is temporarily unavailable'})).toBeVisible();
+    await expect(page.getByRole('link',{name:'Stem Splitter home',exact:true})).toHaveAttribute('href','/');
     await expect(page.getByRole('link',{name:'Trouble signing in?',exact:true})).toBeVisible();
     await page.getByRole('link',{name:'Trouble signing in?',exact:true}).click();
     await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();

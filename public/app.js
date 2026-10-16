@@ -418,6 +418,15 @@ const defaultSongPlaceholder = ytUrlInput.placeholder;
 const sampleReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let sampleTimer = 0, sampleDismissed = false, sampleStarted = false;
 let sampleCache = null;
+const recentSongSearches = new Map();
+const songSearchKey = term => term.toLowerCase().replace(/\s+/g, ' ').trim();
+function rememberSongSearch(term, data) {
+  if (!data?.results?.length) return;
+  const key = songSearchKey(term);
+  recentSongSearches.delete(key);
+  if (recentSongSearches.size >= 12) recentSongSearches.delete(recentSongSearches.keys().next().value);
+  recentSongSearches.set(key, { data, expires: Date.now() + 60000 });
+}
 function sampleVisible() {
   return !ytUrlInput.value && !ytUrlInput.disabled && !sampleDismissed &&
     !document.hidden && ytDisclosure.open && ytUrlInput.getClientRects().length > 0;
@@ -584,6 +593,12 @@ async function searchSourceSongs(term, sequence) {
     if (songResults.size) openSongSuggestions();
   };
   try {
+    const previous = recentSongSearches.get(songSearchKey(term));
+    if (previous && previous.expires > Date.now()) {
+      render(previous.data);
+      songSearchStatus = 'ready';
+      return;
+    }
     const cached = term === SAMPLE_SONG_QUERY && sampleCache &&
       Date.now() - sampleCache.createdAt < 60000 ? sampleCache : null;
     let data;
@@ -606,6 +621,7 @@ async function searchSourceSongs(term, sequence) {
     });
     if (!current()) return;
     render(data);
+    rememberSongSearch(term, data);
     songSearchStatus = 'ready';
     if (!songResults.size) showSongSearchStatus('Try another song or artist.');
   } catch {
@@ -627,7 +643,7 @@ ytUrlInput.addEventListener('input', (event) => {
   if (songResults.has(term)) { closeSongSuggestions(); return; }
   clearSongSuggestions();
   if (event.isComposing || sourceIsLink(term) || term.length < 2 || youtubeFetchInProgress) return;
-  songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence); }, 450);
+  songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence); }, 200);
 });
 ytUrlInput.addEventListener('focus', () => {
   showSongSample();
@@ -3993,7 +4009,6 @@ const stationViews = {
   splitter: document.getElementById('view-splitter'),
   remixer: document.getElementById('view-remixer'),
 };
-const stationWord = document.getElementById('station-word');
 const stationTagline = document.getElementById('station-tagline');
 
 let currentStation = 'splitter';
@@ -4021,7 +4036,6 @@ function switchStation(name) {
     stationTabs[key].setAttribute('aria-selected', String(active));
     stationTabs[key].tabIndex = active ? 0 : -1;
   }
-  stationWord.textContent = STATIONS[name].word;
   stationTagline.textContent = STATIONS[name].tagline;
   splitSummary.textContent = name === 'splitter' ? splitterKicker : STATIONS.remixer.kicker;
   splitSummary.hidden = !splitSummary.textContent;
@@ -4914,7 +4928,7 @@ async function initialize() {
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
-        stopSongSample(); sampleCache = null; songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
+        stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
