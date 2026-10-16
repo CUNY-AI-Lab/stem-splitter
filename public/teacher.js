@@ -438,11 +438,6 @@ historyMoreBtn.addEventListener('click', async () => {
         link.href = `${runtime.loginUrl}?next=/teacher.html`;
         link.textContent = 'CUNY Login';
         signinPanel.append(link);
-        const help = document.createElement('a');
-        help.href = '/auth/help?next=/teacher.html';
-        help.className = 'signin-help-link';
-        help.textContent = 'Trouble signing in?';
-        signinPanel.append(help);
       }
     }
     const { teacher } = await api('/api/teacher/me');

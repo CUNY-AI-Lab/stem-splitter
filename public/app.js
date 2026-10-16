@@ -3976,7 +3976,7 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'Splitter',
-    tagline: 'Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.',
+    tagline: 'Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate waveforms as you go and query the Listening Guy to help guide your analysis.',
   },
   remixer: {
     word: 'Remixer',
@@ -4933,11 +4933,6 @@ async function initialize() {
       link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
-      const help = document.createElement('a');
-      help.href = '/auth/help' + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
-      help.className = 'signin-help-link';
-      help.textContent = 'Trouble signing in?';
-      account.append(help);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead-meta').append(account);
   }
