@@ -217,7 +217,7 @@ async function splitRequestKey(body) {
 
 async function api(path, options = {}) {
   await appReady;
-  const { onResults, ...requestOptions } = options;
+  const { onResults, background = false, ...requestOptions } = options;
   const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(options.body) : null;
   const send = () => fetch(path, {
     ...requestOptions,
@@ -234,6 +234,8 @@ async function api(path, options = {}) {
     return readSongSearch(res, onResults);
   }
   let body = await res.json().catch(() => ({}));
+  // Speculative reads must never open verification or sign-in prompts.
+  if (background && !res.ok) throw new Error('Background search unavailable');
   if (res.status === 403 && body.error?.code === 'guest_verification_required' && guestSessionActive) {
     await window.StemGuest.verify(runtime.guest, document.getElementById('upload-status'));
     res = await send();
@@ -407,6 +409,89 @@ const sourceSongs = document.getElementById('source-songs');
 let songResults = new Map(), songSearchTimer, songSearchSequence = 0, songSearchAbort;
 let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
+
+// One illustrative query, not a curated result: matches still come from the
+// authenticated live search and retain the normal source/eligibility checks.
+const SAMPLE_SONG_QUERY = 'jazz piano';
+const sampleHint = document.getElementById('source-sample-hint');
+const defaultSongPlaceholder = ytUrlInput.placeholder;
+const sampleReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let sampleTimer = 0, sampleDismissed = false, sampleStarted = false;
+let sampleCache = null;
+function sampleVisible() {
+  return !ytUrlInput.value && !ytUrlInput.disabled && !sampleDismissed &&
+    !document.hidden && ytDisclosure.open && ytUrlInput.getClientRects().length > 0;
+}
+function stopSongSample(cancelPreload = true) {
+  clearTimeout(sampleTimer);
+  sampleTimer = 0;
+  sampleHint.hidden = true;
+  ytUrlInput.classList.remove('showing-sample');
+  ytUrlInput.removeAttribute('aria-describedby');
+  ytUrlInput.placeholder = defaultSongPlaceholder;
+  if (cancelPreload && sampleCache?.pending && !sampleCache.listener) {
+    sampleCache.controller.abort();
+    sampleCache = null;
+  }
+}
+function preloadSongSample() {
+  // At most one speculative request per visit; ordinary accepted searches
+  // can retry failures. Never initiate auth from a background suggestion.
+  if (sampleStarted || (runtime.authMode === 'cail' ? !accountSubject : !getClassCode())) return;
+  sampleStarted = true;
+  const cache = { controller: new AbortController(), batches: [], pending: true, createdAt: Date.now(), listener: null };
+  sampleCache = cache;
+  const deadline = setTimeout(() => cache.controller.abort(), 15000);
+  cache.promise = api(`/api/music/search?q=${encodeURIComponent(SAMPLE_SONG_QUERY)}`, {
+    background: true, signal: cache.controller.signal, headers: { Accept: 'application/x-ndjson' },
+    onResults(data) { cache.batches.push(data); cache.listener?.(data); },
+  }).then(data => ({ data }), () => {
+    if (sampleCache === cache) sampleCache = null;
+    return { failed: true };
+  }).finally(() => { cache.pending = false; clearTimeout(deadline); });
+}
+function showSongSample() {
+  if (!sampleVisible()) return;
+  preloadSongSample();
+  if (!sampleHint.hidden) return;
+  sampleHint.hidden = false;
+  ytUrlInput.setAttribute('aria-describedby', 'source-sample-hint');
+  ytUrlInput.classList.add('showing-sample');
+  let shown = sampleReducedMotion.matches ? SAMPLE_SONG_QUERY.length : 1;
+  const tick = () => {
+    if (!sampleVisible()) return stopSongSample();
+    ytUrlInput.placeholder = SAMPLE_SONG_QUERY.slice(0, shown);
+    if (shown < SAMPLE_SONG_QUERY.length) {
+      shown++;
+      sampleTimer = setTimeout(tick, 110);
+    }
+  };
+  tick();
+}
+function acceptSongSample() {
+  if (!sampleVisible() || sampleHint.hidden) return;
+  stopSongSample(false);
+  sampleDismissed = true;
+  ytUrlInput.value = SAMPLE_SONG_QUERY;
+  ytUrlInput.focus();
+  songSuggestionsDismissed = false;
+  clearTimeout(songSearchTimer);
+  void searchSourceSongs(SAMPLE_SONG_QUERY, ++songSearchSequence);
+}
+sampleHint.addEventListener('click', acceptSongSample);
+ytUrlInput.addEventListener('compositionstart', () => { sampleDismissed = true; stopSongSample(); });
+sampleReducedMotion.addEventListener('change', () => {
+  if (sampleReducedMotion.matches && !sampleHint.hidden) {
+    clearTimeout(sampleTimer);
+    ytUrlInput.placeholder = SAMPLE_SONG_QUERY;
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopSongSample();
+  else showSongSample();
+});
+window.addEventListener('pagehide', () => stopSongSample());
+
 function closeSongSuggestions() {
   sourceSongs.hidden = true;
   ytUrlInput.setAttribute('aria-expanded', 'false');
@@ -499,7 +584,24 @@ async function searchSourceSongs(term, sequence) {
     if (songResults.size) openSongSuggestions();
   };
   try {
-    const data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
+    const cached = term === SAMPLE_SONG_QUERY && sampleCache &&
+      Date.now() - sampleCache.createdAt < 60000 ? sampleCache : null;
+    let data;
+    if (cached) {
+      for (const batch of cached.batches) render(batch);
+      cached.listener = render;
+      const release = () => {
+        if (cached.listener === render) cached.listener = null;
+        if (cached.pending) cached.controller.abort();
+      };
+      controller.signal.addEventListener('abort', release, { once: true });
+      const outcome = await cached.promise;
+      controller.signal.removeEventListener('abort', release);
+      if (cached.listener === render) cached.listener = null;
+      if (!current()) return;
+      data = outcome.data;
+    }
+    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
       signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
     });
     if (!current()) return;
@@ -515,6 +617,9 @@ async function searchSourceSongs(term, sequence) {
   }
 }
 ytUrlInput.addEventListener('input', (event) => {
+  stopSongSample();
+  sampleDismissed = Boolean(ytUrlInput.value) || event.isComposing;
+  if (!sampleDismissed) showSongSample();
   clearTimeout(songSearchTimer);
   const term = ytUrlInput.value.trim(), sequence = ++songSearchSequence;
   songSearchAbort?.abort();
@@ -525,6 +630,7 @@ ytUrlInput.addEventListener('input', (event) => {
   songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence); }, 450);
 });
 ytUrlInput.addEventListener('focus', () => {
+  showSongSample();
   songSuggestionsDismissed = false;
   if (!songResults.has(ytUrlInput.value.trim())) openSongSuggestions();
 });
@@ -534,7 +640,14 @@ ytUrlInput.addEventListener('blur', () => {
 });
 ytUrlInput.addEventListener('keydown', (event) => {
   if (event.isComposing) return;
+  if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !sampleHint.hidden && sampleVisible()) {
+    event.preventDefault();
+    acceptSongSample();
+    return;
+  }
   if (event.key === 'Escape') {
+    sampleDismissed = true;
+    stopSongSample();
     event.preventDefault();
     songSuggestionsDismissed = true;
     closeSongSuggestions();
@@ -568,6 +681,7 @@ window.visualViewport?.addEventListener('scroll', positionSongSuggestions);
 // so the next thing you do is paste.
 ytDisclosure.addEventListener('toggle', () => {
   if (ytDisclosure.open) ytUrlInput.focus();
+  else stopSongSample();
 });
 const stemChoice = document.getElementById('stem-choice');
 const splitLegend = document.getElementById('split-legend');
@@ -3891,8 +4005,9 @@ function switchStation(name) {
     // Storage blocked — the tab still switches, it just won't be remembered.
   }
   if (name === 'remixer') {
+    stopSongSample();
     renderShelf();
-  }
+  } else showSongSample();
 }
 
 function initStations() {
@@ -4773,6 +4888,7 @@ async function initialize() {
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
+        stopSongSample(); sampleCache = null; songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
@@ -4810,3 +4926,4 @@ async function initialize() {
   else void adoptSharedJob();
 }
 const appReady = initialize();
+void appReady.then(showSongSample);

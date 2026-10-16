@@ -61,7 +61,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
     });
     await page.route('**/api/jobs/saved-message', route => route.fulfill({ json: { id: 'saved-message', filename: 'Saved example', model: 'htdemucs_ft', status: 'processing', stems: [] } }));
     await page.locator('#yt-url').fill('https://www.youtube.com/watch?v=fixture1234');
-    await page.locator('#yt-form button').click();
+    await page.locator('#yt-form button[type=submit]').click();
     await expect(page.locator('#upload-message')).toContainText('Saved to your account.');
     await page.unroute('**/api/jobs');
     await page.route('**/api/jobs', async route => {
@@ -69,7 +69,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
       await route.fulfill({ status: 429, json: { code: 'split_daily_limit', error: 'Limit reached', resetsAt: '2026-09-30T00:00:00Z' } });
     });
     await page.locator('#yt-url').fill('https://www.youtube.com/watch?v=fixture1234');
-    await page.locator('#yt-form button').click();
+    await page.locator('#yt-form button[type=submit]').click();
     await expect(page.locator('#upload-message')).toContainText("You've used today's runs.");
     await expect(page.locator('#upload-message')).not.toContainText('Saved to your account');
     await page.unroute('**/api/jobs');

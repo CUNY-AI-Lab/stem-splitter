@@ -215,6 +215,24 @@ h1 span {
 }
 #yt-url::placeholder { color: var(--ink-faint); }
 #yt-url:focus { outline: none; border-color: var(--hot); }
+#yt-url.showing-sample { padding-right: 8.2rem; }
+#yt-url.showing-sample::placeholder { color: var(--ink); opacity: 0.5; }
+.source-sample-hint {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  padding: 0.35rem 0;
+  font: 0.65rem var(--font-mono);
+  cursor: pointer;
+}
+.source-sample-hint[hidden] { display: none; }
+.source-sample-hint kbd { border: 1px solid var(--panel-edge); border-radius: 3px; padding: 0.12rem 0.25rem; font: inherit; }
+.source-sample-hint:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
 
 #source-songs {
   position: absolute;
