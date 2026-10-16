@@ -185,7 +185,14 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  await expect(labLink.locator('img')).toHaveCSS('height', '44px');
+  const expectAlignedBrand = () => expect.poll(() => page.evaluate(() => {
+    const row = document.querySelector('.masthead-title').getBoundingClientRect();
+    const title = document.querySelector('.masthead-title h1').getBoundingClientRect();
+    const logo = document.querySelector('.masthead-title .lab-logo').getBoundingClientRect();
+    return Math.abs(title.height - logo.height) < 1
+      && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
+  })).toBe(true);
+  await expectAlignedBrand();
   await expect(page.locator('.tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.');
   await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
@@ -204,7 +211,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // controls stay behind the downward caret instead of squeezing the title
   // down to a one-letter ellipsis.
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(labLink.locator('img')).toHaveCSS('height', '36px');
+  await expectAlignedBrand();
   expect((await labLink.boundingBox()).height).toBeGreaterThanOrEqual(44);
   const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
     element.getBoundingClientRect().width
