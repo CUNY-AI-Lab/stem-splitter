@@ -171,13 +171,13 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle('Stem Splitter');
-  await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^stem\s*splitter$/i })).toBeVisible();
   const labLink = page.locator('.masthead').getByRole('link', { name: 'CUNY AI Lab' });
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  await expect(labLink.locator('img')).toHaveCSS('width', '150px');
-  await expect(page.locator('.tagline')).toHaveText('Split apart a song, listen one layer at a time, annotate as you go.');
+  await expect(labLink.locator('img')).toHaveCSS('height', '44px');
+  await expect(page.locator('.tagline')).toHaveText('Split a song apart. Listen one layer at a time. Annotate as you go.');
   await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -195,7 +195,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // controls stay behind the downward caret instead of squeezing the title
   // down to a one-letter ellipsis.
   await page.setViewportSize({ width: 390, height: 844 });
-  expect((await labLink.locator('img').boundingBox()).width).toBeLessThanOrEqual(150);
+  await expect(labLink.locator('img')).toHaveCSS('height', '36px');
   expect((await labLink.boundingBox()).height).toBeGreaterThanOrEqual(44);
   const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
     element.getBoundingClientRect().width
@@ -1081,6 +1081,7 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
             {
               identifier,
               title: 'Fixture Netlabel Release',
+          mediatype: 'audio', subject: ['music'],
               creator: 'Fixture Collective',
               licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
               year: '2019',
@@ -1095,14 +1096,15 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
         metadata: {
           identifier,
           title: 'Fixture Netlabel Release',
+          mediatype: 'audio', subject: ['music'],
           creator: 'Fixture Collective',
           licenseurl: 'http://creativecommons.org/licenses/by-nc-sa/4.0/',
           year: '2019',
         },
         files: [
-          { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '21.5' },
+          { name: trackFile, format: 'VBR MP3', size: String(archiveAudio.length), length: '2' },
           // A derivative of the same track: the picker must collapse it away.
-          { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '21.5' },
+          { name: '01-fixture-track.ogg', format: 'Ogg Vorbis', size: '4096', length: '2' },
           // Over the 5-minute cap: excluded from the picker entirely.
           { name: '02-long-set.mp3', format: 'VBR MP3', size: '8192', length: '3600' },
           { name: 'cover.jpg', format: 'JPEG', size: '2048' },
@@ -1167,7 +1169,7 @@ test('browses the Internet Archive crate and splits an open-licensed track', asy
   await page.locator('.crate-item-head').click();
   // One row: the ogg derivative collapses away and the hour-long set is hidden.
   await expect(page.locator('.crate-track')).toHaveCount(1);
-  await expect(page.locator('.crate-track-len').first()).toHaveText('0:21');
+  await expect(page.locator('.crate-track-len').first()).toHaveText('0:02');
   await expect(page.locator('.crate-credit')).toContainText('1 track over 5:00 not shown');
   if (process.env.ARCHIVE_QA_SCREENSHOT) {
     await page.screenshot({ path: process.env.ARCHIVE_QA_SCREENSHOT, fullPage: true });
