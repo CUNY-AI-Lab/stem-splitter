@@ -17,14 +17,44 @@ async function fixture(t:any){
  await env.DB.prepare("INSERT INTO jobs(id,filename,source_key,status) VALUES('run','fixture','uploads/run/audio.wav','failed')").run();
  await env.DB.prepare("INSERT INTO job_owners VALUES('run','cail-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')").run();return {env,owner};
 }
-test('failures survive second session; reloads and alternating tabs count once',async t=>{
+test('failures survive reloads but expire on the next owner session',async t=>{
  const {env,owner}=await fixture(t);
- for(const session of ['session-0000000001','session-0000000001','session-0000000002','session-0000000001','session-0000000002']){
+ for(const session of ['session-0000000001','session-0000000001','session-0000000001']){
   await recordFailedRunSession(env,owner,session);assert.equal(await runWasDeleted(env,'run'),false);
  }
- await recordFailedRunSession(env,{...owner,subject:'cail-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'},'session-0000000003');assert.equal(await runWasDeleted(env,'run'),false);
- await recordFailedRunSession(env,owner,'session-0000000003');assert.equal(await runWasDeleted(env,'run'),true);
+ await recordFailedRunSession(env,{...owner,subject:'cail-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'},'session-0000000002');assert.equal(await runWasDeleted(env,'run'),false);
+ await recordFailedRunSession(env,owner,'session-0000000002');assert.equal(await runWasDeleted(env,'run'),true);
  await purgeDeletedRuns(env);assert.equal(await env.DB.prepare("SELECT 1 FROM jobs WHERE id='run'").first(),null);
+});
+test('new sessions preserve successful and in-progress runs and their audio',async t=>{
+ const {env,owner}=await fixture(t);
+ for(const [id,status] of [['success','done'],['active','processing']]){
+  await env.DB.prepare('INSERT INTO jobs(id,filename,source_key,status,stems) VALUES(?,?,?,?,?)')
+   .bind(id,id,`uploads/${id}/audio.wav`,status,status==='done'?JSON.stringify([{name:'vocals',key:`stems/${id}/vocals.mp3`}]):null).run();
+  await env.DB.prepare('INSERT INTO job_owners VALUES(?,?)').bind(id,owner.subject).run();
+  await env.AUDIO.put(`uploads/${id}/audio.wav`,new Uint8Array([1]));
+ }
+ await env.AUDIO.put('stems/success/vocals.mp3',new Uint8Array([2]));
+ for(const session of ['session-0000000001','session-0000000002','session-0000000003']){
+  await recordFailedRunSession(env,owner,session);await purgeDeletedRuns(env);
+  for(const id of ['success','active']){
+   assert.equal(await runWasDeleted(env,id),false);
+   assert.ok(await env.DB.prepare('SELECT 1 FROM jobs WHERE id=?').bind(id).first());
+   assert.ok(await env.AUDIO.get(`uploads/${id}/audio.wav`));
+  }
+  assert.ok(await env.AUDIO.get('stems/success/vocals.mp3'));
+ }
+});
+test('a run that fails later stays for the rest of that session',async t=>{
+ const {env,owner}=await fixture(t);
+ await env.DB.prepare("UPDATE jobs SET status='processing' WHERE id='run'").run();
+ await recordFailedRunSession(env,owner,'session-0000000001');
+ await env.DB.prepare("UPDATE jobs SET status='failed' WHERE id='run'").run();
+ await recordFailedRunSession(env,owner,'session-0000000001','run');
+ await recordFailedRunSession(env,owner,'session-0000000001');
+ assert.equal(await runWasDeleted(env,'run'),false);
+ await recordFailedRunSession(env,owner,'session-0000000002','run');
+ assert.equal(await runWasDeleted(env,'run'),true);
 });
 test('owner deletion is durable and purges only that run audio',async t=>{
  const {env,owner}=await fixture(t);
