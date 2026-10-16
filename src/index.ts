@@ -1394,7 +1394,7 @@ app.get('/api/jobs/:id', async (c) => {
   const principal = c.get('principal');
   const permission = principal ? await jobPermission(c.env, principal, id) : null;
   const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
-  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
     courseId:permission?.courseId??null, permissions:permission, publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });

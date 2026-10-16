@@ -16,7 +16,7 @@ import { processingFeatureFlags } from '../features.ts';
 import { authorizeStoredCourseWork, courseAssignmentStatement } from '../classroom/access.ts';
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation, reserveOperation, TERMINAL, type Operation } from './ledger.ts';
 import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
-import { cooldown, setCooldown, UpstreamError } from './retry.ts';
+import { cooldown, retryAt, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
 import { claimedOperationOwner, ownsClaimedOperation } from '../guest/claim.ts';
 
@@ -50,8 +50,12 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     const url = parseMediaUrl(value.sourceUrl);
     if (!url) throw new OperationError('invalid_source_url',400,'Paste a public HTTPS media link.');
     if (env.URL_IMPORT_ENABLED !== 'true' || !replicateConfiguration(env)) throw new OperationError('url_import_unavailable',503,'URL import is temporarily unavailable. Upload an audio file.');
-    input.remoteUrl = url;
-    input.filename = 'Imported audio';
+    const known = parseVideoSource(url);
+    if (known?.sourceType === 'youtube' && typeof env.fetchYouTubeBrowserAudio === 'function') {
+      input.sourceType='youtube'; input.youtubeUrl=known.canonicalUrl; input.filename='YouTube audio';
+    } else if (known?.sourceType === 'vimeo') {
+      input.sourceType='vimeo'; input.videoUrl=known.canonicalUrl; input.filename='Vimeo audio';
+    } else { input.remoteUrl = url; input.filename = 'Imported audio'; }
   } else if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
     if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a supported video link.');
@@ -184,6 +188,14 @@ async function start(env: Env,op: Operation) {
       } else await imported(env,op,input,await fetchVimeoAudio(url,{deadline:op.deadline,browser:env.AUTH_MODE==='cail'?env.BROWSER:undefined}));
     }
     catch(error) {
+      if(input.sourceType==='youtube'&&input.browserAudio===true&&env.URL_IMPORT_ENABLED==='true'
+        &&error instanceof YouTubeError&&['youtube_fetch_unavailable','youtube_fetch_timeout'].includes(error.code)
+        &&replicateConfiguration(env)&&Date.now()+10000<op.deadline) {
+        input.browserAudio=false;
+        await env.DB.prepare("UPDATE app_operations SET request_json=?,state='queued',provider_id=NULL,error_code='browser_import_fallback',not_before=?,lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND lease_owner=? AND cancel_requested=0 AND state='running'")
+          .bind(JSON.stringify(input),Date.now()+5000,Date.now(),op.id,op.fence,op.lease_owner).run();
+        return;
+      }
       const diagnostic=vimeoFailureDiagnostic(error);
       if(diagnostic)console.error(JSON.stringify({event:'vimeo_import_failed',jobId:op.job_id,...diagnostic}));
       await fail(env,op,error instanceof YouTubeError?error.code:input.sourceType==='audius'?'music_unavailable':input.sourceType==='vimeo'?'vimeo_import_failed':'youtube_fetch_unavailable',
@@ -259,6 +271,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       OR (phase='fetch' AND error_code='import_delivery_unavailable' AND deadline<=?)) RETURNING *`)
     .bind(owner,now+WORK_LEASE_MS,now,op.id,op.fence,now,now,now,now).first<Operation>();
   if(!claimed)return;
+  let nextPollAt=now+5000;
   let deliveryAccepted=claimed.phase==='fetch'&&claimed.error_code==='import_delivery_unavailable';
   try {
     const canCancelProvider = claimed.phase === 'fetch' || (env.SEPARATION_BACKEND ?? 'replicate') === 'replicate';
@@ -288,6 +301,20 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       }
     }
   } catch(error) {
+    if(error instanceof YouTubeError&&error.terminalPrediction&&error.retryable&&claimed.phase==='fetch'&&!claimed.cancel_requested
+      &&['source_fetch_unavailable','youtube_fetch_busy','extractor_timeout','youtube_fetch_timeout'].includes(error.code)) {
+      const attempts=await env.DB.prepare("SELECT COUNT(*) AS n FROM operation_attempts WHERE operation_id=? AND phase='fetch'").bind(claimed.id).first<{n:number}>();
+      nextPollAt=Math.max(error.notBefore,retryAt(null,now,(attempts?.n??1)+3));
+      if((attempts?.n??0)<3&&nextPollAt<claimed.deadline) {
+        await env.DB.batch([
+          env.DB.prepare("UPDATE operation_attempts SET outcome='failed',code=?,updated_at=? WHERE operation_id=? AND phase='fetch' AND external_id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner=?)")
+            .bind(error.code,now,claimed.id,claimed.provider_id,claimed.id,claimed.fence,claimed.lease_owner),
+          env.DB.prepare("UPDATE app_operations SET state='queued',provider_id=NULL,error_code=?,not_before=?,updated_at=? WHERE id=? AND fence=? AND lease_owner=? AND cancel_requested=0 AND state IN ('processing','reconciling')")
+            .bind(error.code,nextPollAt,now,claimed.id,claimed.fence,claimed.lease_owner),
+        ]);
+        return;
+      }
+    }
     if(error instanceof YouTubeError||error instanceof ArchiveError) await fail(env,claimed,error.code,
       error.code==='source_too_long'?error.message:error.code==='audio_too_large'?'This import exceeds the 12 MiB audio limit. No successful-split allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);
     else if(error instanceof UpstreamError) {
@@ -301,7 +328,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
     // Provider/storage outage retains the exact prediction, never creates another.
   } finally {
     await env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0,not_before=? WHERE id=? AND fence=?')
-      .bind(Math.min(Math.max(now+5000,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
+      .bind(Math.min(Math.max(nextPollAt,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
   }
 }
 export async function resumeOwnedSourceImport(env:Env,principal:AppPrincipal,operation:Operation) {

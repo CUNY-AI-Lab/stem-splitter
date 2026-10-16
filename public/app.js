@@ -3618,6 +3618,11 @@ function renderJobs() {
     const li = document.createElement('li');
     li.className = 'console';
     const failed = state.status === 'failed' || state.status === 'done';
+    const operation = state.operation;
+    const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(operation?.stage);
+    const importing = operation?.phase === 'fetch';
+    const progressLabel = queued ? 'QUEUED' : importing ? 'IMPORTING' : 'SEPARATING';
+    const progressNote = queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
     // A silent wait reads as a hung wait. The clock is the server's own start
     // time once polling has one, and the local one until then.
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();
@@ -3627,7 +3632,7 @@ function renderJobs() {
         <span class="badge ${failed ? 'failed' : 'processing'}">${
           failed
             ? 'FAILED'
-            : `SEPARATING<span class="elapsed" data-since="${since}">${fmt(
+            : `${progressLabel}<span class="elapsed" data-since="${since}">${fmt(
                 (Date.now() - since) / 1000
               )}</span>`
         }</span>
@@ -3637,10 +3642,8 @@ function renderJobs() {
         failed
           ? `<p class="job-error">${esc(
               state.error || 'No playable tracks were returned. Run the split again.'
-            )}</p>`
-          : `<p class="job-note">Creating ${esc(
-              stemDescription(state.expectedStems || job.expectedStems)
-            )}…</p>`
+            )}</p>${operation?.errorCode ? `<p class="job-note">Code: ${esc(operation.errorCode)} · Support ID: ${esc(operation.supportId)}</p>` : ''}`
+          : `<p class="job-note" role="status">${esc(progressNote)}</p>`
       }
     `;
     const deleteBtn = li.querySelector('.delete-btn');

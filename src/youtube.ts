@@ -53,6 +53,8 @@ export class YouTubeError extends Error {
   readonly code: string;
   readonly retryable: boolean;
   readonly notBefore: number;
+  /** Set only after a provider status read proves this prediction ended. */
+  terminalPrediction = false;
 
   constructor(message: string, code = 'youtube_fetch_failed', retryable = false, notBefore = 0) {
     super(message);
@@ -792,7 +794,7 @@ function normalizePredictionError(raw: string): YouTubeError {
   if (/invalid_audio_response/.test(message)) return new YouTubeError('The source did not produce usable audio. Try another source or upload an original or licensed file.','invalid_audio_response');
   if (/extractor_failed|extractor_response_too_large/.test(message)) return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
   if (/requested format.*(?:not available|unavailable)|no suitable format/i.test(message)) return new YouTubeError('This source has no supported audio format. Upload an original or licensed file.','youtube_format_unavailable');
-  if (/source_denied|sign.?in|log.?in|captcha|challenge|bot|cookie|private|age.?restrict|not available|unavailable|removed|region|geo.?block|copyright|DRM/i.test(message)) return sourceDenied();
+  if (/source blocked|source_denied|sign.?in|log.?in|captcha|challenge|bot|cookie|private|age.?restrict|not available|unavailable|removed|region|geo.?block|copyright|DRM/i.test(message)) return sourceDenied();
   return new YouTubeError('The audio importer could not finish this source. Try an original or licensed file.','extractor_failed');
 }
 
@@ -836,7 +838,11 @@ export async function pollYouTubeImport(id: string, env: Env, operationDeadline 
     prediction=await readPrediction(res,15000,id,CAIL_PREDICTION_BYTES,true);
   } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
   if (prediction.status==='starting'||prediction.status==='processing') return null;
-  if (prediction.status!=='succeeded'||!prediction.output) throw normalizePredictionError(prediction.error ?? '');
+  if (prediction.status!=='succeeded'||!prediction.output) {
+    const error=normalizePredictionError(prediction.error ?? '');
+    error.terminalPrediction=prediction.status==='failed'||prediction.status==='canceled';
+    throw error;
+  }
   const durationSec=validateDuration(prediction.output.duration);
   if(prediction.inlineTooLarge)throw new YouTubeError('This import exceeds the 12 MiB audio limit. Try a shorter clip or upload an original or licensed file.','audio_too_large');
   if(Date.now()>=operationDeadline)throw youtubeTimedOut();

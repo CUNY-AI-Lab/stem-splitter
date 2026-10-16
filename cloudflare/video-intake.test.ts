@@ -569,3 +569,15 @@ for(const kind of ['guest','student','instructor'] as const)test(`generic URL us
  assert.equal(bodies[0].input.general_url,true);
  assert.equal((await readOperation(db,reservation.operation.id))!.provider_id,'url-provider');
 });
+
+test('general YouTube links retain browser acquisition and persist a transient provider fallback',async t=>{
+ const {db,env}=await setup(t);
+ Object.assign(env,{URL_IMPORT_ENABLED:'true',fetchYouTubeBrowserAudio:async()=>{throw new YouTubeError('Temporary browser outage','youtube_fetch_unavailable');}});
+ const result=await submitSplit(env,principal,{sourceUrl:youtube},'browser-fallback-source-url');
+ assert.equal(JSON.parse(result.operation.request_json).browserAudio,true);
+ await resumeOwnedSourceImport(env,principal,result.operation);
+ const current=(await readOperation(db,result.operation.id))!;
+ assert.equal(current.state,'queued');assert.equal(current.error_code,'browser_import_fallback');
+ assert.equal(JSON.parse(current.request_json).browserAudio,false);
+ assert.equal(current.provider_id,null);
+});
