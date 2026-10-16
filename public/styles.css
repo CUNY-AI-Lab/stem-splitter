@@ -2773,3 +2773,46 @@ body.instructor .folder-btn { display: inline-block; }
 /* Feature visibility is authoritative even where component rules set display. */
 [hidden] { display: none !important; }
 body:not(.remixer-enabled) .to-remix-btn { display: none; }
+
+.signin-help-link { display: inline-block; color: var(--ink-dim); font-size: .8rem; padding: .5rem; text-underline-offset: .2em; }
+.signin-help-link:hover { color: var(--hot); }
+.signin-help-link:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+.signin-steps { color: var(--ink-dim); line-height: 1.6; padding-left: 1.4rem; }
+.signin-steps li + li { margin-top: .8rem; }
+
+/* Shared controls use one type scale, edge treatment, and spacing rhythm. */
+:is(.account-button, .yt-go, .crate-page-btn, .teacher-submit) {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; width: auto; padding: .6rem .9rem;
+  border: 1px solid var(--panel-edge); border-radius: 6px;
+  background: transparent; color: var(--ink-dim);
+  font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em;
+  text-transform: none; text-decoration: none; box-sizing: border-box;
+}
+:is(.account-button, .yt-go, .crate-page-btn, .teacher-submit):hover:not(:disabled) {
+  border-color: var(--hot); background: var(--bg-raise); color: var(--hot);
+}
+:is(.account-button, .yt-go, .crate-page-btn, .teacher-submit):focus-visible {
+  outline: 2px solid var(--hot); outline-offset: 3px;
+}
+:is(.head-btn, .note-btn, .rt-btn, .coach-form button, .folder-menu-new button) {
+  border-radius: 6px; font-weight: 500; letter-spacing: .04em; line-height: 1.3;
+}
+.account-main a.account-button { color: var(--ink-dim); }
+.account-main a.account-button:hover { color: var(--hot); }
+.account-links, .account-resources ul { gap: .5rem; }
+.account-resources a.account-button { border-color: transparent; padding-inline: .65rem; }
+.account-resources a.account-button:hover { border-color: var(--panel-edge); }
+.student-list, .student-jobs { list-style: none; margin: 0; padding: 0; }
+.student-list li, .student-jobs li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .65rem 0; border-bottom: 1px solid var(--panel-edge); }
+.student-select { border: 0; background: none; color: var(--ink); padding: .5rem 0; font: inherit; text-align: left; cursor: pointer; min-height: 44px; }
+.student-select:hover { color: var(--hot); }
+.student-select:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.student-count, .student-jobs small { color: var(--ink-dim); font-size: .75rem; line-height: 1.5; }
+.student-count { text-align: right; }
+.student-jobs li > div { min-width: 0; overflow-wrap: anywhere; }
+.student-jobs small { display: block; margin-top: .25rem; }
+#student-detail { margin: 1.5rem 0; }
+#student-detail h2 { font-size: 1.1rem; margin: 0 0 .5rem; }
+#student-more { margin-top: .75rem; }
+#student-status:empty { display: none; }

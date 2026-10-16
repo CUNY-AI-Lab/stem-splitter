@@ -15,6 +15,7 @@ const CONFIG_PATH = fileURLToPath(new URL('./wrangler.jsonc', import.meta.url));
 const SCHEMA_PATH = fileURLToPath(new URL('../../schema.sql', import.meta.url));
 const SOURCE_AUDIO_PATH = fileURLToPath(new URL('../fixtures/audio/source.wav', import.meta.url));
 const sourceAudio = await readFile(SOURCE_AUDIO_PATH);
+const archiveAudio = await readFile(new URL('../fixtures/audio/vocals.mp3', import.meta.url));
 
 const test = base.extend({
   network: [
@@ -123,7 +124,7 @@ function sourceHandlers({
 }) {
   const youtubeAudio = makeM4a();
   const archiveId = 'server-auto-open-audio';
-  const archiveFile = 'fixture.wav';
+  const archiveFile = 'fixture.mp3';
   const analysisCalls = [];
   const analysisHashes = [];
   const separatorInputs = [];
@@ -136,7 +137,7 @@ function sourceHandlers({
       const stored = await server.fetch(payload.sourceUrl);
       expect(stored.status).toBe(200);
       const bytes = Buffer.from(await stored.arrayBuffer());
-      const expected = payload.sourceType === 'youtube' ? Buffer.from(youtubeAudio) : sourceAudio;
+      const expected = payload.sourceType === 'youtube' ? Buffer.from(youtubeAudio) : payload.sourceType === 'archive' ? archiveAudio : sourceAudio;
       expect(bytes.equals(expected)).toBe(true);
       const sourceHash = createHash('sha256').update(bytes).digest('hex');
       const signed = new URL(payload.sourceUrl);
@@ -181,6 +182,8 @@ function sourceHandlers({
       HttpResponse.json({
         metadata: {
           identifier: archiveId,
+          mediatype: 'audio',
+          subject: 'music',
           title: 'Server Auto Archive Fixture',
           creator: 'Fixture Collective',
           licenseurl: 'https://creativecommons.org/licenses/by/4.0/',
@@ -189,16 +192,16 @@ function sourceHandlers({
           {
             name: archiveFile,
             title: 'Fixture',
-            format: 'WAVE',
-            size: String(sourceAudio.length),
-            length: '30',
+            format: 'VBR MP3',
+            size: String(archiveAudio.length),
+            length: '2',
           },
         ],
       })
     ),
     http.get(`https://archive.org/download/${archiveId}/${archiveFile}`, () =>
-      new HttpResponse(sourceAudio, {
-        headers: { 'Content-Type': 'audio/wav', 'Content-Length': String(sourceAudio.length) },
+      new HttpResponse(archiveAudio, {
+        headers: { 'Content-Type': 'audio/mpeg', 'Content-Length': String(archiveAudio.length) },
       })
     ),
     http.get('https://api.replicate.com/v1/predictions/:id', () =>
@@ -221,7 +224,7 @@ async function createAllSourceJobs(server) {
   const requests = [
     { key: uploadKey, filename: 'source.wav', model: 'auto' },
     { youtubeUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw', model: 'auto' },
-    { archiveId: 'server-auto-open-audio', archiveFile: 'fixture.wav', model: 'auto' },
+    { archiveId: 'server-auto-open-audio', archiveFile: 'fixture.mp3', model: 'auto' },
   ];
   const jobs = [];
   for (const body of requests) {
@@ -449,7 +452,7 @@ test('authoritative Auto rejects analyzer identity drift for server-fetched impo
     { youtubeUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw', model: 'auto' },
     {
       archiveId: 'server-auto-open-audio',
-      archiveFile: 'fixture.wav',
+      archiveFile: 'fixture.mp3',
       model: 'auto',
     },
   ];

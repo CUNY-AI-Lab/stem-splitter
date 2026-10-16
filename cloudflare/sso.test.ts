@@ -304,3 +304,66 @@ test('model actions require exact same-subject app and Gateway legs before forwa
   assert.equal(misconfigured.status, 503);
   assert.equal((await misconfigured.json()).error.code, 'identity_unavailable');
 });
+
+test('sign-in help is public during outages, preserves safe destinations and never starts or changes a session', async () => {
+  const f=fixture();let calls=0;
+  const unavailable={...f.env, IDENTITY:{...f.client,begin:async()=>{calls++;throw new Error('offline');}}};
+  for(const next of ['/account.html','/teacher.html',`/?job=${code}`,'https://attacker.test/"<script>','/auth/logout']){
+    const response=await handleAuth(f.request('/auth/help?next='+encodeURIComponent(next)+'&state=private-state&code=private-code'),unavailable);
+    assert.equal(response.status,200);assert.equal(response.headers.getSetCookie().length,0);
+    assert.match(response.headers.get('cache-control')!,/no-store/);
+    const html=await response.text();assert.ok(html.includes('/auth/login?next='+encodeURIComponent(safeNext(next))));
+    assert.match(html,/private or incognito/);assert.match(html,/Guest work stays in the browser/);
+    assert.doesNotMatch(html,/attacker|<script>|private-state|private-code/);
+  }
+  assert.equal(calls,0);assert.equal(f.calls(),0);
+  assert.equal((await handleAuth(f.request('/auth/help'),{...f.env,IDENTITY:undefined})).status,200);
+  assert.equal((await handleAuth(f.request('/auth/help',{method:'POST'}),f.env)).status,405);
+});
+
+test('background sign-in logging counts attempts, new sessions and failures without storing credentials', async () => {
+  const { SqliteD1 } = await import('../server/d1.ts');
+  const { readFileSync } = await import('node:fs');
+  const { recordSignInUse, usageSummary } = await import('../src/reliability/observability.ts');
+  const db = new SqliteD1(':memory:');
+  db.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+  const env = { AUTH_MODE: 'cail', PUBLIC_BASE_URL: origin, DB: db } as any;
+  const f = fixture();
+  const run = async (request: Request, sso = f.env) => {
+    const response = await handleAuth(request, sso);
+    await recordSignInUse(env, request, response, Date.now());
+    return response;
+  };
+  const start = await run(f.request('/auth/login?next=private-value'));
+  const callbackPath = `/auth/callback?code=${code}&state=${f.state()}`;
+  const done = await run(f.request(callbackPath, { headers: { Cookie: pair(start, LOGIN_COOKIE) } }));
+  assert.equal(done.status, 303);
+  await run(f.request('/auth/callback?code=private-code&state=private-state'));
+  await run(f.request('/auth/login'), { ...f.env, REQUEST_LIMIT: { limit: async () => ({ success: false }) } });
+  await run(f.request('/auth/login'), { ...f.env, IDENTITY: undefined });
+  const deniedFixture = fixture();
+  const pending = await run(deniedFixture.request('/auth/login'), deniedFixture.env);
+  await run(deniedFixture.request(`/auth/callback?code=${code}&state=${deniedFixture.state()}`, { headers: { Cookie: pair(pending, LOGIN_COOKIE) } }),
+    { ...deniedFixture.env, IDENTITY: { ...deniedFixture.client, redeem: async () => ({ ok: false, status: 403 }) } });
+  const jwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+  const reuse = { ...f.env, IDENTITY: { ...f.client, identities: async () => ({ ok: true as const, appJwt: jwt, gatewayJwt: 'unused', workspaceJwt: null }) } };
+  for (const path of ['/auth/login', '/auth/callback?code=expired']) {
+    const response = await run(f.request(path, { headers: { Accept: 'text/html', Cookie: `${SESSION_COOKIE}=${token}` } }), reuse);
+    assert.equal(response.status, 303);
+  }
+  await run(f.request('/auth/help'));
+  await run(f.request('/auth/login', { method: 'POST' }));
+  const rows = (await db.prepare('SELECT * FROM usage_events').all()).results as any[];
+  const count = (type: string) => rows.filter(row => row.event_type === type).length;
+  assert.equal(count('signin_attempt'), 5);
+  assert.equal(count('signin_success'), 1);
+  assert.equal(count('signin_failure'), 4);
+  assert.equal(count('signin_session_reused'), 2);
+  for (const secret of [code, token, f.state(), jwt, 'private-code', 'private-state', 'private-value', 'verifier', 'Cookie']) assert.equal(JSON.stringify(rows).includes(secret), false);
+  assert.ok(rows.every(row => row.source === 'server' && row.at > 0));
+  const summary = await usageSummary(db, 1);
+  assert.ok(summary.uses.some((row: any) => row.event_type === 'signin_success' && row.count === 1));
+  await recordSignInUse({ ...env, DB: { batch: async () => { throw new Error('private DB error'); }, prepare: db.prepare.bind(db) } },
+    f.request('/auth/login'), start, Date.now());
+  assert.equal(start.status, 303);
+});

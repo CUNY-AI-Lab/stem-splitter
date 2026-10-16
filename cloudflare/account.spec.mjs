@@ -22,13 +22,13 @@ async function fixtureFetch(server, request) {
 async function localHttpsFixture(handler) {
   const directory = await mkdtemp(join(tmpdir(), 'stem-account-browser-'));
   let server, origin;
-  const errors = [];
+  const errors = [], pending = new Set();
   try {
     const key = join(directory, 'key.pem'), cert = join(directory, 'cert.pem');
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
       '-subj', '/CN=localhost', '-keyout', key, '-out', cert], { stdio: 'ignore' });
-    server = createServer({ key: await readFile(key), cert: await readFile(cert) }, async (incoming, outgoing) => {
-      try {
+    server = createServer({ key: await readFile(key), cert: await readFile(cert) }, (incoming, outgoing) => {
+      const task = (async () => { try {
         const headers = new Headers();
         for (let index = 0; index < incoming.rawHeaders.length; index += 2) headers.append(incoming.rawHeaders[index], incoming.rawHeaders[index + 1]);
         const chunks = []; for await (const chunk of incoming) chunks.push(chunk);
@@ -36,16 +36,26 @@ async function localHttpsFixture(handler) {
         const request = new Request(new URL(incoming.url, origin), { method: incoming.method, headers,
           ...(body.length ? { body } : {}) });
         const response = await handler(request);
+        const responseBody = Buffer.from(await response.arrayBuffer());
+        if (outgoing.destroyed) return;
         for (const [name, value] of response.headers) if (name !== 'set-cookie') outgoing.setHeader(name, value);
         const cookies = response.headers.getSetCookie();
         if (cookies.length) outgoing.setHeader('set-cookie', cookies);
-        outgoing.writeHead(response.status); outgoing.end(Buffer.from(await response.arrayBuffer()));
-      } catch (error) { errors.push(error.message); outgoing.writeHead(500); outgoing.end('Local fixture request failed'); }
+        outgoing.writeHead(response.status); outgoing.end(responseBody);
+      } catch (error) {
+        errors.push(error.message);
+        if (!outgoing.destroyed) {
+          if (!outgoing.headersSent) outgoing.writeHead(500);
+          outgoing.end('Local fixture request failed');
+        }
+      } })();
+      pending.add(task); void task.finally(() => pending.delete(task));
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     origin = `https://127.0.0.1:${server.address().port}`;
     return { origin, errors, async close() {
       server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+      await Promise.all(pending);
       await rm(directory, { recursive: true, force: true });
     } };
   } catch (error) {
@@ -138,16 +148,16 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     ]);
     expect(retry.status()).toBe(303); expect(retry.headers().location).toBe('/');
     await expect(page).toHaveURL(origin + '/');
-    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'My account', exact: true })).toBeVisible();
     await page.goto(expiredLink);
     await expect(page).toHaveURL(origin + '/');
-    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: /sign.in/i })).toHaveCount(0);
     expect(identityChecks).toBe(3);
     expect((await context.cookies(origin)).find(cookie => cookie.name === SESSION_COOKIE)?.value).toBe(token);
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
-  } finally { await frontend?.close(); await server.close(); }
+  } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
 test('Sign out submits a trusted origin, clears cookies and returns to Splitter', async ({ page, context }) => {
@@ -184,10 +194,10 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
     await expect(page).toHaveURL(origin + '/');
     expect(revoked).toBe(true);
     expect((await context.cookies()).filter(cookie => [SESSION_COOKIE, LOGIN_COOKIE].includes(cookie.name))).toEqual([]);
-    await expect(page.getByRole('heading', { name: 'STEM SPLITTER', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     expect(errors).toEqual([]); expect(frontend.errors).toEqual([]);
-  } finally { await frontend?.close(); await server.close(); }
+  } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
 test('Account stays simple; administration is deliberate, responsive, and recoverable', async ({ page, context }) => {
@@ -221,14 +231,14 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
-    await expect(page).toHaveTitle('STEM Splitter · Account');
+    await expect(page).toHaveTitle('Stem Splitter · Account');
     await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
-    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toHaveAttribute('href', '/');
+    await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
-    await expect(page.locator('#account-id')).toBeHidden();
+    await expect(page.locator('#account-id')).toHaveCount(0);
     expect(memberReads).toBe(0);
     await expect(page.locator('body')).not.toContainText(/Workspace ID|back to the mixer|Manage CUNY sign-in/);
     if (receipts) {
@@ -247,22 +257,22 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeHidden();
     await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeHidden();
-    await expect(page.getByLabel('Allow access to STEM Splitter', { exact: true })).toBeChecked();
+    await expect(page.getByLabel('Allow access to Stem Splitter', { exact: true })).toBeChecked();
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('instructor');
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Instructor access ends', { exact: true })).toHaveAttribute('required', '');
     await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
     await page.getByLabel('Instructor access ends', { exact: true }).fill('2026-12-01T12:00');
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('student');
-    await page.getByLabel('Allow access to STEM Splitter', { exact: true }).uncheck();
+    await page.getByLabel('Allow access to Stem Splitter', { exact: true }).uncheck();
     const [update] = await Promise.all([
       page.waitForRequest(request => request.method() === 'PUT'),
       page.getByRole('button', { name: 'Save changes', exact: true }).click(),
     ]);
     expect(update.postDataJSON()).toMatchObject({ role: 'student', disabled: true, expiresAt: null });
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
-    await expect(page.getByLabel('Allow access to STEM Splitter', { exact: true })).not.toBeChecked();
-    await page.getByLabel('Allow access to STEM Splitter', { exact: true }).check();
+    await expect(page.getByLabel('Allow access to Stem Splitter', { exact: true })).not.toBeChecked();
+    await page.getByLabel('Allow access to Stem Splitter', { exact: true }).check();
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect.poll(async () => (await page.request.get(new URL('/api/admin/users', url).href)).json().then(body => body.users.find(user => user.subject === TEST_SUBJECTS.alice).disabled)).toBe(0);
 
@@ -300,11 +310,9 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('main > footer')).toContainText('Uploaded files are deleted after 90 days.');
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeHidden();
-    await page.getByText('Account ID', { exact: true }).click();
-    await expect(page.locator('#account-id')).toHaveText(TEST_SUBJECTS.alice);
+    await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeHidden();
+    await expect(page.getByText('Account ID', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.getByText('Account ID', { exact: true }).click();
     if (receipts) await page.screenshot({ path: `${receipts}/account-student-mobile-fixture.png`, fullPage: true });
     const day = new Date().toISOString().slice(0, 10);
     await seed(Array.from({ length: 10 }, (_, index) => `INSERT INTO app_request_reservations (id, subject, scope, day) VALUES ('account-split-${index}', '${TEST_SUBJECTS.alice}', 'split', '${day}')`));
@@ -316,7 +324,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();
     await expect(page.locator('#account-splits')).toContainText('0 of 15 runs left today. Resets');
-    await expect(page.getByRole('link', { name: '← Back to Splitter', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toBeVisible();
     if (receipts) await page.screenshot({ path: `${receipts}/account-exhausted-mobile-fixture.png`, fullPage: true });
     // A counter outage is not zero usage, a failed sign-in, or a full allowance.
     await page.route('**/api/account', async route => {
@@ -340,7 +348,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
 
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
@@ -384,9 +392,10 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Guide instructions', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.locator('#account-footer')).toContainText('Your splits remain in your account for 90 days.');
+    await expect(page.locator('body')).not.toContainText('Your splits remain in your account for 90 days.');
+    await expect(page.getByRole('button', {name: 'Sign out', exact: true})).toBeVisible();
     await expect(page.locator('body')).not.toContainText('open them on any browser');
     // Account details must not survive a sign-out from another tab.
     await context.setExtraHTTPHeaders({});
@@ -394,7 +403,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-login')).toBeVisible();
     await expect(page.locator('#account-details')).toBeHidden();
     await expect(page.locator('#account-footer')).toBeHidden();
-    await expect(page.locator('#account-id')).toBeEmpty();
+    await expect(page.locator('#account-id')).toHaveCount(0);
     expect(errors).toEqual([]);
     // Deliberate fixture identity changes can race an old pagehide batch.
     // Accept only a proven actor-fence rejection, never arbitrary409 failures.
@@ -415,4 +424,139 @@ test('Account stays simple; administration is deliberate, responsive, and recove
       !(message.text === 'Failed to load resource: the server responded with a status of 404 (Not Found)' && message.url.endsWith('/favicon.ico'))
     )).toEqual([]);
   } finally { await server.close(); }
+});
+
+test('students can reach sign-in help during an outage and retry their intended page', async ({ page }) => {
+  const origin='https://stem-signin-help.test';
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  try {
+    await server.listen();
+    await page.route(origin+'/**',async route=>{
+      const request=route.request(),url=new URL(request.url());
+      const response=url.pathname.startsWith('/auth/')
+        ? await handleAuth(new Request(request.url(),{headers:await request.allHeaders()}),{PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin})
+        : await server.fetch(url.pathname);
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
+    });
+    for(const width of [1280,390]){
+      await page.setViewportSize({width,height:900});
+      const response=await page.goto(origin+'/auth/help?next=/teacher.html');
+      expect(response.status()).toBe(200);
+      await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
+      await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('href','/auth/login?next=%2Fteacher.html');
+      await expect(page.getByRole('link',{name:'Try CUNY Login again'})).toHaveAttribute('rel','noopener noreferrer');
+      await expect(page.getByRole('link',{name:'Back to Stem Splitter'})).toHaveAttribute('href','/');
+      await expect(page.locator('body')).toContainText('Guest work stays in the browser');
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      if(process.env.STEM_SCREENSHOT_DIR){
+        await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
+        await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/signin-help-${width}.png`,fullPage:true,animations:'disabled'});
+      }
+    }
+    // Route at the context level so the new sign-in tab receives the same
+    // outage fixture; it cannot accidentally navigate to a live identity site.
+    await page.context().route(origin+'/auth/**',async route=>{
+      const response=await handleAuth(new Request(route.request().url(),{headers:await route.request().allHeaders()}),{PUBLIC_BASE_URL:origin,CANONICAL_BASE_URL:origin});
+      await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+    });
+    const [signin]=await Promise.all([page.context().waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
+    await expect(signin).toHaveURL(origin+'/auth/login?next=%2Fteacher.html');
+    await expect(signin.getByRole('heading',{name:'Sign-in is temporarily unavailable'})).toBeVisible();
+    expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
+    await expect(page).toHaveURL(origin+'/auth/help?next=/teacher.html');
+    await expect(page.getByRole('heading',{name:'Trouble signing in?'})).toBeVisible();
+    await signin.close();
+    expect(errors).toEqual([]);
+  }finally {await server.close();}
+});
+
+test('a simulated external CUNY dead end leaves the student recovery tab available',async({page,context})=>{
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
+ let starts=0,app,provider;
+ try {
+  await server.listen();
+  provider=await localHttpsFixture(async()=>new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider failure fixture</title><main><p>LOCAL TEST · simulated external provider failure</p><h1>Login Failed</h1><p>Unable to load Domain/Client profile</p></main></html>',{status:500,headers:{'Content-Type':'text/html'}}));
+  app=await localHttpsFixture(async request=>{
+   const url=new URL(request.url);
+   if(!url.pathname.startsWith('/auth/'))return fixtureFetch(server,request);
+   const response=await handleAuth(request,{
+    PUBLIC_BASE_URL:app.origin,CANONICAL_BASE_URL:app.origin,REQUEST_LIMIT:{limit:async()=>({success:true})},
+    IDENTITY:{begin:async()=>{starts++;return {url:'https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture'};}}
+   });
+   if(url.pathname!=='/auth/login')return response;
+   expect(response.status).toBe(303);
+   expect(response.headers.get('location')).toBe('https://tools.ailab.gc.cuny.edu/worker-login?request=local-fixture');
+   // Verify the real app response, then substitute only the external destination.
+   // The browser follows an actual HTTPS 303 with the app's cookie headers;
+   // no live identity service is contacted by this local failure fixture.
+   const headers=new Headers(response.headers);headers.set('location',provider.origin+'/error');
+   return new Response(null,{status:response.status,headers});
+  });
+  for(const width of [1280,390]){
+   await page.setViewportSize({width,height:900});await page.goto(app.origin+'/auth/help?next=/classroom.html');
+   const [signin]=await Promise.all([context.waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
+   await signin.setViewportSize({width,height:900});
+   await expect(signin).toHaveURL(provider.origin+'/error');await expect(signin.getByRole('heading',{name:'Login Failed'})).toBeVisible();
+   expect(await signin.evaluate(()=>window.opener===null)).toBe(true);
+   await expect(page).toHaveURL(app.origin+'/auth/help?next=/classroom.html');await expect(page.getByRole('link',{name:'Back to Stem Splitter'})).toBeVisible();
+   if(process.env.STEM_SCREENSHOT_DIR){
+    await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
+    await signin.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/simulated-provider-error-${width}.png`,fullPage:true,animations:'disabled'});
+    await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/recovery-retained-${width}.png`,fullPage:true,animations:'disabled'});
+   }
+   await signin.close();await page.getByRole('link',{name:'Back to Stem Splitter'}).click();await expect(page).toHaveURL(app.origin+'/');
+   await expect(page.locator('h1')).toContainText('Splitter');
+  }
+  expect(starts).toBe(2);expect(app.errors).toEqual([]);expect(provider.errors).toEqual([]);
+ }finally{await page.close();await app?.close();await provider?.close();await server.close();}
+});
+
+for (const width of [1280,390]) test(`named student activity loads audio on request at ${width}px`, async ({page,context})=>{
+ const issuer=await createTestIdentityIssuer();
+ const identity=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.carol});
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,TEST_BROWSER:'true',CAIL_CLASSROOM_ENABLED:'false'}}]});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ let audioReads=0;page.on('request',r=>{if(/\/students\/.*\/stems\//.test(r.url()))audioReads++;});
+ try {
+  const {url}=await server.listen();
+  const sql=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
+  sql.push(`INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}')`,
+   `INSERT INTO account_display_names(subject,display_name,updated_at) VALUES('${TEST_SUBJECTS.alice}','Alice Rivera',${Date.now()})`,
+   `INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('remix-fixture','Student recording','uploads/fixture.wav','done','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+   `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`);
+  await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(sql)});
+  await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
+  await context.setExtraHTTPHeaders({'x-fixture-identity':identity});
+  await page.setViewportSize({width,height:900});
+  await page.goto(new URL('/account.html',url).href);
+  await expect(page).toHaveTitle('Stem Splitter · Account');
+  await page.getByText('Manage access',{exact:true}).click();
+  await expect(page.locator('#access-member')).toContainText('Alice Rivera');
+  await expect(page.locator('#access-member')).not.toContainText('cail-');
+  await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
+  await expect(page.getByRole('combobox',{name:'Access level',exact:true})).toBeInViewport();
+  await expect(page.getByRole('button',{name:'Save changes',exact:true})).toBeInViewport();
+  await page.getByText('Manage access',{exact:true}).click();
+  await page.getByText('Student activity',{exact:true}).click();
+  await page.getByRole('button',{name:'Alice Rivera',exact:true}).click();
+  await expect(page.locator('#student-summary')).toContainText('1 split run · 1 completed');
+  await expect(page.locator('#student-jobs')).toContainText('Student recording');
+  expect(audioReads).toBe(0);
+  const receipts=process.env.STEM_SCREENSHOT_DIR;
+  if(receipts){await mkdir(receipts,{recursive:true});await page.screenshot({path:`${receipts}/student-activity-${width}.png`,fullPage:true,animations:'disabled'});}
+  await page.locator('#student-jobs').getByRole('link',{name:'Load',exact:true}).click();
+  await expect(page.locator('.console-title')).toHaveText('Student recording');
+  await expect(page.locator('.channel')).toHaveCount(1);
+  await expect(page.locator('.shared-notice')).toHaveText('Student listening view.');
+  await expect.poll(()=>audioReads).toBeGreaterThan(0);
+  await expect(page.locator('.folder-btn')).toBeHidden();
+  await expect(page.locator('.note-btn')).toBeHidden();
+  await expect(page.locator('#station-word')).toHaveText('Splitter');
+  await expect(page.locator('#station-tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.');
+  await expect(page.locator('#split-summary')).toBeHidden();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  if(receipts)await page.screenshot({path:`${receipts}/student-audio-${width}.png`,fullPage:true,animations:'disabled'});
+  expect(errors).toEqual([]);
+ }finally{await server.close();}
 });

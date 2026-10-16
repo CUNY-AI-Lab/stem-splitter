@@ -29,9 +29,11 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await expect(page.locator('#signin-panel')).toBeVisible();
     await expect(page.getByLabel('PASSWORD')).toBeHidden();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/login?next=/teacher.html');
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveAttribute('href', '/auth/help?next=/teacher.html');
     await page.goto(new URL('/account.html', url).href);
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect(page.locator('#account-details')).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveAttribute('href', '/auth/help?next=/account.html');
     await page.goto(new URL('/teacher.html', url).href);
     if (receipts) await page.screenshot({ path: `${receipts}/01-instructor-signed-out.png`, fullPage: true, animations: 'disabled' });
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice });
@@ -39,7 +41,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.goto(url.href);
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.locator('#crate')).toHaveCount(1);
-    await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+    await expect(page.locator('#split-summary')).toBeHidden();
     // Screenshot capture can outlast the short fixture. Keep it playing until
     // the explicit pause click, rather than accidentally toggling Play again.
     await page.evaluate(() => {

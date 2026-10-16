@@ -948,7 +948,7 @@ function renderSplitLegend() {
 
 function renderSeparationSummary(models) {
   const engines = [...new Set(models.map((model) => model.engine.trim()))];
-  setSplitterKicker('// a closer listen');
+  setSplitterKicker('');
   engineSummary.textContent = `SEPARATION MODEL${engines.length === 1 ? '' : 'S'}: ${engines.join(
     ' / '
   )}`;
@@ -1951,11 +1951,12 @@ class Mixer {
       li.classList.add('shared');
       const notice = document.createElement('p');
       notice.className = 'shared-notice';
-      notice.textContent = 'Shared listening view. Only the owner can rename splits or add notes.';
+      notice.textContent = this.job.instructorReview ? 'Student listening view.' : 'Shared listening view. Only the owner can rename splits or add notes.';
       li.querySelector('.console-sub').after(notice);
       for (const node of li.querySelectorAll('.coach, .note-btn, .folder-btn, .export-btn, .to-remix-btn')) node.hidden = true;
       for (const node of li.querySelectorAll('.ch-name')) { node.removeAttribute('tabindex'); node.removeAttribute('title'); }
-      this.readyBadge.textContent = 'SHARED';
+      this.readyBadge.textContent = this.job.instructorReview ? 'READY' : 'SHARED';
+      if (this.job.instructorReview) li.querySelectorAll('.share-btn').forEach(node => { node.hidden = true; });
       this.keysHint.textContent = 'SPACE play · ←→ 5s · 1–9 mute · ⇧1–9 solo';
     }
     return li;
@@ -3340,6 +3341,7 @@ function renderFolders() {
           // The refresh below shows whichever state the server really holds.
         }
         await refreshFolders();
+        if (accountSubject) await loadAccountJobs();
       })
     );
     folderList.appendChild(li);
@@ -3400,6 +3402,7 @@ async function loadFolderItems(folder, container) {
           // Row stays; the next open re-reads the folder from the server.
         }
         await refreshFolders();
+        if (accountSubject) await loadAccountJobs();
       })
     );
     container.appendChild(li);
@@ -3489,6 +3492,7 @@ function toggleFolderMenu(mixer) {
       if (!res.ok) throw new Error('save failed');
       const body = await res.json();
       row.textContent = body.already ? 'ALREADY SAVED ✓' : 'SAVED ✓';
+      removeFromRack(mixer.job.id);
       await refreshFolders();
       setTimeout(() => menu.remove(), 900);
     } catch {
@@ -3537,6 +3541,7 @@ const emptyState = document.getElementById('empty-state');
 const jobStates = new Map(); // id -> latest server response
 const unavailableJobStates = new Set();
 const mixers = new Map(); // id -> Mixer (persists across re-renders)
+const pendingRenderStates = new WeakMap();
 const rackStatus = document.getElementById('rack-status');
 const rackRetry = document.getElementById('rack-retry');
 const rackMore = document.getElementById('rack-more');
@@ -3593,8 +3598,8 @@ document.addEventListener('pointerdown', (event) => {
   }
 });
 
-// Removing a split is local: the class copy (stems, names, notes, guide) stays
-// on the server, so a shared link — or a teacher folder — can bring it back.
+// Owners delete the server copy before removing the local rack entry.
+// Viewers can only hide a shared run until the next account refresh.
 function canDeleteRun(state) { return runtime.authMode === 'cail' && runtime.runDeletion === true && state?.permissions?.owner === true; }
 
 async function deleteJob(id) {
@@ -3602,24 +3607,30 @@ async function deleteJob(id) {
     try {await api(`/api/jobs/${encodeURIComponent(id)}`,{method:'DELETE'});}
     catch(error) {if(error.status!==404){showUploadMessage(error.message || 'The run could not be deleted. Try again.',true);return;}}
   }
+  removeFromRack(id);
+  try {
+    localStorage.removeItem(`coachChat:${id}`);
+  } catch {
+    // Storage blocked — the rack entry is gone either way.
+  }
+}
+
+// Folder moves remove the visible session while keeping its saved audio and notes.
+function removeFromRack(id) {
   const mixer = mixers.get(id);
   if (mixer?.playing || mixer?.starting) mixer.pause();
   mixer?.disposeWaveforms();
   mixers.delete(id);
   jobStates.delete(id);
   saveJobs(getJobs().filter((j) => j.id !== id));
-  try {
-    localStorage.removeItem(`coachChat:${id}`);
-  } catch {
-    // Storage blocked — the rack entry is gone either way.
-  }
   renderJobs();
 }
 
 function renderJobs() {
   const jobs = getJobs();
   emptyState.hidden = jobs.length > 0;
-  jobList.innerHTML = '';
+  const previous = new Map([...jobList.children].map(el => [el.dataset.jobId, el]));
+  const cards = [];
 
   for (const job of jobs) {
     const state = jobStates.get(job.id) || {
@@ -3637,12 +3648,18 @@ function renderJobs() {
         mixers.set(job.id, mixer);
       }
       mixer.setCollapsed(!!job.collapsed);
-      jobList.appendChild(mixer.el);
+      mixer.el.dataset.jobId = job.id;
+      cards.push(mixer.el);
       continue;
     }
 
-    const li = document.createElement('li');
-    li.className = 'console';
+    const li = previous.get(job.id) || document.createElement('li');
+    li.dataset.jobId = job.id;
+    li.className = `console${job.collapsed && state.status === 'checking' ? ' collapsed' : ''}`;
+    cards.push(li);
+    const signature = JSON.stringify([job.filename, job.collapsed, state, unavailableJobStates.has(job.id)]);
+    if (pendingRenderStates.get(li) === signature) continue;
+    pendingRenderStates.set(li, signature);
     const failed = state.status === 'failed' || state.status === 'done';
     const checking = state.status === 'checking' || unavailableJobStates.has(job.id);
     const operation = state.operation;
@@ -3679,8 +3696,15 @@ function renderJobs() {
         armThenRun(deleteBtn, 'SURE?', () => deleteJob(job.id))
       );
     }
-    jobList.appendChild(li);
   }
+
+  // Keep settled cards attached: detaching them restarts their CSS entrance
+  // animation and interrupts media while other saved runs are still loading.
+  const retained = new Set(cards);
+  for (const el of [...jobList.children]) if (!retained.has(el)) el.remove();
+  cards.forEach((el, index) => {
+    if (jobList.children[index] !== el) jobList.insertBefore(el, jobList.children[index] || null);
+  });
 
   runElapsedClock();
   renderShelf();
@@ -3714,10 +3738,11 @@ function runElapsedClock() {
 // Shared by the ?job= link and the instructor folder loaders. Returns
 // 'present' | 'added' | 'missing'; network failures propagate to the caller,
 // which owns the user-facing message for its own context.
-async function adoptJobById(id) {
+async function adoptJobById(id, reviewSubject = null) {
   if (getJobs().some((existing) => existing.id === id)) return 'present';
-  let res = accountSubject || runtime.authMode !== 'cail' ? await fetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
-  if (runtime.authMode === 'cail' && (!res || res.status === 401 || res.status === 403 || res.status === 404)) {
+  let res = reviewSubject ? await fetch(`/api/teacher/students/${encodeURIComponent(reviewSubject)}/jobs/${encodeURIComponent(id)}`)
+    : accountSubject || runtime.authMode !== 'cail' ? await fetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
+  if (!reviewSubject && runtime.authMode === 'cail' && (!res || res.status === 401 || res.status === 403 || res.status === 404)) {
     res = await fetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
   }
   if (!res.ok) return 'missing';
@@ -3743,7 +3768,7 @@ async function adoptSharedJob() {
   if (!id) return;
 
   try {
-    if ((await adoptJobById(id)) === 'missing') {
+    if ((await adoptJobById(id, new URLSearchParams(location.search).get('student'))) === 'missing') {
       showUploadMessage(
         runtime.authMode === 'cail' ? 'This split is unavailable to your account or has expired.' : 'That link points at a track that is no longer here. Splits are wiped after 30 days.',
         true
@@ -3836,11 +3861,11 @@ function pollSoon() {
 
 const STATIONS = {
   splitter: {
-    word: 'SPLITTER',
-    tagline: 'Split a song apart. Listen one layer at a time. Annotate as you go.',
+    word: 'Splitter',
+    tagline: 'Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.',
   },
   remixer: {
-    word: 'REMIXER',
+    word: 'Remixer',
     tagline: 'Layer sounds. Make something new.',
     kicker: '// station 02 · reassembly',
   },
@@ -3858,7 +3883,7 @@ const stationWord = document.getElementById('station-word');
 const stationTagline = document.getElementById('station-tagline');
 
 let currentStation = 'splitter';
-let splitterKicker = '// a closer listen';
+let splitterKicker = '';
 // Keep the Crate implementation available for the gated Remixer, but take its
 // entry point off the Splitter until the revised workflow is ready to return.
 const CRATE_ON_SPLITTER_ENABLED = false;
@@ -3868,7 +3893,7 @@ const CRATE_ON_SPLITTER_ENABLED = false;
 // otherwise a slow load could stamp splitter copy onto the Remixer masthead.
 function setSplitterKicker(text) {
   splitterKicker = text;
-  if (currentStation === 'splitter') splitSummary.textContent = text;
+  if (currentStation === 'splitter') { splitSummary.textContent = text; splitSummary.hidden = !text; }
 }
 
 function switchStation(name) {
@@ -3885,6 +3910,7 @@ function switchStation(name) {
   stationWord.textContent = STATIONS[name].word;
   stationTagline.textContent = STATIONS[name].tagline;
   splitSummary.textContent = name === 'splitter' ? splitterKicker : STATIONS.remixer.kicker;
+  splitSummary.hidden = !splitSummary.textContent;
   try {
     localStorage.setItem('benchTab', name);
   } catch {
@@ -4574,7 +4600,7 @@ async function addTake(chunks, manifest) {
   const ext = type.includes('mp4') ? 'm4a' : 'webm';
   const name = `${fileSafe(manifest.title) || 'remix'}-take-${String(takeNumber).padStart(2, '0')}.${ext}`;
   const url = URL.createObjectURL(blob);
-  const credits = `STEM Splitter remix\n\nLicense: ${manifest.licenseUrl}\n${manifest.nonCommercial ? 'Noncommercial use only.\n' : ''}\n${manifest.sources.map((s) => `${s.title}\n${s.creator}\n${s.sourceUrl}\n${s.licenseUrl}\nFile: ${s.fileName}\n`).join('\n')}\n${manifest.changes}\n`;
+  const credits = `Stem Splitter remix\n\nLicense: ${manifest.licenseUrl}\n${manifest.nonCommercial ? 'Noncommercial use only.\n' : ''}\n${manifest.sources.map((s) => `${s.title}\n${s.creator}\n${s.sourceUrl}\n${s.licenseUrl}\nFile: ${s.fileName}\n`).join('\n')}\n${manifest.changes}\n`;
   const bundle = makeZip([
     { name, data: new Uint8Array(await blob.arrayBuffer()) },
     { name: 'ATTRIBUTION.txt', data: new TextEncoder().encode(credits) },
@@ -4791,6 +4817,11 @@ async function initialize() {
       link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
       account.append(link);
+      const help = document.createElement('a');
+      help.href = '/auth/help' + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      help.className = 'signin-help-link';
+      help.textContent = 'Trouble signing in?';
+      account.append(help);
     } else account.textContent = 'CUNY Login will be available here soon.';
     document.querySelector('.masthead').append(account);
   }

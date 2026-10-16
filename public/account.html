@@ -3,61 +3,68 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>STEM Splitter · Account</title>
-<link rel="stylesheet" href="/styles.css?v=20261003-account-links">
+<title>Stem Splitter · Account</title>
+<link rel="stylesheet" href="/styles.css?v=20261016-student-review">
 <main class="teacher-main account-main">
   <header class="masthead">
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
     <h1>My account</h1>
   </header>
   <p id="account-status" role="status">Loading…</p>
-  <p id="account-login" hidden><a class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
+  <p id="account-login" hidden><a class="account-button" href="/auth/login?next=/account.html">CUNY Login</a> <a class="signin-help-link" href="/auth/help?next=/account.html">Trouble signing in?</a></p>
   <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
     <p id="account-splits">Daily split allowance unavailable.</p>
     <p id="account-quota">Model usage unavailable.</p>
     <p class="account-help">Successful splits count toward your daily allowance. Listening Guy uses your Lab allowance separately.</p>
-    <nav class="account-links" aria-label="STEM Splitter">
-      <a class="account-button" href="/">← Back to Splitter</a>
-      <a id="account-guidance" href="/teacher.html" hidden>Guide instructions</a>
+    <nav class="account-links" aria-label="Stem Splitter">
+      <a class="account-button" href="/">← Back to Stem Splitter</a>
+      <a class="account-button" id="account-guidance" href="/teacher.html" hidden>System Prompt</a>
     </nav>
   </section>
+  <details id="student-review" class="account-disclosure" hidden>
+    <summary>Student activity</summary>
+    <p class="account-help">Select a student to see their split runs and load a recording. Visits reflect the past 30 days.</p>
+    <p id="student-status" role="status"></p>
+    <ul id="student-list" class="student-list"></ul>
+    <button id="student-retry" class="account-button" type="button" hidden>Try again</button>
+    <section id="student-detail" hidden aria-live="polite">
+      <h2 id="student-name"></h2>
+      <p id="student-summary" class="account-help"></p>
+      <ul id="student-jobs" class="student-jobs"></ul>
+      <button id="student-more" class="account-button" type="button" hidden>Load more</button>
+    </section>
+  </details>
   <details id="account-admin" class="account-disclosure" hidden>
     <summary>Manage access</summary>
-    <p class="account-help">These controls apply only to STEM Splitter. Manage class rosters and invitations in <a href="https://tools.ailab.gc.cuny.edu/my-classes">My classes</a>.</p>
+    <p class="account-help">These controls apply only to Stem Splitter. Manage class rosters and invitations in <a href="https://tools.ailab.gc.cuny.edu/my-classes">My classes</a>.</p>
     <p id="access-empty" class="account-help" hidden>No other accounts yet. People appear here after their first CUNY sign-in.</p>
     <form id="access-form" class="teacher-form" hidden>
       <label class="teacher-field">Account<select id="access-member" required aria-describedby="access-help"></select></label>
-      <p id="access-help" class="account-help">Choose the account ID shared with you. These changes apply only to STEM Splitter.</p>
+      <p id="access-help" class="account-help">Choose a person to update their Stem Splitter access.</p>
       <fieldset id="access-editor" disabled hidden>
         <label class="teacher-field">Access level<select id="access-role"><option value="student">Student</option><option value="instructor">Instructor</option></select></label>
         <label id="access-permanent-field" class="account-checkbox" hidden><input id="access-permanent" type="checkbox" disabled> No end date</label>
         <label id="access-expiry-field" class="teacher-field" hidden>Instructor access ends<input id="access-expiry" type="datetime-local" disabled></label>
-        <label class="account-checkbox"><input id="access-enabled" type="checkbox"> Allow access to STEM Splitter</label>
+        <label class="account-checkbox"><input id="access-enabled" type="checkbox"> Allow access to Stem Splitter</label>
         <button type="submit" class="yt-go teacher-submit">Save changes</button>
       </fieldset>
     </form>
     <p id="access-status" role="status"></p>
     <button id="access-retry" type="button" class="crate-page-btn" hidden>Try again</button>
   </details>
-  <details id="account-reference" class="account-disclosure" hidden>
-    <summary>Account ID</summary>
-    <p class="account-help">Share this with a STEM Splitter administrator if you need instructor access.</p>
-    <code id="account-id"></code>
-  </details>
-  <p id="account-back" hidden><a href="/">← Back to Splitter</a></p>
+  <p id="account-back" hidden><a href="/">← Back to Stem Splitter</a></p>
   <section id="account-footer" hidden>
-    <p class="account-help">Your splits remain in your account for 90 days.</p>
-    <form action="/auth/logout" method="post"><button type="submit" class="crate-page-btn">Sign out</button></form>
+    <form action="/auth/logout" method="post"><button type="submit" class="account-button">Sign out</button></form>
   </section>
   <nav class="account-resources" aria-label="CUNY AI Lab resources">
     <h2>CUNY AI Lab</h2>
     <ul>
-      <li><a href="https://ailab.gc.cuny.edu/">Lab home</a></li>
-      <li><a href="https://ailab.gc.cuny.edu/faq/">FAQ</a></li>
-      <li><a href="https://tools.ailab.gc.cuny.edu/welcome">Welcome</a></li>
-      <li><a href="https://tools.ailab.gc.cuny.edu/model-access">Model access</a></li>
-      <li><a href="https://tools.ailab.gc.cuny.edu/my-classes">My classes</a></li>
+      <li><a class="account-button" href="https://ailab.gc.cuny.edu/">Lab home</a></li>
+      <li><a class="account-button" href="https://ailab.gc.cuny.edu/faq/">FAQ</a></li>
+      <li><a class="account-button" href="https://tools.ailab.gc.cuny.edu/welcome">Welcome</a></li>
+      <li><a class="account-button" href="https://tools.ailab.gc.cuny.edu/model-access">Model access</a></li>
+      <li><a class="account-button" href="https://tools.ailab.gc.cuny.edu/my-classes">My classes</a></li>
     </ul>
   </nav>
   <footer>
@@ -65,7 +72,7 @@
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
   </footer>
 </main>
-<script src="/session-guard.js?v=20261011-background"></script>
+<script src="/session-guard.js?v=20261016-student-review"></script>
 <script src="/guest-claim.js?v=20261012-carryover"></script>
-<script src="/account.js?v=20261012-carryover"></script>
+<script src="/account.js?v=20261016-account-selection"></script>
 </html>

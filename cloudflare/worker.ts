@@ -1,4 +1,4 @@
-import { recordPageUse, recordServerUse } from '../src/reliability/observability.ts';
+import { recordPageUse, recordServerUse, recordSignInUse } from '../src/reliability/observability.ts';
 import { youtubeImportConfiguration } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
 import app, { runReliableJobs } from '../src/index.ts';
@@ -88,7 +88,9 @@ export default {
       } else if (url.pathname === '/auth/guest') {
         response = await startGuestSession(request,env);
       } else if (url.pathname.startsWith('/auth/')) {
+        const started = Date.now();
         response = await handleAuth(request, {...env,guestSignout:()=>revokeGuestSession(request,env)});
+        ctx.waitUntil(recordSignInUse(env,request,response,started));
       } else if (url.pathname.startsWith('/api/')) {
         // Admission and ownership run in the shared application. Limit expensive
         // ingress before provider work; signed provider callbacks are independent.

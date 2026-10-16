@@ -430,7 +430,7 @@ historyMoreBtn.addEventListener('click', async () => {
       signinForm.hidden = true;
       signoutBtn.hidden = true;
       const message = document.createElement('p');
-      message.textContent = 'Sign in with your CUNY account to open guide instructions.';
+      message.textContent = 'Sign in with your CUNY account to open the system prompt.';
       signinPanel.append(message);
       if (runtime.loginUrl) {
         const link = document.createElement('a');
@@ -438,12 +438,17 @@ historyMoreBtn.addEventListener('click', async () => {
         link.href = `${runtime.loginUrl}?next=/teacher.html`;
         link.textContent = 'CUNY Login';
         signinPanel.append(link);
+        const help = document.createElement('a');
+        help.href = '/auth/help?next=/teacher.html';
+        help.className = 'signin-help-link';
+        help.textContent = 'Trouble signing in?';
+        signinPanel.append(help);
       }
     }
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
       showPanel(false);
-      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit guide instructions.';
+      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit the system prompt.';
       return;
     }
     if (cail) {

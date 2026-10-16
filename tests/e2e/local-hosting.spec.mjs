@@ -177,8 +177,8 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
   await expect(labLink.locator('img')).toHaveCSS('height', '44px');
-  await expect(page.locator('.tagline')).toHaveText('Split a song apart. Listen one layer at a time. Annotate as you go.');
-  await expect(page.locator('#split-summary')).toHaveText('// a closer listen');
+  await expect(page.locator('.tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate as you go.');
+  await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
     page.getByRole('radio', { name: '4 splits: voice, percussion, low end, the rest' })
@@ -1844,7 +1844,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);
   expect(await page.locator('link[rel="stylesheet"][href^="/styles.css"]').getAttribute('href')).toMatch(/\?v=/);
-  await expect(page.getByRole('link', { name: 'Back to Splitter' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('link', { name: 'Back to Stem Splitter' })).toHaveAttribute('href', '/');
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'SIGN IN' });
   const signInButtonBox = await signInButton.boundingBox();
@@ -1870,11 +1870,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'GUIDE INSTRUCTIONS' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'System Prompt' })).toBeVisible();
   await expect(page.getByText('More', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
-  await expect(page.getByLabel('Guide instructions')).not.toHaveAttribute('placeholder');
+  await expect(page.getByLabel('System Prompt')).not.toHaveAttribute('placeholder');
   const instructorSurfaceText = await page.locator('body').innerText();
   expect(instructorSurfaceText).not.toMatch(
     /\b(?:e2e|end-to-end|authorized testing|advisory|classifier|routing|training eligible|job id|shadow mode)\b/i
