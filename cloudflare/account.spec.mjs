@@ -534,6 +534,9 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await page.getByText('Manage access',{exact:true}).click();
   await expect(page.locator('#access-member')).toContainText('Alice Rivera');
   await expect(page.locator('#access-member')).not.toContainText('cail-');
+  await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
+  await expect(page.getByRole('combobox',{name:'Access level',exact:true})).toBeInViewport();
+  await expect(page.getByRole('button',{name:'Save changes',exact:true})).toBeInViewport();
   await page.getByText('Manage access',{exact:true}).click();
   await page.getByText('Student activity',{exact:true}).click();
   await page.getByRole('button',{name:'Alice Rivera',exact:true}).click();

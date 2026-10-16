@@ -46,6 +46,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-student-review-20261016-r5"
+    "RELEASE": "cloudflare-student-review-20261016-r6"
   }
 }

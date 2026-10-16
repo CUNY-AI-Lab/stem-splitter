@@ -34,7 +34,7 @@ async function request(path, options = {}) {
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
 }
-function selectMember() {
+function selectMember(event) {
   const user = users.find((user) => user.subject === el('access-member').value);
   el('access-editor').hidden = !user;
   el('access-editor').disabled = !user || saving;
@@ -45,6 +45,11 @@ function selectMember() {
   const date = user.role_expires_at ? new Date(user.role_expires_at) : null;
   el('access-expiry').value = date ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   showExpiry();
+  if (event?.type === 'change') {
+    requestAnimationFrame(() => {
+      el('access-editor').scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    });
+  }
 }
 function showExpiry() {
   const instructor = el('access-role').value === 'instructor';
