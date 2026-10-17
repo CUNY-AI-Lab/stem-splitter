@@ -48,6 +48,7 @@ async function setup(page, chatAvailable = false) {
     widgetLoads++;
     return route.fulfill({ contentType: 'text/javascript', body: `window.turnstile={render(root,options){if(options.appearance!=='interaction-only')throw new Error('Unexpected widget appearance');const button=document.createElement('button');button.textContent='Complete fixture guest check';button.onclick=()=>options.callback('browser-fixture-'+crypto.randomUUID());root.append(button);return 'fixture';},remove(){}};` });
   });
+  await page.route('**/search-samples.json', route => route.fulfill({json:[{artist:'jazz',title:'piano',archiveId:'sample',archiveFile:'sample.mp3'}]}));
   return { origin, errors, requests, issuer, network, counts: () => ({ providerStarts, verifications, widgetLoads }),
     close: async () => { await page.unrouteAll({ behavior: 'wait' }); await page.close(); await harness.close(); network.close(); } };
 }
@@ -105,7 +106,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'jazz piano');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste a link');
     await expect(page.locator('#yt-disclosure summary')).toHaveText('Search for songs via Internet Archive');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
@@ -531,26 +532,25 @@ test('sample query streams translucently and Tab reveals preloaded results witho
   } finally { await f.close(); }
 });
 
-test('Tab during sample animation reuses an in-flight preload; later typing rejects stale results', async ({page}) => {
+test('unverified sample stays hidden and typing rejects a late match', async ({page}) => {
   const f = await setup(page); let delayed, searches = 0;
   try {
     await page.route('**/api/music/search?*', route => { searches++; delayed = route; });
     await page.goto(f.origin);
     await expect.poll(() => Boolean(delayed)).toBe(true);
-    const input = page.locator('#yt-url'); await input.focus(); await input.press('Tab');
-    await expect(input).toHaveValue('jazz piano');
-    expect(searches).toBe(1);
+    const input = page.locator('#yt-url');
+    await expect(page.locator('#source-sample-hint')).toBeHidden();
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste a link');
     await input.fill('https://example.com/song.mp3');
     await delayed.fulfill({json: {results: [sampleTrack]}}).catch(() => {}); delayed = null;
     await expect(page.locator('#source-songs')).toBeHidden();
-    await expect(page.locator('#source-songs [role=option]')).toHaveCount(0);
     await expect(input).toHaveValue('https://example.com/song.mp3');
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    expect(f.counts().providerStarts).toBe(0); expect(f.errors).toEqual([]);
+    expect(searches).toBe(1); expect(f.errors).toEqual([]);
   } finally { if(delayed) await delayed.abort().catch(()=>{}); await f.close(); }
 });
 
-test('failed background search stays silent and acceptance retries through normal search', async ({page}) => {
+test('failed background search offers no song and manual search can retry', async ({page}) => {
   const f = await setup(page); let searches = 0;
   try {
     await page.route('**/api/music/search?*', route => ++searches === 1
@@ -558,9 +558,10 @@ test('failed background search stays silent and acceptance retries through norma
       : route.fulfill({json:{results:[sampleTrack]}}));
     await page.goto(f.origin); await expect.poll(()=>searches).toBe(1);
     await expect.poll(()=>page.evaluate(()=>sampleCache === null)).toBe(true);
+    await expect(page.locator('#source-sample-hint')).toBeHidden();
     await expect(page.locator('#source-songs')).toBeHidden();
     expect(f.counts().widgetLoads).toBe(0);
-    const input=page.locator('#yt-url'); await input.focus(); await input.press('Tab');
+    await page.locator('#yt-url').fill('jazz piano');
     await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
     expect(searches).toBe(2);expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{await f.close();}
@@ -585,7 +586,7 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
   }finally{await f.close();}
 });
 
-test('accepting a partial sample preload reveals cached choices and keeps streaming without duplication', async ({page}) => {
+test('verified streamed sample keeps its selection and excludes unrelated later matches', async ({page}) => {
   const f=await setup(page);
   try {
     await page.addInitScript(()=>{
@@ -610,9 +611,9 @@ test('accepting a partial sample preload reveals cached choices and keeps stream
     await expect(page.getByRole('option')).toHaveCount(1);await expect(page.locator('#source-songs')).toHaveAttribute('aria-busy','true');
     await input.press('ArrowDown');const selected=await input.getAttribute('aria-activedescendant');
     await page.evaluate(track=>{
-      window.pushSample({results:[track,{...track,id:'sample-2',title:'Another piano sample'}],done:true});window.endSample();
+      window.pushSample({results:[track,{...track,id:'sample-2',title:'Another piano sample',archiveFile:'unrelated.mp3'}],done:true});window.endSample();
     },sampleTrack);
-    await expect(page.getByRole('option')).toHaveCount(2);await expect(input).toHaveAttribute('aria-activedescendant',selected);
+    await expect(page.getByRole('option')).toHaveCount(1);await expect(input).toHaveAttribute('aria-activedescendant',selected);
     await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
     expect(await page.evaluate(()=>window.sampleSearches)).toBe(1);
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
@@ -639,4 +640,41 @@ test('returning to a recent song query uses browser results without another requ
     expect(queries.filter(query=>query?.toLowerCase().includes('piano') && query!=='jazz piano')).toEqual(['recent piano']);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
+});
+
+test('playlist samples randomize candidates and skip missing or unrelated Archive matches', async ({page}) => {
+  const f=await setup(page); const queries=[];
+  try {
+    await page.addInitScript(()=>{Math.random=()=>0;});
+    await page.route('**/search-samples.json', route=>route.fulfill({json:[
+      {artist:'Playlist artist',title:'Available song',archiveId:'available',archiveFile:'exact.mp3'},
+      {artist:'Playlist artist',title:'Missing song',archiveId:'missing',archiveFile:'absent.mp3'},
+    ]}));
+    await page.route('**/api/music/search?*',route=>{
+      const query=new URL(route.request().url()).searchParams.get('q');queries.push(query);
+      return route.fulfill({json:{results:query.includes('Missing')
+        ? [{...sampleTrack,archiveId:'unrelated',archiveFile:'cover.mp3'}]
+        : [{...sampleTrack,archiveId:'available',archiveFile:'exact.mp3'}]}});
+    });
+    await page.goto(f.origin);
+    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Playlist artist Available song');
+    expect(queries).toEqual(['Playlist artist Missing song','Playlist artist Available song']);
+    await page.locator('#source-sample-hint').click();
+    await expect(page.getByRole('option')).toHaveCount(1);
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
+test('no verified playlist recordings means no animated suggestion or retired page', async ({page}) => {
+  const f=await setup(page);
+  try {
+    await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[]}}));
+    await page.goto(f.origin);
+    await expect.poll(()=>page.evaluate(()=>sampleStarted && sampleCache===null)).toBe(true);
+    await expect(page.locator('#source-sample-hint')).toBeHidden();
+    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs or paste a link');
+    await expect(page.getByRole('link',{name:'Listen to Sound Station playlists →'})).toHaveCount(0);
+    expect((await page.request.get(f.origin+'/sound-stations.html')).status()).toBe(410);
+    expect(f.errors).toEqual([]);
+  }finally{await f.close();}
 });

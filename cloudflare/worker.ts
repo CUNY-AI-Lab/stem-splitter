@@ -57,6 +57,9 @@ export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     env = intakeEnvironment(env);
     const url = new URL(request.url);
+    if (['/sound-stations', '/sound-stations.html', '/sound-stations.js', '/sound-stations.json'].includes(url.pathname)) {
+      return new Response('Not found', { status: 410, headers: { 'Cache-Control': 'no-store' } });
+    }
     // The explicit alias shares this runtime through a service binding. Keep
     // browser writes and signed provider URLs on its origin without trusting
     // arbitrary Host/Forwarded headers or widening the CSRF allowlist.
@@ -122,7 +125,6 @@ export default {
       .replace("script-src 'self';","script-src 'self' https://challenges.cloudflare.com;")
       .replace("connect-src 'self';","connect-src 'self' https://challenges.cloudflare.com;")
       + '; frame-src https://challenges.cloudflare.com');
-    if (['/sound-stations', '/sound-stations.html'].includes(url.pathname)) headers.set('Content-Security-Policy', headers.get('Content-Security-Policy')!.replace("media-src 'self' blob:;", "media-src 'self' blob: https://archive.org https://*.archive.org;"));
     if (url.pathname.startsWith('/auth/')) headers.set('Referrer-Policy', 'no-referrer');
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname === '/healthz') headers.set('Cache-Control', 'private, no-store');
     return new Response(response.body, { status: response.status, headers });
