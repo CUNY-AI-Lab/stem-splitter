@@ -669,7 +669,7 @@ async function searchSourceSongs(term, sequence) {
       return;
     }
     const cached = term === SAMPLE_SONG_QUERY && sampleCache &&
-      Date.now() - sampleCache.createdAt < 60000 ? sampleCache : null;
+      Date.now() - sampleCache.createdAt < 600000 ? sampleCache : null;
     let data;
     if (cached) {
       for (const batch of cached.batches) render(batch);

@@ -733,6 +733,10 @@ test('playlist hints lazily include the entire verified pool before repeating', 
     expect(new Set(searches).size).toBe(6);
     await expect(input).toHaveAttribute('placeholder','Artist 0 Song 0',{timeout:10000});
     expect(searches).toHaveLength(6);
+    await page.clock.setFixedTime(new Date(Date.now()+61000));
+    await input.focus();await input.press('Tab');
+    await expect(page.getByRole('option',{name:/Song 0/})).toBeVisible({timeout:500});
+    expect(searches).toHaveLength(6);
     expect(f.errors).toEqual([]);
   } finally {await f.close();}
 });
