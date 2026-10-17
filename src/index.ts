@@ -1,3 +1,4 @@
+import { isPlaylistSample, playlistSampleResponse } from './playlist-samples.ts';
 import { namedUsers, studentActivity, requireStudentReview } from './teacher-activity.ts';
 import { runDeletionEnabled, runWasDeleted, deleteOwnedRun, recordFailedRunSession, purgeDeletedRuns } from './run-deletion.ts';
 import { fetchUrlAudio, parseMediaUrl, UrlImportError } from './url-import.ts';
@@ -1023,7 +1024,10 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 
 // --- jobs -------------------------------------------------------------
 
-app.get('/api/music/search', requireClassCode, async (c) => {
+app.get('/api/music/search', async (c, next) => {
+  if (isPlaylistSample(c.req.raw)) return playlistSampleResponse(c.req.raw);
+  return next();
+}, requireClassCode, async (c) => {
   if (c.req.query('sampleItem') !== undefined || c.req.query('sampleFile') !== undefined) {
     try {
       const result = await verifyArchiveSample(c.req.query('q') ?? '', c.req.query('sampleItem') ?? '', c.req.query('sampleFile') ?? '',

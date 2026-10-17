@@ -48,6 +48,7 @@ async function setup(page, chatAvailable = false) {
     widgetLoads++;
     return route.fulfill({ contentType: 'text/javascript', body: `window.turnstile={render(root,options){if(options.appearance!=='interaction-only')throw new Error('Unexpected widget appearance');const button=document.createElement('button');button.textContent='Complete fixture guest check';button.onclick=()=>options.callback('browser-fixture-'+crypto.randomUUID());root.append(button);return 'fixture';},remove(){}};` });
   });
+  await page.route('**/api/music/search?*', route => new URL(route.request().url()).searchParams.has('sampleItem') ? route.fulfill({json:{results:[]}}) : route.fallback());
   await page.route('**/search-samples.json', route => route.fulfill({json:[{artist:'jazz',title:'piano',archiveId:'sample',archiveFile:'sample.mp3'}]}));
   return { origin, errors, requests, issuer, network, counts: () => ({ providerStarts, verifications, widgetLoads }),
     close: async () => { await page.unrouteAll({ behavior: 'wait' }); await page.close(); await harness.close(); network.close(); } };
@@ -106,7 +107,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste a link');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs');
     await expect(page.locator('#yt-disclosure summary')).toHaveText('Search for songs via Internet Archive');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
@@ -540,7 +541,7 @@ test('unverified sample stays hidden and typing rejects a late match', async ({p
     await expect.poll(() => Boolean(delayed)).toBe(true);
     const input = page.locator('#yt-url');
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste a link');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs');
     await input.fill('https://example.com/song.mp3');
     await delayed.fulfill({json: {results: [sampleTrack]}}).catch(() => {}); delayed = null;
     await expect(page.locator('#source-songs')).toBeHidden();
@@ -672,9 +673,41 @@ test('no verified playlist recordings means no animated suggestion or retired pa
     await page.goto(f.origin);
     await expect.poll(()=>page.evaluate(()=>sampleStarted && sampleCache===null)).toBe(true);
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs or paste a link');
+    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs');
     await expect(page.getByRole('link',{name:'Listen to Sound Station playlists →'})).toHaveCount(0);
     expect((await page.request.get(f.origin+'/sound-stations.html')).status()).toBe(410);
     expect(f.errors).toEqual([]);
   }finally{await f.close();}
+});
+
+test('playlist hints load before account setup, rotate, and accept ready options without another lookup', async ({page}) => {
+  const f=await setup(page);let slow,accountRequest;const searches=[];
+  const candidates=[
+    {artist:'Slow artist',title:'Slow song',archiveId:'slow',archiveFile:'slow.mp3'},
+    {artist:'Fast artist',title:'Fast song',archiveId:'fast',archiveFile:'fast.mp3'},
+    {artist:'Next artist',title:'Next song',archiveId:'next',archiveFile:'next.mp3'},
+  ];
+  try {
+    await page.addInitScript(()=>{Math.random=()=>0.999;});
+    await page.route('**/api/account',route=>{accountRequest=route;});
+    await page.route('**/search-samples.json',route=>route.fulfill({json:candidates}));
+    await page.route('**/api/music/search?*',route=>{
+      const params=new URL(route.request().url()).searchParams,item=params.get('sampleItem');searches.push(item);
+      if(item==='slow'){slow=route;return;}
+      const candidate=candidates.find(c=>c.archiveId===item);
+      return route.fulfill({json:{results:[{...sampleTrack,title:candidate.title,artist:candidate.artist,archiveId:item,archiveFile:candidate.archiveFile}]}});
+    });
+    await page.goto(f.origin);
+    const input=page.locator('#yt-url');
+    await expect(page.locator('#source-sample-hint')).toBeVisible({timeout:1500});
+    await expect(input).toHaveAttribute('placeholder','Fast artist Fast song',{timeout:2000});
+    expect(accountRequest).toBeTruthy();expect(slow).toBeTruthy();
+    await expect(input).toHaveAttribute('placeholder','Next artist Next song',{timeout:5000});
+    await input.focus();await input.press('Tab');
+    await expect(page.getByRole('option',{name:/Next song/})).toBeVisible({timeout:500});
+    expect(searches).toHaveLength(3);
+    await input.fill('https://example.com/song.mp3');
+    await expect(page.locator('#source-sample-hint')).toBeHidden();
+    expect(f.errors).toEqual([]);
+  }finally{await slow?.abort().catch(()=>{});await accountRequest?.abort().catch(()=>{});await f.close();}
 });
