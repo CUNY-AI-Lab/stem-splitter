@@ -1,5 +1,11 @@
 import type { Env } from '../env';
 import type { StemRef } from './types';
+import { derivedLayerNames } from './prominent-layers.ts';
+export const ADAPTIVE_FOUR_MODEL = 'adaptive_four';
+export function adaptiveOutputEnabled(env: Env): boolean {
+  return env.AUTH_MODE === 'cail' && env.SEPARATION_BACKEND === 'replicate' &&
+    env.ADAPTIVE_FOUR_ENABLED === 'true' && typeof env.composeStemAudio === 'function';
+}
 
 export const BS_ROFORMER_MODEL = 'bs_roformer_vocals';
 export const DEFAULT_DEMUCS_MODEL = 'htdemucs_ft';
@@ -85,6 +91,14 @@ const ALL_OPTIONS: SeparationOption[] = [
     },
   },
   {
+    id: ADAPTIVE_FOUR_MODEL,
+    stems: ['layer_1', 'layer_2', 'layer_3', 'other'],
+    label: '4 parts: strongest musical layers, the rest',
+    engine: 'DEMUCS',
+    runners: { replicate: { kind: 'replicate', versionVar: 'REPLICATE_MODEL_VERSION',
+      input: () => ({ model: 'htdemucs_6s', ...MP3_OUTPUT }) } },
+  },
+  {
     id: DEFAULT_DEMUCS_MODEL,
     stems: ['vocals', 'drums', 'bass', 'other'],
     label: '4 parts: voice, percussion, low end, the rest',
@@ -117,14 +131,15 @@ const ALL_OPTIONS: SeparationOption[] = [
   },
 ];
 
-export function getSeparationOptions(backend = 'replicate'): {
+export function getSeparationOptions(backend = 'replicate', adaptive = false): {
   backend: string;
   defaultModel: string;
   models: SeparationOptionSummary[];
 } {
-  const available = ALL_OPTIONS.filter((option) => backend in option.runners);
+  const available = ALL_OPTIONS.filter((option) => backend in option.runners &&
+    (adaptive && backend === 'replicate' ? option.id !== DEFAULT_DEMUCS_MODEL : option.id !== ADAPTIVE_FOUR_MODEL));
   const defaultModel =
-    available.find((option) => option.defaultFor?.includes(backend))?.id ?? available[0]?.id ?? '';
+    (adaptive && backend === 'replicate' ? ADAPTIVE_FOUR_MODEL : available.find((option) => option.defaultFor?.includes(backend))?.id) ?? available[0]?.id ?? '';
   return {
     backend,
     defaultModel,
@@ -138,14 +153,17 @@ export function getSeparationOptions(backend = 'replicate'): {
   };
 }
 
-export function modelIsAllowed(backend: string | undefined, model: string): boolean {
-  return getSeparationOptions(backend).models.some((option) => option.id === model);
+export function modelIsAllowed(backend: string | undefined, model: string, adaptive = false): boolean {
+  return getSeparationOptions(backend, model === ADAPTIVE_FOUR_MODEL && adaptive).models.some((option) => option.id === model);
 }
 
 // Searches the full catalogue, not the backend-filtered set, so a job stored
 // under another backend's profile still resolves for display and validation.
 export function getSeparationOption(model: string): SeparationOption | undefined {
-  return ALL_OPTIONS.find((option) => option.id === model);
+  const existing = ALL_OPTIONS.find((option) => option.id === model);
+  if (existing) return existing;
+  const stems = derivedLayerNames(model);
+  return stems ? { id: model, stems, label: `${stems.length} parts: ${stems.join(', ')}`, engine: 'DEMUCS', runners: {} } : undefined;
 }
 
 export function getReplicateRunner(model: string): ReplicateRunner | undefined {

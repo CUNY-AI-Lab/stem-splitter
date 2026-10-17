@@ -6,11 +6,20 @@ import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 import preview, { type WorkerEnv } from './worker.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { SESSION_COOKIE, type WorkerIdentity } from './sso.ts';
-type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_BROWSER?: string; TEST_ROSTER_SUBJECT?: string };
+type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_QUEUE?: string; TEST_BROWSER?: string; TEST_ROSTER_SUBJECT?: string };
+const adaptiveMessages: {jobId:string}[]=[];
 let gatewayCalls = 0;
 let gatewayMessages: Array<{ role: string; content: string }> = [];
 export default {
   async fetch(request: Request, env: TestEnv, ctx: ExecutionContext) {
+    if(env.TEST_QUEUE==='true')env={...env,ADAPTIVE_OUTPUT:{send:async(body:{jobId:string})=>{adaptiveMessages.push(body);}} as unknown as Queue<{jobId:string}>};
+    if(new URL(request.url).pathname==='/__fixture/adaptive-queue'&&request.headers.get('x-fixture')==='local-only') {
+      const bodies=adaptiveMessages.splice(0);let acked=0,retried=0;
+      for(const body of bodies)await env.DB.prepare('UPDATE app_operations SET not_before=0 WHERE id=?').bind(body.jobId).run();
+      await preview.queue({messages:bodies.map(body=>({body,ack:()=>acked++,retry:()=>retried++}))} as unknown as MessageBatch<unknown>,env);
+      return Response.json({delivered:bodies.length,acked,retried});
+    }
+
     if(new URL(request.url).pathname==='/__fixture/inline-import'&&request.headers.get('x-fixture')==='local-only') {const audio=await pollYouTubeImport('inline-memory-fixture',{...env,REPLICATE_API_TOKEN:'test-replicate-token-000',REPLICATE_YT_MODEL:'test/fixture',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});return Response.json({bytes:audio?.data.byteLength});}
     if(new URL(request.url).pathname==='/__fixture/validate-audio'&&request.headers.get('x-fixture')==='local-only')return Response.json({valid:await validateStemAudio(await request.arrayBuffer())});
     if(new URL(request.url).pathname==='/__fixture/operations'&&request.headers.get('x-fixture')==='local-only')return Response.json((await env.DB.prepare('SELECT id,state,phase,error_code,fence,lease_until,not_before FROM app_operations').all()).results);

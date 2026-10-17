@@ -9,6 +9,11 @@
   "browser": { "binding": "BROWSER" },
   "workers_dev": true,
   "preview_urls": false,
+  "limits": { "cpu_ms": 300000 },
+  "queues": {
+    "producers": [{"binding":"ADAPTIVE_OUTPUT","queue":"cail-stem-splitter-adaptive-output"}],
+    "consumers": [{"queue":"cail-stem-splitter-adaptive-output","max_batch_size":1,"max_batch_timeout":1,"max_retries":20,"max_concurrency":1}]
+  },
   "triggers": { "crons": ["* * * * *", "0 8 * * *"] },
   "assets": { "directory": "../public", "binding": "ASSETS", "run_worker_first": true },
   "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
@@ -40,12 +45,13 @@
     "CF_ACCOUNT_ID": "452c33847cf5cb1e46f391fca32fd1b5",
     "R2_BUCKET_NAME": "cail-stem-splitter-preview-audio",
     "SEPARATION_BACKEND": "replicate",
+    "ADAPTIVE_FOUR_ENABLED": "true",
     "SERVER_AUTO_ENABLED": "false",
     "SERVER_AUTO_MODE": "off",
     "INSTRUMENT_DISCOVERY_ENABLED": "false",
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-instructor-samples-20261017"
+    "RELEASE": "cloudflare-adaptive-layers-20261017"
   }
 }

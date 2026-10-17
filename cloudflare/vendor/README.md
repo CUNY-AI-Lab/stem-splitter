@@ -30,3 +30,10 @@ fixture has legal frame headers but an impossible initial reservoir and
 while the combined validator rejects it. This is bounded decode validation,
 not proof against every possible bit corruption or a judgment of sound quality.
 Legitimate silent stems remain acceptable.
+
+## MP3 encoding
+
+Adaptive output uses the unmodified `@breezystack/lamejs@1.2.7` package, locked in
+`cloudflare/bun.lock`. Its JavaScript LAME port is LGPL-3.0-or-later.
+Upstream source: https://github.com/gideonstele/lamejs
+The upstream bundled license notice is retained in `lamejs-LICENSE.txt`.

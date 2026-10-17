@@ -1,0 +1,6 @@
+{
+  "name": "stem-adaptive-codec-test", "main": "adaptive-fixture.ts",
+  "compatibility_date": "2026-09-06", "compatibility_flags": ["nodejs_compat"],
+  "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "stem-adaptive-codec-test" }],
+  "limits": {"cpu_ms": 300000}
+}
