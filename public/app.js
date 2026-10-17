@@ -3935,7 +3935,7 @@ function renderJobs() {
 
     const li = previous.get(job.id) || document.createElement('li');
     li.dataset.jobId = job.id;
-    li.className = `console${job.collapsed && state.status === 'checking' ? ' collapsed' : ''}`;
+    li.className = `console console-pending${job.collapsed && state.status === 'checking' ? ' collapsed' : ''}`;
     cards.push(li);
     const signature = JSON.stringify([job.filename, job.collapsed, state, unavailableJobStates.has(job.id)]);
     if (pendingRenderStates.get(li) === signature) continue;

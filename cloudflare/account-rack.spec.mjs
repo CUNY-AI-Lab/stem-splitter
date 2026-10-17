@@ -250,3 +250,34 @@ for (const width of [1280, 390]) test(`folder moves persist and restore the save
     expect(errors).toEqual([]);
   } finally { await server.close(); }
 });
+
+test('pending song titles keep their own full-width row on narrow screens', async ({page,context}) => {
+  const issuer=await createTestIdentityIssuer();
+  const token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true',RUN_DELETION_ENABLED:'true'}}]});
+  const title='David Bowie - Sound and Vision.mp3';
+  try {
+    const {url}=await server.listen();
+    await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify([
+      ...schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')),
+      `INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO jobs(id,filename,source_key,status,model) VALUES('pending-layout','${title}','uploads/layout/source.mp3','processing','htdemucs_6s')`,
+      `INSERT INTO job_owners(job_id,subject) VALUES('pending-layout','${TEST_SUBJECTS.alice}')`,
+    ])});
+    await context.setExtraHTTPHeaders({'x-fixture-identity':token});
+    await page.route('**/api/jobs/pending-layout',route=>route.fulfill({json:{id:'pending-layout',filename:title,status:'processing',model:'htdemucs_6s',permissions:{owner:true},createdAt:new Date().toISOString(),stems:[]}}));
+    await page.goto(url.href);
+    const card=page.locator('[data-job-id="pending-layout"]');
+    await expect(card.locator('.badge')).toContainText('SEPARATING');
+    await expect(card.getByRole('button',{name:'DELETE',exact:true})).toBeVisible();
+    for(const width of [320,360,390,540]) {
+      await page.setViewportSize({width,height:844});
+      await expect.poll(()=>card.evaluate(el=>{
+        const head=el.querySelector('.console-head').getBoundingClientRect(),title=el.querySelector('.console-title').getBoundingClientRect(),badge=el.querySelector('.badge').getBoundingClientRect(),remove=el.querySelector('.delete-btn').getBoundingClientRect();
+        return title.width>=head.width-1 && title.height<100 && badge.top>=title.bottom && remove.top>=title.bottom && document.documentElement.scrollWidth<=innerWidth;
+      })).toBe(true);
+    }
+    await page.setViewportSize({width:320,height:844});
+    await card.screenshot({path:'/tmp/stem-pending-title-mobile.png',animations:'disabled'});
+  } finally {await server.close();}
+});

@@ -68,8 +68,7 @@ It preserves the single Crate, disabled Remixer default, owned recordings,
 folders, app-local instructor access, and existing independent D1/R2 storage.
 It does not import Railway's class-shared data or revive the Remixer assistant.
 
-`cloudflare-candidate.yml` installs exact packages with the workflow's temporary
-read-only package credential, tests the actual Worker/Hono/client boundary and
+`cloudflare-candidate.yml` installs exact packages from public npm, tests the actual Worker/Hono/client boundary and
 Chrome UI, and dry-builds only this candidate. It does not deploy. Root analyzer
 dependency and existing native-image workflow inputs remain unchanged.
 See `../docs/superpowers/plans/2026-09-23-cloudflare-gateway.md` for acceptance.
@@ -199,9 +198,8 @@ Run root `test:worker`, `test:server`, `test:analysis-service`, `test:e2e`,
 `test:e2e:auto`, and `test:e2e:isolation-shadow` as separate regression gates.
 The adapter pins Wrangler 4.129.0 to test the September compatibility date;
 root package/lock files are deliberately unchanged because they are inputs
-to the accepted analyzer image evidence. Adapter CAIL packages now come from
-GitHub Packages; use a temporary scoped `.npmrc` with a read-only package token,
-then remove it. `vendor/README.md` records the historical 5.2.5 SDK artifact.
+to the accepted analyzer image evidence. Adapter CAIL packages use exact versions and integrity hashes from public npm;
+no GitHub Packages credential is required. `vendor/README.md` records the historical 5.2.5 SDK artifact.
 
 `test-worker.ts` and `test-wrangler.jsonc` are local fixture entrypoints only.
 The deployment entrypoint is `worker.ts`; never deploy the test configuration.
