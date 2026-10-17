@@ -8,7 +8,7 @@ import { archiveAudioMetadata, archiveContentType, ArchiveError, fetchArchiveAud
 import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
 import { fetchVimeoAudio, vimeoFailureDiagnostic } from '../vimeo.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
-import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion } from '../separation/options.ts';
+import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion, ADAPTIVE_FOUR_MODEL, adaptiveOutputEnabled } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
 import { serverAutoCapability, configuredAudioAnalysisProvider, resolveAutoRoutingWithSource, audioAnalysisTimeoutMs, AUTO_ROUTING_REQUEST, prepareAuthoritativeAutoSource } from '../analysis/index.ts';
 import { parseBrowserAutoSummary } from '../analysis/contract.ts';
@@ -26,6 +26,7 @@ interface SplitInput {
   archiveId?: string; archiveFile?: string; archiveSearch?: boolean; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: boolean;
+  adaptive?: 4 | 'auto';
   /** Server-validated remote source; acquired as an app-owned upload snapshot. */
   remoteUrl?: string;
 }
@@ -39,11 +40,14 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const value=body as Record<string,unknown>;
   const courseId=principal.courseId ?? null;
   if (courseId && value.coursePolicy!=='course-work-v1') throw new OperationError('course_policy_required',400,'Review the course sharing notice before submitting.');
-  const options=getSeparationOptions(env.SEPARATION_BACKEND), submitted=value.model ?? options.defaultModel;
+  const adaptiveAvailable=adaptiveOutputEnabled(env);
+  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? options.defaultModel;
+  const adaptive=adaptiveAvailable && (submitted===ADAPTIVE_FOUR_MODEL || submitted===AUTO_ROUTING_REQUEST)
+    ? submitted===AUTO_ROUTING_REQUEST ? 'auto' as const : 4 as const : undefined;
   const capability=serverAutoCapability(env);
-  const auto=Boolean(capability&&(submitted===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST));
-  if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !auto||capability?.mode!=='authoritative' : !modelIsAllowed(env.SEPARATION_BACKEND,submitted))) throw new OperationError('invalid_model',400,'Choose an available split model.');
-  const input: SplitInput={sourceType:'upload',filename:'Audio',model:submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto};
+  const auto=Boolean(!adaptive&&capability&&(submitted===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST));
+  if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !adaptive&&(!auto||capability?.mode!=='authoritative') : !modelIsAllowed(env.SEPARATION_BACKEND,submitted,adaptiveAvailable))) throw new OperationError('invalid_model',400,'Choose an available split model.');
+  const input: SplitInput={sourceType:'upload',filename:'Audio',model:adaptive?'htdemucs_6s':submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto,...(adaptive?{adaptive}:{})};
   if (auto) input.browserAnalysis=parseBrowserAutoSummary(value.browserAnalysis,options.models);
   if ([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
   if (value.sourceUrl !== undefined) {
@@ -93,9 +97,9 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const id=crypto.randomUUID();
   return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',role:principal.role,courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
-      const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type)
-        SELECT id,?,?,'queued',?,? FROM app_operations WHERE id=?`)
-        .bind(input.filename,input.key ?? `uploads/${id}/source.m4a`,input.model,input.sourceType,opId),
+      const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type,routing_request)
+        SELECT id,?,?,'queued',?,?,? FROM app_operations WHERE id=?`)
+        .bind(input.filename,input.key ?? `uploads/${id}/source.m4a`,input.model,input.sourceType,input.adaptive?`adaptive:${input.adaptive}`:null,opId),
         env.DB.prepare(`INSERT INTO ${ownershipTable(principal,'job')}(job_id,subject) SELECT id,subject FROM app_operations WHERE id=?`).bind(opId)];
       const course=courseAssignmentStatement(env,id,principal);
       if (course) statements.push(course);

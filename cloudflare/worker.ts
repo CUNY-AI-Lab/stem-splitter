@@ -3,7 +3,8 @@ import { isPlaylistSample, playlistSampleResponse } from '../src/playlist-sample
 import { recordPageUse, recordServerUse, recordSignInUse } from '../src/reliability/observability.ts';
 import { youtubeImportConfiguration } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
-import app, { runReliableJobs } from '../src/index.ts';
+import { composeStemAudio } from './adaptive-audio.ts';
+import app, { runReliableJobs, resumeAdaptiveOutput } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
 import { gatewayForRequest, canonicalModel, gatewayModelsConfigured } from './gateway.ts';
@@ -18,7 +19,7 @@ import { youtubeBrowserLoader } from './youtube-browser.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
-  { IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService };
+  { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -29,6 +30,10 @@ const HEADERS = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 };
+
+function adaptiveHandoff(env: WorkerEnv) {
+  return env.ADAPTIVE_OUTPUT ? {deferAdaptiveOutput:async (jobId:string)=>{await env.ADAPTIVE_OUTPUT!.send({jobId},{delaySeconds:10});}} : {};
+}
 
 async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
   const path = new URL(request.url).pathname;
@@ -43,16 +48,27 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
   }
   const guest = Boolean(env.guestSession);
   const gateway = gatewayForRequest(env.GATEWAY, guest ? env.GUEST_GATEWAY_API_KEY ?? null : request.headers.get('x-cail-gateway-identity-jwt'), request, env.RELEASE || 'candidate',guest?'key':'jwt');
-  return app.fetch(request, { ...env, ASSISTANT_MODEL: env.GATEWAY_MODEL,
+  return app.fetch(request, { ...env, ...adaptiveHandoff(env), ASSISTANT_MODEL: env.GATEWAY_MODEL,
     ASSISTANT_FALLBACK_MODELS: env.GATEWAY_FALLBACK_MODEL ?? '',
-    assistantTransport: gateway.stream, assistantQuota: guest ? undefined : gateway.quota, verifyCailIdentity, validateStemAudio,
+    assistantTransport: gateway.stream, assistantQuota: guest ? undefined : gateway.quota, verifyCailIdentity, validateStemAudio, composeStemAudio,
     fetchYouTubeBrowserAudio: youtubeBrowserLoader(env.BROWSER) }, ctx);
 }
 
 export default {
+  async queue(batch: MessageBatch<unknown>, env: WorkerEnv): Promise<void> {
+    env = intakeEnvironment(env);
+    for (const message of batch.messages) {
+      const body=message.body as {jobId?:unknown}|null;
+      if (!body || typeof body.jobId !== 'string' || !/^[0-9a-f-]{36}$/.test(body.jobId)) { message.ack(); continue; }
+      try {
+        const done=await resumeAdaptiveOutput({...env,validateStemAudio,composeStemAudio},body.jobId);
+        if(done)message.ack();else message.retry({delaySeconds:15});
+      } catch { message.retry({delaySeconds:30}); }
+    }
+  },
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
     env = intakeEnvironment(env);
-    ctx.waitUntil(runReliableJobs({...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio}));
+    ctx.waitUntil(runReliableJobs({...env,...adaptiveHandoff(env),guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio,composeStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },

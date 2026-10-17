@@ -28,17 +28,10 @@ jobs:
         with:
           bun-version: 1.4.0
       - name: Install frozen application and adapter dependencies
-        env:
-          CAIL_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           bun install --frozen-lockfile
           cd cloudflare
-          trap 'rm -f .npmrc' EXIT
-          cat > .npmrc <<'NPMRC'
-          @cuny-ai-lab:registry=https://npm.pkg.github.com
-          //npm.pkg.github.com/:_authToken=${CAIL_PACKAGES_TOKEN}
-          NPMRC
           bun install --frozen-lockfile
       - name: Install the local audio validation oracle
         run: bash .github/scripts/install-media-tools.sh ffmpeg

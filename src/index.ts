@@ -73,6 +73,7 @@ import {
   allSeparationOptions,
   getSeparationOption,
   getSeparationOptions,
+  adaptiveOutputEnabled,
   modelIsAllowed,
   StemContractError,
   validateAndOrderStems,
@@ -458,8 +459,10 @@ app.get('/api/auth-check', requireClassCode, (c) => c.json({ ok: true }));
 // run. In particular, Replicate must never advertise the local BS-RoFormer
 // profile even though the branched frontend knows how to display it.
 app.get('/api/separation-options', (c) => {
-  const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
+  const adaptive = adaptiveOutputEnabled(c.env);
+  const options = getSeparationOptions(c.env.SEPARATION_BACKEND, adaptive);
   const auto = serverAutoCapability(c.env);
+  if (adaptive) return c.json({ ...options, routing: { auto: 'adaptive' } });
   // Flags off must keep the pre-change response shape byte-for-byte compatible.
   return auto ? c.json({ ...options, routing: { auto: auto.mode } }) : c.json(options);
 });
@@ -1468,7 +1471,8 @@ app.get('/api/jobs/:id', async (c) => {
 
   // A Worker termination can strand an ingestion claim. Re-open only expired
   // leases; active winners keep exclusive ownership.
-  if (row.status === 'ingesting' && ingestLeaseExpired(row.error)) {
+  if (row.status === 'ingesting' && ingestLeaseExpired(row.error) &&
+      !(c.env.AUTH_MODE === 'cail' && ((await readOperation(c.env.DB,id))?.lease_until ?? 0) > Date.now())) {
     await c.env.DB.prepare(
       "UPDATE jobs SET status = 'processing', error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?"
     )
@@ -2271,13 +2275,35 @@ export async function runReliableJobs(env: Env) { await drainSplitQueue(env,inge
 // --- helpers ------------------------------------------------------------
 
 /** Download finished stems from the provider and store them in R2. */
+/** Queue messages name an existing operation; provider state and ownership remain authoritative. */
+export async function resumeAdaptiveOutput(env: Env, jobId: string): Promise<boolean> {
+  const job = await env.DB.prepare('SELECT status,routing_request,error FROM jobs WHERE id=?').bind(jobId)
+    .first<{status:string;routing_request:string|null;error:string|null}>();
+  if (!job || !job.routing_request?.startsWith('adaptive:') || ['done','failed'].includes(job.status)) return true;
+  const operation = await readOperation(env.DB,jobId);
+  if (!operation || !['processing','reconciling'].includes(operation.state)) return true;
+  if (job.status==='ingesting' && ingestLeaseExpired(job.error)) {
+    await env.DB.prepare(`UPDATE jobs SET status='processing',error=NULL WHERE id=? AND status='ingesting' AND error IS ?
+      AND NOT EXISTS(SELECT 1 FROM app_operations WHERE id=? AND lease_until>?)`)
+      .bind(jobId,job.error,operation.id,Date.now()).run();
+  }
+  await reconcileSplit({...env,deferAdaptiveOutput:undefined},operation,ingestResult);
+  const final = await env.DB.prepare('SELECT status FROM jobs WHERE id=?').bind(jobId).first<{status:string}>();
+  return !final || ['done','failed'].includes(final.status);
+}
+
 async function ingestResult(env: Env, jobId: string, result: SeparationResult, operation?: Operation): Promise<void> {
   if (result.status !== 'failed' && result.status !== 'succeeded') return;
 
-  const job = await env.DB.prepare('SELECT model FROM jobs WHERE id = ?')
+  const job = await env.DB.prepare('SELECT model, routing_request FROM jobs WHERE id = ?')
     .bind(jobId)
-    .first<Pick<JobRow, 'model'>>();
+    .first<Pick<JobRow, 'model' | 'routing_request'>>();
   if (!job) return;
+
+  if (result.status === 'succeeded' && job.routing_request?.startsWith('adaptive:') && env.deferAdaptiveOutput) {
+    await env.deferAdaptiveOutput(jobId);
+    return;
+  }
 
   // A webhook and a browser poll can observe the same terminal provider state
   // concurrently. Claim ingestion atomically so stems are downloaded exactly
@@ -2294,6 +2320,17 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
   if (!claim.meta.changes) return;
 
   const stored: { name: string; key: string }[] = [];
+  let published = stored;
+  let outputModel = job.model ?? DEFAULT_DEMUCS_MODEL;
+  const adaptiveMode = job.routing_request === 'adaptive:4' ? 4 : job.routing_request === 'adaptive:auto' ? 'auto' : null;
+  const checkpoint = async () => {
+    if (!operation) return;
+    const now = Date.now();
+    const changed = await env.DB.prepare(`UPDATE app_operations SET lease_until=?,updated_at=?
+      WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=0 AND state IN ('processing','reconciling') AND lease_until>? AND deadline>?`)
+      .bind(now+5*60*1000,now,operation.id,operation.fence,operation.lease_owner,now,now).run();
+    if (!changed.meta.changes) throw new Error('Split lease is no longer current');
+  };
   try {
     if (result.status === 'failed') {
       await env.DB.prepare(
@@ -2334,15 +2371,51 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
         httpMetadata: { contentType: 'audio/mpeg' },
       });
       stored.push({ name: stem.name, key });
+      if (adaptiveMode) await checkpoint();
+    }
+
+    if (adaptiveMode) {
+      if (!env.composeStemAudio || job.model !== 'htdemucs_6s') throw new InvalidStemAudioError('Adaptive audio processing is temporarily unavailable. No allowance was used.');
+      const { NAMED_LAYERS } = await import('./separation/prominent-layers.ts');
+      const sources = [...NAMED_LAYERS,'other' as const].map(name => {
+        const source = stored.find(stem => stem.name === name);
+        if (!source) throw new InvalidStemAudioError('A required musical layer is missing. No allowance was used.');
+        return { name, open: async () => {
+          const audio = await env.AUDIO.get(source.key);
+          if (!audio) throw new Error('Stored musical layer is unavailable');
+          return audio.body;
+        } };
+      });
+      const composed = await env.composeStemAudio({ sources, requested: adaptiveMode, checkpoint,
+        write: async (name, bytes) => {
+          await checkpoint();
+          if (!env.validateStemAudio || !await env.validateStemAudio(bytes.buffer as ArrayBuffer)) throw new InvalidStemAudioError('A musical layer could not be decoded. No allowance was used.');
+          const key = `stems/${jobId}/${lease.split(':').at(-1)}/display/${name}.mp3`;
+          await env.AUDIO.put(key, bytes, {httpMetadata:{contentType:'audio/mpeg'}});
+          stored.push({name,key});return key;
+        } });
+      if (composed.plan.parts !== 6) published = composed.stored;
+      outputModel = composed.plan.model;
+      validateAndOrderStems(outputModel, published.map(stem => ({name:stem.name,url:stem.key})));
     }
 
     const committed = await env.DB.prepare(
-      `UPDATE jobs SET status = ?, stems = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?
-        AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`
+      `UPDATE jobs SET status = ?, stems = ?, model = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?
+        AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=0 AND lease_until>? AND deadline>?))`
     )
-      .bind('done', JSON.stringify(stored), jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null)
+      .bind('done', JSON.stringify(published), outputModel, jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null,Date.now(),Date.now())
       .run();
-    if (!committed.meta.changes) await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
+    if (!committed.meta.changes) {
+      if (operation) await env.DB.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No allowance was used.'
+        WHERE id=? AND status='ingesting' AND error=? AND EXISTS(SELECT 1 FROM app_operations
+          WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=1)`)
+        .bind(jobId,lease,operation.id,operation.fence,operation.lease_owner).run();
+      await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
+    }
+    else {
+      const keep = new Set(published.map(stem => stem.key));
+      await Promise.allSettled(stored.filter(stem => !keep.has(stem.key)).map(stem => env.AUDIO.delete(stem.key)));
+    }
   } catch (error) {
     // A failed acknowledgement does not prove a failed commit. First fence the
     // old ingestion lease, then inspect durable references before any deletion.
@@ -2352,7 +2425,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       const referenced=(row:typeof snapshot)=>new Set(row?.stems?JSON.parse(row.stems).map((stem:{key:string})=>stem.key):[]);
       if(stored.some(({key})=>referenced(snapshot).has(key)))return;
       const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No allowance was used.';
-      const terminal=error instanceof InvalidStemAudioError||env.AUTH_MODE==='cail';
+      const terminal=error instanceof InvalidStemAudioError||(env.AUTH_MODE==='cail'&&!adaptiveMode);
       await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?
         AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`)
         .bind(terminal?'failed':'processing',terminal?failure:null,jobId,lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null).run();
@@ -2495,7 +2568,9 @@ function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: Guid
     status: row.status,
     error: row.status === 'failed' ? row.error?.replaceAll('No successful-split allowance was used.', 'No allowance was used.').replaceAll('Your successful-split allowance has not been used.', 'No allowance was used.') ?? null : null,
     model: row.model ?? DEFAULT_DEMUCS_MODEL,
-    expectedStems: getSeparationOption(row.model ?? DEFAULT_DEMUCS_MODEL)?.stems ?? [],
+    expectedStems: row.routing_request?.startsWith('adaptive:') && row.status !== 'done' ? [] : getSeparationOption(row.model ?? DEFAULT_DEMUCS_MODEL)?.stems ?? [],
+    ...(row.routing_request === 'adaptive:4' || row.routing_request === 'adaptive:auto'
+      ? {adaptiveOutput:row.routing_request === 'adaptive:4' ? 4 : 'auto'} : {}),
     labels: row.labels ? (JSON.parse(row.labels) as Record<string, string>) : {},
     annotations: annotations.map((a) => ({ id: a.id, atSeconds: a.at_seconds, text: a.text })),
     stems,

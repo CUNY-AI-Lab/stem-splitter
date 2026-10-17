@@ -8,4 +8,5 @@ import { validateMp3Pcm } from '../src/reliability/media.ts';
 // The pinned package's module injection hook bypasses runtime compilation.
 // Wrangler emits a compiled Wasm module; no code or binaries are fetched.
 (MPEGDecoder as unknown as {module:WebAssembly.Module}).module=module;
-export const validateStemAudio=(data:ArrayBuffer)=>validateMp3Pcm(data,()=>new MPEGDecoder() as DecoderType);
+export const createMp3Decoder = () => new MPEGDecoder() as DecoderType;
+export const validateStemAudio=(data:ArrayBuffer)=>validateMp3Pcm(data,createMp3Decoder);

@@ -1069,6 +1069,16 @@ footer a:hover { color: var(--hot); }
     text-overflow: clip;
     white-space: normal;
   }
+  .console-pending .console-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .console-pending .console-title {
+    grid-column: 1 / -1;
+    padding-top: 0;
+  }
+  .console-pending .badge { justify-self: start; }
+  .console-pending .delete-btn { justify-self: end; }
   .console-actions-wrap { position: relative; }
   .actions-toggle {
     align-items: center;

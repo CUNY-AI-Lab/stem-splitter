@@ -374,6 +374,7 @@ function addJob(job) {
     filename: job.filename,
     model: job.model,
     expectedStems: job.expectedStems || [],
+    ...(job.adaptiveOutput ? {adaptiveOutput:job.adaptiveOutput} : {}),
     ...(job.autoRouting ? { autoRouting: job.autoRouting } : {}),
     // POST /api/jobs doesn't carry a timestamp; this stands in until the first
     // poll returns the server's own createdAt.
@@ -961,6 +962,7 @@ function readAudioDuration(file) {
  */
 async function resolveModel(chosen, file, sourceLabel = 'this source') {
   if (chosen !== AUTO_MODEL) return { model: chosen, note: '' };
+  if (serverAutoMode === 'adaptive') return { model: AUTO_MODEL, note: 'AUTO will find the strongest musical layers after import.' };
 
   const fallback = fallbackModel();
   const fallbackId = fallback?.id || '';
@@ -1094,7 +1096,7 @@ async function loadSeparationOptions() {
 
     catalogueModels = options.models;
     catalogueDefaultModel = options.defaultModel;
-    serverAutoMode = ['shadow', 'authoritative'].includes(options.routing?.auto)
+    serverAutoMode = ['shadow', 'authoritative', 'adaptive'].includes(options.routing?.auto)
       ? options.routing.auto
       : 'off';
     stemChoice.replaceChildren();
@@ -1177,7 +1179,7 @@ function buildAutoOption() {
   input.value = AUTO_MODEL;
   input.setAttribute(
     'aria-label',
-    serverAutoMode === 'authoritative'
+    ['authoritative','adaptive'].includes(serverAutoMode)
       ? 'Auto: listen after import and choose 2, 4, or 6 splits'
       : 'Auto: listen to a local file and choose 2, 4, or 6 splits'
   );
@@ -1214,7 +1216,7 @@ function renderSplitLegend() {
   if (selectedModel() === AUTO_MODEL) {
     const item = document.createElement('li');
     item.textContent =
-      serverAutoMode === 'authoritative'
+      ['authoritative','adaptive'].includes(serverAutoMode)
         ? 'listens after import, then picks 2, 4, or 6 splits'
         : 'Processes local audio, then splits into either 2, 4, or 6 splits';
     splitLegend.appendChild(item);
@@ -1874,8 +1876,10 @@ class Mixer {
   }
 
   build() {
+    const displayOrder = this.job.model?.startsWith('adaptive_')
+      ? this.job.stems.map(stem => stem.name) : STEM_ORDER;
     const stems = [...this.job.stems].sort(
-      (a, b) => idx(STEM_ORDER, a.name) - idx(STEM_ORDER, b.name)
+      (a, b) => idx(displayOrder, a.name) - idx(displayOrder, b.name)
     );
     const actionsId = `session-actions-${String(this.job.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
@@ -3915,6 +3919,7 @@ function renderJobs() {
       stems: [],
       model: job.model,
       expectedStems: job.expectedStems || [],
+    ...(job.adaptiveOutput ? {adaptiveOutput:job.adaptiveOutput} : {}),
       autoRouting: job.autoRouting,
     };
 
@@ -3932,7 +3937,7 @@ function renderJobs() {
 
     const li = previous.get(job.id) || document.createElement('li');
     li.dataset.jobId = job.id;
-    li.className = `console${job.collapsed && state.status === 'checking' ? ' collapsed' : ''}`;
+    li.className = `console console-pending${job.collapsed && state.status === 'checking' ? ' collapsed' : ''}`;
     cards.push(li);
     const signature = JSON.stringify([job.filename, job.collapsed, state, unavailableJobStates.has(job.id)]);
     if (pendingRenderStates.get(li) === signature) continue;
@@ -3943,7 +3948,7 @@ function renderJobs() {
     const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(operation?.stage);
     const importing = operation?.phase === 'fetch';
     const progressLabel = checking ? 'CHECKING STATUS' : queued ? 'QUEUED' : importing ? 'IMPORTING' : 'SEPARATING';
-    const progressNote = checking ? 'Checking the saved run’s current status…' : queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
+    const progressNote = checking ? 'Checking the saved run’s current status…' : queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : state.adaptiveOutput || job.adaptiveOutput ? 'Finding the strongest musical layers…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
     // A silent wait reads as a hung wait. The clock is the server's own start
     // time once polling has one, and the local one until then.
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();
