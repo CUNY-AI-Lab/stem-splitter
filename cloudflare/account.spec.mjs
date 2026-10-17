@@ -562,7 +562,7 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await expect(page.locator('.folder-btn')).toBeHidden();
   await expect(page.locator('.note-btn')).toBeHidden();
   await expect(page.locator('#station-word')).toHaveText('Splitter');
-  await expect(page.locator('#station-tagline')).toHaveText('Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate waveforms as you go and query the Listening Guy to help guide your analysis.');
+  await expect(page.locator('#station-tagline')).toHaveText('Split audio tracks into independent musical layers. Listen closely, one stem at a time. Take notes as you go and cue the Listening Guy to guide analysis.');
   await expect(page.locator('#split-summary')).toBeHidden();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   if(receipts)await page.screenshot({path:`${receipts}/student-audio-${width}.png`,fullPage:true,animations:'disabled'});
