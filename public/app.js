@@ -477,7 +477,7 @@ function preloadSongSample() {
         showSongSample();
       };
       try {
-        const data = await api(`/api/music/search?q=${encodeURIComponent(query)}`, {
+        const data = await api(`/api/music/search?q=${encodeURIComponent(query)}&sampleItem=${encodeURIComponent(candidate.archiveId)}&sampleFile=${encodeURIComponent(candidate.archiveFile)}`, {
           background: true, signal: cache.controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: receive,
         });
         receive(data);

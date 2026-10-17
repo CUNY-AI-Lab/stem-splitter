@@ -667,6 +667,17 @@ async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<b
       })());
 }
 
+/** Verify a playlist candidate directly; catalog ranking cannot establish absence. */
+export async function verifyArchiveSample(query: string, identifier: string, file: string, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
+  const tokens = archiveSongSearchKey(query).split(' ').filter(Boolean).slice(0, 8);
+  if (!tokens.length || file.length > MAX_FILE_NAME_LENGTH) return { results: [] };
+  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: archiveDurationLimit(maximumSeconds), timeoutMs: 9000 });
+  const song = matchingSongs(item, tokens).find(track => track.archiveFile === file);
+  if (!song || !await downloadableSong(song, songDeliveryLocations.get(item))) return { results: [] };
+  const { score: _score, ...result } = song;
+  return { results: [result] };
+}
+
 /** The main field searches public downloads. The separate open-license Crate keeps its existing scope. */
 export async function searchArchiveSongs(query: string, onResults?: SearchListener, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
   const normalized = archiveSongSearchKey(query);

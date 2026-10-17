@@ -7,6 +7,7 @@ import {
   ArchiveError,
   fetchArchiveAudio,
   fetchArchiveItem,
+  verifyArchiveSample,
   isArchiveScope,
   parseArchiveIdentifier,
 } from '../src/archive.ts';
@@ -324,4 +325,26 @@ test('Archive direct import refuses missing duration metadata', async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test('playlist samples verify the exact Archive recording and delivery, never a substitute', async () => {
+  const original = globalThis.fetch;
+  let available = true, downloads = 0;
+  const audio = readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url));
+  const seconds = mp3FrameInfo(new Uint8Array(audio).buffer).seconds;
+  globalThis.fetch = async input => {
+    if (String(input).includes('/metadata/')) return metadataResponse({}, [{name:FILE_NAME,title:'Playlist Song',size:String(audio.length),length:String(seconds)}]);
+    downloads++;
+    return available ? new Response(audio, { headers: { 'Content-Type':'audio/mpeg','Content-Length':String(audio.length) } }) : new Response('gone',{status:404});
+  };
+  try {
+    assert.equal((await verifyArchiveSample('Classroom artist Playlist Song', IDENTIFIER, FILE_NAME)).results.length,1);
+    assert.equal((await verifyArchiveSample('Different artist Playlist Song', IDENTIFIER, FILE_NAME)).results.length,0);
+    assert.equal((await verifyArchiveSample('Classroom artist Playlist Song', IDENTIFIER, 'other.mp3')).results.length,0);
+    assert.equal(downloads,1);
+    available=false;
+    assert.equal((await verifyArchiveSample('Classroom artist Playlist Song', IDENTIFIER, FILE_NAME)).results.length,0);
+    await assert.rejects(verifyArchiveSample('Playlist Song','../invalid',FILE_NAME));
+  } finally { globalThis.fetch = original; }
 });
