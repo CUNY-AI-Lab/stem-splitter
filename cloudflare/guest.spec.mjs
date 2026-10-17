@@ -744,3 +744,46 @@ test('playlist hints lazily include the entire verified pool before repeating', 
     expect(f.errors).toEqual([]);
   } finally {await f.close();}
 });
+
+test('playlist rotation skips unavailable songs at the pass boundary without extending a slot', async ({page}) => {
+  test.setTimeout(40000);
+  const f=await setup(page);
+  const candidates=Array.from({length:3},(_,i)=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`partial-${i}`,archiveFile:`song-${i}.mp3`}));
+  try {
+    await page.addInitScript(()=>{Math.random=()=>0.999;});
+    await page.route('**/api/song-samples',route=>route.fulfill({json:{revision:1,enabled:true,holdMs:3500,cadenceMs:6000,reshuffle:true,tracks:candidates}}));
+    await page.route('**/api/music/search?*',route=>{
+      const item=new URL(route.request().url()).searchParams.get('sampleItem');
+      const c=candidates.find(c=>c.archiveId===item);
+      return route.fulfill({json:{results:c&&item!=='partial-0'?[{...sampleTrack,title:c.title,artist:c.artist,archiveId:item,archiveFile:c.archiveFile}]:[]}});
+    });
+    await page.goto(f.origin);
+    const input=page.locator('#yt-url');
+    await expect(input).toHaveAttribute('placeholder','Artist 1 Song 1',{timeout:10000});
+    await expect(input).toHaveAttribute('placeholder','Artist 2 Song 2',{timeout:7000});
+    await expect(input).toHaveAttribute('placeholder','Artist 1 Song 1',{timeout:6800});
+    await expect(input).toHaveAttribute('placeholder','Artist 2 Song 2',{timeout:6800});
+    expect(f.errors).toEqual([]);
+  } finally {await f.close();}
+});
+
+test('refreshing the only available song preserves its full title instead of typing it again', async ({page}) => {
+  test.setTimeout(30000);
+  const f=await setup(page);
+  try {
+    await page.route('**/api/song-samples',route=>route.fulfill({json:{revision:1,enabled:true,holdMs:3500,cadenceMs:6000,reshuffle:true,tracks:[{artist:'Artist',title:'Only song',archiveId:'only',archiveFile:'only.mp3'}]}}));
+    await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...sampleTrack,title:'Only song',artist:'Artist',archiveId:'only',archiveFile:'only.mp3'}]}}));
+    await page.goto(f.origin);
+    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Artist Only song',{timeout:10000});
+    // A refreshed entry has a new object identity but the same Archive track.
+    const titles=await page.evaluate(async()=>{
+      verifiedSongSamples.splice(0,1,{...verifiedSongSamples[0]});
+      const input=document.querySelector('#yt-url'),values=[];
+      const observer=new MutationObserver(()=>values.push(input.placeholder));
+      observer.observe(input,{attributes:true,attributeFilter:['placeholder']});
+      await new Promise(resolve=>setTimeout(resolve,7000));observer.disconnect();return values;
+    });
+    expect(titles.every(title=>title==='Artist Only song')).toBe(true);
+    expect(f.errors).toEqual([]);
+  } finally {await f.close();}
+});
