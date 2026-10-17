@@ -252,7 +252,9 @@ async function api(path, options = {}) {
   }
   if (res.status === 429 && body.code === 'split_daily_limit' && Number.isFinite(Date.parse(body.resetsAt))) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
-    throw new Error(`You've used today's runs. You can split again ${reset}.`);
+    throw new Error(guestSessionActive
+      ? `You've used today's 3 guest runs. Sign in with CUNY Login for your account's daily allowance. Guest work stays in this browser. You can split again ${reset}.`
+      : `You've used today's runs. You can split again ${reset}.`);
   }
   if (!res.ok) {
     const error = new Error(body.error?.message || body.error || `Request failed (${res.status})`);

@@ -29,7 +29,7 @@ async function setup(t:{after:(f:()=>void)=>void}) {
   ADMISSION_RESOLVER:{resolveCourseAccess:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)}} as unknown as Env;
  async function split(key='test-operation-0001',phase:'fetch'|'split'='split') {
   const id=crypto.randomUUID();
-  return (await reserveOperation(db,{subject,courseId:null,kind:'split',key,fingerprint:key,phase,jobId:id,
+  return (await reserveOperation(db,{subject,role:'student',courseId:null,kind:'split',key,fingerprint:key,phase,jobId:id,
    request:{sourceType:phase==='fetch'?'youtube':'upload',youtubeUrl:'https://www.youtube.com/watch?v=abcdefghijk',filename:'private fixture',model:'htdemucs_ft',key:'uploads/fixture/audio.wav'},
    statements:op=>[db.prepare("INSERT INTO jobs(id,filename,source_key,status,model) SELECT id,'private fixture','uploads/fixture/audio.wav','queued','htdemucs_ft' FROM app_operations WHERE id=?").bind(op)]})).operation;
  }

@@ -1,5 +1,5 @@
-// Session creation is silent. The existing submission flow asks for a check
-// only when the server requires one after three completed or pending splits.
+// Session creation is silent. The server may ask for a check before guest
+// Listening Guy use; guest split allowances stop at three per UTC day.
 (() => {
   let scriptReady;
   let verification;

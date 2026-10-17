@@ -135,7 +135,7 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-status').textContent = '';
     try { await window.StemGuestClaim.run(account); }
     catch (error) { el('account-status').textContent = error.message; }
-    el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student' }[account.role] || 'Student'} access`;
+    el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student', member: 'CUNY AI Lab member' }[account.role] || 'CUNY AI Lab member'} access`;
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
     el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);

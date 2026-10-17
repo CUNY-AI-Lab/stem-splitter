@@ -26,7 +26,7 @@ async function setup(t:{after:(f:()=>void)=>void}) {
   ADMISSION_RESOLVER:{resolveCourseAccess:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)}} as unknown as Env;
  async function split(key='test-operation-0001',phase:'fetch'|'split'='split') {
   const id=crypto.randomUUID();
-  return (await reserveOperation(db,{subject,courseId:null,kind:'split',key,fingerprint:key,phase,jobId:id,
+  return (await reserveOperation(db,{subject,role:'student',courseId:null,kind:'split',key,fingerprint:key,phase,jobId:id,
    request:{sourceType:phase==='fetch'?'youtube':'upload',youtubeUrl:'https://www.youtube.com/watch?v=abcdefghijk',filename:'private fixture',model:'htdemucs_ft',key:'uploads/fixture/audio.wav'},
    statements:op=>[db.prepare("INSERT INTO jobs(id,filename,source_key,status,model) SELECT id,'private fixture','uploads/fixture/audio.wav','queued','htdemucs_ft' FROM app_operations WHERE id=?").bind(op)]})).operation;
  }
@@ -148,7 +148,7 @@ test('provider deadline cancellation releases a guest place without recording a 
  await db.prepare("UPDATE app_operations SET state='processing',provider_id='prediction' WHERE id=?").bind(operation.id).run();
  t.mock.method(globalThis,'fetch',async(_url:any,init?:RequestInit)=>{assert.notEqual(init?.method,'POST');return Response.json({id:'prediction',status:'canceled'});});
  await runReliableJobs(env);await runReliableJobs(env);
- const usage=await splitAllowance(db,guest,new Date(),'guest');assert.equal(usage.remaining,5);assert.equal(usage.completed,0);assert.equal(usage.inProgress,0);
+ const usage=await splitAllowance(db,guest,new Date(),'guest');assert.equal(usage.remaining,3);assert.equal(usage.completed,0);assert.equal(usage.inProgress,0);
  assert.equal((await readOperation(db,operation.id))?.state,'failed');
 });
 
@@ -170,7 +170,7 @@ test('cancel HTTP route forwards promptly, preserves ownership, and starts no ot
  assert.equal((await request(other.id)).status,404);assert.equal(cancels,0);
  assert.equal((await request(operation.id)).status,200);assert.equal(cancels,1);
  assert.equal((await readOperation(db,other.id))?.state,'queued');assert.equal((await readOperation(db,operation.id))?.state,'cancelled');
- assert.equal((await splitAllowance(db,guest,new Date(),'guest')).remaining,5);
+ assert.equal((await splitAllowance(db,guest,new Date(),'guest')).remaining,3);
  assert.equal((await request(operation.id)).status,200);assert.equal(cancels,1,'duplicate cancellation is settled locally');
 });
 

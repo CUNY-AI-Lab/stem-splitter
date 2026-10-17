@@ -7,10 +7,10 @@ release gates below still apply.
 
 ## Accounting and recovery
 
-A student's successful splits plus active reservations cannot exceed 15 per
-UTC submission day, across courses and browsers. The separate guest allowance
-is five successful splits and 25 human inputs per server-issued guest session;
-[guest access and activation](guest-access.md) describe its separate ownership,
+A current STEM student's successful splits plus active reservations cannot
+exceed 15 per UTC submission day, across courses and browsers. Other signed-in
+Lab members receive five, and a server-issued guest session receives three
+successful splits and 25 human inputs; [guest access](guest-access.md) describes its separate ownership,
 seven-day session and bot/sponsor requirements. Guest access remains off by
 default. Anonymous sessions cannot establish a unique human.
 

@@ -57,7 +57,7 @@ test('same-browser claim transfers saved jobs and notes once, preserving history
  assert.equal((await db.prepare("SELECT revision FROM listening_conversations WHERE job_id='saved' AND subject=?").bind(alice).first<any>())?.revision,3);
  assert.deepEqual(await db.prepare('SELECT * FROM app_operations ORDER BY id').all(),usage);
  assert.equal((await splitAllowance(env.DB,alice)).remaining,15);
- assert.equal((await splitAllowance(env.DB,guest,new Date(),'guest')).remaining,4);
+ assert.equal((await splitAllowance(env.DB,guest,new Date(),'guest')).remaining,2);
  const guestResponse=await authorizeGuestRequest(new Request('https://split.test/api/account'),{...env,guestSession:env.guestClaimSession},()=>assert.fail('Claimed guest cannot regain anonymous access'));
  assert.equal(guestResponse?.status,403);
 });
@@ -94,7 +94,9 @@ test('interrupted transaction rolls back ownership and notes; a later claim reco
 test('failed membership, course eligibility, cross-origin requests and expired guest proof preserve originals',async()=>{
  const {db,env,flags,seed,post}=await fixture();await seed('saved');
  flags.membership=false;assert.equal((await post()).status,403);flags.membership=true;
- flags.course=false;assert.equal((await post()).status,403);flags.course=true;
+ flags.course=false;
+ const personal=await app.fetch(new Request('https://split.test/api/account',{headers:{Origin:'https://split.test','x-cail-identity-jwt':alice}}),env);
+ assert.equal(personal.status,200,'Lab membership grants personal access without STEM enrollment');flags.course=true;
  const cross=await app.fetch(new Request('https://split.test/api/account/claim-guest',{method:'POST',headers:{Origin:'https://attacker.test','x-cail-identity-jwt':alice}}),env);
  assert.equal(cross.status,403);
  env.guestClaimSession={...env.guestClaimSession!,expiresAt:Date.now()-1};assert.equal((await post()).status,403);
@@ -138,7 +140,7 @@ test('only the claiming member can cancel a pending guest split and the original
  assert.equal((await cancel(bob)).status,404);assert.equal((await cancel(alice)).status,200);assert.equal((await cancel(alice)).status,200);
  const operation=(await readOperation(env.DB,'pending-cancel'))!;
  assert.equal(operation.subject,guest);assert.equal(operation.quota_class,'guest');assert.equal(operation.state,'cancelled');
- assert.equal((await splitAllowance(env.DB,guest,new Date(),'guest')).remaining,5);
+ assert.equal((await splitAllowance(env.DB,guest,new Date(),'guest')).remaining,3);
  assert.equal((await splitAllowance(env.DB,alice)).remaining,15);
 });
 
@@ -180,9 +182,9 @@ test('lost acknowledgement after committed claim retries without duplicate owner
  assert.equal((await splitAllowance(db,alice)).remaining,15);
 });
 
-test('claimed five-place guest allowance preserves successful work and refunds a later source failure',async t=>{
+test('claimed three-place guest allowance preserves successful work and refunds a later source failure',async t=>{
  const {db,env,seed,post}=await fixture();
- for(let i=0;i<4;i++)await seed(`done-${i}`);
+ for(let i=0;i<2;i++)await seed(`done-${i}`);
  const operation=await seed('fetch-failure',guest,false);
  assert.equal((await splitAllowance(db,guest,new Date(),'guest')).remaining,0);
  await assert.rejects(seed('over-limit',guest,false));
@@ -194,7 +196,7 @@ test('claimed five-place guest allowance preserves successful work and refunds a
  const current=(await readOperation(db,operation.id))!;
  assert.equal(current.state,'failed');assert.equal(current.subject,guest);assert.equal(current.quota_class,'guest');
  const guestAllowance=await splitAllowance(db,guest,new Date(),'guest');
- assert.equal(guestAllowance.limit,5);assert.equal(guestAllowance.completed,4);assert.equal(guestAllowance.inProgress,0);assert.equal(guestAllowance.remaining,1);
+ assert.equal(guestAllowance.limit,3);assert.equal(guestAllowance.completed,2);assert.equal(guestAllowance.inProgress,0);assert.equal(guestAllowance.remaining,1);
  assert.equal((await splitAllowance(db,alice)).remaining,15);
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<any>())?.n,0);
 });

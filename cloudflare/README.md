@@ -22,16 +22,18 @@ separate release gates. `TODO.md` records the coordinated PR1–PR3 status.
 The [local acceptance record](../docs/acceptance/classroom-2026-10-06.md) lists
 test results, screenshots, migration rehearsal and dependency-audit limits.
 
-## Current authority — September 29, 2026
+## Current authority — October 17, 2026
 
 The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from
-`codex/cloudflare-migration`, not Railway's `main`. The latest verified baseline
-is PR #16, merge `be7b8b450b5f5cb79c9cd974d9f94ae724d4275a`, with release marker
-`cloudflare-playback-retention-20260929`. The runtime Worker remains named
+`codex/cloudflare-migration`, not Railway's `main`. The current source baseline includes PR #41 for instructor-controlled Archive
+examples and consistent rotation. The runtime Worker remains named
 `cail-stem-splitter-preview`; the canonical alias uses the same D1/R2 data.
 
-Account recovery, ten daily signed-in runs and 90-day upload retention are
-released. The Listening Guide uses the private CAIL Gateway. Remixer, server
+Current daily split limits are 15 for an active STEM course student, five for
+other signed-in Lab members, and three for guest browser sessions. Failed or
+cancelled splits release their reserved place; current Lab membership grants
+personal access even without course enrollment. Account recovery and 90-day
+upload retention remain released. The Listening Guide uses the private CAIL Gateway. Remixer, server
 Auto, instrument discovery and public paid visitor runs remain disabled. See
 [the current progression](../TODO.md) and [migration status](../MIGRATION.md)
 for acceptance gates. Railway remains untouched, with its separate release and

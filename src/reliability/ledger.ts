@@ -1,4 +1,4 @@
-import { dailyWindow, allowanceLimit, GUEST_UNVERIFIED_SPLITS_PER_DAY, type QuotaClass } from '../daily-allowance.ts';
+import { dailyWindow, allowanceLimit, type AllowanceRole, type QuotaClass } from '../daily-allowance.ts';
 
 export type OperationKind = 'split' | 'chat' | 'guide';
 export type Phase = 'fetch' | 'split' | 'chat' | 'guide';
@@ -34,7 +34,7 @@ export async function findOperation(db: D1Database, subject: string, kind: Opera
  */
 export async function reserveOperation(db: D1Database, input: {
   subject: string; quotaClass?: QuotaClass; courseId: string | null; kind: OperationKind; key: string; fingerprint: string;
-  phase: Phase; jobId?: string; request?: unknown; now?: number;
+  phase: Phase; jobId?: string; request?: unknown; now?: number; role?: AllowanceRole;
   statements?: (id: string) => D1PreparedStatement[];
 }): Promise<{ operation: Operation; created: boolean }> {
   if (!validOperationKey(input.key)) throw new OperationError('idempotency_required', 400, 'Reload and submit again with a request identifier.');
@@ -42,7 +42,8 @@ export async function reserveOperation(db: D1Database, input: {
   const { day, retryAfter } = dailyWindow(new Date(now));
   const quotaClass = input.quotaClass ?? 'member';
   if (quotaClass === 'guest' && input.courseId !== null) throw new OperationError('guest_course_forbidden',400,'Guest work cannot be assigned to a course.');
-  const limit = allowanceLimit(input.kind,quotaClass);
+  const role: AllowanceRole = quotaClass === 'guest' ? 'guest' : input.role === 'student' ? 'student' : 'member';
+  const limit = allowanceLimit(input.kind,quotaClass,role);
   const abuseLimit = quotaClass === 'guest' ? input.kind === 'split' ? 15 : input.kind === 'chat' ? 50 : 10
     : input.kind === 'split' ? MAX_SPLIT_ATTEMPTS_PER_DAY : input.kind === 'chat' ? MAX_CHAT_ATTEMPTS_PER_DAY : 20;
   const id = input.kind==='split' && input.jobId ? input.jobId : crypto.randomUUID();
@@ -54,16 +55,14 @@ export async function reserveOperation(db: D1Database, input: {
       AND (? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE kind='split' AND state NOT IN (${TERMINAL})) < ?)
       AND (? <> 'guide' OR (SELECT COUNT(*) FROM app_operations WHERE kind='guide' AND day=?) < 200)
       AND (? <> 'guest' OR EXISTS(SELECT 1 FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL
-        AND NOT EXISTS(SELECT 1 FROM guest_account_claims WHERE guest_subject=guest_sessions.subject)
-        AND (verified_day=? OR (?='split' AND (SELECT COUNT(*) FROM app_operations
-          WHERE subject=? AND kind='split' AND day=? AND state NOT IN ('failed','cancelled')) < ?))))
+        AND NOT EXISTS(SELECT 1 FROM guest_account_claims WHERE guest_subject=guest_sessions.subject)))
       AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind='split' AND state NOT IN (${TERMINAL})) < 2)
       AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE quota_class='guest' AND kind='split' AND state NOT IN (${TERMINAL})) < 10)
     ON CONFLICT(subject,kind,idempotency_key) DO NOTHING`)
     .bind(id,input.subject,quotaClass,input.courseId,input.kind,input.key,input.fingerprint,day,input.phase,input.jobId ?? null,
       JSON.stringify(input.request ?? {}),now+24*60*60*1000,now,now,input.subject,input.kind,day,limit,
       input.subject,input.kind,day,abuseLimit,input.kind,MAX_QUEUED_SPLITS,input.kind,day,
-      quotaClass,input.subject,now,day,input.kind,input.subject,day,GUEST_UNVERIFIED_SPLITS_PER_DAY,
+      quotaClass,input.subject,now,
       quotaClass,input.kind,input.subject,quotaClass,input.kind);
   await db.batch([insert,...(input.statements?.(id) ?? [])]);
   const operation = await findOperation(db,input.subject,input.kind,input.key);
@@ -79,11 +78,6 @@ export async function reserveOperation(db: D1Database, input: {
         :'Today\'s Listening Guy input allowance is full.',retryAfter);
     if ((counts?.attempts ?? 0)>=abuseLimit || input.kind==='guide') throw new OperationError(`${input.kind}_attempt_limit`,429,
       'Repeated requests have reached the daily protection limit. No allowance was used. Please try again after the reset.',retryAfter);
-    if (quotaClass==='guest' && input.kind==='split' && (counts?.held ?? 0)>=GUEST_UNVERIFIED_SPLITS_PER_DAY) {
-      const session=await db.prepare('SELECT verified_day FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL')
-        .bind(input.subject,now).first<{verified_day:string}>();
-      if (session && session.verified_day!==day) throw new OperationError('guest_verification_required',403,'Complete the check to continue splitting today.');
-    }
     throw new OperationError('split_queue_full',429,'The audio queue is full. Wait a minute and submit the same request again.',60);
   }
   if (operation.fingerprint !== input.fingerprint || operation.course_id !== input.courseId || operation.quota_class !== quotaClass) {

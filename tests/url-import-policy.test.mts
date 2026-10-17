@@ -14,6 +14,7 @@ test('duration authority fails closed and checks actual finite positive seconds'
  assert.equal(importDurationLimit(undefined),300);
  assert.equal(importDurationLimit({...principal,role:'guest',quotaClass:'guest'}),300);
  assert.equal(importDurationLimit({...principal,role:'student'}),900);
+ assert.equal(importDurationLimit({...principal,role:'member'}),900);
  assert.equal(importDurationLimit({...principal,role:'instructor'}),900);
  assert.equal(importDurationLimit({...principal,role:'instructor',quotaClass:'guest'}),300);
  for(const value of [null,undefined,NaN,Infinity,0,-1,'299',301]) assert.equal(durationIsAllowed(value,300),false);

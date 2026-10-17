@@ -32,6 +32,30 @@ test('valid CAIL identity becomes a student; display and entitlement claims neve
   assert.equal(principals[0]?.role, 'student');
   assert.equal((await authorizeCailRequest(req('/api/teacher/folders', token), env))?.status, 403);
 });
+test('all current Lab members can use a personal workspace when they have no STEM course enrollment', async () => {
+  const { env } = setup();
+  env.ADMISSION_RESOLVER = {
+    resolveMembership: async () => ({ ok: true, accessRole: 'member', budgetScope: 'person', revision: 1, expiresAt: new Date(Date.now()+60000).toISOString() }),
+    resolveCourseAccess: async () => ({ ok: false, code: 'not_enrolled', retryable: false }),
+  };
+  for (const [path, method] of [['/api/account','GET'], ['/api/jobs','POST']] as const) {
+    const request = new Request(`https://split.test${path}`, { method, headers: { 'x-cail-identity-jwt': alice, origin: 'https://split.test', ...(path==='/api/jobs'?{'x-stem-course':'personal'}:{}) } });
+    const principals: AppPrincipal[] = [];
+    assert.equal(await authorizeCailRequest(request, env, principal => principals.push(principal)), null);
+    assert.equal(principals[0]?.role, 'member');
+  }
+  assert.equal((await authorizeCailRequest(req('/api/teacher/folders'), env))?.status, 403);
+});
+test('a course authority outage does not prevent an admitted member from opening the personal workspace', async () => {
+  const { env } = setup();
+  env.ADMISSION_RESOLVER = {
+    resolveMembership: async () => ({ ok: true, accessRole: 'member', budgetScope: 'person', revision: 1, expiresAt: new Date(Date.now()+60000).toISOString() }),
+    resolveCourseAccess: async () => { throw new Error('course service unavailable'); },
+  };
+  const principals: AppPrincipal[] = [];
+  assert.equal(await authorizeCailRequest(req('/api/account'), env, principal => principals.push(principal)), null);
+  assert.equal(principals[0]?.role, 'member');
+});
 test('wrong audience, array audience, expired token, wrong issuer, forged header fail authentication', async () => {
   const { env } = setup();
   const tokens = ['forged', '', await issuer.mintIdentityJwt({ audience: 'cail:gateway' }),

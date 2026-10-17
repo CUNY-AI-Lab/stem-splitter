@@ -1,5 +1,9 @@
 # Daily splits and public access
 
+> Historical policy from September 29, 2026. Superseded by the newer user-approved
+> October 17 policy in [the current access and allowance specification](2026-10-17-lab-access-and-daily-splits.md).
+
+
 User-approved policy, September 29, 2026:
 
 - Admitted, signed-in users: **10 split attempts per person per UTC day**.

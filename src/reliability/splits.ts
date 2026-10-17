@@ -91,7 +91,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const requestFingerprint=await fingerprint(input);
   if(input.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function')input.browserAudio=true;
   const id=crypto.randomUUID();
-  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl?'split':'fetch',jobId:id,request:input,
+  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',role:principal.role,courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
       const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type)
         SELECT id,?,?,'queued',?,? FROM app_operations WHERE id=?`)

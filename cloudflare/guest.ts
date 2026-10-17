@@ -1,6 +1,6 @@
 import type { Env } from '../src/env.ts';
 import { activeGuest, guestFailure, GUEST_SESSION_MS, GUEST_SUBJECT, type GuestSession } from '../src/guest/access.ts';
-import { dailyWindow } from '../src/daily-allowance.ts';
+import { dailyWindow, GUEST_SPLITS_PER_DAY } from '../src/daily-allowance.ts';
 import { readBoundedJsonRequest } from '../src/http/bounded-request.ts';
 import { readBoundedResponse } from '../src/http/bounded-response.ts';
 import { uniqueCookie } from './session-contract/session.js';
@@ -113,5 +113,5 @@ export async function startGuestSession(request: Request,env: GuestAdapterEnv): 
     return guestFailure('guest_session_unavailable',503,'The session could not be saved. Try again shortly.');
   }
   const chatAvailable=guestChatConfigured(env);
-  return Response.json({ok:true,expiresAt,splitLimit:5,chatAvailable,chatLimit:chatAvailable?25:null},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});
+  return Response.json({ok:true,expiresAt,splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable,chatLimit:chatAvailable?25:null},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});
 }

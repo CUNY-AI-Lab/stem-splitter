@@ -187,7 +187,7 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const first = await account(page);
-    expect(first.guest.verificationRequired).toBe(false);
+    expect(first.guest.verificationRequired).toBe(true);
     await expect(page.locator('#guest-panel, #guest-session, #course-context, .bug-report, .compact-masthead')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Continue as guest', exact: true })).toHaveCount(0);
     expect(f.counts()).toEqual({ providerStarts: 0, verifications: 0, widgetLoads: 0 });
@@ -205,12 +205,16 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     expect(resumed.account.subject).toBe(first.account.subject);
     expect(resumed.guest.expiresAt).toBe(first.guest.expiresAt);
     expect(resumed.splitAllowance.completed).toBe(1);
-    expect(resumed.splitAllowance.limit).toBe(5);
+    expect(resumed.splitAllowance.limit).toBe(3);
     expect(f.counts()).toEqual({ providerStarts: 1, verifications: 0, widgetLoads: 0 });
     expect(f.requests.filter(request => request.path.startsWith('/api/classroom/'))).toEqual([]);
     await page.goto(f.origin + '/account.html');
     await expect(page).toHaveURL(f.origin + '/');
-    for (const width of [390, 768, 1280]) { await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
+    for (const width of [390, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      const layout=await page.evaluate(()=>({viewport:innerWidth,document:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].map(element=>{const rect=element.getBoundingClientRect();return {element:element.tagName.toLowerCase(),className:typeof element.className==='string'?element.className:'',left:Math.round(rect.left),right:Math.round(rect.right),width:Math.round(rect.width),scrollWidth:element.scrollWidth};}).filter(element=>element.right>innerWidth+1||element.left< -1).slice(0,8)}));
+      expect(layout.document<=layout.viewport,JSON.stringify(layout)).toBe(true);
+    }
     await expect(page.locator('.console-title')).toHaveText('source.wav');
     await page.locator('.play-btn').click();
     let releaseCheck;
@@ -247,29 +251,23 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
-test('guest completes three splits before the fourth requests verification and retries the same submission', async ({ page }) => {
+test('guest stops at three daily splits and sees the CUNY sign-in path without a challenge', async ({ page }) => {
   test.setTimeout(120000);
   const f = await setup(page);
   try {
     await page.goto(f.origin);
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
-    const subject = (await account(page)).account.subject;
     for (let count = 1; count <= 3; count++) { await startUpload(page); await completed(page, count); }
     expect(f.counts()).toEqual({ providerStarts: 3, verifications: 0, widgetLoads: 0 });
-    expect((await account(page)).guest.verificationRequired).toBe(true);
-    const blocked = page.waitForResponse(response => new URL(response.url()).pathname === '/api/jobs' && response.request().method() === 'POST' && response.status() === 403);
+    const blocked = page.waitForResponse(response => new URL(response.url()).pathname === '/api/jobs' && response.request().method() === 'POST' && response.status() === 429);
     await startUpload(page);
-    expect((await (await blocked).json()).error.code).toBe('guest_verification_required');
-    await expect(page.locator('#upload-status').getByRole('button', { name: 'Complete fixture guest check' })).toBeVisible();
-    expect(f.counts().providerStarts).toBe(3);
-    await page.getByRole('button', { name: 'Complete fixture guest check' }).click();
-    await completed(page, 4);
+    expect((await (await blocked).json()).code).toBe('split_daily_limit');
+    await expect(page.locator('#upload-message')).toContainText("today's 3 guest runs");
+    await expect(page.locator('#upload-message')).toContainText('Sign in with CUNY Login');
+    expect(f.counts()).toEqual({ providerStarts: 3, verifications: 0, widgetLoads: 0 });
     const posts = f.requests.filter(request => request.path === '/api/jobs' && request.method === 'POST');
-    expect(posts).toHaveLength(5); expect(posts[3].key).toBeTruthy(); expect(posts[4].key).toBe(posts[3].key);
-    expect((await account(page)).account.subject).toBe(subject);
-    expect((await account(page)).guest.verificationRequired).toBe(false);
-    expect(f.counts()).toEqual({ providerStarts: 4, verifications: 1, widgetLoads: 1 });
-    await expect(page.getByRole('button', { name: 'Complete fixture guest check' })).toHaveCount(0);
+    expect(posts).toHaveLength(4); expect(posts[3].key).toBeTruthy();
+    expect((await account(page)).splitAllowance.completed).toBe(3);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
@@ -301,7 +299,7 @@ test('guest searches and imports a complete song through the existing field',asy
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-import-${width}.png`,animations:'disabled'});}
     }
-    expect((await account(page)).splitAllowance.remaining).toBe(4);expect(f.errors).toEqual([]);
+    expect((await account(page)).splitAllowance.remaining).toBe(2);expect(f.errors).toEqual([]);
   }finally{await f.close();}
 });
 

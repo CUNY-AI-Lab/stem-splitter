@@ -6,7 +6,7 @@ import type { Env } from './env.ts';
 import { authorizeGuestRequest } from './guest/access.ts';
 
 export const STEM_AUDIENCE = 'cail:stem-splitter';
-export type AppRole = 'student' | 'instructor' | 'admin' | 'guest';
+export type AppRole = 'student' | 'member' | 'instructor' | 'admin' | 'guest';
 export interface AppPrincipal { subject: string; role: AppRole; quotaClass?: 'member' | 'guest'; displayName: string; course: CourseAssignment | null; courseId: string | null; }
 export interface AdmissionResolver extends AdmissionCourseResolver {
   resolveMembership(input: { subject: string }): Promise<unknown>;
@@ -84,35 +84,43 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
   const user = await env.DB.prepare('SELECT role, disabled, role_expires_at FROM app_users WHERE subject = ?')
     .bind(identity.subject).first<{ role: string; disabled: number; role_expires_at: string | null }>();
   if (!user || user.disabled) return authFailure('admission_required', 403);
-  const role: AppRole = membership.accessRole === 'admin' ? 'admin'
+  let role: AppRole = membership.accessRole === 'admin' ? 'admin'
     : user.role === 'instructor' && (user.role_expires_at === null || Date.parse(user.role_expires_at) > Date.now())
-      ? 'instructor' : 'student';
+      ? 'instructor' : 'member';
   const jobId = /^\/api\/(?:teacher\/)?jobs\/([^/]+)/.exec(path)?.[1] ?? /^\/api\/files\/stems\/([^/]+)/.exec(path)?.[1];
   try {
     const storedCourse = jobId ? await jobCourse(env, jobId) : null;
     const routeCourse = /^\/api\/classroom\/courses\/([^/]+)/.exec(path)?.[1];
-    const selected = storedCourse?.course_id ?? routeCourse ?? request.headers.get('x-stem-course') ?? courseIds(env)[0];
-    const personal = selected === 'personal';
+    const requestedCourse = storedCourse?.course_id ?? routeCourse ?? request.headers.get('x-stem-course') ?? 'personal';
+    const personal = requestedCourse === 'personal';
+    const selected = personal ? null : requestedCourse;
     if (env.CAIL_CLASSROOM_ENABLED === 'false' && (routeCourse || path === '/api/classroom/courses' || (storedCourse && !['GET','HEAD'].includes(request.method)) || (!storedCourse && !personal && request.headers.has('x-stem-course') && !['GET','HEAD'].includes(request.method)))) throw new CourseError(503,'course_work_paused');
-    // Admin/app roles remain separate. They never create a course-owner grant.
+    // Lab membership grants the personal workspace. Course membership is
+    // checked separately and supplies the student allowance only when active.
     let course: CourseAssignment | null = null;
-    try { course = await resolveCourse(env, identity.subject, personal ? courseIds(env)[0] : selected); }
-    catch (error) {
-      if (!(error instanceof CourseError) || error.status === 503) throw error;
-      if (!request.headers.has('x-stem-course') && !storedCourse && !routeCourse && ['/api/account','/api/teacher/me','/api/classroom/courses'].includes(path)) {
-        // Course owners may discover their independently authorized teaching context.
-        for (const id of courseIds(env).filter(id=>id!==selected)) {
-          try { const candidate=await resolveCourse(env,identity.subject,id); if(candidate.owner){course=candidate;break;} }
-          catch(lookup) { if(!(lookup instanceof CourseError)||lookup.status===503)throw lookup; }
-        }
+    if (selected) {
+      course = await resolveCourse(env, identity.subject, selected);
+      // Classroom membership still gates explicit course work. The course
+      // participant/owner distinction also controls the personal split tier.
+      if (!course.owner && course.classId !== STEM_COURSE_ID) {
+        const entry = await resolveCourse(env,identity.subject,STEM_COURSE_ID);
+        if (!entry.participant) throw new CourseError(403,'target_course_enrollment_required');
+        if (role === 'member' && entry.participant && !entry.owner) role = 'student';
       }
-      if (!course && (role === 'student' || storedCourse || routeCourse || (!personal && selected !== courseIds(env)[0]))) throw error;
-    }
-    // The entry policy is the exact MSH245 participant source, independently of
-    // which other configured course is selected. Owners use their separate relationship.
-    if (course && !course.owner && course.classId !== STEM_COURSE_ID) {
-      const entry = await resolveCourse(env,identity.subject,STEM_COURSE_ID);
-      if (!entry.participant) throw new CourseError(403,'target_course_enrollment_required');
+      if (role === 'member' && course.classId === STEM_COURSE_ID && course.participant && !course.owner) role = 'student';
+    } else if (role === 'member') {
+      // Course lookup is optional for personal workspace access: an unavailable
+      // course authority cannot block a verified Lab member from signing in.
+      try {
+        const courseIdsForApp = courseIds(env);
+        if (courseIdsForApp.includes(STEM_COURSE_ID)) {
+          course = await resolveCourse(env, identity.subject, STEM_COURSE_ID);
+          if (course.participant && !course.owner) role = 'student';
+        }
+      } catch (error) {
+        if (!(error instanceof CourseError)) throw error;
+        course = null;
+      }
     }
     const principal: AppPrincipal = { subject: identity.subject, role, quotaClass:'member',
       displayName: cleanDisplayName(identity.name), course,
@@ -121,7 +129,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     try { await rememberDisplayName(env, identity.subject, principal.displayName); } catch { /* Profile availability is independent of sign-in authority. */ }
     if (path === '/api/teacher/login' || path === '/api/teacher/logout') return authFailure('admission_required', 403);
     if (path.startsWith('/api/admin/') && role !== 'admin') return authFailure('admission_required', 403);
-    if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && role === 'student') return authFailure('admission_required', 403);
+    if (path.startsWith('/api/teacher/') && path !== '/api/teacher/me' && !['instructor','admin'].includes(role)) return authFailure('admission_required', 403);
     if (jobId) {
       const permission = await jobPermission(env, principal, jobId);
       if (!permission) return Response.json({ error: 'Job not found' }, { status: 404 });

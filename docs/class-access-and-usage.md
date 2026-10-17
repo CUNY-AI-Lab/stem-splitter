@@ -2,11 +2,11 @@
 
 ## Current state
 
-The Cloudflare app accepts current CUNY AI Lab membership, including membership
-provided by an active class. Signing up identifies a person; admission or a
-claimed class place grants access. `src/identity.ts` asks Admission on every
-protected request and creates the local student record on first use. A class
-does not need a second student import into STEM Splitter.
+Current CUNY AI Lab membership (individual, class, or Lab administrator) grants
+the personal STEM Splitter workspace. Admission is checked on each protected
+request. A current STEM course enrollment is needed only for course features;
+it is not required for the personal splitter. `src/identity.ts` creates the
+local account record on first use. A class does not need a second student import.
 
 The deployed Cloudflare app includes the Gateway integration from PR #11. Listening Guide
 requests carry the signed-in person's Gateway credential, so the Lab Gateway
@@ -14,12 +14,10 @@ resolves their current allowance and accounting key. The Account usage display
 is an estimate of the person's effective Lab allowance, including other tools;
 it is neither a class-only bill nor an extra STEM Splitter balance.
 
-The September 29 production baseline is
-`cloudflare-playback-retention-20260929` (PR #16), with Remixer still disabled,
-at https://stem-splitter.ailab-452.workers.dev/. Verify `/healthz` and deployed
-asset hashes on each release. Local tests use synthetic
-identities and controlled provider responses; they cannot establish live
-allowance drawdown.
+The current Cloudflare app is at
+https://stem-splitter.ailab-452.workers.dev/. Verify `/healthz` and deployed
+asset hashes on each release. Local tests use synthetic identities and controlled
+provider responses; they cannot establish live Lab allowance drawdown.
 
 ## Enroll a class
 
@@ -57,19 +55,20 @@ owns their recordings; class enrollment alone does not share everyone's audio.
 | Separate audio with Replicate | Provider spend, not yet deducted from the Lab allowance |
 | Replicate YouTube fallback | Additional provider prediction, not yet deducted from the Lab allowance |
 
-The deployed September 29 daily allowance reserves at most **ten runs
-per signed-in person per UTC day**, with **no shared class/app split-count cap**.
-Failed or uncertain attempts consume a slot; playback and saved-result reads do
-not. My account displays the remaining count and reset time separately from the
-estimated Lab model allowance. A run consumes a daily slot when it is reserved,
-not only when it succeeds; this count is not a count of saved recordings.
+The daily splitter limits are **15 runs per current STEM course student**,
+**5 runs per other signed-in CUNY AI Lab member**, and **3 runs per guest browser
+session**, per UTC day. There is no shared class or app split-count cap. The app
+reserves successful and in-progress runs atomically; failed or cancelled work
+releases its place. Existing reads do not use a run. My account displays the
+applicable daily count and reset time separately from the estimated Lab model
+allowance. These run counts do not represent provider costs.
 
-The approved public policy is **three runs per visitor per day**. That tier
-is not enabled: private visitor sessions and bot verification must precede
-public paid work. The user confirmed existing Replicate billing is covered;
-do not replace that transport or change credentials for this rollout. See the
-[daily allowance specification](superpowers/specs/2026-09-29-daily-split-allowances.md).
-Neither visitor nor member attempt counts constitute dollar accounting.
+Guests receive three runs without a challenge. Turnstile does not unlock more
+splits; the guest Listening Guide still requires its existing daily check. Guest
+work remains isolated to the browser session. See the
+[current access and allowance specification](superpowers/specs/2026-10-17-lab-access-and-daily-splits.md).
+The app run limits do not change the existing Replicate billing path or Lab
+Gateway model allowance.
 
 ## Finish unified audio accounting
 
