@@ -2887,3 +2887,22 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 #student-detail h2 { font-size: 1.1rem; margin: 0 0 .5rem; }
 #student-more { margin-top: .75rem; }
 #student-status:empty { display: none; }
+
+/* Instructor song suggestions */
+.sample-editor { margin-top: 1.8rem; }
+.sample-timing { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
+.sample-timing label { display: grid; gap: .4rem; }
+.sample-timing input { max-width: 9rem; }
+.sample-search-results { display: grid; gap: .3rem; max-height: 15rem; overflow-y: auto; }
+.sample-search-results button { text-align: left; background: var(--panel,#222); color: inherit; border: 1px solid var(--line,#565043); padding: .65rem; font: inherit; cursor: pointer; }
+.sample-search-results button:disabled { opacity: .45; cursor: default; }
+.sample-selected { display: grid; gap: .65rem; padding: 0; list-style: none; }
+.sample-card { padding: .85rem; border: 1px solid var(--line,#565043); border-radius: .2rem; cursor: grab; }
+.sample-card:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.sample-card strong { display: block; overflow-wrap: anywhere; }
+.sample-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+@media(max-width:600px) { .sample-timing { grid-template-columns: 1fr; } }
+.sample-drag-handle { float: right; padding: .1rem .35rem; font-size: 1.5rem; cursor: grab; touch-action: none; }
+.sample-card select { margin-bottom: .6rem; max-width: 100%; }
+.sample-dragging { opacity: .65; }
+.sample-drag-target { outline: 2px dashed var(--hot); outline-offset: 2px; }

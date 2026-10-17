@@ -1,68 +1,221 @@
 [
   {
+    "artist": "David Bowie",
+    "title": "Sound and Vision",
+    "archiveId": "HUG055CD",
+    "archiveFile": "HUG055CD Here Comes the Night - 1990-03-04 Colisée de Québec, Québec City, Canada/Disc 2/202 Sound And Vision.mp3",
+    "genre": "rock",
+    "durationSec": 213.84,
+    "verifiedAt": "2026-10-17T03:30:26.980Z",
+    "importTestedAt": "2026-10-17T03:30:26.980Z",
+    "importBytes": 4570381
+  },
+  {
     "artist": "Yellow Magic Orchestra",
     "title": "Behind the Mask",
     "archiveId": "1979-yellow-magic-orchestra-solid-state-survivor",
-    "archiveFile": "05 - Behind The Mask.mp3"
+    "archiveFile": "05 - Behind The Mask.mp3",
+    "genre": "electronic",
+    "durationSec": 217,
+    "verifiedAt": "2026-10-17T03:30:14.881Z",
+    "importTestedAt": "2026-10-17T03:30:14.881Z",
+    "importBytes": 5317073
   },
   {
     "artist": "Goblin",
     "title": "Suspiria",
     "archiveId": "07-suspiria-blind-concert",
-    "archiveFile": "01 Suspiria.mp3"
+    "archiveFile": "01 Suspiria.mp3",
+    "durationSec": 363.05,
+    "verifiedAt": "2026-10-17T03:19:03.069Z"
   },
   {
     "artist": "Babe Ruth",
     "title": "The Mexican",
     "archiveId": "1972-babe-ruth-first-base",
-    "archiveFile": "05 The Mexican.mp3"
+    "archiveFile": "05 The Mexican.mp3",
+    "durationSec": 350,
+    "verifiedAt": "2026-10-17T03:19:06.396Z"
+  },
+  {
+    "artist": "Kraftwerk",
+    "title": "Trans-Europe Express",
+    "archiveId": "Kraftwerk_2015-01-23",
+    "archiveFile": "2015-01-23 Paradiso Grote Zaal, Amsterdam, Netherlands/flac/25_transeurope_express.mp3",
+    "durationSec": 200,
+    "verifiedAt": "2026-10-17T03:19:04.221Z"
+  },
+  {
+    "artist": "The Magic Disco Machine",
+    "title": "Scratchin’",
+    "archiveId": "11-control-tower-extended-disco-mix",
+    "archiveFile": "07 Scratchin'.mp3",
+    "durationSec": 158.01,
+    "verifiedAt": "2026-10-17T03:19:05.861Z"
   },
   {
     "artist": "Sonny Rollins",
-    "title": "Woody 'N You",
+    "title": "Introduction #1",
     "archiveId": "sonny-rollins-village-vanguard",
-    "archiveFile": "Woody 'N You.mp3"
+    "archiveFile": "Introduction 1 (Live At The Village Vanguard 1957).mp3",
+    "durationSec": 38.66,
+    "verifiedAt": "2026-10-17T03:19:06.642Z",
+    "exampleEligible": false
   },
   {
     "artist": "Sonny Rollins",
     "title": "Sonnymoon for Two",
-    "archiveId": "sonny-rollins-village-vanguard",
-    "archiveFile": "Sonnymoon For Two.mp3"
+    "archiveId": "1-sonnymoon-for-two",
+    "archiveFile": "1 Sonnymoon for two.mp3",
+    "durationSec": 533,
+    "verifiedAt": "2026-10-17T03:19:06.562Z"
   },
   {
     "artist": "John Coltrane",
-    "title": "Softly as in a Morning Sunrise",
-    "archiveId": "village-vanguard-coltrane-62",
-    "archiveFile": "Softly as In a Morning Sunrise.mp3"
+    "title": "Naima",
+    "archiveId": "J-Coltrane-1963-10-25",
+    "archiveFile": "John Coltrane Quartet - 1963-10-25 - Tivolis Koncertsal, Copenhagen, Denmark, B'cast rm (goody)/203 Naima.mp3",
+    "durationSec": 463,
+    "verifiedAt": "2026-10-17T03:19:07.432Z"
   },
   {
-    "artist": "D'Angelo",
-    "title": "Send It On",
-    "archiveId": "d-angelo-voodoo-2000",
-    "archiveFile": "05. D'Angelo - Send It On (2000).mp3"
+    "artist": "Donna Summer",
+    "title": "I Feel Love",
+    "archiveId": "donna-summer-the-ultimate-collection-cd3_202207",
+    "archiveFile": "12-I Feel Love (Part 1) Special Version Remix By Patrick Cowley.mp3",
+    "durationSec": 227.86,
+    "verifiedAt": "2026-10-17T03:19:07.155Z"
+  },
+  {
+    "artist": "First Choice",
+    "title": "Doctor Love",
+    "archiveId": "10-doctor-love-shep-pettibone-special-12-mix",
+    "archiveFile": "10 Doctor Love (Shep Pettibone Special 12_ Mix).mp3",
+    "durationSec": 507.62,
+    "verifiedAt": "2026-10-17T03:19:07.930Z"
+  },
+  {
+    "artist": "Harold Melvin & the Blue Notes",
+    "title": "The Love I Lost",
+    "archiveId": "01TheLoveILost",
+    "archiveFile": "01 The Love I Lost.mp3",
+    "durationSec": 384.84,
+    "verifiedAt": "2026-10-17T03:19:07.782Z"
+  },
+  {
+    "artist": "Manu Dibango",
+    "title": "Soul Makossa",
+    "archiveId": "dance-africa-dance-1989",
+    "archiveFile": "Dance Africa Dance (1989)/A6 Manu Dibango - Soul Makossa.mp3",
+    "durationSec": 259.97,
+    "verifiedAt": "2026-10-17T03:19:08.129Z"
+  },
+  {
+    "artist": "First Choice",
+    "title": "Armed and Extremely Dangerous",
+    "archiveId": "first-choice-armed-and-extremely-dangerous-cd-reissue",
+    "archiveFile": "04. First Choice - Armed And Extremely Dangerous.mp3",
+    "durationSec": 297,
+    "verifiedAt": "2026-10-17T03:19:09.447Z"
+  },
+  {
+    "artist": "D Train",
+    "title": "Keep On",
+    "archiveId": "d-train-youre-the-one-for-me-1982",
+    "archiveFile": "06 Keep On.mp3",
+    "durationSec": 403.79,
+    "verifiedAt": "2026-10-17T03:19:08.660Z"
+  },
+  {
+    "artist": "The Turtles",
+    "title": "Happy Together",
+    "archiveId": "the-turtles-all-access",
+    "archiveFile": "09 Happy Together.mp3",
+    "durationSec": 262.14,
+    "verifiedAt": "2026-10-17T03:19:08.773Z"
   },
   {
     "artist": "Willie Nelson",
     "title": "Stardust",
     "archiveId": "willie-nelson-ride-me-back-home",
-    "archiveFile": "Willie Nelson Discografía completa FLAC/Willie Nelson - Stardust - 1978(1980) LP/01.Stardust.mp3"
+    "archiveFile": "Willie Nelson Discografía completa FLAC/Willie Nelson - Stardust - 1978(1980) LP/01.Stardust.mp3",
+    "genre": "country",
+    "durationSec": 234,
+    "verifiedAt": "2026-10-17T03:30:17.838Z",
+    "importTestedAt": "2026-10-17T03:30:17.838Z",
+    "importBytes": 5990236
   },
   {
     "artist": "Jorge Ben",
     "title": "Ponta de Lança Africano",
-    "archiveId": "10.-jorge-ben-10-cavalheiro-do-cavalo-imaculado",
-    "archiveFile": "0358_jorge_ben_jor_africa_brasil_1976__mlib/1. Jorge Ben - 01  Ponta de Lanca Africano.mp3"
+    "archiveId": "1976-jorge-ben-africa-brasil",
+    "archiveFile": "01 - Ponta de lança africano (Umbabarauma).mp3",
+    "genre": "funk",
+    "durationSec": 229,
+    "verifiedAt": "2026-10-17T03:30:23.660Z",
+    "importTestedAt": "2026-10-17T03:30:23.660Z",
+    "importBytes": 6138821
   },
   {
     "artist": "Al Green",
     "title": "Love and Happiness",
     "archiveId": "monterfunkI",
-    "archiveFile": "Al Green - Love and Happiness.mp3"
+    "archiveFile": "Al Green - Love and Happiness.mp3",
+    "durationSec": 307.1,
+    "verifiedAt": "2026-10-17T03:19:10.303Z"
+  },
+  {
+    "artist": "Chuck Berry",
+    "title": "Maybellene",
+    "archiveId": "playingchess19551956",
+    "archiveFile": "09 Maybellene.mp3",
+    "durationSec": 142.03,
+    "verifiedAt": "2026-10-17T03:19:10.912Z"
   },
   {
     "artist": "KC and the Sunshine Band",
     "title": "Get Down Tonight",
     "archiveId": "kcgetdown",
-    "archiveFile": "kcgetdown.mp3"
+    "archiveFile": "kcgetdown.mp3",
+    "durationSec": 319.1,
+    "verifiedAt": "2026-10-17T03:19:10.911Z"
+  },
+  {
+    "artist": "David Bowie",
+    "title": "Five Years",
+    "archiveId": "david-bowie-starman",
+    "archiveFile": "05Five Years.mp3",
+    "durationSec": 279.75,
+    "verifiedAt": "2026-10-17T03:19:12.021Z"
+  },
+  {
+    "artist": "Simon & Garfunkel",
+    "title": "The Sound of Silence",
+    "archiveId": "simon-garfunkel-sounds-of-silence-1966-2014_24-192",
+    "archiveFile": "01 - The Sound of Silence (Overdubbed Version).mp3",
+    "genre": "folk",
+    "durationSec": 190.13,
+    "verifiedAt": "2026-10-17T03:30:30.784Z",
+    "importTestedAt": "2026-10-17T03:30:30.784Z",
+    "importBytes": 4483548
+  },
+  {
+    "artist": "Talking Heads",
+    "title": "Burning Down the House",
+    "archiveId": "speaking-in-tongues_202511",
+    "archiveFile": "01 Burning Down the House.mp3",
+    "durationSec": 241.82,
+    "verifiedAt": "2026-10-17T03:19:13.209Z"
+  },
+  {
+    "artist": "Bill Evans",
+    "title": "My Foolish Heart",
+    "archiveId": "riversidejazz",
+    "archiveFile": "01 Waltz For Debby - My Foolish Heart.mp3",
+    "genre": "jazz",
+    "durationSec": 297.8,
+    "verifiedAt": "2026-10-17T03:30:12.450Z",
+    "importTestedAt": "2026-10-17T03:30:12.450Z",
+    "importBytes": 11913366
   }
 ]

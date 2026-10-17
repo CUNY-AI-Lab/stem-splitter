@@ -1,0 +1,9 @@
+# Instructor song resource implementation and release
+
+1. Add additive migration 0026 and canonical schema tables for a revisioned settings singleton and immutable revisions. Keep the deployment in the Cloudflare lane.
+2. Add strict settings validation, exact new-source verification, atomic compare-and-swap saves, public snapshots with content-derived versions and instructor-only completed-run aggregates.
+3. Serve the frontend snapshot before account initialization; authorize public source checks against the current enabled selection. Keep ordinary search and instructor writes behind existing identity/role/origin checks.
+4. Add a streamed Internet Archive picker, selected draggable cards, accessible reordering, cadence controls, clear save/conflict/readback states and cancellation on account changes.
+5. Add frontend progress persistence, first-pass ordering, later-pass shuffle bags, fixed-duration typing and consistent display slots, lazy availability checks, configuration refresh and ready-result reuse.
+6. Verify six diverse full imports without storing source audio; retain exact source and timing evidence. Test migrations, role boundaries, concurrent editors, immutability, version/readback, streamed selection, ordering, refresh, no-repeat behavior and cadence.
+7. Require local checks and GitHub CI. Merge the reviewed tree, prove tested/merged equality, apply migration 0026 to the dedicated Cloudflare D1 database, deploy an isolated archive, then verify the public snapshot, access boundaries, source delivery and actual browser timing. Record authenticated live acceptance separately if no instructor session is available.

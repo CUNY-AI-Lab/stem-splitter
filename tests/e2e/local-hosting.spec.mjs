@@ -47,7 +47,7 @@ const quietAudio = await readFile(
 const test = base.extend({
   page: async ({ page }, use) => {
     // Split-flow tests have no playlist candidates; dedicated guest tests cover suggestions.
-    await page.route('**/search-samples.json', route => route.fulfill({ json: [] }));
+    await page.route('**/api/song-samples', route => route.fulfill({ json: [] }));
     await use(page);
   },
   network: [

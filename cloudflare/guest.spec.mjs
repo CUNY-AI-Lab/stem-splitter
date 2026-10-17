@@ -49,7 +49,7 @@ async function setup(page, chatAvailable = false) {
     return route.fulfill({ contentType: 'text/javascript', body: `window.turnstile={render(root,options){if(options.appearance!=='interaction-only')throw new Error('Unexpected widget appearance');const button=document.createElement('button');button.textContent='Complete fixture guest check';button.onclick=()=>options.callback('browser-fixture-'+crypto.randomUUID());root.append(button);return 'fixture';},remove(){}};` });
   });
   await page.route('**/api/music/search?*', route => new URL(route.request().url()).searchParams.has('sampleItem') ? route.fulfill({json:{results:[]}}) : route.fallback());
-  await page.route('**/search-samples.json', route => route.fulfill({json:[{artist:'jazz',title:'piano',archiveId:'sample',archiveFile:'sample.mp3'}]}));
+  await page.route('**/api/song-samples', route => route.fulfill({json:[{artist:'jazz',title:'piano',archiveId:'sample',archiveFile:'sample.mp3'}]}));
   return { origin, errors, requests, issuer, network, counts: () => ({ providerStarts, verifications, widgetLoads }),
     close: async () => { await page.unrouteAll({ behavior: 'wait' }); await page.close(); await harness.close(); network.close(); } };
 }
@@ -647,7 +647,7 @@ test('playlist samples randomize candidates and skip missing or unrelated Archiv
   const f=await setup(page); const queries=[];
   try {
     await page.addInitScript(()=>{Math.random=()=>0;});
-    await page.route('**/search-samples.json', route=>route.fulfill({json:[
+    await page.route('**/api/song-samples', route=>route.fulfill({json:[
       {artist:'Playlist artist',title:'Available song',archiveId:'available',archiveFile:'exact.mp3'},
       {artist:'Playlist artist',title:'Missing song',archiveId:'missing',archiveFile:'absent.mp3'},
     ]}));
@@ -690,7 +690,7 @@ test('playlist hints load before account setup, rotate, and accept ready options
   try {
     await page.addInitScript(()=>{Math.random=()=>0.999;});
     await page.route('**/api/account',route=>{accountRequest=route;});
-    await page.route('**/search-samples.json',route=>route.fulfill({json:candidates}));
+    await page.route('**/api/song-samples',route=>route.fulfill({json:candidates}));
     await page.route('**/api/music/search?*',route=>{
       const params=new URL(route.request().url()).searchParams,item=params.get('sampleItem');searches.push(item);
       if(item==='slow'){slow=route;return;}
@@ -702,6 +702,8 @@ test('playlist hints load before account setup, rotate, and accept ready options
     await expect(page.locator('#source-sample-hint')).toBeVisible({timeout:1500});
     await expect(input).toHaveAttribute('placeholder','Fast artist Fast song',{timeout:2000});
     expect(accountRequest).toBeTruthy();expect(slow).toBeTruthy();
+    await page.waitForTimeout(3100);
+    await expect(input).toHaveAttribute('placeholder','Fast artist Fast song');
     await expect(input).toHaveAttribute('placeholder','Next artist Next song',{timeout:5000});
     await input.focus();await input.press('Tab');
     await expect(page.getByRole('option',{name:/Next song/})).toBeVisible({timeout:500});
@@ -710,4 +712,31 @@ test('playlist hints load before account setup, rotate, and accept ready options
     await expect(page.locator('#source-sample-hint')).toBeHidden();
     expect(f.errors).toEqual([]);
   }finally{await slow?.abort().catch(()=>{});await accountRequest?.abort().catch(()=>{});await f.close();}
+});
+
+
+test('playlist hints lazily include the entire verified pool before repeating', async ({page}) => {
+  test.setTimeout(65000);
+  const f=await setup(page);const searches=[];
+  const candidates=Array.from({length:6},(_,i)=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`pool-${i}`,archiveFile:`song-${i}.mp3`}));
+  try {
+    await page.addInitScript(()=>{Math.random=()=>0.999;});
+    await page.route('**/api/song-samples',route=>route.fulfill({json:candidates}));
+    await page.route('**/api/music/search?*',route=>{
+      const item=new URL(route.request().url()).searchParams.get('sampleItem');searches.push(item);
+      const c=candidates.find(c=>c.archiveId===item);
+      return route.fulfill({json:{results:[{...sampleTrack,title:c.title,artist:c.artist,archiveId:item,archiveFile:c.archiveFile}]}});
+    });
+    await page.goto(f.origin);
+    const input=page.locator('#yt-url');
+    for (const c of candidates) await expect(input).toHaveAttribute('placeholder',`${c.artist} ${c.title}`,{timeout:10000});
+    expect(new Set(searches).size).toBe(6);
+    await expect(input).toHaveAttribute('placeholder','Artist 0 Song 0',{timeout:10000});
+    expect(searches).toHaveLength(6);
+    await page.clock.setFixedTime(new Date(Date.now()+61000));
+    await input.focus();await input.press('Tab');
+    await expect(page.getByRole('option',{name:/Song 0/})).toBeVisible({timeout:500});
+    expect(searches).toHaveLength(6);
+    expect(f.errors).toEqual([]);
+  } finally {await f.close();}
 });

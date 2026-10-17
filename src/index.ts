@@ -1,3 +1,4 @@
+import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { isPlaylistSample, playlistSampleResponse } from './playlist-samples.ts';
 import { namedUsers, studentActivity, requireStudentReview } from './teacher-activity.ts';
 import { runDeletionEnabled, runWasDeleted, deleteOwnedRun, recordFailedRunSession, purgeDeletedRuns } from './run-deletion.ts';
@@ -202,6 +203,7 @@ app.use('/api/*', async (c,next)=>{
 });
 
 app.use('/api/*', async (c, next) => {
+  if (c.req.method === 'GET' && c.req.path === '/api/song-samples') return publicSampleResource(c.env.DB, c.req.raw);
   if (c.env.AUTH_MODE === 'cail') {
     const denied = await authorizeCailRequest(c.req.raw, c.env, (principal) => c.set('principal', principal));
     if (denied) return denied;
@@ -668,6 +670,18 @@ app.get('/api/teacher/me', async (c) => {
   });
 });
 
+app.get('/api/teacher/song-samples', requireTeacher, async c => c.json(await instructorSampleResource(c.env.DB)));
+app.put('/api/teacher/song-samples', requireTeacher, async c => {
+  try {
+    const parsed=await readBoundedTeacherJson(c.req.raw, 65536) as {settings?:unknown;expectedRevision?:unknown};
+    const teacher=await currentTeacher(c);
+    return c.json(await saveSampleResource(c.env.DB,parsed?.settings,parsed?.expectedRevision,teacher!.username));
+  } catch(error) {
+    if(error instanceof SampleResourceError || error instanceof TeacherRequestError)return c.json({error:error.message},error.status);
+    throw error;
+  }
+});
+
 app.get('/api/teacher/prompt', requireTeacher, async (c) => {
   const record = await getAmendment(c.env);
   const basePrompt = buildSystemPromptPreview();
@@ -1043,7 +1057,7 @@ app.get('/api/music/search', async (c, next) => {
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson',
     storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
-    c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300);
+    c.req.query('examples')==='1' ? 300 : c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300);
 });
 
 app.get('/api/import-options', requireClassCode, (c) => c.json({urlImport:c.env.URL_IMPORT_ENABLED==='true',maxDurationSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):900}));
