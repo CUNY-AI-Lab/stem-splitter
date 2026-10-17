@@ -253,6 +253,16 @@ function parseLength(value: unknown): number {
 const FETCH_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1000, 3000];
 
+function archiveRetryDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const finish = () => { signal?.removeEventListener('abort', abort); resolve(); };
+    const timer = setTimeout(finish, ms);
+    const abort = () => { clearTimeout(timer); reject(signal?.reason); };
+    signal?.addEventListener('abort', abort, {once:true});
+  });
+}
+
 function approvedArchiveUrl(raw: string | URL): URL | null {
   let url: URL;
   try {
@@ -335,7 +345,8 @@ async function fetchWithBusyRetry(
   label: string,
   timeoutMs: number,
   attemptTimeoutMs = timeoutMs,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<{ response: Response; deadline: number }> {
   let lastNetworkError: unknown;
   let sawBusy = false;
@@ -343,15 +354,16 @@ async function fetchWithBusyRetry(
   const deadline = Date.now() + timeoutMs;
 
   for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt++) {
+    signal?.throwIfAborted();
     if (attempt > 0) {
       const delayMs = RETRY_DELAYS_MS[attempt - 1];
       if (Date.now() + delayMs >= deadline) break;
-      await new Promise((r) => setTimeout(r, delayMs));
+      await archiveRetryDelay(delayMs, signal);
     }
     try {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) break;
-      const res = await fetchArchiveOnce(url, Math.min(remainingMs, attemptTimeoutMs), headers);
+      const res = await fetchArchiveOnce(url, Math.min(remainingMs, attemptTimeoutMs), headers, signal);
       if (res.status === 429 || res.status >= 500) {
         sawBusy = true;
         lastStatus = res.status; lastContentType = responseMediaType(res);
@@ -360,6 +372,7 @@ async function fetchWithBusyRetry(
       }
       return { response: res, deadline };
     } catch (err) {
+      signal?.throwIfAborted();
       if (err instanceof ArchiveError && err.code.startsWith('archive_untrusted')) throw err;
       lastNetworkError = err;
       console.error(`archive ${label} network error (attempt ${attempt + 1})`, {
@@ -609,26 +622,45 @@ function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, l
 
 /** Check public file delivery before exposing a choice; imports still read the complete file. */
 async function downloadableSong(song: ArchiveSong, locations: string[] = []): Promise<boolean> {
-  // MDAPI supplies redundant storage nodes. Race at most two verified locations:
-  // a busy disk must not hold the first result behind a five-second retry.
-  // If both fail, the canonical resolver handles moved items and stale metadata.
+  const canonical = async (signal?: AbortSignal) => {
+    const {response} = await fetchWithBusyRetry(
+      `${DOWNLOAD_BASE}/${encodeURIComponent(song.archiveId)}/${encodeURIComponent(song.archiveFile)}`,
+      'audio', 12000, 5000, { Range: 'bytes=0-65535' }, signal
+    );
+    return verifiedSongResponse(song, response);
+  };
+  // Prefer metadata's direct nodes. Hedge via the canonical resolver after
+  // 600ms (or immediately if both fail), so stale locations cannot add their
+  // full timeout before resolution begins. Cancel every loser and its retries.
   if (locations.length) {
     const cancel = new AbortController();
+    let startFallback!: () => void;
+    const fallbackReady = new Promise<void>(resolve => { startFallback = resolve; });
+    const timer = setTimeout(startFallback, 600);
     try {
-      return await Promise.any(locations.map(async base => {
+      const mirrors = Promise.any(locations.map(async base => {
         const res = await fetchArchiveOnce(`${base}/${encodeURIComponent(song.archiveFile)}`, 2500,
           { Range: 'bytes=0-65535' }, cancel.signal);
         if (!await verifiedSongResponse(song, res)) throw new Error('Archive mirror unavailable');
         return true;
       }));
-    } catch { /* Fall back to the canonical resolver, with its bounded retries. */ }
-    finally { cancel.abort(); }
+      // Attach failure handling immediately; a failed mirror is not a result.
+      void mirrors.catch(() => { clearTimeout(timer); startFallback(); });
+      return await Promise.any([mirrors, fallbackReady.then(async () => {
+        if (!await canonical(cancel.signal)) throw new ArchiveError('This recording is unavailable.', 'archive_audio_unavailable');
+        return true;
+      })]);
+    } catch (error) {
+      // Preserve the canonical path's retryability when every route fails.
+      if (error instanceof AggregateError) {
+        const canonicalError = error.errors[1];
+        if (canonicalError instanceof ArchiveError && canonicalError.code === 'archive_audio_unavailable') return false;
+        throw canonicalError;
+      }
+      throw error;
+    } finally { clearTimeout(timer); cancel.abort(); startFallback(); }
   }
-  const {response: res} = await fetchWithBusyRetry(
-    `${DOWNLOAD_BASE}/${encodeURIComponent(song.archiveId)}/${encodeURIComponent(song.archiveFile)}`,
-    'audio', 12000, 5000, { Range: 'bytes=0-65535' }
-  );
-  return verifiedSongResponse(song, res);
+  return canonical();
 }
 
 async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<boolean> {
@@ -754,6 +786,20 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
       + tokens.filter(token => !title.includes(token) && artist.includes(token)).length * 4
       + (recordingCredit(displayText(doc.creator)) ? 6 : 0) + (doc.musicQuery ? 4 : 0) - (title + artist).length / 200;
   };
+  const discoveryOrder = <T extends { title?: unknown; creator?: unknown; musicQuery?: boolean }>(docs: T[]): T[] => {
+    const ranked = [...docs].sort((a,b) => docScore(b)-docScore(a));
+    const credited = ranked.filter(doc => recordingCredit(displayText(doc.creator)));
+    const fileCredits = ranked.filter(doc => !recordingCredit(displayText(doc.creator)));
+    const ordered:T[] = [];
+    // The catalog omits file-level artist tags. Give those items one in three
+    // discovery slots so album credits cannot monopolize the metadata pool.
+    // This affects inspection order only; every result still needs real credits,
+    // matching track metadata and verified audio, then keeps its relevance rank.
+    while (credited.length || fileCredits.length) {
+      ordered.push(...credited.splice(0,2), ...fileCredits.splice(0,1));
+    }
+    return ordered;
+  };
   const metadata = new Map<string, Promise<ArchiveItem | null>>();
   const probes = new Map<string, Promise<boolean>>();
   const candidates = new Map<string, ArchiveSong & { score: number }>();
@@ -835,7 +881,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
     const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1}));
     const deadline = Date.now()+18000;
-    for (const doc of [...found].sort((a,b) => docScore(b)-docScore(a)).slice(0,index === 1 ? 16 : 4)) {
+    for (const doc of discoveryOrder(found).slice(0,index === 1 ? 16 : 4)) {
       const id = doc.identifier;
       if (typeof id !== 'string' || !IDENTIFIER_PATTERN.test(id) || earlyIds.has(id)) continue;
       earlyIds.add(id);
@@ -851,7 +897,9 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   docs.sort((a,b) => docScore(b) - docScore(a));
   const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
   const metadataDeadline = Date.now() + 18000;
-  const items = await Promise.all(ids.map(id => inspectMatches(id, metadataDeadline)));
+  const selected = new Set(ids);
+  const orderedIds = [...new Set(discoveryOrder(docs.filter(doc => selected.has(String(doc.identifier)))).map(doc => String(doc.identifier)))];
+  const items = await Promise.all(orderedIds.map(id => inspectMatches(id, metadataDeadline)));
   await Promise.all(earlyChecks);
   // Reuse early probes and retain the complete relevance pass. At most eight
   // speculative probes plus twenty-four final candidates can reach the source.

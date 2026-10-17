@@ -185,6 +185,38 @@ test('a full fast broad catalog cannot starve the music catalog behind a stalled
   finally { credited.resolve(); await search; }
 });
 
+test('file-credited recordings get metadata capacity before slow item-credited hits finish', {timeout:5000}, async t => {
+  const slow = deferred(), firstResult = deferred(), capacityFilled = deferred();
+  const inspected:string[] = []; let firstId = '';
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url = new URL(String(input));
+    if(url.pathname === '/advancedsearch.php') {
+      if(!url.searchParams.get('q')!.includes('subject:')) return Response.json({response:{docs:[]}});
+      return Response.json({response:{docs:[
+        ...Array.from({length:12},(_,i)=>({identifier:`credit-queue-${i}`,title:'Queue prelude',creator:'Composer'})),
+        {identifier:'file-credit-queue',title:'Queue prelude'},
+      ]}});
+    }
+    if(url.pathname.startsWith('/metadata/')) {
+      const id = url.pathname.split('/')[2]; inspected.push(id);
+      if(inspected.length === 6) capacityFilled.resolve();
+      if(id !== 'file-credit-queue') { await slow.promise; return metadata('Unrelated recording'); }
+      const data = await metadata('Queue prelude').json();
+      delete data.metadata.creator;
+      data.files[0].artist = 'Credited Performer';
+      return Response.json(data);
+    }
+    return probe();
+  });
+  const search = searchArchiveSongs('Queue prelude',r=>{if(r.results.length){firstId=r.results[0].archiveId;firstResult.resolve();}});
+  try {
+    await capacityFilled.promise;
+    assert.ok(inspected.includes('file-credit-queue'),'file-level credit discovery must share the first six metadata slots');
+    await firstResult.promise;
+    assert.equal(firstId,'file-credit-queue');
+  } finally { slow.resolve(); await search; }
+});
+
 test('cold delivery uses the responsive metadata mirror and cancels a stalled sibling', {timeout:5000}, async t => {
   let stalledAborted=false;const requested:string[]=[];
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -222,6 +254,42 @@ test('failed mirrors fall back to canonical delivery and untrusted locations are
     assert.equal(requests.some(url=>url.includes('attacker.example')),false);
     t.mock.restoreAll();
   }
+});
+
+test('canonical resolution starts while both direct nodes are still stalled', {timeout:5000}, async t => {
+  let aborted=0, canonicalCalls=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'hedged-prelude'}]}});
+    if(url.pathname.startsWith('/metadata/'))return Response.json({...await metadata('Hedged prelude').json(),
+      server:'ia800003.us.archive.org',workable_servers:['ia800003.us.archive.org','ia600003.us.archive.org'],dir:'/12/items/hedged-prelude'});
+    if(url.hostname!=='archive.org')return new Promise<Response>((_resolve,reject)=>{
+      init!.signal!.addEventListener('abort',()=>{aborted++;reject(new DOMException('Aborted','AbortError'));},{once:true});
+    });
+    canonicalCalls++;
+    assert.equal(aborted,0,'canonical resolution must begin before the direct-node timeouts');
+    assert.equal(new Headers(init?.headers).get('range'),'bytes=0-65535');
+    return probe();
+  });
+  const result=await searchArchiveSongs('Hedged prelude');
+  assert.equal(result.results.length,1);assert.equal(canonicalCalls,1);assert.equal(aborted,2);
+});
+
+test('a successful mirror cancels a busy canonical fallback before its retry', {timeout:5000}, async t => {
+  const canonicalStarted=deferred();let canonicalCalls=0;let canonicalSignal:AbortSignal|null|undefined;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'retry-cancel-prelude'}]}});
+    if(url.pathname.startsWith('/metadata/'))return Response.json({...await metadata('Retry cancel prelude').json(),
+      server:'ia800004.us.archive.org',dir:'/12/items/retry-cancel-prelude'});
+    if(url.hostname!=='archive.org'){await canonicalStarted.promise;return probe();}
+    canonicalCalls++;canonicalSignal=init?.signal;canonicalStarted.resolve();
+    return new Response('busy',{status:503});
+  });
+  assert.equal((await searchArchiveSongs('Retry cancel prelude')).results.length,1);
+  assert.equal(canonicalSignal?.aborted,true);
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  assert.equal(canonicalCalls,1,'the losing fallback must not retry after a verified mirror wins');
 });
 
 test('edge and metadata caches keep student durations separate from visitor results', async t => {
