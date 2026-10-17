@@ -577,7 +577,7 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
     await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});
-    await page.locator('.yt-go').click();await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
+    await page.locator('#yt-form .yt-go').click();await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-results-mobile.png`,animations:'disabled'});
     await input.fill('');await expect(input).toHaveAttribute('placeholder','jazz piano');await input.press('Escape');await expect(hint).toBeHidden();
     await input.press('Tab');await expect(page.locator('#yt-form button[type=submit]')).toBeFocused();

@@ -102,7 +102,7 @@ test('mobile streams inside the search field with no hint or extra box',async({p
   await page.setViewportSize({width:900,height:812});await expect(hint).toBeVisible();await expect(input).toHaveAttribute('placeholder',query);
   await page.setViewportSize({width:375,height:812});await expect(hint).toBeHidden();
   if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('#yt-disclosure').screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/song-suggestion-mobile.png'});}
-  await page.locator('.yt-go').click();await expect(input).toHaveValue(query);await expect(page.locator('#source-songs [role="option"]')).toBeVisible();
+  await page.locator('#yt-form .yt-go').click();await expect(input).toHaveValue(query);await expect(page.locator('#source-songs [role="option"]')).toBeVisible();
   await input.fill('jazz');await expect(input).toHaveValue('jazz');
  }finally{releaseSamples();await f.harness.close();}
 });
