@@ -1,3 +1,4 @@
+import { createTestIdentityIssuer } from '@cuny-ai-lab/cail-identity/testing';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -14,7 +15,8 @@ test('public playlist suggestions verify before identity or account setup; arbit
     http.get('https://archive.org/download/:id/:file',()=>new HttpResponse(audio,{headers:{'content-type':'audio/mpeg','content-length':String(audio.length)}})),
   );
   network.listen({onUnhandledRequest:'error'});
-  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
+  const issuer=await createTestIdentityIssuer();
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson}}]});
   try {
     await server.listen();const worker=server.getWorker('stem-preview-contract-test');
     const query=new URLSearchParams({q:`${track.artist} ${track.title}`,sampleItem:track.archiveId,sampleFile:track.archiveFile});
