@@ -83,6 +83,7 @@ import {
   ARCHIVE_SCOPES,
   fetchArchiveAudio,
   fetchArchiveItem,
+  verifyArchiveSample,
   isArchiveScope,
   parseArchiveIdentifier,
   searchArchive,
@@ -1023,6 +1024,18 @@ function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: st
 // --- jobs -------------------------------------------------------------
 
 app.get('/api/music/search', requireClassCode, async (c) => {
+  if (c.req.query('sampleItem') !== undefined || c.req.query('sampleFile') !== undefined) {
+    try {
+      const result = await verifyArchiveSample(c.req.query('q') ?? '', c.req.query('sampleItem') ?? '', c.req.query('sampleFile') ?? '',
+        c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300);
+      return c.json(result, 200, { 'Cache-Control': 'private, no-store' });
+    } catch (error) {
+      // Missing, restricted or temporarily unavailable candidates are simply not suggestions.
+      if (error instanceof ArchiveError) return c.json({ results: [] }, 200, { 'Cache-Control': 'private, no-store' });
+      return archiveErrorResponse(c, error, 'Song verification is temporarily unavailable.');
+    }
+  }
+
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson',
     storage ? { storage, origin: new URL(c.req.url).origin } : undefined,

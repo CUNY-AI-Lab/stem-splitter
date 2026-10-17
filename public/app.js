@@ -410,9 +410,9 @@ let songResults = new Map(), songSearchTimer, songSearchSequence = 0, songSearch
 let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
 
-// One illustrative query, not a curated result: matches still come from the
-// authenticated live search and retain the normal source/eligibility checks.
-const SAMPLE_SONG_QUERY = 'jazz piano';
+// Playlist candidates become suggestions only after the live Archive search
+// verifies the exact item and audio file. Never substitute an unrelated result.
+let SAMPLE_SONG_QUERY = '';
 const sampleHint = document.getElementById('source-sample-hint');
 const defaultSongPlaceholder = ytUrlInput.placeholder;
 const sampleReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -444,25 +444,58 @@ function stopSongSample(cancelPreload = true) {
   }
 }
 function preloadSongSample() {
-  // At most one speculative request per visit; ordinary accepted searches
-  // can retry failures. Never initiate auth from a background suggestion.
+  // One bounded background selection per visit, without triggering sign-in.
   if (sampleStarted || (runtime.authMode === 'cail' ? !accountSubject : !getClassCode())) return;
   sampleStarted = true;
   const cache = { controller: new AbortController(), batches: [], pending: true, createdAt: Date.now(), listener: null };
   sampleCache = cache;
   const deadline = setTimeout(() => cache.controller.abort(), 15000);
-  cache.promise = api(`/api/music/search?q=${encodeURIComponent(SAMPLE_SONG_QUERY)}`, {
-    background: true, signal: cache.controller.signal, headers: { Accept: 'application/x-ndjson' },
-    onResults(data) { cache.batches.push(data); cache.listener?.(data); },
-  }).then(data => ({ data }), () => {
+  cache.promise = (async () => {
+    const response = await fetch('/search-samples.json', { signal: cache.controller.signal });
+    if (!response.ok) throw new Error('Song candidates unavailable');
+    const candidates = await response.json();
+    if (!Array.isArray(candidates)) throw new Error('Invalid song candidates');
+    const shuffled = candidates.filter(track => ['artist', 'title', 'archiveId', 'archiveFile'].every(key => typeof track?.[key] === 'string' && track[key].trim()));
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    for (const candidate of shuffled.slice(0, 3)) {
+      if (cache.controller.signal.aborted || sampleCache !== cache) break;
+      const query = `${candidate.artist} ${candidate.title}`;
+      const verified = new Map();
+      const receive = data => {
+        if (cache.controller.signal.aborted || sampleCache !== cache) return;
+        const matches = (data.results || []).filter(track => track.archiveId === candidate.archiveId && track.archiveFile === candidate.archiveFile);
+        if (!matches.length) return;
+        for (const track of matches) verified.set(track.id, track);
+        const batch = { ...data, results: matches };
+        cache.batches.push(batch);
+        SAMPLE_SONG_QUERY = query;
+        sampleHint.setAttribute('aria-label', `Use suggested song: ${query}. Tab to accept.`);
+        cache.listener?.(batch);
+        showSongSample();
+      };
+      try {
+        const data = await api(`/api/music/search?q=${encodeURIComponent(query)}&sampleItem=${encodeURIComponent(candidate.archiveId)}&sampleFile=${encodeURIComponent(candidate.archiveFile)}`, {
+          background: true, signal: cache.controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: receive,
+        });
+        receive(data);
+        if (verified.size) return { data: { results: [...verified.values()] } };
+      } catch { if (cache.controller.signal.aborted) break; }
+    }
+    if (sampleCache === cache) sampleCache = null;
+    return { failed: true };
+  })().catch(() => {
     if (sampleCache === cache) sampleCache = null;
     return { failed: true };
   }).finally(() => { cache.pending = false; clearTimeout(deadline); });
 }
+
 function showSongSample() {
   if (!sampleVisible()) return;
   preloadSongSample();
-  if (!sampleHint.hidden) return;
+  if (!SAMPLE_SONG_QUERY || !sampleCache || !sampleHint.hidden) return;
   sampleHint.hidden = false;
   ytUrlInput.setAttribute('aria-describedby', 'source-sample-hint');
   ytUrlInput.classList.add('showing-sample');
