@@ -6,7 +6,8 @@ import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 import preview, { type WorkerEnv } from './worker.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { SESSION_COOKIE, type WorkerIdentity } from './sso.ts';
-type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_QUEUE?: string; TEST_BROWSER?: string; TEST_ROSTER_SUBJECT?: string };
+type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_QUEUE_FAIL?: string; TEST_QUEUE?: string; TEST_BROWSER?: string; TEST_ROSTER_SUBJECT?: string };
+let adaptiveWriteFailed=false;
 const adaptiveMessages: {jobId:string}[]=[];
 let gatewayCalls = 0;
 let gatewayMessages: Array<{ role: string; content: string }> = [];
@@ -16,7 +17,12 @@ export default {
     if(new URL(request.url).pathname==='/__fixture/adaptive-queue'&&request.headers.get('x-fixture')==='local-only') {
       const bodies=adaptiveMessages.splice(0);let acked=0,retried=0;
       for(const body of bodies)await env.DB.prepare('UPDATE app_operations SET not_before=0 WHERE id=?').bind(body.jobId).run();
-      await preview.queue({messages:bodies.map(body=>({body,ack:()=>acked++,retry:()=>retried++}))} as unknown as MessageBatch<unknown>,env);
+      const audio=env.AUDIO;
+      const queueEnv=env.TEST_QUEUE_FAIL==='true'?{...env,AUDIO:new Proxy(audio,{get(target,key){
+        if(key==='put')return async (...args:Parameters<R2Bucket['put']>)=>{if(!adaptiveWriteFailed){adaptiveWriteFailed=true;throw new Error('fixture storage outage');}return audio.put(...args);};
+        const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+      }})}:env;
+      await preview.queue({messages:bodies.map(body=>({body,ack:()=>acked++,retry:()=>{retried++;adaptiveMessages.push(body);}}))} as unknown as MessageBatch<unknown>,queueEnv);
       return Response.json({delivered:bodies.length,acked,retried});
     }
 

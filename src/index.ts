@@ -2401,9 +2401,9 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
 
     const committed = await env.DB.prepare(
       `UPDATE jobs SET status = ?, stems = ?, model = ?, error = NULL WHERE id = ? AND status = 'ingesting' AND error = ?
-        AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`
+        AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=0 AND lease_until>? AND deadline>?))`
     )
-      .bind('done', JSON.stringify(published), outputModel, jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null)
+      .bind('done', JSON.stringify(published), outputModel, jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null,Date.now(),Date.now())
       .run();
     if (!committed.meta.changes) await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
     else {
@@ -2419,7 +2419,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       const referenced=(row:typeof snapshot)=>new Set(row?.stems?JSON.parse(row.stems).map((stem:{key:string})=>stem.key):[]);
       if(stored.some(({key})=>referenced(snapshot).has(key)))return;
       const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No allowance was used.';
-      const terminal=error instanceof InvalidStemAudioError||env.AUTH_MODE==='cail';
+      const terminal=error instanceof InvalidStemAudioError||(env.AUTH_MODE==='cail'&&!adaptiveMode);
       await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?
         AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`)
         .bind(terminal?'failed':'processing',terminal?failure:null,jobId,lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null).run();

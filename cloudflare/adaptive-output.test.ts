@@ -23,7 +23,7 @@ test('workerd: adaptive four publishes guitar and a real remainder with ownershi
   http.get('https://api.replicate.com/v1/predictions/:id',({params})=>HttpResponse.json({id:params.id,status:'succeeded',output:Object.fromEntries(names.map(n=>[n,`https://adaptive.replicate.delivery/${n}.mp3`]))})),
   http.get('https://adaptive.replicate.delivery/:name.mp3',({params})=>new HttpResponse(audio[String(params.name)],{headers:{'content-type':'audio/mpeg'}})),
  );network.listen({onUnhandledRequest:'error'});
- const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,ADAPTIVE_FOUR_ENABLED:'true',TEST_QUEUE:'true'},secrets:{REPLICATE_API_TOKEN:'fixture-only',REPLICATE_MODEL_VERSION:'fixture-pin',WEBHOOK_SECRET:'fixture-webhook'}}]});
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,ADAPTIVE_FOUR_ENABLED:'true',TEST_QUEUE:'true',TEST_QUEUE_FAIL:'true'},secrets:{REPLICATE_API_TOKEN:'fixture-only',REPLICATE_MODEL_VERSION:'fixture-pin',WEBHOOK_SECRET:'fixture-webhook'}}]});
  try {
   await server.listen();const worker=server.getWorker('stem-preview-contract-test');
   const schema=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
@@ -48,7 +48,9 @@ test('workerd: adaptive four publishes guitar and a real remainder with ownershi
     drained=await(await worker.fetch('/__fixture/adaptive-queue',{headers:{'x-fixture':'local-only'}})).json() as typeof drained;
     if(!drained.delivered)await new Promise(r=>setTimeout(r,250));
   }
-  assert.ok(drained.delivered>=1);assert.equal(drained.retried,0);assert.equal(drained.acked,drained.delivered);
+  assert.ok(drained.delivered>=1);assert.ok(drained.retried>=1,'transient storage failures retry without spending another allowance');
+  const recovered=await(await worker.fetch('/__fixture/adaptive-queue',{headers:{'x-fixture':'local-only'}})).json() as typeof drained;
+  assert.ok(recovered.delivered>=1);assert.equal(recovered.retried,0);assert.equal(recovered.acked,recovered.delivered);
   let job:{status:string;model:string;expectedStems:string[];stems:{name:string;url:string}[]}|undefined;
   for(let i=0;i<50;i++){job=await(await call(`/api/jobs/${created.id}`)).json() as typeof job;if(job?.status==='done'||job?.status==='failed')break;await new Promise(r=>setTimeout(r,50));}
   assert.equal(job?.status,'done',JSON.stringify(job));assert.equal(starts,1);assert.equal(job!.model,'adaptive_4__vocals_drums_guitar');
