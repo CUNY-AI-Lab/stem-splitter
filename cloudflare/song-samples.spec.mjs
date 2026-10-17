@@ -72,7 +72,7 @@ test('configured hints keep a steady cadence, preserve progress and refresh inst
  }finally{await f.harness.close();}
 });
 
-test('narrow song suggestions wrap fully and accept by touch without covering search',async({page})=>{
+test('mobile streams inside the search field with no hint or extra box',async({page})=>{
  const f=await fixture();
  const track={artist:'A particularly long ensemble name',title:'An extended live recording with a very long song title',archiveId:'mobile-example',archiveFile:'song.mp3'};
  const query=`${track.artist} ${track.title}`;
@@ -80,34 +80,29 @@ test('narrow song suggestions wrap fully and accept by touch without covering se
  try{
   await page.addInitScript(()=>document.addEventListener('DOMContentLoaded',()=>{
    window.mobileSampleGeometry=[];
-   new MutationObserver(()=>{const hint=document.querySelector('#source-sample-hint');if(!hint.hidden)window.mobileSampleGeometry.push({height:hint.getBoundingClientRect().height,fetchOffset:document.querySelector('.yt-go').getBoundingClientRect().top-hint.getBoundingClientRect().top});}).observe(document.querySelector('.source-sample-stream'),{childList:true});
+   const input=document.querySelector('#yt-url');
+   new MutationObserver(()=>{if(input.classList.contains('showing-sample'))window.mobileSampleGeometry.push({height:input.getBoundingClientRect().height,fetchOffset:document.querySelector('.yt-go').getBoundingClientRect().top-input.getBoundingClientRect().top});}).observe(input,{attributes:true,attributeFilter:['placeholder']});
   }));
   await page.route('**/api/song-samples',async route=>{await samplesReady;return route.fulfill({json:{revision:1,version:'mobile',enabled:true,holdMs:3500,cadenceMs:5000,reshuffle:true,tracks:[track]}});});
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...track,id:track.archiveId,durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/'+track.archiveId}]}}));
-  await page.setViewportSize({width:375,height:812});
-  await page.goto(f.url.href);
+  await page.setViewportSize({width:375,height:812});await page.goto(f.url.href);
   await page.evaluate(()=>document.fonts.ready);releaseSamples();
-  const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint'),title=hint.locator('.source-sample-title');
-  await expect(hint).toBeVisible();await expect(title).toHaveText(query);
+  const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint');
+  await expect(input).toHaveAttribute('placeholder',query);await expect(hint).toBeHidden();
   const streamingGeometry=await page.evaluate(()=>window.mobileSampleGeometry);
   expect(streamingGeometry.length).toBeGreaterThan(1);
   expect(streamingGeometry).toEqual(streamingGeometry.map(()=>streamingGeometry[0]));
   for(const width of [320,375,560]){
-   await page.setViewportSize({width,height:812});
-   await expect(input).toHaveAttribute('placeholder','Search songs');
-   await expect(hint.locator('.source-sample-touch')).toBeVisible();
-   await expect(hint.locator('.source-sample-keyboard')).toBeHidden();
-   const geometry=await page.evaluate(()=>{
-    const field=document.querySelector('#yt-url').getBoundingClientRect(),hint=document.querySelector('#source-sample-hint').getBoundingClientRect(),title=document.querySelector('.source-sample-title');
-    return {overlap:field.bottom>hint.top,clipped:title.scrollWidth>title.clientWidth||title.scrollHeight>title.clientHeight,overflow:document.documentElement.scrollWidth>innerWidth,height:hint.height};
-   });
-   expect(geometry).toEqual({overlap:false,clipped:false,overflow:false,height:expect.any(Number)});expect(geometry.height).toBeGreaterThanOrEqual(44);
+   await page.setViewportSize({width,height:812});await expect(input).toHaveAttribute('placeholder',query);await expect(hint).toBeHidden();
+   expect(await page.evaluate(()=>{
+    const input=document.querySelector('#yt-url'),field=input.getBoundingClientRect(),button=document.querySelector('.yt-go').getBoundingClientRect(),style=getComputedStyle(input);
+    return {overflow:document.documentElement.scrollWidth>innerWidth,sameRow:Math.abs(field.top-button.top)<1,paddingBalanced:style.paddingRight===style.paddingLeft,extraBox:!!document.querySelector('.source-sample-title')};
+   })).toEqual({overflow:false,sameRow:true,paddingBalanced:true,extraBox:false});
   }
-  await page.setViewportSize({width:900,height:812});
-  await expect(input).toHaveAttribute('placeholder',query);await expect(title).toBeHidden();await expect(hint.locator('.source-sample-keyboard')).toBeVisible();
-  await page.setViewportSize({width:375,height:812});
-  if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/song-suggestion-mobile.png',animations:'disabled'});}
-  await hint.click();await expect(input).toHaveValue(query);await expect(hint).toBeHidden();await expect(page.locator('#source-songs [role="option"]')).toBeVisible();
+  await page.setViewportSize({width:900,height:812});await expect(hint).toBeVisible();await expect(input).toHaveAttribute('placeholder',query);
+  await page.setViewportSize({width:375,height:812});await expect(hint).toBeHidden();
+  if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('#yt-disclosure').screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/song-suggestion-mobile.png'});}
+  await page.locator('.yt-go').click();await expect(input).toHaveValue(query);await expect(page.locator('#source-songs [role="option"]')).toBeVisible();
   await input.fill('jazz');await expect(input).toHaveValue('jazz');
  }finally{releaseSamples();await f.harness.close();}
 });

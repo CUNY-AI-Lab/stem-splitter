@@ -94,6 +94,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.match(anonymous.headers.get('cache-control')!, /no-store/);
     assert.equal((await call('/api/account')).status, 200);
     assert.equal((await call('/api/account', 1)).status, 200);
+    assert.equal((await (await call('/api/account', 2)).json()).splitAllowance.limit, 25);
     assert.equal((await call('/api/remix/archive-audio', 0, { method: 'POST', body: '{"archiveId":"example","archiveFile":"track.mp3"}' })).status, 404);
     assert.equal((await call('/api/admin/users')).status, 403);
     assert.equal((await call('/api/teacher/login', 0, { method: 'POST', body: '{}' })).status, 403);
@@ -265,6 +266,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     assert.equal(updated.role_expires_at, null);
     assert.equal(updated.revision, alice.revision + 2);
     assert.equal((await (await call('/api/account')).json()).account.role, 'instructor');
+    assert.equal((await (await call('/api/account')).json()).splitAllowance.limit, 25);
     assert.equal((await call('/api/teacher/folders')).status, 200);
     assert.equal((await call('/api/admin/users')).status, 403);
     assert.equal((await call('/api/teacher/folders', 1)).status, 403);

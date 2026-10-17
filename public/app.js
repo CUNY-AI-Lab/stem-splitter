@@ -253,7 +253,7 @@ async function api(path, options = {}) {
   if (res.status === 429 && body.code === 'split_daily_limit' && Number.isFinite(Date.parse(body.resetsAt))) {
     const reset = new Date(body.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
     throw new Error(guestSessionActive
-      ? `You've used today's 3 guest runs. Sign in with CUNY Login for your account's daily allowance. Guest work stays in this browser. You can split again ${reset}.`
+      ? `You've used today's ${runtime.guest.splitLimit} guest runs. Sign in with CUNY Login for your account's daily allowance. Guest work stays in this browser. You can split again ${reset}.`
       : `You've used today's runs. You can split again ${reset}.`);
   }
   if (!res.ok) {
@@ -416,17 +416,10 @@ const sourceIsLink = value => /^https?:\/\//i.test(value);
 // verifies the exact item and audio file. Never substitute an unrelated result.
 let SAMPLE_SONG_QUERY = '';
 const sampleHint = document.getElementById('source-sample-hint');
-const sampleHintTitle = sampleHint.querySelector('.source-sample-title');
-const sampleHintStream = sampleHint.querySelector('.source-sample-stream');
 const defaultSongPlaceholder = ytUrlInput.placeholder;
-const sampleNarrowViewport = matchMedia('(max-width: 560px)');
 function renderSongSample(text) {
-  sampleHintStream.textContent = text;
-  ytUrlInput.placeholder = sampleNarrowViewport.matches ? defaultSongPlaceholder : text;
+  ytUrlInput.placeholder = text;
 }
-sampleNarrowViewport.addEventListener('change', () => {
-  if (!sampleHint.hidden) renderSongSample(sampleHintStream.textContent);
-});
 const sampleReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let sampleTimer = 0, sampleDismissed = false, sampleStarted = false;
 let sampleCache = null;
@@ -530,7 +523,6 @@ setInterval(()=>{void refreshSongSampleSettings();},30000);
 function selectSongSample(cache) {
   sampleCache = cache;
   SAMPLE_SONG_QUERY = cache.query;
-  sampleHintTitle.dataset.title = cache.query;
   sampleHint.setAttribute('aria-label', `Use suggested song: ${cache.query}. Tab to accept.`);
 }
 function preloadSongSample() {
@@ -1269,7 +1261,8 @@ dropzone.addEventListener('drop', (e) => {
 ytForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = ytUrlInput.value.trim();
-  if (!url || youtubeFetchInProgress) return;
+  if (youtubeFetchInProgress) return;
+  if (!url) { acceptSongSample(); return; }
   const song = songResults.get(url);
   if (!sourceIsLink(url) && !song) {
     clearTimeout(songSearchTimer);

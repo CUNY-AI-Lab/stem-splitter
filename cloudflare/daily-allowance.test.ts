@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqliteD1 } from '../server/d1.ts';
-import { dailyWindow, operationAllowance, splitAllowance } from '../src/daily-allowance.ts';
+import { dailyWindow, operationAllowance, splitAllowance, allowanceLimit, type AllowanceRole } from '../src/daily-allowance.ts';
 import { OperationError, readOperation, reserveOperation, settleOperation } from '../src/reliability/ledger.ts';
 import { claimNext, recoverExpired, transition, QUEUE_CAPS } from '../src/reliability/queue.ts';
 import { retryAt } from '../src/reliability/retry.ts';
@@ -17,7 +17,7 @@ function setup(t:{after:(f:()=>void)=>void}) {
  return [left,right] as unknown as D1Database[];
 }
 async function user(db:D1Database,subject:string){await db.prepare('INSERT OR IGNORE INTO app_users(subject) VALUES(?)').bind(subject).run();}
-const reserve=(db:D1Database,i:number,subject=alice,kind:'split'|'chat'='split',at=now,role:'student'|'member'='student')=>reserveOperation(db,{subject,role,courseId:i%2?'course-a':'course-b',kind,key:`request-number-${String(i).padStart(4,'0')}`,fingerprint:`fingerprint-${i}`,phase:kind==='split'?'split':'chat',now:at});
+const reserve=(db:D1Database,i:number,subject=alice,kind:'split'|'chat'='split',at=now,role:AllowanceRole='student')=>reserveOperation(db,{subject,role,courseId:i%2?'course-a':'course-b',kind,key:`request-number-${String(i).padStart(4,'0')}`,fingerprint:`fingerprint-${i}`,phase:kind==='split'?'split':'chat',now:at});
 
 test('two connections atomically admit fifteen across courses; failures release exactly once',async t=>{
  const db=setup(t);for(const u of [alice,bob])await user(db[0],u);
@@ -40,14 +40,17 @@ test('sixty human messages admit fifty; one replay/partial/failure uses one rese
  const count=await operationAllowance(db[0],alice,'chat',new Date(now));assert.equal(count.completed,1);assert.equal(count.inProgress,48);assert.equal(count.remaining,1);
  await reserve(db[1],70,alice,'chat');await assert.rejects(reserve(db[0],71,alice,'chat'),OperationError);
 });
-test('student and other admitted Lab member splits use distinct atomic daily caps',async t=>{
- const db=setup(t);for(const u of [alice,bob])await user(db[0],u);
- const students=await Promise.allSettled(Array.from({length:16},(_,i)=>reserve(db[i%2],100+i,alice,'split',now,'student')));
- const members=await Promise.allSettled(Array.from({length:8},(_,i)=>reserve(db[i%2],200+i,bob,'split',now,'member')));
- assert.equal(students.filter(result=>result.status==='fulfilled').length,15);
- assert.equal(members.filter(result=>result.status==='fulfilled').length,5);
- assert.equal((await splitAllowance(db[0],alice,new Date(now),'member','student')).limit,15);
- assert.equal((await splitAllowance(db[0],bob,new Date(now),'member','member')).limit,5);
+test('every verified role enforces the same daily cap in reservations and account readback',async t=>{
+ const db=setup(t);
+ for(const [index,role] of (['student','member','instructor','admin','guest'] as const).entries()){
+  const subject='cail-'+String(index).padStart(32,'0');await user(db[0],subject);
+  const limit=role==='instructor'||role==='admin'?25:15;
+  const attempts=await Promise.allSettled(Array.from({length:limit+3},(_,i)=>reserve(db[i%2],i,subject,'split',now,role)));
+  assert.equal(attempts.filter(result=>result.status==='fulfilled').length,limit,role);
+  for(const result of attempts)if(result.status==='rejected')assert.equal(result.reason.code,'split_daily_limit');
+  assert.deepEqual(await splitAllowance(db[0],subject,new Date(now),'member',role),{limit,completed:0,inProgress:limit,remaining:0,resetsAt:'2027-01-01T00:00:00.000Z'});
+  assert.equal(allowanceLimit('split','guest',role),5,'unsigned quota takes precedence over any role');
+ }
 });
 test('submission-day accounting survives UTC midnight/year rollover and DST',async t=>{
  const db=setup(t);await user(db[0],alice);
