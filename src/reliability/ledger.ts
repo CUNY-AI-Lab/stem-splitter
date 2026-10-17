@@ -1,4 +1,4 @@
-import { dailyWindow, allowanceLimit, type AllowanceRole, type QuotaClass } from '../daily-allowance.ts';
+import { dailyWindow, effectiveAllowanceLimit, type AllowanceRole, type QuotaClass } from '../daily-allowance.ts';
 
 export type OperationKind = 'split' | 'chat' | 'guide';
 export type Phase = 'fetch' | 'split' | 'chat' | 'guide';
@@ -42,8 +42,8 @@ export async function reserveOperation(db: D1Database, input: {
   const { day, retryAfter } = dailyWindow(new Date(now));
   const quotaClass = input.quotaClass ?? 'member';
   if (quotaClass === 'guest' && input.courseId !== null) throw new OperationError('guest_course_forbidden',400,'Guest work cannot be assigned to a course.');
-  const role: AllowanceRole = quotaClass === 'guest' ? 'guest' : input.role === 'student' ? 'student' : 'member';
-  const limit = allowanceLimit(input.kind,quotaClass,role);
+  const role: AllowanceRole = quotaClass === 'guest' ? 'guest' : input.role === 'student' ? 'student' : input.role === 'admin' ? 'admin' : 'member';
+  const limit = await effectiveAllowanceLimit(db,input.subject,day,input.kind,quotaClass,role);
   const abuseLimit = quotaClass === 'guest' ? input.kind === 'split' ? 15 : input.kind === 'chat' ? 50 : 10
     : input.kind === 'split' ? MAX_SPLIT_ATTEMPTS_PER_DAY : input.kind === 'chat' ? MAX_CHAT_ATTEMPTS_PER_DAY : 20;
   const id = input.kind==='split' && input.jobId ? input.jobId : crypto.randomUUID();

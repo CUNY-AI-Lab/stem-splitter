@@ -12,6 +12,19 @@ export function allowanceLimit(kind: 'split' | 'chat' | 'guide', quotaClass: Quo
     : quotaClass === 'guest' ? GUEST_INPUTS_PER_DAY : HUMAN_INPUTS_PER_DAY;
 }
 
+/** A dated operator grant adds capacity only while central identity verifies admin.
+ * Usage remains intact; the next UTC day automatically restores the normal cap. */
+export async function effectiveAllowanceLimit(db: D1Database, subject: string, day: string,
+  kind: 'split' | 'chat' | 'guide', quotaClass: QuotaClass, role: AllowanceRole) {
+  const base = allowanceLimit(kind, quotaClass, role);
+  if (kind !== 'split' || quotaClass !== 'member' || role !== 'admin') return base;
+  const grant = await db.prepare('SELECT extra_splits FROM admin_testing_grants WHERE subject=? AND day=?')
+    .bind(subject, day).first<{ extra_splits: number }>();
+  if (!grant) return base;
+  if (!Number.isSafeInteger(grant.extra_splits) || grant.extra_splits < 1 || grant.extra_splits > 30) throw new Error('Allowance unavailable');
+  return base + grant.extra_splits;
+}
+
 export function dailyWindow(now = new Date()) {
   const day = now.toISOString().slice(0, 10);
   const resetsAt = new Date(`${day}T00:00:00.000Z`);
@@ -34,6 +47,6 @@ export async function operationAllowance(db: D1Database, subject: string, kind: 
     .bind(kind, day, subject).first<{ completed: number; inProgress: number }>();
   // A missing/corrupt read must never present a full allowance as verified.
   if (!row || !Number.isSafeInteger(row.completed) || row.completed < 0 || !Number.isSafeInteger(row.inProgress) || row.inProgress < 0) throw new Error('Allowance unavailable');
-  const limit = allowanceLimit(kind,quotaClass,role);
+  const limit = await effectiveAllowanceLimit(db,subject,day,kind,quotaClass,role);
   return { limit, completed: row.completed, inProgress: row.inProgress, remaining: Math.max(0, limit-row.completed-row.inProgress), resetsAt };
 }

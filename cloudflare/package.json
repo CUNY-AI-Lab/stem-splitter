@@ -11,7 +11,9 @@
     "db:migrate:24": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0024-run-deletion.sql",
     "db:migrate:24:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0024-run-deletion.sql",
     "db:migrate:26": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0026-song-samples.sql",
-    "db:migrate:26:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0026-song-samples.sql"
+    "db:migrate:26:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0026-song-samples.sql",
+    "db:migrate:27": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0027-admin-testing-grants.sql",
+    "db:migrate:27:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0027-admin-testing-grants.sql"
   },
   "dependencies": {
     "@cuny-ai-lab/cail-client": "6.2.2",

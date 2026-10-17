@@ -17,7 +17,7 @@ function setup(t:{after:(f:()=>void)=>void}) {
  return [left,right] as unknown as D1Database[];
 }
 async function user(db:D1Database,subject:string){await db.prepare('INSERT OR IGNORE INTO app_users(subject) VALUES(?)').bind(subject).run();}
-const reserve=(db:D1Database,i:number,subject=alice,kind:'split'|'chat'='split',at=now,role:'student'|'member'='student')=>reserveOperation(db,{subject,role,courseId:i%2?'course-a':'course-b',kind,key:`request-number-${String(i).padStart(4,'0')}`,fingerprint:`fingerprint-${i}`,phase:kind==='split'?'split':'chat',now:at});
+const reserve=(db:D1Database,i:number,subject=alice,kind:'split'|'chat'='split',at=now,role:'student'|'member'|'admin'='student')=>reserveOperation(db,{subject,role,courseId:i%2?'course-a':'course-b',kind,key:`request-number-${String(i).padStart(4,'0')}`,fingerprint:`fingerprint-${i}`,phase:kind==='split'?'split':'chat',now:at});
 
 test('two connections atomically admit fifteen across courses; failures release exactly once',async t=>{
  const db=setup(t);for(const u of [alice,bob])await user(db[0],u);
@@ -87,4 +87,24 @@ test('migration keeps old attempt evidence separate and never invents successful
  const db=setup(t);await user(db[0],alice);await db[0].prepare("INSERT INTO app_request_reservations(id,subject,scope,day) VALUES('old',?,'split','2026-12-31')").bind(alice).run();
  (db[0] as unknown as SqliteD1).applySchema(readFileSync(new URL('../migrations/0022-reliable-operations.sql',import.meta.url),'utf8'));
  assert.equal((await splitAllowance(db[0],alice,new Date(now))).completed,0);assert.equal((await db[0].prepare('SELECT COUNT(*) AS n FROM app_request_reservations').first<{n:number}>())?.n,1);
+});
+
+test('dated admin grants preserve usage and atomically bound concurrent submissions',async t=>{
+ const db=setup(t);for(const u of [alice,bob])await user(db[0],u);
+ const migration=readFileSync(new URL('../migrations/0027-admin-testing-grants.sql',import.meta.url),'utf8');
+ (db[0] as unknown as SqliteD1).applySchema(migration);(db[0] as unknown as SqliteD1).applySchema(migration);
+ await db[0].prepare("INSERT INTO admin_testing_grants(subject,day,extra_splits,reason) VALUES(?,'2026-12-31',12,'Authorized release verification')").bind(alice).run();
+ const first=await reserve(db[0],900,alice,'split',now,'admin');await settleOperation(db[0],first.operation.id,'succeeded');
+ assert.deepEqual(await splitAllowance(db[0],alice,new Date(now),'member','admin'),{limit:17,completed:1,inProgress:0,remaining:16,resetsAt:'2027-01-01T00:00:00.000Z'});
+ const results=await Promise.allSettled(Array.from({length:25},(_,i)=>reserve(db[i%2],1000+i,alice,'split',now,'admin')));
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,16);
+ assert.equal((await splitAllowance(db[0],alice,new Date(now),'member','admin')).remaining,0);
+ assert.equal((await splitAllowance(db[0],alice,new Date(now+1),'member','admin')).limit,5);
+ assert.equal((await splitAllowance(db[0],bob,new Date(now),'member','admin')).limit,5);
+ assert.equal((await splitAllowance(db[0],alice,new Date(now),'member','member')).limit,5);
+ assert.equal((await splitAllowance(db[0],alice,new Date(now),'member','student')).limit,15);
+ assert.equal((await splitAllowance(db[0],alice,new Date(now),'guest','admin')).limit,3);
+ assert.equal((await operationAllowance(db[0],alice,'chat',new Date(now),'member','admin')).limit,50);
+ await assert.rejects(reserve(db[0],2000,alice,'split',now,'member'),OperationError);
+ await assert.rejects(db[0].prepare("INSERT INTO admin_testing_grants(subject,day,extra_splits,reason) VALUES(?,'2027-01-01',31,'invalid')").bind(alice).run());
 });
