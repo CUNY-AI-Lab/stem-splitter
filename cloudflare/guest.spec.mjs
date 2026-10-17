@@ -570,10 +570,16 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
   const f = await setup(page);
   try {
     await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:390,height:844});
+    await page.route('**/api/song-samples',route=>route.fulfill({json:{version:'reduced-motion',enabled:true,holdMs:3500,cadenceMs:6000,tracks:[{...sampleTrack,artist:'jazz',title:'piano'}]}}));
+    await page.addInitScript(()=>document.addEventListener('DOMContentLoaded',()=>{
+      window.reducedMotionSamples=[];const input=document.querySelector('#yt-url');
+      new MutationObserver(()=>{if(input.classList.contains('showing-sample'))window.reducedMotionSamples.push(input.placeholder);}).observe(input,{attributes:true,attributeFilter:['placeholder']});
+    }));
     await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[sampleTrack]}}));
     await page.goto(f.origin);
     const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint');
     await expect(hint).toBeHidden();await expect(input).toHaveAttribute('placeholder','jazz piano');
+    expect(await page.evaluate(()=>window.reducedMotionSamples)).toEqual(['jazz piano']);
     await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});
