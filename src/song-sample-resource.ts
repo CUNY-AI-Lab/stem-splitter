@@ -32,10 +32,9 @@ export function parseSampleSettings(value: unknown): SampleSettings {
 }
 
 export async function readSampleResource(db: Env['DB']): Promise<SampleResource> {
-  let row: { revision:number; settings:string|null; updated_by:string|null; updated_at:string|null } | null;
-  try {row=await db.prepare('SELECT revision, settings, updated_by, updated_at FROM song_sample_settings WHERE id = 1').first<typeof row>();}
-  catch(error){if(!/no such table.*song_sample_settings/i.test(String(error)))throw error;row=null;}
-  if(!row?.settings)return {revision:row?.revision??0,settings:defaultSampleSettings(),updatedBy:null,updatedAt:null};
+  const row=await db.prepare('SELECT revision, settings, updated_by, updated_at FROM song_sample_settings WHERE id = 1')
+    .first<{revision:number;settings:string|null;updated_by:string|null;updated_at:string|null}>();
+  if(!row?.settings)throw new Error('Song settings are unavailable. Apply the song-resource migration.');
   // Corruption must fail closed, never silently restore an instructor-disabled pool.
   const parsed=JSON.parse(row.settings);const valid=parseSampleSettings(parsed);
   const tracks=valid.tracks.map(t=>({...t,...(parsed.tracks.find((x:SampleTrack)=>sampleTrackKey(x)===sampleTrackKey(t)) || {})}));

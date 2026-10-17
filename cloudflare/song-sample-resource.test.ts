@@ -23,6 +23,7 @@ test('song settings enforce complete-name timing, bounded unique recordings and 
   assert.equal(parseSampleSettings({...base,enabled:false,tracks:[]}).enabled,false);
 });
 test('song settings persist atomically, reject stale concurrent editors, and retain immutable history',async()=>{
+  const empty=new SqliteD1(':memory:');await assert.rejects(readSampleResource(empty as unknown as D1Database),/no such table/);
   const {db}=await setup(),initial=await readSampleResource(db);
   const outcomes=await Promise.allSettled([saveSampleResource(db,{...initial.settings,holdMs:4000},0,teacher),saveSampleResource(db,{...initial.settings,cadenceMs:7000},0,admin)]);
   assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createTestHarness } from 'wrangler';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
+import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 import { defaultSampleSettings } from '../src/song-sample-resource.ts';
 
 test('public playlist suggestions verify before identity or account setup; arbitrary searches remain protected', async () => {
@@ -19,6 +20,8 @@ test('public playlist suggestions verify before identity or account setup; arbit
   const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson}}]});
   try {
     await server.listen();const worker=server.getWorker('stem-preview-contract-test');
+    const schema=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
+    await worker.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(schema)});
     const query=new URLSearchParams({q:`${track.artist} ${track.title}`,sampleItem:track.archiveId,sampleFile:track.archiveFile});
     const response=await worker.fetch('/api/music/search?'+query);
     assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'public, max-age=60');
