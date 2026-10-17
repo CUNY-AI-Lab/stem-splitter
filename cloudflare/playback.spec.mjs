@@ -195,6 +195,42 @@ test('compact controls never obscure the short full-track waveform and omit the 
   } finally { await server.close(); }
 });
 
+test('long stem names stay whole, waveforms align and phone controls share one scale', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'instrumental'], { owned: true });
+  try {
+    for (const width of [320, 339, 375, 390, 540, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const rows = await page.locator('.channel').all();
+      const meters = [];
+      for (const row of rows) {
+        const name = row.locator('.ch-name');
+        expect((await name.boundingBox()).height).toBeLessThan(25);
+        // "instrumental" fits without a mid-word break or an ellipsis.
+        expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+        meters.push(await row.locator('.meter').boundingBox());
+      }
+      expect(meters[1].x).toBeCloseTo(meters[0].x, 0);
+      expect(meters[1].width).toBeCloseTo(meters[0].width, 0);
+      if (width < 540) expect(meters[0].width).toBeGreaterThan(width - 200);
+      if (width <= 540) {
+        const row = page.locator('.channel').last();
+        const heights = await Promise.all([row.locator('.solo-btn'), row.locator('.mute-btn'), row.locator('.dl'), page.locator('.note-btn')]
+          .map(async control => (await control.boundingBox()).height));
+        for (const height of heights) expect(height).toBeCloseTo(24, 0);
+        const play = await page.locator('.play-btn').boundingBox();
+        expect(play.width).toBeLessThanOrEqual(44);
+        expect(play.width).toBeGreaterThanOrEqual(40);
+        const toggle = await page.locator('.actions-toggle').boundingBox();
+        expect(toggle.height).toBeGreaterThanOrEqual(24);
+        expect(toggle.height).toBeLessThanOrEqual(30);
+      }
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test('waveforms preserve source amplitude and stereo peaks; mute, pause and seek move no peaks', async ({ page }) => {
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
   try {
