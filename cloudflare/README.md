@@ -259,3 +259,21 @@ must fail closed. Do not add a development bypass to the deployed Worker.
 The `/healthz` endpoint checks D1 and identifies the candidate release. A 200
 does **not** establish SSO, R2, provider, analyzer or guide readiness. The full
 promotion gates and rollback sequence are in `../MIGRATION.md`.
+
+## Adaptive output queue
+
+`ADAPTIVE_FOUR_ENABLED=true` advertises adaptive four and imported-source Auto.
+Both use the existing pinned six-source prediction, then measure its real audio.
+Create `cail-stem-splitter-adaptive-output` in the configured CUNY account before
+the first release using this binding. The deployed consumer has one message per
+batch, one concurrent invocation, twenty retries, and a 300000 ms CPU limit.
+Messages contain only an existing job ID. The consumer rechecks stored intent,
+provider state and the existing lease/fence; duplicates cannot create paid work.
+Polls, completion webhooks and the minute scheduler enqueue publication.
+
+For rollback, prefer the same merged codec/queue-capable bundle with
+`ADAPTIVE_FOUR_ENABLED=false`: this stops advertising new adaptive choices while
+already accepted adaptive jobs can finish. Keep the queue and its consumer until
+all accepted jobs are terminal. Do not roll an active adaptive job back to code
+that does not understand its stored output contract. No schema migration or
+provider version change accompanies this feature.
