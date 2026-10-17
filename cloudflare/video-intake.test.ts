@@ -174,7 +174,7 @@ test('native Vimeo failures release a guest place once and preserve only fixed e
     await resumeOwnedVimeoImport(env,guest,first.operation);
     const failed=(await readOperation(db,first.operation.id))!;
     assert.equal(failed.state,'failed');assert.equal(failed.error_code,code);assert.equal(failed.provider_id,null);
-    assert.equal((await splitAllowance(db,guestSubject,new Date(),'guest')).remaining,5);
+    assert.equal((await splitAllowance(db,guestSubject,new Date(),'guest')).remaining,3);
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
     const job=await db.prepare('SELECT source_type,error FROM jobs WHERE id=?').bind(first.operation.id).first<{source_type:string;error:string}>();
     assert.equal(job!.source_type,'vimeo');assert.doesNotMatch(job!.error,/private|credential|https:/);
@@ -437,7 +437,7 @@ test('failed or unavailable browser loaders refund marked YouTube work without p
     await resumeOwnedSourceImport(guest.env,guest.principal,operation);
     const failed=(await readOperation(db,operation.id))!;
     assert.equal(failed.state,'failed');assert.equal(failed.error_code,mode==='denied'?'youtube_source_denied':'youtube_fetch_unavailable');
-    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,3);
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
     await resumeOwnedSourceImport(guest.env,guest.principal,failed);await drainSplitQueue(guest.env,async()=>{});
     assert.equal(loads,mode==='denied'?1:0);t.mock.restoreAll();
@@ -504,7 +504,7 @@ test('Archive search and import keep guest ownership, full audio, attribution an
     const staleJob=await stale.json() as {id:string};await guest.flush();
     const operation=(await readOperation(db,staleJob.id))!;
     assert.equal(operation.state,'failed');assert.equal(operation.error_code,'no_audio_files');
-    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,3);
+    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,1);
   }
   assert.equal(sourceReads,1);assert.equal(posts,previousPosts,'stale credits stop cached and direct imports before GPU submission');
   const other=await guestRequests(db,env,'d');assert.equal((await other.request('/api/jobs/'+body.id)).status,404);
@@ -521,7 +521,7 @@ test('Archive search imports stay owner-only and a newly restricted file refunds
   await resumeOwnedSourceImport(guest.env,guest.principal,operation);
   const failed=(await readOperation(db,operation.id))!;assert.equal(failed.state,'failed');assert.equal(failed.provider_id,null);
   assert.equal(failed.error_code,'archive_download_restricted');
-  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,3);
   await resumeOwnedSourceImport(guest.env,guest.principal,failed);assert.equal(reads,1);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
 });
@@ -532,7 +532,7 @@ test('retired Audius submissions stop before source access or quota reservation'
   const response=await guest.request('/api/jobs',{method:'POST',body:JSON.stringify({audiusId:'4zxjE'})});
   assert.equal(response.status,400);assert.equal((await response.json() as {code:string}).code,'unsupported_source');
   await assert.rejects(()=>submitSplit(guest.env,guest.principal,{audiusId:'4zxjE'},'retired-audius'),/Internet Archive/);
-  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,3);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<{n:number}>())!.n,0);
 });
 
@@ -605,7 +605,7 @@ for (const kind of ['student','guest'] as const) test(`Archive ten-minute import
   if(kind==='guest'){
     assert.equal((await readOperation(db,first.operation.id))!.state,'failed');
     assert.equal(downloads,0);assert.equal(starts,0);
-    assert.equal((await splitAllowance(db,identity.subject,new Date(),'guest')).remaining,5);
+    assert.equal((await splitAllowance(db,identity.subject,new Date(),'guest')).remaining,3);
   }else{
     assert.equal((await readOperation(db,first.operation.id))!.phase,'split');assert.equal(downloads,1);
     await drainSplitQueue(scoped,async()=>{});assert.equal(starts,1);

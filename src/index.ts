@@ -15,7 +15,7 @@ import { archiveSongSearchResponse } from './archive-search-response.ts';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
-import { splitAllowance, operationAllowance, dailyWindow, GUEST_UNVERIFIED_SPLITS_PER_DAY } from './daily-allowance.ts';
+import { splitAllowance, operationAllowance, dailyWindow, GUEST_SPLITS_PER_DAY } from './daily-allowance.ts';
 import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport } from './reliability/splits.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation } from './reliability/queue.ts';
@@ -252,7 +252,7 @@ app.get('/api/runtime', (c) => c.json({
   remixer: c.env.REMIXER_ENABLED === 'true',
   runDeletion: runDeletionEnabled(c.env),
   guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,
-    splitLimit:5,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?25:null} : null,
+    splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?25:null} : null,
 }));
 
 // Explicit sharing exposes only finished audio and its title, never account
@@ -305,14 +305,13 @@ app.get('/api/account', async (c) => {
   if (!principal) return c.json({ account: null }, 401);
   // Usage is informational; an unavailable count must not hide a valid account.
   let allowance = null;
-  try { allowance = await splitAllowance(c.env.DB, principal.subject,new Date(),principal.quotaClass ?? 'member'); } catch { /* Report unknown, not zero. */ }
+  try { allowance = await splitAllowance(c.env.DB, principal.subject,new Date(),principal.quotaClass ?? 'member',principal.role); } catch { /* Report unknown, not zero. */ }
   let chatAllowance = null;
   const chatAvailable=!guestPrincipal(principal)||c.env.guestChatReady===true;
   if(chatAvailable)try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),principal.quotaClass ?? 'member'); } catch {}
   return c.json({ account: principal, splitAllowance: allowance, chatAllowance,
     ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,
-      verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day
-        && (allowance===null || allowance.completed+allowance.inProgress>=GUEST_UNVERIFIED_SPLITS_PER_DAY)}}:{}) });
+      verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
 });
 
 app.post('/api/account/claim-guest', async (c) => {

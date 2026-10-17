@@ -45,9 +45,10 @@ async function setup(){
   }
   return {db,env,request,job,revoked,calls:()=>calls,principal:async(who:Person='alice',courseId=A)=>({subject:ids[who],role:'student',displayName:'Alice',course:await courseFixture(ids[who],courseId),courseId} as AppPrincipal)};
 }
-test('current target enrollment and independent course ownership protect direct APIs and course boundaries',async()=>{
+test('Lab membership grants personal access while course enrollment and ownership protect course APIs',async()=>{
   const {request,job,revoked,env}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
-  assert.equal((await request('/api/account','outsider')).status,403);
+  const outsiderAccount=await request('/api/account','outsider');assert.equal(outsiderAccount.status,200);
+  assert.equal((await outsiderAccount.json() as any).account.role,'member');assert.equal((await(await request('/api/account','outsider')).json() as any).splitAllowance.limit,5);
   assert.equal((await request('/api/uploads','outsider','POST',{filename:'x.wav'},{'x-stem-course':B})).status,403);
   assert.equal((await request('/api/classroom/courses/'+B+'/folders','outsider')).status,403);
   assert.equal((await request('/api/jobs/b','alice')).status,200);
@@ -63,8 +64,11 @@ test('current target enrollment and independent course ownership protect direct 
   assert.equal((await request('/api/account','ownerB')).status,200);
   assert.equal((await request('/api/jobs/%61','alice')).status,400);
   revoked.add(`${ids.alice}:${A}`);
-  for(const path of ['/api/jobs/a','/api/jobs/b','/api/jobs','/api/uploads','/api/jobs/a/chat','/api/files/stems/a/vocals.mp3'])assert.equal((await request(path,'alice',path.endsWith('chat')||path.endsWith('uploads')?'POST':'GET',path.endsWith('chat')||path.endsWith('uploads')?{}:undefined)).status,403);
-  env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>{throw new Error('private detail');};assert.equal((await request('/api/account')).status,503);
+  for(const path of ['/api/jobs/a','/api/jobs/b','/api/jobs/a/chat','/api/files/stems/a/vocals.mp3'])assert.equal((await request(path,'alice',path.endsWith('chat')?'POST':'GET',path.endsWith('chat')?{}:undefined)).status,403);
+  const personalRuns=await request('/api/jobs');assert.equal(personalRuns.status,200);
+  const personalAccount=await request('/api/account');assert.equal(personalAccount.status,200);assert.equal((await personalAccount.json() as any).splitAllowance.limit,5);
+  env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>{throw new Error('private detail');};
+  const courseOutageAccount=await request('/api/account');assert.equal(courseOutageAccount.status,200);assert.equal((await courseOutageAccount.json() as any).splitAllowance.limit,5);
   const anonymous=await app.fetch(new Request('https://split.test/api/account'),env);assert.equal(anonymous.status,401);
 });
 test('roster includes zero-work students and stable pages; scoped counts and split cursors',async()=>{
@@ -239,14 +243,14 @@ test('fresh and additive migration preserve private history, no backfill; retain
   assert.equal((await conversationPage(fixture.env,'expired',p.subject)).entries.length,0);await purgeExpiredListeningConversations(fixture.env.DB);assert.equal((await fixture.db.prepare('SELECT count(*) AS n FROM course_messages').first<any>()).n,0);
 });
 
-test('the exact shared private-wire fixture validates, while stale/extra/mismatched authority fails closed',async()=>{
+test('private course authority fails closed while personal Lab-member access remains available',async()=>{
  const fixture=JSON.parse(readFileSync(new URL('./fixtures/stem-course-v1.json',import.meta.url),'utf8'));
  const now=Date.parse(fixture.access.checkedAt);assert.equal(validAccess(fixture.access,now),true);assert.equal(validPage(fixture.roster,now),true);assert.equal(validFailure(fixture.denied),true);
  assert.equal(validAccess({...fixture.access,subject:ids.alice},now),false);assert.equal(validAccess(fixture.access,now+31000),false);
  const {env,request}=await setup();for(const altered of [{startsAt:new Date(Date.now()+60000).toISOString()},{expiresAt:new Date(Date.now()-1).toISOString()},{classId:B},{revision:-1},{owner:false,participant:false},{subject:ids.alice}]){
-  env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({...await courseFixture(ids.alice,A),...altered});assert.equal((await request('/api/account')).status,503);
+  env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({...await courseFixture(ids.alice,A),...altered});assert.equal((await request(`/api/classroom/courses/${A}/folders`)).status,503);
  }
- for(const code of ['scheduled','expired','revoked']){env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({ok:false,code,retryable:false});assert.equal((await request('/api/account')).status,403);}
+ for(const code of ['scheduled','expired','revoked']){env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({ok:false,code,retryable:false});assert.equal((await request(`/api/classroom/courses/${A}/folders`)).status,403);}
 });
 
 test('concurrent duplicate course turns claim once; assistant notes retain the verified initiating author',async()=>{

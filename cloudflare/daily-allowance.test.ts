@@ -17,7 +17,7 @@ function setup(t:{after:(f:()=>void)=>void}) {
  return [left,right] as unknown as D1Database[];
 }
 async function user(db:D1Database,subject:string){await db.prepare('INSERT OR IGNORE INTO app_users(subject) VALUES(?)').bind(subject).run();}
-const reserve=(db:D1Database,i:number,subject=alice,kind:'split'|'chat'='split',at=now)=>reserveOperation(db,{subject,courseId:i%2?'course-a':'course-b',kind,key:`request-number-${String(i).padStart(4,'0')}`,fingerprint:`fingerprint-${i}`,phase:kind==='split'?'split':'chat',now:at});
+const reserve=(db:D1Database,i:number,subject=alice,kind:'split'|'chat'='split',at=now,role:'student'|'member'='student')=>reserveOperation(db,{subject,role,courseId:i%2?'course-a':'course-b',kind,key:`request-number-${String(i).padStart(4,'0')}`,fingerprint:`fingerprint-${i}`,phase:kind==='split'?'split':'chat',now:at});
 
 test('two connections atomically admit fifteen across courses; failures release exactly once',async t=>{
  const db=setup(t);for(const u of [alice,bob])await user(db[0],u);
@@ -39,6 +39,15 @@ test('sixty human messages admit fifty; one replay/partial/failure uses one rese
  const second=await reserve(db[0],1,alice,'chat');await settleOperation(db[0],second.operation.id,'failed');
  const count=await operationAllowance(db[0],alice,'chat',new Date(now));assert.equal(count.completed,1);assert.equal(count.inProgress,48);assert.equal(count.remaining,1);
  await reserve(db[1],70,alice,'chat');await assert.rejects(reserve(db[0],71,alice,'chat'),OperationError);
+});
+test('student and other admitted Lab member splits use distinct atomic daily caps',async t=>{
+ const db=setup(t);for(const u of [alice,bob])await user(db[0],u);
+ const students=await Promise.allSettled(Array.from({length:16},(_,i)=>reserve(db[i%2],100+i,alice,'split',now,'student')));
+ const members=await Promise.allSettled(Array.from({length:8},(_,i)=>reserve(db[i%2],200+i,bob,'split',now,'member')));
+ assert.equal(students.filter(result=>result.status==='fulfilled').length,15);
+ assert.equal(members.filter(result=>result.status==='fulfilled').length,5);
+ assert.equal((await splitAllowance(db[0],alice,new Date(now),'member','student')).limit,15);
+ assert.equal((await splitAllowance(db[0],bob,new Date(now),'member','member')).limit,5);
 });
 test('submission-day accounting survives UTC midnight/year rollover and DST',async t=>{
  const db=setup(t);await user(db[0],alice);
@@ -69,7 +78,7 @@ test('Retry-After 90/date never shortens server floor; malformed headers use bou
 });
 test('quota rejection/duplicate key create no orphan jobs; late success cannot revive failure',async t=>{
  const db=setup(t);await user(db[0],alice);
- const submit=(id:string,key:string)=>reserveOperation(db[0],{subject:alice,courseId:null,kind:'split',key,fingerprint:key,phase:'split',jobId:id,now,statements:operationId=>[db[0].prepare("INSERT INTO jobs(id,filename,source_key) SELECT id,'fixture','uploads/fixture/a.mp3' FROM app_operations WHERE id=?").bind(operationId)]});
+ const submit=(id:string,key:string)=>reserveOperation(db[0],{subject:alice,role:'student',courseId:null,kind:'split',key,fingerprint:key,phase:'split',jobId:id,now,statements:operationId=>[db[0].prepare("INSERT INTO jobs(id,filename,source_key) SELECT id,'fixture','uploads/fixture/a.mp3' FROM app_operations WHERE id=?").bind(operationId)]});
  await submit('job-a','request-duplicate-0001');await submit('job-b','request-duplicate-0001');for(let i=0;i<14;i++)await reserve(db[i%2],i+100);
  await assert.rejects(submit('job-full','request-quota-full-01'),OperationError);assert.equal((await db[0].prepare('SELECT COUNT(*) AS n FROM jobs').first<{n:number}>())?.n,1);
  await db[0].prepare("UPDATE jobs SET status='failed' WHERE id='job-a'").run();await assert.rejects(db[0].prepare("UPDATE jobs SET status='done' WHERE id='job-a'").run());

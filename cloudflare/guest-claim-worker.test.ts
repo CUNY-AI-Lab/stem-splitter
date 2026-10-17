@@ -6,7 +6,7 @@ import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
-test('workerd claims require both verified browser cookie and eligible member identity',async()=>{
+test('workerd claims require both verified browser cookie and Lab membership, not STEM course enrollment',async()=>{
  const issuer=await createTestIdentityIssuer(),member=TEST_SUBJECTS.alice;
  const jwt=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:member});
  const harness=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),
@@ -17,7 +17,8 @@ test('workerd claims require both verified browser cookie and eligible member id
   const sql=async(statements:string[])=>assert.equal((await worker.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status,200);
   await sql(schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')));
   const call=(path:string,headers:Record<string,string>={},body?:string)=>worker.fetch(origin+path,{redirect:'manual',method:body===undefined?'GET':'POST',headers:{Origin:origin,'Content-Type':'application/json',...(path==='/api/account/claim-guest'?{'X-Stem-Claim-Actor':member}:{}),...headers},body});
-  const started=await call('/auth/guest',{},'{}');assert.equal(started.status,200);
+  assert.equal(((await(await call('/api/runtime')).json() as any).guest).splitLimit,3);
+  const started=await call('/auth/guest',{},'{}');assert.equal(started.status,200);assert.equal((await started.clone().json() as any).splitLimit,3);
   const cookie=started.headers.get('set-cookie')!.split(';')[0];
   const guestAccount=await(await call('/api/account',{Cookie:cookie})).json() as any;
   const guest=guestAccount.account.subject;assert.match(guest,/^guest-[0-9a-f]{64}$/);
@@ -29,8 +30,9 @@ test('workerd claims require both verified browser cookie and eligible member id
   assert.equal(noProof.status,200);assert.deepEqual(await noProof.json(),{claimedJobIds:[],guestStorageKey:null});
   const tampered=await call(route,{'x-fixture-identity':jwt,Cookie:cookie+'x'},'{}');
   assert.equal(tampered.status,200);assert.deepEqual(await tampered.json(),{claimedJobIds:[],guestStorageKey:null});
-  assert.equal((await call(route,{'x-fixture-identity':jwt,Cookie:cookie,'x-fixture-course-state':'revoked'},'{}')).status,403);
-  assert.equal((await call('/api/jobs/claim-worker',{Cookie:cookie})).status,200,'failed eligibility preserves guest ownership');
+  const courseUnavailableClaim=await call(route,{'x-fixture-identity':jwt,Cookie:cookie,'x-fixture-course-state':'revoked'},'{}');
+  assert.equal(courseUnavailableClaim.status,200);assert.deepEqual((await courseUnavailableClaim.json() as any).claimedJobIds,['claim-worker']);
+  assert.equal((await call('/api/jobs/claim-worker',{Cookie:cookie})).status,403,'a Lab member claim removes anonymous guest authority');
   const headers={'x-fixture-identity':jwt,Cookie:cookie};
   const claimed=await call(route,headers,'{}');assert.equal(claimed.status,200,await claimed.clone().text());
   assert.deepEqual(await claimed.json(),{claimedJobIds:['claim-worker'],guestStorageKey:`jobs:${guest}`});
