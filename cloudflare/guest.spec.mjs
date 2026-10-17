@@ -573,7 +573,8 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
     await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[sampleTrack]}}));
     await page.goto(f.origin);
     const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint');
-    await expect(hint).toBeVisible();await expect(input).toHaveAttribute('placeholder','jazz piano');
+    await expect(hint).toBeVisible();await expect(input).toHaveAttribute('placeholder','Search songs');
+    await expect(hint.locator('.source-sample-stream')).toHaveText('jazz piano');
     await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});

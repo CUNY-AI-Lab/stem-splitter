@@ -48,7 +48,7 @@
         <form id="yt-form" class="yt-form">
           <div class="source-field">
             <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
-            <button id="source-sample-hint" class="source-sample-hint" type="button" aria-label="Use suggested song. Tab to accept." hidden><kbd>Tab</kbd> to accept</button>
+            <button id="source-sample-hint" class="source-sample-hint" type="button" aria-label="Use suggested song. Tab to accept." hidden><span class="source-sample-title"><span class="source-sample-stream"></span></span><span class="source-sample-keyboard"><kbd>Tab</kbd> to accept</span><span class="source-sample-touch">Use song</span></button>
             <ul id="source-songs" role="listbox" aria-label="Songs" hidden></ul>
           </div>
           <button type="submit" class="yt-go">FETCH</button>
