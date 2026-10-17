@@ -597,10 +597,12 @@ function showSongSample() {
   ytUrlInput.classList.add('showing-sample');
   sampleSeen.add(sampleCacheKey(sampleCache));sampleLastKey=sampleCacheKey(sampleCache);persistSampleProgress();
   const slotStart=performance.now();
+  // Leave the instructor's full-title reading time intact within each slot.
+  const revealMs=sampleSettings.cadenceMs?Math.min(2000,sampleSettings.cadenceMs-sampleSettings.holdMs):null;
   let shown = sampleReducedMotion.matches ? SAMPLE_SONG_QUERY.length : 1;
   const tick = () => {
     if (!sampleVisible()) return stopSongSample();
-    if(sampleSettings.cadenceMs)shown=Math.max(1,Math.min(SAMPLE_SONG_QUERY.length,Math.ceil((performance.now()-slotStart)/600*SAMPLE_SONG_QUERY.length)));
+    if(revealMs&&!sampleReducedMotion.matches)shown=Math.min(SAMPLE_SONG_QUERY.length,1+Math.floor((performance.now()-slotStart)/revealMs*(SAMPLE_SONG_QUERY.length-1)));
     renderSongSample(SAMPLE_SONG_QUERY.slice(0, shown));
     if (shown < SAMPLE_SONG_QUERY.length) {
       shown++;

@@ -50,22 +50,24 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
  }finally{releaseSlow();network.close();await f.harness.close();}
 });
 
-test('configured hints keep a steady cadence, preserve progress and refresh instructor changes',async({page})=>{
- test.setTimeout(65000);const f=await fixture();let snapshot={revision:1,version:'1-first',enabled:true,holdMs:3500,cadenceMs:5000,reshuffle:true,tracks:[0,1,2].map(i=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`steady-${i}`,archiveFile:'song.mp3'}))};
+for(const cadenceMs of [5000,6000])test(`configured hints reveal slowly at ${cadenceMs}ms cadence, preserve progress and refresh instructor changes`,async({page})=>{
+ test.setTimeout(65000);const f=await fixture();let snapshot={revision:1,version:'1-first',enabled:true,holdMs:3500,cadenceMs,reshuffle:true,tracks:[0,1,2].map(i=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`steady-${i}`,archiveFile:'song.mp3'}))};
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{
   await page.addInitScript(()=>{Math.random=()=>0;});
   await page.route('**/api/song-samples',route=>route.fulfill({json:snapshot}));
   await page.route('**/api/music/search?*',async route=>{const id=new URL(route.request().url()).searchParams.get('sampleItem');if(id==='steady-0')await new Promise(resolve=>setTimeout(resolve,200));const t=snapshot.tracks.find(t=>t.archiveId===id);return route.fulfill({json:{results:t?[{...t,id:t.archiveId,title:t.title,artist:t.artist,durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/'+id}]:[]}});});
+  await page.addInitScript(()=>document.addEventListener('DOMContentLoaded',()=>{window.songCadenceEvents=[];const input=document.querySelector('#yt-url');let last='';new MutationObserver(()=>{const value=input.placeholder,full=/^Artist \d Song \d$/.test(value);if(input.classList.contains('showing-sample')&&value!==last){window.songCadenceEvents.push({value,full,time:performance.now()});last=value;}}).observe(input,{attributes:true,attributeFilter:['placeholder']});}));
   await page.goto(f.url.href);
-  await page.evaluate(()=>{window.songCadenceEvents=[];const input=document.querySelector('#yt-url');let last='';new MutationObserver(()=>{const value=input.placeholder,full=/^Artist \d Song \d$/.test(value);if(value!==last){window.songCadenceEvents.push({value,full,time:performance.now()});last=value;}}).observe(input,{attributes:true,attributeFilter:['placeholder']});});
   const input=page.locator('#yt-url');
   for(const i of [0,1,2])await expect(input).toHaveAttribute('placeholder',`Artist ${i} Song ${i}`,{timeout:6500});
   const events=await page.evaluate(()=>window.songCadenceEvents),full=events.filter(e=>e.full);
   expect(full.map(e=>e.value)).toEqual(['Artist 0 Song 0','Artist 1 Song 1','Artist 2 Song 2']);
-  for(let i=1;i<full.length;i++){expect(full[i].time-full[i-1].time).toBeGreaterThan(4600);expect(full[i].time-full[i-1].time).toBeLessThan(5600);}
+  const revealMs=Math.min(2000,cadenceMs-snapshot.holdMs);
+  for(const e of full){const start=events.filter(x=>x.value==='A'&&x.time<=e.time).at(-1);expect(e.time-start.time).toBeGreaterThanOrEqual(revealMs-100);expect(e.time-start.time).toBeLessThan(revealMs+500);}
+  for(let i=1;i<full.length;i++){expect(full[i].time-full[i-1].time).toBeGreaterThan(cadenceMs-400);expect(full[i].time-full[i-1].time).toBeLessThan(cadenceMs+600);}
   for(const e of full.slice(0,-1)){const left=events.find(x=>x.time>e.time&&x.value!==e.value);expect(left.time-e.time).toBeGreaterThanOrEqual(3500);}
-  await page.reload();await expect(input).toHaveAttribute('placeholder','Artist 1 Song 1',{timeout:2500});
+  await page.reload();await expect(input).toHaveAttribute('placeholder','Artist 1 Song 1',{timeout:3500});
   snapshot={...snapshot,revision:2,version:'2-disabled',enabled:false,tracks:[]};
   await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await expect(page.locator('#source-sample-hint')).toBeHidden({timeout:1500});await expect(input).toHaveAttribute('placeholder','Search songs');
   expect(errors).toEqual([]);
