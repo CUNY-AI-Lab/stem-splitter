@@ -416,7 +416,17 @@ const sourceIsLink = value => /^https?:\/\//i.test(value);
 // verifies the exact item and audio file. Never substitute an unrelated result.
 let SAMPLE_SONG_QUERY = '';
 const sampleHint = document.getElementById('source-sample-hint');
+const sampleHintTitle = sampleHint.querySelector('.source-sample-title');
+const sampleHintStream = sampleHint.querySelector('.source-sample-stream');
 const defaultSongPlaceholder = ytUrlInput.placeholder;
+const sampleNarrowViewport = matchMedia('(max-width: 560px)');
+function renderSongSample(text) {
+  sampleHintStream.textContent = text;
+  ytUrlInput.placeholder = sampleNarrowViewport.matches ? defaultSongPlaceholder : text;
+}
+sampleNarrowViewport.addEventListener('change', () => {
+  if (!sampleHint.hidden) renderSongSample(sampleHintStream.textContent);
+});
 const sampleReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let sampleTimer = 0, sampleDismissed = false, sampleStarted = false;
 let sampleCache = null;
@@ -520,6 +530,7 @@ setInterval(()=>{void refreshSongSampleSettings();},30000);
 function selectSongSample(cache) {
   sampleCache = cache;
   SAMPLE_SONG_QUERY = cache.query;
+  sampleHintTitle.dataset.title = cache.query;
   sampleHint.setAttribute('aria-label', `Use suggested song: ${cache.query}. Tab to accept.`);
 }
 function preloadSongSample() {
@@ -598,7 +609,7 @@ function showSongSample() {
   const tick = () => {
     if (!sampleVisible()) return stopSongSample();
     if(sampleSettings.cadenceMs)shown=Math.max(1,Math.min(SAMPLE_SONG_QUERY.length,Math.ceil((performance.now()-slotStart)/600*SAMPLE_SONG_QUERY.length)));
-    ytUrlInput.placeholder = SAMPLE_SONG_QUERY.slice(0, shown);
+    renderSongSample(SAMPLE_SONG_QUERY.slice(0, shown));
     if (shown < SAMPLE_SONG_QUERY.length) {
       shown++;
       sampleTimer = setTimeout(tick, 45);
@@ -632,7 +643,7 @@ ytUrlInput.addEventListener('compositionstart', () => { sampleDismissed = true; 
 sampleReducedMotion.addEventListener('change', () => {
   if (sampleReducedMotion.matches && !sampleHint.hidden) {
     clearTimeout(sampleTimer);
-    ytUrlInput.placeholder = SAMPLE_SONG_QUERY;
+    renderSongSample(SAMPLE_SONG_QUERY);
   }
 });
 document.addEventListener('visibilitychange', () => {
