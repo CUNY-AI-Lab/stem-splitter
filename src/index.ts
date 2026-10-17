@@ -80,6 +80,8 @@ import {
 } from './separation/options';
 import { fetchVideoAudio, YouTubeError } from './youtube';
 import { parseVideoSource } from './video-source.ts';
+import { importLinkViaService, linkImportEnabled, resolveLinkViaService } from './link-import-client.ts';
+import type { ImportResult } from './link-import.ts';
 import {
   archiveContentType,
   ArchiveError,
@@ -1062,7 +1064,23 @@ app.get('/api/music/search', async (c, next) => {
     c.req.query('examples')==='1' ? 300 : c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300);
 });
 
-app.get('/api/import-options', requireClassCode, (c) => c.json({urlImport:c.env.URL_IMPORT_ENABLED==='true',maxDurationSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):900}));
+app.get('/api/import-options', requireClassCode, (c) => c.json({urlImport:c.env.URL_IMPORT_ENABLED==='true',maxDurationSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):900,
+  ...(linkImportEnabled(c.env)?{linkRouter:true}:{})}));
+
+// Classifies a pasted link before any job exists. YouTube links resolve to
+// title metadata for an Archive search; the app never fetches their audio.
+app.post('/api/link-info', requireClassCode, async (c) => {
+  if (!linkImportEnabled(c.env)) return c.json({ error: 'Link import is unavailable.', code: 'link_import_unavailable' }, 503);
+  const parsed = await boundedJson(c, 4096);
+  if ('response' in parsed) return parsed.response;
+  const url = (parsed.value as { url?: unknown } | null)?.url;
+  if (typeof url !== 'string') return c.json({ error: 'Paste a public HTTPS link.', code: 'invalid_source_url' }, 400);
+  try {
+    return c.json(await resolveLinkViaService(c.env, url), 200, { 'Cache-Control': 'private, no-store' });
+  } catch {
+    return c.json({ error: 'Link lookup is unavailable right now.', code: 'link_import_unavailable', retryable: true }, 503);
+  }
+});
 
 app.post('/api/jobs', requireClassCode, async (c) => {
   const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
@@ -1152,7 +1170,25 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   let attribution: unknown = null;
   const id = crypto.randomUUID();
 
-  if (body.sourceUrl !== undefined) {
+  let native: Extract<ImportResult, { ok: true }> | null = null;
+  if (body.sourceUrl !== undefined && linkImportEnabled(c.env)) {
+    let result: ImportResult;
+    try {
+      result = await importLinkViaService(c.env, { url: String(body.sourceUrl), keyPrefix: `uploads/${crypto.randomUUID()}/source-0`, maximumSeconds: 900, deadline: Date.now() + 120_000 });
+    } catch {
+      return c.json({ error: 'The link importer is unavailable right now. Try again shortly or upload the file.', code: 'link_import_unavailable', retryable: true }, 503);
+    }
+    if (result.ok) native = result;
+    else if (!result.hosted) return c.json({ error: result.message, code: result.code, retryable: result.retryable }, result.retryable ? 502 : 400);
+  }
+
+  if (native) {
+    sourceType = 'upload';
+    key = native.key;
+    filename = sanitizeFilename(native.title) || 'Imported audio';
+    sourceHash = native.sha256;
+    expectedSourceIdentity = { schemaVersion:'1',sha256:native.sha256,bytes:native.bytes };
+  } else if (body.sourceUrl !== undefined) {
     let audio;
     try { audio = await fetchUrlAudio(body.sourceUrl, c.env, 900); }
     catch (error) {

@@ -1293,12 +1293,25 @@ ytForm.addEventListener('submit', async (e) => {
   progressBar.style.width = '0%';
   showUploadMessage('IMPORTING AUDIO…');
 
+  let followUpQuery = '';
   try {
+    const imports = song ? null : await api('/api/import-options');
+    if (imports?.linkRouter) {
+      // Only direct files and share links become jobs; YouTube links turn into
+      // an Internet Archive search, since the app does not fetch their audio.
+      const link = await api('/api/link-info', { method: 'POST', body: JSON.stringify({ url }) });
+      if (link.kind !== 'direct' && link.kind !== 'share') {
+        followUpQuery = link.kind === 'youtube' && link.query ? link.query : '';
+        showUploadMessage(linkGuidance(link), link.kind === 'invalid');
+        if (link.kind !== 'invalid') offerLocalUpload();
+        ytUrlInput.value = '';
+        return;
+      }
+    }
     const chosen = await requireSelectedModel();
     const resolved = await resolveModel(chosen, null, song ? 'song audio' : 'video audio');
     const { model, note } = resolved;
     if (note) showUploadMessage(note);
-    const imports = song ? null : await api('/api/import-options');
     const job = await api('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
@@ -1316,19 +1329,37 @@ ytForm.addEventListener('submit', async (e) => {
     pollSoon();
   } catch (err) {
     showUploadMessage(`${err.message}${err.code ? ` Code: ${err.code}.` : ''}`, true);
-    if (/source_(denied|restricted)|youtube_source_denied/.test(err.code || '')) {
-      const action = document.createElement('button');
-      action.type = 'button'; action.className = 'head-btn'; action.textContent = 'Choose a local audio file';
-      action.addEventListener('click', () => document.getElementById('file-input').click());
-      action.dataset.localImportFallback = 'true'; uploadStatus.appendChild(action);
-    }
+    if (/source_(denied|restricted)|youtube_source_denied|share_link_not_public/.test(err.code || '')) offerLocalUpload();
   } finally {
     youtubeFetchInProgress = false;
     ytForm.removeAttribute('aria-busy');
     ytUrlInput.disabled = false;
     ytFetchButton.disabled = false;
+    if (followUpQuery) {
+      ytUrlInput.value = followUpQuery;
+      songSuggestionsDismissed = false;
+      ytUrlInput.focus();
+      searchSourceSongs(followUpQuery, ++songSearchSequence);
+    }
   }
 });
+
+function offerLocalUpload() {
+  const action = document.createElement('button');
+  action.type = 'button'; action.className = 'head-btn'; action.textContent = 'Choose a local audio file';
+  action.addEventListener('click', () => document.getElementById('file-input').click());
+  action.dataset.localImportFallback = 'true'; uploadStatus.appendChild(action);
+}
+
+function linkGuidance(link) {
+  if (link.kind === 'youtube') {
+    return link.query
+      ? 'This app can’t fetch audio from YouTube. Here are matching recordings from the Internet Archive, or upload your own file.'
+      : 'This app can’t fetch audio from YouTube. Type the song title to search the Internet Archive, or upload your own file.';
+  }
+  if (link.kind === 'retired') return 'Vimeo links are no longer supported. Upload an original or licensed audio file.';
+  return 'Paste a public HTTPS link to an audio file, or search for a song.';
+}
 
 // --- internet archive crate ----------------------------------------------
 

@@ -7,6 +7,8 @@ import type { AppPrincipal } from '../identity.ts';
 import { archiveAudioMetadata, archiveContentType, ArchiveError, fetchArchiveAudio, fetchArchiveItem, parseArchiveIdentifier, validateArchiveSongFrames } from '../archive.ts';
 import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
 import { fetchVimeoAudio, vimeoFailureDiagnostic } from '../vimeo.ts';
+import { importLinkViaService, linkImportEnabled } from '../link-import-client.ts';
+import type { ImportResult } from '../link-import.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
 import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion, ADAPTIVE_FOUR_MODEL, adaptiveOutputEnabled } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
@@ -122,20 +124,52 @@ async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:Ar
   const extension=audio.fileName?.match(/\.[a-zA-Z0-9]+$/)?.[0] ?? '.m4a';
   const key=`uploads/${op.id}/source-${op.fence}${extension}`;
   await env.AUDIO.put(key,audio.data,{httpMetadata:{contentType:audio.contentType??(audio.fileName?archiveContentType(audio.fileName):'audio/mp4')}});
+  await commitImported(env,op,input,{key,sha,title:audio.title,attribution:audio.attribution});
+}
+/** Hand a stored source to the split phase under the same fence, or remove it. */
+async function commitImported(env: Env,op: Operation,input: SplitInput,stored: {key:string;sha:string;title:string;attribution?:unknown}) {
+  const {key,sha}=stored;
   const current=await readOperation(env.DB,op.id);
   if (!current||current.fence!==op.fence||current.cancel_requested||['failed','cancelled'].includes(current.state)) {
     await env.AUDIO.delete(key);
     if(current?.fence===op.fence&&current.cancel_requested)await fail(env,op,'cancelled');
     return;
   }
-  input.key=key;input.filename=title(audio.title)||input.filename;
+  input.key=key;input.filename=title(stored.title)||input.filename;
   await env.DB.batch([
     env.DB.prepare(`UPDATE jobs SET source_key=?,source_hash=?,filename=?,status='queued' WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(key,sha,input.filename,op.job_id,op.id,op.fence),
     env.DB.prepare(`UPDATE app_operations SET request_json=?,provider_id=NULL,phase='split',state='queued',error_code=NULL,lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL})`).bind(JSON.stringify(input),Date.now(),op.id,op.fence),
-    ...(audio.attribution?[env.DB.prepare(`INSERT OR REPLACE INTO job_attributions(job_id,attribution) SELECT ?,? WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(op.job_id,JSON.stringify(audio.attribution),op.id,op.fence)]:[]),
+    ...(stored.attribution?[env.DB.prepare(`INSERT OR REPLACE INTO job_attributions(job_id,attribution) SELECT ?,? WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(op.job_id,JSON.stringify(stored.attribution),op.id,op.fence)]:[]),
   ]);
   const saved=await env.DB.prepare('SELECT source_key FROM jobs WHERE id=?').bind(op.job_id).first<{source_key:string}>();
   if(saved?.source_key!==key)await env.AUDIO.delete(key);
+}
+/** Direct and share links fetched by cail-stem-import. Returns false only when
+ * the link needs the hosted ffmpeg importer (other containers, web pages). */
+async function importLinkNatively(env: Env,op: Operation,input: SplitInput): Promise<boolean> {
+  const maximum=op.quota_class==='guest'?300:900;
+  const keyPrefix=`uploads/${op.id}/source-${op.fence}`;
+  let result: ImportResult;
+  try {
+    // Finish inside the claim's lease so recovery never races a live import.
+    result=await importLinkViaService(env,{url:input.remoteUrl!,keyPrefix,maximumSeconds:maximum,deadline:Math.min(op.deadline,op.lease_until-10_000)});
+  } catch(error) {
+    console.error(JSON.stringify({event:'link_import_unavailable',jobId:op.job_id,name:error instanceof Error?error.name:typeof error}));
+    await fail(env,op,'link_import_unavailable','The link importer is unavailable right now. No allowance was used. Try again shortly or upload the file.');
+    return true;
+  }
+  if (!result.ok) {
+    if (result.hosted) return false;
+    await fail(env,op,result.code,`${result.message} No allowance was used.`);
+    return true;
+  }
+  if (!result.key.startsWith(`${keyPrefix}.`)||!durationIsAllowed(result.durationSec,maximum)||result.bytes<=0||result.bytes>MAX_BYTES||!/^[0-9a-f]{64}$/.test(result.sha256)) {
+    if (result.key.startsWith(`${keyPrefix}.`)) await env.AUDIO.delete(result.key);
+    await fail(env,op,'invalid_audio_response');
+    return true;
+  }
+  await commitImported(env,op,input,{key:result.key,sha:result.sha256,title:result.title});
+  return true;
 }
 async function storeArchive(env: Env,op: Operation,input: SplitInput) {
   const maximumSeconds=op.quota_class==='guest'?300:900;
@@ -208,6 +242,7 @@ async function start(env: Env,op: Operation) {
         ?'This import exceeds the 12 MiB audio limit. No allowance was used. Try a shorter clip or upload an original or licensed file.':undefined);}
     return;
   }
+  if (op.phase==='fetch'&&input.remoteUrl&&linkImportEnabled(env)&&await importLinkNatively(env,op,input)) return;
   let attempt: string | null=null;
   try {
     let sourceUrl='';let model=input.model;

@@ -64,6 +64,10 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   YOUTUBE_FETCH_ORDER?: string;
   /** Requires the canaried public-address-only general URL fetch model. */
   URL_IMPORT_ENABLED?: string;
+  /** Service binding to cail-stem-import, which owns every fetch to a user-supplied host. */
+  LINK_IMPORT?: { fetch(request: Request): Promise<Response> };
+  /** Literal "true" imports direct and share links natively and resolves YouTube links to Archive search. */
+  LINK_IMPORT_ENABLED?: string;
   /** OpenRouter model slug for the Listening Guy; unset disables the assistant. */
   ASSISTANT_MODEL?: string;
   /** Comma-separated OpenRouter model slugs used after the primary model fails. */
