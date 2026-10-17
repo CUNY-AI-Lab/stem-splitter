@@ -101,7 +101,8 @@ test('redirects are re-checked at every hop', async t => {
   const followed = await importLink({ AUDIO }, request());
   assert.ok(followed.ok); assert.equal(followed.key, `${keyPrefix}.wav`);
 
-  for (const location of ['https://127.0.0.1/x.mp3', 'http://cdn.example.net/x.mp3', 'https://stem-splitter.ailab-452.workers.dev/api/x']) {
+  for (const location of ['https://127.0.0.1/x.mp3', 'http://cdn.example.net/x.mp3', 'https://stem-splitter.ailab-452.workers.dev/api/x',
+    'https://stem-splitter.ailab-452.workers.dev./api/x', 'https://STEM-SPLITTER.AILAB-452.WORKERS.DEV/api/x']) {
     t.mock.restoreAll();
     t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
       assert.equal(String(input), source, 'a refused redirect target must never be requested');
@@ -110,6 +111,27 @@ test('redirects are re-checked at every hop', async t => {
     const refused = await importLink({ AUDIO }, request());
     assert.ok(!refused.ok); assert.equal(refused.code, 'source_untrusted_redirect');
   }
+});
+
+test('a host check runs before every hop and fails closed', async t => {
+  const AUDIO = bucket(t), checked: string[] = [];
+  const isPublicHost = async (hostname: string) => { checked.push(hostname); return hostname !== 'internal.example.net'; };
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    assert.equal(String(input), source, 'the private redirect target must never be requested');
+    return new Response(null, { status: 302, headers: { location: 'https://internal.example.net/x.mp3' } });
+  });
+  const refused = await importLink({ AUDIO, isPublicHost }, request());
+  assert.ok(!refused.ok); assert.equal(refused.code, 'source_untrusted_redirect');
+  assert.deepEqual(checked, ['media.example.org', 'internal.example.net']);
+  const failing = await importLink({ AUDIO, isPublicHost: async () => { throw new Error('resolver down'); } }, request());
+  assert.ok(!failing.ok); assert.equal(failing.code, 'invalid_source_url');
+});
+
+test('the Node host check rejects loopback names and address literals', async () => {
+  const { isPublicHost } = await import('../server/public-host.ts');
+  assert.equal(await isPublicHost('localhost'), false);
+  assert.equal(await isPublicHost('127.0.0.1'), false);
+  assert.equal(await isPublicHost('::1'), false);
 });
 
 test('pages and oversized files go to the hosted importer; private shares are refused', async t => {

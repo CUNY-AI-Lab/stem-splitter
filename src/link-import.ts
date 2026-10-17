@@ -52,6 +52,12 @@ export type ImportResult =
 
 export interface LinkImportEnv {
   AUDIO: R2Bucket;
+  /**
+   * Hosts that resolve DNS themselves (the Node host) must reject private,
+   * loopback, link-local and CGNAT addresses before each hop. Cloudflare
+   * Workers egress cannot reach private networks, so the Worker omits it.
+   */
+  isPublicHost?: (hostname: string) => Promise<boolean>;
 }
 
 class ImportFailure extends Error {
@@ -92,11 +98,13 @@ export function shareDownloadUrl(input: string): { provider: ShareProvider; url:
 }
 
 /** Fetch with manual redirects; every hop must pass the same public-HTTPS rules. */
-async function fetchPublic(raw: string, deadline: number, accept: string): Promise<Response> {
+async function fetchPublic(raw: string, deadline: number, accept: string, isPublicHost?: LinkImportEnv['isPublicHost']): Promise<Response> {
   let current = raw;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const checked = parseMediaUrl(current);
-    if (!checked || BLOCKED_HOSTS.test(new URL(checked).hostname)) {
+    // A trailing dot names the same host ("example.org.") and would slip past suffix rules.
+    const hostname = checked ? new URL(checked).hostname.toLowerCase() : '';
+    if (!checked || hostname.endsWith('.') || BLOCKED_HOSTS.test(hostname) || (isPublicHost && !await isPublicHost(hostname).catch(() => false))) {
       throw new ImportFailure(hop ? 'source_untrusted_redirect' : 'invalid_source_url',
         hop ? 'The link redirected to an address that cannot be imported.' : 'Paste a public HTTPS audio link.');
     }
@@ -121,12 +129,12 @@ async function fetchPublic(raw: string, deadline: number, accept: string): Promi
 /** Short retries for rate limits and server errors, never past the deadline.
  * Each retry restarts at the original link, so a redirecting host can pick a
  * different mirror (archive.org mirrors return intermittent 500s). */
-async function fetchWithRetry(url: string, deadline: number, accept: string): Promise<Response> {
+async function fetchWithRetry(url: string, deadline: number, accept: string, isPublicHost?: LinkImportEnv['isPublicHost']): Promise<Response> {
   const RETRIES = 2;
   for (let attempt = 0; ; attempt++) {
     let response: Response;
     try {
-      response = await fetchPublic(url, deadline, accept);
+      response = await fetchPublic(url, deadline, accept, isPublicHost);
     } catch (error) {
       if (attempt < RETRIES && error instanceof ImportFailure && error.code === 'source_unreachable' && Date.now() + 1500 < deadline) {
         await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
@@ -284,7 +292,7 @@ export async function importLink(env: LinkImportEnv, request: ImportRequest): Pr
     if (video) throw toHosted(`${video.sourceType}_link`);
     const share = shareDownloadUrl(checked);
     const deadline = Math.min(request.deadline, Date.now() + MAX_IMPORT_MS);
-    const response = await fetchWithRetry(share?.url ?? checked, deadline, 'audio/*,application/octet-stream;q=0.9,*/*;q=0.5');
+    const response = await fetchWithRetry(share?.url ?? checked, deadline, 'audio/*,application/octet-stream;q=0.9,*/*;q=0.5', env.isPublicHost);
     if (response.status !== 200 || response.headers.has('content-range')) {
       await response.body?.cancel().catch(() => undefined);
       if (share && [401, 403, 404].includes(response.status)) throw new ImportFailure('share_link_not_public', 'This share link is not public. Set it to "Anyone with the link" or upload the file.');
