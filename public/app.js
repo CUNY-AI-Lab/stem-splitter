@@ -455,7 +455,7 @@ function preloadSongSample() {
   sampleStarted = true;
   const controller = new AbortController();
   sampleLoad = controller;
-  const deadline = setTimeout(() => controller.abort(), 15000);
+  const deadline = setTimeout(() => controller.abort(), 600000);
   void (async () => {
     const response = await fetch('/search-samples.json', { signal: controller.signal });
     if (!response.ok) return;
@@ -495,7 +495,13 @@ function preloadSongSample() {
           return matches.size ? { data: { results: [...matches.values()] } } : { failed: true };
         })();
         await cache.promise;
-        if (verifiedSongSamples.length >= 4) return;
+        // Continue through the entire shuffled catalog, gently enough to stay
+        // below the public endpoint's per-minute request limit.
+        if (next < shuffled.length) await new Promise(resolve => {
+          const finish = () => { clearTimeout(pause); controller.signal.removeEventListener('abort', finish); resolve(); };
+          const pause = setTimeout(finish, 7000);
+          controller.signal.addEventListener('abort', finish, { once: true });
+        });
       }
     };
     // First-ready wins; one slow Archive item cannot hold back another song.
@@ -506,7 +512,7 @@ function preloadSongSample() {
 function showSongSample() {
   if (!sampleVisible()) return;
   for (let i = verifiedSongSamples.length - 1; i >= 0; i--) {
-    if (Date.now() - verifiedSongSamples[i].createdAt >= 60000) verifiedSongSamples.splice(i, 1);
+    if (Date.now() - verifiedSongSamples[i].createdAt >= 600000) verifiedSongSamples.splice(i, 1);
   }
   if (sampleCache && !verifiedSongSamples.includes(sampleCache)) { sampleCache = null; SAMPLE_SONG_QUERY = ''; }
   if (!sampleCache && verifiedSongSamples.length) selectSongSample(verifiedSongSamples[0]);
@@ -526,7 +532,7 @@ function showSongSample() {
     } else if (!sampleReducedMotion.matches) {
       sampleTimer = setTimeout(() => {
         if (!sampleVisible()) return;
-        if (Date.now() - sampleCache.createdAt >= 60000) {
+        if (Date.now() - sampleCache.createdAt >= 600000) {
           sampleLoad?.abort(); sampleHint.hidden = true; showSongSample(); return;
         }
         const index = verifiedSongSamples.indexOf(sampleCache);
@@ -534,7 +540,7 @@ function showSongSample() {
         if (next && next !== sampleCache) {
           selectSongSample(next); sampleHint.hidden = true; showSongSample();
         } else tick();
-      }, 1800);
+      }, 3500);
     }
   };
   tick();

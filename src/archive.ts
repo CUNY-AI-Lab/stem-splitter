@@ -700,10 +700,10 @@ async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<b
 }
 
 /** Verify a playlist candidate directly; catalog ranking cannot establish absence. */
-export async function verifyArchiveSample(query: string, identifier: string, file: string, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
+export async function verifyArchiveSample(query: string, identifier: string, file: string, maximumSeconds: number | 'availability' = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
   const tokens = archiveSongSearchKey(query).split(' ').filter(Boolean).slice(0, 8);
   if (!tokens.length || file.length > MAX_FILE_NAME_LENGTH) return { results: [] };
-  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: archiveDurationLimit(maximumSeconds), timeoutMs: 9000 });
+  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: typeof maximumSeconds === 'number' ? archiveDurationLimit(maximumSeconds) : undefined, suggestionAvailability: maximumSeconds === 'availability', timeoutMs: 9000 });
   const song = matchingSongs(item, tokens).find(track => track.archiveFile === file);
   if (!song || !await downloadableSong(song, songDeliveryLocations.get(item))) return { results: [] };
   const { score: _score, ...result } = song;
@@ -1005,7 +1005,7 @@ function archiveFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number } = {}): Promise<ArchiveItem> {
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
@@ -1091,7 +1091,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
         bytes > 0 &&
         bytes <= (options.publicAudio ? ARCHIVE_SEARCH_MAX_BYTES : MAX_AUDIO_BYTES) &&
         durationSec > 0 &&
-        durationSec <= archiveDurationLimit(options.maximumSeconds),
+        (options.suggestionAvailability || durationSec <= archiveDurationLimit(options.maximumSeconds)),
     };
     const previous = tracksByBase.get(base);
     if (

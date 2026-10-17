@@ -702,6 +702,8 @@ test('playlist hints load before account setup, rotate, and accept ready options
     await expect(page.locator('#source-sample-hint')).toBeVisible({timeout:1500});
     await expect(input).toHaveAttribute('placeholder','Fast artist Fast song',{timeout:2000});
     expect(accountRequest).toBeTruthy();expect(slow).toBeTruthy();
+    await page.waitForTimeout(3100);
+    await expect(input).toHaveAttribute('placeholder','Fast artist Fast song');
     await expect(input).toHaveAttribute('placeholder','Next artist Next song',{timeout:5000});
     await input.focus();await input.press('Tab');
     await expect(page.getByRole('option',{name:/Next song/})).toBeVisible({timeout:500});
@@ -710,4 +712,27 @@ test('playlist hints load before account setup, rotate, and accept ready options
     await expect(page.locator('#source-sample-hint')).toBeHidden();
     expect(f.errors).toEqual([]);
   }finally{await slow?.abort().catch(()=>{});await accountRequest?.abort().catch(()=>{});await f.close();}
+});
+
+
+test('playlist hints lazily include the entire verified pool before repeating', async ({page}) => {
+  test.setTimeout(65000);
+  const f=await setup(page);const searches=[];
+  const candidates=Array.from({length:6},(_,i)=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`pool-${i}`,archiveFile:`song-${i}.mp3`}));
+  try {
+    await page.addInitScript(()=>{Math.random=()=>0.999;});
+    await page.route('**/search-samples.json',route=>route.fulfill({json:candidates}));
+    await page.route('**/api/music/search?*',route=>{
+      const item=new URL(route.request().url()).searchParams.get('sampleItem');searches.push(item);
+      const c=candidates.find(c=>c.archiveId===item);
+      return route.fulfill({json:{results:[{...sampleTrack,title:c.title,artist:c.artist,archiveId:item,archiveFile:c.archiveFile}]}});
+    });
+    await page.goto(f.origin);
+    const input=page.locator('#yt-url');
+    for (const c of candidates) await expect(input).toHaveAttribute('placeholder',`${c.artist} ${c.title}`,{timeout:10000});
+    expect(new Set(searches).size).toBe(6);
+    await expect(input).toHaveAttribute('placeholder','Artist 0 Song 0',{timeout:10000});
+    expect(searches).toHaveLength(6);
+    expect(f.errors).toEqual([]);
+  } finally {await f.close();}
 });

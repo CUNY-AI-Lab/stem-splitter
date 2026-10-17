@@ -17,7 +17,7 @@ export async function playlistSampleResponse(request: Request, storage?: Pick<Ca
   if (!isPlaylistSample(request)) return Response.json({ results: [] }, { status: 400 });
   const url = new URL(request.url);
   const key = new URLSearchParams({ q: archiveSongSearchKey(url.searchParams.get('q') || ''), sampleItem: url.searchParams.get('sampleItem')!, sampleFile: url.searchParams.get('sampleFile')! }).toString();
-  const cacheRequest = new Request(new URL('/__playlist-sample/v1?' + key, url.origin));
+  const cacheRequest = new Request(new URL('/__playlist-sample/v2?' + key, url.origin));
   const respond = (data: SongResults) => Response.json(data, { headers: { 'Cache-Control': 'public, max-age=60' } });
   const cached = verified.get(key);
   if (cached && cached.expires > Date.now()) return respond(cached.data);
@@ -28,7 +28,7 @@ export async function playlistSampleResponse(request: Request, storage?: Pick<Ca
   } catch { /* Cache failures do not block live verification. */ }
   let work = pending.get(key);
   if (!work) {
-    work = verifyArchiveSample(url.searchParams.get('q')!, url.searchParams.get('sampleItem')!, url.searchParams.get('sampleFile')!, 300)
+    work = verifyArchiveSample(url.searchParams.get('q')!, url.searchParams.get('sampleItem')!, url.searchParams.get('sampleFile')!, 'availability')
       .catch(() => ({ results: [] }))
       .then(async data => {
         if (data.results.length) {
