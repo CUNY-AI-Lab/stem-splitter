@@ -480,9 +480,14 @@ function configureSongSamples(payload){
   return sampleSettings.enabled?candidates:[];
 }
 function nextSongSample(){
-  const ready=sampleOrder.map(key=>verifiedSongSamples.find(cache=>sampleCacheKey(cache)===key)).filter(Boolean);
-  let next=ready.find(cache=>!sampleSeen.has(sampleCacheKey(cache)));
-  if(!next&&ready.length&&samplePoolComplete){beginSamplePass();next=sampleOrder.map(key=>ready.find(cache=>sampleCacheKey(cache)===key)).find(Boolean);}
+  const chooseReady=()=>{
+    const unseen=sampleOrder.map(key=>verifiedSongSamples.find(cache=>sampleCacheKey(cache)===key)).filter(cache=>cache&&!sampleSeen.has(sampleCacheKey(cache)));
+    // The first configured song may be unavailable. Avoid repeating the last
+    // actual song, even when the shuffled catalogue starts with another key.
+    return unseen.find(cache=>sampleCacheKey(cache)!==sampleLastKey)||unseen[0];
+  };
+  let next=chooseReady();
+  if(!next&&verifiedSongSamples.length&&samplePoolComplete){beginSamplePass();next=chooseReady();}
   return next;
 }
 function presentFirstSample(force=false){
@@ -615,7 +620,7 @@ function showSongSample() {
           sampleLoad?.abort(); sampleHint.hidden = true; showSongSample(); return;
         }
         const next = nextSongSample();
-        if (next && next !== sampleCache) {
+        if (next && sampleCacheKey(next) !== sampleCacheKey(sampleCache)) {
           selectSongSample(next); sampleHint.hidden = true; showSongSample();
         } else {sampleSeen.add(sampleCacheKey(sampleCache));persistSampleProgress();tick();}
       }, sampleSettings.cadenceMs ? Math.max(sampleSettings.holdMs,slotStart+sampleSettings.cadenceMs-performance.now()) : sampleSettings.holdMs);
