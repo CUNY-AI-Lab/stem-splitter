@@ -4133,7 +4133,7 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'Splitter',
-    tagline: 'Decompose musical tracks into independent audio files. Listen closely, one layer at a time. Annotate waveforms as you go and query the Listening Guy to help guide your analysis.',
+    tagline: 'Split audio tracks into independent musical layers. Listen closely, one stem at a time. Take notes as you go and cue the Listening Guy to guide analysis.',
   },
   remixer: {
     word: 'Remixer',
