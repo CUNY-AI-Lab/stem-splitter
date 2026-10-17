@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { createTestHarness } from 'wrangler';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
-import candidates from '../public/search-samples.json' with { type: 'json' };
+import { defaultSampleSettings } from '../src/song-sample-resource.ts';
 
 test('public playlist suggestions verify before identity or account setup; arbitrary searches remain protected', async () => {
-  const track=candidates[0], audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+  const track=defaultSampleSettings().tracks[0], audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
   const network=setupServer(
     http.get('https://archive.org/metadata/'+track.archiveId,()=>HttpResponse.json({metadata:{title:track.title,creator:track.artist,mediatype:'audio',subject:'Music'},files:[{name:track.archiveFile,title:track.title,size:String(audio.length),length:'2'}]})),
     http.get('https://archive.org/download/:id/:file',()=>new HttpResponse(audio,{headers:{'content-type':'audio/mpeg','content-length':String(audio.length)}})),

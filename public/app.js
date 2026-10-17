@@ -434,17 +434,87 @@ function sampleVisible() {
     !document.hidden && ytDisclosure.open && ytUrlInput.getClientRects().length > 0;
 }
 function stopSongSample(cancelPreload = true) {
-  clearTimeout(sampleTimer);
+  clearTimeout(sampleTimer);clearTimeout(sampleFirstTimer);sampleFirstTimer=0;
   sampleTimer = 0;
   sampleHint.hidden = true;
   ytUrlInput.classList.remove('showing-sample');
   ytUrlInput.removeAttribute('aria-describedby');
   ytUrlInput.placeholder = defaultSongPlaceholder;
-  if (cancelPreload && sampleCache?.pending && !sampleCache.listener) {
-    sampleCache.controller.abort();
-    sampleCache = null;
-  }
+  if(cancelPreload){sampleLoad?.abort();sampleStarted=false;if(sampleCache?.pending&&!sampleCache.listener)sampleCache=null;}
 }
+let sampleSettings={enabled:true,holdMs:3500,cadenceMs:null,reshuffle:true};
+let sampleConfigSnapshot=null,sampleConfigRevision=null,sampleConfigFetchedAt=0,samplePoolComplete=false,sampleCompletedAt=0,sampleConfigRefresh=null;
+let sampleOrder=[],sampleSeen=new Set(),sampleLastKey='',samplePass=0,sampleFirstTimer=0;
+const sampleUnavailable=new Set();
+const sampleTrackKey=track=>`${track.archiveId}/${track.archiveFile}`;
+const sampleCacheKey=cache=>cache.trackKey;
+function shuffledSampleOrder(order,ensureDifferent=false){
+  const result=[...order];for(let i=result.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}
+  if(result.length>1&&result[0]===sampleLastKey)[result[0],result[1]]=[result[1],result[0]];
+  if(ensureDifferent&&result.length>2&&result.every((key,index)=>key===order[index]))[result[1],result[2]]=[result[2],result[1]];
+  return result;
+}
+function persistSampleProgress(){
+  if(sampleConfigRevision===null)return;
+  try{localStorage.setItem('stem-song-rotation-v1',JSON.stringify({revision:sampleConfigRevision,seen:[...sampleSeen].slice(-64),last:sampleLastKey,pass:samplePass,order:sampleOrder.slice(0,64)}));}catch{/* Suggestions also work without browser storage. */}
+}
+function beginSamplePass(){sampleSeen.clear();samplePass++;if(sampleSettings.reshuffle)sampleOrder=shuffledSampleOrder(sampleOrder,true);persistSampleProgress();}
+function configureSongSamples(payload){
+  const legacy=Array.isArray(payload),tracks=legacy?payload:payload?.tracks;
+  if(!Array.isArray(tracks))return [];
+  sampleSettings=legacy?{enabled:true,holdMs:3500,cadenceMs:null,reshuffle:true}:{enabled:payload.enabled!==false,holdMs:Math.max(3000,Math.min(15000,Number(payload.holdMs)||3500)),cadenceMs:Math.max((Number(payload.holdMs)||3500)+600,Math.min(30000,Number(payload.cadenceMs)||6000)),reshuffle:payload.reshuffle!==false};
+  const candidates=tracks.filter(track=>['artist','title','archiveId','archiveFile'].every(key=>typeof track?.[key]==='string'&&track[key].trim())).slice(0,64);
+  const keys=candidates.map(sampleTrackKey),revision=legacy?null:(payload.version||payload.revision);
+  if(revision!==null&&sampleConfigRevision===null){
+    try{const progress=JSON.parse(localStorage.getItem('stem-song-rotation-v1')||'null');if(progress&&Array.isArray(progress.seen)){sampleSeen=new Set(progress.seen.filter(key=>keys.includes(key)));sampleLastKey=typeof progress.last==='string'?progress.last:'';samplePass=Number.isInteger(progress.pass)?progress.pass:0;if(progress.revision===revision&&Array.isArray(progress.order)&&progress.order.length===keys.length&&new Set(progress.order).size===keys.length&&progress.order.every(key=>keys.includes(key))){sampleOrder=progress.order;sampleConfigRevision=revision;}}}catch{/* Ignore corrupt public rotation preferences. */}
+  }
+  if(sampleConfigRevision!==revision||sampleOrder.length!==keys.length||!sampleOrder.every(key=>keys.includes(key)))sampleOrder=legacy?shuffledSampleOrder(keys):keys;
+  sampleConfigRevision=revision;sampleSeen=new Set([...sampleSeen].filter(key=>keys.includes(key)));
+  if(keys.length&&keys.every(key=>sampleSeen.has(key)))beginSamplePass();
+  return sampleSettings.enabled?candidates:[];
+}
+function nextSongSample(){
+  const ready=sampleOrder.map(key=>verifiedSongSamples.find(cache=>sampleCacheKey(cache)===key)).filter(Boolean);
+  let next=ready.find(cache=>!sampleSeen.has(sampleCacheKey(cache)));
+  if(!next&&ready.length&&samplePoolComplete){beginSamplePass();next=sampleOrder.map(key=>ready.find(cache=>sampleCacheKey(cache)===key)).find(Boolean);}
+  return next;
+}
+function presentFirstSample(force=false){
+  if(sampleCache||!sampleVisible())return;
+  const next=nextSongSample();if(!next)return;
+  const preferred=sampleOrder.find(key=>!sampleSeen.has(key)&&!sampleUnavailable.has(key));
+  // Give configured priority a short chance without letting one slow source
+  // hold the entire field hostage. Later available songs remain ready.
+  if(!force&&sampleConfigRevision!==null&&preferred&&sampleCacheKey(next)!==preferred&&!samplePoolComplete){
+    if(!sampleFirstTimer)sampleFirstTimer=setTimeout(()=>{sampleFirstTimer=0;presentFirstSample(true);},1500);
+    return;
+  }
+  clearTimeout(sampleFirstTimer);sampleFirstTimer=0;selectSongSample(next);showSongSample();
+}
+async function refreshSongSampleSettings(){
+  if(sampleConfigRefresh||!sampleVisible())return;
+  sampleConfigRefresh=(async()=>{
+    try{
+      const response=await fetch('/api/song-samples',{cache:'no-cache',signal:AbortSignal.timeout(5000)});if(!response.ok)return;
+      const payload=await response.json();sampleConfigFetchedAt=Date.now();
+      if(Array.isArray(payload))return;
+      if(!payload||!Array.isArray(payload.tracks))return;
+      const changed=sampleConfigRevision!==(payload.version||payload.revision);
+      sampleConfigSnapshot=payload;
+      if(changed){
+        sampleLoad?.abort();sampleStarted=false;samplePoolComplete=false;
+        const allowed=new Set(payload.tracks.map(sampleTrackKey));
+        for(let i=verifiedSongSamples.length-1;i>=0;i--)if(!allowed.has(sampleCacheKey(verifiedSongSamples[i])))verifiedSongSamples.splice(i,1);
+        configureSongSamples(payload);
+        if(!sampleSettings.enabled||!allowed.has(sampleCacheKey(sampleCache||{}))){stopSongSample(false);sampleCache=null;SAMPLE_SONG_QUERY='';}
+        if(sampleSettings.enabled){preloadSongSample();if(sampleHint.hidden)showSongSample();}
+      }else if(samplePoolComplete&&Date.now()-sampleCompletedAt>=60000){sampleStarted=false;preloadSongSample();}
+    }catch{/* Preserve the last verified pool during a temporary settings outage. */}
+  })().finally(()=>{sampleConfigRefresh=null;});
+  return sampleConfigRefresh;
+}
+setInterval(()=>{void refreshSongSampleSettings();},30000);
+
 function selectSongSample(cache) {
   sampleCache = cache;
   SAMPLE_SONG_QUERY = cache.query;
@@ -457,21 +527,17 @@ function preloadSongSample() {
   sampleLoad = controller;
   const deadline = setTimeout(() => controller.abort(), 600000);
   void (async () => {
-    const response = await fetch('/search-samples.json', { signal: controller.signal });
-    if (!response.ok) return;
-    const candidates = await response.json();
-    if (!Array.isArray(candidates)) return;
-    const shuffled = candidates.filter(track => ['artist', 'title', 'archiveId', 'archiveFile'].every(key => typeof track?.[key] === 'string' && track[key].trim()));
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
+    let payload=sampleConfigSnapshot;
+    if(!payload){const response=await fetch('/api/song-samples',{signal:controller.signal});if(!response.ok)return;payload=await response.json();sampleConfigFetchedAt=Date.now();if(!Array.isArray(payload))sampleConfigSnapshot=payload;}
+    const candidates=configureSongSamples(payload);
+    const shuffled=sampleOrder.map(key=>candidates.find(track=>sampleTrackKey(track)===key)).filter(Boolean).filter(track=>!verifiedSongSamples.some(cache=>sampleCacheKey(cache)===sampleTrackKey(track)&&Date.now()-cache.createdAt<600000));
+    samplePoolComplete=false;sampleUnavailable.clear();
     let next = 0;
     const loadNext = async () => {
       while (next < shuffled.length && !controller.signal.aborted && sampleVisible()) {
         const candidate = shuffled[next++], query = `${candidate.artist} ${candidate.title}`;
         const matches = new Map();
-        const cache = { query, controller, batches: [], pending: true, createdAt: Date.now(), listener: null, promise: null };
+        const cache = { query, trackKey:sampleTrackKey(candidate), controller, batches: [], pending: true, createdAt: Date.now(), listener: null, promise: null };
         const receive = data => {
           if (controller.signal.aborted) return;
           const results = (data.results || []).filter(track => track.archiveId === candidate.archiveId && track.archiveFile === candidate.archiveFile);
@@ -481,7 +547,7 @@ function preloadSongSample() {
           const batch = { ...data, results };
           cache.batches.push(batch);
           if (first) verifiedSongSamples.push(cache);
-          if (!sampleCache) { selectSongSample(cache); showSongSample(); }
+          if (!sampleCache) presentFirstSample();
           cache.listener?.(batch);
         };
         cache.promise = (async () => {
@@ -491,7 +557,7 @@ function preloadSongSample() {
             });
             receive(data);
           } catch { /* An unavailable candidate never becomes a suggestion. */ }
-          finally { cache.pending = false; }
+          finally { cache.pending = false;if(!controller.signal.aborted){if(!matches.size)sampleUnavailable.add(cache.trackKey);if(!sampleCache)presentFirstSample();} }
           return matches.size ? { data: { results: [...matches.values()] } } : { failed: true };
         })();
         await cache.promise;
@@ -506,25 +572,30 @@ function preloadSongSample() {
     };
     // First-ready wins; one slow Archive item cannot hold back another song.
     await Promise.all([loadNext(), loadNext(), loadNext()]);
+    if(!controller.signal.aborted){samplePoolComplete=next>=shuffled.length;sampleCompletedAt=Date.now();if(sampleHint.hidden)showSongSample();}
   })().catch(() => {}).finally(() => { clearTimeout(deadline); });
 }
 
 function showSongSample() {
   if (!sampleVisible()) return;
+  if(sampleConfigSnapshot&&Date.now()-sampleConfigFetchedAt>30000)void refreshSongSampleSettings();
   for (let i = verifiedSongSamples.length - 1; i >= 0; i--) {
     if (Date.now() - verifiedSongSamples[i].createdAt >= 600000) verifiedSongSamples.splice(i, 1);
   }
   if (sampleCache && !verifiedSongSamples.includes(sampleCache)) { sampleCache = null; SAMPLE_SONG_QUERY = ''; }
-  if (!sampleCache && verifiedSongSamples.length) selectSongSample(verifiedSongSamples[0]);
+  if (!sampleCache && verifiedSongSamples.length) {presentFirstSample();if(!sampleCache)return;}
   if (!sampleCache && sampleLoad?.signal.aborted) sampleStarted = false;
   preloadSongSample();
-  if (!SAMPLE_SONG_QUERY || !sampleCache || !sampleHint.hidden) return;
+  if (!sampleSettings.enabled || !SAMPLE_SONG_QUERY || !sampleCache || !sampleHint.hidden) return;
   sampleHint.hidden = false;
   ytUrlInput.setAttribute('aria-describedby', 'source-sample-hint');
   ytUrlInput.classList.add('showing-sample');
+  sampleSeen.add(sampleCacheKey(sampleCache));sampleLastKey=sampleCacheKey(sampleCache);persistSampleProgress();
+  const slotStart=performance.now();
   let shown = sampleReducedMotion.matches ? SAMPLE_SONG_QUERY.length : 1;
   const tick = () => {
     if (!sampleVisible()) return stopSongSample();
+    if(sampleSettings.cadenceMs)shown=Math.max(1,Math.min(SAMPLE_SONG_QUERY.length,Math.ceil((performance.now()-slotStart)/600*SAMPLE_SONG_QUERY.length)));
     ytUrlInput.placeholder = SAMPLE_SONG_QUERY.slice(0, shown);
     if (shown < SAMPLE_SONG_QUERY.length) {
       shown++;
@@ -535,12 +606,11 @@ function showSongSample() {
         if (Date.now() - sampleCache.createdAt >= 600000) {
           sampleLoad?.abort(); sampleHint.hidden = true; showSongSample(); return;
         }
-        const index = verifiedSongSamples.indexOf(sampleCache);
-        const next = verifiedSongSamples[(index + 1) % verifiedSongSamples.length];
+        const next = nextSongSample();
         if (next && next !== sampleCache) {
           selectSongSample(next); sampleHint.hidden = true; showSongSample();
-        } else tick();
-      }, 3500);
+        } else {sampleSeen.add(sampleCacheKey(sampleCache));persistSampleProgress();tick();}
+      }, sampleSettings.cadenceMs ? Math.max(sampleSettings.holdMs,slotStart+sampleSettings.cadenceMs-performance.now()) : sampleSettings.holdMs);
     }
   };
   tick();
@@ -565,7 +635,7 @@ sampleReducedMotion.addEventListener('change', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopSongSample();
-  else showSongSample();
+  else {void refreshSongSampleSettings();showSongSample();}
 });
 window.addEventListener('pagehide', () => { stopSongSample(); sampleLoad?.abort(); });
 showSongSample();
