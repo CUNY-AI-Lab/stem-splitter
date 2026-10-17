@@ -1,5 +1,8 @@
 # Railway container for the Audio Separator service (CPU inference).
 # Model weights cache on a volume at /models; job scratch space is ephemeral.
+# Binding 0.0.0.0 makes service.py refuse to start unless AUDIO_SEPARATOR_TOKEN
+# is a non-default secret of at least 32 characters. The CUDA GPU host uses
+# cuda/pyproject.toml and docs/legion-separator.md instead of this image.
 FROM python:3.12-slim
 
 # build-essential: diffq (an audio-separator dependency) compiles a C extension.

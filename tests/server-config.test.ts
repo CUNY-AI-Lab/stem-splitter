@@ -3,9 +3,12 @@ import test from 'node:test';
 
 import {
   audioAnalysisStatus,
+  audioSeparatorStatus,
   queryIsolationProviderStatus,
+  replicateSeparationStatus,
   runtimeConfigurationSummary,
   runtimeConfigurationWarnings,
+  separationBackendStatus,
   youtubeImportStatus,
 } from '../server/config.ts';
 
@@ -160,6 +163,9 @@ test('authoritative Auto cannot look ready when its analyzer is absent', () => {
     SERVER_AUTO_MODE: 'authoritative',
   };
   assert.deepEqual(runtimeConfigurationSummary(env), {
+    separationBackend: 'replicate',
+    audioSeparator: 'unconfigured',
+    replicateSeparation: 'unconfigured',
     youtubeImport: 'unconfigured',
     audioAnalysis: 'unconfigured',
     serverAutoMode: 'authoritative',
@@ -238,5 +244,101 @@ test('a mode string alone does not enable Auto and is called out as ignored', ()
     runtimeConfigurationWarnings(env).includes(
       'SERVER_AUTO_MODE=authoritative is ignored unless SERVER_AUTO_ENABLED=true'
     )
+  );
+});
+
+const SEPARATOR_TOKEN = 'separator-test-token-000000000000000';
+const REPLICATE_TOKEN = 'r8_separation_test_token_0000';
+
+test('separation configuration reports backend and provider state without values', () => {
+  assert.equal(separationBackendStatus(disabled), 'replicate');
+  assert.equal(separationBackendStatus({ ...disabled, SEPARATION_BACKEND: 'failover' }), 'failover');
+  assert.equal(separationBackendStatus({ ...disabled, SEPARATION_BACKEND: 'legion' }), 'invalid');
+
+  assert.equal(audioSeparatorStatus(disabled), 'unconfigured');
+  assert.equal(
+    audioSeparatorStatus({ ...disabled, AUDIO_SEPARATOR_URL: 'https://separator.example.org' }),
+    'incomplete'
+  );
+  for (const [url, token] of [
+    ['http://separator.example.org', SEPARATOR_TOKEN],
+    ['https://separator.example.org', 'short-token'],
+    ['https://separator.example.org?token=x', SEPARATOR_TOKEN],
+    ['not a url', SEPARATOR_TOKEN],
+    ['https://separator.example.org', `${SEPARATOR_TOKEN} `],
+  ]) {
+    assert.equal(
+      audioSeparatorStatus({ ...disabled, AUDIO_SEPARATOR_URL: url, AUDIO_SEPARATOR_TOKEN: token }),
+      'invalid',
+      `${url} / ${token.length}`
+    );
+  }
+  assert.equal(
+    audioSeparatorStatus({
+      ...disabled,
+      AUDIO_SEPARATOR_URL: 'https://separator.example.org',
+      AUDIO_SEPARATOR_TOKEN: SEPARATOR_TOKEN,
+    }),
+    'configured'
+  );
+  // Loopback dev keeps its short local token, matching local-separator/service.py.
+  assert.equal(
+    audioSeparatorStatus({
+      ...disabled,
+      AUDIO_SEPARATOR_URL: 'http://127.0.0.1:8765',
+      AUDIO_SEPARATOR_TOKEN: 'local-separator-token',
+    }),
+    'configured'
+  );
+
+  assert.equal(replicateSeparationStatus(disabled), 'unconfigured');
+  assert.equal(
+    replicateSeparationStatus({ ...disabled, REPLICATE_API_TOKEN: REPLICATE_TOKEN }),
+    'incomplete'
+  );
+  assert.equal(
+    replicateSeparationStatus({
+      ...disabled,
+      REPLICATE_API_TOKEN: REPLICATE_TOKEN,
+      REPLICATE_MODEL_VERSION: 'latest',
+    }),
+    'invalid'
+  );
+  assert.equal(
+    replicateSeparationStatus({
+      ...disabled,
+      REPLICATE_API_TOKEN: REPLICATE_TOKEN,
+      REPLICATE_MODEL_VERSION: 'b'.repeat(64),
+    }),
+    'configured'
+  );
+});
+
+test('a half-configured failover warns and never echoes its secrets', () => {
+  const env = {
+    ...disabled,
+    SEPARATION_BACKEND: 'failover',
+    AUDIO_SEPARATOR_URL: 'https://separator.example.org',
+    AUDIO_SEPARATOR_TOKEN: 'short-but-secret-value',
+  };
+  const summary = runtimeConfigurationSummary(env);
+  assert.equal(summary.separationBackend, 'failover');
+  assert.equal(summary.audioSeparator, 'invalid');
+  const warnings = runtimeConfigurationWarnings(env);
+  assert.ok(warnings.some((warning) => warning.includes('failover will send every split to Replicate')));
+  assert.ok(warnings.some((warning) => warning.includes('Replicate separation configuration is unconfigured')));
+  const shipped = JSON.stringify({ summary, warnings });
+  assert.ok(!shipped.includes('separator.example.org'));
+  assert.ok(!shipped.includes('short-but-secret-value'));
+
+  const ready = {
+    ...env,
+    AUDIO_SEPARATOR_TOKEN: SEPARATOR_TOKEN,
+    REPLICATE_API_TOKEN: REPLICATE_TOKEN,
+    REPLICATE_MODEL_VERSION: 'b'.repeat(64),
+  };
+  assert.deepEqual(
+    runtimeConfigurationWarnings(ready).filter((warning) => /separat/i.test(warning)),
+    []
   );
 });

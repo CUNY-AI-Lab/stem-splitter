@@ -30,6 +30,7 @@ both static gates; runtime tests still exercise the SQLite/filesystem shims.
 | `npm run dev` (`wrangler dev --remote`) | **real** D1 + R2 | Replicate | Verifying against production infra. Presigned URLs point at the live bucket — uploads here are real. |
 | `npm run dev:local` + `npm run separator:local` | simulated D1/R2 (Miniflare) | local BS-RoFormer via `local-separator/` | Offline work with no cloud spend. Needs `uv`. `LOCAL_DEV=1`, `SEPARATION_BACKEND=audio-separator`. |
 | `npm start` (this directory) | `node:sqlite` + a real directory | Replicate | Railway, and any time you need a **publicly reachable** origin. |
+| `npm start` with `SEPARATION_BACKEND=failover` | `node:sqlite` + a real directory | self-hosted GPU service, Replicate fallback | Railway staging, then production, once the GPU host passes [../docs/legion-separator.md](../docs/legion-separator.md). |
 
 The third mode exists because of one constraint the other two can't satisfy: Replicate must be able to *reach back*. Under `LOCAL_HOSTING=true` the app hands the provider an HMAC-signed `/api/local-sources/` URL built from `PUBLIC_BASE_URL`, and the provider posts results to `/api/webhooks/separation`. On localhost both are unreachable — jobs only complete via the reconciliation fallback in `GET /api/jobs/:id`. On Railway the public domain makes both work, so this is the only setup that exercises the real webhook path and is currently the release target.
 
@@ -145,6 +146,29 @@ re-POSTing a key uploaded before a restart—`400 Upload not found` means the
 volume is not holding.
 
 `PUBLIC_BASE_URL` is derived from `RAILWAY_PUBLIC_DOMAIN` when unset, so the domain must exist before the container starts for webhooks to resolve. Builder is Railpack; `engines.node` is pinned to exact `22.23.1`, matching CI and the declared Node types, because `node:sqlite` is what the D1 shim is built on.
+
+## Self-hosted GPU separator (failover)
+
+[../docs/legion-separator.md](../docs/legion-separator.md) owns the GPU host,
+the staging environment, the acceptance checklist, and the production flip.
+The rules that matter on this host:
+
+- **Staging first.** A separate `staging` environment in the canonical project
+  points at the GPU host while production stays on `replicate`. Record its
+  environment ID here once created (staging environment: *not yet created*),
+  and pass explicit IDs on every command, as above.
+- **Production flip.** Release the reviewed SHA with `SEPARATION_BACKEND`
+  unchanged and run one Replicate job. Then stage `AUDIO_SEPARATOR_URL` and
+  `AUDIO_SEPARATOR_TOKEN` with `--skip-deploys`, and set
+  `SEPARATION_BACKEND=failover` as the one change that redeploys.
+- **Rollback** is `SEPARATION_BACKEND=replicate`. Keep the `AUDIO_SEPARATOR_*`
+  pair until no self-hosted job is in flight: polls follow each job's stored
+  `as:` prefix, so those jobs still finish on the GPU host.
+- **`/healthz.configuration`** reports `separationBackend`, `audioSeparator`
+  and `replicateSeparation` without values. With failover, both provider parts
+  must read `configured`. The rollback baseline
+  (`scripts/capture-railway-baseline.mjs`) is Replicate-only by design;
+  capture it before the flip.
 
 ## Verifying a deploy
 

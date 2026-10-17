@@ -1,0 +1,49 @@
+# systemd unit for the self-hosted GPU separator. Install with:
+#   sudo cp local-separator/deploy/stem-separator.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now stem-separator
+# Full runbook: docs/legion-separator.md
+
+[Unit]
+Description=Stem Splitter GPU separator (Audio Separator over HTTP)
+Documentation=https://github.com/CUNY-AI-Lab/stem-splitter/blob/main/docs/legion-separator.md
+After=network-online.target nvidia-persistenced.service
+Wants=network-online.target
+# Keep retrying forever. With AUDIO_SEPARATOR_REQUIRE_CUDA=1 a broken driver
+# makes the service exit at startup, and a GPU failure during a split makes it
+# exit (code 75) so this unit re-probes CUDA. Meanwhile the tunnel answers 502
+# and the app sends every split to Replicate until the GPU works again.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=stemsep
+Group=stemsep
+EnvironmentFile=/etc/stem-separator/separator.env
+# The tunnel forwards to 127.0.0.1, so a loopback bind proves nothing about
+# exposure. This forces the strong-token and https-public-URL checks.
+Environment=AUDIO_SEPARATOR_EXPOSED=1
+Environment=HOME=/var/lib/stem-separator
+Environment=NUMBA_CACHE_DIR=/var/lib/stem-separator/numba-cache
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/stem-separator/app/local-separator
+# Create /dev/nvidia-uvm before the unprivileged start (NoNewPrivileges blocks
+# the setuid helper torch would otherwise rely on). "-" tolerates a host where
+# udev already did it or the helper lives elsewhere; "+" runs it as root.
+ExecStartPre=-+/usr/bin/nvidia-modprobe -u -c=0
+# Run the venv's interpreter directly. `uv run` would re-sync the environment.
+ExecStart=/opt/stem-separator/venv/bin/python /opt/stem-separator/app/local-separator/service.py --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=30
+TimeoutStopSec=20
+
+StateDirectory=stem-separator
+StateDirectoryMode=0750
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/stem-separator
+# Do not add PrivateDevices=: it hides /dev/nvidia* from the service.
+
+[Install]
+WantedBy=multi-user.target

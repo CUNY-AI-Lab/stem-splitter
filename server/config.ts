@@ -3,6 +3,7 @@ import { processingFeatureFlags } from '../src/features';
 import { audioAnalysisEndpoint } from '../src/analysis/http';
 import { queryIsolationBudgetConfigurationStatus } from '../src/isolation/budget.ts';
 import { audioSepReplicateIdentity } from '../src/isolation/options.ts';
+import { selfHostedSeparatorStatus } from '../src/separation/self-hosted.ts';
 
 export type OptionalServiceConfigurationStatus =
   | 'unconfigured'
@@ -13,6 +14,10 @@ export type OptionalServiceConfigurationStatus =
 type RuntimeConfig = Pick<
   Env,
   | 'REPLICATE_API_TOKEN'
+  | 'SEPARATION_BACKEND'
+  | 'AUDIO_SEPARATOR_URL'
+  | 'AUDIO_SEPARATOR_TOKEN'
+  | 'REPLICATE_MODEL_VERSION'
   | 'REPLICATE_YT_MODEL'
   | 'REPLICATE_YT_MODEL_VERSION'
   | 'AUDIO_ANALYSIS_URL'
@@ -30,6 +35,39 @@ type RuntimeConfig = Pick<
 
 function enabled(value: string | undefined): boolean {
   return value === 'true';
+}
+
+function plausibleReplicateToken(token: string): boolean {
+  return token.length >= 20 && token.length <= 512 && /^[^\s\u0000-\u001f\u007f]+$/.test(token);
+}
+
+const SEPARATION_BACKENDS = new Set(['replicate', 'audio-separator', 'failover', 'modal']);
+
+/** The configured separation backend name, or `invalid`; never a value from a secret. */
+export function separationBackendStatus(env: RuntimeConfig): string {
+  const backend = env.SEPARATION_BACKEND ?? 'replicate';
+  return SEPARATION_BACKENDS.has(backend) ? backend : 'invalid';
+}
+
+/**
+ * The self-hosted Audio Separator pair, judged by the same rule failover uses
+ * before it sends anything to the service (src/separation/self-hosted.ts).
+ */
+export function audioSeparatorStatus(env: RuntimeConfig): OptionalServiceConfigurationStatus {
+  return selfHostedSeparatorStatus(env);
+}
+
+/** The Replicate Demucs pin that `replicate` and the failover fallback both need. */
+export function replicateSeparationStatus(
+  env: RuntimeConfig
+): OptionalServiceConfigurationStatus {
+  const token = env.REPLICATE_API_TOKEN ?? '';
+  const version = env.REPLICATE_MODEL_VERSION ?? '';
+  const count = [token, version].filter(Boolean).length;
+  if (count === 0) return 'unconfigured';
+  if (count < 2) return 'incomplete';
+  if (!/^[0-9a-f]{64}$/.test(version) || !plausibleReplicateToken(token)) return 'invalid';
+  return 'configured';
 }
 
 export function youtubeImportStatus(env: RuntimeConfig): OptionalServiceConfigurationStatus {
@@ -85,6 +123,9 @@ export function queryIsolationProviderStatus(
 export function runtimeConfigurationSummary(env: RuntimeConfig) {
   const flags = processingFeatureFlags(env);
   return {
+    separationBackend: separationBackendStatus(env),
+    audioSeparator: audioSeparatorStatus(env),
+    replicateSeparation: replicateSeparationStatus(env),
     youtubeImport: youtubeImportStatus(env),
     audioAnalysis: audioAnalysisStatus(env),
     serverAutoMode: flags.serverAutoMode,
@@ -99,6 +140,30 @@ export function runtimeConfigurationSummary(env: RuntimeConfig) {
 export function runtimeConfigurationWarnings(env: RuntimeConfig): string[] {
   const summary = runtimeConfigurationSummary(env);
   const warnings: string[] = [];
+
+  if (summary.separationBackend === 'invalid') {
+    warnings.push('SEPARATION_BACKEND is not a known backend; every split will fail to start');
+  }
+  const usesSelfHosted =
+    summary.separationBackend === 'failover' || summary.separationBackend === 'audio-separator';
+  if (usesSelfHosted && summary.audioSeparator !== 'configured') {
+    warnings.push(
+      summary.separationBackend === 'failover'
+        ? `self-hosted separator configuration is ${summary.audioSeparator}; failover will send every split to Replicate`
+        : `self-hosted separator configuration is ${summary.audioSeparator}; splits will fail to start`
+    );
+  }
+  const usesReplicate =
+    summary.separationBackend === 'failover' || summary.separationBackend === 'replicate';
+  if (usesReplicate && summary.replicateSeparation !== 'configured') {
+    warnings.push(
+      `Replicate separation configuration is ${summary.replicateSeparation}; ${
+        summary.separationBackend === 'failover'
+          ? 'splits the self-hosted separator cannot take will fail'
+          : 'splits will fail to start'
+      }`
+    );
+  }
 
   if (summary.youtubeImport === 'incomplete' || summary.youtubeImport === 'invalid') {
     warnings.push(

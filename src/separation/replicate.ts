@@ -1,5 +1,7 @@
 import type { Env } from '../env';
-import { DEFAULT_DEMUCS_MODEL, getReplicateRunner, replicateVersion } from './options';
+// Explicit .ts: the failover tests load this module through Node's
+// type-stripping runner, which does not resolve extensionless specifiers.
+import { DEFAULT_DEMUCS_MODEL, getReplicateRunner, replicateVersion } from './options.ts';
 import type { SeparationBackend, SeparationResult, SeparationStartRequest } from './types';
 
 // Replicate-hosted Demucs (ryan5453/demucs), running the htdemucs_ft

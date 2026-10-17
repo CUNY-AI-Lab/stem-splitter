@@ -11,6 +11,46 @@ interface AudioSeparatorPayload {
   error?: unknown;
 }
 
+/** The service is on another machine; a hung tunnel must not hold a request open. */
+const SERVICE_TIMEOUT_MS = 10_000;
+
+/**
+ * service.py answers exactly this body for a job it no longer knows, which
+ * happens after the service restarts. Any other 404 (a misrouted tunnel, a
+ * proxy page) still throws, so the job keeps polling until the stall deadline.
+ */
+const LOST_JOB_ERROR = 'job not found';
+export const LOST_JOB_MESSAGE =
+  'The separator restarted before this split finished. Start the split again.';
+
+const SERVICE_STATUSES = new Set(['queued', 'processing', 'succeeded', 'failed']);
+
+/** True for a service job payload; Replicate predictions never carry a `stems` array. */
+export function isAudioSeparatorPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const result = payload as AudioSeparatorPayload;
+  return (
+    typeof result.id === 'string' &&
+    typeof result.status === 'string' &&
+    SERVICE_STATUSES.has(result.status) &&
+    Array.isArray(result.stems)
+  );
+}
+
+function isLostJobBody(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    return (
+      !!parsed &&
+      typeof parsed === 'object' &&
+      Object.keys(parsed).length === 1 &&
+      (parsed as { error?: unknown }).error === LOST_JOB_ERROR
+    );
+  } catch {
+    return false;
+  }
+}
+
 function serviceHeaders(env: Env): Headers {
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (env.AUDIO_SEPARATOR_TOKEN) {
@@ -86,6 +126,7 @@ export function audioSeparatorBackend(env: Env): SeparationBackend {
           webhook_url: req.webhookUrl,
           model: runner.profile,
         }),
+        signal: AbortSignal.timeout(SERVICE_TIMEOUT_MS),
       });
       if (!res.ok) {
         throw new Error(`Audio Separator start failed (${res.status})${await serviceError(res)}`);
@@ -102,9 +143,15 @@ export function audioSeparatorBackend(env: Env): SeparationBackend {
     async fetchStatus(externalId: string): Promise<SeparationResult> {
       const res = await fetch(serviceUrl(env, `/v1/jobs/${encodeURIComponent(externalId)}`), {
         headers: serviceHeaders(env),
+        signal: AbortSignal.timeout(SERVICE_TIMEOUT_MS),
       });
       if (!res.ok) {
-        throw new Error(`Audio Separator status failed (${res.status})${await serviceError(res)}`);
+        const detail = (await res.text()).trim();
+        if (res.status === 404 && isLostJobBody(detail)) {
+          return { status: 'failed', error: LOST_JOB_MESSAGE };
+        }
+        const suffix = detail ? `: ${detail.slice(0, 500)}` : '';
+        throw new Error(`Audio Separator status failed (${res.status})${suffix}`);
       }
       return parseAudioSeparatorResult(await res.json());
     },

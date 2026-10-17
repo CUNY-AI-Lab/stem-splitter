@@ -38,6 +38,15 @@ CLASS_CODE=your-class-code
 # AUDIO_SEPARATOR_URL=http://127.0.0.1:8765
 # AUDIO_SEPARATOR_TOKEN=choose-a-local-service-token
 
+# Self-hosted GPU separator with Replicate as automatic fallback
+# (docs/legion-separator.md). Off loopback the URL must be HTTPS and the token
+# at least 32 characters; Replicate's token and pin above are still required.
+# SEPARATION_BACKEND=failover
+# AUDIO_SEPARATOR_URL=https://separator.your-domain.example
+# AUDIO_SEPARATOR_TOKEN=paste-the-openssl-rand-hex-32-value
+# Fail a job still pending or processing after this many minutes (0 disables).
+# SEPARATION_STALL_MINUTES=60
+
 # For simulated local D1/R2 behind Tailscale Funnel, pass these as Wrangler
 # --var flags so they cannot be enabled accidentally:
 # LOCAL_HOSTING=true

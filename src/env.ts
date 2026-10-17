@@ -17,9 +17,16 @@ export type Env = {
   R2_BUCKET_NAME: string;
   CF_ACCOUNT_ID: string;
   PUBLIC_BASE_URL: string;
+  /**
+   * replicate (default) | audio-separator | failover | modal. `failover` sends
+   * splits to the self-hosted service and falls back to Replicate
+   * (src/separation/failover.ts).
+   */
   SEPARATION_BACKEND?: string;
   /** Base URL of the self-hosted Audio Separator service. */
   AUDIO_SEPARATOR_URL?: string;
+  /** Minutes before a pending or processing job is failed on its next poll; 0 disables. Default 60. */
+  SEPARATION_STALL_MINUTES?: string;
   /** Enables local upload/source routes so the full pipeline can run without remote R2. */
   LOCAL_DEV?: string;
   /** "true" when running locally behind Tailscale Funnel with simulated R2/D1. */

@@ -48,7 +48,13 @@ import {
   INSTRUMENT_REVIEW_OPTIONS,
 } from './analysis/instrument-review.ts';
 import { processingFeatureFlags } from './features';
-import { getBackend, type SeparationResult } from './separation';
+import { getBackend, getJobBackend, webhookMatchesJob, type SeparationResult } from './separation';
+import {
+  expireStalledJob,
+  separationStallMinutes,
+  stallDeadlinePassed,
+} from './separation/deadline';
+import { jobWebhookToken, webhookTokenMatches } from './separation/webhook-token';
 import {
   DEFAULT_DEMUCS_MODEL,
   allSeparationOptions,
@@ -125,6 +131,7 @@ const MAX_JOB_JSON_BYTES = 32 * 1024;
 const MAX_WEBHOOK_JSON_BYTES = 64 * 1024;
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
+const STEM_DOWNLOAD_IDLE_MS = 60 * 1000;
 const MP3_FRAME_SCAN_BYTES = 64 * 1024;
 const STORED_CORE_MODELS = allSeparationOptions().map(({ id, stems }) => ({
   id,
@@ -972,7 +979,10 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     throw error;
   }
 
-  const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${c.env.WEBHOOK_SECRET}`;
+  // A per-job token, never WEBHOOK_SECRET itself: the URL goes to every
+  // provider, and the secret also signs source URLs (src/separation/webhook-token.ts).
+  const webhookToken = await jobWebhookToken(c.env.WEBHOOK_SECRET, id);
+  const webhookUrl = `${c.env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&token=${webhookToken}`;
 
   try {
     const { externalId } = await getBackend(c.env).start({ jobId: id, audioUrl, webhookUrl, model });
@@ -1019,19 +1029,39 @@ app.get('/api/jobs/:id', async (c) => {
     row = (await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>())!;
   }
 
+  // A pending row never recorded a provider id, so nothing can answer for it.
+  let providerUnanswered = row.status === 'pending' || !row.external_id;
+
   // Reconciliation fallback: if we're still 'processing', poll the provider
   // directly in case the completion webhook was missed (also makes local
   // dev work, where webhooks can't reach us).
   if (row.status === 'processing' && row.external_id) {
     try {
-      const result = await getBackend(c.env).fetchStatus(row.external_id);
+      // Route by the stored id, not the current setting, so a job finishes
+      // with the provider that accepted it (src/separation/failover.ts).
+      const job = getJobBackend(c.env, row.external_id);
+      const result = await job.backend.fetchStatus(job.providerId);
       if (result.status !== 'processing') {
         await ingestResult(c.env, id, result);
         row = (await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>())!;
       }
     } catch {
       // Provider hiccup — stay 'processing', the next poll will retry.
+      providerUnanswered = true;
     }
+  }
+
+  // A provider that can no longer answer would leave the job processing
+  // forever; past the stall deadline this poll fails it instead. A provider
+  // that just reported the job as running is never overruled.
+  const stallMinutes = separationStallMinutes(c.env);
+  if (
+    providerUnanswered &&
+    (row.status === 'processing' || row.status === 'pending') &&
+    stallDeadlinePassed(row.created_at, stallMinutes) &&
+    (await expireStalledJob(c.env.DB, id, stallMinutes))
+  ) {
+    row = (await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first<JobRow>())!;
   }
 
   const { results } = await c.env.DB
@@ -1565,24 +1595,30 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
 app.post('/api/webhooks/separation', async (c) => {
   const token = c.req.query('token');
   const jobId = c.req.query('job');
-  if (!token || token !== c.env.WEBHOOK_SECRET) return c.text('Forbidden', 403);
+  if (!token || !(await webhookTokenMatches(c.env.WEBHOOK_SECRET, jobId, token))) {
+    return c.text('Forbidden', 403);
+  }
   if (!jobId) return c.text('Missing job', 400);
 
   const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(jobId).first<JobRow>();
   if (!row) return c.text('Unknown job', 404);
   if (row.status === 'done' || row.status === 'failed') return c.json({ ok: true }); // already ingested
+  // Without a stored provider id nothing can claim ingestion yet (it needs a
+  // processing row); the next browser poll reconciles once the id is stored.
+  if (!row.external_id) return c.json({ ok: true });
+  const job = getJobBackend(c.env, row.external_id);
 
   const parsed = await boundedJson(c, MAX_WEBHOOK_JSON_BYTES);
   let result: SeparationResult;
   if (parsed.response) {
-    if (parsed.response.status !== 413 || !row.external_id) return parsed.response;
+    if (parsed.response.status !== 413) return parsed.response;
     // Replicate webhook bodies routinely exceed any sane JSON bound (they
     // carry the model's full progress logs, and new cog builds inline file
     // outputs as data URIs). The webhook is only a completion signal, so for
     // an oversized body ask the provider for the authoritative prediction
     // instead of 413ing and stranding the job until a browser poll.
     try {
-      result = await getBackend(c.env).fetchStatus(row.external_id);
+      result = await job.backend.fetchStatus(job.providerId);
     } catch (err) {
       // 500 so the provider retries the webhook.
       const message = err instanceof Error ? err.message : String(err);
@@ -1590,7 +1626,10 @@ app.post('/api/webhooks/separation', async (c) => {
     }
   } else {
     if (!parsed.value) return c.text('Bad payload', 400);
-    result = getBackend(c.env).parseResult(parsed.value);
+    // A late webhook from a provider that no longer owns this job (see
+    // webhookMatchesJob) is acknowledged and ignored.
+    if (!webhookMatchesJob(parsed.value, job.providerId)) return c.json({ ok: true });
+    result = job.backend.parseResult(parsed.value);
   }
   try {
     await ingestResult(c.env, jobId, result);
@@ -1719,59 +1758,109 @@ async function downloadStem(name: string, url: string): Promise<ArrayBuffer> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    let response: Response;
+    // A self-hosted provider serves stems over its own uplink, and a stalled
+    // transfer must not hold the ingest lease. The timer aborts only when no
+    // bytes arrive for a while, so a slow but moving download of a long song
+    // still completes; an abort lands in the retry branches like any error.
+    const idle = idleAbort(STEM_DOWNLOAD_IDLE_MS);
     try {
-      response = await fetch(url);
-    } catch (error) {
-      lastError =
-        error instanceof Error
-          ? error
-          : new Error(`Failed to download stem "${name}"`);
-      if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
-      }
-      continue;
-    }
-
-    if (response.ok) {
+      let response: Response;
       try {
-        const audio = await response.arrayBuffer();
-        if (!looksLikeMp3(audio)) {
-          lastError = new InvalidStemAudioError(
-            `The "${name}" track was empty or was not a playable MP3`
-          );
-          if (attempt < 3) {
-            await new Promise((resolve) => setTimeout(resolve, attempt * 100));
-          }
-          continue;
-        }
-        return audio;
+        response = await fetch(url, { signal: idle.signal });
+        idle.touch();
       } catch (error) {
-        if (error instanceof InvalidStemAudioError) {
-          lastError = error;
-          continue;
-        }
         lastError =
           error instanceof Error
             ? error
-            : new Error(`Failed to read stem "${name}"`);
+            : new Error(`Failed to download stem "${name}"`);
         if (attempt < 3) {
           await new Promise((resolve) => setTimeout(resolve, attempt * 100));
         }
         continue;
       }
-    }
 
-    lastError = new Error(`Failed to download stem "${name}" (${response.status})`);
-    await response.body?.cancel().catch(() => {});
-    if (response.status !== 429 && response.status < 500) throw lastError;
+      if (response.ok) {
+        try {
+          const audio = await readBodyResettingIdle(response, idle.touch);
+          if (!looksLikeMp3(audio)) {
+            lastError = new InvalidStemAudioError(
+              `The "${name}" track was empty or was not a playable MP3`
+            );
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+            }
+            continue;
+          }
+          return audio;
+        } catch (error) {
+          if (error instanceof InvalidStemAudioError) {
+            lastError = error;
+            continue;
+          }
+          lastError =
+            error instanceof Error
+              ? error
+              : new Error(`Failed to read stem "${name}"`);
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+          }
+          continue;
+        }
+      }
 
-    if (attempt < 3) {
-      await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+      lastError = new Error(`Failed to download stem "${name}" (${response.status})`);
+      await response.body?.cancel().catch(() => {});
+      if (response.status !== 429 && response.status < 500) throw lastError;
+
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+      }
+    } finally {
+      idle.clear();
     }
   }
 
   throw lastError ?? new Error(`Failed to download stem "${name}"`);
+}
+
+/** An AbortSignal that fires after `idleMs` without a touch(). */
+function idleAbort(idleMs: number): { signal: AbortSignal; touch: () => void; clear: () => void } {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clear = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const touch = () => {
+    clear();
+    timer = setTimeout(
+      () => controller.abort(new DOMException('The stem transfer stalled', 'TimeoutError')),
+      idleMs
+    );
+  };
+  touch();
+  return { signal: controller.signal, touch, clear };
+}
+
+async function readBodyResettingIdle(response: Response, touch: () => void): Promise<ArrayBuffer> {
+  if (!response.body) return new ArrayBuffer(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    touch();
+    chunks.push(value);
+    size += value.byteLength;
+  }
+  const audio = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    audio.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return audio.buffer;
 }
 
 function looksLikeMp3(audio: ArrayBuffer): boolean {

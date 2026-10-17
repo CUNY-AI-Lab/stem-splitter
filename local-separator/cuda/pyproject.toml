@@ -1,0 +1,99 @@
+# CUDA environment for the self-hosted GPU separator (docs/legion-separator.md).
+#
+# This project only installs dependencies; it runs ../service.py unchanged.
+# It is separate from ../pyproject.toml so the CPU Railway image, CI, macOS dev
+# (MPS) and the e2e harnesses keep their existing lock untouched.
+#
+# torch 2.13 publishes cu126, cu130 and cu132 wheels. Only cu130 and newer carry
+# sm_120 kernels for RTX 50-series (Blackwell) GPUs, and CUDA 13 wheels need
+# NVIDIA driver 580 or newer.
+#
+# Every other package is constrained to the exact version in ../uv.lock (for
+# Python 3.12, the Ubuntu 24.04 system Python), so both paths run the same
+# separation code. test_cuda_constraints.py fails when the two drift; after
+# changing ../uv.lock, update the list below and re-lock this project on the GPU
+# host with `uv lock --project local-separator/cuda`.
+[project]
+name = "stem-splitter-separator-cuda"
+version = "0.1.0"
+description = "CUDA build of the Stem Splitter separator service for a Linux GPU host"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  # [cpu] only selects the CPU onnxruntime. Every served profile (Demucs and
+  # BS-RoFormer) runs on torch, which the cu130 wheels put on the GPU.
+  "audio-separator[cpu]==0.44.5",
+  "torch==2.13.0",
+  "torchvision==0.28.0",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+constraint-dependencies = [
+  "absl-py==2.5.0",
+  "audioread==3.1.0",
+  "beartype==0.18.5",
+  "certifi==2026.7.22",
+  "cffi==2.1.1",
+  "charset-normalizer==3.4.9",
+  "colorama==0.4.6",
+  "cython==3.2.9",
+  "decorator==5.3.1",
+  "diffq==0.2.4",
+  "diffq-fixed==0.2.4",
+  "einops==0.8.2",
+  "filelock==3.32.2",
+  "flatbuffers==25.12.19",
+  "fsspec==2026.7.0",
+  "idna==3.18",
+  "jinja2==3.1.6",
+  "joblib==1.5.3",
+  "julius==0.2.8",
+  "lazy-loader==0.5",
+  "librosa==0.11.0",
+  "llvmlite==0.48.0",
+  "markupsafe==3.0.3",
+  "ml-collections==1.1.0",
+  "ml-dtypes==0.5.4",
+  "mpmath==1.3.0",
+  "msgpack==1.2.1",
+  "narwhals==2.24.0",
+  "networkx==3.6.1",
+  "numba==0.66.0",
+  "numpy==2.4.6",
+  "onnx-weekly==1.23.0.dev20260727",
+  "onnx2torch-py313==1.6.0",
+  "onnxruntime==1.28.0",
+  "packaging==26.3",
+  "pillow==12.3.0",
+  "platformdirs==4.11.0",
+  "pooch==1.9.0",
+  "protobuf==7.35.1",
+  "pycparser==3.0",
+  "pydub==0.25.1",
+  "pyyaml==6.0.3",
+  "requests==2.34.2",
+  "resampy==0.4.3",
+  "rotary-embedding-torch==0.6.5",
+  "samplerate==0.1.0",
+  "scikit-learn==1.9.0",
+  "scipy==1.18.0",
+  "setuptools==83.0.0",
+  "six==1.17.0",
+  "soundfile==0.14.0",
+  "soxr==1.1.0",
+  "sympy==1.14.0",
+  "threadpoolctl==3.6.0",
+  "tqdm==4.70.0",
+  "typing-extensions==4.16.0",
+  "urllib3==2.7.0",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

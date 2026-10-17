@@ -286,6 +286,21 @@ local service, accepts its webhook, and also polls as a reconciliation
 fallback. Set `SEPARATION_BACKEND=audio-separator`, `AUDIO_SEPARATOR_URL`,
 and the `AUDIO_SEPARATOR_TOKEN` secret to use it.
 
+`SEPARATION_BACKEND=failover` runs the same service on a self-hosted GPU
+machine with Replicate behind it (`src/separation/failover.ts`). Each split
+goes to the self-hosted service when it has a runner for the choice (the 4-
+and 6-track Demucs splits) and to Replicate otherwise, or whenever the service
+refuses, cannot be reached, or does not answer within 10 seconds. Students see
+Replicate's catalogue unchanged. Failover needs both the `AUDIO_SEPARATOR_*`
+pair and the Replicate pin, and `/healthz.configuration` reports each part.
+Two rules keep jobs from getting stuck across a flip or a rollback. Polls and
+webhooks follow the provider prefix stored with each job (`as:` or `rep:`),
+not the current setting. And when a job's provider cannot be reached at all,
+`SEPARATION_STALL_MINUTES` (default 60) fails it on the first poll after that
+age; a provider that still reports the job as running is never overruled.
+Webhook URLs carry a per-job token derived from `WEBHOOK_SECRET`, not the
+secret. The GPU host runbook is [docs/legion-separator.md](docs/legion-separator.md).
+
 To move instead to **Modal** (deploy your own container with scale-to-zero
 GPUs):
 

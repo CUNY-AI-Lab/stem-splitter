@@ -117,16 +117,26 @@ const ALL_OPTIONS: SeparationOption[] = [
   },
 ];
 
+// A composite backend advertises exactly another backend's catalogue and
+// default, under that backend's name. Failover sends any choice the
+// self-hosted service cannot run to Replicate, so it can offer everything
+// Replicate offers, and the /api/separation-options response is byte-identical
+// across a flip: students, Auto, stored jobs and the frozen catalogue baseline
+// (scripts/lib/railway-baseline.mjs) see no change. /healthz reports the
+// configured backend.
+const CATALOGUE_ALIASES: Readonly<Record<string, string>> = { failover: 'replicate' };
+
 export function getSeparationOptions(backend = 'replicate'): {
   backend: string;
   defaultModel: string;
   models: SeparationOptionSummary[];
 } {
-  const available = ALL_OPTIONS.filter((option) => backend in option.runners);
+  const catalogue = CATALOGUE_ALIASES[backend] ?? backend;
+  const available = ALL_OPTIONS.filter((option) => catalogue in option.runners);
   const defaultModel =
-    available.find((option) => option.defaultFor?.includes(backend))?.id ?? available[0]?.id ?? '';
+    available.find((option) => option.defaultFor?.includes(catalogue))?.id ?? available[0]?.id ?? '';
   return {
-    backend,
+    backend: catalogue,
     defaultModel,
     // Projected deliberately: runner wiring must never reach the browser.
     models: available.map(({ id, stems, label, engine }) => ({
