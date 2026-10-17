@@ -274,32 +274,9 @@ h1 span {
 .source-sample-hint[hidden] { display: none; }
 .source-sample-hint kbd { border: 1px solid var(--panel-edge); border-radius: 3px; padding: 0.12rem 0.25rem; font: inherit; }
 .source-sample-hint:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
-.source-sample-title, .source-sample-touch { display: none; }
-
 @media (max-width: 560px) {
-  .yt-form { flex-wrap: wrap; }
-  .source-field { flex-basis: 100%; flex-direction: column; gap: 0.4rem; }
   #yt-url.showing-sample { padding-right: 0.7rem; }
-  .source-sample-hint {
-    position: static;
-    transform: none;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-height: 44px;
-    padding: 0.55rem 0.7rem;
-    border: 1px solid var(--panel-edge);
-    border-radius: 6px;
-    background: var(--bg-raise);
-    text-align: left;
-  }
-  .source-sample-title { position: relative; display: block; flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.8rem; }
-  /* Reserve the complete title's height before its first streamed character. */
-  .source-sample-title::before { content: attr(data-title); visibility: hidden; }
-  .source-sample-stream { position: absolute; inset: 0; }
-  .source-sample-touch { display: block; flex-shrink: 0; color: var(--hot); }
-  .source-sample-keyboard { display: none; }
-  .yt-form > .yt-go { margin-left: auto; }
+  .source-sample-hint { display: none; }
 }
 
 

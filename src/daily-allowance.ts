@@ -1,14 +1,14 @@
 /** App allowances are independent of provider spend and Gateway authorization. */
 export const SIGNED_IN_SPLITS_PER_DAY = 15;
-export const OTHER_MEMBER_SPLITS_PER_DAY = 5;
+export const INSTRUCTOR_SPLITS_PER_DAY = 25;
 export const HUMAN_INPUTS_PER_DAY = 50;
-export const GUEST_SPLITS_PER_DAY = 3;
+export const GUEST_SPLITS_PER_DAY = 5;
 export const GUEST_INPUTS_PER_DAY = 25;
 export type QuotaClass = 'member' | 'guest';
 export type AllowanceRole = 'student' | 'member' | 'instructor' | 'admin' | 'guest';
 export function allowanceLimit(kind: 'split' | 'chat' | 'guide', quotaClass: QuotaClass, role: AllowanceRole = 'member') {
   return kind === 'guide' ? quotaClass === 'guest' ? 10 : 20
-    : kind === 'split' ? quotaClass === 'guest' ? GUEST_SPLITS_PER_DAY : role === 'student' ? SIGNED_IN_SPLITS_PER_DAY : OTHER_MEMBER_SPLITS_PER_DAY
+    : kind === 'split' ? quotaClass === 'guest' ? GUEST_SPLITS_PER_DAY : role === 'instructor' || role === 'admin' ? INSTRUCTOR_SPLITS_PER_DAY : SIGNED_IN_SPLITS_PER_DAY
     : quotaClass === 'guest' ? GUEST_INPUTS_PER_DAY : HUMAN_INPUTS_PER_DAY;
 }
 

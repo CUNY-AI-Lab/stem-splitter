@@ -234,7 +234,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page).toHaveTitle('Stem Splitter · Account');
     await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
-    await expect(page.locator('#account-splits')).toContainText('5 of 5 runs left today. Resets');
+    await expect(page.locator('#account-splits')).toContainText('25 of 25 runs left today. Resets');
     await expect(page.getByRole('link', { name: 'System Prompt', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();

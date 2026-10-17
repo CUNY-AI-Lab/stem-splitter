@@ -29,8 +29,9 @@ The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from
 examples and consistent rotation. The runtime Worker remains named
 `cail-stem-splitter-preview`; the canonical alias uses the same D1/R2 data.
 
-Current daily split limits are 15 for an active STEM course student, five for
-other signed-in Lab members, and three for guest browser sessions. Failed or
+Current daily split limits are 25 for instructors and administrators, 15 for
+students and other signed-in Lab members (including signed-in guests), and five
+for unsigned guest browser sessions. Failed or
 cancelled splits release their reserved place; current Lab membership grants
 personal access even without course enrollment. Account recovery and 90-day
 upload retention remain released. The Listening Guide uses the private CAIL Gateway. Remixer, server

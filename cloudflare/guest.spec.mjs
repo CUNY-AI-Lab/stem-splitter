@@ -205,7 +205,7 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     expect(resumed.account.subject).toBe(first.account.subject);
     expect(resumed.guest.expiresAt).toBe(first.guest.expiresAt);
     expect(resumed.splitAllowance.completed).toBe(1);
-    expect(resumed.splitAllowance.limit).toBe(3);
+    expect(resumed.splitAllowance.limit).toBe(5);
     expect(f.counts()).toEqual({ providerStarts: 1, verifications: 0, widgetLoads: 0 });
     expect(f.requests.filter(request => request.path.startsWith('/api/classroom/'))).toEqual([]);
     await page.goto(f.origin + '/account.html');
@@ -251,23 +251,23 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
-test('guest stops at three daily splits and sees the CUNY sign-in path without a challenge', async ({ page }) => {
+test('guest stops at five daily splits and sees the CUNY sign-in path without a challenge', async ({ page }) => {
   test.setTimeout(120000);
   const f = await setup(page);
   try {
     await page.goto(f.origin);
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
-    for (let count = 1; count <= 3; count++) { await startUpload(page); await completed(page, count); }
-    expect(f.counts()).toEqual({ providerStarts: 3, verifications: 0, widgetLoads: 0 });
+    for (let count = 1; count <= 5; count++) { await startUpload(page); await completed(page, count); }
+    expect(f.counts()).toEqual({ providerStarts: 5, verifications: 0, widgetLoads: 0 });
     const blocked = page.waitForResponse(response => new URL(response.url()).pathname === '/api/jobs' && response.request().method() === 'POST' && response.status() === 429);
     await startUpload(page);
     expect((await (await blocked).json()).code).toBe('split_daily_limit');
-    await expect(page.locator('#upload-message')).toContainText("today's 3 guest runs");
+    await expect(page.locator('#upload-message')).toContainText("today's 5 guest runs");
     await expect(page.locator('#upload-message')).toContainText('Sign in with CUNY Login');
-    expect(f.counts()).toEqual({ providerStarts: 3, verifications: 0, widgetLoads: 0 });
+    expect(f.counts()).toEqual({ providerStarts: 5, verifications: 0, widgetLoads: 0 });
     const posts = f.requests.filter(request => request.path === '/api/jobs' && request.method === 'POST');
-    expect(posts).toHaveLength(4); expect(posts[3].key).toBeTruthy();
-    expect((await account(page)).splitAllowance.completed).toBe(3);
+    expect(posts).toHaveLength(6); expect(posts[5].key).toBeTruthy();
+    expect((await account(page)).splitAllowance.completed).toBe(5);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
@@ -299,7 +299,7 @@ test('guest searches and imports a complete song through the existing field',asy
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-import-${width}.png`,animations:'disabled'});}
     }
-    expect((await account(page)).splitAllowance.remaining).toBe(2);expect(f.errors).toEqual([]);
+    expect((await account(page)).splitAllowance.remaining).toBe(4);expect(f.errors).toEqual([]);
   }finally{await f.close();}
 });
 
@@ -573,14 +573,13 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
     await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[sampleTrack]}}));
     await page.goto(f.origin);
     const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint');
-    await expect(hint).toBeVisible();await expect(input).toHaveAttribute('placeholder','Search songs');
-    await expect(hint.locator('.source-sample-stream')).toHaveText('jazz piano');
+    await expect(hint).toBeHidden();await expect(input).toHaveAttribute('placeholder','jazz piano');
     await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});
-    await hint.click();await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
+    await page.locator('#yt-form .yt-go').click();await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-results-mobile.png`,animations:'disabled'});
-    await input.fill('');await expect(hint).toBeVisible();await input.press('Escape');await expect(hint).toBeHidden();
+    await input.fill('');await expect(input).toHaveAttribute('placeholder','jazz piano');await input.press('Escape');await expect(hint).toBeHidden();
     await input.press('Tab');await expect(page.locator('#yt-form button[type=submit]')).toBeFocused();
     expect(f.errors).toEqual([]);
   }finally{await f.close();}

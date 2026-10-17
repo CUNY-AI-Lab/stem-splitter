@@ -148,7 +148,7 @@ test('provider deadline cancellation releases a guest place without recording a 
  await db.prepare("UPDATE app_operations SET state='processing',provider_id='prediction' WHERE id=?").bind(operation.id).run();
  t.mock.method(globalThis,'fetch',async(_url:any,init?:RequestInit)=>{assert.notEqual(init?.method,'POST');return Response.json({id:'prediction',status:'canceled'});});
  await runReliableJobs(env);await runReliableJobs(env);
- const usage=await splitAllowance(db,guest,new Date(),'guest');assert.equal(usage.remaining,3);assert.equal(usage.completed,0);assert.equal(usage.inProgress,0);
+ const usage=await splitAllowance(db,guest,new Date(),'guest');assert.equal(usage.remaining,5);assert.equal(usage.completed,0);assert.equal(usage.inProgress,0);
  assert.equal((await readOperation(db,operation.id))?.state,'failed');
 });
 
@@ -170,7 +170,7 @@ test('cancel HTTP route forwards promptly, preserves ownership, and starts no ot
  assert.equal((await request(other.id)).status,404);assert.equal(cancels,0);
  assert.equal((await request(operation.id)).status,200);assert.equal(cancels,1);
  assert.equal((await readOperation(db,other.id))?.state,'queued');assert.equal((await readOperation(db,operation.id))?.state,'cancelled');
- assert.equal((await splitAllowance(db,guest,new Date(),'guest')).remaining,3);
+ assert.equal((await splitAllowance(db,guest,new Date(),'guest')).remaining,5);
  assert.equal((await request(operation.id)).status,200);assert.equal(cancels,1,'duplicate cancellation is settled locally');
 });
 

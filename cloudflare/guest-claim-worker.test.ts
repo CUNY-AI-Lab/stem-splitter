@@ -17,8 +17,8 @@ test('workerd claims require both verified browser cookie and Lab membership, no
   const sql=async(statements:string[])=>assert.equal((await worker.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status,200);
   await sql(schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')));
   const call=(path:string,headers:Record<string,string>={},body?:string)=>worker.fetch(origin+path,{redirect:'manual',method:body===undefined?'GET':'POST',headers:{Origin:origin,'Content-Type':'application/json',...(path==='/api/account/claim-guest'?{'X-Stem-Claim-Actor':member}:{}),...headers},body});
-  assert.equal(((await(await call('/api/runtime')).json() as any).guest).splitLimit,3);
-  const started=await call('/auth/guest',{},'{}');assert.equal(started.status,200);assert.equal((await started.clone().json() as any).splitLimit,3);
+  assert.equal(((await(await call('/api/runtime')).json() as any).guest).splitLimit,5);
+  const started=await call('/auth/guest',{},'{}');assert.equal(started.status,200);assert.equal((await started.clone().json() as any).splitLimit,5);
   const cookie=started.headers.get('set-cookie')!.split(';')[0];
   const guestAccount=await(await call('/api/account',{Cookie:cookie})).json() as any;
   const guest=guestAccount.account.subject;assert.match(guest,/^guest-[0-9a-f]{64}$/);

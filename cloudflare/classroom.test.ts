@@ -48,7 +48,7 @@ async function setup(){
 test('Lab membership grants personal access while course enrollment and ownership protect course APIs',async()=>{
   const {request,job,revoked,env}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
   const outsiderAccount=await request('/api/account','outsider');assert.equal(outsiderAccount.status,200);
-  assert.equal((await outsiderAccount.json() as any).account.role,'member');assert.equal((await(await request('/api/account','outsider')).json() as any).splitAllowance.limit,5);
+  assert.equal((await outsiderAccount.json() as any).account.role,'member');assert.equal((await(await request('/api/account','outsider')).json() as any).splitAllowance.limit,15);
   assert.equal((await request('/api/uploads','outsider','POST',{filename:'x.wav'},{'x-stem-course':B})).status,403);
   assert.equal((await request('/api/classroom/courses/'+B+'/folders','outsider')).status,403);
   assert.equal((await request('/api/jobs/b','alice')).status,200);
@@ -66,9 +66,9 @@ test('Lab membership grants personal access while course enrollment and ownershi
   revoked.add(`${ids.alice}:${A}`);
   for(const path of ['/api/jobs/a','/api/jobs/b','/api/jobs/a/chat','/api/files/stems/a/vocals.mp3'])assert.equal((await request(path,'alice',path.endsWith('chat')?'POST':'GET',path.endsWith('chat')?{}:undefined)).status,403);
   const personalRuns=await request('/api/jobs');assert.equal(personalRuns.status,200);
-  const personalAccount=await request('/api/account');assert.equal(personalAccount.status,200);assert.equal((await personalAccount.json() as any).splitAllowance.limit,5);
+  const personalAccount=await request('/api/account');assert.equal(personalAccount.status,200);assert.equal((await personalAccount.json() as any).splitAllowance.limit,15);
   env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>{throw new Error('private detail');};
-  const courseOutageAccount=await request('/api/account');assert.equal(courseOutageAccount.status,200);assert.equal((await courseOutageAccount.json() as any).splitAllowance.limit,5);
+  const courseOutageAccount=await request('/api/account');assert.equal(courseOutageAccount.status,200);assert.equal((await courseOutageAccount.json() as any).splitAllowance.limit,15);
   const anonymous=await app.fetch(new Request('https://split.test/api/account'),env);assert.equal(anonymous.status,401);
 });
 test('roster includes zero-work students and stable pages; scoped counts and split cursors',async()=>{
