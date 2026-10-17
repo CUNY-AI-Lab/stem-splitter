@@ -157,7 +157,7 @@ export async function fetchYouTubeAudio(url: string, env: Env): Promise<YouTubeA
   );
   if (timedOut) throw youtubeTimedOut();
   throw new YouTubeError(
-    'This source could not be imported. Try a different video, upload your own audio, or browse the Crate for openly licensed music.',
+    'This source could not be imported. Try a different video, upload your own audio, or search for a song.',
     'youtube_fetch_blocked',
     false
   );

@@ -8,7 +8,6 @@ import {
   fetchArchiveAudio,
   fetchArchiveItem,
   verifyArchiveSample,
-  isArchiveScope,
   parseArchiveIdentifier,
 } from '../src/archive.ts';
 
@@ -69,10 +68,8 @@ function makeMp3(size = 2048): Uint8Array {
   return bytes;
 }
 
-test('Archive parsers refuse malformed identifiers and inherited scope names', () => {
+test('Archive parsers refuse malformed identifiers', () => {
   assert.equal(parseArchiveIdentifier('https://archive.org/details/%E0%A4%A'), null);
-  assert.equal(isArchiveScope('toString'), false);
-  assert.equal(isArchiveScope('music'), true);
 });
 
 test('Archive direct import enforces the same open-license floor as search', async () => {

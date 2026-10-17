@@ -47,8 +47,6 @@ owns their recordings; class enrollment alone does not share everyone's audio.
 
 | Action | Current accounting |
 | --- | --- |
-| Search the Crate, load source details | No model inference |
-| Preview or add Archive audio to Remixer | No separation model; browser mixing |
 | Play, mute, layer, annotate, export | No model inference |
 | Generate a new Listening Guide or chat reply | Lab Gateway, using the signed-in person's current allowance |
 | Open an already cached Listening Guide | No new model call |
@@ -104,20 +102,12 @@ Required implementation order:
    new work, and continued access to existing playback. Separately verify that
    revoked/expired class-only membership loses access.
 
-## Crate purpose
+## Internet Archive songs
 
-The Crate is an Internet Archive source browser: students can search music or
-other open audio, inspect the creator/license/source, and import an eligible
-track for separation. The server repeats license checks and excludes material
-that prohibits derivatives. Displayed imports are bounded to five minutes and
-100 MB.
-
-With Remixer enabled, PREVIEW and ADD TO MIX load bounded whole-track audio
-without separating it. Students can combine up to eight layers, including stems
-sent from Splitter, adjust volume/pan/entry/speed/reverse/loop/mute, record a take,
-and download audio with credits and arrangement metadata. License compatibility
-is checked before combining/exporting. Raw layers and takes are browser-session
-work; download them before leaving. The Crate itself is not saved-work storage.
+Students find Internet Archive recordings through the Splitter's song search.
+The server repeats license checks when the item loads and refuses material that
+prohibits derivatives. The separate Crate browser was removed on 2026-10-17;
+the Remixer starts from stems sent from the Splitter.
 
 ## Sources
 

@@ -2,8 +2,8 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
-  // Only the fully-mocked suite: the live specs (real-audio, archive-crate)
-  // run through their own configs and must never ride along in `test:e2e`.
+  // Only the fully-mocked suite: the live real-audio spec runs through its
+  // own config and must never ride along in `test:e2e`.
   testMatch: 'local-hosting.spec.mjs',
   timeout: 30_000,
   expect: { timeout: 15_000 },

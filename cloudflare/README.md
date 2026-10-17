@@ -73,17 +73,13 @@ Chrome UI, and dry-builds only this candidate. It does not deploy. Root analyzer
 dependency and existing native-image workflow inputs remain unchanged.
 See `../docs/superpowers/plans/2026-09-23-cloudflare-gateway.md` for acceptance.
 
-## Class access and Crate placement
+## Class access
 
 The Cloudflare production and Workerd-test bundles alias Hono to the adapter's
 patched `hono-cloudflare` pin (4.13.11). Keep the two alias maps aligned. The
 root dependency lock belongs to the frozen native-analyzer evidence and is not
 silently rebaselined by this Cloudflare release. Its older Hono dependency still
 needs a separately validated update before rebuilding that host.
-
-The Crate is temporarily hidden in Splitter. When Remixer is enabled, the single
-Crate appears below the remix deck. Its search state and source attribution
-survive station changes.
 
 Active Lab class enrollment satisfies the existing Admission check, and the
 first signed-in request creates the student's local app record. No second
