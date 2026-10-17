@@ -113,25 +113,30 @@ test('redirects are re-checked at every hop', async t => {
   }
 });
 
-test('a host check runs before every hop and fails closed', async t => {
-  const AUDIO = bucket(t), checked: string[] = [];
-  const isPublicHost = async (hostname: string) => { checked.push(hostname); return hostname !== 'internal.example.net'; };
-  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
-    assert.equal(String(input), source, 'the private redirect target must never be requested');
-    return new Response(null, { status: 302, headers: { location: 'https://internal.example.net/x.mp3' } });
-  });
-  const refused = await importLink({ AUDIO, isPublicHost }, request());
-  assert.ok(!refused.ok); assert.equal(refused.code, 'source_untrusted_redirect');
-  assert.deepEqual(checked, ['media.example.org', 'internal.example.net']);
-  const failing = await importLink({ AUDIO, isPublicHost: async () => { throw new Error('resolver down'); } }, request());
-  assert.ok(!failing.ok); assert.equal(failing.code, 'invalid_source_url');
+test('a supplied connection-pinned fetch carries every hop', async t => {
+  const AUDIO = bucket(t), requested: string[] = [];
+  t.mock.method(globalThis, 'fetch', async () => assert.fail('The platform fetch must not be used when a pinned fetch is supplied'));
+  const pinned = async (url: string) => {
+    requested.push(url);
+    if (url === source) return new Response(null, { status: 302, headers: { location: 'https://internal.example.net/x.mp3' } });
+    throw Object.assign(new Error('Refusing a non-public address for internal.example.net'), { code: 'EADDRNOTPUBLIC' });
+  };
+  const refused = await importLink({ AUDIO, fetch: pinned }, request());
+  assert.ok(!refused.ok); assert.equal(refused.code, 'source_unreachable');
+  assert.deepEqual(requested, [source, 'https://internal.example.net/x.mp3', source, 'https://internal.example.net/x.mp3', source, 'https://internal.example.net/x.mp3']);
 });
 
-test('the Node host check rejects loopback names and address literals', async () => {
-  const { isPublicHost } = await import('../server/public-host.ts');
-  assert.equal(await isPublicHost('localhost'), false);
-  assert.equal(await isPublicHost('127.0.0.1'), false);
-  assert.equal(await isPublicHost('::1'), false);
+test('the Node host connects only to public unicast addresses', async () => {
+  const { isPublicAddress, publicOnlyFetch } = await import('../server/public-host.ts');
+  for (const [address, family] of [['127.0.0.1', 4], ['10.1.2.3', 4], ['100.64.0.1', 4], ['169.254.169.254', 4], ['192.168.1.1', 4],
+    ['::1', 6], ['::ffff:127.0.0.1', 6], ['::7f00:1', 6], ['fe80::1', 6], ['fc00::1', 6], ['fec0::1', 6], ['64:ff9b::7f00:1', 6],
+    ['64:ff9b:1::1', 6], ['2001::1', 6], ['2001:db8::1', 6], ['2002:7f00:1::1', 6]] as const) {
+    assert.equal(isPublicAddress(address, family), false, address);
+  }
+  for (const [address, family] of [['8.8.8.8', 4], ['1.1.1.1', 4], ['2606:4700:4700::1111', 6]] as const) assert.equal(isPublicAddress(address, family), true, address);
+  await assert.rejects(publicOnlyFetch('https://localhost/x.mp3'), { code: 'EADDRNOTPUBLIC' });
+  await assert.rejects(publicOnlyFetch('https://127.0.0.1/x.mp3'), TypeError);
+  await assert.rejects(publicOnlyFetch('http://example.org/x.mp3'), TypeError);
 });
 
 test('pages and oversized files go to the hosted importer; private shares are refused', async t => {

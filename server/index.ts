@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import app from '../src/index';
 import type { Env } from '../src/env';
 import { handleLinkImportRequest } from '../src/link-import';
-import { isPublicHost } from './public-host';
+import { publicOnlyFetch } from './public-host';
 import { runtimeConfigurationSummary, runtimeConfigurationWarnings } from './config';
 import { SqliteD1 } from './d1';
 import { FsR2Bucket } from './r2';
@@ -85,7 +85,7 @@ const env = {
   URL_IMPORT_ENABLED: process.env.URL_IMPORT_ENABLED,
   LINK_IMPORT_ENABLED: process.env.LINK_IMPORT_ENABLED,
   // In-process stand-in for the cail-stem-import service binding.
-  LINK_IMPORT: { fetch: (request: Request) => handleLinkImportRequest(request, { AUDIO: audio as unknown as R2Bucket, isPublicHost }) },
+  LINK_IMPORT: { fetch: (request: Request) => handleLinkImportRequest(request, { AUDIO: audio as unknown as R2Bucket, fetch: publicOnlyFetch }) },
   YOUTUBE_FETCH_ORDER: process.env.YOUTUBE_FETCH_ORDER ?? 'replicate-first',
   ASSISTANT_MODEL: process.env.ASSISTANT_MODEL,
   ASSISTANT_FALLBACK_MODELS: process.env.ASSISTANT_FALLBACK_MODELS,
