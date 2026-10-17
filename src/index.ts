@@ -2405,7 +2405,13 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
     )
       .bind('done', JSON.stringify(published), outputModel, jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null,Date.now(),Date.now())
       .run();
-    if (!committed.meta.changes) await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
+    if (!committed.meta.changes) {
+      if (operation) await env.DB.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No allowance was used.'
+        WHERE id=? AND status='ingesting' AND error=? AND EXISTS(SELECT 1 FROM app_operations
+          WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=1)`)
+        .bind(jobId,lease,operation.id,operation.fence,operation.lease_owner).run();
+      await Promise.allSettled(stored.map(({key})=>env.AUDIO.delete(key)));
+    }
     else {
       const keep = new Set(published.map(stem => stem.key));
       await Promise.allSettled(stored.filter(stem => !keep.has(stem.key)).map(stem => env.AUDIO.delete(stem.key)));
