@@ -216,8 +216,8 @@ async function splitRequestKey(body) {
 }
 
 async function api(path, options = {}) {
-  await appReady;
-  const { onResults, background = false, ...requestOptions } = options;
+  const { onResults, background = false, publicSample = false, ...requestOptions } = options;
+  if (!publicSample) await appReady;
   const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(options.body) : null;
   const send = () => fetch(path, {
     ...requestOptions,
@@ -418,6 +418,8 @@ const defaultSongPlaceholder = ytUrlInput.placeholder;
 const sampleReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let sampleTimer = 0, sampleDismissed = false, sampleStarted = false;
 let sampleCache = null;
+let sampleLoad = null;
+const verifiedSongSamples = [];
 const recentSongSearches = new Map();
 const songSearchKey = term => term.toLowerCase().replace(/\s+/g, ' ').trim();
 function rememberSongSearch(term, data) {
@@ -443,57 +445,72 @@ function stopSongSample(cancelPreload = true) {
     sampleCache = null;
   }
 }
-function preloadSongSample() {
-  // One bounded background selection per visit, without triggering sign-in.
-  if (sampleStarted || (runtime.authMode === 'cail' ? !accountSubject : !getClassCode())) return;
-  sampleStarted = true;
-  const cache = { controller: new AbortController(), batches: [], pending: true, createdAt: Date.now(), listener: null };
+function selectSongSample(cache) {
   sampleCache = cache;
-  const deadline = setTimeout(() => cache.controller.abort(), 15000);
-  cache.promise = (async () => {
-    const response = await fetch('/search-samples.json', { signal: cache.controller.signal });
-    if (!response.ok) throw new Error('Song candidates unavailable');
+  SAMPLE_SONG_QUERY = cache.query;
+  sampleHint.setAttribute('aria-label', `Use suggested song: ${cache.query}. Tab to accept.`);
+}
+function preloadSongSample() {
+  if (sampleStarted) return;
+  sampleStarted = true;
+  const controller = new AbortController();
+  sampleLoad = controller;
+  const deadline = setTimeout(() => controller.abort(), 15000);
+  void (async () => {
+    const response = await fetch('/search-samples.json', { signal: controller.signal });
+    if (!response.ok) return;
     const candidates = await response.json();
-    if (!Array.isArray(candidates)) throw new Error('Invalid song candidates');
+    if (!Array.isArray(candidates)) return;
     const shuffled = candidates.filter(track => ['artist', 'title', 'archiveId', 'archiveFile'].every(key => typeof track?.[key] === 'string' && track[key].trim()));
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-    for (const candidate of shuffled.slice(0, 3)) {
-      if (cache.controller.signal.aborted || sampleCache !== cache) break;
-      const query = `${candidate.artist} ${candidate.title}`;
-      const verified = new Map();
-      const receive = data => {
-        if (cache.controller.signal.aborted || sampleCache !== cache) return;
-        const matches = (data.results || []).filter(track => track.archiveId === candidate.archiveId && track.archiveFile === candidate.archiveFile);
-        if (!matches.length) return;
-        for (const track of matches) verified.set(track.id, track);
-        const batch = { ...data, results: matches };
-        cache.batches.push(batch);
-        SAMPLE_SONG_QUERY = query;
-        sampleHint.setAttribute('aria-label', `Use suggested song: ${query}. Tab to accept.`);
-        cache.listener?.(batch);
-        showSongSample();
-      };
-      try {
-        const data = await api(`/api/music/search?q=${encodeURIComponent(query)}&sampleItem=${encodeURIComponent(candidate.archiveId)}&sampleFile=${encodeURIComponent(candidate.archiveFile)}`, {
-          background: true, signal: cache.controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: receive,
-        });
-        receive(data);
-        if (verified.size) return { data: { results: [...verified.values()] } };
-      } catch { if (cache.controller.signal.aborted) break; }
-    }
-    if (sampleCache === cache) sampleCache = null;
-    return { failed: true };
-  })().catch(() => {
-    if (sampleCache === cache) sampleCache = null;
-    return { failed: true };
-  }).finally(() => { cache.pending = false; clearTimeout(deadline); });
+    let next = 0;
+    const loadNext = async () => {
+      while (next < shuffled.length && !controller.signal.aborted && sampleVisible()) {
+        const candidate = shuffled[next++], query = `${candidate.artist} ${candidate.title}`;
+        const matches = new Map();
+        const cache = { query, controller, batches: [], pending: true, createdAt: Date.now(), listener: null, promise: null };
+        const receive = data => {
+          if (controller.signal.aborted) return;
+          const results = (data.results || []).filter(track => track.archiveId === candidate.archiveId && track.archiveFile === candidate.archiveFile);
+          if (!results.length) return;
+          const first = !matches.size;
+          for (const track of results) matches.set(track.id, track);
+          const batch = { ...data, results };
+          cache.batches.push(batch);
+          if (first) verifiedSongSamples.push(cache);
+          if (!sampleCache) { selectSongSample(cache); showSongSample(); }
+          cache.listener?.(batch);
+        };
+        cache.promise = (async () => {
+          try {
+            const data = await api(`/api/music/search?q=${encodeURIComponent(query)}&sampleItem=${encodeURIComponent(candidate.archiveId)}&sampleFile=${encodeURIComponent(candidate.archiveFile)}`, {
+              publicSample: true, background: true, signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: receive,
+            });
+            receive(data);
+          } catch { /* An unavailable candidate never becomes a suggestion. */ }
+          finally { cache.pending = false; }
+          return matches.size ? { data: { results: [...matches.values()] } } : { failed: true };
+        })();
+        await cache.promise;
+        if (verifiedSongSamples.length >= 4) return;
+      }
+    };
+    // First-ready wins; one slow Archive item cannot hold back another song.
+    await Promise.all([loadNext(), loadNext(), loadNext()]);
+  })().catch(() => {}).finally(() => { clearTimeout(deadline); });
 }
 
 function showSongSample() {
   if (!sampleVisible()) return;
+  for (let i = verifiedSongSamples.length - 1; i >= 0; i--) {
+    if (Date.now() - verifiedSongSamples[i].createdAt >= 60000) verifiedSongSamples.splice(i, 1);
+  }
+  if (sampleCache && !verifiedSongSamples.includes(sampleCache)) { sampleCache = null; SAMPLE_SONG_QUERY = ''; }
+  if (!sampleCache && verifiedSongSamples.length) selectSongSample(verifiedSongSamples[0]);
+  if (!sampleCache && sampleLoad?.signal.aborted) sampleStarted = false;
   preloadSongSample();
   if (!SAMPLE_SONG_QUERY || !sampleCache || !sampleHint.hidden) return;
   sampleHint.hidden = false;
@@ -505,7 +522,19 @@ function showSongSample() {
     ytUrlInput.placeholder = SAMPLE_SONG_QUERY.slice(0, shown);
     if (shown < SAMPLE_SONG_QUERY.length) {
       shown++;
-      sampleTimer = setTimeout(tick, 110);
+      sampleTimer = setTimeout(tick, 45);
+    } else if (!sampleReducedMotion.matches) {
+      sampleTimer = setTimeout(() => {
+        if (!sampleVisible()) return;
+        if (Date.now() - sampleCache.createdAt >= 60000) {
+          sampleLoad?.abort(); sampleHint.hidden = true; showSongSample(); return;
+        }
+        const index = verifiedSongSamples.indexOf(sampleCache);
+        const next = verifiedSongSamples[(index + 1) % verifiedSongSamples.length];
+        if (next && next !== sampleCache) {
+          selectSongSample(next); sampleHint.hidden = true; showSongSample();
+        } else tick();
+      }, 1800);
     }
   };
   tick();
@@ -532,7 +561,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopSongSample();
   else showSongSample();
 });
-window.addEventListener('pagehide', () => stopSongSample());
+window.addEventListener('pagehide', () => { stopSongSample(); sampleLoad?.abort(); });
+showSongSample();
 
 function closeSongSuggestions() {
   sourceSongs.hidden = true;

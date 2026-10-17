@@ -1,3 +1,4 @@
+import { isPlaylistSample, playlistSampleResponse } from '../src/playlist-samples.ts';
 import { recordPageUse, recordServerUse, recordSignInUse } from '../src/reliability/observability.ts';
 import { youtubeImportConfiguration } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
@@ -83,6 +84,11 @@ export default {
             : {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},
           listeningGuide: { configured: Boolean(env.GATEWAY && gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL)),
             transport: 'cail-gateway', fallbackConfigured: gatewayModelsConfigured(env.GATEWAY_MODEL,env.GATEWAY_FALLBACK_MODEL) } });
+      } else if (isPlaylistSample(request)) {
+        const limited = env.REQUEST_LIMIT ? await env.REQUEST_LIMIT.limit({ key: 'playlist-sample:' + (request.headers.get('cf-connecting-ip') || 'unknown') }) : { success: true };
+        response = limited.success
+          ? await playlistSampleResponse(request, typeof caches !== 'undefined' ? caches.default : undefined)
+          : Response.json({ results: [] }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } });
       } else if (url.pathname === '/api/bug-reports') {
         response = await handleBugReport(request, { app: 'stem-splitter', origin: env.PUBLIC_BASE_URL,
           service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
@@ -126,7 +132,7 @@ export default {
       .replace("connect-src 'self';","connect-src 'self' https://challenges.cloudflare.com;")
       + '; frame-src https://challenges.cloudflare.com');
     if (url.pathname.startsWith('/auth/')) headers.set('Referrer-Policy', 'no-referrer');
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname === '/healthz') headers.set('Cache-Control', 'private, no-store');
+    if ((url.pathname.startsWith('/api/') && !isPlaylistSample(request)) || url.pathname.startsWith('/auth/') || url.pathname === '/healthz') headers.set('Cache-Control', 'private, no-store');
     return new Response(response.body, { status: response.status, headers });
   },
 } satisfies ExportedHandler<WorkerEnv>;
