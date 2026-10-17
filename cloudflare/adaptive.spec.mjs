@@ -8,7 +8,7 @@ import {setupServer} from 'msw/node';
 import {http,HttpResponse} from 'msw';
 import {schemaStatements} from '../tests/e2e/schema-statements.mjs';
 const names=['vocals','drums','bass','other','guitar','piano'];
-function tone(i,dense){const r=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',`sine=frequency=${[500,1500,80,250,900,650][i]}:sample_rate=44100:duration=2`,'-af',`volume=${dense ? .8 : [.8,.8,.0008,.8,4,.0008][i]}`,'-ac','2','-c:a','libmp3lame','-b:a','192k','-f','mp3','pipe:1']);if(r.status!==0)throw Error(String(r.stderr));return r.stdout;}
+function tone(i,dense){const levels=dense==='sparse'?[4,.0008,.0008,.0008,.0008,.0008]:dense?Array(6).fill(.8):[.8,.8,.0008,.8,4,.0008];const r=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',`sine=frequency=${[500,1500,80,250,900,650][i]}:sample_rate=44100:duration=2`,'-af',`volume=${levels[i]}`,'-ac','2','-c:a','libmp3lame','-b:a','192k','-f','mp3','pipe:1']);if(r.status!==0)throw Error(String(r.stderr));return r.stdout;}
 async function fixture(context,page,dense=false){
  const issuer=await createTestIdentityIssuer(),jwt=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
  const audio=Object.fromEntries(names.map((name,i)=>[name,tone(i,dense)]));let starts=0;
@@ -56,6 +56,22 @@ test('Auto analyzes imported audio through the actual six-source path and keeps 
   const console=page.locator('.console').first();await expect(console.getByText('READY',{exact:true})).toBeVisible({timeout:20000});
   expect(submitted[0]).toMatchObject({model:'auto',archiveId:'fixture-adaptive',archiveFile:'fixture.mp3'});
   await expect(console.locator('.ch-name')).toHaveText(['vocals','drums','bass','other','guitar','piano']);
+  expect(f.starts()).toBe(1);expect(errors).toEqual([]);
+ }finally{await f.close();}
+});
+
+
+test('Auto publishes and plays two real layers for a sparse source',async({page,context})=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));const f=await fixture(context,page,'sparse');
+ try{
+  await page.getByRole('radio',{name:'Auto: listen after import and choose 2, 4, or 6 splits',exact:true}).check();
+  await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav',import.meta.url)));
+  const console=page.locator('.console').first();await expect(console.getByText('READY',{exact:true})).toBeVisible({timeout:20000});
+  await expect(console.locator('.ch-name')).toHaveText(['vocals','other']);
+  await expect(console.locator('.split-meta')).toContainText('2 SPLITS');
+  await console.getByRole('button',{name:'Play all stems',exact:true}).click();
+  await expect.poll(async()=>Number(await console.getByRole('slider',{name:'Seek',exact:true}).inputValue())).toBeGreaterThan(0);
+  await console.getByRole('button',{name:'Play all stems',exact:true}).click();
   expect(f.starts()).toBe(1);expect(errors).toEqual([]);
  }finally{await f.close();}
 });

@@ -27,3 +27,17 @@ A Cloudflare-only flag gates the new four-layer picker and adaptive Auto mode. L
 Seven real app/provider jobs established the original six-example audit and a six-stem Bowie comparison. In the latter, guitar measured about -15 dBFS and bass about -44 dBFS; the selection is vocals/drums/guitar plus the combined remainder. Real outputs are retained outside Git. The standalone streaming codec completed that whole track in the Workerd test runtime in about 29 seconds. Its four MP3s decode and pass gross reconstruction correlation; the provisional residual threshold still produces a warning, which must be retained in reporting.
 
 Before rollout require selector tests, real-codec Workerd tests, production-handler integration tests, browser coverage for adaptive requests/completed names, the normal required CI gates, exact merged-tree identity, and a live authenticated canary. The existing instructor playlist selection and timing remain independent from model selection.
+
+## Final acceptance checklist
+
+The refreshed branch includes the deployed landing copy and narrow-screen suggestion fixes. Local verification covers 403 shared tests, 244 Cloudflare tests, root/adapter type checks, and three actual-codec browser cases: guitar-focused four, dense Auto-six, and sparse Auto-two. The handler test covers queue handoff, an expired ingestion marker, a transient storage failure, retry without another prediction, and output ownership. These use a mocked provider boundary and do not replace real-song acceptance.
+
+Remaining before release:
+
+- Obtain green required CI on the refreshed PR head; earlier green commits do not cover this combined tree.
+- Exercise a long input near the 15-minute limit to confirm codec memory, CPU budget, alignment and lease renewal in Workerd.
+- Verify the actual Cloudflare queue binding/consumer and a full-song canary, including completion after closing the initiating tab and no duplicate paid prediction.
+- Check guitar-focused four-layer output on the guitar-led example and the other five curated recordings. Decode every final MP3, inspect duration, per-layer levels, distinctness, reconstruction and any residual warnings; check playback, seeking, mute and downloads in the live app. Recheck explicit two and six to protect their existing contracts.
+- Capture a queue-capable flag-off rollback version and prove the merged tree equals the tested tree before production acceptance. No database migration or provider-pin change is required.
+
+The current browser account was checked on October 17: zero of five runs remain, resetting at 8 PM EDT. Fresh paid canaries require available allowance; no quota reset or access change is part of this feature. Existing real-song results and the full-track Workerd prototype remain useful evidence, but they are not a live test of the new adaptive default.
