@@ -1029,7 +1029,11 @@ app.get('/api/music/search', requireClassCode, async (c) => {
       const result = await verifyArchiveSample(c.req.query('q') ?? '', c.req.query('sampleItem') ?? '', c.req.query('sampleFile') ?? '',
         c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300);
       return c.json(result, 200, { 'Cache-Control': 'private, no-store' });
-    } catch (error) { return archiveErrorResponse(c, error, 'Song verification is temporarily unavailable.'); }
+    } catch (error) {
+      // Missing, restricted or temporarily unavailable candidates are simply not suggestions.
+      if (error instanceof ArchiveError) return c.json({ results: [] }, 200, { 'Cache-Control': 'private, no-store' });
+      return archiveErrorResponse(c, error, 'Song verification is temporarily unavailable.');
+    }
   }
 
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
