@@ -1,3 +1,4 @@
+export class InvalidStemAudioError extends Error {}
 /** Structural preflight only. Settlement additionally requires validateMp3Pcm
  * with the trusted platform decoder; frame headers alone are insufficient. */
 export function validMp3Frames(data: ArrayBuffer): boolean {

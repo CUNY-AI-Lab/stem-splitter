@@ -5,7 +5,6 @@
     "": {
       "name": "stem-splitter-cloudflare",
       "dependencies": {
-        "@breezystack/lamejs": "1.2.7",
         "@cloudflare/puppeteer": "1.1.0",
         "@cuny-ai-lab/cail-client": "6.2.2",
         "@cuny-ai-lab/cail-identity": "5.2.6",
@@ -13,6 +12,7 @@
         "googlevideo": "4.1.1",
         "hono-cloudflare": "npm:hono@4.13.11",
         "mpg123-decoder": "1.0.3",
+        "wasm-media-encoders": "0.7.0",
       },
       "devDependencies": {
         "wrangler": "4.129.0",
@@ -20,8 +20,6 @@
     },
   },
   "packages": {
-    "@breezystack/lamejs": ["@breezystack/lamejs@1.2.7", "", {}, "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA=="],
-
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.16.0", "", {}, "sha512-FWa0sPlqYGJgpTs6OxBRcL/AW4JT0OIO+W1ajerluoTVh8CV0B7XM1qsNCRgnkSCkRCgOICKHRQlY17jrsm0+Q=="],
 
     "@cloudflare/kv-asset-handler": ["@cloudflare/kv-asset-handler@0.5.0", "", {}, "sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg=="],
@@ -42,11 +40,11 @@
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 
-    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "https://registry.npmjs.org/@cuny-ai-lab/cail-client/-/cail-client-6.2.2.tgz", { "dependencies": { "zod": "4.4.3" } }, "sha512-4aBjULb7Bd7O8kBT7lrM5OGC7sTHkTp9Lc/5mMpK9f+QRSCkEK+eUCJjl/+ZPRdXoOk+XpyUdLZB8OtUvE5+xQ=="],
+    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "", { "dependencies": { "zod": "4.4.3" } }, "sha512-4aBjULb7Bd7O8kBT7lrM5OGC7sTHkTp9Lc/5mMpK9f+QRSCkEK+eUCJjl/+ZPRdXoOk+XpyUdLZB8OtUvE5+xQ=="],
 
-    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "https://registry.npmjs.org/@cuny-ai-lab/cail-identity/-/cail-identity-5.2.6.tgz", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-j4Klru5ivG6ZWoGQBvIIiI2v7EDwDPiDIOvzsOV73n7LrUj3deCXM4tzFTfhZntaYdonFh4lJ9xs933YwNRnNA=="],
+    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-j4Klru5ivG6ZWoGQBvIIiI2v7EDwDPiDIOvzsOV73n7LrUj3deCXM4tzFTfhZntaYdonFh4lJ9xs933YwNRnNA=="],
 
-    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "https://registry.npmjs.org/@cuny-ai-lab/cail-log/-/cail-log-0.6.4.tgz", { "dependencies": { "zod": "4.4.3" } }, "sha512-j/YEmBC1hi/64rYTmHp8sawk5xJCQMCBU0F2ZllFIMbXMEG3mq0yF5SYo9sgqjn0MHy+ZQLdE2Svbz/oUbOTRA=="],
+    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "", { "dependencies": { "zod": "4.4.3" } }, "sha512-j/YEmBC1hi/64rYTmHp8sawk5xJCQMCBU0F2ZllFIMbXMEG3mq0yF5SYo9sgqjn0MHy+ZQLdE2Svbz/oUbOTRA=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 
@@ -175,6 +173,8 @@
     "@sindresorhus/is": ["@sindresorhus/is@7.2.0", "", {}, "sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw=="],
 
     "@speed-highlight/core": ["@speed-highlight/core@1.2.24", "", {}, "sha512-qeW2e1l78afw8VhRPfPQ1Gjj+KU5XFQ/OFV5ti6eTa9bruO7mJyZtA4vw0ofqmA3tKCkROE9xLk3VZoeRc98nw=="],
+
+    "@swc/helpers": ["@swc/helpers@0.5.23", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw=="],
 
     "@tootallnate/quickjs-emscripten": ["@tootallnate/quickjs-emscripten@0.23.0", "", {}, "sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA=="],
 
@@ -357,6 +357,8 @@
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "unenv": ["unenv@2.0.0-rc.24", "", { "dependencies": { "pathe": "^2.0.3" } }, "sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw=="],
+
+    "wasm-media-encoders": ["wasm-media-encoders@0.7.0", "", { "dependencies": { "@swc/helpers": "^0.5.10" } }, "sha512-Sp4wUasgxOK/IFfNhpon6LQQgYGwtpxyV4isjGIe1rvhnJL3w2KYr4f+CdqDNtGPDcgCDRY+uBanVfSx6Si0WQ=="],
 
     "workerd": ["workerd@1.20260903.1", "", { "optionalDependencies": { "@cloudflare/workerd-darwin-64": "1.20260903.1", "@cloudflare/workerd-darwin-arm64": "1.20260903.1", "@cloudflare/workerd-linux-64": "1.20260903.1", "@cloudflare/workerd-linux-arm64": "1.20260903.1", "@cloudflare/workerd-windows-64": "1.20260903.1" }, "bin": { "workerd": "bin/workerd" } }, "sha512-xJzt2RnCy7ulOULmZy/4JLbEPg1uisp9lVoOUsEz+UVhDsTmrSQ0rBXZMGcXuhr2HCGKs89bg8nnbbzvBSX1Ig=="],
 

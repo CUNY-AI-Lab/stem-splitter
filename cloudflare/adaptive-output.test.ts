@@ -49,10 +49,11 @@ test('workerd: adaptive four publishes guitar and a real remainder with ownershi
     if(!drained.delivered)await new Promise(r=>setTimeout(r,250));
   }
   assert.ok(drained.delivered>=1);assert.ok(drained.retried>=1,'transient storage failures retry without spending another allowance');
+  assert.equal((await (await call(`/api/jobs/${created.id}`)).json() as any).operation.phase,'output');
   const recovered=await(await worker.fetch('/__fixture/adaptive-queue',{headers:{'x-fixture':'local-only'}})).json() as typeof drained;
   assert.ok(recovered.delivered>=1);assert.equal(recovered.retried,0);assert.equal(recovered.acked,recovered.delivered);
   let job:{status:string;model:string;expectedStems:string[];stems:{name:string;url:string}[]}|undefined;
-  for(let i=0;i<50;i++){job=await(await call(`/api/jobs/${created.id}`)).json() as typeof job;if(job?.status==='done'||job?.status==='failed')break;await new Promise(r=>setTimeout(r,50));}
+  for(let i=0;i<50;i++){await worker.fetch('/__fixture/adaptive-queue',{headers:{'x-fixture':'local-only'}});job=await(await call(`/api/jobs/${created.id}`)).json() as typeof job;if(job?.status==='done'||job?.status==='failed')break;await new Promise(r=>setTimeout(r,50));}
   assert.equal(job?.status,'done',JSON.stringify(job));assert.equal(starts,1);assert.equal(job!.model,'adaptive_4__vocals_drums_guitar');
   assert.deepEqual(job!.expectedStems,['vocals','drums','guitar','other']);assert.deepEqual(job!.stems.map(s=>s.name),['vocals','drums','guitar','other']);
   assert.equal((await call(`/api/jobs/${created.id}`,1)).status,404);const hashes=[];

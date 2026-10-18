@@ -253,3 +253,37 @@ approved normal-runtime audio acceptance check, including long tracks/resource
 limits. No test here launches a paid job or changes production. The root
 analysis-image dependency inputs are unchanged; only the adapter gains the
 small pinned decoder dependency and separately imported module.
+
+### Resumable output preparation (October 18)
+
+A successful split prediction is saved as `split-output-v1` in the existing
+operation's `result_json`. This is a private processing journal, not API output.
+The marker removes that operation from provider-capacity counts while its
+allowance remains reserved until validated publication. The production provider
+ceiling is `SPLIT_CONCURRENCY=2`, with one provider job per subject. Unknown starts
+remain in the count, and the shared Retry-After floor still blocks new starts.
+
+The existing adaptive-output queue now publishes all split contracts. Each
+message completes one source download/measurement, plan, peak scan, encode,
+validation, or final publication. Saved R2 keys and journal entries survive
+retries; publication never starts a new prediction. Delivery URLs are removed
+from the journal after all source files are safely stored. The 90-day content
+purge also redacts these journals.
+
+The journal doubles as an outbox: `not_before` reserves a dispatch for 60 seconds.
+Duplicate polls and callbacks do not repeatedly fetch the finished prediction.
+Lost sends are recovered by cron. Output stages use 60-second renewable fenced
+leases, independent of provider cooldowns. The 24-hour hard deadline remains
+unchanged. Cancellation or expiry fences output publication and releases the
+app allowance once; it does not promise a provider refund.
+
+One output stage runs at a time because each native decoder/encoder reserves
+about 16 MiB. The five-source Auto remainder uses a 5 MiB multipart upload buffer;
+full output validation runs in a later invocation. Interrupted multipart uploads
+are covered by the bucket's one-day incomplete-upload cleanup. Uncertain D1
+acknowledgements are read back before object deletion. CPU termination can still
+leave unreferenced objects for the existing retention lifecycle.
+
+Structured `split_output_stage` logs contain only job ID, stage and wall time.
+Compare platform CPU time for the same invocation separately. Existing sanitized
+error logs and DLQ inspection/redrive instructions still apply.

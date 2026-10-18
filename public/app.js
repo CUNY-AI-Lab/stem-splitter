@@ -3635,8 +3635,9 @@ function renderJobs() {
     const operation = state.operation;
     const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(operation?.stage);
     const importing = operation?.phase === 'fetch';
-    const progressLabel = checking ? 'CHECKING STATUS' : queued ? 'QUEUED' : importing ? 'IMPORTING' : 'SEPARATING';
-    const progressNote = checking ? 'Checking the saved run’s current status…' : queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : state.adaptiveOutput || job.adaptiveOutput ? 'Finding the strongest musical layers…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
+    const preparing = operation?.phase === 'output';
+    const progressLabel = checking ? 'CHECKING STATUS' : queued ? 'QUEUED' : importing ? 'IMPORTING' : preparing ? 'PREPARING TRACKS' : 'SEPARATING';
+    const progressNote = checking ? 'Checking the saved run’s current status…' : queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : preparing ? 'Preparing and checking your tracks. You can close this tab and return later.' : state.adaptiveOutput || job.adaptiveOutput ? 'Finding the strongest musical layers…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
     // A silent wait reads as a hung wait. The clock is the server's own start
     // time once polling has one, and the local one until then.
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();

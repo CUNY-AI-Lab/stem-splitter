@@ -14,14 +14,14 @@
     "db:migrate:26:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0026-song-samples.sql"
   },
   "dependencies": {
-    "@breezystack/lamejs": "1.2.7",
     "@cloudflare/puppeteer": "1.1.0",
     "@cuny-ai-lab/cail-client": "6.2.2",
     "@cuny-ai-lab/cail-identity": "5.2.6",
     "@cuny-ai-lab/cail-log": "0.6.4",
     "googlevideo": "4.1.1",
     "hono-cloudflare": "npm:hono@4.13.11",
-    "mpg123-decoder": "1.0.3"
+    "mpg123-decoder": "1.0.3",
+    "wasm-media-encoders": "0.7.0"
   },
   "devDependencies": {
     "wrangler": "4.129.0"

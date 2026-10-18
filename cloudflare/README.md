@@ -317,3 +317,23 @@ Deploy order: deploy `cail-stem-import` first
 (`wrangler deploy --config link-import.jsonc`). A splitter release that declares
 the `LINK_IMPORT` binding fails to deploy while the target Worker is missing.
 Turn the flag on only after that release; roll back by setting it to `"false"`.
+
+### Long-track composition and provider capacity
+
+The October 18 pipeline checkpoints output preparation in the existing D1
+operation and runs one bounded stage per queue message. Native LAME WebAssembly
+replaces the JavaScript encoder. Provider capacity is released as soon as its
+terminal output is durably handed off; the production ceiling is two provider
+jobs, one per subject. Output remains one stage at a time for the 128 MiB isolate
+memory limit and uses 5 MiB multipart buffering. All published MP3s are fully
+decoded in their own validation stages.
+
+No migration, new secret or additional Worker is required. Keep the existing
+queue/DLQ and R2 incomplete-upload policy. `bun run test` includes the actual
+Workerd fifteen-minute four/Auto regression; `output-pipeline.test.ts` covers
+idempotent stage recovery and the multi-Worker queue gate exercises the two-slot
+ceiling. The new `PREPARING TRACKS` state is safe to leave and revisit.
+
+Before rollback, drain pending output work where possible. The previous version
+uses the same schema and prediction but repeats monolithic composition and
+restores the former long-track CPU limitation.

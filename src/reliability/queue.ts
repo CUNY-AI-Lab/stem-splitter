@@ -5,8 +5,8 @@ import { type Operation, type Phase, TERMINAL, readOperation } from './ledger.ts
 export const QUEUE_CAPS = { fetch: 1, split: 1, perSubject: 1 } as const;
 export const WORK_LEASE_MS = 5*60*1000;
 
-export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Date.now()): Promise<Operation | null> {
-  return claimQueuedSplit(db,phase,now);
+export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Date.now(), splitLimit=1): Promise<Operation | null> {
+  return claimQueuedSplit(db,phase,now,undefined,splitLimit);
 }
 
 export const isOwnedSourceImport=(request:{sourceType?:unknown;browserAudio?:unknown;archiveSearch?:unknown})=>
@@ -23,7 +23,7 @@ export async function claimNativeImport(db:D1Database,id:string,subject:string,n
 }
 export const claimVimeoImport=claimNativeImport;
 
-async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,native?:{id:string;subject:string}):Promise<Operation|null> {
+async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,native?:{id:string;subject:string},splitLimit=1):Promise<Operation|null> {
   const owner=crypto.randomUUID();
   // D1 serializes this statement. The subquery plus compare-and-set cannot
   // oversubscribe even when unrelated Worker instances claim simultaneously.
@@ -35,11 +35,11 @@ async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,n
         OR (q.phase='fetch' AND ${nativeSourceSql('q')} AND q.cancel_requested=0 AND q.id=? AND q.subject=?))
       AND ((q.phase='fetch' AND ${nativeSourceSql('q')})
         OR COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)<=?)
-      AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
-      AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.subject=q.subject AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
+      AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.phase=q.phase AND COALESCE(json_extract(a.result_json,'$.kind'),'')<>'split-output-v1' AND a.state IN ('running','starting','processing','reconciling'))<?
+      AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.subject=q.subject AND a.phase=q.phase AND COALESCE(json_extract(a.result_json,'$.kind'),'')<>'split-output-v1' AND a.state IN ('running','starting','processing','reconciling'))<?
       ORDER BY COALESCE(f.last_started,0),q.created_at,q.id LIMIT 1)
     AND state='queued' RETURNING *`)
-    .bind(owner,now+WORK_LEASE_MS,now,phase,now,now,native?.id??null,native?.id??null,native?.subject??null,now,QUEUE_CAPS[phase],QUEUE_CAPS.perSubject).first<Operation>();
+    .bind(owner,now+WORK_LEASE_MS,now,phase,now,now,native?.id??null,native?.id??null,native?.subject??null,now,phase==='split'?Math.max(1,Math.min(2,Math.floor(splitLimit)||1)):QUEUE_CAPS[phase],QUEUE_CAPS.perSubject).first<Operation>();
   if (row) await db.prepare(`INSERT INTO operation_fairness(subject,phase,last_started) VALUES(?,?,?)
     ON CONFLICT(subject,phase) DO UPDATE SET last_started=excluded.last_started`).bind(row.subject,phase,now).run();
   return row;

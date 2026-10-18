@@ -14,12 +14,12 @@ test('two actual Workerd Workers sharing D1 admit fifteen simultaneous requests 
  const tokens=await Promise.all(people.map(subject=>issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject})));
  const config=JSON.parse(await readFile(new URL('./test-wrangler.jsonc',import.meta.url),'utf8'));
  config.main=fileURLToPath(new URL('./test-worker.ts',import.meta.url));config.assets.directory=fileURLToPath(new URL('../public',import.meta.url));
- config.vars={...config.vars,TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,CAIL_COURSE_IDS:`${STEM_COURSE_ID},second-fixture-course`,
+ config.vars={...config.vars,TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,SPLIT_CONCURRENCY:'2',CAIL_COURSE_IDS:`${STEM_COURSE_ID},second-fixture-course`,
   REPLICATE_API_TOKEN:'fixture-only',REPLICATE_MODEL_VERSION:'fixture-pin',WEBHOOK_SECRET:'fixture-secret'};
  delete config.$schema;
  let starts=0;
- const network=setupServer(http.post('https://api.replicate.com/v1/predictions',()=>{starts++;return HttpResponse.json({id:'shared-prediction'});}),
-  http.get('https://api.replicate.com/v1/predictions/shared-prediction',()=>HttpResponse.json({id:'shared-prediction',status:'processing'})));
+ const network=setupServer(http.post('https://api.replicate.com/v1/predictions',()=>{starts++;return HttpResponse.json({id:`shared-prediction-${starts}`});}),
+  http.get('https://api.replicate.com/v1/predictions/:id',()=>HttpResponse.json({id:'shared-prediction',status:'processing'})));
  network.listen({onUnhandledRequest:'error'});
  const harness=createTestHarness({workers:[{config:{...config,name:'queue-worker-one'}},{config:{...config,name:'queue-worker-two'}}]});
  try {
@@ -40,6 +40,7 @@ test('two actual Workerd Workers sharing D1 admit fifteen simultaneous requests 
   for(let who=0;who<2;who++){
    const account=await(await call((who+1)%2,who,'/api/account')).json();assert.equal(account.splitAllowance.inProgress,15);assert.equal(account.splitAllowance.completed,0);assert.equal(account.splitAllowance.remaining,0);
   }
-  const rows=await(await workers[1].fetch('/__fixture/operations',{headers:{'x-fixture':'local-only'}})).json();assert.equal(rows.length,30);assert.equal(starts,1);
+  const rows=await(await workers[1].fetch('/__fixture/operations',{headers:{'x-fixture':'local-only'}})).json();assert.equal(rows.length,30);assert.equal(starts,2);
+  assert.equal(rows.filter((row:any)=>row.state==='processing').length,2);
  } finally {await harness.close();network.close();}
 });

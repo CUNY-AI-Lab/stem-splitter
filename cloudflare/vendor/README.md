@@ -33,7 +33,21 @@ Legitimate silent stems remain acceptable.
 
 ## MP3 encoding
 
-Adaptive output uses the unmodified `@breezystack/lamejs@1.2.7` package, locked in
-`cloudflare/bun.lock`. Its JavaScript LAME port is LGPL-3.0-or-later.
-Upstream source: https://github.com/gideonstele/lamejs
-The upstream bundled license notice is retained in `lamejs-LICENSE.txt`.
+Adaptive output uses `wasm-media-encoders@0.7.0` with the unmodified native LAME
+module `lame-0.7.0.wasm` (SHA-256
+`85e81719250b9a667b1258143f689dda70e3e57a7e7c29ab0b4cef65c8f6eb9a`).
+`node scripts/extract-encoder-wasm.mjs` reproduces the binary from the frozen
+adapter install and rejects a mismatched version or digest. `mp3-encoder.ts`
+passes the statically compiled module to the package's module injection API;
+there is no runtime compilation, code download, or browser Worker.
+
+The wrapper is MIT (notice: `wasm-media-encoders-LICENSE.txt`). Corresponding
+source and reproducible build instructions are in
+[wasm-media-encoders v0.7.0](https://github.com/arseneyr/wasm-media-encoders/tree/v0.7.0).
+Its LAME submodule is [98db548](https://github.com/arseneyr/lame/tree/98db548e8e851defbba3184125ce10725355c332),
+LGPL-2.0-or-later (`lame-COPYING.txt`). The binary is separately replaceable.
+Both the native encoder and each decoder reserve about 16 MiB. The durable
+output queue runs one stage at a time, uses a 5 MiB multipart buffer, and never
+holds an entire long output beside the five-decoder remainder. Output validation
+runs in its own stage. All displayed tracks use the same encoder, sample rate,
+192 kbps bitrate, and global gain to preserve relative levels and encoder delay.

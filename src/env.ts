@@ -21,6 +21,8 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   validateStemAudio?: (data: ArrayBuffer) => Promise<boolean>;
   ADAPTIVE_FOUR_ENABLED?: string;
   /** Trusted durable handoff, omitted inside the queue consumer. */
+  outputAudio?: import('./reliability/output.ts').OutputAudio;
+  SPLIT_CONCURRENCY?: string;
   deferAdaptiveOutput?: (jobId: string) => Promise<void>;
   /** Trusted codec supplied by the Cloudflare adapter, never request JSON. */
   composeStemAudio?: (input: Omit<Parameters<typeof import('./separation/compose-layers.ts').composeProminentLayers>[0], 'createDecoder' | 'createEncoder'>) => ReturnType<typeof import('./separation/compose-layers.ts').composeProminentLayers>;

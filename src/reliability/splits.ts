@@ -1,3 +1,4 @@
+import { dispatchOutput, outputProgress, settleStoppedOutput } from './output.ts';
 import { parseMediaUrl } from '../url-source.ts';
 import { durationIsAllowed } from '../import-policy.ts';
 import type { Env } from '../env.ts';
@@ -305,6 +306,11 @@ async function start(env: Env,op: Operation) {
 
 export async function reconcileSplit(env: Env,op: Operation,complete: Complete) {
   if (!['processing','reconciling'].includes(op.state)) return;
+  if (outputProgress(op)) {
+    if(op.cancel_requested || op.deadline<=Date.now())await settleStoppedOutput(env,op);
+    else await dispatchOutput(env,op.id);
+    return;
+  }
   if (op.deadline<=Date.now()) {await expireSplitOperations(env.DB,Date.now(),op.id);return;}
   if (!op.provider_id) return;
   const now=Date.now(),owner=crypto.randomUUID();
@@ -401,7 +407,12 @@ export async function drainSplitQueue(env: Env,complete: Complete) {
     .bind(Date.now()).all<Operation>();
   for(const op of active.results)await reconcileSplit(env,op,complete);
   if(env.SPLIT_STARTS_DISABLED==='true')return;
-  for(const phase of ['fetch','split'] as const) {const op=await claimNext(env.DB,phase);if(op)await start(env,op);}
+  const limit=env.SPLIT_CONCURRENCY==='2'?2:1;
+  for(const phase of ['fetch','split'] as const) {
+    for(let slot=0;slot<(phase==='split'?limit:1);slot++) {
+      const op=await claimNext(env.DB,phase,Date.now(),limit);if(!op)break;await start(env,op);
+    }
+  }
 }
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {

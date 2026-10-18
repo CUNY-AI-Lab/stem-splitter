@@ -1,3 +1,6 @@
+import { runOutputStep, outputProgress } from '../src/reliability/output.ts';
+import { outputAudio } from './adaptive-audio.ts';
+import { readOperation } from '../src/reliability/ledger.ts';
 import { pollYouTubeImport } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
 import { courseFixture } from './course-fixture.ts';
@@ -24,6 +27,21 @@ export default {
       }})}:env;
       await preview.queue({messages:bodies.map(body=>({body,ack:()=>acked++,retry:()=>{retried++;adaptiveMessages.push(body);}}))} as unknown as MessageBatch<unknown>,queueEnv);
       return Response.json({delivered:bodies.length,acked,retried});
+    }
+
+    if(new URL(request.url).pathname==='/__fixture/output-file' && request.headers.get('x-fixture')==='local-only') {
+      const key=new URL(request.url).searchParams.get('key')??'';
+      const audio=key.startsWith('stems/')?await env.AUDIO.get(key):null;
+      return audio?new Response(audio.body):new Response('Missing',{status:404});
+    }
+    if(new URL(request.url).pathname==='/__fixture/output-step' && request.headers.get('x-fixture')==='local-only') {
+      const id=new URL(request.url).searchParams.get('id')!;
+      const done=await runOutputStep({...env,outputAudio,validateStemAudio},id,async(_name,url)=>{
+        const response=await fetch(url);if(!response.ok)throw Error('Fixture download failed');return response.arrayBuffer();
+      });
+      const operation=await readOperation(env.DB,id);
+      const job=await env.DB.prepare('SELECT status,stems,model,error FROM jobs WHERE id=?').bind(id).first();
+      return Response.json({done,job,progress:operation&&outputProgress(operation)});
     }
 
     if(new URL(request.url).pathname==='/__fixture/inline-import'&&request.headers.get('x-fixture')==='local-only') {const audio=await pollYouTubeImport('inline-memory-fixture',{...env,REPLICATE_API_TOKEN:'test-replicate-token-000',REPLICATE_YT_MODEL:'test/fixture',REPLICATE_YT_MODEL_VERSION:'a'.repeat(64)});return Response.json({bytes:audio?.data.byteLength});}

@@ -1,3 +1,5 @@
+import { dispatchOutput, handoffOutput, outputProgress, runOutputStep } from './reliability/output.ts';
+import { InvalidStemAudioError } from './reliability/media.ts';
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { isPlaylistSample, playlistSampleResponse } from './playlist-samples.ts';
 import { namedUsers, studentActivity, requireStudentReview } from './teacher-activity.ts';
@@ -1476,7 +1478,7 @@ app.get('/api/jobs/:id', async (c) => {
   const permission = principal ? await jobPermission(c.env, principal, id) : null;
   if(principal&&row.status==='failed'){await recordFailedRunSession(c.env,principal,c.req.header('X-Stem-Rack-Session')??null,id);if(await runWasDeleted(c.env,id))return c.json({error:'Run not found.'},404);}
   const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
-  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:outputProgress(operation)?'output':operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
     courseId:permission?.courseId??null, permissions:permission, publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
@@ -2244,6 +2246,12 @@ export async function runReliableJobs(env: Env) { await drainSplitQueue(env,inge
 /** Download finished stems from the provider and store them in R2. */
 /** Queue messages name an existing operation; provider state and ownership remain authoritative. */
 export async function resumeAdaptiveOutput(env: Env, jobId: string): Promise<boolean> {
+  const progress=await readOperation(env.DB,jobId);
+  if(progress && outputProgress(progress)) {
+    const done=await runOutputStep(env,jobId,downloadStem);
+    if(!done)await dispatchOutput(env,jobId);
+    return true; // The next stage is durably scheduled; acknowledge this delivery.
+  }
   const job = await env.DB.prepare('SELECT status,routing_request,error FROM jobs WHERE id=?').bind(jobId)
     .first<{status:string;routing_request:string|null;error:string|null}>();
   if (!job || !job.routing_request?.startsWith('adaptive:') || ['done','failed'].includes(job.status)) return true;
@@ -2267,6 +2275,20 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
     .bind(jobId)
     .first<Pick<JobRow, 'model' | 'routing_request'>>();
   if (!job) return;
+
+  if (result.status === 'succeeded' && operation && env.outputAudio && env.deferAdaptiveOutput) {
+    try {
+      await handoffOutput(env,operation,result,job.model ?? DEFAULT_DEMUCS_MODEL,
+        job.routing_request==='adaptive:4'?4:job.routing_request==='adaptive:auto'?'auto':null);
+    } catch(error) {
+      if(error instanceof StemContractError || error instanceof InvalidStemAudioError) {
+        await env.DB.prepare(`UPDATE jobs SET status='failed',error='The separator returned invalid tracks. No allowance was used.'
+          WHERE id=? AND status NOT IN ('done','failed') AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?)`)
+          .bind(jobId,operation.id,operation.fence,operation.lease_owner).run();
+      } else throw error;
+    }
+    return;
+  }
 
   if (result.status === 'succeeded' && job.routing_request?.startsWith('adaptive:') && env.deferAdaptiveOutput) {
     await env.deferAdaptiveOutput(jobId);
@@ -2411,7 +2433,6 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
   }
 }
 
-class InvalidStemAudioError extends Error {}
 
 async function downloadStem(name: string, url: string, strict = false): Promise<ArrayBuffer> {
   let lastError: Error | null = null;
