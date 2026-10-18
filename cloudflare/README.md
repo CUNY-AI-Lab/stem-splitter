@@ -275,3 +275,30 @@ already accepted adaptive jobs can finish. Keep the queue and its consumer until
 all accepted jobs are terminal. Do not roll an active adaptive job back to code
 that does not understand its stored output contract. No schema migration or
 provider version change accompanies this feature.
+
+## Link import Worker
+
+`cail-stem-import` (`link-import.jsonc`, entry `link-import-worker.ts`, logic in
+`../src/link-import.ts`) owns every request to a host a person pasted. It has no
+public route (`workers_dev: false`); the splitter reaches it only through the
+`LINK_IMPORT` service binding.
+
+- **Direct files and share links.** Dropbox, Google Drive, OneDrive and
+  SharePoint links are rewritten to their direct downloads. Every redirect hop
+  must pass the same public-HTTPS rules, and the app's own hosts are refused.
+  MP3 (full frame syntax), WAV and FLAC (header fields checked against the byte
+  count) are proven and written to R2 under the operation's fenced
+  `uploads/<operation>/source-<fence>` key. Other containers, web pages and
+  files over the native byte caps answer `hosted: true`, and the splitter uses
+  the existing pinned ffmpeg importer, so the native path never refuses what the
+  hosted path would accept.
+- **YouTube links.** `POST /api/link-info` returns oEmbed title metadata and an
+  Internet Archive search query. The app does not fetch YouTube audio; the UI
+  runs the Archive song search and offers a local upload.
+- **Flag.** `LINK_IMPORT_ENABLED` is `"false"` by default. With it off, or with
+  the binding absent, every path behaves exactly as before.
+
+Deploy order: deploy `cail-stem-import` first
+(`wrangler deploy --config link-import.jsonc`). A splitter release that declares
+the `LINK_IMPORT` binding fails to deploy while the target Worker is missing.
+Turn the flag on only after that release; roll back by setting it to `"false"`.
