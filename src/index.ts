@@ -18,7 +18,7 @@ import type { Env } from './env';
 import { splitAllowance, operationAllowance, dailyWindow, GUEST_SPLITS_PER_DAY } from './daily-allowance.ts';
 import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport } from './reliability/splits.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
-import { cancelOperation } from './reliability/queue.ts';
+import { cancelOperation, expireSplitOperations } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt } from './reliability/assistant.ts';
 import { validMp3Frames } from './reliability/media.ts';
 import {
@@ -79,7 +79,7 @@ import {
   validateAndOrderStems,
 } from './separation/options';
 import { fetchVideoAudio, YouTubeError } from './youtube';
-import { parseVideoSource } from './video-source.ts';
+import { parseVideoSource, isVimeoUrl } from './video-source.ts';
 import { importLinkViaService, linkImportEnabled, resolveLinkViaService } from './link-import-client.ts';
 import type { ImportResult } from './link-import.ts';
 import {
@@ -1023,7 +1023,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     const value=input as Record<string,unknown>;
     if (value.audiusId !== undefined && [value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1) return c.json({error:'Search again to choose an Internet Archive recording.',code:'unsupported_source',retryable:false},400);
     if([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length===1
-      &&parseVideoSource(value.videoUrl??value.youtubeUrl)?.sourceType==='vimeo') {
+      &&isVimeoUrl(value.sourceUrl??value.videoUrl??value.youtubeUrl)) {
       return c.json({error:'Choose a supported video link or upload an audio file.',code:'unsupported_source',retryable:false},400);
     }
   }
@@ -2261,6 +2261,7 @@ export async function resumeAdaptiveOutput(env: Env, jobId: string): Promise<boo
 
 async function ingestResult(env: Env, jobId: string, result: SeparationResult, operation?: Operation): Promise<void> {
   if (result.status !== 'failed' && result.status !== 'succeeded') return;
+  if (operation && operation.deadline<=Date.now()) {await expireSplitOperations(env.DB,Date.now(),operation.id);return;}
 
   const job = await env.DB.prepare('SELECT model, routing_request FROM jobs WHERE id = ?')
     .bind(jobId)
@@ -2373,6 +2374,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       .bind('done', JSON.stringify(published), outputModel, jobId, lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null,Date.now(),Date.now())
       .run();
     if (!committed.meta.changes) {
+      if (operation) await expireSplitOperations(env.DB,Date.now(),operation.id);
       if (operation) await env.DB.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No allowance was used.'
         WHERE id=? AND status='ingesting' AND error=? AND EXISTS(SELECT 1 FROM app_operations
           WHERE id=? AND fence=? AND lease_owner IS ? AND cancel_requested=1)`)
@@ -2391,8 +2393,10 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       const snapshot=await env.DB.prepare('SELECT status,stems,error FROM jobs WHERE id=?').bind(jobId).first<{status:string;stems:string|null;error:string|null}>();
       const referenced=(row:typeof snapshot)=>new Set(row?.stems?JSON.parse(row.stems).map((stem:{key:string})=>stem.key):[]);
       if(stored.some(({key})=>referenced(snapshot).has(key)))return;
+      const expired=operation!==undefined && operation.deadline<=Date.now();
+      if(expired)await expireSplitOperations(env.DB,Date.now(),operation.id);
       const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No allowance was used.';
-      const terminal=error instanceof InvalidStemAudioError||(env.AUTH_MODE==='cail'&&!adaptiveMode);
+      const terminal=expired||error instanceof InvalidStemAudioError||(env.AUTH_MODE==='cail'&&!adaptiveMode);
       await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?
         AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`)
         .bind(terminal?'failed':'processing',terminal?failure:null,jobId,lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null).run();

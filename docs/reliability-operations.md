@@ -45,8 +45,12 @@ distinct codes and messages.
 The durable coordinator caps concurrent fetch and separation phases at one
 each, with one per student per phase. Shared D1 predicates arbitrate claims;
 least-recently-served students precede repeated work. The one-minute cron,
-callbacks and authorized polling drain the same queue. A 24-hour unstarted
-request deadline does not time out or free an accepted/unknown paid job.
+callbacks and authorized polling drain the same queue. The 24-hour hard request
+deadline fails any unfinished split, including accepted/unknown work, releases
+its app allowance and capacity once, and prevents late publication. This does
+not claim a provider refund or cancellation; durable attempt/cost evidence stays
+available for operator reconciliation. No replacement prediction is posted for
+an expired operation or a replay of its idempotency key.
 Leases last five minutes; every takeover increments a fence. A runner must
 successfully persist its fenced attempt before a paid POST. Expiry before that
 write may requeue; expiry after it reconciles. A late accepted response supplies
@@ -60,8 +64,8 @@ are polled. Callback recovery requires provider-side evidence of the exact
 operation/phase callback and the pinned model version recorded before start.
 An old import callback cannot adopt a separation ID. Callback bodies never
 choose output URLs. Cancelled uncertain work holds allowance/capacity until an
-authoritative terminal result; late success cannot settle it. Active jobs
-cannot be deleted out from under the ledger.
+authoritative terminal result or the hard deadline; late success cannot settle
+it. Active jobs cannot be deleted out from under the ledger.
 
 ## Audio validation and import diagnosis
 
@@ -216,7 +220,8 @@ release. It pauses intake/new paid starts while preserving read/playback and
 known-operation reconciliation. Cancel queued work through the cancellation
 path. Drain accepted work and reconcile unknown starts with exact provider
 IDs/phase/version evidence. Never mark an unknown start failed merely because
-its lease expired. Keep a compatible reconciler until those operations are
+its renewable lease expired; the hard deadline is the separate terminal boundary.
+Keep a compatible reconciler until those operations are
 terminal. Do not drop new tables or restore an old backup over newer work.
 If returning to the historical reader, keep intake paused through the next
 UTC boundary and until all in-flight work is settled; otherwise neither its
@@ -224,7 +229,8 @@ old daily count nor its rollback can represent the same allowance safely.
 
 A vanished provider response with no discoverable ID can require operator
 reconciliation; no provider-wide idempotency lookup is claimed. Retain the
-minimal correlation/cost evidence and hold the operation rather than guessing.
+minimal correlation/cost evidence and hold the operation until its hard deadline
+rather than guessing.
 At 90 days, request filenames/URLs, replay metadata and cached source metadata
 are redacted even for unresolved operations, cancellation is requested, and
 existing conversation/audio retention still applies. Minimal non-content

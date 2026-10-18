@@ -265,6 +265,24 @@ Messages contain only an existing job ID. The consumer rechecks stored intent,
 provider state and the existing lease/fence; duplicates cannot create paid work.
 Polls, completion webhooks and the minute scheduler enqueue publication.
 
+Provision `cail-stem-splitter-adaptive-output-dlq` before deploying the consumer.
+After twenty retries, Cloudflare moves an undeliverable message there instead
+of discarding it. It has no automatic consumer. Inspect the source queue and
+DLQ in Cloudflare Queues and correlate the job ID with D1 before manually
+redriving a message. Redrive only an active job before its hard deadline;
+duplicate deliveries still use the existing prediction and publication fence.
+No source URLs, audio or credentials are placed in either queue.
+
+Queue exceptions emit `adaptive_queue_failed`; reconciliation exceptions emit
+`split_reconcile_failed`. Both include job ID, stage, a bounded error name and
+a fixed diagnostic message. Raw exception text is deliberately excluded because
+upstream failures can contain signed URLs or credentials. A CPU-limit termination
+may skip application logging; inspect Cloudflare invocation outcomes as well.
+The minute sweep and queue delivery terminally fail jobs at their 24-hour hard
+deadline, even if a work lease or provider cooldown is still active. Settlement
+releases allowance/capacity once and fences late publication; partial output is
+cleaned by the ingesting worker when it can resume, or by R2 retention otherwise.
+
 For rollback, prefer the same merged codec/queue-capable bundle with
 `ADAPTIVE_FOUR_ENABLED=false`: this stops advertising new adaptive choices while
 already accepted adaptive jobs can finish. Keep the queue and its consumer until

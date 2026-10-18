@@ -98,7 +98,7 @@ test('durable and legacy intake reject multiple sources and invalid URLs before 
     await assert.rejects(()=>submitSplit(env,principal,{videoUrl},'invalid-video-fixture'),
       (error:unknown)=>error instanceof OperationError&&error.code==='invalid_youtube_url');
     const response=await api({videoUrl});assert.equal(response.status,400);
-    assert.equal((await response.json() as {code:string}).code,'invalid_youtube_url');
+    assert.equal((await response.json() as {code:string}).code,videoUrl==='https://vimeo.com/76979871?h=wrong'?'unsupported_source':'invalid_youtube_url');
   }
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM jobs').first<{n:number}>())!.n,0);
   assert.equal((await splitAllowance(db,subject)).inProgress,0);
@@ -261,7 +261,7 @@ test('retired Vimeo submissions stop before quota, source fetches or provider st
   const {db,env,api}=await setup(t),guest=await guestRequests(db,env,'a');
   let outbound=0;
   t.mock.method(globalThis,'fetch',async()=>{outbound++;throw new Error('retired source reached the network');});
-  for(const source of [vimeo,vimeoPlayer,'https://vimeo.com/1084537'])for(const field of ['videoUrl','youtubeUrl']) {
+  for(const source of [vimeo,vimeoPlayer,'https://vimeo.com/1084537','https://vimeo.com/channels/staffpicks/1084537','https://VIMEO.com./1084537'])for(const field of ['sourceUrl','videoUrl','youtubeUrl']) {
     const payload={[field]:source};
     const responses=[await api(payload),await guest.request('/api/jobs',{method:'POST',headers:{'Idempotency-Key':`retired-${field}-source`},body:JSON.stringify(payload)})];
     for(const response of responses) {

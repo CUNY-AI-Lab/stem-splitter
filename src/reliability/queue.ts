@@ -1,7 +1,7 @@
 import { type Operation, type Phase, TERMINAL, readOperation } from './ledger.ts';
 
 // Conservative application ceilings; they do not assert an account entitlement.
-// Unknown starts occupy a slot until authoritative evidence resolves them.
+// Unknown starts occupy a slot until authoritative evidence or the hard deadline.
 export const QUEUE_CAPS = { fetch: 1, split: 1, perSubject: 1 } as const;
 export const WORK_LEASE_MS = 5*60*1000;
 
@@ -55,7 +55,22 @@ export async function transition(db: D1Database, operation: Operation, state: Op
   return result.meta.changes>0;
 }
 
+/** A hard deadline ends the job even while its renewable work lease is live. */
+export async function expireSplitOperations(db: D1Database, now=Date.now(), id: string | null=null) {
+  await db.batch([
+    db.prepare(`UPDATE app_operations SET error_code=CASE WHEN phase='fetch' THEN 'youtube_fetch_timeout' ELSE 'deadline_exceeded' END,
+      fence=fence+1,updated_at=? WHERE kind='split' AND state NOT IN (${TERMINAL}) AND deadline<=? AND (? IS NULL OR id=?)`)
+      .bind(now,now,id,id),
+    // The job settlement trigger releases the reservation and lease once.
+    db.prepare(`UPDATE jobs SET status='failed',error='This split expired. No allowance was used. Submit it again.'
+      WHERE status NOT IN ('done','failed') AND id IN(SELECT job_id FROM app_operations
+        WHERE kind='split' AND state NOT IN (${TERMINAL}) AND deadline<=? AND (? IS NULL OR id=?))`)
+      .bind(now,id,id),
+  ]);
+}
+
 export async function recoverExpired(db: D1Database, now=Date.now()) {
+  await expireSplitOperations(db,now);
   // Cron and callbacks recover abandoned ingestion without a browser poll.
   // The job lease is a separate output-write fence; reopening it invalidates
   // a late old uploader's final CAS and preserves the known provider ID.
@@ -79,8 +94,6 @@ export async function recoverExpired(db: D1Database, now=Date.now()) {
   await db.prepare(`UPDATE jobs SET status='failed',error='Split cancelled. No allowance was used.'
     WHERE id IN(SELECT job_id FROM app_operations WHERE kind='split' AND phase='fetch' AND state='queued'
       AND cancel_requested=1 AND ${nativeSourceSql('app_operations')})`).run();
-  await db.prepare(`UPDATE jobs SET status='failed',error='This request expired before it started. Submit it again.'
-    WHERE id IN(SELECT job_id FROM app_operations WHERE kind='split' AND state='queued' AND deadline<=?)`).bind(now).run();
   // A late known response is safe evidence even when its old Worker lost the
   // lease. Adopt the ID from the durable attempt, never POST a replacement.
   await db.prepare(`UPDATE app_operations SET provider_id=(SELECT a.external_id FROM operation_attempts a
