@@ -291,8 +291,9 @@ public route (`workers_dev: false`); the splitter reaches it only through the
 - **YouTube links.** `POST /api/link-info` returns oEmbed title metadata and an
   Internet Archive search query. The app does not fetch YouTube audio; the UI
   runs the Archive song search and offers a local upload.
-- **Flag.** `LINK_IMPORT_ENABLED` is `"false"` by default. With it off, or with
-  the binding absent, every path behaves exactly as before.
+- **Flag.** `LINK_IMPORT_ENABLED` is `"true"` in production since 2026-10-18
+  (`cail-stem-import` deployed first). With it set to `"false"`, or with the
+  binding absent, every path behaves exactly as before.
 
 Deploy order: deploy `cail-stem-import` first
 (`wrangler deploy --config link-import.jsonc`). A splitter release that declares
