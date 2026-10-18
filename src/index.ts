@@ -85,13 +85,9 @@ import type { ImportResult } from './link-import.ts';
 import {
   archiveContentType,
   ArchiveError,
-  ARCHIVE_SCOPES,
   fetchArchiveAudio,
-  fetchArchiveItem,
   verifyArchiveSample,
-  isArchiveScope,
   parseArchiveIdentifier,
-  searchArchive,
 } from './archive';
 import {
   AssistantError,
@@ -958,72 +954,7 @@ app.delete('/api/teacher/folders/:id/items/:jobId', requireTeacher, async (c) =>
   return c.json({ ok: true });
 });
 
-// --- internet archive browse ------------------------------------------
-//
-// Reads are gated the same way the assistant endpoints are: they are cheap,
-// but they are also the pathway into a paid separation, so keep them behind
-// the class code rather than leaving an open search proxy on the Worker.
-
-app.get('/api/archive/scopes', (c) =>
-  c.json({
-    scopes: Object.entries(ARCHIVE_SCOPES).map(([id, scope]) => ({ id, label: scope.label })),
-  })
-);
-
-// Cloudflare candidate only: authenticated, rate-limited, bounded delivery of
-// reviewed public Crate audio into this browser session. No split, upload row,
-// Replicate call, arbitrary URL proxy, or durable copy is created.
-app.post('/api/remix/archive-audio', requireClassCode, async (c) => {
-  if (c.env.AUTH_MODE !== 'cail' || c.env.REMIXER_ENABLED !== 'true') {
-    return c.json({ error: 'Remixer is unavailable.' }, 404);
-  }
-  const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES);
-  if ('response' in parsed) return parsed.response;
-  const body = parsed.value;
-  if (!body || typeof body !== 'object' || Array.isArray(body) || !('archiveId' in body) || !('archiveFile' in body)
-    || typeof body.archiveId !== 'string' || typeof body.archiveFile !== 'string' || body.archiveFile.length > 512) {
-    return c.json({ error: 'Choose a track from the Crate.' }, 400);
-  }
-  const identifier = parseArchiveIdentifier(body.archiveId);
-  if (!identifier) return c.json({ error: 'Choose a valid Internet Archive item.' }, 400);
-  try {
-    const audio = await fetchArchiveAudio(identifier, body.archiveFile, c.env, { maximumBytes: 10 * 1024 * 1024, remix: true });
-    return new Response(audio.data, { headers: {
-      'Content-Type': archiveContentType(audio.fileName),
-      'Content-Length': String(audio.data.byteLength),
-      'Cache-Control': 'private, no-store',
-      'X-Remix-Source': encodeURIComponent(JSON.stringify({ attribution: audio.attribution, durationSec: audio.durationSec })),
-    } });
-  } catch (err) {
-    return archiveErrorResponse(c, err, 'Could not load this track. Try again.');
-  }
-});
-
-app.get('/api/archive/search', requireClassCode, async (c) => {
-  const term = c.req.query('q') ?? '';
-  const scopeParam = c.req.query('scope') ?? 'music';
-  const scope = isArchiveScope(scopeParam) ? scopeParam : 'music';
-  const page = Number.parseInt(c.req.query('page') ?? '1', 10) || 1;
-
-  try {
-    return c.json(await searchArchive(term, scope, page));
-  } catch (err) {
-    return archiveErrorResponse(c, err, 'Internet Archive search failed.');
-  }
-});
-
-app.get('/api/archive/items/:identifier', requireClassCode, async (c) => {
-  const identifier = parseArchiveIdentifier(c.req.param('identifier'));
-  if (!identifier) {
-    return c.json({ error: 'That is not a valid Internet Archive item.' }, 400);
-  }
-
-  try {
-    return c.json(await fetchArchiveItem(identifier));
-  } catch (err) {
-    return archiveErrorResponse(c, err, 'Could not load that Internet Archive item.');
-  }
-});
+// --- internet archive errors ------------------------------------------
 
 function archiveErrorResponse(c: Context<AppContext>, err: unknown, fallback: string) {
   console.error('archive request failed', err);

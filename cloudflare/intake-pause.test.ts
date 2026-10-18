@@ -42,7 +42,7 @@ test('maintenance rejects new compute and uploads through both entry paths befor
   const env = { ...paused, DB: forbidden, AUDIO: forbidden, IDENTITY: forbidden, PREVIEW_IDENTITY: forbidden };
   const starts = [
     ['POST', '/api/jobs'], ['POST', '/api/jobs/'], ['POST', '/api/uploads'],
-    ['PUT', '/api/local-uploads/new.wav'], ['POST', '/api/remix/archive-audio'],
+    ['PUT', '/api/local-uploads/new.wav'],
     ['POST', '/api/jobs/owned-song/chat'], ['POST', '/api/jobs/owned-song/guide'],
     ['POST', '/api/jobs/encoded%2Fname/chat'], ['POST', '/api/teacher/jobs/owned-song/isolations'],
   ];

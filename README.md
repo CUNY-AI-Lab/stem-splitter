@@ -38,7 +38,7 @@ src/
   env.ts                Bindings/vars/secrets types
   r2.ts                 Signed URLs + local retention enforcement
   youtube.ts            YouTube audio fetch (youtubei.js + Replicate yt-dlp fallback)
-  archive.ts            Internet Archive crate: licence-floored search + import
+  archive.ts            Internet Archive song search + licence-floored import
   assistant/            Listening Guy: OpenRouter client, mixer tool schemas,
                         system prompt (prompt.ts), guide/chat orchestrators
   separation/

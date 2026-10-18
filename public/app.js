@@ -1361,354 +1361,6 @@ function linkGuidance(link) {
   return 'Paste a public HTTPS link to an audio file, or search for a song.';
 }
 
-// --- internet archive crate ----------------------------------------------
-
-const crateToggle = document.getElementById('crate-toggle');
-const crateBody = document.getElementById('crate-body');
-const crateForm = document.getElementById('crate-form');
-const crateQuery = document.getElementById('crate-query');
-const crateScope = document.getElementById('crate-scope');
-const crateStatus = document.getElementById('crate-status');
-const crateImportStatus = document.getElementById('crate-import-status');
-const crateResults = document.getElementById('crate-results');
-const cratePager = document.getElementById('crate-pager');
-const cratePrev = document.getElementById('crate-prev');
-const crateNext = document.getElementById('crate-next');
-const cratePageLabel = document.getElementById('crate-page-label');
-
-const CRATE_PAGE_SIZE = 24;
-const crateState = { term: '', scope: 'music', page: 1, total: 0, busy: false };
-// Monotonic request id: a slower earlier search must not clobber a newer one's
-// results (which also silently collapsed any item the student had expanded).
-let crateSeq = 0;
-// Track lists are fetched once per item and reused when the row is re-opened.
-const crateItems = new Map();
-
-crateToggle.addEventListener('click', () => {
-  const open = crateBody.hidden;
-  crateBody.hidden = !open;
-  crateToggle.setAttribute('aria-expanded', String(open));
-  crateToggle.classList.toggle('open', open);
-  if (open && crateResults.childElementCount === 0) void runCrateSearch(1);
-});
-
-crateForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  void runCrateSearch(1);
-});
-
-cratePrev.addEventListener('click', () => void runCrateSearch(crateState.page - 1));
-crateNext.addEventListener('click', () => void runCrateSearch(crateState.page + 1));
-
-function showCrateStatus(message, isError = false) {
-  crateStatus.hidden = !message;
-  crateStatus.textContent = message;
-  crateStatus.classList.toggle('error', isError);
-}
-
-async function runCrateSearch(page) {
-  if (page < 1) return;
-  // Deliberately not guarded on `busy`: dropping the request meant a student
-  // who typed and hit SEARCH while the opening auto-search was still running
-  // silently got the default results instead of theirs.
-  const seq = ++crateSeq;
-
-  crateState.busy = true;
-  crateState.term = crateQuery.value.trim();
-  crateState.scope = crateScope.value;
-  crateForm.setAttribute('aria-busy', 'true');
-  showCrateStatus('SEARCHING THE ARCHIVE…');
-
-  try {
-    const params = new URLSearchParams({
-      q: crateState.term,
-      scope: crateState.scope,
-      page: String(page),
-    });
-    const data = await api(`/api/archive/search?${params}`);
-    if (seq !== crateSeq) return; // superseded — leave the newer results alone
-
-    crateState.page = data.page;
-    crateState.total = data.total;
-    crateItems.clear();
-    renderCrateResults(data.results);
-
-    if (data.results.length === 0) {
-      showCrateStatus('No openly licensed audio matched that search.');
-    } else {
-      showCrateStatus(`${data.total.toLocaleString()} OPENLY LICENSED ITEMS MATCH`);
-    }
-  } catch (err) {
-    if (seq !== crateSeq) return;
-    crateResults.replaceChildren();
-    cratePager.hidden = true;
-    showCrateStatus(err.message, true);
-  } finally {
-    if (seq === crateSeq) {
-      crateState.busy = false;
-      crateForm.removeAttribute('aria-busy');
-    }
-  }
-}
-
-function renderCrateResults(results) {
-  crateResults.replaceChildren();
-
-  for (const result of results) {
-    const li = document.createElement('li');
-    li.className = 'crate-item';
-
-    const head = document.createElement('button');
-    head.type = 'button';
-    head.className = 'crate-item-head';
-    head.setAttribute('aria-expanded', 'false');
-
-    const title = document.createElement('span');
-    title.className = 'crate-item-title';
-    title.textContent = result.title;
-
-    const meta = document.createElement('span');
-    meta.className = 'crate-item-meta mono';
-    meta.textContent = [result.creator, result.year].filter(Boolean).join(' · ');
-
-    const license = document.createElement('span');
-    license.className = 'crate-license';
-    license.textContent = result.license;
-
-    head.append(title, meta, license);
-
-    const tracks = document.createElement('div');
-    tracks.className = 'crate-tracks';
-    tracks.hidden = true;
-
-    head.addEventListener('click', () => {
-      const open = tracks.hidden;
-      tracks.hidden = !open;
-      head.setAttribute('aria-expanded', String(open));
-      head.classList.toggle('open', open);
-      if (open) void loadCrateTracks(result, tracks);
-    });
-
-    li.append(head, tracks);
-    crateResults.append(li);
-  }
-
-  const pages = Math.max(1, Math.ceil(Math.min(crateState.total, CRATE_PAGE_SIZE * 20) / CRATE_PAGE_SIZE));
-  cratePager.hidden = results.length === 0;
-  cratePageLabel.textContent = `PAGE ${crateState.page} / ${pages}`;
-  cratePrev.disabled = crateState.page <= 1;
-  crateNext.disabled = crateState.page >= pages;
-}
-
-async function loadCrateTracks(result, container) {
-  if (crateItems.has(result.identifier)) {
-    renderCrateTracks(crateItems.get(result.identifier), container);
-    return;
-  }
-
-  container.replaceChildren(Object.assign(document.createElement('p'), {
-    className: 'mono crate-loading',
-    textContent: 'LOADING TRACKS…',
-  }));
-
-  try {
-    const item = await api(`/api/archive/items/${encodeURIComponent(result.identifier)}`);
-    crateItems.set(result.identifier, item);
-    renderCrateTracks(item, container);
-  } catch (err) {
-    container.replaceChildren(Object.assign(document.createElement('p'), {
-      className: 'mono crate-loading error',
-      textContent: err.message,
-    }));
-  }
-}
-
-function renderCrateTracks(item, container) {
-  // Songs only: anything over the 5-minute cap (or 100 MB) is left out of the
-  // list entirely rather than shown greyed — the server refuses them anyway.
-  const splittable = item.tracks.filter((track) => track.importable);
-  const hiddenCount = item.tracks.length - splittable.length;
-
-  if (splittable.length === 0) {
-    container.replaceChildren(Object.assign(document.createElement('p'), {
-      className: 'mono crate-loading',
-      textContent: 'No tracks under 5 minutes on this item.',
-    }));
-    return;
-  }
-
-  const list = document.createElement('ul');
-  list.className = 'crate-track-list';
-
-  for (const track of splittable) {
-    const li = document.createElement('li');
-    li.className = 'crate-track';
-
-    const name = document.createElement('span');
-    name.className = 'crate-track-name';
-    name.textContent = track.title;
-
-    const length = document.createElement('span');
-    length.className = 'mono crate-track-len';
-    length.textContent = track.durationSec ? fmt(track.durationSec) : '—';
-
-    const split = document.createElement('button');
-    split.type = 'button';
-    split.className = 'crate-split';
-    split.textContent = 'SPLIT';
-    split.addEventListener('click', () => void importArchiveTrack(item, track, split));
-
-    li.append(name, length);
-    if (runtime.remixer) {
-      const preview = document.createElement('button');
-      preview.type = 'button';
-      preview.className = 'crate-preview';
-      preview.textContent = 'PREVIEW';
-      preview.addEventListener('click', () => void useCrateAudio(item, track, preview, true));
-      const add = document.createElement('button');
-      add.type = 'button';
-      add.className = 'crate-add';
-      add.textContent = 'ADD TO MIX';
-      add.disabled = track.bytes > 10 * 1024 * 1024;
-      preview.disabled = add.disabled;
-      add.dataset.unavailable = preview.dataset.unavailable = String(add.disabled);
-      if (add.disabled) add.title = preview.title = 'Choose a track under 10 MB for browser mixing.';
-      add.addEventListener('click', () => void useCrateAudio(item, track, add));
-      li.append(preview, add);
-      split.title = 'Optional: separate this track into instrument stems first';
-    }
-    li.append(split);
-    list.append(li);
-  }
-
-  const credit = document.createElement('p');
-  credit.className = 'mono crate-credit';
-  const link = document.createElement('a');
-  link.href = item.detailsUrl;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  link.textContent = 'view on archive.org';
-  const hiddenNote = hiddenCount ? ` · ${hiddenCount} track${hiddenCount === 1 ? '' : 's'} over 5:00 not shown` : '';
-  credit.append(
-    document.createTextNode(`${item.license}${item.creator ? ` · ${item.creator}` : ''} · `),
-    link,
-    document.createTextNode(hiddenNote)
-  );
-
-  container.replaceChildren(list, credit);
-}
-
-// The crate lives at the Remixer station, so its status has to speak there —
-// the splitter's upload strip is on a hidden panel while this runs. Mirror to
-// both: the crate line is what the importer sees, the strip is what greets
-// them if they walk back to the Splitter.
-function showCrateImportMessage(message, isError = false) {
-  crateImportStatus.hidden = false;
-  crateImportStatus.textContent = message;
-  crateImportStatus.classList.toggle('error', isError);
-  showUploadMessage(message, isError);
-}
-
-async function importArchiveTrack(item, track, button) {
-  button.disabled = true;
-  button.textContent = 'FETCHING…';
-  uploadStatus.hidden = false;
-  progressBar.style.width = '0%';
-  showCrateImportMessage(`IMPORTING "${track.title}" FROM THE INTERNET ARCHIVE…`);
-
-  try {
-    const chosen = await requireSelectedModel();
-    const resolved = await resolveModel(chosen, null, 'Internet Archive audio');
-    const { model, note } = resolved;
-    if (note) showCrateImportMessage(note);
-    const job = await api('/api/jobs', {
-      method: 'POST',
-      body: JSON.stringify({
-        archiveId: item.identifier,
-        archiveFile: track.name,
-        model,
-        ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
-        ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
-      }),
-    });
-
-    addJob(job);
-    showCrateImportMessage(`${processingMessage(job, 'stems')} ${runtime.remixer ? 'Find its stems on the shelf when ready.' : 'Find the split in your session rack when ready.'}`);
-    renderJobs();
-    pollSoon();
-    button.textContent = 'QUEUED';
-  } catch (err) {
-    showCrateImportMessage(err.message, true);
-    button.disabled = false;
-    button.textContent = 'SPLIT';
-  }
-}
-
-// Raw Crate material stays in this browser session. The server rechecks rights,
-// metadata, size, redirects and audio bytes; no paid separator is involved.
-const crateAudio = new Map();
-let cratePreview = null;
-async function useCrateAudio(item, track, button, previewOnly = false) {
-  if (!runtime.remixer || remix.recorder) return;
-  const key = JSON.stringify([item.identifier, track.name]);
-  const label = previewOnly ? 'PREVIEW' : 'ADD TO MIX';
-  button.disabled = true;
-  button.textContent = 'LOADING…';
-  try {
-    if (!crateAudio.has(key)) {
-      if (crateAudio.size >= 8) throw new Error('This session already has eight Crate tracks. Download your work before starting a new session.');
-      const work = (async () => {
-        const response = await fetch('/api/remix/archive-audio', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ archiveId: item.identifier, archiveFile: track.name }),
-          signal: AbortSignal.timeout(180000),
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(response.status === 401 ? 'Sign in with CUNY Login to use the Crate.' : body.error?.message || body.error || 'Could not load this track. Try again.');
-        }
-        const source = JSON.parse(decodeURIComponent(response.headers.get('X-Remix-Source') || ''));
-        const blob = await response.blob();
-        if (!blob.size || blob.size > 10 * 1024 * 1024 || !source.attribution) throw new Error('This track could not be loaded safely.');
-        return { ...source, url: URL.createObjectURL(blob), id: `archive:${key}` };
-      })();
-      crateAudio.set(key, work);
-      work.catch(() => crateAudio.delete(key));
-    }
-    const source = await crateAudio.get(key);
-    if (remix.recorder) throw new Error('Finish recording before previewing or adding a track.');
-    if (previewOnly) {
-      cratePreview?.pause();
-      let player = button.closest('.crate-track').querySelector('audio');
-      if (!player) {
-        player = document.createElement('audio');
-        player.controls = true;
-        player.preload = 'metadata';
-        player.setAttribute('aria-label', `Preview ${track.title}`);
-        button.closest('.crate-track').append(player);
-      }
-      player.src = source.url;
-      cratePreview = player;
-      await player.play();
-    } else {
-      const license = window.StemRemixLicense.resolve([...remix.layers.map(layer => layer.attribution), source.attribution]);
-      if (!license.allowed) throw new Error(license.reason);
-      cratePreview?.pause();
-      const layer = addRemixLayer({ id: source.id, filename: source.attribution.title, attribution: source.attribution, labels: { source: source.attribution.title } }, { name: 'source', url: source.url });
-      if (!layer) throw new Error('Finish recording or remove a layer before adding another.');
-      layer.duration = source.durationSec;
-      document.getElementById('remix-deck').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      crateImportStatus.textContent = `Added “${source.attribution.title}” to your mix.`;
-      crateImportStatus.hidden = false;
-      crateImportStatus.classList.remove('error');
-    }
-  } catch (error) {
-    crateImportStatus.textContent = error.message;
-    crateImportStatus.hidden = false;
-    crateImportStatus.classList.add('error');
-  } finally { button.disabled = false; button.textContent = label; }
-}
-
 async function handleFile(file) {
   if (file.size > 100 * 1024 * 1024) {
     showUploadMessage('File too large (max 100 MB).', true);
@@ -3628,7 +3280,7 @@ function renderFolders() {
     li.innerHTML = `
       <div class="folder-head">
         <button class="folder-open" aria-expanded="false">
-          <span class="crate-toggle-caret" aria-hidden="true">▶</span>
+          <span class="folder-caret" aria-hidden="true">▶</span>
           <span class="folder-name">${esc(folder.name)}</span>
           <span class="mono folder-count">· ${folder.itemCount}</span>
         </button>
@@ -4173,8 +3825,8 @@ function pollSoon() {
 // --- workshop stations: 01 Splitter | 02 Remixer ---------------------------
 //
 // Two benches, one shop. The Splitter takes a song apart; the Remixer puts
-// the layers back together wrong — on purpose. Panels stay in the DOM (the
-// crate keeps its search state, mixers keep playing) and only visibility
+// the layers back together wrong — on purpose. Panels stay in the DOM
+// (mixers keep playing) and only visibility
 // flips, so switching stations never tears anything down.
 
 const STATIONS = {
@@ -4201,9 +3853,6 @@ const stationTagline = document.getElementById('station-tagline');
 
 let currentStation = 'splitter';
 let splitterKicker = '';
-// Keep the Crate implementation available for the gated Remixer, but take its
-// entry point off the Splitter until the revised workflow is ready to return.
-const CRATE_ON_SPLITTER_ENABLED = false;
 
 // The kicker doubles as the split-options summary on the Splitter bench, so
 // async option loads route through here instead of writing the DOM directly —
@@ -4242,20 +3891,6 @@ function initStations() {
   document.querySelector('.bench-tabs').hidden = !runtime.remixer;
   document.querySelector('.station-next').hidden = !runtime.remixer;
   document.body.classList.toggle('remixer-enabled', runtime.remixer);
-  if (!runtime.remixer) document.querySelector('.crate-note').textContent = 'Browse openly licensed recordings and choose a track to split.';
-  if (!runtime.remixer) {
-    const crate = document.getElementById('crate');
-    stationViews.splitter.append(crate);
-    crate.hidden = runtime.authMode === 'cail' && !CRATE_ON_SPLITTER_ENABLED;
-  }
-  else {
-    const crate = document.getElementById('crate');
-    stationViews.remixer.append(crate);
-    crate.hidden = false;
-    document.getElementById('crate-toggle').setAttribute('aria-expanded', 'true');
-    crateToggle.classList.add('open');
-    document.getElementById('crate-body').hidden = false;
-  }
   for (const [name, tab] of Object.entries(stationTabs)) {
     tab.addEventListener('click', () => switchStation(name));
   }
@@ -4583,7 +4218,6 @@ function syncLayer(layer) {
 
 function remixPlay() {
   if (remix.playing || !remix.layers.length) return;
-  cratePreview?.pause();
   const ctx = remixCtx();
   if (ctx && ctx.state === 'suspended') void ctx.resume();
   remix.playing = true;
@@ -4906,7 +4540,7 @@ function setCaptureControls(recording) {
   remixPlayBtn.disabled = recording;
   document.getElementById('remix-title').disabled = recording;
   document.getElementById('remix-length').disabled = recording;
-  document.querySelectorAll('.crate-add, .crate-preview, .shelf-stem, .shelf-add-all, .to-remix-btn').forEach(button => { button.disabled = recording || button.dataset.unavailable === 'true'; });
+  document.querySelectorAll('.shelf-stem, .shelf-add-all, .to-remix-btn').forEach(button => { button.disabled = recording || button.dataset.unavailable === 'true'; });
 }
 
 async function addTake(chunks, manifest) {

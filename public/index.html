@@ -95,52 +95,15 @@
     </div>
 
     <div id="view-remixer" role="tabpanel" aria-labelledby="tab-remixer" hidden>
-      <section id="crate" class="crate">
-        <button type="button" id="crate-toggle" class="crate-toggle" aria-expanded="false" aria-controls="crate-body">
-          <span class="crate-toggle-caret" aria-hidden="true">▶</span>
-          <span>BROWSE THE CRATE</span>
-          <span class="crate-toggle-sub mono">openly licensed songs &amp; sounds — musical and not — from the Internet Archive</span>
-        </button>
-
-        <div id="crate-body" class="crate-body" hidden>
-          <p class="crate-note mono">
-            Preview a track, add it to your mix, then layer and record your song.
-            SPLIT is optional. Downloads include the source credits.
-          </p>
-          <form id="crate-form" class="crate-form">
-            <input
-              id="crate-query"
-              type="search"
-              placeholder="search artist, album, or genre"
-              aria-label="Search the Internet Archive"
-            />
-            <select id="crate-scope" aria-label="Collection scope">
-              <option value="music">Music</option>
-              <option value="all">All open audio</option>
-            </select>
-            <button type="submit" class="yt-go">SEARCH</button>
-          </form>
-
-          <p id="crate-import-status" class="crate-status crate-import-status mono" hidden></p>
-          <p id="crate-status" class="mono crate-status" hidden></p>
-          <ul id="crate-results" class="crate-results"></ul>
-          <div id="crate-pager" class="crate-pager" hidden>
-            <button type="button" id="crate-prev" class="crate-page-btn">◀ PREV</button>
-            <span id="crate-page-label" class="mono"></span>
-            <button type="button" id="crate-next" class="crate-page-btn">NEXT ▶</button>
-          </div>
-        </div>
-      </section>
-
       <section id="shelf" class="rack shelf">
         <h2 class="rack-title"><span>THE SHELF</span><span class="rack-step mono">01 · pull layers</span></h2>
-        <p id="shelf-empty" class="empty mono">Optional: send stems here from the Splitter.</p>
+        <p id="shelf-empty" class="empty mono">Send stems here from the Splitter.</p>
         <ul id="shelf-list" class="shelf-list"></ul>
       </section>
 
       <section id="remix-deck" class="remix-deck">
         <h2 class="rack-title"><span>REMIX DECK</span><span class="rack-step mono">02 · stack &amp; bend</span></h2>
-        <p id="deck-empty" class="empty mono">Choose ADD TO MIX on a Crate track to begin.</p>
+        <p id="deck-empty" class="empty mono">Add a stem from the shelf to begin.</p>
         <div class="remix-song-fields">
           <label>Song title <input id="remix-title" maxlength="80" value="Untitled remix" /></label>
           <label>Length (seconds) <input id="remix-length" type="number" min="1" max="600" value="60" /></label>

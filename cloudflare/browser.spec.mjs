@@ -5,7 +5,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 const receipts = process.env.STEM_SCREENSHOT_DIR;
-test('CAIL student, instructor and admin surfaces; one Crate and attribution-bearing Remixer capture', async ({ page, context }) => {
+test('CAIL student, instructor and admin surfaces; no Crate and attribution-bearing Remixer capture', async ({ page, context }) => {
   const issuer = await createTestIdentityIssuer();
   const alice = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
   const admin = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.carol });
@@ -55,7 +55,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.addInitScript((subject) => localStorage.setItem(`jobs:${subject}`, JSON.stringify([{ id: 'remix-fixture', filename: 'Licensed fixture', model: 'htdemucs_ft' }])), TEST_SUBJECTS.alice);
     await page.goto(url.href);
     await expect(page.locator('.badge.ready')).toBeVisible();
-    await expect(page.locator('#crate')).toHaveCount(1);
+    await expect(page.locator('#crate')).toHaveCount(0);
     await expect(page.locator('#split-summary')).toBeHidden();
     // Screenshot capture can outlast the short fixture. Keep it playing until
     // the explicit pause click, rather than accidentally toggling Play again.
@@ -127,7 +127,7 @@ test('CAIL student, instructor and admin surfaces; one Crate and attribution-bea
     await page.reload();
     await expect(page.locator('.badge.ready')).toBeVisible();
     await page.getByRole('tab', { name: /REMIXER/ }).click();
-    await expect(page.locator('#crate')).toBeVisible();
+    await expect(page.locator('#shelf')).toBeVisible();
     await page.locator('.shelf-stem').first().click();
     await expect(page.locator('.rlayer')).toHaveCount(1);
     await page.getByRole('button', { name: '● CAPTURE' }).click();

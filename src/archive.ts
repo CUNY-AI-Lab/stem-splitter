@@ -4,12 +4,9 @@
 // public audio over HTTPS without a bot-check, so a direct provider fetch is
 // the whole story (and costs nothing per import).
 //
-// Public song search verifies downloadable MP3s; the separate Crate and remix
-// paths retain their open-license floor. Boundaries are enforced here:
-//   - the search query is assembled server-side so students can never widen it
-//     past open-licensed audio (see buildQuery), and
-//   - Crate imports repeat that open-license check and exclude
-//     NoDerivatives (ND), because stems are a derivative work; and
+// Public song search verifies downloadable MP3s. Boundaries are enforced here:
+//   - item loads repeat the open-license check and exclude NoDerivatives (ND),
+//     because stems are a derivative work; and
 //   - provider redirects, response sizes, read times, and audio signatures are
 //     bounded before any bytes are stored.
 import type { Env } from './env';
@@ -23,8 +20,6 @@ export const ARCHIVE_SEARCH_MAX_BYTES = 12 * 1024 * 1024;
 const PUBLIC_AUDIO_MAX_SECONDS = 5 * 60;
 // Callers derive this from verified identity, never a client-supplied role.
 const archiveDurationLimit = (maximumSeconds?: number) => maximumSeconds === 900 ? 900 : PUBLIC_AUDIO_MAX_SECONDS;
-const SEARCH_ROWS = 24;
-const MAX_SEARCH_PAGE = 20;
 const MAX_TERM_LENGTH = 120;
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const JSON_FETCH_TIMEOUT_MS = 20 * 1000;
@@ -38,15 +33,6 @@ const METADATA_API = 'https://archive.org/metadata';
 const DOWNLOAD_BASE = 'https://archive.org/download';
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
-
-/**
- * Open-licence floor: CC or public domain, minus every NoDerivatives variant.
- * Two ND exclusions because CC v1.0 licences used bare "nd" / "nd-nc" path
- * segments (licenses/nd/1.0, licenses/nd-nc/1.0) that the *-nd* infix misses —
- * 98 such items were live in the scoped collections when this was written.
- */
-const LICENSE_FILTER =
-  'licenseurl:(*creativecommons* OR *publicdomain*) AND NOT licenseurl:*-nd* AND NOT licenseurl:*licenses\\/nd*';
 
 /**
  * True when any licence module is NoDerivatives. Parses the licence code out
@@ -80,29 +66,6 @@ function isOpenLicenseUrl(raw: string): boolean {
   );
 }
 
-/**
- * Collection scopes offered to the UI. `music` is the curated default;
- * `all` widens to the general open-audio pool (which mixes in spoken word,
- * radio and podcasts, so it is opt-in).
- */
-export const ARCHIVE_SCOPES = {
-  music: {
-    label: 'Music',
-    collections: ['netlabels', 'audio_music'],
-  },
-  all: {
-    label: 'All open audio',
-    collections: ['netlabels', 'audio_music', 'opensource_audio'],
-  },
-} as const;
-
-export type ArchiveScope = keyof typeof ARCHIVE_SCOPES;
-
-export function isArchiveScope(value: unknown): value is ArchiveScope {
-  return typeof value === 'string' && Object.hasOwn(ARCHIVE_SCOPES, value);
-}
-
-/** Errors safe to show to students verbatim. */
 export class ArchiveError extends Error {
   readonly code: string;
   readonly retryable: boolean;
@@ -120,16 +83,6 @@ export interface ArchiveAudio {
   title: string;
   durationSec: number;
   attribution: { title: string; creator: string; sourceUrl: string; licenseUrl: string; fileName: string; itemTitle?: string; itemCreator?: string; fileCreator?: string };
-}
-
-export interface ArchiveSearchResult {
-  identifier: string;
-  title: string;
-  creator: string;
-  year: number | null;
-  license: string;
-  licenseUrl: string;
-  downloads: number;
 }
 
 export interface ArchiveTrack {
@@ -185,31 +138,6 @@ export function parseArchiveIdentifier(input: string): string | null {
     return null;
   }
   return IDENTIFIER_PATTERN.test(identifier) ? identifier : null;
-}
-
-/**
- * Builds the Lucene query. User text is reduced to quoted terms so it cannot
- * introduce operators or fields and escape the licence/collection floor.
- */
-function buildQuery(term: string, scope: ArchiveScope): string {
-  const collections = ARCHIVE_SCOPES[scope].collections
-    .map((name) => `collection:${name}`)
-    .join(' OR ');
-
-  const clauses = [`mediatype:audio`, `(${collections})`, LICENSE_FILTER];
-
-  const tokens = term
-    .slice(0, MAX_TERM_LENGTH)
-    .split(/\s+/)
-    .map((token) => token.replace(/[^\p{L}\p{N}'&._-]/gu, ''))
-    .filter((token) => token.length > 0)
-    .slice(0, 8);
-
-  if (tokens.length > 0) {
-    clauses.push(`(${tokens.map((token) => `"${token}"`).join(' AND ')})`);
-  }
-
-  return clauses.join(' AND ');
 }
 
 /** `…/licenses/by-nc-sa/4.0/` → `CC BY-NC-SA 4.0`. */
@@ -462,77 +390,6 @@ async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIME
   }
 }
 
-export async function searchArchive(
-  term: string,
-  scope: ArchiveScope,
-  page: number
-): Promise<{ results: ArchiveSearchResult[]; total: number; page: number }> {
-  const safePage = Math.min(Math.max(Math.trunc(page) || 1, 1), MAX_SEARCH_PAGE);
-
-  const url = new URL(SEARCH_API);
-  url.searchParams.set('q', buildQuery(term, scope));
-  for (const field of ['identifier', 'title', 'creator', 'licenseurl', 'year', 'downloads']) {
-    url.searchParams.append('fl[]', field);
-  }
-  // Popularity is the least-bad relevance proxy here and keeps the first page
-  // of a broad query (e.g. "piano") on things students can actually use.
-  url.searchParams.append('sort[]', 'downloads desc');
-  url.searchParams.set('rows', String(SEARCH_ROWS));
-  url.searchParams.set('page', String(safePage));
-  url.searchParams.set('output', 'json');
-
-  const payload = await fetchJson(url.toString(), 'search');
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new ArchiveError('Internet Archive search returned an unreadable response.');
-  }
-  const response = (payload as Record<string, unknown>).response;
-  if (!response || typeof response !== 'object' || Array.isArray(response)) {
-    throw new ArchiveError('Internet Archive search returned an unreadable response.');
-  }
-  const rawDocs = (response as Record<string, unknown>).docs;
-  const rawTotal = (response as Record<string, unknown>).numFound;
-  if (!Array.isArray(rawDocs)) {
-    throw new ArchiveError('Internet Archive search returned an unreadable response.');
-  }
-  const docs = rawDocs
-    .filter(
-      (doc): doc is Record<string, unknown> =>
-        Boolean(doc) && typeof doc === 'object' && !Array.isArray(doc)
-    )
-    .slice(0, SEARCH_ROWS);
-  const total = Number(rawTotal);
-  return {
-    page: safePage,
-    total: Number.isSafeInteger(total) && total >= 0 ? total : 0,
-    results: docs
-      .filter((doc) => {
-        const identifier = typeof doc.identifier === 'string' ? doc.identifier : '';
-        const licenseUrl = firstString(doc.licenseurl);
-        return (
-          IDENTIFIER_PATTERN.test(identifier) &&
-          isOpenLicenseUrl(licenseUrl) &&
-          !licenseForbidsDerivatives(licenseUrl)
-        );
-      })
-      .map((doc) => {
-        const licenseUrl = firstString(doc.licenseurl);
-        const identifier = String(doc.identifier);
-        return {
-          identifier,
-          title: displayText(doc.title, identifier),
-          creator: displayText(doc.creator),
-          year: toYear(doc.year),
-          license: licenseLabel(licenseUrl),
-          licenseUrl,
-          downloads:
-            Number.isSafeInteger(Number(doc.downloads)) && Number(doc.downloads) >= 0
-              ? Number(doc.downloads)
-              : 0,
-        };
-      }),
-  };
-}
-
 export interface ArchiveSong {
   id: string;
   archiveId: string;
@@ -710,7 +567,7 @@ export async function verifyArchiveSample(query: string, identifier: string, fil
   return { results: [result] };
 }
 
-/** The main field searches public downloads. The separate open-license Crate keeps its existing scope. */
+/** The main field searches public downloads. */
 export async function searchArchiveSongs(query: string, onResults?: SearchListener, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
   const normalized = archiveSongSearchKey(query);
   const tokens = normalized.split(' ').filter(Boolean).slice(0, 8);

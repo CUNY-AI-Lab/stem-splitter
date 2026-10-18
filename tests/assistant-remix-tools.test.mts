@@ -19,9 +19,11 @@ test('Remixer has no adversarial chat surface or scripted challenge shortcut', (
   }
 });
 
-test('the single Crate precedes the shelf and remix deck in the HTML itself', () => {
+test('the Crate is gone; the Remixer starts from the shelf', () => {
+  for (const file of ['../public/index.html', '../public/app.js', '../public/styles.css']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /crate/i, file);
+  }
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.equal((html.match(/id="crate"/g) || []).length, 1);
-  assert.ok(html.indexOf('id="crate"') < html.indexOf('id="shelf"'));
-  assert.ok(html.indexOf('id="crate"') < html.indexOf('id="remix-deck"'));
+  assert.ok(html.indexOf('id="shelf"') < html.indexOf('id="remix-deck"'));
 });
