@@ -65,44 +65,45 @@ async function localHttpsFixture(handler) {
 
 test('Expired sign-in links give students readable recovery on desktop and mobile', async ({ page }) => {
   const origin = 'https://stem-signin.test';
-  const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)) }] });
+  // This recovery page only needs the auth handler and its real static assets.
+  // Avoid a second Workerd server (and its asset-proxy socket) for CSS/images.
+  const assets = new Map([['/styles.css', 'text/css'], ['/cuny-ai-lab-logo.png', 'image/png'], ['/fonts/bricolage-grotesque-800.ttf', 'font/ttf']]);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  try {
-    await server.listen();
-    await page.route(origin + '/**', async route => {
-      const request = route.request();
-      const path = new URL(request.url()).pathname;
-      const response = path.startsWith('/auth/')
-        ? await handleAuth(new Request(request.url(), { headers: await request.allHeaders() }), {
-          PUBLIC_BASE_URL: origin, CANONICAL_BASE_URL: origin,
-          IDENTITY: path === '/auth/callback' ? {} : undefined,
-        })
-        : await server.fetch(path);
-      await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
-    });
-    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
-      await page.setViewportSize(viewport);
-      const response = await page.goto(origin + '/auth/callback?code=private-code&state=private-state');
-      expect(response.status()).toBe(401);
-      await expect(page.getByRole('heading', { name: 'Start sign-in again', exact: true })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
-      await expect(page.locator('body')).not.toContainText(/private-code|private-state|admission_required/);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      if (process.env.STEM_SCREENSHOT_DIR) {
-        await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
-        await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/signin-recovery-${viewport.width}.png`, fullPage: true });
-      }
-    }
-    await page.getByRole('link', { name: 'CUNY Login', exact: true }).click();
-    await expect(page).toHaveURL(origin + '/auth/login');
-    await expect(page.getByRole('heading', { name: 'Sign-in is temporarily unavailable', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Retry', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
+  await page.route(origin + '/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const response = path.startsWith('/auth/')
+      ? await handleAuth(new Request(request.url(), { headers: await request.allHeaders() }), {
+        PUBLIC_BASE_URL: origin, CANONICAL_BASE_URL: origin,
+        IDENTITY: path === '/auth/callback' ? {} : undefined,
+      })
+      : assets.has(path)
+        ? new Response(await readFile(new URL('../public' + path, import.meta.url)), { headers: { 'content-type': assets.get(path) } })
+        : new Response(null, { status: 404 });
+    await route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
+  });
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const response = await page.goto(origin + '/auth/callback?code=private-code&state=private-state');
+    expect(response.status()).toBe(401);
+    await expect(page.getByRole('heading', { name: 'Start sign-in again', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
-    expect(errors).toEqual([]);
-  } finally { await server.close(); }
+    await expect(page.locator('body')).not.toContainText(/private-code|private-state|admission_required/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (process.env.STEM_SCREENSHOT_DIR) {
+      await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/signin-recovery-${viewport.width}.png`, fullPage: true });
+    }
+  }
+  await page.getByRole('link', { name: 'CUNY Login', exact: true }).click();
+  await expect(page).toHaveURL(origin + '/auth/login');
+  await expect(page.getByRole('heading', { name: 'Sign-in is temporarily unavailable', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Retry', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
 
 test('Verified sessions return to Splitter directly; unavailable verification offers Retry without guessing state', async ({ page, context }) => {
