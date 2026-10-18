@@ -38,7 +38,7 @@
     "SPLIT_STARTS_DISABLED": "false",
     "RUN_DELETION_ENABLED": "true",
     "URL_IMPORT_ENABLED": "true",
-    "LINK_IMPORT_ENABLED": "false",
+    "LINK_IMPORT_ENABLED": "true",
     "CAIL_BROWSER_ORIGIN": "https://tools.ailab.gc.cuny.edu",
     "PUBLIC_BASE_URL": "https://stem-splitter.ailab-452.workers.dev",
     "CANONICAL_BASE_URL": "https://stem-splitter.ailab-452.workers.dev",
