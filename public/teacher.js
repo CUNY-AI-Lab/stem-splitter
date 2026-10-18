@@ -432,7 +432,7 @@ historyMoreBtn.addEventListener('click', async () => {
       signinForm.hidden = true;
       signoutBtn.hidden = true;
       const message = document.createElement('p');
-      message.textContent = 'Sign in with your CUNY account to open the system prompt.';
+      message.textContent = 'Sign in with your CUNY account to open Instructor Settings.';
       signinPanel.append(message);
       if (runtime.loginUrl) {
         const link = document.createElement('a');
@@ -445,7 +445,7 @@ historyMoreBtn.addEventListener('click', async () => {
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
       showPanel(false);
-      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit the system prompt.';
+      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to change Instructor Settings.';
       return;
     }
     if (cail) {
@@ -491,8 +491,7 @@ function renderSelectedSamples(){
     const label=document.createElement('strong');label.textContent=`${index+1}. ${track.artist} — ${track.title}`;
     const meta=document.createElement('p');meta.className='teacher-help';
     const checked=track.verifiedAt?`Archive checked ${formatUtc(track.verifiedAt)}`:'Archive delivery verified when selected';
-    meta.textContent=(track.genre?track.genre+' · ':'')+checked+(track.importTestedAt?' · complete import tested':'')+(track.durationSec?` · ${Math.round(track.durationSec)} seconds`:'')+(track.successfulRuns?` · ${track.successfulRuns} successful split${track.successfulRuns===1?'':'s'}`:'');
-    const genre=document.createElement('select');genre.setAttribute('aria-label',`Musical style: ${track.title}`);for(const value of ['jazz','electronic','country','funk','rock','folk','other']){const option=document.createElement('option');option.value=value;option.textContent=value;genre.append(option);}genre.value=track.genre||'other';genre.addEventListener('change',()=>{track.genre=genre.value;sampleEditorStatus('Unsaved musical style.');});
+    meta.textContent=checked+(track.importTestedAt?' · complete import tested':'')+(track.durationSec?` · ${Math.round(track.durationSec)} seconds`:'')+(track.successfulRuns?` · ${track.successfulRuns} successful split${track.successfulRuns===1?'':'s'}`:'');
     const actions=document.createElement('div');actions.className='sample-card-actions';
     for(const [text,delta] of [['Move up',-1],['Move down',1]]){const b=document.createElement('button');b.type='button';b.className='page-btn';b.textContent=text;b.disabled=index+delta<0||index+delta>=selectedSamples.length;b.setAttribute('aria-label',`${text}: ${track.title}`);b.addEventListener('click',()=>moveSample(index,index+delta));actions.append(b);}
     const remove=document.createElement('button');remove.type='button';remove.className='page-btn';remove.textContent='Remove';remove.setAttribute('aria-label',`Remove: ${track.title}`);remove.addEventListener('click',()=>{selectedSamples.splice(index,1);renderSelectedSamples();renderSampleChoices(sampleCatalog.filter(t=>`${t.artist} ${t.title}`.toLowerCase().includes(sampleSearch.value.toLowerCase())));sampleEditorStatus('Unsaved song changes.');});actions.append(remove);
@@ -518,7 +517,7 @@ function renderSelectedSamples(){
     grip.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();pointerDrag={id:event.pointerId,x:event.clientX,y:event.clientY};grip.setPointerCapture(event.pointerId);card.classList.add('sample-dragging');dragFrame=requestAnimationFrame(paintDrag);});
     grip.addEventListener('pointermove',event=>{if(pointerDrag){pointerDrag.x=event.clientX;pointerDrag.y=event.clientY;}});
     grip.addEventListener('pointerup',finishDrag);grip.addEventListener('pointercancel',finishDrag);grip.addEventListener('lostpointercapture',finishDrag);
-    card.append(grip,label,meta,genre,actions);
+    card.append(grip,label,meta,actions);
     card.addEventListener('dragstart',event=>{event.dataTransfer.setData('text/plain',sampleKey(track));event.dataTransfer.effectAllowed='move';});
     card.addEventListener('dragenter',event=>event.preventDefault());
     card.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';});
