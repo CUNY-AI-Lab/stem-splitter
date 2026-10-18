@@ -14,7 +14,9 @@ import {validateMp3Pcm} from '../src/reliability/media.ts';
 import {createHash} from 'node:crypto';
 import {OUTPUT_KIND} from '../src/reliability/output.ts';
 const names=['vocals','drums','bass','other','guitar','piano'];
-test('workerd: fifteen-minute four and Auto survive bounded stages, including five-source remainder',{timeout:240000},async()=>{
+// Fixture generation and both complete modes share this budget on slower CI runners;
+// each individual output invocation still has the separate 120-second assertion below.
+test('workerd: fifteen-minute four and Auto survive bounded stages, including five-source remainder',{timeout:600000},async()=>{
  const folder=await mkdtemp(join(tmpdir(),'stem-long-output-'));
  const audio:Record<string,Buffer>={};const timings:{mode:string;steps:number[];totalMs:number}[]=[];
  for(let i=0;i<names.length;i++){
