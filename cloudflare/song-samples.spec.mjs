@@ -24,7 +24,7 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
  try{
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.admin});await page.goto(new URL('/teacher.html',f.url).href);
   await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);
-  await expect(page.locator('#sample-selected')).toContainText('jazz');await expect(page.locator('#sample-selected')).toContainText('folk');
+  await expect(page.locator('#sample-selected')).toContainText('Bill Evans');await expect(page.locator('#sample-selected')).not.toContainText(/\b(jazz|electronic|country|funk|rock|folk) ·/);
   await expect(page.locator('#sample-selected')).toContainText('complete import tested');
   await page.locator('#sample-search').fill('https://archive.org/details/example');await expect(page.locator('#sample-search-status')).toHaveText('Search by artist or song title.');
   await page.locator('#sample-search').fill('Fixture piano');
@@ -37,7 +37,8 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
   await expect(cards.first()).toContainText('Fixture piano');
   await page.getByRole('button',{name:'Move down: Fixture piano',exact:true}).click();await expect(cards.nth(1)).toContainText('Fixture piano');
   await cards.nth(1).focus();await cards.nth(1).press('ArrowUp');await expect(cards.first()).toContainText('Fixture piano');
-  await page.getByLabel('Musical style: Fixture piano',{exact:true}).selectOption('jazz');
+  await expect(page.locator('.sample-card select')).toHaveCount(0);
+  await expect(page.locator('#sample-selected')).not.toContainText(/\b(jazz|electronic|country|funk|rock|folk)\b ·/);
   await page.locator('#samples-hold').fill('4');await page.locator('#samples-cadence').fill('7');
   await page.getByRole('button',{name:'Save songs',exact:true}).click();await expect(page.locator('#sample-settings-status')).toContainText('Saved.',{timeout:5000});
   releaseSlow();

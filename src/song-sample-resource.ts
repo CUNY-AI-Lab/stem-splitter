@@ -2,14 +2,17 @@ import catalog from '../public/search-samples.json' with { type: 'json' };
 import { verifyArchiveSample } from './archive.ts';
 import type { Env } from './env';
 
-export type SampleTrack = { artist: string; title: string; archiveId: string; archiveFile: string; durationSec?: number; verifiedAt?: string; genre?: string; importTestedAt?: string; importBytes?: number; exampleEligible?: boolean; itemTitle?: string };
+export type SampleTrack = { artist: string; title: string; archiveId: string; archiveFile: string; durationSec?: number; verifiedAt?: string; importTestedAt?: string; importBytes?: number; exampleEligible?: boolean; itemTitle?: string };
 export type SampleSettings = { enabled: boolean; holdMs: number; cadenceMs: number; reshuffle: boolean; tracks: SampleTrack[] };
 export type SampleResource = { revision: number; settings: SampleSettings; updatedBy: string | null; updatedAt: string | null };
 export const sampleTrackKey = (track: SampleTrack) => `${track.archiveId}/${track.archiveFile}`;
-// Six complete, verified recordings spanning the requested musical styles.
-const initialGenres=['jazz','electronic','country','funk','rock','folk'];
+// Six complete, verified starting recordings. Examples carry no category labels.
+const initialExamples=['riversidejazz','1979-yellow-magic-orchestra-solid-state-survivor','willie-nelson-ride-me-back-home',
+  '1976-jorge-ben-africa-brasil','HUG055CD','simon-garfunkel-sounds-of-silence-1966-2014_24-192'];
+/** Stored settings and older clients may still carry a retired category field. */
+const uncategorized = <T extends object>(track: T): Omit<T, 'genre'> => { const { genre: _genre, ...rest } = track as T & { genre?: unknown }; return rest; };
 export const defaultSampleSettings = (): SampleSettings => ({enabled:true,holdMs:3500,cadenceMs:6000,reshuffle:true,
-  tracks:initialGenres.map(genre=>catalog.find(track=>track.genre===genre)!).filter(Boolean),
+  tracks:initialExamples.map(id=>catalog.find(track=>track.archiveId===id)!).filter(Boolean).map(uncategorized),
 });
 
 export class SampleResourceError extends Error { status:400|409|502; constructor(message:string,status:400|409|502){super(message);this.status=status;} }
@@ -24,8 +27,7 @@ export function parseSampleSettings(value: unknown): SampleSettings {
     const t=raw as Record<string,unknown>;
     for (const k of ['artist','title','archiveId','archiveFile']) if(typeof t[k]!=='string' || !(t[k] as string).trim() || (t[k] as string).length>(k==='archiveFile'?512:180) || /[\u0000-\u001f\u007f]/.test(t[k] as string)) throw new SampleResourceError('Each song needs an artist, title and exact Archive file.',400);
     if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(t.archiveId as string) || !(t.archiveFile as string).toLowerCase().endsWith('.mp3')) throw new SampleResourceError('Choose a public Archive MP3.',400);
-    if(t.genre!==undefined && !['jazz','electronic','country','funk','rock','folk','other'].includes(t.genre as string))throw new SampleResourceError('Choose a valid musical style.',400);
-    return {artist:(t.artist as string).trim(),title:(t.title as string).trim(),archiveId:t.archiveId as string,archiveFile:t.archiveFile as string,...(typeof t.genre==='string'?{genre:t.genre}:{})};
+    return {artist:(t.artist as string).trim(),title:(t.title as string).trim(),archiveId:t.archiveId as string,archiveFile:t.archiveFile as string};
   });
   if(new Set(tracks.map(sampleTrackKey)).size!==tracks.length) throw new SampleResourceError('Each song can appear only once.',400);
   return {enabled:v.enabled,reshuffle:v.reshuffle,holdMs:v.holdMs as number,cadenceMs:v.cadenceMs as number,tracks};
@@ -37,7 +39,7 @@ export async function readSampleResource(db: Env['DB']): Promise<SampleResource>
   if(!row?.settings)throw new Error('Song settings are unavailable. Apply the song-resource migration.');
   // Corruption must fail closed, never silently restore an instructor-disabled pool.
   const parsed=JSON.parse(row.settings);const valid=parseSampleSettings(parsed);
-  const tracks=valid.tracks.map(t=>({...t,...(parsed.tracks.find((x:SampleTrack)=>sampleTrackKey(x)===sampleTrackKey(t)) || {})}));
+  const tracks=valid.tracks.map(t=>uncategorized<SampleTrack>({...t,...(parsed.tracks.find((x:SampleTrack)=>sampleTrackKey(x)===sampleTrackKey(t)) || {})}));
   return {revision:row.revision,settings:{...valid,tracks},updatedBy:row.updated_by,updatedAt:row.updated_at};
 }
 
@@ -68,7 +70,7 @@ export async function saveSampleResource(db: Env['DB'], value: unknown, expected
 
 export async function instructorSampleResource(db:Env['DB']) {
   const resource=await readSampleResource(db);
-  const tracks=[...catalog,...resource.settings.tracks].filter((t,i,a)=>a.findIndex(x=>sampleTrackKey(x)===sampleTrackKey(t))===i).filter(t=>t.durationSec&&t.durationSec<=300&&t.exampleEligible!==false);
+  const tracks=[...catalog.map(uncategorized),...resource.settings.tracks].filter((t,i,a)=>a.findIndex(x=>sampleTrackKey(x)===sampleTrackKey(t))===i).filter(t=>t.durationSec&&t.durationSec<=300&&t.exampleEligible!==false);
   const urls=[...new Set(tracks.map(t=>'https://archive.org/details/'+encodeURIComponent(t.archiveId)))];
   const attribution="CASE WHEN json_valid(a.attribution) THEN a.attribution ELSE '{}' END";
   const rows=await db.prepare(`SELECT json_extract(${attribution},'$.sourceUrl') AS source_url, json_extract(${attribution},'$.fileName') AS file_name, COUNT(*) AS successful_runs

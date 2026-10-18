@@ -17,7 +17,9 @@ async function setup(){
   return {db:db as unknown as D1Database,request};
 }
 test('song settings enforce complete-name timing, bounded unique recordings and ordering',()=>{
-  const base=defaultSampleSettings();assert.equal(base.tracks.length,6);assert.deepEqual(base.tracks.map(t=>t.genre),['jazz','electronic','country','funk','rock','folk']);assert.ok(base.tracks.every(t=>t.durationSec!>0&&t.durationSec!<=300&&t.importTestedAt));
+  const base=defaultSampleSettings();assert.equal(base.tracks.length,6);assert.deepEqual(base.tracks.map(t=>t.archiveId),['riversidejazz','1979-yellow-magic-orchestra-solid-state-survivor','willie-nelson-ride-me-back-home','1976-jorge-ben-africa-brasil','HUG055CD','simon-garfunkel-sounds-of-silence-1966-2014_24-192']);assert.ok(base.tracks.every(t=>!('genre' in t)));
+  // A retired category on stored or submitted songs is accepted and dropped.
+  assert.ok(parseSampleSettings({...base,tracks:base.tracks.map(t=>({...t,genre:'country'}))}).tracks.every(t=>!('genre' in t)));assert.ok(base.tracks.every(t=>t.durationSec!>0&&t.durationSec!<=300&&t.importTestedAt));
   for(const change of [{holdMs:2999},{cadenceMs:3500},{tracks:[base.tracks[0],base.tracks[0]]},{tracks:[]},{tracks:[{...base.tracks[0],archiveFile:'not-audio.html'}]}])assert.throws(()=>parseSampleSettings({...base,...change}),SampleResourceError);
   assert.deepEqual(parseSampleSettings({...base,tracks:[...base.tracks].reverse()}).tracks.map(t=>t.title),[...base.tracks].reverse().map(t=>t.title));
   assert.equal(parseSampleSettings({...base,enabled:false,tracks:[]}).enabled,false);

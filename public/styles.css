@@ -2755,6 +2755,5 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .sample-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 @media(max-width:600px) { .sample-timing { grid-template-columns: 1fr; } }
 .sample-drag-handle { float: right; padding: .1rem .35rem; font-size: 1.5rem; cursor: grab; touch-action: none; }
-.sample-card select { margin-bottom: .6rem; max-width: 100%; }
 .sample-dragging { opacity: .65; }
 .sample-drag-target { outline: 2px dashed var(--hot); outline-offset: 2px; }
