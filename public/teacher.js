@@ -432,7 +432,7 @@ historyMoreBtn.addEventListener('click', async () => {
       signinForm.hidden = true;
       signoutBtn.hidden = true;
       const message = document.createElement('p');
-      message.textContent = 'Sign in with your CUNY account to open the system prompt.';
+      message.textContent = 'Sign in with your CUNY account to open Instructor Settings.';
       signinPanel.append(message);
       if (runtime.loginUrl) {
         const link = document.createElement('a');
@@ -445,7 +445,7 @@ historyMoreBtn.addEventListener('click', async () => {
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
       showPanel(false);
-      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to edit the system prompt.';
+      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to change Instructor Settings.';
       return;
     }
     if (cail) {

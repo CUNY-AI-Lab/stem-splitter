@@ -1706,7 +1706,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'System Prompt' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Instructor Settings' })).toBeVisible();
   await expect(page.getByText('More', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
