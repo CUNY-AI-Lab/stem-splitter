@@ -259,9 +259,12 @@ small pinned decoder dependency and separately imported module.
 A successful split prediction is saved as `split-output-v1` in the existing
 operation's `result_json`. This is a private processing journal, not API output.
 The marker removes that operation from provider-capacity counts while its
-allowance remains reserved until validated publication. The production provider
+allowance remains reserved until validated publication. The dev provider
 ceiling is `SPLIT_CONCURRENCY=2`, with one provider job per subject. Unknown starts
 remain in the count, and the shared Retry-After floor still blocks new starts.
+
+The initial rollout is dev only (`wrangler.dev.jsonc`); the production Worker
+and its concurrency configuration are not changed by this deployment.
 
 The existing adaptive-output queue now publishes all split contracts. Each
 message completes one source download/measurement, plan, peak scan, encode,

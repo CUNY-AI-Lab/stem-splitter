@@ -1,0 +1,70 @@
+{
+  // Dev Worker for Stem Splitter. `cail-stem-splitter-preview` remains the
+  // production runtime behind the `stem-splitter` alias; this configuration
+  // never touches it. Everything stateful is separate: D1, R2, queue, rate
+  // limits and the Doorway sign-in callback (derived from the `worker` prop).
+  // Deploy with `bun run deploy:dev` from this directory after `db:migrate:dev`.
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "stem-splitter-dev",
+  "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
+  "main": "worker.ts",
+  "alias": { "hono": "hono-cloudflare", "hono/factory": "hono-cloudflare/factory" },
+  "compatibility_date": "2026-09-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "browser": { "binding": "BROWSER" },
+  "workers_dev": true,
+  "preview_urls": false,
+  "limits": { "cpu_ms": 300000 },
+  "queues": {
+    "producers": [{"binding":"ADAPTIVE_OUTPUT","queue":"stem-splitter-dev-adaptive-output"}],
+    "consumers": [{"queue":"stem-splitter-dev-adaptive-output","max_batch_size":1,"max_batch_timeout":1,"max_retries":20,"max_concurrency":1,"dead_letter_queue":"stem-splitter-dev-adaptive-output-dlq"}]
+  },
+  "triggers": { "crons": ["* * * * *", "0 8 * * *"] },
+  "assets": { "directory": "../public", "binding": "ASSETS", "run_worker_first": true },
+  "observability": { "enabled": true, "logs": { "invocation_logs": false, "head_sampling_rate": 1 } },
+  "d1_databases": [{ "binding": "DB", "database_name": "stem-splitter-dev", "database_id": "c66d920f-dd3f-417f-9949-438d50128d56" }],
+  "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "stem-splitter-dev-audio" }],
+  "services": [
+    { "binding": "BUG_REPORTS", "service": "cail-tools-admission", "entrypoint": "AdmissionBugReports", "props": { "app": "stem-splitter", "origins": ["https://stem-splitter-dev.ailab-452.workers.dev"] } },
+    { "binding": "GATEWAY", "service": "cail-model-api" },
+    { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
+    { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter-dev", "workspace": false } }
+  ],
+  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } }],
+  "vars": {
+    "GATEWAY_MODEL": "glm-5.2",
+    "GATEWAY_FALLBACK_MODEL": "deepseek-v4-flash-0731",
+    "ASSISTANT_MODEL": "glm-5.2",
+    "AUTH_MODE": "cail",
+    "CAIL_CLASSROOM_ENABLED": "false",
+    "GUEST_ENABLED": "false",
+    "INTAKE_PAUSED": "false",
+    "SPLIT_STARTS_DISABLED": "true",
+    "SPLIT_CONCURRENCY": "2",
+    "RUN_DELETION_ENABLED": "true",
+    "URL_IMPORT_ENABLED": "true",
+    "CAIL_BROWSER_ORIGIN": "https://tools.ailab.gc.cuny.edu",
+    "PUBLIC_BASE_URL": "https://stem-splitter-dev.ailab-452.workers.dev",
+    "CANONICAL_BASE_URL": "https://stem-splitter-dev.ailab-452.workers.dev",
+    "ROUTED_AUDIO": "true",
+    "CF_ACCOUNT_ID": "452c33847cf5cb1e46f391fca32fd1b5",
+    "R2_BUCKET_NAME": "stem-splitter-dev-audio",
+    "SEPARATION_BACKEND": "replicate",
+    "REPLICATE_YT_MODEL": "smorello87/yt-audio",
+    "YOUTUBE_FETCH_ORDER": "replicate-first",
+    "ADAPTIVE_FOUR_ENABLED": "true",
+    "SERVER_AUTO_ENABLED": "false",
+    "SERVER_AUTO_MODE": "off",
+    "INSTRUMENT_DISCOVERY_ENABLED": "false",
+    "QUERY_ISOLATION_ENABLED": "false",
+    "QUERY_ISOLATION_MODE": "off",
+    "REMIXER_ENABLED": "false",
+    "RELEASE": "dev"
+  }
+  // Secrets (`wrangler secret put <NAME> -c wrangler.dev.jsonc`, values via stdin):
+  //   WEBHOOK_SECRET            — fresh random value for this Worker only
+  //   CAIL_IDENTITY_JWKS        — public JWKS from tools.ailab.gc.cuny.edu/cail-sso/.well-known/jwks.json
+  //   REPLICATE_API_TOKEN       — set by the operator; splits fail closed until present
+  //   REPLICATE_MODEL_VERSION   — set by the operator
+  //   REPLICATE_YT_MODEL_VERSION — set by the operator
+}

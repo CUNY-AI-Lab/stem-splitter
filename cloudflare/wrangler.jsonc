@@ -36,7 +36,6 @@
     "GUEST_ENABLED": "true",
     "INTAKE_PAUSED": "false",
     "SPLIT_STARTS_DISABLED": "false",
-    "SPLIT_CONCURRENCY": "2",
     "RUN_DELETION_ENABLED": "true",
     "URL_IMPORT_ENABLED": "true",
     "LINK_IMPORT_ENABLED": "true",

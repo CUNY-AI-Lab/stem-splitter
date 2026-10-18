@@ -11,14 +11,16 @@
    objects on uncertain D1 acknowledgements and remove unpublished partials.
 5. Dispatch through the D1 outbox with periodic recovery, separate local output
    leases from provider cooldowns, and retain the existing hard deadline/DLQ.
-6. Set the production provider ceiling to two with one per subject; keep output
+6. Set the dev provider ceiling to two with one per subject; keep output
    concurrency at one. Make the preparation phase visible in the existing UI.
 7. Test duplicate delivery, crash/lease takeover, lost sends, lost acknowledgements,
    cancellation, deadline crossing, fair multi-Worker claiming, storage failures,
    full fifteen-minute four/Auto composition and authenticated output playback.
 8. Run the shared, adapter, browser and immutable-tree release gates. Merge through
-   the Cloudflare release branch, deploy the exact merge, then verify production
-   jobs, provider/allowance counts, long-track timing and browser playback.
+   the shared Cloudflare branch and deploy the exact merge only to dev, with
+   `SPLIT_STARTS_DISABLED=true` as requested. Verify health, sign-in, assets and
+   provider-disabled behavior. Live provider/allowance counts, Cloudflare CPU
+   timing and generated-stem playback remain pending until dev is enabled.
 
 Rollback: the preceding Worker version can read the unchanged schema. Its older
 code ignores the output journal and re-polls the same existing prediction. Drain

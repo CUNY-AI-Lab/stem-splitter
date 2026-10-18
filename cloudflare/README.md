@@ -22,6 +22,35 @@ separate release gates. `TODO.md` records the coordinated PR1–PR3 status.
 The [local acceptance record](../docs/acceptance/classroom-2026-10-06.md) lists
 test results, screenshots, migration rehearsal and dependency-audit limits.
 
+## Dev Worker — October 17, 2026
+
+`wrangler.dev.jsonc` deploys `stem-splitter-dev` at
+`https://stem-splitter-dev.ailab-452.workers.dev` with its own D1
+(`stem-splitter-dev`, `c66d920f-dd3f-417f-9949-438d50128d56`), R2
+(`stem-splitter-dev-audio`, 90-day expiry, 1-day incomplete-multipart abort),
+queue (`stem-splitter-dev-adaptive-output`), rate-limit namespace and secrets.
+`cail-stem-splitter-preview` remains the production runtime behind the
+`stem-splitter` alias; it is not renamed, redeployed or read by the dev Worker.
+Workers cannot be renamed, so "renaming the preview" would mean deleting
+production, which this change does not do.
+
+Sign-in uses one `IDENTITY` binding whose `worker` prop is `stem-splitter-dev`;
+Doorway derives the callback from that prop, so no Doorway registration is
+needed. `CANONICAL_BASE_URL` equals the dev origin so the adapter selects that
+binding. Guest access is off on dev, which keeps Turnstile and guest-cookie
+secrets out of it. `ASSISTANT_MODEL`, `REPLICATE_YT_MODEL` and
+`YOUTUBE_FETCH_ORDER` are plain vars on dev.
+
+From this directory: `bun run db:migrate:dev` applies `schema.sql` and the
+numbered migrations (duplicates are no-ops), `bun run deploy:dev:check` is the
+dry run, `bun run deploy:dev` deploys. Secrets go through stdin:
+`WEBHOOK_SECRET` (fresh random) and `CAIL_IDENTITY_JWKS` (the public JWKS) are
+set at creation; `REPLICATE_API_TOKEN`, `REPLICATE_MODEL_VERSION` and
+`REPLICATE_YT_MODEL_VERSION` are set by the operator, and splits fail closed
+with the existing provider-configuration message until they exist. `/healthz`,
+anonymous denial and a real CUNY sign-in on the dev origin are the acceptance
+checks; they do not attest to production.
+
 ## Current authority — October 17, 2026
 
 The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from
@@ -323,16 +352,25 @@ Turn the flag on only after that release; roll back by setting it to `"false"`.
 The October 18 pipeline checkpoints output preparation in the existing D1
 operation and runs one bounded stage per queue message. Native LAME WebAssembly
 replaces the JavaScript encoder. Provider capacity is released as soon as its
-terminal output is durably handed off; the production ceiling is two provider
+terminal output is durably handed off; the dev ceiling is two provider
 jobs, one per subject. Output remains one stage at a time for the 128 MiB isolate
 memory limit and uses 5 MiB multipart buffering. All published MP3s are fully
 decoded in their own validation stages.
 
-No migration, new secret or additional Worker is required. Keep the existing
-queue/DLQ and R2 incomplete-upload policy. `bun run test` includes the actual
+This rollout targets only `stem-splitter-dev` through `wrangler.dev.jsonc`.
+Production is not redeployed and retains its existing concurrency configuration.
+No migration or additional Worker is required. Create the separate
+`stem-splitter-dev-adaptive-output-dlq` before deployment and keep the R2
+incomplete-upload policy. Dev needs the existing approved Replicate key and
+model pin before live separation can be tested. `bun run test` includes the actual
 Workerd fifteen-minute four/Auto regression; `output-pipeline.test.ts` covers
 idempotent stage recovery and the multi-Worker queue gate exercises the two-slot
 ceiling. The new `PREPARING TRACKS` state is safe to leave and revisit.
+
+For this dev rollout, `SPLIT_STARTS_DISABLED=true` keeps provider calls disabled
+at the user's request. The long-track regression runs locally in Workerd;
+live provider/audio and Cloudflare CPU acceptance remain pending until explicitly
+enabled with approved dev credentials.
 
 Before rollback, drain pending output work where possible. The previous version
 uses the same schema and prediction but repeats monolithic composition and

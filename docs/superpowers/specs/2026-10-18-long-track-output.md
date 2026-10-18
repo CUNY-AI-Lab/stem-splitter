@@ -30,8 +30,11 @@ single provider slot; a failed invocation repeated the downloads and encoding.
 
 ## Release boundaries
 
-Use the existing Cloudflare runtime, queue, DLQ, D1 and R2. There is no new
-service, provider model, secret, schema migration or Railway change. The frozen
+Deploy only `stem-splitter-dev` through `cloudflare/wrangler.dev.jsonc`, using its
+separate D1, R2 and queue. Add its missing DLQ and use only the already approved
+Replicate key/pins if the dev bindings need provisioning. Production is not a
+deployment target for this change; its concurrency configuration stays unchanged.
+There is no new provider model, schema migration or Railway change. The frozen
 root analyzer dependency inputs stay unchanged. The import Worker is unaffected.
 
 Provider time and cold starts remain external constraints. Two is an application
