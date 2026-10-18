@@ -1660,12 +1660,15 @@ footer a:hover { color: var(--hot); }
 /* A compact control line above a full-width, unobscured source waveform. */
 .channel {
   display: grid;
-  grid-template-columns: 6.2rem minmax(0, 1fr);
+  /* One shared name column keeps every waveform aligned. It fits the longest
+     stem name ("instrumental") on one line; longer custom names end in an
+     ellipsis rather than splitting a word onto a second line. */
+  grid-template-columns: 7.25rem minmax(0, 1fr);
   gap: .2rem .75rem;
   padding: .35rem .1rem;
 }
-.channel .ch-id { grid-column: 1; grid-row: 2; min-width: 0; overflow-wrap: anywhere; align-self: center; }
-.channel .ch-name { font-size: .72rem; letter-spacing: .08em; }
+.channel .ch-id { grid-column: 1; grid-row: 2; min-width: 0; align-self: center; }
+.channel .ch-name { font-size: .72rem; letter-spacing: .08em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
 .channel .meter {
   grid-column: 2;
@@ -1713,11 +1716,22 @@ footer a:hover { color: var(--hot); }
   padding: .3rem;
 }
 @media (max-width: 540px) {
-  .channel { grid-template-columns: 5.25rem minmax(0, 1fr); gap: .2rem .55rem; }
+  .channel { grid-template-columns: 6.4rem minmax(0, 1fr); gap: .2rem .5rem; }
+  .channel .ch-id { gap: .45rem; }
+  .channel .ch-name { font-size: .66rem; letter-spacing: .06em; }
   .channel .meter { height: 1.5rem; }
+  /* One control scale on phones: every rack button is 24px tall (the touch
+     floor) with the same small type, and the play button stops dominating. */
   .channel .solo-btn,
-  .channel .mute-btn { flex-basis: 3.4rem; width: 3.4rem; height: 1.5rem; font-size: .65rem; letter-spacing: .08em; }
-  .channel .dl { width: 1.5rem; height: 1.5rem; }
+  .channel .mute-btn { flex-basis: 3rem; width: 3rem; height: 1.5rem; padding: 0 .3rem; font-size: .6rem; letter-spacing: .06em; }
+  .channel .dl {
+    width: 1.5rem; height: 1.5rem; padding: 0;
+    border: 1px solid var(--panel-edge); border-radius: 6px;
+    color: var(--ink-dim); font-size: .7rem; line-height: 1;
+  }
+  .note-btn { display: inline-flex; align-items: center; height: 1.5rem; padding: 0 .5rem; font-size: .6rem; letter-spacing: .06em; }
+  .play-btn { width: 42px; height: 42px; font-size: .95rem; }
+  .actions-toggle { min-width: 1.75rem; min-height: 1.75rem; padding: .2rem .45rem; font-size: .75rem; }
 }
 
 .coach-cancel {
