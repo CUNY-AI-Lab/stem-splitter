@@ -2,6 +2,7 @@ import { publicSampleResource, readSampleResource } from '../src/song-sample-res
 import { isPlaylistSample, playlistSampleResponse } from '../src/playlist-samples.ts';
 import { recordPageUse, recordServerUse, recordSignInUse } from '../src/reliability/observability.ts';
 import { youtubeImportConfiguration } from '../src/youtube.ts';
+import { logSplitError } from '../src/reliability/error-log.ts';
 import { validateStemAudio } from './audio-validator.ts';
 import { composeStemAudio } from './adaptive-audio.ts';
 import app, { runReliableJobs, resumeAdaptiveOutput } from '../src/index.ts';
@@ -63,7 +64,10 @@ export default {
       try {
         const done=await resumeAdaptiveOutput({...env,validateStemAudio,composeStemAudio},body.jobId);
         if(done)message.ack();else message.retry({delaySeconds:15});
-      } catch { message.retry({delaySeconds:30}); }
+      } catch(error) {
+        logSplitError('adaptive_queue_failed',body.jobId,'adaptive_output',error);
+        message.retry({delaySeconds:30});
+      }
     }
   },
   async scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {

@@ -307,7 +307,7 @@ for(const failure of ['denied','delivery-403','invalid-audio','invalid-length','
  assert.equal(current.state,'failed');
  assert.equal(current.error_code,{denied:'youtube_source_denied','delivery-403':'youtube_fetch_unavailable','invalid-audio':'invalid_audio_response','invalid-length':'invalid_audio_response',expired:'youtube_fetch_timeout'}[failure]);
  await reconcileSplit(env,current,complete);
- assert.equal(reads,1);assert.equal(downloads,['denied','expired'].includes(failure)?0:1);
+ assert.equal(reads,failure==='expired'?0:1);assert.equal(downloads,['denied','expired'].includes(failure)?0:1);
  assert.equal((await splitAllowance(db,subject)).completed,0);assert.equal((await splitAllowance(db,subject)).inProgress,0);
 });
 

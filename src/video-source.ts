@@ -8,6 +8,15 @@ const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 const VIMEO_ID = '[1-9][0-9]{0,11}';
 const VIMEO_HASH = /^[a-fA-F0-9]{10}$/;
 
+/** Retirement applies to the whole source, including noncanonical page URLs. */
+export function isVimeoUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/\.$/, '');
+    return host === 'vimeo.com' || host.endsWith('.vimeo.com');
+  } catch { return false; }
+}
+
 /** Accept individual videos on known hosts; drop tracking data and retain
  * Vimeo's unlisted access hash only when its location is unambiguous.
  */

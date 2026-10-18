@@ -12,7 +12,7 @@
   "limits": { "cpu_ms": 300000 },
   "queues": {
     "producers": [{"binding":"ADAPTIVE_OUTPUT","queue":"cail-stem-splitter-adaptive-output"}],
-    "consumers": [{"queue":"cail-stem-splitter-adaptive-output","max_batch_size":1,"max_batch_timeout":1,"max_retries":20,"max_concurrency":1}]
+    "consumers": [{"queue":"cail-stem-splitter-adaptive-output","max_batch_size":1,"max_batch_timeout":1,"max_retries":20,"max_concurrency":1,"dead_letter_queue":"cail-stem-splitter-adaptive-output-dlq"}]
   },
   "triggers": { "crons": ["* * * * *", "0 8 * * *"] },
   "assets": { "directory": "../public", "binding": "ASSETS", "run_worker_first": true },

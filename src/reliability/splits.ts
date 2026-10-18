@@ -17,7 +17,8 @@ import { parseBrowserAutoSummary } from '../analysis/contract.ts';
 import { processingFeatureFlags } from '../features.ts';
 import { authorizeStoredCourseWork, courseAssignmentStatement } from '../classroom/access.ts';
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation, reserveOperation, TERMINAL, type Operation } from './ledger.ts';
-import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, transition, WORK_LEASE_MS } from './queue.ts';
+import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, expireSplitOperations, transition, WORK_LEASE_MS } from './queue.ts';
+import { logSplitError } from './error-log.ts';
 import { cooldown, retryAt, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
 import { claimedOperationOwner, ownsClaimedOperation } from '../guest/claim.ts';
@@ -303,7 +304,9 @@ async function start(env: Env,op: Operation) {
 }
 
 export async function reconcileSplit(env: Env,op: Operation,complete: Complete) {
-  if (!op.provider_id||!['processing','reconciling'].includes(op.state)) return;
+  if (!['processing','reconciling'].includes(op.state)) return;
+  if (op.deadline<=Date.now()) {await expireSplitOperations(env.DB,Date.now(),op.id);return;}
+  if (!op.provider_id) return;
   const now=Date.now(),owner=crypto.randomUUID();
   const claimed=await env.DB.prepare(`UPDATE app_operations SET lease_owner=?,lease_until=?,fence=fence+1,updated_at=?
     WHERE id=? AND fence=? AND lease_until<=? AND not_before<=? AND state IN ('processing','reconciling')
@@ -312,6 +315,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
     .bind(owner,now+WORK_LEASE_MS,now,op.id,op.fence,now,now,now,now).first<Operation>();
   if(!claimed)return;
   let nextPollAt=now+5000;
+  let stage: 'source_import' | 'provider_status' | 'output_ingest' = op.phase==='fetch'?'source_import':'provider_status';
   let deliveryAccepted=claimed.phase==='fetch'&&claimed.error_code==='import_delivery_unavailable';
   try {
     const canCancelProvider = claimed.phase === 'fetch' || (env.SEPARATION_BACKEND ?? 'replicate') === 'replicate';
@@ -333,7 +337,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       if(current?.fence!==claimed.fence||current.lease_owner!==claimed.lease_owner)return;
       if(result.status!=='processing') {
         if(current.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No allowance was used.');
-        else await complete(env,claimed.job_id!,result,claimed);
+        else {stage='output_ingest';await complete(env,claimed.job_id!,result,claimed);}
       } else if (current.cancel_requested && canCancelProvider) {
         if (await cancelReplicatePrediction(env, claimed.provider_id!)) {
           await fail(env,claimed,'cancelled','Split cancelled. No allowance was used.');
@@ -341,6 +345,7 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       }
     }
   } catch(error) {
+    logSplitError('split_reconcile_failed',claimed.job_id!,stage,error);
     if(error instanceof YouTubeError&&error.terminalPrediction&&error.retryable&&claimed.phase==='fetch'&&!claimed.cancel_requested
       &&['source_fetch_unavailable','youtube_fetch_busy','extractor_timeout','youtube_fetch_timeout'].includes(error.code)) {
       const attempts=await env.DB.prepare("SELECT COUNT(*) AS n FROM operation_attempts WHERE operation_id=? AND phase='fetch'").bind(claimed.id).first<{n:number}>();
@@ -367,7 +372,8 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
     }
     // Provider/storage outage retains the exact prediction, never creates another.
   } finally {
-    await env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0,not_before=? WHERE id=? AND fence=?')
+    if(claimed.deadline<=Date.now())await expireSplitOperations(env.DB,Date.now(),claimed.id);
+    await env.DB.prepare(`UPDATE app_operations SET lease_owner=NULL,lease_until=0,not_before=? WHERE id=? AND fence=? AND state NOT IN (${TERMINAL})`)
       .bind(Math.min(Math.max(nextPollAt,await cooldown(env.DB,'replicate')),deliveryAccepted?claimed.deadline:Infinity),claimed.id,claimed.fence).run();
   }
 }
