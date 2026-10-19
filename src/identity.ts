@@ -1,13 +1,13 @@
 import { rememberDisplayName } from './teacher-activity.ts';
 import { courseIds, resolveCourse, jobCourse, jobPermission, cleanDisplayName, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { STEM_COURSE_ID } from './classroom/contract.ts';
-import type { AdmissionCourseResolver, CourseAssignment } from './classroom/contract.ts';
+import type { AdmissionCourseResolver, CourseAssignmentV2 } from './classroom/contract.ts';
 import type { Env } from './env.ts';
 import { authorizeGuestRequest } from './guest/access.ts';
 
 export const STEM_AUDIENCE = 'cail:stem-splitter';
 export type AppRole = 'student' | 'member' | 'instructor' | 'admin' | 'guest';
-export interface AppPrincipal { subject: string; role: AppRole; quotaClass?: 'member' | 'guest'; displayName: string; course: CourseAssignment | null; courseId: string | null; }
+export interface AppPrincipal { subject: string; role: AppRole; quotaClass?: 'member' | 'guest'; displayName: string; course: CourseAssignmentV2 | null; courseId: string | null; }
 export interface AdmissionResolver extends AdmissionCourseResolver {
   resolveMembership(input: { subject: string }): Promise<unknown>;
 }
@@ -97,12 +97,12 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     if (env.CAIL_CLASSROOM_ENABLED === 'false' && (routeCourse || path === '/api/classroom/courses' || (storedCourse && !['GET','HEAD'].includes(request.method)) || (!storedCourse && !personal && request.headers.has('x-stem-course') && !['GET','HEAD'].includes(request.method)))) throw new CourseError(503,'course_work_paused');
     // Lab membership grants the personal workspace. Course membership is
     // checked separately and supplies the student allowance only when active.
-    let course: CourseAssignment | null = null;
+    let course: CourseAssignmentV2 | null = null;
     if (selected) {
       course = await resolveCourse(env, identity.subject, selected);
       // Classroom membership still gates explicit course work. The course
       // participant/owner distinction also controls the personal split tier.
-      if (!course.owner && course.classId !== STEM_COURSE_ID) {
+      if (!course.owner && !course.guestInstructor && course.classId !== STEM_COURSE_ID) {
         const entry = await resolveCourse(env,identity.subject,STEM_COURSE_ID);
         if (!entry.participant) throw new CourseError(403,'target_course_enrollment_required');
         if (role === 'member' && entry.participant && !entry.owner) role = 'student';

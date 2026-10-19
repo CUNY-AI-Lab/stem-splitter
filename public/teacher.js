@@ -6,8 +6,22 @@ const signinPanel = document.getElementById('signin-panel');
 const signinForm = document.getElementById('signin-form');
 const signinError = document.getElementById('signin-error');
 const consolePanel = document.getElementById('console-panel');
+const courseDiscovery = document.getElementById('course-discovery');
+const courseList = document.getElementById('course-list');
+const courseDiscoveryStatus = document.getElementById('course-discovery-status');
 const teacherWho = document.getElementById('teacher-who');
 const signoutBtn = document.getElementById('signout');
+const requestedCourse = (() => {
+  const value = new URLSearchParams(location.search).get('course');
+  return typeof value === 'string' && /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value) && value !== 'search'
+    ? value
+    : null;
+})();
+function teacherLoginNext(courseId) {
+  const path = new URL('/teacher.html', location.origin);
+  if (courseId) path.searchParams.set('course', courseId);
+  return `${path.pathname}${path.search}`;
+}
 
 const promptForm = document.getElementById('prompt-form');
 const amendment = document.getElementById('amendment');
@@ -40,6 +54,15 @@ let loadedRevision = 0;
 let showingPromptTop = false;
 let historyNextBeforeId = null;
 let historyLoading = false;
+let courseModeId = null;
+let courseModeName = '';
+let rosterNextCursor = null;
+
+function promptPath(suffix = '') {
+  return courseModeId
+    ? `/api/classroom/courses/${encodeURIComponent(courseModeId)}/prompt${suffix}`
+    : `/api/teacher/prompt${suffix}`;
+}
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -59,6 +82,7 @@ async function api(path, options = {}) {
 function showPanel(signedIn, teacher) {
   signinPanel.hidden = signedIn;
   consolePanel.hidden = !signedIn;
+  courseDiscovery.hidden = true;
   if (signedIn) {
     const displayName = String(teacher.displayName || '').trim();
     teacherWho.textContent = /^instructor$/i.test(displayName) ? '' : displayName;
@@ -271,6 +295,22 @@ function renderHistory(history, append = false) {
     }
     details.append(summary, body);
     item.append(head, trace, details);
+    if (courseModeId) {
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'page-btn';
+      restore.textContent = 'RESTORE AS NEW VERSION';
+      restore.setAttribute('aria-label', `Restore revision ${revision.settingsRevision} as a new version`);
+      restore.addEventListener('click', () => {
+        amendment.value = revision.amendment || '';
+        changeNote.value = `Restored revision ${revision.settingsRevision}`;
+        paintCounts();
+        showStatus(`Revision ${revision.settingsRevision} is ready to save as a new version.`);
+        promptForm.scrollIntoView({behavior:'smooth',block:'center'});
+        amendment.focus();
+      });
+      item.appendChild(restore);
+    }
     historyList.appendChild(item);
   }
   historyEmpty.hidden = historyList.children.length > 0;
@@ -284,7 +324,7 @@ function setHistoryPagination(hasMore, nextBeforeId) {
 }
 
 async function loadPrompt() {
-  const record = await api('/api/teacher/prompt');
+  const record = await api(promptPath());
   maxChars = record.maxChars ?? maxChars;
   maxChangeNoteChars = record.maxChangeNoteChars ?? maxChangeNoteChars;
   amendment.maxLength = maxChars;
@@ -300,6 +340,37 @@ async function loadPrompt() {
   requestAnimationFrame(() => {
     fixedPromptScroll.scrollTop = fixedPromptScroll.scrollHeight;
   });
+}
+
+async function loadCourseRoster(append = false) {
+  if (!courseModeId) return;
+  const list = document.getElementById('course-roster');
+  const status = document.getElementById('course-roster-status');
+  const more = document.getElementById('course-roster-more');
+  const query = rosterNextCursor ? `?cursor=${encodeURIComponent(rosterNextCursor)}` : '';
+  more.disabled = true;
+  status.textContent = 'Loading roster…';
+  try {
+    const page = await api(`/api/classroom/courses/${encodeURIComponent(courseModeId)}/roster${query}`);
+    if (!append) list.replaceChildren();
+    for (const participant of page.participants || []) {
+      const item = document.createElement('li');
+      item.className = 'teacher-history-item';
+      item.textContent = `${participant.displayName || 'Student'} · ${participant.splitCount || 0} saved splits`;
+      list.appendChild(item);
+    }
+    if (!append) for (const sample of page.demonstrationParticipants || []) {
+      const item = document.createElement('li');
+      item.className = 'teacher-history-item';
+      item.textContent = `DEMO DATA · ${sample.displayName} · ${sample.splitCount} sample saved splits`;
+      list.appendChild(item);
+    }
+    rosterNextCursor = page.nextCursor || null;
+    more.hidden = !rosterNextCursor;
+    status.textContent = list.children.length ? `${list.children.length} roster item${list.children.length === 1 ? '' : 's'} shown.` : 'No enrolled students are listed yet.';
+  } catch (error) {
+    status.textContent = error.message;
+  } finally { more.disabled = false; }
 }
 
 signinForm.addEventListener('submit', async (event) => {
@@ -361,8 +432,10 @@ promptForm.addEventListener('submit', async (event) => {
   }
 
   showStatus('SAVING…');
+  const promptControls = [...promptForm.querySelectorAll('button, input, textarea'), ...historyList.querySelectorAll('button')];
+  promptControls.forEach((control) => { control.disabled = true; });
   try {
-    const record = await api('/api/teacher/prompt', {
+    const record = await api(promptPath(), {
       method: 'PUT',
       body: JSON.stringify({
         amendment: amendment.value,
@@ -384,11 +457,13 @@ promptForm.addEventListener('submit', async (event) => {
     if (!previewWrap.hidden) await loadPreview();
   } catch (error) {
     showStatus(error.message, true);
+  } finally {
+    promptControls.forEach((control) => { control.disabled = false; });
   }
 });
 
 async function loadPreview() {
-  const { prompt } = await api('/api/teacher/prompt/preview');
+  const { prompt } = await api(promptPath('/preview'));
   renderPromptMarkdown(prompt, previewBody);
 }
 
@@ -410,7 +485,7 @@ historyMoreBtn.addEventListener('click', async () => {
   historyMoreBtn.textContent = 'LOADING EARLIER REVISIONS…';
   try {
     const page = await api(
-      `/api/teacher/prompt/history?before=${encodeURIComponent(historyNextBeforeId)}`
+      `${promptPath('/history')}?before=${encodeURIComponent(historyNextBeforeId)}`
     );
     renderHistory(page.history || [], true);
     setHistoryPagination(page.historyHasMore, page.historyNextBeforeId);
@@ -422,6 +497,8 @@ historyMoreBtn.addEventListener('click', async () => {
     historyMoreBtn.textContent = 'LOAD EARLIER REVISIONS';
   }
 });
+
+document.getElementById('course-roster-more').addEventListener('click', () => void loadCourseRoster(true));
 
 (async function init() {
   let cail = false;
@@ -437,21 +514,54 @@ historyMoreBtn.addEventListener('click', async () => {
       if (runtime.loginUrl) {
         const link = document.createElement('a');
         link.className = 'account-button';
-        link.href = `${runtime.loginUrl}?next=/teacher.html`;
+        const separator = runtime.loginUrl.includes('?') ? '&' : '?';
+        const next = new URLSearchParams({ next: teacherLoginNext(requestedCourse) });
+        link.href = `${runtime.loginUrl}${separator}${next}`;
         link.textContent = 'CUNY Login';
         signinPanel.append(link);
+      }
+      const account = await api('/api/account');
+      window.StemSessionGuard?.start(account.account.subject, () => { amendment.value = ''; changeNote.value = ''; fixedPromptBody.replaceChildren(); previewBody.replaceChildren(); historyList.replaceChildren(); clearSongSampleEditor(); });
+      try { await window.StemGuestClaim.run(account.account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
+      if (requestedCourse) {
+        const response = await api('/api/classroom/courses');
+        const course = response.courses.find(row => row.classId === requestedCourse && row.capabilities?.instructorPanel);
+        if (!course) throw new Error('Instructor access is not available for this class.');
+        courseModeId = course.classId;
+        courseModeName = course.className;
+        document.getElementById('sample-editor-title').closest('.sample-editor').hidden = true;
+        document.getElementById('course-roster-section').hidden = !course.capabilities.rosterRead;
+        document.getElementById('prompt-scope-note').textContent = `Class guidance for ${courseModeName}. The system prompt above remains read only.`;
+        await loadPrompt();
+        if (course.capabilities.rosterRead) await loadCourseRoster();
+        showPanel(true, {displayName:courseModeName});
+        return;
       }
     }
     const { teacher } = await api('/api/teacher/me');
     if (!teacher) {
       showPanel(false);
-      if (cail) signinPanel.querySelector('p').textContent = 'Instructor access is required to change Instructor Settings.';
+      if (cail) {
+        const { courses } = await api('/api/classroom/courses');
+        const instructorCourses = courses.filter(row => row.capabilities?.instructorPanel);
+        signinPanel.hidden = true;
+        courseDiscovery.hidden = false;
+        courseList.replaceChildren();
+        for (const course of instructorCourses) {
+          const item = document.createElement('li');
+          item.className = 'teacher-history-item';
+          const link = document.createElement('a');
+          link.href = `/teacher.html?course=${encodeURIComponent(course.classId)}`;
+          link.textContent = `${course.className} · ${course.term} · ${course.section}`;
+          item.appendChild(link);
+          courseList.appendChild(item);
+        }
+        courseDiscoveryStatus.textContent = instructorCourses.length ? 'Choose a class to review its roster and guidance.' : 'No instructor classes are available to this account.';
+      }
       return;
     }
     if (cail) {
-      const { account } = await api('/api/account');
-      window.StemSessionGuard?.start(account.subject, () => { amendment.value = ''; changeNote.value = ''; fixedPromptBody.replaceChildren(); previewBody.replaceChildren(); historyList.replaceChildren(); clearSongSampleEditor(); });
-      try { await window.StemGuestClaim.run(account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
+      // Session state was established before the course picker above.
     }
     await loadPrompt();
     await loadSongSampleEditor();

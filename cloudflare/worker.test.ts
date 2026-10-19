@@ -55,7 +55,7 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     }
     assert.doesNotMatch((await worker.fetch('/account.html')).headers.get('content-security-policy') || '', /https:\/\/\*\.archive\.org/);
     const readyHealth = await (await worker.fetch('/healthz')).json();
-    assert.deepEqual(readyHealth.courseAccess, { contract: 'stem-course-v1' });
+    assert.deepEqual(readyHealth.courseAccess, { contract: 'stem-course-v2' });
     assert.equal(readyHealth.intakePaused, false);
     // Real locally bundled Wasm runs in Workerd, with no inference/media service.
     for(const valid of [true,false]) {

@@ -70,6 +70,33 @@ for acceptance gates. Railway remains untouched, with its separate release and
 data policies. Dated handoffs below are historical evidence, not current
 deployment instructions where they conflict with this section.
 
+## Guest-instructor course access — October 18, 2026
+
+Course discovery and authorization use Admission V2 (`resolveCourseAccessV2`,
+`listCourseAssignmentsV2`, and `listCourseRosterV2`) on every protected request.
+The app strictly validates each assignment's `guestInstructor` flag and four
+capabilities before opening course tools. V1 remains untouched for its other
+consumers. A guest instructor stays a Lab member for personal workspace and
+split limits; the guest grant reaches only its assigned class. Instructor
+Settings opens at `/teacher.html?course=<classId>` and reads the base prompt,
+edits that class's appended guidance, records a change note, and restores a
+history snapshot as a new revision with the current revision check.
+The demo class also shows one separate, display-only sample roster item; it has
+no Admission identity, member ID, stored job, or paid split behind it.
+
+The production Worker allowlist contains the existing musical-experience course
+and `cail-teaching-tools-demo`, with `CAIL_CLASSROOM_ENABLED=true`. Admission
+must grant the named CUNY identity the persistent guest-instructor role for the
+demo class separately in each consuming app; this app never creates Lab-wide
+membership, enrollment, invitations, or budget authority. Deploy Admission V2
+before this Worker revision. From `cloudflare/`, run
+`bunx --no-install wrangler deploy --dry-run` and then
+`bunx --no-install wrangler deploy`. After the candidate is accepted, dry-run
+and deploy the canonical alias with
+`bunx --no-install wrangler deploy --config wrangler.alias.jsonc --dry-run` and
+`bunx --no-install wrangler deploy --config wrangler.alias.jsonc`. Revert the
+allowlist and classroom flag to `false` to close the app's course entry points.
+
 ## September 23 Gateway handoff
 
 The candidate now sends Listening Guide and chat requests through the private

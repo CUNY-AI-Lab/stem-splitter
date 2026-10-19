@@ -1,7 +1,7 @@
 import type { Env } from './env.ts';
 import type { AppPrincipal } from './identity.ts';
 import { boundedRpc, cleanDisplayName, courseIds, resolveCourse, CourseError } from './classroom/access.ts';
-import { COURSE_APP, validAssignment, validPage } from './classroom/contract.ts';
+import { COURSE_APP, validAssignmentV2, validPage } from './classroom/contract.ts';
 import { fingerprint } from './reliability/ledger.ts';
 
 export async function rememberDisplayName(env:Env,subject:string,value:unknown) {
@@ -40,10 +40,10 @@ async function profile(env:Env,subject:string,classes:string[],requireParticipan
   }
   // An administrator may review older app accounts whose original course ended.
   // Another current assignment can supply their verified name without granting access.
-  if(allowed&&!name&&env.ADMISSION_RESOLVER?.listCourseAssignments) {
+  if(allowed&&!name&&env.ADMISSION_RESOLVER?.listCourseAssignmentsV2) {
     try {
-      const value=await boundedRpc(()=>env.ADMISSION_RESOLVER!.listCourseAssignments!({subject,app:COURSE_APP,limit:100}));
-      if(validPage(value)&&'assignments' in value&&Array.isArray(value.assignments)&&value.assignments.length<=100&&value.assignments.every(row=>validAssignment(row))) {
+      const value=await boundedRpc(()=>env.ADMISSION_RESOLVER!.listCourseAssignmentsV2!({subject,app:COURSE_APP,limit:100}));
+      if(validPage(value)&&'assignments' in value&&Array.isArray(value.assignments)&&value.assignments.length<=100&&value.assignments.every(row=>validAssignmentV2(row))) {
         const verified=value.assignments.find(row=>row.displayNameSource==='verified_profile');
         if(verified){name=cleanDisplayName(verified.displayName);await rememberDisplayName(env,subject,name);}
       }

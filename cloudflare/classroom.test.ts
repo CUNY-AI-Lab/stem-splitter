@@ -6,7 +6,7 @@ import app from '../src/index.ts';
 import { SqliteD1 } from '../server/d1.ts';
 import type { Env } from '../src/env.ts';
 import type { AppPrincipal } from '../src/identity.ts';
-import { STEM_COURSE_ID as A, validAccess, validAssignment, validPage, validFailure } from '../src/classroom/contract.ts';
+import { DEMO_COURSE_ID as DEMO, STEM_COURSE_ID as A, validAccess, validAssignment, validAssignmentV2, validPage, validFailure } from '../src/classroom/contract.ts';
 import { courseFixture } from './course-fixture.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation, recoverExpiredCourseTurn } from '../src/classroom/conversations.ts';
 import { cacheGuideIfPromptCurrent, getGuide } from '../src/assistant/index.ts';
@@ -17,23 +17,24 @@ import { purgeExpiredListeningConversations } from './retention.ts';
 import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
 import { recoverExpired } from '../src/reliability/queue.ts';
 const B='another-reviewed-course';
-const ids={alice:`cail-${'1'.repeat(32)}`,bob:`cail-${'2'.repeat(32)}`,ownerA:`cail-${'3'.repeat(32)}`,ownerB:`cail-${'4'.repeat(32)}`,outsider:`cail-${'5'.repeat(32)}`,admin:`cail-${'6'.repeat(32)}`};
+const ids={alice:`cail-${'1'.repeat(32)}`,bob:`cail-${'2'.repeat(32)}`,ownerA:`cail-${'3'.repeat(32)}`,ownerB:`cail-${'4'.repeat(32)}`,outsider:`cail-${'5'.repeat(32)}`,admin:`cail-${'6'.repeat(32)}`,guestA:`cail-${'7'.repeat(32)}`};
 type Person=keyof typeof ids;
 async function setup(){
   const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
   const revoked=new Set<string>();let calls=0;
   const assignments=async(subject:string,classId:string)=>{
     const role=(classId===A&&subject===ids.ownerA)||(classId===B&&subject===ids.ownerB)?'owner'
+      :classId===DEMO&&subject===ids.guestA?'guest'
       :[ids.alice,ids.bob].includes(subject as never)||classId===B&&subject===ids.outsider?'participant':null;
     if(!role||revoked.has(`${subject}:${classId}`))return {ok:false,code:'not_enrolled',retryable:false};
-    return {...await courseFixture(subject,classId,role==='owner'),displayName:subject===ids.alice?'<b>Alice</b>':'Student'};
+    return {...await courseFixture(subject,classId,role==='owner',role==='guest'),displayName:subject===ids.alice?'<b>Alice</b>':'Student'};
   };
-  const env={AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://split.test',CAIL_COURSE_IDS:`${A},${B}`,DB:db,
+  const env={AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://split.test',CAIL_COURSE_IDS:`${A},${B},${DEMO}`,DB:db,
     verifyCailIdentity:async(token:string)=>Object.values(ids).includes(token as never)?{subject:token,name:'Ignored JWT fallback'}:null,
     ADMISSION_RESOLVER:{resolveMembership:async({subject}:{subject:string})=>({ok:true,accessRole:subject===ids.admin?'admin':'member',budgetScope:subject===ids.admin?'admin':'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}),
-      resolveCourseAccess:async({subject,classId}:{subject:string;classId:string})=>assignments(subject,classId),
-      listCourseAssignments:async({subject}:{subject:string})=>{const a=await assignments(subject,A),b=await assignments(subject,B);return {ok:true,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),revision:1,assignments:[a,b].filter(a=>a.ok).map(({ok,...row})=>row),nextCursor:null};},
-      listCourseRoster:async({subject,classId,cursor}:{subject:string;classId:string;cursor?:string})=>{const authority=await assignments(subject,classId);if(!('owner'in authority)||!authority.owner)return {ok:false,code:'not_owner',retryable:false};const people=await Promise.all(Array.from({length:45},(_,i)=>courseFixture(i===0?ids.alice:`cail-${i.toString(16).padStart(32,'0')}`,classId)));const start=cursor==='next'?40:0;return {ok:true,classId,checkedAt:authority.checkedAt,expiresAt:authority.expiresAt,revision:1,participants:people.slice(start,start+40).map(({memberId,displayName,displayNameSource,startsAt,expiresAt})=>({memberId,displayName,displayNameSource,startsAt,expiresAt})),nextCursor:start===0?'next':null};}},
+      resolveCourseAccessV2:async({subject,classId}:{subject:string;classId:string})=>assignments(subject,classId),
+      listCourseAssignmentsV2:async({subject}:{subject:string})=>{const a=await assignments(subject,A),b=await assignments(subject,B),demo=await assignments(subject,DEMO);return {ok:true,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),revision:1,assignments:[a,b,demo].filter(a=>a.ok).map(({ok,...row})=>row),nextCursor:null};},
+      listCourseRosterV2:async({subject,classId,cursor}:{subject:string;classId:string;cursor?:string})=>{const authority=await assignments(subject,classId);if(!('capabilities'in authority)||!authority.capabilities.rosterRead)return {ok:false,code:'not_owner',retryable:false};const people=await Promise.all(Array.from({length:45},(_,i)=>courseFixture(i===0?ids.alice:`cail-${i.toString(16).padStart(32,'0')}`,classId)));const start=cursor==='next'?40:0;return {ok:true,classId,checkedAt:authority.checkedAt,expiresAt:authority.expiresAt,revision:1,participants:people.slice(start,start+40).map(({memberId,displayName,displayNameSource,startsAt,expiresAt})=>({memberId,displayName,displayNameSource,startsAt,expiresAt})),nextCursor:start===0?'next':null};}},
     ASSISTANT_MODEL:'fixture',assistantTransport:async(_env:unknown,input:{messages:Array<{content:string}>},delta:(text:string)=>Promise<void>)=>{calls++;await delta('A server reply.');return {content:'A server reply.',model:'fixture',toolCalls:[],finishReason:'stop'};},
   } as unknown as Env;
   const request=(path:string,who:Person='alice',method='GET',body?:unknown,headers:Record<string,string>={})=>app.fetch(new Request(`https://split.test${path}`,{method,headers:{'x-cail-identity-jwt':ids[who],origin:'https://split.test','content-type':'application/json',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})}),env);
@@ -67,9 +68,29 @@ test('Lab membership grants personal access while course enrollment and ownershi
   for(const path of ['/api/jobs/a','/api/jobs/b','/api/jobs/a/chat','/api/files/stems/a/vocals.mp3'])assert.equal((await request(path,'alice',path.endsWith('chat')?'POST':'GET',path.endsWith('chat')?{}:undefined)).status,403);
   const personalRuns=await request('/api/jobs');assert.equal(personalRuns.status,200);
   const personalAccount=await request('/api/account');assert.equal(personalAccount.status,200);assert.equal((await personalAccount.json() as any).splitAllowance.limit,15);
-  env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>{throw new Error('private detail');};
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>{throw new Error('private detail');};
   const courseOutageAccount=await request('/api/account');assert.equal(courseOutageAccount.status,200);assert.equal((await courseOutageAccount.json() as any).splitAllowance.limit,15);
   const anonymous=await app.fetch(new Request('https://split.test/api/account'),env);assert.equal(anonymous.status,401);
+});
+test('guest instructors get only their scoped class panel, roster and versioned guidance',async()=>{
+  const {request}=await setup();
+  const listed=await request('/api/classroom/courses','guestA');assert.equal(listed.status,200);
+  const courses=(await listed.json() as any).courses;const assignedCourse=courses.find((row:any)=>row.classId===DEMO);
+  assert.equal(assignedCourse.guestInstructor,true);assert.deepEqual(assignedCourse.capabilities,{instructorPanel:true,rosterRead:true,promptRead:true,promptWrite:true});
+  assert.equal((await request('/api/teacher/me','guestA')).status,200);
+  assert.equal((await request('/api/admin/users','guestA')).status,403);
+  assert.equal((await request(`/api/classroom/courses/${A}/prompt`,'guestA')).status,403);
+  const roster=await request(`/api/classroom/courses/${DEMO}/roster`,'guestA');assert.equal(roster.status,200);
+  const demo=assignedCourse;assert.equal(demo?.guestInstructor,true);
+  const demoRoster=await request(`/api/classroom/courses/${DEMO}/roster`,'guestA');assert.equal(demoRoster.status,200);
+  const demoRows=(await demoRoster.json() as any).demonstrationParticipants;
+  assert.deepEqual(demoRows,[{displayName:'Sample student',splitCount:3,retainedCount:2,demonstration:true}]);
+  const prompt=await request(`/api/classroom/courses/${DEMO}/prompt`,'guestA');assert.equal(prompt.status,200);
+  const initial=await prompt.json() as any;assert.equal(typeof initial.basePrompt,'string');
+  const saved=await request(`/api/classroom/courses/${DEMO}/prompt`,'guestA','PUT',{amendment:'Use the class listening goals.',changeNote:'Set demo class guidance',expectedRevision:initial.revision});
+  assert.equal(saved.status,200);const revision=(await saved.json() as any).revision;
+  assert.equal((await request(`/api/classroom/courses/${DEMO}/prompt`,'guestA','PUT',{amendment:'stale write',changeNote:'Stale',expectedRevision:initial.revision})).status,409);
+  assert.equal((await request(`/api/classroom/courses/${DEMO}/prompt/history?before=${revision+1}`,'guestA')).status,200);
 });
 test('roster includes zero-work students and stable pages; scoped counts and split cursors',async()=>{
   const {request,job,db}=await setup();await job('a');await job('b','alice',B);
@@ -248,9 +269,9 @@ test('private course authority fails closed while personal Lab-member access rem
  const now=Date.parse(fixture.access.checkedAt);assert.equal(validAccess(fixture.access,now),true);assert.equal(validPage(fixture.roster,now),true);assert.equal(validFailure(fixture.denied),true);
  assert.equal(validAccess({...fixture.access,subject:ids.alice},now),false);assert.equal(validAccess(fixture.access,now+31000),false);
  const {env,request}=await setup();for(const altered of [{startsAt:new Date(Date.now()+60000).toISOString()},{expiresAt:new Date(Date.now()-1).toISOString()},{classId:B},{revision:-1},{owner:false,participant:false},{subject:ids.alice}]){
-  env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({...await courseFixture(ids.alice,A),...altered});assert.equal((await request(`/api/classroom/courses/${A}/folders`)).status,503);
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>({...await courseFixture(ids.alice,A),...altered});assert.equal((await request(`/api/classroom/courses/${A}/folders`)).status,503);
  }
- for(const code of ['scheduled','expired','revoked']){env.ADMISSION_RESOLVER!.resolveCourseAccess=async()=>({ok:false,code,retryable:false});assert.equal((await request(`/api/classroom/courses/${A}/folders`)).status,403);}
+ for(const code of ['scheduled','expired','revoked']){env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>({ok:false,code,retryable:false});assert.equal((await request(`/api/classroom/courses/${A}/folders`)).status,403);}
 });
 
 test('concurrent duplicate course turns claim once; assistant notes retain the verified initiating author',async()=>{
@@ -285,8 +306,20 @@ test('private course mirror rejects impossible UTC dates, inverted validity wind
  assert.equal(validAccess({...fixture.access,startsAt:'2026-02-31T00:00:00.000Z'},now),false);
  assert.equal(validAccess({...fixture.access,checkedAt:new Date(now+2000).toISOString(),expiresAt:new Date(now+1000).toISOString()},now),false);
  assert.equal(validPage({...fixture.roster,checkedAt:new Date(now+2000).toISOString(),expiresAt:new Date(now+1000).toISOString()},now),false);
- const {env,request}=await setup();env.ADMISSION_RESOLVER!.listCourseAssignments=async()=>{const access=await courseFixture(ids.alice);return {ok:true,checkedAt:access.checkedAt,expiresAt:access.expiresAt,revision:1,assignments:[{...access,ok:false}],nextCursor:null};};
+ const {env,request}=await setup();env.ADMISSION_RESOLVER!.listCourseAssignmentsV2=async()=>{const access=await courseFixture(ids.alice);return {ok:true,checkedAt:access.checkedAt,expiresAt:access.expiresAt,revision:1,assignments:[{...access,ok:false}],nextCursor:null};};
  assert.equal((await request('/api/classroom/courses')).status,503);
+});
+
+test('Admission V2 requires a consistent guest role and exact capability set while V1 parsing remains unchanged',async()=>{
+ const now=Date.now();const {ok:_ok,...guest}=await courseFixture(ids.guestA,DEMO,false,true);
+ assert.equal(validAssignment(guest,now),false,'V2-only fields cannot be silently accepted as V1');
+ assert.equal(validAssignmentV2(guest,now),true);
+ assert.equal(validAssignmentV2({...guest,classId:A},now),false,'guest authority is limited to the demo class');
+ assert.equal(validAssignmentV2({...guest,expiresAt:new Date(Date.parse(guest.checkedAt)+60000).toISOString()},now),false);
+ assert.equal(validAssignmentV2({...guest,capabilities:{...guest.capabilities,promptWrite:false}},now),false);
+ assert.equal(validAssignmentV2({...guest,participant:true},now),false);
+ assert.equal(validAssignmentV2({...guest,unexpected:'authority'},now),false);
+ const {ok:_studentOk,...student}=await courseFixture(ids.alice,DEMO);assert.equal(validAssignmentV2(student,now),true);
 });
 
 test('expired course turn leases recover without deleting prior messages or retrying uncertain inference',async()=>{

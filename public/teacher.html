@@ -15,6 +15,13 @@
   </header>
   <h2 class="page-title" id="class-guidance-title">Instructor Settings</h2>
 
+  <section id="course-discovery" class="deck teacher-panel" hidden aria-labelledby="course-discovery-title">
+    <h2 id="course-discovery-title">Choose a class</h2>
+    <p class="account-help">Open a class where you have instructor access.</p>
+    <ul id="course-list" class="teacher-history-list"></ul>
+    <p id="course-discovery-status" class="teacher-help" role="status"></p>
+  </section>
+
   <section id="signin-panel" class="deck teacher-panel" hidden>
     <form id="signin-form" class="teacher-form">
       <h2 class="rack-title"><span>SIGN IN</span></h2>
@@ -37,9 +44,17 @@
       <button type="button" id="signout" class="page-btn">SIGN OUT</button>
     </div>
 
+    <section id="course-roster-section" class="teacher-prompt-section" hidden aria-labelledby="course-roster-title">
+      <h2 id="course-roster-title">Class roster</h2>
+      <p class="teacher-help">Student names and saved split counts for this class.</p>
+      <ol id="course-roster" class="teacher-history-list"></ol>
+      <p id="course-roster-status" class="teacher-help" role="status"></p>
+      <button type="button" id="course-roster-more" class="page-btn" hidden>LOAD MORE STUDENTS</button>
+    </section>
+
     <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="class-guidance-title">
       <p class="account-help">System prompt instructions for Listening Guide.</p>
-      <p class="account-help">Applies across Stem Splitter, not just one class.</p>
+      <p id="prompt-scope-note" class="account-help">Applies across Stem Splitter, not just one class.</p>
       <span id="effective-prompt-meta" hidden></span>
 
       <form id="prompt-form" class="teacher-form">
