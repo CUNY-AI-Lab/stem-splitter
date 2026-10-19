@@ -324,7 +324,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.locator('.folder-btn').click();
   await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
   await expect(page.locator('.folder-menu')).toBeVisible();
-  await expect(page.locator('.folder-menu')).toContainText('SAVE TO FOLDER');
+  await expect(page.locator('.folder-menu')).toContainText('ADD TO FOLDER');
   const [{ collapsed: collapsedAfterMenu }] = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('jobs') || '[]')
   );
