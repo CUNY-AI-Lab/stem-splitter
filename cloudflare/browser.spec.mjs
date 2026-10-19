@@ -43,7 +43,12 @@ test('CAIL student, instructor and admin surfaces; no Crate and attribution-bear
     await page.goto(new URL('/teacher.html', url).href);
     await expect(page.locator('#signin-panel')).toBeVisible();
     await expect(page.getByLabel('PASSWORD')).toBeHidden();
-    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveAttribute('href', '/auth/login?next=/teacher.html');
+    const teacherLogin = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    expect(new URL(await teacherLogin.getAttribute('href'), url).searchParams.get('next')).toBe('/teacher.html');
+    await page.goto(new URL('/teacher.html?course=cail-teaching-tools-demo', url).href);
+    const demoTeacherLogin = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    expect(new URL(await demoTeacherLogin.getAttribute('href'), url).searchParams.get('next'))
+      .toBe('/teacher.html?course=cail-teaching-tools-demo');
     await expect(page.getByRole('link', { name: 'Trouble signing in?', exact: true })).toHaveCount(0);
     await page.goto(new URL('/account.html', url).href);
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
