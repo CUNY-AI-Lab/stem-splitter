@@ -532,7 +532,9 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   const {url}=await server.listen();
   const sql=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
   sql.push(`INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}')`,
+   `INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.bob}')`,
    `INSERT INTO account_display_names(subject,display_name,updated_at) VALUES('${TEST_SUBJECTS.alice}','Alice Rivera',${Date.now()})`,
+   `INSERT INTO account_display_names(subject,display_name,updated_at) VALUES('${TEST_SUBJECTS.bob}','Bob Morgan',${Date.now()})`,
    `INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('remix-fixture','Student recording','uploads/fixture.wav','done','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
    `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`);
   await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(sql)});
@@ -544,13 +546,50 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await page.getByText('Manage access',{exact:true}).click();
   await expect(page.locator('#access-member')).toContainText('Alice Rivera');
   await expect(page.locator('#access-member')).not.toContainText('cail-');
+  let activityReads=0;
+  await page.route('**/api/teacher/students',async route=>{
+   activityReads++;
+   await route.fulfill({status:503,json:{error:'Activity is temporarily unavailable.'}});
+  });
   await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
-  await expect(page.getByRole('combobox',{name:'Access level',exact:true})).toBeInViewport();
-  await expect(page.getByRole('button',{name:'Save changes',exact:true})).toBeInViewport();
-  await page.getByText('Manage access',{exact:true}).click();
-  await page.getByText('Student activity',{exact:true}).click();
-  await page.getByRole('button',{name:'Alice Rivera',exact:true}).click();
+  await expect(page.locator('#student-review')).toHaveAttribute('open','');
+  await expect(page.locator('#student-name')).toHaveText('Alice Rivera');
+  await expect(page.locator('#student-name')).toBeInViewport();
+  await expect(page.locator('#student-status')).toHaveText('Activity is temporarily unavailable.');
+  await expect(page.locator('#student-summary')).toBeEmpty();
+  expect(activityReads).toBe(1);
+  await page.unroute('**/api/teacher/students');
+  await page.locator('#student-retry').click();
   await expect(page.locator('#student-summary')).toContainText('1 split run · 1 completed');
+  await expect(page.locator('#student-jobs')).toContainText('Student recording');
+
+  // A slower recording response must not replace the next selected person's work.
+  await page.locator('#access-member').selectOption(TEST_SUBJECTS.bob);
+  await expect(page.locator('#student-summary')).toContainText('0 split runs · 0 completed');
+  let releaseAlice, aliceStarted, aliceFinished;
+  const heldAlice=new Promise(resolve=>{releaseAlice=resolve;});
+  const startedAlice=new Promise(resolve=>{aliceStarted=resolve;});
+  const finishedAlice=new Promise(resolve=>{aliceFinished=resolve;});
+  const aliceJobs=`**/api/teacher/students/${TEST_SUBJECTS.alice}/jobs`;
+  await page.route(aliceJobs,async route=>{
+   const response=await route.fetch();aliceStarted();await heldAlice;
+   await route.fulfill({response});aliceFinished();
+  });
+  await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
+  await startedAlice;
+  await page.locator('#access-member').selectOption(TEST_SUBJECTS.bob);
+  await expect(page.locator('#student-name')).toHaveText('Bob Morgan');
+  await expect(page.locator('#student-status')).toHaveText('No saved splits in the past 90 days.');
+  releaseAlice();await finishedAlice;
+  await expect(page.locator('#student-name')).toHaveText('Bob Morgan');
+  await expect(page.locator('#student-jobs')).toBeEmpty();
+  await page.unroute(aliceJobs);
+  await page.route(aliceJobs,route=>route.fulfill({status:503,json:{error:'Recordings are temporarily unavailable.'}}));
+  await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
+  await expect(page.locator('#student-status')).toHaveText('Recordings are temporarily unavailable.');
+  await page.unroute(aliceJobs);
+  await page.locator('#student-retry').click();
+  await expect(page.locator('#student-name')).toHaveText('Alice Rivera');
   await expect(page.locator('#student-jobs')).toContainText('Student recording');
   expect(audioReads).toBe(0);
   const receipts=process.env.STEM_SCREENSHOT_DIR;

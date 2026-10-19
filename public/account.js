@@ -45,11 +45,7 @@ function selectMember(event) {
   const date = user.role_expires_at ? new Date(user.role_expires_at) : null;
   el('access-expiry').value = date ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   showExpiry();
-  if (event?.type === 'change') {
-    requestAnimationFrame(() => {
-      el('access-editor').scrollIntoView({ block: 'nearest', behavior: 'instant' });
-    });
-  }
+  if (event?.type === 'change') void openAccountActivity(user);
 }
 function showExpiry() {
   const instructor = el('access-role').value === 'instructor';
@@ -159,13 +155,15 @@ el('access-form').addEventListener('submit', async (event) => {
 })();
 
 let studentSelection = '', studentCursor = null, studentRequest = 0;
-let studentRows = [];
-async function loadStudents() {
+let studentRows = [], studentsLoading = null, studentsLoaded = false;
+function loadStudents() {
+  if (studentsLoading) return studentsLoading;
   el('student-status').textContent = 'Loading students…';
   el('student-retry').hidden = true;
-  try {
+  studentsLoading = (async () => { try {
     const result = await request('/api/teacher/students');
     studentRows = result.students;
+    studentsLoaded = true;
     el('student-list').replaceChildren(...studentRows.map(student => {
       const row = document.createElement('li'), button = document.createElement('button'), count = document.createElement('span');
       button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName;
@@ -175,7 +173,33 @@ async function loadStudents() {
       row.append(button, count); return row;
     }));
     el('student-status').textContent = studentRows.length ? '' : 'Students appear here after they use Stem Splitter.';
-  } catch (error) { el('student-status').textContent = error.message; el('student-retry').hidden = false; }
+    return true;
+  } catch (error) {
+    el('student-status').textContent = error.message;
+    el('student-retry').hidden = false;
+    return false;
+  } finally { studentsLoading = null; } })();
+  return studentsLoading;
+}
+async function openAccountActivity(user) {
+  const requestId = ++studentRequest;
+  studentSelection = user.subject;
+  studentCursor = null;
+  el('student-review').open = true;
+  el('student-detail').hidden = false;
+  el('student-name').textContent = user.displayName || 'Name unavailable';
+  el('student-summary').textContent = '';
+  el('student-jobs').replaceChildren();
+  el('student-more').hidden = true;
+  el('student-status').textContent = 'Loading activity…';
+  requestAnimationFrame(() => {
+    if (studentSelection === user.subject) el('student-review').scrollIntoView({ block: 'start', behavior: 'instant' });
+  });
+  if (!studentsLoaded && !await loadStudents()) return;
+  if (requestId !== studentRequest) return;
+  const student = studentRows.find(row => row.subject === user.subject);
+  if (!student) { el('student-status').textContent = 'Activity is unavailable for this account.'; return; }
+  await loadStudentJobs(student);
 }
 async function loadStudentJobs(student, more = false) {
   const requestId = ++studentRequest;
@@ -185,7 +209,13 @@ async function loadStudentJobs(student, more = false) {
   el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} recorded ${student.recordedVisits === 1 ? "visit" : "visits"} in 30 days`;
   el('student-more').hidden = true;
   el('student-more').disabled = true;
-  if (!more) el('student-jobs').replaceChildren();
+  el('student-retry').hidden = true;
+  if (!more) {
+    el('student-jobs').replaceChildren();
+    requestAnimationFrame(() => {
+      if (requestId === studentRequest) el('student-review').scrollIntoView({ block: 'start', behavior: 'instant' });
+    });
+  }
   el('student-status').textContent = 'Loading splits…';
   try {
     const result = await request(`/api/teacher/students/${encodeURIComponent(student.subject)}/jobs${more && studentCursor ? '?cursor=' + encodeURIComponent(studentCursor) : ''}`);
@@ -205,13 +235,23 @@ async function loadStudentJobs(student, more = false) {
     studentCursor = result.nextCursor;
     el('student-more').hidden = !studentCursor;
     el('student-status').textContent = el('student-jobs').children.length ? '' : 'No saved splits in the past 90 days.';
-  } catch (error) { if (requestId === studentRequest) el('student-status').textContent = error.message; }
+  } catch (error) {
+    if (requestId === studentRequest) {
+      el('student-status').textContent = error.message;
+      el('student-retry').hidden = false;
+    }
+  }
   finally { if (requestId === studentRequest) el('student-more').disabled = false; }
 }
 el('student-review').addEventListener('toggle', () => {
-  if (el('student-review').open && !studentRows.length) void loadStudents();
+  if (el('student-review').open && !studentsLoaded && !studentSelection) void loadStudents();
 });
-el('student-retry').addEventListener('click', () => void loadStudents());
+el('student-retry').addEventListener('click', async () => {
+  const selection = studentSelection;
+  if (!await loadStudents() || selection !== studentSelection) return;
+  const student = studentRows.find(row => row.subject === selection);
+  if (student) await loadStudentJobs(student);
+});
 el('student-more').addEventListener('click', () => {
   const student = studentRows.find(row => row.subject === studentSelection);
   if (student) void loadStudentJobs(student, true);
