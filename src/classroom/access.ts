@@ -1,7 +1,7 @@
 import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { guestOwnsJob } from '../guest/access.ts';
-import { COURSE_APP, STEM_COURSE_ID, validAccess, validClassId, validFailure, type CourseAssignment } from './contract.ts';
+import { COURSE_APP, STEM_COURSE_ID, validAssignmentV2, validClassId, validFailure, type CourseAssignmentV2 } from './contract.ts';
 
 export class CourseError extends Error {
   status: 400 | 403 | 404 | 409 | 503;
@@ -19,21 +19,21 @@ export async function boundedRpc<T>(run: () => Promise<T>): Promise<T> {
   catch { throw new CourseError(503, 'course_authority_unavailable'); }
   finally { if (timer) clearTimeout(timer); }
 }
-export async function resolveCourse(env: Env, subject: string, classId: string): Promise<CourseAssignment> {
+export async function resolveCourse(env: Env, subject: string, classId: string): Promise<CourseAssignmentV2> {
   if (!courseIds(env).includes(classId)) throw new CourseError(403, 'course_not_available');
-  if (!env.ADMISSION_RESOLVER?.resolveCourseAccess) throw new CourseError(503, 'course_authority_unavailable');
-  const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccess!({ subject, app: COURSE_APP, classId }));
+  if (!env.ADMISSION_RESOLVER?.resolveCourseAccessV2) throw new CourseError(503, 'course_authority_unavailable');
+  const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId }));
   if (validFailure(value)) throw new CourseError(403, value.code);
-  if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAccess(value) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
+  if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAssignmentV2(value,Date.now(),true) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
   return value;
 }
 /** Used again by delayed operation workers; a remembered launch is not permission. */
-export async function authorizeStoredCourseWork(env: Env, subject: string, courseId: string | null): Promise<CourseAssignment> {
+export async function authorizeStoredCourseWork(env: Env, subject: string, courseId: string | null): Promise<CourseAssignmentV2> {
   if (courseId && env.CAIL_CLASSROOM_ENABLED === 'false') throw new CourseError(503, 'course_work_paused');
   const user = await env.DB.prepare('SELECT disabled FROM app_users WHERE subject=?').bind(subject).first<{ disabled: number }>();
   if (!user || user.disabled) throw new CourseError(403, 'workspace_disabled');
   const access=await resolveCourse(env,subject,courseId??STEM_COURSE_ID);
-  if(!access.owner&&access.classId!==STEM_COURSE_ID){const entry=await resolveCourse(env,subject,STEM_COURSE_ID);if(!entry.participant)throw new CourseError(403,'target_course_enrollment_required');}
+  if(!access.owner&&!access.guestInstructor&&access.classId!==STEM_COURSE_ID){const entry=await resolveCourse(env,subject,STEM_COURSE_ID);if(!entry.participant)throw new CourseError(403,'target_course_enrollment_required');}
   return access;
 }
 export interface JobCourse { course_id: string; member_id: string; policy_version: string }

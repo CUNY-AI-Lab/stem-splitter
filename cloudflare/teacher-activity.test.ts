@@ -20,7 +20,7 @@ test('student review uses names, counts visits and runs, and confines audio to t
  let ownsCourse=true;
  const env={AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://split.test',CAIL_CLASSROOM_ENABLED:'false',DB:db,CAIL_IDENTITY_JWKS:issuer.jwksJson,verifyCailIdentity,
   ADMISSION_RESOLVER:{resolveMembership:async({subject}:any)=>({ok:true,accessRole:subject===admin?'admin':'member',budgetScope:subject===admin?'admin':'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}),
-   resolveCourseAccess:async({subject,classId}:any)=> subject===bob?{ok:false,code:'not_enrolled',retryable:false}:
+   resolveCourseAccessV2:async({subject,classId}:any)=> subject===bob?{ok:false,code:'not_enrolled',retryable:false}:
     {...await courseFixture(subject,classId,subject===teacher&&ownsCourse),displayName:subject===alice?'Alice Rivera':subject===teacher?'Michele Teacher':'Lab Administrator'}},
   AUDIO:{head:async()=>({size:4,uploaded:new Date(),httpEtag:'"test"',writeHttpMetadata:(headers:Headers)=>headers.set('Content-Type','audio/mpeg')}),get:async()=>({body:new Uint8Array([1,2,3,4]),size:4,httpEtag:'"test"',writeHttpMetadata:(headers:Headers)=>headers.set('Content-Type','audio/mpeg')})}
  } as unknown as Env;
@@ -55,8 +55,8 @@ test('verified names from another current course fill historical accounts withou
  await db.prepare('INSERT INTO app_users(subject,role) VALUES(?,?)').bind(bob,'student').run();
  const {ok,...assignment}=await courseFixture(bob,'another-current-course');
  let invalid=false;
- const env={DB:db,ADMISSION_RESOLVER:{resolveCourseAccess:async()=>({ok:false,code:'not_enrolled',retryable:false}),
-  listCourseAssignments:async()=>({ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:assignment.revision,nextCursor:null,
+ const env={DB:db,ADMISSION_RESOLVER:{resolveCourseAccessV2:async()=>({ok:false,code:'not_enrolled',retryable:false}),
+  listCourseAssignmentsV2:async()=>({ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:assignment.revision,nextCursor:null,
    assignments:[{...assignment,displayName:'Bob Morgan',...(invalid?{expiresAt:'2020-01-01T00:00:00.000Z'}:{})}]})}} as unknown as Env;
  const actor={subject:admin,role:'admin'} as AppPrincipal;
  invalid=true;assert.equal((await namedUsers(env,actor))[0].displayName,'Name unavailable');

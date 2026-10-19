@@ -40,7 +40,7 @@ async function setup(t:{after:(f:()=>void)=>void}) {
     CLASS_CODE:'intake-fixture',PUBLIC_BASE_URL:'https://split.test',WEBHOOK_SECRET:'fixture-only',
     REPLICATE_API_TOKEN:'fixture-replicate-token',REPLICATE_YT_MODEL:'test/video-audio',
     REPLICATE_YT_MODEL_VERSION:importVersion,REPLICATE_MODEL_VERSION:splitVersion,
-    ADMISSION_RESOLVER:{resolveCourseAccess:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)},
+    ADMISSION_RESOLVER:{resolveCourseAccessV2:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)},
   } as unknown as Env;
   const api=(body:unknown)=>app.fetch(new Request('https://split.test/api/jobs',{
     method:'POST',headers:{'x-class-code':'intake-fixture','Content-Type':'application/json'},body:JSON.stringify(body),

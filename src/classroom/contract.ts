@@ -3,19 +3,30 @@
  * Keep runtime validation here dependency-free; never derive authority from a summary. */
 export const COURSE_APP = 'stem-splitter' as const;
 export const STEM_COURSE_ID = 'msh-245-the-american-musical-experience-fall-2026-01';
+export const DEMO_COURSE_ID = 'cail-teaching-tools-demo';
 export interface CourseAssignment {
   classId: string; className: string; term: string; section: string;
   memberId: string; displayName: string | null; displayNameSource: 'verified_profile' | 'unavailable';
   participant: boolean; owner: boolean; startsAt: string; checkedAt: string; expiresAt: string; revision: number;
+}
+export interface CourseCapabilities {
+  instructorPanel: boolean; rosterRead: boolean; promptRead: boolean; promptWrite: boolean;
+}
+export interface CourseAssignmentV2 extends CourseAssignment {
+  guestInstructor: boolean; capabilities: CourseCapabilities;
 }
 export interface CourseFailure { ok: false; code: 'invalid' | 'not_admitted' | 'not_enrolled' | 'scheduled' | 'expired' | 'revoked' | 'not_owner' | 'cursor_invalid' | 'stale_cursor'; retryable: false }
 export type CourseAccessResult = (CourseAssignment & { ok: true }) | CourseFailure;
 export interface CoursePage { ok: true; checkedAt: string; expiresAt: string; revision: number; nextCursor: string | null }
 export interface CourseMember { memberId: string; displayName: string | null; displayNameSource: 'verified_profile' | 'unavailable'; startsAt: string; expiresAt: string }
 export interface AdmissionCourseResolver {
+  /** V1 remains available for unchanged consumers; this app authorizes with V2 only. */
   resolveCourseAccess?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
   listCourseAssignments?(input: { subject: string; app: typeof COURSE_APP; limit?: number; cursor?: string }): Promise<unknown>;
   listCourseRoster?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit?: number; cursor?: string }): Promise<unknown>;
+  resolveCourseAccessV2?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
+  listCourseAssignmentsV2?(input: { subject: string; app: typeof COURSE_APP; limit?: number; cursor?: string }): Promise<unknown>;
+  listCourseRosterV2?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit?: number; cursor?: string }): Promise<unknown>;
 }
 const classIdPattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 export const validClassId = (value: unknown): value is string => typeof value === 'string' && classIdPattern.test(value) && value !== 'search';
@@ -37,16 +48,30 @@ function memberFields(v: unknown): v is CourseMember {
 export function validMember(v: unknown): v is CourseMember {
   return memberFields(v) && Object.keys(v).every(k=>['memberId','displayName','displayNameSource','startsAt','expiresAt'].includes(k));
 }
-function assignment(v: unknown, now: number, access: boolean): v is CourseAssignment {
+function assignment(v: unknown, now: number, access: boolean, v2=false): v is CourseAssignment {
   if (!memberFields(v)) return false;
   const r = v as unknown as Record<string, unknown>;
   return validClassId(r.classId) && bounded(r.className, 200) && bounded(r.term, 120) && bounded(r.section, 120) &&
-    typeof r.owner === 'boolean' && typeof r.participant === 'boolean' && (r.owner || r.participant) &&
-    Object.keys(r).every(k=>[...(access?['ok']:[]),'classId','className','term','section','memberId','displayName','displayNameSource','participant','owner','startsAt','checkedAt','expiresAt','revision'].includes(k)) &&
+    typeof r.owner === 'boolean' && typeof r.participant === 'boolean' && (r.owner || r.participant || (v2 && r.guestInstructor === true)) &&
+    Object.keys(r).every(k=>[...(access?['ok']:[]),...(v2?['guestInstructor','capabilities']:[]),'classId','className','term','section','memberId','displayName','displayNameSource','participant','owner','startsAt','checkedAt','expiresAt','revision'].includes(k)) &&
     (!access || r.ok === true) && validClock(r,now) && Date.parse(r.startsAt as string) <= Date.parse(r.checkedAt as string);
 }
 export const validAssignment = (v: unknown, now=Date.now()): v is CourseAssignment => assignment(v,now,false);
 export const validAccess = (v: unknown, now=Date.now()): v is CourseAssignment & {ok:true} => assignment(v,now,true);
+const capabilityNames = ['instructorPanel','rosterRead','promptRead','promptWrite'] as const;
+export function validAssignmentV2(v: unknown, now=Date.now(), access=false): v is CourseAssignmentV2 {
+  if (!v || typeof v !== 'object') return false;
+  const r=v as Record<string,unknown>, c=r.capabilities;
+  if (!assignment(v,now,access,true) || typeof r.guestInstructor !== 'boolean' || !c || typeof c !== 'object') return false;
+  const capabilities=c as Record<string,unknown>;
+  if (Object.keys(capabilities).length!==capabilityNames.length || !capabilityNames.every(key=>typeof capabilities[key]==='boolean')) return false;
+  const all=capabilityNames.every(key=>capabilities[key]===true), none=capabilityNames.every(key=>capabilities[key]===false);
+  if (r.guestInstructor===true) return r.classId===DEMO_COURSE_ID && r.owner===false && r.participant===false && all &&
+    Date.parse(r.expiresAt as string)-Date.parse(r.checkedAt as string)===300000;
+  if (r.owner===true) return all;
+  if (r.participant===true) return none;
+  return false;
+}
 export function validPage(v: unknown,now = Date.now()): v is CoursePage {
   if (!v || typeof v !== 'object') return false;
   const r = v as Record<string, unknown>;

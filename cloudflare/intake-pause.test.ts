@@ -105,6 +105,6 @@ test('Doorway course readiness follows the classroom pause independently of the 
     } as never, {} as never);
     const body = await response.json() as { courseAccess: unknown; intakePaused: boolean };
     assert.equal(body.intakePaused, false);
-    assert.deepEqual(body.courseAccess, classroom === 'false' ? null : { contract: 'stem-course-v1' });
+    assert.deepEqual(body.courseAccess, classroom === 'false' ? null : { contract: 'stem-course-v2' });
   }
 });

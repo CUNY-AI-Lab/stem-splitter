@@ -12,7 +12,7 @@ async function setup(){
   for(const subject of [teacher,student,admin])await db.prepare('INSERT INTO app_users(subject,role) VALUES(?,?)').bind(subject,subject===teacher?'instructor':'student').run();
   const env={AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://split.test',CAIL_CLASSROOM_ENABLED:'false',DB:db,
     verifyCailIdentity:async(token:string)=>[teacher,student,admin].includes(token)?{subject:token,name:'Instructor fixture'}:null,
-    ADMISSION_RESOLVER:{resolveMembership:async({subject}:{subject:string})=>({ok:true,accessRole:subject===admin?'admin':'member',budgetScope:subject===admin?'admin':'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}),resolveCourseAccess:async({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId,false)}} as unknown as Env;
+    ADMISSION_RESOLVER:{resolveMembership:async({subject}:{subject:string})=>({ok:true,accessRole:subject===admin?'admin':'member',budgetScope:subject===admin?'admin':'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}),resolveCourseAccessV2:async({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId,false)}} as unknown as Env;
   const request=(path:string,who=teacher,method='GET',body?:unknown)=>app.fetch(new Request('https://split.test'+path,{method,headers:{'x-cail-identity-jwt':who,Origin:'https://split.test','Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),env);
   return {db:db as unknown as D1Database,request};
 }

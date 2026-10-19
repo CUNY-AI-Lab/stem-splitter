@@ -99,7 +99,7 @@ export default {
         const courseSchema = await env.DB.prepare("SELECT COUNT(*) AS present FROM sqlite_master WHERE type='table' AND name IN ('job_courses','app_operations')").first<{ present: number }>();
         response = Response.json({ ok: Boolean(db), release: env.RELEASE || 'preview', authMode: env.AUTH_MODE,
           remixer: env.REMIXER_ENABLED === 'true', production: false, intakePaused: env.INTAKE_PAUSED === 'true',
-          courseAccess: courseSchema?.present === 2 && env.CAIL_CLASSROOM_ENABLED !== 'false' ? { contract: 'stem-course-v1' } : null,
+          courseAccess: courseSchema?.present === 2 && env.CAIL_CLASSROOM_ENABLED !== 'false' ? { contract: 'stem-course-v2' } : null,
           youtubeImport: youtubeBrowserLoader(env.BROWSER)
             ? {configuration:'configured',strategy:'cloudflare-browser'}
             : {configuration:youtubeImportConfiguration(env),strategy:'durable-pinned-provider'},

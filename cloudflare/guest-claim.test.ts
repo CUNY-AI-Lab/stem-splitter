@@ -27,7 +27,7 @@ async function fixture(expiresIn=86400000){
   guestClaimSession:{subject:guest,expiresAt,verifiedDay:new Date().toISOString().slice(0,10)},
   verifyCailIdentity:async(token:string)=>[alice,bob].includes(token)?{subject:token,name:'Student'}:null,
   ADMISSION_RESOLVER:{resolveMembership:async()=>flags.membership?{ok:true,accessRole:'member',budgetScope:'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}:{ok:false,code:'not_admitted'},
-   resolveCourseAccess:async({subject,classId}:any)=>flags.course?courseFixture(subject,classId):{ok:false,code:'not_enrolled',retryable:false}},
+   resolveCourseAccessV2:async({subject,classId}:any)=>flags.course?courseFixture(subject,classId):{ok:false,code:'not_enrolled',retryable:false}},
  } as unknown as Env;
  const seed=async(id:string,who=guest,done=true)=>{
   const {operation}=await reserveOperation(env.DB,{subject:who,quotaClass:'guest',courseId:null,kind:'split',key:`guest-claim-job-${id}`,fingerprint:id,phase:'fetch',jobId:id,

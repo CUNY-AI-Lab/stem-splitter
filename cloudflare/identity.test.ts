@@ -16,7 +16,7 @@ function setup() {
   db.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   const membership = { ok: true, expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1, accessRole: 'member', budgetScope: 'person' };
   const env = { AUTH_MODE: 'cail', PUBLIC_BASE_URL: 'https://split.test', CAIL_IDENTITY_JWKS: issuer.jwksJson, DB: db, verifyCailIdentity,
-    ADMISSION_RESOLVER: { resolveMembership: async () => membership, resolveCourseAccess: async ({subject,classId})=>courseFixture(subject,classId) } } as unknown as Env;
+    ADMISSION_RESOLVER: { resolveMembership: async () => membership, resolveCourseAccessV2: async ({subject,classId})=>courseFixture(subject,classId) } } as unknown as Env;
   return { db, env, membership };
 }
 function req(path = '/api/account', token = alice, method = 'GET', origin = 'https://split.test') {
@@ -36,7 +36,7 @@ test('all current Lab members can use a personal workspace when they have no STE
   const { env } = setup();
   env.ADMISSION_RESOLVER = {
     resolveMembership: async () => ({ ok: true, accessRole: 'member', budgetScope: 'person', revision: 1, expiresAt: new Date(Date.now()+60000).toISOString() }),
-    resolveCourseAccess: async () => ({ ok: false, code: 'not_enrolled', retryable: false }),
+    resolveCourseAccessV2: async () => ({ ok: false, code: 'not_enrolled', retryable: false }),
   };
   for (const [path, method] of [['/api/account','GET'], ['/api/jobs','POST']] as const) {
     const request = new Request(`https://split.test${path}`, { method, headers: { 'x-cail-identity-jwt': alice, origin: 'https://split.test', ...(path==='/api/jobs'?{'x-stem-course':'personal'}:{}) } });
@@ -50,7 +50,7 @@ test('a course authority outage does not prevent an admitted member from opening
   const { env } = setup();
   env.ADMISSION_RESOLVER = {
     resolveMembership: async () => ({ ok: true, accessRole: 'member', budgetScope: 'person', revision: 1, expiresAt: new Date(Date.now()+60000).toISOString() }),
-    resolveCourseAccess: async () => { throw new Error('course service unavailable'); },
+    resolveCourseAccessV2: async () => { throw new Error('course service unavailable'); },
   };
   const principals: AppPrincipal[] = [];
   assert.equal(await authorizeCailRequest(req('/api/account'), env, principal => principals.push(principal)), null);
