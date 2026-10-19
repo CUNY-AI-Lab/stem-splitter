@@ -1584,7 +1584,7 @@ class Mixer {
             <span class="badge ready">READY</span>
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
             <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
-            <button class="head-btn folder-btn" title="Save this split to a class folder">+ FOLDER</button>
+            <button class="head-btn folder-btn" title="Add this split to a class folder">+ FOLDER</button>
             <button class="head-btn delete-btn" title="${canDeleteRun(this.job) ? 'Delete this run from your account' : runtime.authMode === 'cail' ? 'Hide until your next visit. This run belongs to another account.' : 'Remove this split from your rack'}">${canDeleteRun(this.job) || runtime.authMode !== 'cail' ? 'DELETE' : 'HIDE'}</button>
             <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
           </div>
@@ -3335,7 +3335,7 @@ async function loadFolderItems(folder, container) {
   container.innerHTML = '';
   if (!detail.items.length) {
     container.innerHTML =
-      '<li class="mono folder-items-note">Empty — save a split here with “+ FOLDER” on any finished session.</li>';
+      '<li class="mono folder-items-note">This folder is empty. Use “+ FOLDER” on a finished split to add it here.</li>';
     return;
   }
   for (const item of detail.items) {
@@ -3406,7 +3406,7 @@ async function loadWholeFolder(folder, button) {
 }
 
 // The "+ FOLDER" popover on a finished console: pick an existing folder or
-// name a new one; either way the split is saved server-side for the teacher.
+// name a new one; either way it organizes a split that is already saved.
 function toggleFolderMenu(mixer) {
   const existing = mixer.el.querySelector('.folder-menu');
   if (existing) {
@@ -3442,7 +3442,7 @@ function toggleFolderMenu(mixer) {
     )
     .join('');
   menu.innerHTML = `
-    <p class="folder-menu-title mono">SAVE TO FOLDER</p>
+    <p class="folder-menu-title mono">ADD TO FOLDER</p>
     <div class="folder-menu-rows">${rows || '<p class="mono folder-menu-none">no folders yet</p>'}</div>
     <form class="folder-menu-new">
       <input maxlength="80" placeholder="new folder name" aria-label="New folder name" />
@@ -3460,7 +3460,7 @@ function toggleFolderMenu(mixer) {
       });
       if (!res.ok) throw new Error('save failed');
       const body = await res.json();
-      row.textContent = body.already ? 'ALREADY SAVED ✓' : 'SAVED ✓';
+      row.textContent = body.already ? 'ALREADY IN FOLDER ✓' : 'ADDED ✓';
       removeFromRack(mixer.job.id);
       await refreshFolders();
       setTimeout(() => menu.remove(), 900);
