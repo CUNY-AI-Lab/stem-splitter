@@ -130,6 +130,7 @@ function showPanel(signedIn, teacher) {
   consolePanel.hidden = !signedIn;
   courseDiscovery.hidden = true;
   if (signedIn) {
+    if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = '';
     const displayName = String(teacher.displayName || '').trim();
     teacherWho.textContent = /^instructor$/i.test(displayName) ? '' : displayName;
   }
@@ -426,14 +427,17 @@ async function loadCourseRoster(append = false) {
 signinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   signinError.hidden = true;
+  const username = document.getElementById('signin-username').value;
+  let loginSucceeded = false;
   try {
     const teacher = await api('/api/teacher/login', {
       method: 'POST',
       body: JSON.stringify({
-        username: document.getElementById('signin-username').value,
+        username,
         password: document.getElementById('signin-password').value,
       }),
     });
+    loginSucceeded = true;
     document.getElementById('signin-password').value = '';
     await loadPrompt();
     const generation = teacherGeneration;
@@ -441,6 +445,9 @@ signinForm.addEventListener('submit', async (event) => {
     if (generation !== teacherGeneration) return;
     showPanel(true, teacher);
   } catch (error) {
+    // A wrong password still clears protected state and the password. Keep
+    // only the attempted username so correcting the password can resubmit.
+    if (!loginSucceeded && [401, 403].includes(error.status)) document.getElementById('signin-username').value = username;
     signinError.hidden = false;
     signinError.textContent = error.message;
   }

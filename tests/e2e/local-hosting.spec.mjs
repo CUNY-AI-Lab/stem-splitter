@@ -1692,6 +1692,9 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByLabel('PASSWORD').fill('not-the-password');
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#signin-error')).toHaveText('Incorrect username or password.');
+  await expect(page.getByLabel('USERNAME')).toHaveValue('e2eteacher');
+  await expect(page.getByLabel('PASSWORD')).toHaveValue('');
+  await expect(page.locator('#console-panel')).toBeHidden();
 
   const unknownUser = await server.fetch('http://stem-splitter.test/api/teacher/login', {
     method: 'POST',
@@ -1706,7 +1709,8 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'SIGN IN' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'Instructor Settings' })).toBeVisible();
+  await expect(page.locator('#teacher-access-status')).toBeEmpty();
+  await expect(page.getByRole('heading', { name: 'Instructor Console' })).toBeVisible();
   await expect(page.getByText('More', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
@@ -1950,7 +1954,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'PREVIEW', exact: true }).click();
+  await page.getByRole('button', { name: 'PREVIEW SAVED PROMPT', exact: true }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
 
