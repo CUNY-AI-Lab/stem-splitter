@@ -188,7 +188,8 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const first = await account(page);
     expect(first.guest.verificationRequired).toBe(true);
-    await expect(page.locator('#guest-panel, #guest-session, #course-context, .bug-report, .compact-masthead')).toHaveCount(0);
+    await expect(page.locator('#guest-panel, #guest-session, #course-context, .compact-masthead')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Report a bug', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Continue as guest', exact: true })).toHaveCount(0);
     expect(f.counts()).toEqual({ providerStarts: 0, verifications: 0, widgetLoads: 0 });
     await startUpload(page); await completed(page, 1);
@@ -210,12 +211,12 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     expect(f.requests.filter(request => request.path.startsWith('/api/classroom/'))).toEqual([]);
     await page.goto(f.origin + '/account.html');
     await expect(page).toHaveURL(f.origin + '/');
+    await expect(page.locator('.console-title')).toHaveText('source.wav');
     for (const width of [390, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
-      const layout=await page.evaluate(()=>({viewport:innerWidth,document:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].map(element=>{const rect=element.getBoundingClientRect();return {element:element.tagName.toLowerCase(),className:typeof element.className==='string'?element.className:'',left:Math.round(rect.left),right:Math.round(rect.right),width:Math.round(rect.width),scrollWidth:element.scrollWidth};}).filter(element=>element.right>innerWidth+1||element.left< -1).slice(0,8)}));
-      expect(layout.document<=layout.viewport,JSON.stringify(layout)).toBe(true);
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+        { message: `The resumed guest mixer fits the ${width}px viewport` }).toBeLessThanOrEqual(0);
     }
-    await expect(page.locator('.console-title')).toHaveText('source.wav');
     await page.locator('.play-btn').click();
     let releaseCheck;
     const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
@@ -571,15 +572,22 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
   try {
     await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:390,height:844});
     await page.route('**/api/song-samples',route=>route.fulfill({json:{version:'reduced-motion',enabled:true,holdMs:3500,cadenceMs:6000,tracks:[{...sampleTrack,artist:'jazz',title:'piano'}]}}));
-    await page.addInitScript(()=>document.addEventListener('DOMContentLoaded',()=>{
-      window.reducedMotionSamples=[];const input=document.querySelector('#yt-url');
-      new MutationObserver(()=>{if(input.classList.contains('showing-sample'))window.reducedMotionSamples.push(input.placeholder);}).observe(input,{attributes:true,attributeFilter:['placeholder']});
-    }));
+    await page.addInitScript(()=>{
+      window.reducedMotionSamples=[];
+      // A deferred footer module can postpone DOMContentLoaded past the sample response.
+      // Start recording as soon as the parser creates the input, before app initialization.
+      const observer=new MutationObserver(()=>{
+        const input=document.querySelector('#yt-url');if(!input)return;
+        observer.disconnect();
+        new MutationObserver(()=>{if(input.classList.contains('showing-sample'))window.reducedMotionSamples.push(input.placeholder);}).observe(input,{attributes:true,attributeFilter:['placeholder']});
+      });
+      observer.observe(document,{childList:true,subtree:true});
+    });
     await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[sampleTrack]}}));
     await page.goto(f.origin);
     const input=page.locator('#yt-url'),hint=page.locator('#source-sample-hint');
     await expect(hint).toBeHidden();await expect(input).toHaveAttribute('placeholder','jazz piano');
-    expect(await page.evaluate(()=>window.reducedMotionSamples)).toEqual(['jazz piano']);
+    await expect.poll(()=>page.evaluate(()=>window.reducedMotionSamples)).toEqual(['jazz piano']);
     await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});

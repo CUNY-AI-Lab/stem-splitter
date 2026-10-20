@@ -969,3 +969,65 @@ CREATE TRIGGER IF NOT EXISTS song_sample_revisions_no_replace BEFORE INSERT ON s
 BEGIN
   SELECT RAISE(ABORT, 'song sample history is immutable');
 END;
+-- Opt-in live transport only. No existing split, grant, note or conversation is changed.
+CREATE TABLE IF NOT EXISTS course_live_sessions (
+  job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+  course_id TEXT NOT NULL,
+  host_subject TEXT NOT NULL,
+  active INTEGER NOT NULL CHECK(active IN (0,1)),
+  revision INTEGER NOT NULL CHECK(revision>0),
+  playing INTEGER NOT NULL CHECK(playing IN (0,1)),
+  position REAL NOT NULL CHECK(position BETWEEN 0 AND 900),
+  playback_rate REAL NOT NULL CHECK(playback_rate BETWEEN 0.5 AND 2),
+  focus_stem TEXT,
+  focus_mode TEXT CHECK(focus_mode IN ('behind','only')),
+  selection_start REAL,
+  selection_end REAL,
+  updated_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  CHECK((focus_stem IS NULL AND focus_mode IS NULL) OR (focus_stem IS NOT NULL AND focus_mode IS NOT NULL)),
+  CHECK((selection_start IS NULL AND selection_end IS NULL) OR
+    (selection_start IS NOT NULL AND selection_end IS NOT NULL AND selection_start>=0 AND selection_end>selection_start AND selection_end<=900))
+);
+CREATE TRIGGER IF NOT EXISTS course_live_identity_immutable BEFORE UPDATE ON course_live_sessions
+WHEN NEW.job_id<>OLD.job_id OR NEW.course_id<>OLD.course_id
+BEGIN
+  SELECT RAISE(ABORT,'immutable live session identity');
+END;
+
+-- Signed-in Listening Guy pacing, separate from provider spend and guest quotas.
+-- No historical turns are inferred or backfilled. Apply before the new worker.
+CREATE TABLE IF NOT EXISTS listening_cycles (
+  subject TEXT PRIMARY KEY REFERENCES app_users(subject) ON DELETE CASCADE,
+  generation INTEGER NOT NULL DEFAULT 0 CHECK(generation>=0),
+  completed INTEGER NOT NULL DEFAULT 0 CHECK(completed BETWEEN 0 AND 5),
+  cooldown_until INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS listening_turn_reservations (
+  operation_id TEXT PRIMARY KEY REFERENCES app_operations(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL REFERENCES listening_cycles(subject) ON DELETE CASCADE,
+  generation INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS listening_reservations_subject ON listening_turn_reservations(subject,generation);
+CREATE INDEX IF NOT EXISTS listening_attempt_window ON app_operations(subject,created_at) WHERE kind IN ('chat','guide');
+-- Completion and the fifth-turn cooldown commit with the operation itself.
+-- Terminal-operation fencing makes repeated receipts and late runners harmless.
+CREATE TRIGGER IF NOT EXISTS listening_success AFTER UPDATE OF state ON app_operations
+WHEN NEW.state='succeeded' AND OLD.state<>'succeeded' AND NEW.quota_class='member' AND NEW.kind IN ('chat','guide')
+BEGIN
+  UPDATE listening_cycles SET completed=completed+1,
+    cooldown_until=CASE WHEN completed=4 THEN NEW.updated_at+300000 ELSE cooldown_until END
+    WHERE subject=NEW.subject AND completed<5 AND EXISTS(
+      SELECT 1 FROM listening_turn_reservations r WHERE r.operation_id=NEW.id
+        AND r.subject=listening_cycles.subject AND r.generation=listening_cycles.generation);
+END;
+-- Private, short-lived personal reply readback; never copied to accounting or
+-- instructor APIs. Course replies remain in their existing conversation tables.
+CREATE TABLE IF NOT EXISTS listening_reply_receipts (
+  operation_id TEXT PRIMARY KEY REFERENCES app_operations(id) ON DELETE CASCADE,
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL REFERENCES app_users(subject) ON DELETE CASCADE,
+  response_json TEXT NOT NULL CHECK(json_valid(response_json)),
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS listening_reply_expiry ON listening_reply_receipts(expires_at);

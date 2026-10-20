@@ -1,7 +1,7 @@
 /* Private results belong to the active browser session. Revalidation keeps
  * the original page controls in place while private regions stay concealed. */
 (() => {
-  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel, #course-discovery';
+  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel, #course-discovery, #course-context';
   const originalFetch = window.fetch.bind(window);
   let subject = null, clearing = false, checking = null, suspended = false;
   let cleanup = () => {}, pause = () => {};
@@ -53,6 +53,15 @@
     suspend();
     try { cleanup(); } catch { /* Private contents are cleared even if a player cleanup fails. */ }
     for (const element of document.querySelectorAll(privateSelectors)) element.replaceChildren();
+    if (window.StemReportDraft?.hasDraft()) {
+      window.StemReportDraft.sessionChanged();
+      const message = document.getElementById('rack-status') || document.getElementById('account-status');
+      if (message) {
+        message.textContent = 'Your session changed, so your saved work is hidden. Finish checking your report, then reload this page.';
+        message.hidden = false;
+      }
+      return;
+    }
     location.reload();
   }
 
@@ -64,10 +73,19 @@
   }
 
   window.fetch = async function (input, options) {
-    let sameOrigin = false;
-    try { sameOrigin = new URL(input instanceof Request ? input.url : String(input), location.href).origin === location.origin; } catch {}
+    let sameOrigin = false, reportRequest = false;
+    try {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      sameOrigin = url.origin === location.origin;
+      reportRequest = sameOrigin && ['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname);
+    } catch {}
+    // A retained draft does not keep the old workspace alive or permit stale writes.
+    // Report routes independently verify the session and compare its original actor.
+    if (clearing && sameOrigin && !reportRequest) return Response.json({ error: {
+      code: 'authentication_required', message: 'Your session changed. Reload the page to continue.',
+    } }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
     const response = await originalFetch(input, options);
-    return sameOrigin ? observe(response) : response;
+    return sameOrigin && !reportRequest ? observe(response) : response;
   };
 
   async function check() {

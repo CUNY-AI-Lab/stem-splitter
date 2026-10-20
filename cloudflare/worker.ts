@@ -8,6 +8,7 @@ import { composeStemAudio } from './adaptive-audio.ts';
 import app, { runReliableJobs, resumeAdaptiveOutput } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
+import { authorizeCailRequest, type AppPrincipal } from '../src/identity.ts';
 import { gatewayForRequest, canonicalModel, gatewayModelsConfigured } from './gateway.ts';
 import { authenticatedRequest, handleAuth, sanitizedRequest, publicApi, type WorkerIdentity } from './sso.ts';
 import { guestConfigured, guestChatConfigured, hasMemberCookie, readGuestSession, revokeGuestSession, startGuestSession, clearGuestCookie, GUEST_COOKIE } from './guest.ts';
@@ -117,11 +118,22 @@ export default {
           ? await playlistSampleResponse(request, typeof caches !== 'undefined' ? caches.default : undefined, allowed)
           : Response.json({ results: [] }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } });
         }
-      } else if (url.pathname === '/api/bug-reports') {
-        response = await handleBugReport(request, { app: 'stem-splitter', origin: env.PUBLIC_BASE_URL,
-          service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
+      } else if (['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
+        const internal = await authenticatedRequest(request, env);
+        if (internal instanceof Response) response = internal;
+        else {
+          // Reporting requires the member session, never the unsigned guest path.
+          // Its reporter does not depend on the course currently selected in the UI.
+          internal.headers.delete('x-stem-course');
+          let principal: AppPrincipal | undefined;
+          const denied = await authorizeCailRequest(internal, { ...env, verifyCailIdentity }, value => { principal = value; });
+          response = denied ?? (principal
+            ? await handleBugReport(internal, { origin: env.PUBLIC_BASE_URL, subject: principal.subject,
+              release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT })
+            : Response.json({ error: { code: 'authentication_required', message: 'Sign in with CUNY Login to continue.' } }, { status: 401 }));
+        }
       } else if (url.pathname === '/auth/guest') {
         response = await startGuestSession(request,env);
       } else if (url.pathname.startsWith('/auth/')) {

@@ -236,7 +236,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('25 of 25 runs left today. Resets');
-    await expect(page.getByRole('link', { name: 'Instructor Settings', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
     await expect(page.locator('#account-id')).toHaveCount(0);
@@ -311,7 +311,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('main > footer')).toContainText('Uploaded files are deleted after 90 days.');
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.getByRole('link', { name: 'Instructor Settings', exact: true })).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toBeHidden();
     await expect(page.getByText('Account ID', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (receipts) await page.screenshot({ path: `${receipts}/account-student-mobile-fixture.png`, fullPage: true });
@@ -320,7 +320,8 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await page.reload();
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today'); // historical attempts are not manufactured successes
     await expect(page.locator('#account-chat')).toHaveCount(0);
-    expect((await (await page.request.get(new URL('/api/account', url).href)).json()).chatAllowance.remaining).toBe(50);
+    const listeningAccount=await(await page.request.get(new URL('/api/account',url).href)).json();
+    expect(listeningAccount.chatAllowance).toBeNull();expect(listeningAccount.listeningUsage.remainingTurns).toBe(5);
     const clock=Date.now();
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();
@@ -349,7 +350,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Instructor Settings', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
 
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
@@ -393,7 +394,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Instructor Settings', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.locator('body')).not.toContainText('Your splits remain in your account for 90 days.');
     await expect(page.getByRole('button', {name: 'Sign out', exact: true})).toBeVisible();

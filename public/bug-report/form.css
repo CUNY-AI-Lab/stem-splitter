@@ -1,0 +1,139 @@
+.bug-report {
+  --report-surface: var(--bug-background, var(--panel, #fff));
+  --report-field: var(--bug-field, var(--bg, #f7f8fa));
+  --report-ink: var(--bug-ink, var(--ink, #202735));
+  --report-muted: var(--bug-muted, var(--ink-dim, #5d6877));
+  --report-line: var(--bug-line, var(--panel-edge, #d8dde5));
+  --report-accent: var(--bug-focus, var(--hot, #2856ce));
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  color: var(--report-ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+}
+.bug-report *, .bug-report *::before, .bug-report *::after { box-sizing: border-box; }
+.bug-report [hidden] { display: none !important; }
+.bug-report button, .bug-report textarea, .bug-report a { -webkit-tap-highlight-color: transparent; }
+.bug-report button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0;
+  border: 1px solid var(--report-line);
+  border-radius: 8px;
+  padding: 9px 14px;
+  background: var(--report-surface);
+  color: var(--report-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+.bug-report button:hover:not(:disabled) { border-color: var(--report-accent); }
+.bug-report :is(button, textarea, a):focus-visible { outline: 2px solid var(--report-accent); outline-offset: 3px; }
+.bug-report button:disabled { cursor: default; opacity: .6; }
+.bug-report svg { flex: 0 0 auto; width: 18px; height: 18px; pointer-events: none; }
+.bug-report .bug-report__trigger { border-radius: 999px; padding-inline: 15px; background: transparent; }
+.bug-report__trigger[aria-expanded="true"] { border-color: var(--report-accent); background: var(--report-surface); }
+.bug-report__trigger > svg { color: var(--report-accent); }
+.bug-report__badge { padding: 2px 7px; border-radius: 999px; background: var(--report-field); color: var(--report-muted); font-size: 10px; }
+.bug-report__panel {
+  position: fixed;
+  inset: auto;
+  z-index: 1000;
+  width: min(408px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scroll-margin-bottom: var(--bug-panel-clearance, 0px);
+  border: 1px solid var(--report-line);
+  border-radius: 16px;
+  background: var(--report-surface);
+  color: var(--report-ink);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 18%), 0 3px 12px rgb(0 0 0 / 10%);
+  animation: report-appear 140ms ease-out;
+}
+.bug-report__panel::backdrop { background: transparent; pointer-events: none; }
+.bug-report__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 0 0 18px; }
+.bug-report__heading p, .bug-report__form p { margin: 0; overflow-wrap: anywhere; }
+.bug-report .bug-report__eyebrow { color: var(--report-accent); font-family: var(--font-mono, inherit); font-size: 10px; font-weight: 600; line-height: 1.4; letter-spacing: .09em; text-transform: uppercase; }
+.bug-report__heading h2 { margin: 7px 0 5px; padding: 0; color: var(--report-ink); font-family: var(--font-display, inherit); font-size: 22px; font-weight: 650; line-height: 1.15; letter-spacing: -.02em; }
+.bug-report .bug-report__intro { color: var(--report-muted); font-size: 13px; line-height: 1.5; }
+.bug-report .bug-report__close { flex: 0 0 44px; width: 44px; padding: 0; margin: -8px -8px 0 0; background: transparent; border-color: transparent; }
+.bug-report__close svg { width: 20px; height: 20px; }
+.bug-report__form { display: grid; gap: 14px; margin: 0; padding: 0; min-width: 0; }
+.bug-report__form .bug-report__context { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 9px 11px; border: 1px solid var(--report-line); border-radius: 8px; background: var(--report-field); color: var(--report-muted); font-size: 12px; line-height: 1.5; }
+.bug-report__context svg { width: 15px; height: 15px; }
+.bug-report__context strong { color: var(--report-ink); font-weight: 600; margin-left: auto; }
+.bug-report__label { position: relative; }
+.bug-report__form label { display: grid; gap: 8px; color: var(--report-ink); font: inherit; font-size: 13px; font-weight: 600; }
+.bug-report__form textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 128px;
+  max-height: 220px;
+  margin: 0;
+  padding: 11px 12px 26px;
+  border: 1px solid var(--report-line);
+  border-radius: 8px;
+  background: var(--report-field);
+  color: var(--report-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  resize: vertical;
+}
+.bug-report__form textarea::placeholder { color: var(--report-muted); opacity: 1; }
+.bug-report__form textarea:read-only { opacity: .8; }
+.bug-report__count { position: absolute; right: 12px; bottom: 6px; color: var(--report-muted); font-size: 10px; line-height: 1.5; pointer-events: none; }
+.bug-report__form .bug-report__help { color: var(--report-muted); font-size: 11px; line-height: 1.55; }
+.bug-report__status { position: relative; padding-left: 16px; font-size: 12px; line-height: 1.5; }
+.bug-report__status:empty { display: none; }
+.bug-report__status::before { content: ''; position: absolute; left: 0; top: .45em; width: 6px; height: 6px; border-radius: 50%; background: var(--report-accent); }
+.bug-report__panel[data-tone="attention"] .bug-report__status { padding: 10px 12px; border-left: 2px solid var(--report-accent); border-radius: 0 6px 6px 0; background: var(--report-field); }
+.bug-report__panel[data-tone="attention"] .bug-report__status::before { display: none; }
+.bug-report__panel:is([data-state="sending"], [data-state="checking"]) .bug-report__status::before { top: .27em; width: 10px; height: 10px; border: 2px solid var(--report-line); border-top-color: var(--report-accent); background: transparent; animation: report-spin 700ms linear infinite; }
+.bug-report__panel[data-state="saved"] .bug-report__status { padding: 14px 14px 14px 30px; border: 1px solid var(--report-line); border-radius: 8px; background: var(--report-field); font-size: 13px; }
+.bug-report__panel[data-state="saved"] .bug-report__status::before { content: '✓'; left: 12px; top: 14px; width: auto; height: auto; color: var(--report-accent); background: none; font-weight: 700; }
+.bug-report__panel[data-state="saved"] :is(.bug-report__field, .bug-report__help, .bug-report__draft-note) { display: none; }
+.bug-report__actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 2px; }
+.bug-report__draft-note { margin-right: auto; max-width: 125px; color: var(--report-muted); font-size: 10px; line-height: 1.5; }
+.bug-report__form button[type="submit"] { flex: 0 0 auto; border-color: var(--report-accent); background: var(--report-accent); color: var(--bug-on-accent, var(--bg, #fff)); }
+.bug-report__form button[type="submit"]:hover:not(:disabled) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--report-accent) 18%, transparent); }
+.bug-report__session:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.bug-report__session a { display: inline-flex; align-items: center; min-height: 44px; color: var(--report-accent); text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
+.bug-report__session button { flex: 0 0 auto; }
+@keyframes report-appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes report-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  .bug-report__panel { padding: 18px; border-radius: 16px; }
+  .bug-report__form textarea { font-size: 16px; min-height: 132px; }
+  .bug-report__heading { margin-bottom: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bug-report *, .bug-report *::before, .bug-report *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .bug-report :is(button, textarea, .bug-report__panel, .bug-report__context, .bug-report__status) { border-color: CanvasText; }
+  .bug-report__status::before { background: CanvasText; }
+  .bug-report__form button[type="submit"] { color: ButtonText; }
+}
+@media print { .bug-report { display: none; } }

@@ -1,0 +1,95 @@
+import { test, expect } from '@playwright/test';
+import { createTestHarness } from 'wrangler';
+import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
+const course = 'msh-245-the-american-musical-experience-fall-2026-01';
+async function fixture(browser) {
+  const issuer = await createTestIdentityIssuer();
+  const server = createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true'}}]});
+  const {url} = await server.listen();
+  const seed = async statements => expect((await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status).toBe(200);
+  const member = 'stem-member-v1-' + createHash('sha256').update(`fixture:${course}:${TEST_SUBJECTS.alice}`).digest('hex');
+  await seed([...schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')),
+    `INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}'),('${TEST_SUBJECTS.bob}')`,
+    `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('shared-course','Class fixture','uploads/source.wav','done','htdemucs_ft','[{"name":"vocals","key":"stems/shared-course/vocals.mp3"}]')`,
+    `INSERT INTO job_owners VALUES('shared-course','${TEST_SUBJECTS.alice}')`,
+    `INSERT INTO job_courses(job_id,course_id,member_id,assigned_by,policy_version) VALUES('shared-course','${course}','${member}','${TEST_SUBJECTS.alice}','course-work-v1')`,
+    `INSERT INTO course_folders(id,course_id,name,created_by,permission) VALUES('shared-folder','${course}','Class comments','${TEST_SUBJECTS.alice}','comment')`,
+    `INSERT INTO course_folder_items(folder_id,job_id,filename,model) VALUES('shared-folder','shared-course','Class fixture','htdemucs_ft')`]);
+  const contexts=[];
+  const pageFor = async (subject,owner=false) => {
+    const token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject});
+    const gateway=await issuer.mintIdentityJwt({audience:'cail:gateway',subject});
+    const context=await browser.newContext({extraHTTPHeaders:{'x-fixture-identity':token,'x-fixture-gateway-identity':gateway,...(owner?{'x-fixture-course-role':'owner'}:{})}});contexts.push(context);
+    const page=await context.newPage();
+    await page.route('**/api/files/stems/shared-course/*',route=>route.fulfill({contentType:'audio/mpeg',body:Buffer.alloc(0)}));
+    return page;
+  };
+  return {url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
+}
+
+test('course creation requires disclosure and sends an exact course with the acknowledged policy',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const page=await f.pageFor(TEST_SUBJECTS.alice,true);let received;
+    await page.route('**/api/jobs',async route=>{
+      if(route.request().method()!=='POST')return route.continue();
+      received={headers:route.request().headers(),body:route.request().postDataJSON()};
+      return route.fulfill({status:400,json:{error:'Fixture stops before any provider job.'}});
+    });
+    await page.goto(new URL(`/?course=${course}`,f.url).href);
+    await expect(page.getByLabel('New split workspace')).toHaveValue(course);
+    await expect(page.locator('#course-work-ack')).not.toBeChecked();
+    const blocked=await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});return null;}catch(error){return error.message;}});
+    expect(blocked).toContain('disclosure');expect(received).toBeUndefined();
+    await page.locator('#course-work-ack').check();
+    await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});}catch{}});
+    expect(received.headers['x-stem-course']).toBe(course);expect(received.body.coursePolicy).toBe('course-work-v1');
+    const courseKey=received.headers['idempotency-key'];
+    await page.locator('#course-work-ack').uncheck();
+    const withdrawn=await page.evaluate(async courseContext=>{try{await api('/api/jobs',{method:'POST',courseContext,body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});return null;}catch(error){return error.message;}},course);
+    expect(withdrawn).toContain('disclosure');expect(received.headers['idempotency-key']).toBe(courseKey);
+    await page.getByLabel('New split workspace').selectOption('personal');
+    await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});}catch{}});
+    expect(received.headers['x-stem-course']).toBe('personal');expect(received.body.coursePolicy).toBeUndefined();expect(received.headers['idempotency-key']).not.toBe(courseKey);
+  }finally{await f.close();}
+});
+
+test('shared class notes refresh across students, preserve failed drafts, attribute authors, and stop on revocation',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const owner=await f.pageFor(TEST_SUBJECTS.alice,true),student=await f.pageFor(TEST_SUBJECTS.bob);
+    await Promise.all([owner.goto(new URL('/?job=shared-course',f.url).href),student.goto(new URL('/?job=shared-course',f.url).href)]);
+    await expect(student.locator('.console')).toBeVisible();
+    await expect(student.locator('.coach')).toBeHidden();
+    let fail=true;
+    await student.route('**/api/jobs/shared-course/annotations',async route=>fail?(fail=false,route.fulfill({status:503,json:{error:'Fixture temporary failure'}})):route.continue());
+    await student.locator('.note-btn').click();await student.getByRole('textbox',{name:'Note text'}).fill('A classmate hears the bass entrance.');
+    await student.getByRole('button',{name:'SAVE',exact:true}).click();
+    await expect(student.getByRole('textbox',{name:'Note text'})).toHaveValue('A classmate hears the bass entrance.');
+    await student.getByRole('button',{name:'SAVE',exact:true}).click();
+    await expect(student.locator('.note-text')).toContainText('Fixture Student');
+    await expect(owner.locator('.note-text')).toContainText('A classmate hears the bass entrance.',{timeout:9000});
+    await expect(owner.locator('.note-del')).toBeHidden();
+    await expect(student.locator('.note-del')).toBeVisible();
+    expect(await student.evaluate(()=>mixers.get('shared-course').exportMarkdown())).toContain('(Fixture Student)');
+    await f.seed(["UPDATE course_folders SET permission='private',revision=revision+1 WHERE id='shared-folder'"]);
+    await expect(student.locator('.console')).toBeHidden({timeout:9000});
+    const response=await student.request.get(new URL('/api/jobs/shared-course',f.url).href);expect(response.status()).toBe(404);
+  }finally{await f.close();}
+});
+
+test('owner Listening Guy cue recovers visibly after a failed stream and can be retried',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const page=await f.pageFor(TEST_SUBJECTS.alice,true);let fail=true;
+    await page.route('**/api/jobs/shared-course/guide',route=>fail?(fail=false,route.fulfill({status:503,json:{error:'Fixture guide unavailable. Try again.'}})):route.fulfill({contentType:'text/event-stream',body:'data: {"type":"delta","text":"Listen for the bass."}\n\ndata: {"type":"done","text":"Listen for the bass.","model":"fixture"}\n\n'}));
+    await page.goto(new URL('/?job=shared-course',f.url).href);await page.locator('.coach-toggle').click();
+    await page.locator('.coach-cue-btn').click();await expect(page.locator('.coach-hint')).toContainText('Fixture guide unavailable');
+    await expect(page.locator('.coach-cue-btn')).toBeEnabled();await page.locator('.coach-cue-btn').click();
+    await expect(page.locator('.coach-guide-text')).toContainText('Listen for the bass.');
+  }finally{await f.close();}
+});

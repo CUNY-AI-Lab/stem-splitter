@@ -57,6 +57,25 @@ let historyLoading = false;
 let courseModeId = null;
 let courseModeName = '';
 let rosterNextCursor = null;
+let teacherGeneration = 0;
+let teacherAccessVerified = false;
+let recheckingTeacher = false;
+let coursePendingRequests = 0;
+let courseAuthorityUncertain = false;
+let courseFailureVersion = 0;
+
+function syncTeacherVisibility() {
+  document.getElementById('teacher-protected-region').hidden = !teacherAccessVerified || coursePendingRequests > 0 || courseAuthorityUncertain;
+}
+
+function denyTeacherAccess(message) {
+  teacherAccessVerified = false;
+  clearTeacherConsole();
+  consolePanel.hidden = true;
+  document.getElementById('teacher-protected-region').hidden = true;
+  courseDiscovery.hidden = true;
+  document.getElementById('teacher-access-status').textContent = message;
+}
 
 function promptPath(suffix = '') {
   return courseModeId
@@ -65,25 +84,53 @@ function promptPath(suffix = '') {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`), {
-      status: res.status,
+  const generation = teacherGeneration;
+  const scoped = !!courseModeId && path.startsWith(`/api/classroom/courses/${encodeURIComponent(courseModeId)}/`);
+  const failureVersion = courseFailureVersion;
+  const { courseAccessCheck = false, ...fetchOptions } = options;
+  const controller = scoped ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  if (scoped) { coursePendingRequests++; syncTeacherVisibility(); }
+  try {
+    const res = await fetch(path, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...(fetchOptions.headers || {}) },
+      ...fetchOptions,
+      ...(controller ? { signal: controller.signal } : {}),
     });
+    const body = await res.json().catch(error => { if (!res.ok) return {}; throw error; });
+    if (generation !== teacherGeneration) throw new DOMException('Instructor access changed', 'AbortError');
+    if (!res.ok) {
+      if ([401, 403].includes(res.status)) denyTeacherAccess('Instructor access is no longer available. Reload to check your current access.');
+      throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`), { status: res.status });
+    }
+    if (scoped && courseAccessCheck && failureVersion === courseFailureVersion) courseAuthorityUncertain = false;
+    return body;
+  } catch (error) {
+    if (scoped && generation === teacherGeneration && ![400, 409].includes(error.status)) {
+      courseAuthorityUncertain = true;
+      courseFailureVersion++;
+      document.getElementById('teacher-access-status').textContent = 'Instructor access could not be verified. Return to this tab to recheck access. Your draft is retained; reload before retrying a save whose result is uncertain.';
+    }
+    throw error;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+    if (scoped) {
+      coursePendingRequests--;
+      syncTeacherVisibility();
+      if (teacherAccessVerified && !coursePendingRequests && !courseAuthorityUncertain) document.getElementById('teacher-access-status').textContent = '';
+    }
   }
-  return body;
 }
 
 function showPanel(signedIn, teacher) {
+  teacherAccessVerified = signedIn;
+  syncTeacherVisibility();
   signinPanel.hidden = signedIn;
   consolePanel.hidden = !signedIn;
   courseDiscovery.hidden = true;
   if (signedIn) {
+    if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = '';
     const displayName = String(teacher.displayName || '').trim();
     teacherWho.textContent = /^instructor$/i.test(displayName) ? '' : displayName;
   }
@@ -96,12 +143,15 @@ function showStatus(message, isError = false) {
 }
 
 function clearTeacherConsole() {
+  teacherGeneration++;
   clearSongSampleEditor();
   signinForm.reset();
   promptForm.reset();
   loadedAmendment = '';
   loadedRevision = 0;
   teacherWho.textContent = '';
+  document.getElementById('course-roster').replaceChildren();
+  document.getElementById('course-roster-status').textContent = '';
   fixedPromptMeta.textContent = '';
   fixedPromptMeta.removeAttribute('title');
   effectivePromptMeta.textContent = '';
@@ -370,25 +420,34 @@ async function loadCourseRoster(append = false) {
     status.textContent = list.children.length ? `${list.children.length} roster item${list.children.length === 1 ? '' : 's'} shown.` : 'No enrolled students are listed yet.';
   } catch (error) {
     status.textContent = error.message;
+    if (!append && ([401, 403].includes(error.status) || error.name === 'AbortError')) throw error;
   } finally { more.disabled = false; }
 }
 
 signinForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   signinError.hidden = true;
+  const username = document.getElementById('signin-username').value;
+  let loginSucceeded = false;
   try {
     const teacher = await api('/api/teacher/login', {
       method: 'POST',
       body: JSON.stringify({
-        username: document.getElementById('signin-username').value,
+        username,
         password: document.getElementById('signin-password').value,
       }),
     });
+    loginSucceeded = true;
     document.getElementById('signin-password').value = '';
     await loadPrompt();
+    const generation = teacherGeneration;
     await loadSongSampleEditor();
+    if (generation !== teacherGeneration) return;
     showPanel(true, teacher);
   } catch (error) {
+    // A wrong password still clears protected state and the password. Keep
+    // only the attempted username so correcting the password can resubmit.
+    if (!loginSucceeded && [401, 403].includes(error.status)) document.getElementById('signin-username').value = username;
     signinError.hidden = false;
     signinError.textContent = error.message;
   }
@@ -423,6 +482,7 @@ fixedPromptDetails.addEventListener('toggle', () => {
 
 promptForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (!teacherAccessVerified || coursePendingRequests || courseAuthorityUncertain) return;
   const nextAmendment = amendment.value.trim();
   const changed = nextAmendment !== loadedAmendment;
   if (changed && !changeNote.value.trim()) {
@@ -509,7 +569,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
       signinForm.hidden = true;
       signoutBtn.hidden = true;
       const message = document.createElement('p');
-      message.textContent = 'Sign in with your CUNY account to open Instructor Settings.';
+      message.textContent = 'Sign in with your CUNY account to open Instructor Console.';
       signinPanel.append(message);
       if (runtime.loginUrl) {
         const link = document.createElement('a');
@@ -521,7 +581,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
         signinPanel.append(link);
       }
       const account = await api('/api/account');
-      window.StemSessionGuard?.start(account.account.subject, () => { amendment.value = ''; changeNote.value = ''; fixedPromptBody.replaceChildren(); previewBody.replaceChildren(); historyList.replaceChildren(); clearSongSampleEditor(); });
+      window.StemSessionGuard?.start(account.account.subject, () => denyTeacherAccess('Your account changed. Reload to check Instructor Console access.'));
       try { await window.StemGuestClaim.run(account.account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
       if (requestedCourse) {
         const response = await api('/api/classroom/courses');
@@ -529,11 +589,13 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
         if (!course) throw new Error('Instructor access is not available for this class.');
         courseModeId = course.classId;
         courseModeName = course.className;
+        document.getElementById('teacher-classroom').href = `/classroom.html?course=${encodeURIComponent(courseModeId)}`;
         document.getElementById('sample-editor-title').closest('.sample-editor').hidden = true;
         document.getElementById('course-roster-section').hidden = !course.capabilities.rosterRead;
         document.getElementById('prompt-scope-note').textContent = `Class guidance for ${courseModeName}. The system prompt above remains read only.`;
         await loadPrompt();
         if (course.capabilities.rosterRead) await loadCourseRoster();
+        teacherAccessVerified = true;
         showPanel(true, {displayName:courseModeName});
         return;
       }
@@ -564,12 +626,31 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
       // Session state was established before the course picker above.
     }
     await loadPrompt();
+    const generation = teacherGeneration;
     await loadSongSampleEditor();
+    if (generation !== teacherGeneration) return;
+    teacherAccessVerified = true;
     showPanel(true, teacher);
-  } catch {
+  } catch (error) {
     showPanel(false);
+    if (error.name !== 'AbortError') document.getElementById('teacher-access-status').textContent = error.message;
   }
 })();
+
+async function recheckTeacherAccess() {
+  if (!teacherAccessVerified || recheckingTeacher) return;
+  recheckingTeacher = true;
+  document.getElementById('teacher-protected-region').hidden = true;
+  try {
+    if (courseModeId) await api(promptPath(), { courseAccessCheck: true });
+    else if (!(await api('/api/teacher/me')).teacher) { denyTeacherAccess('Instructor access is no longer available.'); return; }
+    if (teacherAccessVerified) { consolePanel.hidden = false; syncTeacherVisibility(); if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = ''; }
+  } catch (error) {
+    if (error.name !== 'AbortError') document.getElementById('teacher-access-status').textContent = 'Instructor access could not be verified. Reload to reconnect.';
+  } finally { recheckingTeacher = false; }
+}
+window.addEventListener('focus', () => void recheckTeacherAccess());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void recheckTeacherAccess(); });
 
 
 // Public song metadata only; teacher credentials remain in the existing session.
@@ -578,10 +659,11 @@ const sampleSearch=document.getElementById('sample-search');
 const sampleResults=document.getElementById('sample-search-results');
 const sampleSelected=document.getElementById('sample-selected');
 const sampleSettingsStatus=document.getElementById('sample-settings-status');
-let selectedSamples=[],sampleCatalog=[],sampleRevision=0,sampleSearchTimer=0,sampleSearchAbort=null,sampleEditorGeneration=0;
+let selectedSamples=[],sampleCatalog=[],sampleRevision=0,sampleSearchTimer=0,sampleSearchAbort=null,sampleEditorGeneration=0,sampleLoaded=false;
 const sampleKey=t=>`${t.archiveId}/${t.archiveFile}`;
 function sampleEditorStatus(message,error=false){sampleSettingsStatus.textContent=message;sampleSettingsStatus.classList.toggle('error',error);}
-function clearSongSampleEditor(){sampleEditorGeneration++;sampleSearchAbort?.abort();clearTimeout(sampleSearchTimer);selectedSamples=[];sampleCatalog=[];sampleRevision=0;sampleForm.reset();sampleSelected.replaceChildren();sampleResults.replaceChildren();document.getElementById('sample-search-status').textContent='';document.getElementById('sample-settings-meta').textContent='';sampleEditorStatus('');}
+function sampleAvailability(loaded){sampleLoaded=loaded;for(const control of sampleForm.querySelectorAll('input,select,button'))if(control.id!=='samples-reload')control.disabled=!loaded;}
+function clearSongSampleEditor(){sampleEditorGeneration++;sampleSearchAbort?.abort();clearTimeout(sampleSearchTimer);selectedSamples=[];sampleCatalog=[];sampleRevision=0;sampleForm.reset();sampleSelected.replaceChildren();sampleResults.replaceChildren();document.getElementById('sample-search-status').textContent='';document.getElementById('sample-settings-meta').textContent='';sampleEditorStatus('');sampleAvailability(false);}
 function renderSampleChoices(tracks){
   sampleResults.replaceChildren();
   for(const track of tracks.slice(0,24)){
@@ -638,6 +720,7 @@ function renderSelectedSamples(){
 }
 async function loadSongSampleEditor(){
   const generation=sampleEditorGeneration;
+  sampleAvailability(false);
   try{
     const resource=await api('/api/teacher/song-samples');if(generation!==sampleEditorGeneration)return;
     sampleRevision=resource.revision;sampleCatalog=resource.catalog||[];
@@ -647,7 +730,7 @@ async function loadSongSampleEditor(){
     document.getElementById('samples-hold').value=resource.settings.holdMs/1000;
     document.getElementById('samples-cadence').value=resource.settings.cadenceMs/1000;
     document.getElementById('sample-settings-meta').textContent=resource.updatedBy?`Revision ${resource.revision} · Saved ${formatUtc(resource.updatedAt)}`:'Six Archive-verified starting examples. Add songs from the full catalog or search.';
-    renderSelectedSamples();renderSampleChoices(sampleCatalog);sampleEditorStatus('');return true;
+    sampleAvailability(true);renderSelectedSamples();renderSampleChoices(sampleCatalog);sampleEditorStatus('');return true;
   }catch(error){sampleEditorStatus(error.message,true);return false;}
 }
 async function streamSampleSearch(query,signal,receive){
@@ -680,12 +763,12 @@ sampleSearch.addEventListener('input',()=>{
   },250);
 });
 sampleForm.addEventListener('submit',async event=>{
-  event.preventDefault();const generation=sampleEditorGeneration;const button=document.getElementById('samples-save');button.disabled=true;sampleEditorStatus('Verifying new songs and saving…');
+  event.preventDefault();if(!teacherAccessVerified||!sampleLoaded)return;const generation=sampleEditorGeneration;const button=document.getElementById('samples-save');button.disabled=true;sampleEditorStatus('Verifying new songs and saving…');
   try{
     const settings={enabled:document.getElementById('samples-enabled').checked,reshuffle:document.getElementById('samples-reshuffle').checked,holdMs:Math.round(Number(document.getElementById('samples-hold').value)*1000),cadenceMs:Math.round(Number(document.getElementById('samples-cadence').value)*1000),tracks:selectedSamples};
     await api('/api/teacher/song-samples',{method:'PUT',body:JSON.stringify({expectedRevision:sampleRevision,settings})});
     if(generation!==sampleEditorGeneration)return;
     if(!await loadSongSampleEditor())throw new Error('Saved, but the readback failed. Reload saved songs before editing again.');sampleEditorStatus('Saved. Open search fields refresh within 30 seconds.');
-  }catch(error){if(generation===sampleEditorGeneration)sampleEditorStatus(error.message,true);}finally{button.disabled=false;}
+  }catch(error){if(generation===sampleEditorGeneration)sampleEditorStatus(error.message,true);}finally{button.disabled=!sampleLoaded;}
 });
 document.getElementById('samples-reload').addEventListener('click',()=>{sampleEditorGeneration++;sampleSearchAbort?.abort();void loadSongSampleEditor();});

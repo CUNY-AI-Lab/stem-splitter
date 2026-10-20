@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Stem Splitter · Instructor Console</title>
+<link rel="stylesheet" href="/styles.css?v=20261020-classroom">
+<link rel="stylesheet" href="/classroom.css?v=20261020">
+<link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
+<main class="teacher-main">
+  <header class="masthead"><div class="masthead-title">
+    <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br><span>Splitter</span></a></h1>
+    <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
+  </div></header>
+  <h2 class="page-title">Instructor Console</h2>
+  <p class="account-help">Course work and shared listening</p>
+  <p id="account-status" role="status">Checking class access…</p>
+  <button id="classroom-retry" class="page-btn" type="button" hidden>Retry class access</button>
+  <p id="classroom-login" hidden><a class="account-button" href="/auth/login?next=/classroom.html">CUNY Login</a></p>
+  <section id="course-discovery" hidden>
+    <label for="classroom-course">Class</label>
+    <select id="classroom-course"><option value="">Choose a class</option></select>
+  </section>
+  <section id="console-panel" hidden>
+    <div class="classroom-actions">
+      <a id="classroom-create" class="account-button" href="/">Create a course split</a>
+      <button id="classroom-own-splits" class="page-btn" type="button" hidden>My course splits</button>
+      <a id="classroom-guidance" class="account-button" href="/teacher.html" hidden>Listening Guy settings</a>
+      <button id="classroom-refresh" class="page-btn" type="button">Refresh class work</button>
+    </div>
+    <p class="account-help">Only newly assigned course splits appear here. Personal splits stay private. Shared folders are available only to current members of this class.</p>
+    <p id="classroom-refresh-status" class="account-help" role="status">Course work refreshes automatically while this page is visible.</p>
+    <section id="classroom-roster-section" class="teacher-prompt-section" hidden>
+      <h2>Class roster and usage</h2>
+      <p id="classroom-usage" class="account-help"></p>
+      <p id="classroom-roster-status" role="status"></p>
+      <ul id="classroom-roster" class="teacher-history-list"></ul>
+      <button id="classroom-roster-more" class="page-btn" type="button" hidden>Load more students</button>
+    </section>
+    <section id="classroom-student" class="teacher-prompt-section" hidden>
+      <h2 id="classroom-student-name"></h2>
+      <p id="classroom-jobs-status" role="status"></p>
+      <ul id="classroom-jobs" class="teacher-history-list"></ul>
+      <button id="classroom-jobs-more" class="page-btn" type="button" hidden>Load more splits</button>
+    </section>
+    <section id="classroom-notes-section" class="teacher-prompt-section" hidden>
+      <h2 id="classroom-notes-title">Course annotations</h2>
+      <p class="account-help">Notes from the selected course split, including classmates’ notes on instructor-shared work. Review only; authors manage their own notes in the split.</p>
+      <p id="classroom-notes-status" role="status"></p>
+      <ol id="classroom-notes" class="teacher-history-list"></ol>
+    </section>
+    <section id="classroom-conversation" class="teacher-prompt-section" hidden>
+      <h2 id="classroom-conversation-title">Listening Guy session</h2>
+      <p class="account-help">Read-only review of the split owner's course conversation. No new model response is generated.</p>
+      <p id="classroom-conversation-status" role="status"></p>
+      <ol id="classroom-messages" class="teacher-history-list"></ol>
+      <button id="classroom-conversation-more" class="page-btn" type="button" hidden>Load more messages</button>
+    </section>
+    <section class="teacher-prompt-section">
+      <h2>Shared class folders</h2>
+      <p id="classroom-folders-status" role="status"></p>
+      <ul id="classroom-folders" class="teacher-history-list"></ul>
+      <form id="classroom-folder-create" class="teacher-form" hidden>
+        <label for="classroom-folder-name">New folder name</label>
+        <input id="classroom-folder-name" maxlength="80" required>
+        <button class="page-btn" type="submit">Create private folder</button>
+      </form>
+      <section id="classroom-folder-detail" hidden>
+        <h3 id="classroom-folder-title"></h3>
+        <p id="classroom-folder-status" role="status"></p>
+        <form id="classroom-folder-sharing" class="teacher-form" hidden>
+          <label for="classroom-folder-permission">Who can use this folder?</label>
+          <select id="classroom-folder-permission">
+            <option value="private">Instructors only</option>
+            <option value="read">Class members can listen and read notes</option>
+            <option value="comment">Class members can listen and add their own notes</option>
+          </select>
+          <button class="page-btn" type="submit">Save sharing</button>
+        </form>
+        <p><label for="classroom-folder-link">Class folder link</label><input id="classroom-folder-link" readonly></p>
+        <p class="account-help">This link requires current class access. It is different from an audio-only public link.</p>
+        <ul id="classroom-folder-items" class="teacher-history-list"></ul>
+      </section>
+    </section>
+  </section>
+  <footer>
+    <p class="project-credit">Built through the Critical AI Literacy Institute. A continuing project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
+    <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
+    <p><a href="/">← Back to Stem Splitter</a> · <a href="/account.html">My account</a></p>
+  </footer>
+</main>
+<script src="/session-guard.js?v=20261020-report-draft"></script>
+<script src="/classroom.js?v=20261020"></script>
+<script type="module" src="/classroom-feedback.js?v=20261020-sso"></script>
+</html>

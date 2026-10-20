@@ -1221,6 +1221,10 @@ footer a:hover { color: var(--hot); }
   margin: 0.25rem 0;
 }
 .coach-save-status.error { color: var(--danger); }
+.coach-usage { margin: .65rem 0; color: var(--ink-dim); font-size: .75rem; line-height: 1.5; }
+.coach-cooldown-timer { color: var(--hot); font-variant-numeric: tabular-nums; }
+.coach-form button:disabled { opacity: .5; cursor: default; }
+.coach-form input[readonly] { color: var(--ink-dim); }
 
 .coach-log {
   display: flex;
@@ -2757,3 +2761,7 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .sample-drag-handle { float: right; padding: .1rem .35rem; font-size: 1.5rem; cursor: grab; touch-action: none; }
 .sample-dragging { opacity: .65; }
 .sample-drag-target { outline: 2px dashed var(--hot); outline-offset: 2px; }
+#course-context { min-width: 0; margin: 0 0 1rem; }
+#course-context select { max-width: 100%; min-width: 0; margin: .35rem 0; }
+#course-context p { overflow-wrap: anywhere; }
+#course-context input[type="checkbox"] { width: auto; margin-right: .35rem; }

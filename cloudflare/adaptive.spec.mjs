@@ -52,7 +52,7 @@ test('Auto analyzes imported audio through the actual six-source path and keeps 
   page.on('request',req=>{if(new URL(req.url()).pathname==='/api/jobs'&&req.method()==='POST')submitted.push(req.postDataJSON());});
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{id:'fixture-adaptive/fixture.mp3',archiveId:'fixture-adaptive',archiveFile:'fixture.mp3',artist:'Fixture ensemble',title:'Fixture song',durationSec:2,bytes:50000,itemTitle:'Fixture recording'}]}}));
   await page.getByRole('radio',{name:'Auto: listen after import and choose 2, 4, or 6 splits',exact:true}).check();
-  await page.getByRole('combobox',{name:'Song or link',exact:true}).fill('Fixture song');await page.getByRole('option').click();await page.getByRole('button',{name:'FETCH',exact:true}).click();
+  await page.getByRole('combobox',{name:'Song or link',exact:true}).fill('Fixture song');await page.getByRole('listbox',{name:'Songs',exact:true}).getByRole('option').click();await page.getByRole('button',{name:'FETCH',exact:true}).click();
   const console=page.locator('.console').first();await expect(console.getByText('READY',{exact:true})).toBeVisible({timeout:20000});
   expect(submitted[0]).toMatchObject({model:'auto',archiveId:'fixture-adaptive',archiveFile:'fixture.mp3'});
   await expect(console.locator('.ch-name')).toHaveText(['vocals','drums','bass','other','guitar','piano']);
