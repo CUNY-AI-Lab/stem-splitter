@@ -47,12 +47,13 @@
         <summary class="yt-summary mono">Search for songs via Internet Archive</summary>
         <form id="yt-form" class="yt-form">
           <div class="source-field">
-            <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
+            <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" aria-describedby="source-import-help" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
             <button id="source-sample-hint" class="source-sample-hint" type="button" aria-label="Use suggested song. Tab to accept." hidden><kbd>Tab</kbd> to accept</button>
             <ul id="source-songs" role="listbox" aria-label="Songs" hidden></ul>
           </div>
           <button type="submit" class="yt-go">FETCH</button>
         </form>
+        <p id="source-import-help" class="account-help">YouTube links look for matching Internet Archive recordings. To use an exact recording, upload your audio file.</p>
       </details>
 
       <section class="split-picker">
@@ -137,6 +138,7 @@
       </p>
       <p id="engine-summary" class="mono footer-sig">SEPARATION MODELS: LOADING…</p>
       <a class="mono footer-teacher-link" href="/teacher.html">INSTRUCTOR</a>
+      <a class="mono footer-teacher-link" href="/classroom.html">CLASS WORKSPACE</a>
     </footer>
   </main>
 
@@ -159,6 +161,8 @@
   <script src="/session-guard.js?v=20261016-student-review"></script>
 <script src="/guest.js?v=20261011-background"></script>
   <script src="/guest-claim.js?v=20261012-carryover"></script>
+  <script src="/classroom-live.js?v=20261020"></script>
   <script src="/app.js?v=20261019-folder-copy"></script>
+  <script src="/classroom-feedback.js?v=20261020"></script>
 </body>
 </html>

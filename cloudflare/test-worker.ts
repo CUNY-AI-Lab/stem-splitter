@@ -6,7 +6,7 @@ import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 import preview, { type WorkerEnv } from './worker.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { SESSION_COOKIE, type WorkerIdentity } from './sso.ts';
-type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_QUEUE_FAIL?: string; TEST_QUEUE?: string; TEST_BROWSER?: string; TEST_ROSTER_SUBJECT?: string };
+type TestEnv = WorkerEnv & { TEST_JWKS: string; TEST_ADMIN: string; TEST_QUEUE_FAIL?: string; TEST_QUEUE?: string; TEST_BROWSER?: string; TEST_ROSTER_SUBJECT?: string; TEST_COURSE_OWNER_SUBJECT?: string };
 let adaptiveWriteFailed=false;
 const adaptiveMessages: {jobId:string}[]=[];
 let gatewayCalls = 0;
@@ -91,8 +91,8 @@ export default {
         return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream', 'x-request-id': requestId } });
       } } as Fetcher,
       ADMISSION_RESOLVER: {
-        resolveCourseAccessV2: async ({subject,classId}) => courseRevoked?{ok:false,code:'revoked',retryable:false}:courseFixture(subject,classId,courseOwner),
-        listCourseAssignmentsV2: async ({subject}) => {const assignment=await courseFixture(subject,STEM_COURSE_ID,courseOwner);return {ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:1,assignments:[(({ok,...row})=>row)(assignment)],nextCursor:null};},
+        resolveCourseAccessV2: async ({subject,classId}) => courseRevoked?{ok:false,code:'revoked',retryable:false}:courseFixture(subject,classId,env.TEST_COURSE_OWNER_SUBJECT?subject===env.TEST_COURSE_OWNER_SUBJECT:courseOwner),
+        listCourseAssignmentsV2: async ({subject}) => {const assignment=await courseFixture(subject,STEM_COURSE_ID,env.TEST_COURSE_OWNER_SUBJECT?subject===env.TEST_COURSE_OWNER_SUBJECT:courseOwner);return {ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:1,assignments:[(({ok,...row})=>row)(assignment)],nextCursor:null};},
         listCourseRosterV2: async ({subject,classId}) => {const assignment=await courseFixture(subject,classId,true);return {ok:true,classId,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:1,participants:env.TEST_ROSTER_SUBJECT?await Promise.all([env.TEST_ROSTER_SUBJECT,'cail-00000000000000000000000000000000'].map(async member=>{const row=await courseFixture(member,classId);return {memberId:row.memberId,displayName:member===env.TEST_ROSTER_SUBJECT?'Fixture Student with a long preferred display name':'Zero split student',displayNameSource:row.displayNameSource,startsAt:row.startsAt,expiresAt:row.expiresAt};})):[],nextCursor:null};},
         resolveMembership: async ({ subject }) => ({
         ok: true, expiresAt: new Date(Date.now() + 60000).toISOString(), revision: 1,

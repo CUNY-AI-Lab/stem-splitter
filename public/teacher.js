@@ -529,6 +529,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
         if (!course) throw new Error('Instructor access is not available for this class.');
         courseModeId = course.classId;
         courseModeName = course.className;
+        document.getElementById('teacher-classroom').href = `/classroom.html?course=${encodeURIComponent(courseModeId)}`;
         document.getElementById('sample-editor-title').closest('.sample-editor').hidden = true;
         document.getElementById('course-roster-section').hidden = !course.capabilities.rosterRead;
         document.getElementById('prompt-scope-note').textContent = `Class guidance for ${courseModeName}. The system prompt above remains read only.`;

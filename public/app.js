@@ -206,8 +206,40 @@ async function ensureClassCode() {
   }
 }
 
-async function splitRequestKey(body) {
-  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`personal\0${body || ''}`))), b => b.toString(16).padStart(2, '0')).join('');
+let selectedCourse = 'personal';
+let courseAcknowledgment = null;
+function creationCourse() {
+  if (selectedCourse !== 'personal' && !courseAcknowledgment?.checked) throw new Error('Confirm the course-work disclosure before creating a class split.');
+  return selectedCourse;
+}
+async function initializeCourseSelection() {
+  if (!accountSubject || guestSessionActive) return;
+  const region = document.createElement('section');
+  region.id = 'course-context';
+  region.className = 'account-help';
+  region.innerHTML = '<label for="new-split-course">New splits belong to </label><select id="new-split-course" aria-label="New split workspace"><option value="personal">Personal</option></select><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
+  document.getElementById('dropzone').before(region);
+  const select = region.querySelector('select');
+  courseAcknowledgment = region.querySelector('input');
+  const choose = () => { selectedCourse = select.value; courseAcknowledgment.checked = false; courseAcknowledgment.closest('p').hidden = selectedCourse === 'personal'; };
+  select.addEventListener('change', choose);
+  try {
+    const response = await fetch('/api/classroom/courses', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error('Course work is unavailable. Personal work remains available.');
+    const data = await response.json();
+    for (const course of data.courses || []) {
+      const option = document.createElement('option'); option.value = course.classId;
+      option.textContent = `${course.className} · ${course.term} · ${course.section}`; select.append(option);
+    }
+    const requested = new URLSearchParams(location.search).get('course');
+    if (requested && [...select.options].some(option => option.value === requested)) { select.value = requested; choose(); }
+    else if (requested) region.querySelector('.course-load-status').textContent = 'This course is not available to your account. New splits remain Personal.';
+    if (!data.courses?.length && !requested) region.hidden = true;
+  } catch (error) { region.querySelector('.course-load-status').textContent = error.message; }
+}
+
+async function splitRequestKey(body, course = 'personal') {
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${course}\0${body || ''}`))), b => b.toString(16).padStart(2, '0')).join('');
   const slot = `pendingSplit:${accountSubject || 'anonymous'}:${hash}`;
   let key;
   try { key = sessionStorage.getItem(slot); } catch {}
@@ -216,15 +248,20 @@ async function splitRequestKey(body) {
 }
 
 async function api(path, options = {}) {
-  const { onResults, background = false, publicSample = false, ...requestOptions } = options;
+  const { onResults, background = false, publicSample = false, courseContext, ...requestOptions } = options;
   if (!publicSample) await appReady;
-  const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(options.body) : null;
+  const creating = runtime.authMode === 'cail' && ['/api/uploads', '/api/jobs'].includes(path) && options.method === 'POST';
+  const currentCourse = creating ? creationCourse() : 'personal';
+  const course = creating ? (courseContext || currentCourse) : 'personal';
+  if (creating && course !== selectedCourse) throw new Error('The workspace changed. Start the import again in the selected workspace.');
+  if (creating && course !== 'personal' && path === '/api/jobs') requestOptions.body = JSON.stringify({ ...JSON.parse(requestOptions.body), coursePolicy: 'course-work-v1' });
+  const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(requestOptions.body, course) : null;
   const send = () => fetch(path, {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
       'x-class-code': getClassCode(),
-      ...(runtime.authMode === 'cail' && ['/api/uploads', '/api/jobs'].includes(path) ? { 'x-stem-course': 'personal' } : {}),
+      ...(creating ? { 'x-stem-course': course } : {}),
       ...(pending ? { 'Idempotency-Key': pending.key } : {}),
       ...(options.headers || {}),
     },
@@ -1295,6 +1332,8 @@ ytForm.addEventListener('submit', async (e) => {
 
   let followUpQuery = '';
   try {
+    await appReady;
+    const courseContext = creationCourse();
     const imports = song ? null : await api('/api/import-options');
     if (imports?.linkRouter) {
       // Only direct files and share links become jobs; YouTube links turn into
@@ -1314,6 +1353,7 @@ ytForm.addEventListener('submit', async (e) => {
     if (note) showUploadMessage(note);
     const job = await api('/api/jobs', {
       method: 'POST',
+      courseContext,
       body: JSON.stringify({
         ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
@@ -1376,12 +1416,15 @@ async function handleFile(file) {
   showUploadMessage(`UPLOADING ${file.name}…`);
 
   try {
+    await appReady;
+    const courseContext = creationCourse();
     const chosen = await requireSelectedModel();
     const resolved = await resolveModel(chosen, file);
     const { model, note } = resolved;
     if (note) showUploadMessage(note);
     const { key, uploadUrl } = await api('/api/uploads', {
       method: 'POST',
+      courseContext,
       body: JSON.stringify({ filename: file.name }),
     });
 
@@ -1392,6 +1435,7 @@ async function handleFile(file) {
     showUploadMessage('STARTING SEPARATION…');
     const job = await api('/api/jobs', {
       method: 'POST',
+      courseContext,
       body: JSON.stringify({
         key,
         filename: file.name,
@@ -1561,6 +1605,7 @@ class Mixer {
       if (entries.some(entry => entry.isIntersecting)) this.loadWaveforms();
     }, { rootMargin: '100px' });
     this.waveformObserver.observe(this.el);
+    window.StemClassLive?.attach(this);
   }
 
   build() {
@@ -1928,6 +1973,23 @@ class Mixer {
       if (this.job.instructorReview) li.querySelectorAll('.share-btn').forEach(node => { node.hidden = true; });
       this.keysHint.textContent = 'SPACE play · ←→ 5s · 1–9 mute · ⇧1–9 solo';
     }
+    if (this.job.courseId && !this.job.readOnlyShared) {
+      const refresh = document.createElement('button');
+      refresh.type = 'button'; refresh.className = 'head-btn refresh-btn'; refresh.textContent = 'REFRESH CLASS NOTES';
+      refresh.addEventListener('click', () => this.refresh());
+      li.querySelector('.console-sub').append(refresh);
+      const workspace = document.createElement('a'); workspace.className = 'share-btn';
+      workspace.href = `/classroom.html?course=${encodeURIComponent(this.job.courseId)}`;
+      workspace.textContent = 'CLASS WORKSPACE'; li.querySelector('.console-sub').append(workspace);
+      li.querySelector('.folder-btn').hidden = true;
+      if (!this.job.permissions?.comment) li.querySelector('.note-btn').hidden = true;
+      if (!this.job.permissions?.owner) {
+        // A classmate's private conversation stays separate from shared notes.
+        li.querySelector('.coach').hidden = true;
+        li.querySelector('.share-btn:not(.to-remix-btn)').hidden = true;
+        li.querySelector('.unshare-btn').hidden = true;
+      }
+    }
     return li;
   }
 
@@ -2073,7 +2135,7 @@ class Mixer {
     }
     if (this.annotations.length) {
       lines.push('## Notes', '');
-      for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text}`);
+      for (const note of this.annotations) lines.push(`- ${fmt(note.atSeconds)} — ${note.text}${note.authorName ? ` (${note.authorName})` : ''}`);
       lines.push('');
     }
     if (runtime.authMode === 'cail' && this.conversationEntries.length) {
@@ -2646,13 +2708,14 @@ class Mixer {
       row.dataset.id = note.id;
       row.innerHTML = `
         <button class="note-time mono" title="Jump to this moment">${fmt(note.atSeconds)}</button>
-        <span class="note-text">${esc(note.text)}</span>
+        <span class="note-text">${esc(note.text)}${note.authorName ? ` <small class="note-author">— ${esc(note.authorName)}</small>` : ''}</span>
         <button class="note-loop" data-at="${note.atSeconds}" aria-pressed="false" aria-label="Loop from this note to the next" title="Loop from here to the next note">↻</button>
         <button class="note-del" aria-label="Delete note" title="Delete note">✕</button>
       `;
       row.querySelector('.note-time').addEventListener('click', () => this.seekTo(note.atSeconds));
       row.querySelector('.note-loop').addEventListener('click', () => this.loopFromNote(note));
       row.querySelector('.note-del').addEventListener('click', () => this.deleteNote(note));
+      row.querySelector('.note-del').hidden = note.canDelete === false;
       this.notes.appendChild(row);
     }
     this.renderLoop();
@@ -2683,7 +2746,7 @@ class Mixer {
   }
 
   addNote() {
-    if (this.job.readOnlyShared) return;
+    if (this.job.readOnlyShared || this.job.permissions?.comment === false) return;
     if (this.el.querySelector('.note-form')) return;
     const t = this.audios[0].currentTime;
     const form = document.createElement('form');
@@ -2703,12 +2766,15 @@ class Mixer {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = input.value.trim();
-      form.remove();
       if (!text) return;
+      const button = form.querySelector('button'); button.disabled = true;
       try {
         await this.saveNote(t, text);
+        form.remove();
       } catch (err) {
         showUploadMessage(err.message, true);
+      } finally {
+        button.disabled = false;
       }
     });
   }
@@ -2728,22 +2794,25 @@ class Mixer {
     return note;
   }
 
-  // Labels, notes, and the guide are class-wide; this pulls in whatever other
-  // students have added since the page loaded. Read-only, so no class code.
+  // Refresh the recording through its current account and course authorization.
+  // Shared course notes can change while this browser keeps playing.
   async refresh() {
-    if (this.job.readOnlyShared) return;
+    if (this.job.readOnlyShared || this.refreshing) return;
+    this.refreshing = true;
     try {
-      const res = await fetch(`/api/jobs/${this.job.id}`);
-      if (!res.ok) return;
+      const res = await fetch(`/api/jobs/${this.job.id}`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error('Class work is unavailable. Reconnecting…');
       const state = await res.json();
       jobStates.set(this.job.id, state);
       this.merge(state);
+      this.el.hidden = false;
     } catch {
-      // Offline or a blip — the panel keeps whatever it already had.
-    }
+      if (this.job.courseId) { this.pause(); this.coachAbort?.abort(); this.el.hidden = true; }
+    } finally { this.refreshing = false; }
   }
 
   merge(state) {
+    if (state.permissions) this.job.permissions = state.permissions;
     if (state.labels) {
       this.job.labels = state.labels;
       this.renderChannelNames();
@@ -4752,6 +4821,7 @@ async function initialize() {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null;
+        selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
     if (accountSubject && !guestSessionActive) {
@@ -4762,6 +4832,7 @@ async function initialize() {
       link.href = '/account.html';
       link.textContent = 'My account';
       account.append(link);
+      await initializeCourseSelection();
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
@@ -4784,3 +4855,7 @@ async function initialize() {
 }
 const appReady = initialize();
 void appReady.then(showSongSample);
+setInterval(() => {
+  if (document.hidden) return;
+  for (const mixer of mixers.values()) if (mixer.job.courseId && !mixer.job.readOnlyShared && mixer.el.isConnected) void mixer.refresh();
+}, 3000);

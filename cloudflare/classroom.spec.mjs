@@ -30,18 +30,19 @@ async function setup(page){
  return {server,url,alice,bob,gateway,seed};
 }
 const get = async (page, path) => { const response = await page.request.get(new URL(path, page.url()).href); return { status: response.status(), body: await response.json() }; };
-test('existing pages keep course tools in the background while course APIs retain owner authorization', async ({ page, context }) => {
+test('existing pages expose class workspace and feedback while course APIs retain owner authorization', async ({ page, context }) => {
   const f = await setup(page), errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
-  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/classroom/')) requests.push(request.url()); });
+  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/classroom/')) requests.push({url:request.url(),method:request.method()}); });
   try {
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.alice, 'x-fixture-course-role': 'owner' });
     for (const path of ['/', '/account.html', '/teacher.html']) {
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('main')).toBeVisible();
-      await expect(page.locator('#course-context, #teacher-course, #classroom-course, a[href="/classroom.html"], .bug-report')).toHaveCount(0);
+      await expect(page.locator('a[href="/classroom.html"]')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Send us a comment', exact: true })).toBeVisible();
     }
-    expect(requests).toEqual([]);
+    expect(requests.every(request => request.method === 'GET')).toBe(true);
     const roster = await get(page, `/api/classroom/courses/${course}/roster`);
     expect(roster.status).toBe(200);
     expect(roster.body.participants.some(person => person.splitCount === 0)).toBe(true);
@@ -65,7 +66,8 @@ test('existing mixer opens shared course work using its original controls and en
     await expect(page.locator('.console')).toBeVisible();
     await expect(page.locator('.note-text')).toContainText('First student note');
     await expect(page.locator('.seek')).toHaveCount(1);
-    await expect(page.locator('.refresh-btn, .waveform-seek')).toHaveCount(0);
+    await expect(page.locator('.refresh-btn')).toBeVisible();
+    await expect(page.locator('.waveform-seek')).toHaveCount(0);
     await page.locator('.play-btn').click();
     await expect.poll(() => page.evaluate(() => mixers.get('course-song').audios[0].currentTime)).toBeGreaterThan(.1);
     await page.locator('.play-btn').click();

@@ -7,6 +7,7 @@ import { boundedRpc, courseIds, CourseError, courseErrorResponse } from './acces
 import { COURSE_APP, DEMO_COURSE_ID, validAssignmentV2, validFailure, validMember, validMemberId, validPage, type CourseAssignmentV2, type CourseMember } from './contract.ts';
 import { conversationPage } from './conversations.ts';
 import { coursePrompt, promptView, saveCoursePrompt } from './prompts.ts';
+import liveRoutes from './live.ts';
 
 type State = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const routes = new Hono<State>();
@@ -116,4 +117,5 @@ routes.post('/courses/:courseId/folders/:id/items',async c=>{
 routes.delete('/courses/:courseId/folders/:id/items/:jobId',async c=>{
   const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));await c.env.DB.prepare('DELETE FROM course_folder_items WHERE folder_id=? AND job_id=?').bind(f.id,c.req.param('jobId')).run();return c.json({ok:true});
 });
+routes.route('/', liveRoutes);
 export default routes;
