@@ -1897,7 +1897,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'TOP' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('button', { name: 'END' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'END', exact: true })).toBeVisible();
   await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
   await expect
     .poll(() =>
