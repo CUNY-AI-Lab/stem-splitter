@@ -4,6 +4,10 @@ import { gatewayForRequest } from './gateway.ts';
 import { AssistantError } from '../src/assistant/openrouter.ts';
 import { streamChat } from '../src/assistant/index.ts';
 import type { Env } from '../src/env.ts';
+import { readFileSync } from 'node:fs';
+import { SqliteD1 } from '../server/d1.ts';
+import { reserveAssistant } from '../src/reliability/assistant.ts';
+import { setCooldown } from '../src/reliability/retry.ts';
 const id = '01900000-0000-7000-8000-000000000001';
 const request = () => new Request('https://split.test/api/jobs/job/chat', { headers: { 'x-request-id': id } });
 const env = { ASSISTANT_MODEL: 'glm-5.2' } as Env;
@@ -21,6 +25,8 @@ test('the private client sends one Gateway credential and drains trailing usage 
     assert.equal(outbound.headers.get('x-cail-request-id'), id);
     const body = await outbound.json() as Record<string, unknown>;
     assert.equal(body.model, 'glm-5.2'); assert.equal(body.provider, undefined);
+    assert.deepEqual(body.reasoning, { enabled: false });
+    assert.equal(body.max_tokens, params.maxTokens);
     return sse([{ choices: [{ delta: { content: 'Listen for the bass.' }, finish_reason: null }] }, finished,
       trailingError ? { error: { code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'private provider text', cail: { request_id: id, should_retry: false } } } : { choices: [], usage: { total_tokens: 10 } }]);
   } } as unknown as Fetcher;
@@ -31,6 +37,55 @@ test('the private client sends one Gateway credential and drains trailing usage 
   trailingError = true;
   await assert.rejects(client.stream(env, params, () => {}), error => error instanceof AssistantError && error.code === 'quota_exceeded' && error.requestId === id && error.shouldRetry === false && !error.message.includes('private provider'));
   assert.equal(calls, 2);
+});
+
+test('empty and truncated streams are failures, never successful attempts or automatic paid retries', async () => {
+  for (const [content, finishReason, code] of [
+    ['', 'stop', 'empty_response'], ['', 'length', 'incomplete_response'],
+    ['Unfinished sentence', 'length', 'incomplete_response'], ['Filtered', 'content_filter', 'incomplete_response'],
+  ]) {
+    const local = new SqliteD1(':memory:');
+    local.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+    const DB = local as unknown as D1Database, subject = `cail-${'e'.repeat(32)}`;
+    await DB.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(subject).run();
+    const operation = (await reserveAssistant({ DB } as Env, subject, null, 'guide', 'empty-guide-request-001', 'fixture-job', {})).operation;
+    let calls = 0;
+    const transport = gatewayForRequest({ fetch: async () => {
+      calls++;
+      return sse([{ choices: [{ delta: { content }, finish_reason: finishReason }] }, { choices: [], usage: { completion_tokens: 500 } }]);
+    } } as unknown as Fetcher, 'gateway-leg', request(), 'test');
+    await assert.rejects(transport.stream({ ...env, DB, ASSISTANT_OPERATION_ID: operation.id,
+      ASSISTANT_FALLBACK_MODELS: 'deepseek-v4-flash-0731' }, params, () => {}),
+      (error: unknown) => error instanceof AssistantError && error.code === code && error.shouldRetry === false);
+    assert.equal(calls, 1);
+    const attempts = (await DB.prepare('SELECT outcome,code FROM operation_attempts').all()).results;
+    assert.deepEqual(attempts?.map(row => ({ ...row })), [{ outcome: content ? 'partial' : 'failed', code }]);
+  }
+});
+
+test('a cooling primary skips directly to the configured backup without recording a fictitious attempt', async () => {
+  const local = new SqliteD1(':memory:');
+  local.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+  const DB = local as unknown as D1Database, subject = `cail-${'f'.repeat(32)}`;
+  await DB.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(subject).run();
+  const operation = (await reserveAssistant({ DB } as Env, subject, null, 'chat', 'cooling-primary-request-001', 'fixture-job', {})).operation;
+  await setCooldown(DB, 'gateway:glm-5.2', Date.now() + 30000);
+  const models: string[] = [];
+  const transport = gatewayForRequest({ fetch: async (outbound: Request) => {
+    models.push((await outbound.json() as { model: string }).model);
+    return sse([{ choices: [{ delta: { content: 'Listen for the bass.' }, finish_reason: 'stop' }] }]);
+  } } as unknown as Fetcher, 'gateway-leg', request(), 'test');
+  const result = await transport.stream({ ...env, DB, ASSISTANT_OPERATION_ID: operation.id,
+    ASSISTANT_FALLBACK_MODELS: 'deepseek-v4-flash-0731' }, params, () => {});
+  assert.equal(result.content, 'Listen for the bass.');
+  assert.deepEqual(models, ['deepseek-v4-flash-0731']);
+  assert.deepEqual((await DB.prepare('SELECT model,outcome FROM operation_attempts').all()).results?.map(row => ({ ...row })),
+    [{ model: 'deepseek-v4-flash-0731', outcome: 'succeeded' }]);
+  await setCooldown(DB, 'gateway:deepseek-v4-flash-0731', Date.now() + 30000);
+  await assert.rejects(transport.stream({ ...env, DB, ASSISTANT_OPERATION_ID: operation.id,
+    ASSISTANT_FALLBACK_MODELS: 'deepseek-v4-flash-0731' }, params, () => {}),
+    (error: unknown) => error instanceof AssistantError && error.code === 'model_cooldown');
+  assert.equal(models.length, 1);
 });
 
 test('tools-only replies receive local narration without another model request', async () => {
