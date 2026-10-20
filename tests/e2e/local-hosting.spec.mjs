@@ -1682,7 +1682,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect(await page.locator('link[rel="stylesheet"][href^="/styles.css"]').getAttribute('href')).toMatch(/\?v=/);
   await expect(page.getByRole('link', { name: 'Back to Stem Splitter' })).toHaveAttribute('href', '/');
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
-  const signInButton = page.getByRole('button', { name: 'SIGN IN' });
+  const signInButton = page.getByRole('button', { name: 'Sign in' });
   const signInButtonBox = await signInButton.boundingBox();
   expect(signInButtonBox).not.toBeNull();
   expect(signInButtonBox.height).toBeGreaterThanOrEqual(44);
@@ -1690,7 +1690,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   // Wrong password is rejected, and the message does not reveal which half failed.
   await page.getByLabel('USERNAME').fill('e2eteacher');
   await page.getByLabel('PASSWORD').fill('not-the-password');
-  await page.getByRole('button', { name: 'SIGN IN' }).click();
+  await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.locator('#signin-error')).toHaveText('Incorrect username or password.');
   await expect(page.getByLabel('USERNAME')).toHaveValue('e2eteacher');
   await expect(page.getByLabel('PASSWORD')).toHaveValue('');
@@ -1706,15 +1706,15 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   expect((await unknownUser.json()).error).toBe('Incorrect username or password.');
 
   await page.getByLabel('PASSWORD').fill(TEACHER_PASSWORD);
-  await page.getByRole('button', { name: 'SIGN IN' }).click();
+  await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
   await expect(page.locator('#teacher-access-status')).toBeEmpty();
   await expect(page.getByRole('heading', { name: 'Instructor Console' })).toBeVisible();
-  await expect(page.getByText('More', { exact: true })).toBeVisible();
+  await expect(page.getByText('Prompt reference', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
-  await expect(page.getByRole('textbox', { name: 'System Prompt', exact: true })).not.toHaveAttribute('placeholder');
+  await expect(page.getByRole('textbox', { name: 'Teaching instructions', exact: true })).not.toHaveAttribute('placeholder');
   const instructorSurfaceText = await page.locator('body').innerText();
   expect(instructorSurfaceText).not.toMatch(
     /\b(?:e2e|end-to-end|authorized testing|advisory|classifier|routing|training eligible|job id|shadow mode)\b/i
@@ -1899,9 +1899,9 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   ]);
   await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-09-07.1');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
-  await page.getByRole('button', { name: 'TOP' }).click();
+  await page.getByRole('button', { name: 'Top' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('button', { name: 'END', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
   await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
   await expect
     .poll(() =>
@@ -1920,17 +1920,17 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
-  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#prompt-status')).toContainText('Add a change note');
 
   const changeNote = 'Add bilingual vocabulary guidance for the survey course';
   await page.locator('#change-note').fill(changeNote);
-  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('#prompt-status')).toHaveText('Saved.');
   await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('BASE 2026-09-07.1');
+  await expect(page.locator('.teacher-history-trace')).toContainText('System prompt 2026-09-07.1');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -1954,7 +1954,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'PREVIEW SAVED PROMPT', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview saved prompt', exact: true }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
 
@@ -2012,9 +2012,9 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#amendment')).toHaveValue('Pagination amendment 42');
   await expect(page.locator('.teacher-history-item')).toHaveCount(40);
-  await expect(page.locator('.teacher-history-item').first()).toContainText('REVISION 42');
+  await expect(page.locator('.teacher-history-item').first()).toContainText('Revision 42');
   await page.getByText('History', { exact: true }).click();
-  const loadEarlier = page.getByRole('button', { name: 'LOAD EARLIER REVISIONS' });
+  const loadEarlier = page.getByRole('button', { name: 'Load earlier revisions' });
   await expect(loadEarlier).toBeVisible();
   await loadEarlier.click();
   await expect(page.locator('.teacher-history-item')).toHaveCount(42);
@@ -2026,20 +2026,20 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   // A failed logout must not tell the teacher the active HttpOnly session is
   // gone. Keep the console visible until the server confirms invalidation.
   await page.route('**/api/teacher/logout', (route) => route.abort('failed'));
-  await page.getByRole('button', { name: 'SIGN OUT' }).click();
+  await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#prompt-status')).toContainText(
     'Sign out failed. Your session may still be active.'
   );
   await expect(page.getByText('AutoSplit review', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'SIGN OUT' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   const afterFailedSignOut = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then((r) => r.status)
   );
   expect(afterFailedSignOut).toBe(200);
   await page.unroute('**/api/teacher/logout');
 
-  await page.getByRole('button', { name: 'SIGN OUT' }).click();
+  await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#amendment')).toHaveValue('');
   await expect(page.locator('.teacher-history-item')).toHaveCount(0);

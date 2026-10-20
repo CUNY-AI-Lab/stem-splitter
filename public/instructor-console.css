@@ -1,0 +1,144 @@
+/* Shared console components. Keep these rules out of the student mixer. */
+.instructor-console {
+  max-width: 960px;
+  padding: 2.5rem 1.25rem 4rem;
+  font-size: .875rem;
+  line-height: 1.55;
+}
+.instructor-console .masthead { margin-bottom: 1.75rem; }
+.instructor-console .page-title { margin: 0 0 .5rem; font-size: 1.75rem; line-height: 1.2; }
+.instructor-console h2:not(.page-title) { margin: 0 0 .75rem; font-size: 1.2rem; line-height: 1.35; }
+.instructor-console h3 { margin: 0 0 .75rem; font-size: 1rem; line-height: 1.4; }
+.instructor-console .rack-title { justify-content: flex-start; font-family: var(--font-body); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.instructor-console .rack-title::before, .instructor-console .rack-title::after { display: none; }
+.instructor-console :is(h2, h3, strong, p, a) { overflow-wrap: anywhere; }
+.instructor-console a { color: var(--hot); text-underline-offset: .2em; }
+.instructor-console #course-list a { display: flex; align-items: center; min-height: 44px; }
+.instructor-console :is(.account-help, .teacher-help) {
+  color: var(--ink-dim);
+  font: 400 .8125rem/1.55 var(--font-body);
+  margin: .5rem 0 1rem;
+}
+.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) {
+  padding: 1.5rem;
+  margin: 1.5rem 0 0;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: var(--bg-raise);
+}
+.instructor-console .teacher-amendment-section { border-top: 2px solid var(--hot); }
+.console-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  margin: 1.25rem 0;
+  border-bottom: 1px solid var(--panel-edge);
+}
+.console-nav :is(a, span) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: .6rem 0;
+  color: var(--ink-dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  font: 500 .875rem/1.4 var(--font-body);
+}
+.console-nav [aria-current="page"] { color: var(--ink); border-bottom-color: var(--hot); }
+.console-nav a:hover { color: var(--hot); }
+.instructor-console :is(.page-btn, .account-button, .yt-go, .teacher-caret-control) {
+  min-height: 44px;
+  padding: .65rem .9rem;
+  border-radius: 6px;
+  border: 1px solid var(--panel-edge);
+  background: transparent;
+  color: var(--ink);
+  font: 500 .8125rem/1.35 var(--font-body);
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  cursor: pointer;
+}
+.instructor-console :is(.page-btn, .account-button, .yt-go):hover:not(:disabled) { background: var(--panel); border-color: var(--ink-dim); color: var(--ink); }
+.instructor-console :is(.console-primary, .yt-go, #samples-save) { background: var(--hot); border-color: var(--hot); color: var(--bg); }
+.instructor-console :is(.console-primary, .yt-go, #samples-save):hover:not(:disabled) { background: #ffc46b; border-color: #ffc46b; color: var(--bg); }
+.instructor-console :is(button, input, select, textarea, summary, a):focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.instructor-console button:disabled { cursor: default; opacity: .45; }
+.instructor-console label { font: 500 .8125rem/1.5 var(--font-body); color: var(--ink); }
+.instructor-console :is(input:not([type="checkbox"]), select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid #514739;
+  border-radius: 6px;
+  padding: .65rem .8rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 .875rem/1.5 var(--font-body);
+  color-scheme: dark;
+}
+.instructor-console input::placeholder { color: var(--ink-dim); }
+.instructor-console input[readonly] { color: var(--ink-dim); font-size: .8125rem; }
+.instructor-console input[type="checkbox"] { accent-color: var(--hot); width: 1rem; height: 1rem; margin: 0 .55rem 0 0; flex: none; }
+.instructor-console label:has(input[type="checkbox"]) { display: flex; align-items: center; min-height: 44px; }
+.instructor-console .teacher-field { gap: .45rem; }
+.instructor-console .teacher-field > span { color: var(--ink); font: 500 .8125rem/1.5 var(--font-body); letter-spacing: 0; }
+.instructor-console .teacher-field > .console-field-count { justify-self: end; color: var(--ink-dim); font: 400 .6875rem/1.5 var(--font-mono); }
+.instructor-console .teacher-field > .console-field-count.error { color: var(--danger); }
+.instructor-console .teacher-form { gap: 1rem; }
+.instructor-console .teacher-textarea { min-height: 160px; }
+.instructor-console :is(.teacher-actions, .classroom-actions) { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.instructor-console .teacher-actions > * { width: auto; }
+.instructor-console .teacher-bar { font-size: .75rem; line-height: 1.5; letter-spacing: 0; color: var(--ink-dim); }
+.instructor-console .teacher-edit-meta { margin: -.25rem 0 0; gap: .5rem 1rem; }
+.instructor-console .teacher-edit-meta #amendment-meta { width: 100%; margin: 0; text-align: left; }
+.instructor-console :is(.teacher-status, .teacher-error) { font: 400 .8125rem/1.55 var(--font-body); }
+.instructor-console [role="status"]:empty { display: none; }
+.instructor-console .teacher-history-list { gap: 0; }
+.instructor-console .teacher-history-item {
+  padding: 1rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--panel-edge);
+  border-radius: 0;
+  background: transparent;
+  min-width: 0;
+}
+.instructor-console .teacher-history-item:last-child { border-bottom: 0; }
+.instructor-console .teacher-history-head { align-items: baseline; gap: .5rem 1rem; flex-wrap: wrap; }
+.instructor-console .teacher-history-head strong { font-size: .875rem; }
+.instructor-console :is(.teacher-history-head span, .teacher-history-trace) { color: var(--ink-dim); font-size: .6875rem; }
+.instructor-console .teacher-history-details summary { font: 500 .8125rem/1.5 var(--font-body); }
+.instructor-console .teacher-history-details + button { margin-top: .75rem; }
+.instructor-console .teacher-more-tools { margin-top: 1.5rem; }
+.instructor-console .teacher-more-tools > h2 { color: var(--ink); font-family: var(--font-body); font-size: 1rem; text-transform: none; letter-spacing: 0; }
+.instructor-console .teacher-tool > summary { min-height: 56px; }
+.instructor-console .teacher-tool > summary strong { font-size: .875rem; font-weight: 500; }
+.instructor-console :is(.teacher-preview summary, .teacher-markdown) { font: 400 .875rem/1.65 var(--font-body); }
+.instructor-console .teacher-preview summary { cursor: pointer; min-height: 44px; padding-block: .5rem; color: var(--ink); font-weight: 500; }
+.instructor-console .teacher-markdown h4 { font: 600 .8125rem/1.5 var(--font-body); letter-spacing: 0; }
+.instructor-console .teacher-fixed-scroll { height: 420px; }
+.instructor-console .teacher-effective-preview { max-height: 420px; }
+.instructor-console .sample-timing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.instructor-console .sample-timing input { max-width: none; }
+.instructor-console .sample-search-results { gap: 0; grid-auto-rows: max-content; border-radius: 6px; }
+.instructor-console .sample-search-results button { min-height: 44px; padding: .85rem; background: var(--bg); border-color: var(--panel-edge); font: 400 .875rem/1.5 var(--font-body); }
+.instructor-console .sample-selected { gap: 0; margin: 0; }
+.instructor-console .sample-card { padding: 1rem 0; border: 0; border-bottom: 1px solid var(--panel-edge); border-radius: 0; }
+.instructor-console .sample-card strong { font-size: .875rem; line-height: 1.55; }
+.instructor-console .sample-card .teacher-help { margin: .25rem 0 .75rem; font-size: .75rem; }
+.instructor-console .sample-card-actions { gap: .5rem; }
+.instructor-console .sample-card-actions button { padding: .6rem .75rem; }
+.instructor-console .sample-drag-handle { color: var(--ink-dim); }
+.instructor-console footer { margin-top: 2.5rem; font-size: .75rem; }
+@media (max-width: 600px) {
+  .instructor-console { padding-top: 1.5rem; }
+  .instructor-console .masthead { margin-bottom: 1.5rem; }
+  .instructor-console .page-title { font-size: 1.65rem; }
+  .instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: 1.1rem; }
+  .instructor-console .teacher-history-head { display: flex; }
+  .instructor-console .teacher-fixed-scroll { height: 360px; }
+  .instructor-console :is(input:not([type="checkbox"]), select, textarea) { font-size: 1rem; }
+  .console-nav { gap: 0 1.1rem; }
+}

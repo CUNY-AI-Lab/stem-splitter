@@ -3,11 +3,12 @@
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor Console</title>
 <link rel="stylesheet" href="/styles.css?v=20261017-song-resource" />
+<link rel="stylesheet" href="/instructor-console.css?v=20261020" />
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso" />
 
 <div class="grain" aria-hidden="true"></div>
 
-<main class="teacher-main">
+<main class="teacher-main instructor-console">
   <header class="masthead">
     <div class="masthead-title">
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
@@ -16,7 +17,7 @@
   </header>
   <h2 class="page-title" id="class-guidance-title">Instructor Console</h2>
   <p id="teacher-access-status" role="status"></p>
-  <nav aria-label="Instructor Console"><a class="account-button" id="teacher-classroom" href="/classroom.html">Class workspace: roster, splits and shared folders</a> <a class="account-button" href="/account.html">My account</a></nav>
+  <nav class="console-nav" aria-label="Instructor Console"><a id="teacher-classroom" href="/classroom.html">Class work</a><span aria-current="page">Settings</span><a href="/account.html">My account</a></nav>
 
   <section id="course-discovery" class="deck teacher-panel" hidden aria-labelledby="course-discovery-title">
     <h2 id="course-discovery-title">Choose a class</h2>
@@ -27,16 +28,16 @@
 
   <section id="signin-panel" class="deck teacher-panel" hidden>
     <form id="signin-form" class="teacher-form">
-      <h2 class="rack-title"><span>SIGN IN</span></h2>
+      <h2 class="rack-title"><span>Sign in</span></h2>
       <label class="teacher-field">
-        <span class="mono">USERNAME</span>
+        <span>Username</span>
         <input id="signin-username" name="username" autocomplete="username" required />
       </label>
       <label class="teacher-field">
-        <span class="mono">PASSWORD</span>
+        <span>Password</span>
         <input id="signin-password" name="password" type="password" autocomplete="current-password" required />
       </label>
-      <button type="submit" class="yt-go teacher-submit">SIGN IN</button>
+      <button type="submit" class="yt-go teacher-submit">Sign in</button>
       <p id="signin-error" class="mono teacher-error" hidden></p>
     </form>
   </section>
@@ -45,7 +46,7 @@
   <section id="console-panel" class="teacher-panel" hidden>
     <div class="teacher-bar">
       <span id="teacher-who" class="mono"></span>
-      <button type="button" id="signout" class="page-btn">SIGN OUT</button>
+      <button type="button" id="signout" class="page-btn">Sign out</button>
     </div>
 
     <section id="course-roster-section" class="teacher-prompt-section" hidden aria-labelledby="course-roster-title">
@@ -53,39 +54,41 @@
       <p class="teacher-help">Student names and saved split counts for this class.</p>
       <ol id="course-roster" class="teacher-history-list"></ol>
       <p id="course-roster-status" class="teacher-help" role="status"></p>
-      <button type="button" id="course-roster-more" class="page-btn" hidden>LOAD MORE STUDENTS</button>
+      <button type="button" id="course-roster-more" class="page-btn" hidden>Load more students</button>
     </section>
 
-    <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="class-guidance-title">
-      <h2>Listening Guide instructions</h2>
-      <p class="account-help">Append teaching instructions to the read-only system prompt. To reset your instructions, clear this field and save with a change note.</p>
+    <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="instructions-title">
+      <h2 id="instructions-title">Listening Guy instructions</h2>
+      <p class="account-help">Add teaching instructions to the fixed system prompt. To reset them, clear the field and save with a change note.</p>
       <p id="prompt-scope-note" class="account-help">Applies across Stem Splitter, not just one class.</p>
       <span id="effective-prompt-meta" hidden></span>
 
       <form id="prompt-form" class="teacher-form">
         <label class="teacher-field" for="amendment">
-          <span class="sr-only">System Prompt</span>
+          <span>Teaching instructions</span>
           <textarea
             id="amendment"
             class="teacher-textarea"
             rows="5"
+            aria-describedby="amendment-count"
           ></textarea>
+          <span id="amendment-count" class="console-field-count" aria-hidden="true"></span>
         </label>
         <label class="teacher-field" for="change-note">
-          <span class="mono">CHANGE NOTE</span>
+          <span>Change note</span>
           <input
             id="change-note"
             maxlength="240"
+            aria-describedby="change-note-count"
           />
+          <span id="change-note-count" class="console-field-count" aria-hidden="true"></span>
         </label>
         <div class="teacher-bar teacher-edit-meta">
-          <span id="amendment-count" class="mono"></span>
-          <span id="change-note-count" class="mono"></span>
           <span id="amendment-meta" class="mono"></span>
         </div>
         <div class="teacher-actions">
-          <button type="submit" class="yt-go">SAVE</button>
-          <button type="button" id="preview-btn" class="page-btn">PREVIEW SAVED PROMPT</button>
+          <button type="submit" class="yt-go">Save</button>
+          <button type="button" id="preview-btn" class="page-btn">Preview saved prompt</button>
         </div>
         <p id="prompt-status" class="mono teacher-status" hidden></p>
       </form>
@@ -93,19 +96,20 @@
 
     <section class="teacher-prompt-section sample-editor" aria-labelledby="sample-editor-title">
       <h2 id="sample-editor-title">Search examples</h2>
-      <p class="teacher-help">Search Internet Archive for complete recordings up to five minutes. Choose the songs suggested in the Splitter search field. The first pass follows this order, skipping unavailable recordings.</p>
+      <p class="teacher-help">Choose the songs suggested in the Splitter search field. Search Internet Archive for complete recordings up to five minutes. Songs appear in this order first; unavailable recordings are skipped.</p>
       <form id="sample-settings-form" class="teacher-form">
         <label><input type="checkbox" id="samples-enabled" /> Show song suggestions</label>
         <div class="sample-timing">
-          <label>Minimum fully displayed seconds<input id="samples-hold" type="number" min="3" max="15" step="0.5" required /></label>
-          <label>Seconds per song<input id="samples-cadence" type="number" min="3.6" max="30" step="0.1" required /></label>
+          <label>Hold text (seconds)<input id="samples-hold" type="number" min="3" max="15" step="0.5" required /></label>
+          <label>Cycle (seconds)<input id="samples-cadence" type="number" min="3.6" max="30" step="0.1" required /></label>
         </div>
-        <label><input type="checkbox" id="samples-reshuffle" /> Reshuffle after each complete pass</label>
+        <p class="teacher-help">Hold time keeps each song name fully visible. Cycle time is the interval between songs, including typing.</p>
+        <label><input type="checkbox" id="samples-reshuffle" /> Shuffle after each pass</label>
         <label for="sample-search">Find a song</label>
         <input id="sample-search" type="search" placeholder="Search artist or song" autocomplete="off" aria-controls="sample-search-results" />
         <p id="sample-search-status" class="teacher-help" role="status"></p>
         <div id="sample-search-results" class="sample-search-results" role="listbox" aria-label="Songs to add"></div>
-        <p class="teacher-help" id="sample-order-help">Drag to reorder, or use the move buttons. Focus a card and press ↑ or ↓ to move it. Changes appear after saving.</p>
+        <p class="teacher-help" id="sample-order-help">Drag songs or use Move up and Move down. You can also focus a song and use the arrow keys. Save to apply changes.</p>
         <ol id="sample-selected" class="sample-selected" aria-label="Selected songs in display order" aria-describedby="sample-order-help"></ol>
         <div class="teacher-actions"><button type="submit" class="page-btn" id="samples-save">Save songs</button><button type="button" class="page-btn" id="samples-reload">Reload saved songs</button></div>
         <p id="sample-settings-meta" class="teacher-help"></p>
@@ -114,12 +118,12 @@
     </section>
 
     <details id="preview-wrap" class="teacher-preview" hidden>
-      <summary class="mono">Prompt preview</summary>
+      <summary>Saved prompt preview</summary>
       <article id="preview-body" class="teacher-markdown teacher-effective-preview"></article>
     </details>
 
     <section class="teacher-more-tools" aria-labelledby="teacher-more-tools-title">
-      <h2 id="teacher-more-tools-title">More</h2>
+      <h2 id="teacher-more-tools-title">Prompt reference</h2>
 
       <details id="fixed-prompt-details" class="teacher-tool">
         <summary id="fixed-prompt-title">
@@ -127,6 +131,7 @@
           <span id="fixed-prompt-meta" hidden></span>
         </summary>
         <section class="teacher-tool-body" aria-labelledby="fixed-prompt-title">
+          <p class="teacher-help">Read only. Your teaching instructions are added to this prompt.</p>
           <div
             id="fixed-prompt-scroll"
             class="teacher-fixed-scroll"
@@ -143,7 +148,7 @@
             aria-expanded="false"
           >
             <span class="teacher-up-caret" aria-hidden="true">↑</span>
-            <span id="fixed-prompt-toggle-label">TOP</span>
+            <span id="fixed-prompt-toggle-label">Top</span>
           </button>
         </section>
       </details>
@@ -156,7 +161,7 @@
           <p id="prompt-history-empty" class="teacher-help">No revisions yet.</p>
           <ol id="prompt-history" class="teacher-history-list"></ol>
           <button type="button" id="prompt-history-more" class="page-btn" hidden>
-            LOAD EARLIER REVISIONS
+            Load earlier revisions
           </button>
         </section>
       </details>

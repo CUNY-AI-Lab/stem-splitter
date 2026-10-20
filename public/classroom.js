@@ -102,10 +102,10 @@
       if (!append) el('jobs').replaceChildren();
       for (const job of data.jobs) {
         const item = row(); const title = document.createElement('strong'); title.textContent = job.filename; item.append(title);
-        const state = document.createElement('p'); state.className = 'account-help'; state.textContent = job.retained ? job.status : 'Audio expired'; item.append(state);
+        const state = document.createElement('p'); state.className = 'account-help'; state.textContent = job.retained ? (job.status === 'done' ? 'Ready' : job.status) : 'Audio expired'; item.append(state);
         if (job.retained && job.status === 'done') {
-          const actions = document.createElement('div'); actions.className = 'classroom-actions';
-          actions.append(link('Open split and notes', `/?job=${encodeURIComponent(job.id)}`), button('Review annotations', () => void loadAnnotations(job)), button('Review Listening Guy session', () => void loadConversation(job)));
+          const actions = document.createElement('div'); actions.className = 'classroom-actions classroom-job-actions';
+          actions.append(link('Open split', `/?job=${encodeURIComponent(job.id)}`), button('Annotations', () => void loadAnnotations(job)), button('Listening Guy messages', () => void loadConversation(job)));
           const select = document.createElement('select'); select.setAttribute('aria-label', `Folder for ${job.filename}`);
           select.dataset.jobId = job.id;
           select.append(new Option('Choose a class folder', ''), ...folders.map(folder => new Option(folder.name, folder.id)));
@@ -118,7 +118,8 @@
             } catch (error) { if (view === studentGeneration && error.name !== 'AbortError') state.textContent = error.message; }
             finally { if (view === studentGeneration) add.disabled = false; }
           });
-          actions.append(select, add); item.append(actions);
+          const assignment = document.createElement('div'); assignment.className = 'classroom-folder-assignment';
+          assignment.append(select, add); item.append(actions, assignment);
         }
         el('jobs').append(item);
       }
@@ -141,7 +142,9 @@
       el('notes').replaceChildren();
       for (const note of data.annotations) {
         const seconds = Math.max(0, Number(note.atSeconds) || 0), stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-        el('notes').append(row(`${stamp} · ${note.authorName || 'Author unavailable'}: ${note.text}`));
+        const item = row(), meta = document.createElement('span'); meta.className = 'classroom-entry-meta';
+        meta.textContent = `${stamp} · ${note.authorName || 'Author unavailable'}: `;
+        item.append(meta, document.createTextNode(note.text)); el('notes').append(item);
       }
       el('notes-status').textContent = data.annotations.length ? `${data.annotations.length} saved ${data.annotations.length === 1 ? 'note' : 'notes'}.` : 'No saved course notes yet.';
     } catch (error) { if (current === generation && view === annotationGeneration) { el('notes').replaceChildren(); report('notes-status', error); } }
@@ -162,7 +165,11 @@
       if (view !== conversationGeneration) return;
       conversationPages = append ? conversationPages + 1 : 1;
       if (!append) el('messages').replaceChildren();
-      for (const entry of data.entries) el('messages').append(row(`${entry.kind === 'you' ? 'Student' : entry.kind === 'coach' ? 'Listening Guy' : 'Session status'}: ${entry.text}`));
+      for (const entry of data.entries) {
+        const item = row(), meta = document.createElement('span'); meta.className = 'classroom-entry-meta';
+        meta.textContent = `${entry.kind === 'you' ? 'Student' : entry.kind === 'coach' ? 'Listening Guy' : 'Session status'}: `;
+        item.append(meta, document.createTextNode(entry.text)); el('messages').append(item);
+      }
       conversationCursor = data.nextCursor; conversationRevision = data.revision;
       el('conversation-more').hidden = conversationCursor === null || conversationCursor === undefined;
       el('conversation-status').textContent = el('messages').children.length ? '' : 'No saved course messages.';
@@ -263,7 +270,7 @@
         await loadConversation(conversation, false, true);
         for (let i = 1; current === generation && i < pageCounts.conversation && conversationCursor; i++) await loadConversation(conversation, true);
       }
-      if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Course work refreshes automatically while this page is visible.`;
+      if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Updates automatically while this page is open.`;
     } finally {
       if (current === generation) { refreshing = false; pendingRequests--; if (!pendingRequests) delete panel.dataset.checking; scheduleRefresh(); }
     }

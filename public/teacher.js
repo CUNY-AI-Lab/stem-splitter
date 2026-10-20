@@ -165,13 +165,9 @@ function clearTeacherConsole() {
   setHistoryPagination(false, null);
   showingPromptTop = false;
   fixedPromptToggle.setAttribute('aria-expanded', 'false');
-  fixedPromptToggleLabel.textContent = 'TOP';
+  fixedPromptToggleLabel.textContent = 'Top';
   paintCounts();
   showStatus('');
-}
-
-function shortHash(value) {
-  return typeof value === 'string' && value ? value.slice(0, 12) : '—';
 }
 
 function formatUtc(value) {
@@ -199,9 +195,15 @@ function paintCounts() {
   changeNoteCount.classList.toggle('error', noteUsed > maxChangeNoteChars);
 }
 
+function visibleSavedAuthor(actor) {
+  // Audit records retain their original actor. Opaque SSO subjects are not names.
+  return typeof actor === 'string' && !/^cail-[0-9a-f]{32}$/i.test(actor) ? actor : '';
+}
+
 function paintMeta(record) {
+  const author = visibleSavedAuthor(record.updatedBy);
   amendmentMeta.textContent = record.updatedBy
-    ? `Saved by ${record.updatedBy} · ${formatUtc(record.updatedAt)}`
+    ? `Saved${author ? ` by ${author}` : ''} · ${formatUtc(record.updatedAt)}`
     : '';
   fixedPromptMeta.textContent = record.basePromptVersion;
   effectivePromptMeta.textContent = record.revision ? `Revision ${record.revision}` : '';
@@ -286,14 +288,14 @@ function renderPromptMarkdown(text, target) {
 function showPromptEnd() {
   showingPromptTop = false;
   fixedPromptToggle.setAttribute('aria-expanded', 'false');
-  fixedPromptToggleLabel.textContent = 'TOP';
+  fixedPromptToggleLabel.textContent = 'Top';
   fixedPromptScroll.scrollTo({ top: fixedPromptScroll.scrollHeight, behavior: 'smooth' });
 }
 
 function showPromptTop() {
   showingPromptTop = true;
   fixedPromptToggle.setAttribute('aria-expanded', 'true');
-  fixedPromptToggleLabel.textContent = 'END';
+  fixedPromptToggleLabel.textContent = 'End';
   fixedPromptScroll.focus({ preventScroll: true });
   fixedPromptScroll.scrollTo({ top: 0, behavior: 'smooth' });
   requestAnimationFrame(() => {
@@ -312,7 +314,7 @@ function renderHistory(history, append = false) {
     head.className = 'teacher-history-head';
 
     const title = document.createElement('strong');
-    title.textContent = `REVISION ${revision.settingsRevision} · ${revision.changeNote}`;
+    title.textContent = `Revision ${revision.settingsRevision} · ${revision.changeNote}`;
     const time = document.createElement('span');
     time.className = 'mono';
     time.textContent = formatUtc(revision.createdAt);
@@ -320,9 +322,8 @@ function renderHistory(history, append = false) {
 
     const trace = document.createElement('p');
     trace.className = 'teacher-history-trace mono';
-    trace.textContent =
-      `${revision.updatedBy.toUpperCase()} · BASE ${revision.basePromptVersion} ` +
-      `${shortHash(revision.basePromptHash)} · EFFECTIVE ${shortHash(revision.effectivePromptHash)}`;
+    const author = visibleSavedAuthor(revision.updatedBy);
+    trace.textContent = `${author ? `${author} · ` : ''}System prompt ${revision.basePromptVersion}`;
     trace.title =
       `Base policy SHA-256: ${revision.basePromptHash}\n` +
       `Effective policy SHA-256: ${revision.effectivePromptHash}`;
@@ -332,15 +333,15 @@ function renderHistory(history, append = false) {
     const summary = document.createElement('summary');
     summary.className = 'mono';
     summary.textContent = revision.amendment
-      ? 'VIEW APPENDED SNAPSHOT'
-      : 'VIEW EMPTY APPENDIX SNAPSHOT';
+      ? 'View saved instructions'
+      : 'View reset instructions';
     const body = document.createElement('div');
     body.className = 'teacher-markdown teacher-history-snapshot';
     if (revision.amendment) {
       renderPromptMarkdown(revision.amendment, body);
     } else {
       const empty = document.createElement('p');
-      empty.textContent = 'No appended class instructions.';
+      empty.textContent = 'No added teaching instructions.';
       body.appendChild(empty);
     }
     details.append(summary, body);
@@ -349,7 +350,7 @@ function renderHistory(history, append = false) {
       const restore = document.createElement('button');
       restore.type = 'button';
       restore.className = 'page-btn';
-      restore.textContent = 'RESTORE AS NEW VERSION';
+      restore.textContent = 'Restore as new version';
       restore.setAttribute('aria-label', `Restore revision ${revision.settingsRevision} as a new version`);
       restore.addEventListener('click', () => {
         amendment.value = revision.amendment || '';
@@ -542,7 +543,7 @@ historyMoreBtn.addEventListener('click', async () => {
   if (historyLoading || historyNextBeforeId === null) return;
   historyLoading = true;
   historyMoreBtn.disabled = true;
-  historyMoreBtn.textContent = 'LOADING EARLIER REVISIONS…';
+  historyMoreBtn.textContent = 'Loading earlier revisions…';
   try {
     const page = await api(
       `${promptPath('/history')}?before=${encodeURIComponent(historyNextBeforeId)}`
@@ -554,7 +555,7 @@ historyMoreBtn.addEventListener('click', async () => {
   } finally {
     historyLoading = false;
     historyMoreBtn.disabled = false;
-    historyMoreBtn.textContent = 'LOAD EARLIER REVISIONS';
+    historyMoreBtn.textContent = 'Load earlier revisions';
   }
 });
 
@@ -592,7 +593,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
         document.getElementById('teacher-classroom').href = `/classroom.html?course=${encodeURIComponent(courseModeId)}`;
         document.getElementById('sample-editor-title').closest('.sample-editor').hidden = true;
         document.getElementById('course-roster-section').hidden = !course.capabilities.rosterRead;
-        document.getElementById('prompt-scope-note').textContent = `Class guidance for ${courseModeName}. The system prompt above remains read only.`;
+        document.getElementById('prompt-scope-note').textContent = `Applies to ${courseModeName}. The fixed system prompt is read only.`;
         await loadPrompt();
         if (course.capabilities.rosterRead) await loadCourseRoster();
         teacherAccessVerified = true;
