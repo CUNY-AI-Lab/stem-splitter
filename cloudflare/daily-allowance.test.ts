@@ -8,6 +8,7 @@ import { dailyWindow, operationAllowance, splitAllowance, allowanceLimit, type A
 import { OperationError, readOperation, reserveOperation, settleOperation } from '../src/reliability/ledger.ts';
 import { claimNext, recoverExpired, transition, QUEUE_CAPS } from '../src/reliability/queue.ts';
 import { retryAt } from '../src/reliability/retry.ts';
+import { listeningUsage } from '../src/reliability/listening.ts';
 const alice='cail-'+'a'.repeat(32),bob='cail-'+'b'.repeat(32);
 const now=Date.parse('2026-12-31T23:59:59.999Z');
 function setup(t:{after:(f:()=>void)=>void}) {
@@ -30,15 +31,15 @@ test('two connections atomically admit fifteen across courses; failures release 
  await reserve(db[1],400,bob);assert.equal((await splitAllowance(db[1],bob,new Date(now))).remaining,14);
  assert.equal(await settleOperation(db[0],admitted[8].id,'succeeded'),false);
 });
-test('sixty human messages admit fifty; one replay/partial/failure uses one reservation',async t=>{
+test('two connections atomically reserve five assistant turns across courses; partial and failed requests release capacity',async t=>{
  const db=setup(t);await user(db[0],alice);
- const results=await Promise.allSettled(Array.from({length:60},(_,i)=>reserve(db[i%2],i,alice,'chat')));assert.equal(results.filter(r=>r.status==='fulfilled').length,50);
+ const results=await Promise.allSettled(Array.from({length:60},(_,i)=>reserve(db[i%2],i,alice,'chat')));assert.equal(results.filter(r=>r.status==='fulfilled').length,5);
  const first=await reserve(db[1],0,alice,'chat');assert.equal(first.created,false);
  await assert.rejects(reserveOperation(db[1],{subject:alice,courseId:'course-b',kind:'chat',key:'request-number-0000',fingerprint:'different',phase:'chat',now}),OperationError);
  await settleOperation(db[0],first.operation.id,'partial',null,{text:'Partial answer'});
  const second=await reserve(db[0],1,alice,'chat');await settleOperation(db[0],second.operation.id,'failed');
- const count=await operationAllowance(db[0],alice,'chat',new Date(now));assert.equal(count.completed,1);assert.equal(count.inProgress,48);assert.equal(count.remaining,1);
- await reserve(db[1],70,alice,'chat');await assert.rejects(reserve(db[0],71,alice,'chat'),OperationError);
+ const count=await listeningUsage(db[0],alice,now);assert.equal(count.successfulTurns,0);assert.equal(count.inProgress,3);assert.equal(count.remainingTurns,2);
+ await reserve(db[1],70,alice,'chat');await reserve(db[0],71,alice,'chat');await assert.rejects(reserve(db[0],72,alice,'chat'),OperationError);
 });
 test('every verified role enforces the same daily cap in reservations and account readback',async t=>{
  const db=setup(t);

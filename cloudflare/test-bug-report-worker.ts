@@ -1,24 +1,42 @@
-// Local fixture only. This module is never referenced by deployment configuration.
+// Local signed-session fixture only; never referenced by deployment configuration.
 import app from './worker.ts';
-let mode = 'accepted';
-let calls: unknown[] = [];
-const reports = new Map<string, unknown>();
+let mode = 'saved', expired = false, limitReports = false;
+const calls: any[] = [], reports = new Map<string, any>();
+const aliceSession = '11111111-1111-4111-8111-111111111111.' + 'a'.repeat(43);
+const bobSession = '22222222-2222-4222-8222-222222222222.' + 'b'.repeat(43);
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
-    const headers = new Headers(request.headers); headers.set('cf-connecting-ip', '192.0.2.5');
-    request = new Request(request, { headers });
     const url = new URL(request.url);
     if (url.pathname === '/__bug-fixture') {
-      if (request.method === 'POST') { mode = (await request.json<any>()).mode; calls = []; reports.clear(); }
-      return Response.json({ mode, calls });
+      if (request.method === 'POST') {
+        const input = await request.json<any>();
+        if (input.sql) for (const sql of input.sql) await env.DB.prepare(sql).run();
+        if (input.mode) mode = input.mode;
+        if (typeof input.expired === 'boolean') expired = input.expired;
+        if (typeof input.limitReports === 'boolean') limitReports = input.limitReports;
+      }
+      return Response.json({ mode, expired, calls, records: [...reports.values()] });
     }
-    const service = { submit: async (report: any) => {
+    const headers = new Headers(request.headers); headers.set('cf-connecting-ip', '192.0.2.5');
+    request = new Request(request, { headers });
+    const service = { submitAuthenticated: async (report: any) => {
       calls.push(report);
       if (mode === 'unavailable') return { ok: false, code: 'unavailable', retryable: true, retryAfterSeconds: 1 };
-      if (mode === 'unknown') return { ok: false, code: 'delivery_unknown', retryable: false, reportId: report.reportId };
-      if (!reports.has(report.reportId)) reports.set(report.reportId, { ok: true, status: 'accepted', reportId: report.reportId });
-      return reports.get(report.reportId);
+      if (mode === 'slow') await new Promise(resolve => setTimeout(resolve, 300));
+      const key = `${report.subject}:${report.reportId}`, previous = reports.get(key);
+      if (previous && previous.description !== report.description) return { ok: false, code: 'idempotency_conflict', retryable: false };
+      if (!previous) reports.set(key, { ...report, createdAt: new Date().toISOString() });
+      if (mode === 'lost-ack') { mode = 'saved'; throw new Error('Injected lost acknowledgement after persistence'); }
+      return { ok: true, status: 'saved', reportId: report.reportId, createdAt: reports.get(key).createdAt };
     } };
-    return app.fetch(request, { ...env, PUBLIC_BASE_URL: url.origin, BUG_REPORTS: service }, ctx);
+    const identity = { identities: async (token: string) => !expired && [aliceSession, bobSession].includes(token)
+      ? { ok: true, appJwt: token === aliceSession ? env.TEST_ALICE_JWT : env.TEST_BOB_JWT, gatewayJwt: '', workspaceJwt: null }
+      : { ok: false, status: 401 } };
+    return app.fetch(request, { ...env, PUBLIC_BASE_URL: url.origin, CANONICAL_BASE_URL: url.origin,
+      CAIL_IDENTITY_JWKS: env.TEST_JWKS, IDENTITY: identity, BUG_REPORTS: service,
+      REQUEST_LIMIT: limitReports && url.pathname.startsWith('/api/bug-reports') ? { limit: async () => ({ success: false }) } : env.REQUEST_LIMIT,
+      ADMISSION_RESOLVER: { resolveMembership: async () => ({ ok: true, expiresAt: new Date(Date.now() + 60000).toISOString(),
+        revision: 1, accessRole: 'member', budgetScope: 'person' }) },
+    }, ctx);
   },
 };

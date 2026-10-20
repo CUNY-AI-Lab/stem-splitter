@@ -320,7 +320,8 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await page.reload();
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today'); // historical attempts are not manufactured successes
     await expect(page.locator('#account-chat')).toHaveCount(0);
-    expect((await (await page.request.get(new URL('/api/account', url).href)).json()).chatAllowance.remaining).toBe(50);
+    const listeningAccount=await(await page.request.get(new URL('/api/account',url).href)).json();
+    expect(listeningAccount.chatAllowance).toBeNull();expect(listeningAccount.listeningUsage.remainingTurns).toBe(5);
     const clock=Date.now();
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();

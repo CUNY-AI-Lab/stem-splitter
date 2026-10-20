@@ -1,4 +1,5 @@
 import { dailyWindow, allowanceLimit, type AllowanceRole, type QuotaClass } from '../daily-allowance.ts';
+import { listeningUsage, prepareListeningCycle, recoverListeningOperations, LISTENING_ATTEMPT_WINDOW_MS, LISTENING_ATTEMPTS_PER_WINDOW } from './listening.ts';
 
 export type OperationKind = 'split' | 'chat' | 'guide';
 export type Phase = 'fetch' | 'split' | 'chat' | 'guide';
@@ -17,7 +18,7 @@ export const MAX_CHAT_ATTEMPTS_PER_DAY = 80;
 export const validOperationKey = (key: unknown): key is string => typeof key === 'string' && /^[a-zA-Z0-9_-]{16,80}$/.test(key);
 export class OperationError extends Error {
   code: string; status: 400|403|404|409|429|503; retryAfter: number;
-  constructor(code: string, status: 400 | 403 | 404 | 409 | 429 | 503, message: string, retryAfter = 0) { super(message);this.code=code;this.status=status;this.retryAfter=retryAfter; }
+  constructor(code: string, status: 400 | 403 | 404 | 409 | 429 | 503, message: string, retryAfter = 0, public readonly details: Record<string,unknown> = {}) { super(message);this.code=code;this.status=status;this.retryAfter=retryAfter; }
 }
 export async function fingerprint(value: unknown): Promise<string> {
   const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
@@ -41,6 +42,8 @@ export async function reserveOperation(db: D1Database, input: {
   const now = input.now ?? Date.now();
   const { day, retryAfter } = dailyWindow(new Date(now));
   const quotaClass = input.quotaClass ?? 'member';
+  const listening = quotaClass==='member' && (input.kind==='chat' || input.kind==='guide');
+  if(listening)await recoverListeningOperations(db,input.subject,now);
   if (quotaClass === 'guest' && input.courseId !== null) throw new OperationError('guest_course_forbidden',400,'Guest work cannot be assigned to a course.');
   const role: AllowanceRole = quotaClass === 'guest' ? 'guest' : input.role ?? 'member';
   const limit = allowanceLimit(input.kind,quotaClass,role);
@@ -50,8 +53,12 @@ export async function reserveOperation(db: D1Database, input: {
   const insert = db.prepare(`INSERT INTO app_operations
     (id,subject,quota_class,course_id,kind,idempotency_key,fingerprint,day,state,phase,job_id,request_json,deadline,created_at,updated_at)
     SELECT ?,?,?,?,?,?,?,?,'queued',?,?,?,?,?,? WHERE
-      (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=? AND state NOT IN ('failed','cancelled')) < ?
-      AND (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=?) < ?
+      (?=1 OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=? AND state NOT IN ('failed','cancelled')) < ?)
+      AND (?=1 OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind=? AND day=?) < ?)
+      AND (?=0 OR EXISTS(SELECT 1 FROM listening_cycles c WHERE c.subject=? AND c.cooldown_until<=?
+        AND c.completed+(SELECT COUNT(*) FROM listening_turn_reservations r JOIN app_operations o ON o.id=r.operation_id
+          WHERE r.subject=c.subject AND r.generation=c.generation AND o.state NOT IN (${TERMINAL}))<5))
+      AND (?=0 OR (SELECT COUNT(*) FROM app_operations WHERE subject=? AND kind IN ('chat','guide') AND created_at>?)<?)
       AND (? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE kind='split' AND state NOT IN (${TERMINAL})) < ?)
       AND (? <> 'guide' OR (SELECT COUNT(*) FROM app_operations WHERE kind='guide' AND day=?) < 200)
       AND (? <> 'guest' OR EXISTS(SELECT 1 FROM guest_sessions WHERE subject=? AND expires_at>? AND revoked_at IS NULL
@@ -60,13 +67,28 @@ export async function reserveOperation(db: D1Database, input: {
       AND (? <> 'guest' OR ? <> 'split' OR (SELECT COUNT(*) FROM app_operations WHERE quota_class='guest' AND kind='split' AND state NOT IN (${TERMINAL})) < 10)
     ON CONFLICT(subject,kind,idempotency_key) DO NOTHING`)
     .bind(id,input.subject,quotaClass,input.courseId,input.kind,input.key,input.fingerprint,day,input.phase,input.jobId ?? null,
-      JSON.stringify(input.request ?? {}),now+24*60*60*1000,now,now,input.subject,input.kind,day,limit,
-      input.subject,input.kind,day,abuseLimit,input.kind,MAX_QUEUED_SPLITS,input.kind,day,
+      JSON.stringify(input.request ?? {}),now+24*60*60*1000,now,now,listening?1:0,input.subject,input.kind,day,limit,
+      listening?1:0,input.subject,input.kind,day,abuseLimit,listening?1:0,input.subject,now,
+      listening?1:0,input.subject,now-LISTENING_ATTEMPT_WINDOW_MS,LISTENING_ATTEMPTS_PER_WINDOW,input.kind,MAX_QUEUED_SPLITS,input.kind,day,
       quotaClass,input.subject,now,
       quotaClass,input.kind,input.subject,quotaClass,input.kind);
-  await db.batch([insert,...(input.statements?.(id) ?? [])]);
+  await db.batch([...(listening?prepareListeningCycle(db,input.subject,now):[]),insert,
+    ...(listening?[db.prepare(`INSERT INTO listening_turn_reservations(operation_id,subject,generation)
+      SELECT o.id,c.subject,c.generation FROM app_operations o JOIN listening_cycles c ON c.subject=o.subject
+      WHERE o.id=? ON CONFLICT(operation_id) DO NOTHING`).bind(id)]:[]),...(input.statements?.(id) ?? [])]);
   const operation = await findOperation(db,input.subject,input.kind,input.key);
   if (!operation) {
+    if(listening) {
+      const usage=await listeningUsage(db,input.subject,now);
+      if(usage.cooldownUntil)throw new OperationError('listening_cooldown',429,'Five replies are complete. Listening Guy will be ready again in five minutes.',usage.retryAfterSeconds,{usage,cooldownUntil:usage.cooldownUntil});
+      if(!usage.remainingTurns)throw new OperationError('listening_in_progress',429,'Listening Guy is finishing your other requests. Please wait before sending another.',2,{usage});
+      const attempts=await db.prepare(`SELECT COUNT(*) AS n,MIN(created_at) AS oldest FROM app_operations
+        WHERE subject=? AND kind IN ('chat','guide') AND created_at>?`).bind(input.subject,now-LISTENING_ATTEMPT_WINDOW_MS).first<{n:number;oldest:number}>();
+      if((attempts?.n??0)>=LISTENING_ATTEMPTS_PER_WINDOW)throw new OperationError('listening_attempt_limit',429,
+        'Please wait briefly before trying Listening Guy again. Failed replies do not use a turn.',Math.max(1,Math.ceil(((attempts?.oldest??now)+LISTENING_ATTEMPT_WINDOW_MS-now)/1000)),{usage});
+      if(input.kind==='guide')throw new OperationError('guide_attempt_limit',429,'The shared daily cue protection limit has been reached. Chat and the mixer remain available.',retryAfter,{usage});
+      throw new OperationError('listening_unavailable',503,'Listening Guy could not reserve this request. Please try again.',2,{usage});
+    }
     if (quotaClass==='guest' && await db.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(input.subject).first()) {
       throw new OperationError('guest_session_claimed',403,'Your guest splits have been saved. Continue with your signed-in account.');
     }

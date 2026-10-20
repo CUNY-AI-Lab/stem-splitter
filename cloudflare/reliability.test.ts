@@ -12,6 +12,7 @@ import { cancelOperation, claimNext, recoverExpired, transition } from '../src/r
 import { drainSplitQueue, operationWebhook, recoverCallback, reconcileSplit } from '../src/reliability/splits.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
 import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
+import { listeningUsage } from '../src/reliability/listening.ts';
 import { MPEGDecoder } from 'mpg123-decoder';
 import { validMp3Frames, mp3FrameInfo, validateMp3Pcm } from '../src/reliability/media.ts';
 import { splitAllowance, operationAllowance } from '../src/daily-allowance.ts';
@@ -97,18 +98,19 @@ test('ninety-day purge redacts private request/cache content but preserves an un
  assert.equal((await db.prepare('SELECT outcome FROM operation_attempts WHERE id=?').bind(attempt).first<{outcome:string}>())!.outcome,'uncertain');
 });
 
-test('chat receipts never copy content; failure releases, partial/unknown count once, settled replay cannot call a model',async t=>{
+test('chat accounting never copies content; failed or partial replies release cycle capacity and settled retry cannot call a model',async t=>{
  const {db,env}=await setup(t);
  const first=await reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]);const receipt=assistantReceipt(env,first.operation);
  await receipt.delta('Secret transcript');await receipt.failed();await assert.rejects(receipt.complete('Late secret'),/input ended/);
  assert.equal((await readOperation(db,first.operation.id))!.state,'partial');assert.doesNotMatch((await readOperation(db,first.operation.id))!.result_json!,/Secret|Late/);
- await assert.rejects(reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]),/already accepted/);
+ await assert.rejects(reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]),(error:any)=>error.code==='listening_attempt_failed');
  const second=await reserveAssistant(env,subject,null,'chat','human-message-0002','job',[]);await assistantReceipt(env,second.operation).failed();
  const third=await reserveAssistant(env,subject,null,'chat','human-message-0003','job',[]);await recoverExpired(db,Date.now()+90001);
  assert.equal((await readOperation(db,third.operation.id))!.error_code,'no_usable_response');
  await assert.rejects(assistantReceipt(env,third.operation).delta('Late output'));
  const fourth=await reserveAssistant(env,subject,null,'chat','human-message-0004','job',[]);await assistantReceipt(env,fourth.operation).effect();await recoverExpired(db,Date.now()+90001);
  assert.equal((await readOperation(db,fourth.operation.id))!.error_code,'delivery_uncertain');assert.equal((await operationAllowance(db,subject,'chat')).completed,2);
+ assert.equal((await listeningUsage(db,subject)).successfulTurns,0);assert.equal((await listeningUsage(db,subject)).remainingTurns,5);
  await assert.rejects(assistantReceipt(env,fourth.operation).complete('Late usable result'),/input ended/);
  const fifth=await reserveAssistant(env,subject,null,'chat','human-message-0005','job',[]);
  await assert.rejects(assistantReceipt(env,fifth.operation).complete('  '),/could not finish/);

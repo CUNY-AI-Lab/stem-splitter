@@ -7,6 +7,8 @@ export async function purgeOperationContent(db: D1Database, now=Date.now()) {
     db.prepare('DELETE FROM usage_events WHERE at<?').bind(now-30*86400000),
     db.prepare('DELETE FROM operation_events WHERE at<?').bind(now-30*86400000),
     db.prepare('DELETE FROM import_cache WHERE expires_at<=?').bind(now),
+    db.prepare(`DELETE FROM listening_reply_receipts WHERE expires_at<=? OR job_id IN
+      (SELECT id FROM jobs WHERE created_at<=datetime(? / 1000,'unixepoch','-90 days'))`).bind(now,now),
     db.prepare(`UPDATE app_operations SET request_json='{}',result_json=NULL,cancel_requested=1,updated_at=?
       WHERE created_at<=? AND (request_json<>'{}' OR result_json IS NOT NULL)`).bind(now,cutoff),
     db.prepare(`UPDATE jobs SET status='failed',error='This split expired before it finished.'

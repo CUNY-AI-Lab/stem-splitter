@@ -40,7 +40,7 @@ test('existing pages expose class workspace and feedback while course APIs retai
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('main')).toBeVisible();
       await expect(page.locator('a[href="/classroom.html"]')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Send us a comment', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Report a bug', exact: true })).toBeVisible();
     }
     expect(requests.every(request => request.method === 'GET')).toBe(true);
     const roster = await get(page, `/api/classroom/courses/${course}/roster`);
@@ -79,6 +79,38 @@ test('existing mixer opens shared course work using its original controls and en
     expect(errors).toEqual([]);
   } finally { await f.server.close(); }
 });
+test('an interrupted accepted course reply can be reset using its current server revision', async ({ page, context }) => {
+  const f = await setup(page);
+  try {
+    await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.alice, 'x-fixture-gateway-identity': f.gateway });
+    await page.route('**/api/jobs/course-song/chat', async route => {
+      // The real local Worker accepts and completes the turn, but this browser
+      // loses the final acknowledgement and still holds the earlier revision.
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'data: {"type":"delta","text":"An interrupted reply"}\n\n' });
+    });
+    await page.goto(new URL('/?job=course-song', f.url).href);
+    await page.locator('.coach-toggle').click();
+    const input = page.getByRole('textbox', { name: 'Ask the Listening Guide' });
+    await input.fill('Reset after this interrupted course reply.');
+    await page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'RETRY REPLY' })).toBeEnabled();
+    const accepted = await get(page, '/api/jobs/course-song/listening-conversation');
+    expect(accepted.body.entries).toHaveLength(2);
+    const reset = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes('/listening-conversation'));
+    await page.locator('.coach-reset').click();
+    await page.locator('.coach-reset').click();
+    const response = await reset;
+    expect(response.request().postDataJSON().revision).toBe(accepted.body.revision);
+    expect(response.status()).toBe(200);
+    await expect(page.getByRole('button', { name: 'ASK', exact: true })).toBeEnabled();
+    await expect(input).not.toHaveAttribute('readonly');
+    await expect(page.locator('.coach-row')).toHaveCount(0);
+    expect((await get(page, '/api/jobs/course-song/listening-conversation')).body.entries).toEqual([]);
+  } finally { await f.server.close(); }
+});
+
 test('original Listening Guy archive loads every durable course page and keeps peer conversations private', async ({ page, context }) => {
   const f = await setup(page), errors = [], writes = [];
   page.on('pageerror', error => errors.push(error.message));

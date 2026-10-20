@@ -39,10 +39,14 @@ note submission preserves its draft for an explicit retry. Account changes,
 revocation or uncertain course authority conceal private content and stop
 playback rather than continuing to show the previous account's work.
 
-The visible **Send us a comment** action opens a form. Only the user's entered
-fields are submitted, after an explicit send; no split, transcript or account
-content is attached automatically. A delivery-unknown result retains the
-reference and does not automatically resubmit.
+The footer's **Report a bug** button opens a compact panel with one description
+field after existing CUNY Login verification. Close and Escape preserve the draft
+and return focus to the footer button. An explicit send stores a report for the
+Lab administrators with verified account attribution, a fixed page category and
+the deployment release. No split, transcript or other app content is attached.
+An uncertain response retains the reference and original text for an explicit
+status check. Same-account sign-in recovery preserves the draft in the open tab;
+a different account cannot submit it. See [the report contract](../bug-reports.md).
 
 ## Instructor-led listening
 
@@ -79,11 +83,25 @@ video metadata to suggest an Internet Archive search and offers local file
 upload. A missing metadata match falls back to entering the song title. This
 candidate does not claim to repair direct YouTube extraction or prove a live
 provider import. Local MP3 upload remains a separate supported source path.
+This follows the current import rollout in merged
+[PR #51](https://github.com/CUNY-AI-Lab/stem-splitter/pull/51) and
+[PR #55](https://github.com/CUNY-AI-Lab/stem-splitter/pull/55), which enabled
+metadata lookup and Archive alternatives on October 18. Historical extractor
+fixes do not supersede that deployed decision.
 
 Listening Guy cue recovery is exercised with synthetic responses, including a
 failed stream followed by an explicit retry. Course conversation review makes
 no generation request. Successful local tests do not prove current production
 model availability, audio separation, or quota headroom.
+
+Signed-in cue and chat now share five successful turns across tabs and songs,
+followed by a five-minute pause. Failed replies do not use a turn. The interface
+keeps the pending question and exact request identifier, shows the countdown,
+and permits continued use when it ends without sending automatically. A lost
+fifth reply can still be recovered during the pause. This replaces the old
+signed-in per-user daily caps while retaining guest, global cue, and provider
+protections. See [Listening Guy pacing and recovery](../listening-pacing.md) for
+atomic accounting, bounded uncertainty, retention, and migration 0028.
 
 ## Local acceptance evidence
 
@@ -98,7 +116,7 @@ No student conversation or real class submission is used.
 | New-course consent, notes and cue recovery | `cloudflare/course-workflow.spec.mjs` contains the browser acceptance cases; final candidate results belong in the release verification record. |
 | Roster, own splits, folders and scoped review | `cloudflare/instructor-acceptance.spec.mjs` covers permitted workflows, course changes, revocation and unavailable authority using local fixtures. |
 | Eight browser contexts and browser restrictions | `cloudflare/live-session.spec.mjs` covers explicit follow, playback/focus/section convergence, unavailable authority, autoplay rejection and visibility changes. Eight contexts are not eight physical devices. |
-| Feedback discovery and delivery | `cloudflare/bug-report.spec.mjs` tests the visible form and local mock delivery, including uncertain delivery without automatic retries. No real report is sent by these tests. |
+| Report discovery and durable saving | `cloudflare/bug-report.spec.mjs` tests the compact panel, keyboard and phone access, verified attribution and local mock storage, including uncertain outcomes without automatic retries. No real report is sent by these tests. |
 
 Pending live acceptance: verify the exact deployed commit/assets and migration
 readback; use an already authorized instructor/test account to confirm the
@@ -124,18 +142,22 @@ deployment, database identity and recovery point. Confirm the destination is
 the existing Cloudflare production runtime `cail-stem-splitter-preview`, D1
 `ae01c5db-c19e-48c8-91bd-132876276f22`, behind the canonical
 `https://stem-splitter.ailab-452.workers.dev/` alias. Apply only the numbered
-additive migration to that verified database, not the full `schema.sql` or old
+additive migrations to that verified database, not the full `schema.sql` or old
 migrations:
 
 ```sh
 cd cloudflare
 node_modules/.bin/wrangler d1 execute cail-stem-splitter-preview --remote \
   --file ../migrations/0027-classroom-live.sql
+node_modules/.bin/wrangler d1 execute cail-stem-splitter-preview --remote \
+  --file ../migrations/0028-listening-cycles.sql
 ```
 
 Read back the table/trigger definitions and confirm the newly added table is
-empty before publishing the candidate. Preserve existing variables, secrets,
-bindings, quotas and course permissions. Source CI performs checks and dry
+empty before publishing the candidate. Check the new pacing tables and success
+trigger too. Preserve existing variables, secrets, bindings, provider/guest/split
+limits and course permissions; only the explicitly requested signed-in Listening
+Guy turn policy changes. Source CI performs checks and dry
 builds; it is not evidence of deployment. Record the exact reviewed commit,
 resulting Worker version and production asset/API checks separately. This
 candidate needs no new credentials, security grants, paid jobs or spending

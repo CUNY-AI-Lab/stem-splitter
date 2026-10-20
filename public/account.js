@@ -17,12 +17,12 @@ window.addEventListener('focus', async () => {
       users = [];
       el('access-member').replaceChildren();
       subject = '';
-      location.reload();
+      window.StemSessionGuard ? window.StemSessionGuard.clear() : location.reload();
     } else if (response.ok) {
       const { account } = await response.json();
       if (account?.subject !== subject || account?.role !== accountRole) {
         for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
-        location.reload();
+        window.StemSessionGuard ? window.StemSessionGuard.clear() : location.reload();
       }
     }
   } catch { /* A network outage is not a sign-out. */ }
@@ -123,7 +123,7 @@ el('access-form').addEventListener('submit', async (event) => {
 });
 (async () => {
   try {
-    const { account, splitAllowance } = await request('/api/account');
+    const { account, splitAllowance, listeningUsage } = await request('/api/account');
     if (account.quotaClass === 'guest') { location.replace('/'); return; }
     subject = account.subject;
     window.StemSessionGuard?.start(subject, () => { users = []; subject = ""; });
@@ -142,6 +142,12 @@ el('access-form').addEventListener('submit', async (event) => {
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
       const reset = new Date(splitAllowance.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
       el('account-splits').textContent = `${splitAllowance.remaining} of ${splitAllowance.limit} runs left today. Resets ${reset}.`;
+    }
+    if (listeningUsage?.limit === 5 && Number.isInteger(listeningUsage.remainingTurns)) {
+      const until = Date.parse(listeningUsage.cooldownUntil);
+      el('account-listening').textContent = Number.isFinite(until) && until > Date.now()
+        ? `Listening Guy is taking a five-minute pause. You can continue after ${new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+        : `Listening Guy: ${listeningUsage.remainingTurns} of 5 turns available before a five-minute pause. Failed replies do not use a turn.`;
     }
     try {
       const { quota } = await request('/api/model-quota');

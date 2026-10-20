@@ -1221,6 +1221,10 @@ footer a:hover { color: var(--hot); }
   margin: 0.25rem 0;
 }
 .coach-save-status.error { color: var(--danger); }
+.coach-usage { margin: .65rem 0; color: var(--ink-dim); font-size: .75rem; line-height: 1.5; }
+.coach-cooldown-timer { color: var(--hot); font-variant-numeric: tabular-nums; }
+.coach-form button:disabled { opacity: .5; cursor: default; }
+.coach-form input[readonly] { color: var(--ink-dim); }
 
 .coach-log {
   display: flex;

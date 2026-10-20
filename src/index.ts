@@ -19,7 +19,8 @@ import { splitAllowance, operationAllowance, dailyWindow, GUEST_SPLITS_PER_DAY }
 import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport } from './reliability/splits.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation, expireSplitOperations } from './reliability/queue.ts';
-import { reserveAssistant, assistantReceipt } from './reliability/assistant.ts';
+import { reserveAssistant, assistantReceipt, replayAssistant } from './reliability/assistant.ts';
+import { listeningUsage, recoverListeningOperations } from './reliability/listening.ts';
 import { validMp3Frames } from './reliability/media.ts';
 import {
   getRetainedAudio,
@@ -307,8 +308,10 @@ app.get('/api/account', async (c) => {
   try { allowance = await splitAllowance(c.env.DB, principal.subject,new Date(),principal.quotaClass ?? 'member',principal.role); } catch { /* Report unknown, not zero. */ }
   let chatAllowance = null;
   const chatAvailable=!guestPrincipal(principal)||c.env.guestChatReady===true;
-  if(chatAvailable)try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),principal.quotaClass ?? 'member'); } catch {}
+  if(chatAvailable && guestPrincipal(principal))try { chatAllowance = await operationAllowance(c.env.DB, principal.subject, 'chat',new Date(),'guest'); } catch {}
+  const listening=await currentListeningUsage(c);
   return c.json({ account: principal, splitAllowance: allowance, chatAllowance,
+    listeningUsage:listening,
     ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,
       verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
 });
@@ -1923,6 +1926,13 @@ app.delete('/api/jobs/:id/annotations/:annotationId', requireClassCode, async (c
 
 // --- listening guy (the Listening Guide) -----------------------------------------
 
+app.get('/api/listening-usage', async(c)=>{
+  const principal=c.get('principal');
+  if(!principal || guestPrincipal(principal))return c.json({error:'Sign in with CUNY Login to view Listening Guy pacing.'},401);
+  await recoverListeningOperations(c.env.DB,principal.subject);
+  return c.json(await listeningUsage(c.env.DB,principal.subject));
+});
+
 // Generate (once) and return the class-shared listening guide, streamed as
 // SSE (`data: {type: delta|done|error}` events); the done event carries the
 // full cached record. Generation is class-code-gated because it costs money;
@@ -1944,7 +1954,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
 
   const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
   if ('response' in parsed) return parsed.response;
-  const body = parsed.value as { durationSec?: unknown } | null;
+  const body = parsed.value as { durationSec?: unknown; messageId?: unknown } | null;
   const { results } = await c.env.DB
     .prepare('SELECT * FROM annotations WHERE job_id = ? ORDER BY at_seconds')
     .bind(id)
@@ -1952,11 +1962,13 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
 
   const principal=c.get('principal');
   const cachedGuide=await getGuide(c.env,id);
-  if(cachedGuide)return sseResponse(c,async emit=>{await emit({type:'done',text:cachedGuide.text,model:cachedGuide.model,createdAt:cachedGuide.createdAt,cached:true,finishReason:'stop'});});
+  if(cachedGuide)return sseResponse(c,async emit=>{await emit({type:'done',text:cachedGuide.text,model:cachedGuide.model,createdAt:cachedGuide.createdAt,cached:true,finishReason:'stop',usage:await currentListeningUsage(c)});});
   const scope=await jobCourse(c.env,id);
   const prompt=await coursePrompt(c.env,scope?.course_id ?? null);
-  const guideKey=await fingerprint([id,scope?.course_id ?? null,prompt.revision,await hashSystemPromptFingerprint(prompt.amendment),Math.floor(Date.now()/300000)]);
-  const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,{guideKey},principal.quotaClass ?? 'member'):null;
+  const guideInput=[id,scope?.course_id ?? null,prompt.revision,await hashSystemPromptFingerprint(prompt.amendment),parseDuration(body?.durationSec)];
+  const guideKey=typeof body?.messageId==='string'?body.messageId:c.req.header('Idempotency-Key') ?? await fingerprint([...guideInput,Math.floor(Date.now()/300000)]);
+  const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,guideInput,principal.quotaClass ?? 'member'):null;
+  if(reservation?.replay)throw new OperationError('listening_result_unavailable',409,'This cue already completed, but its saved result is no longer available. Request a new cue.',0,{newAttemptAllowed:true});
   const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   return sseResponse(c, async (emit, signal) => {
     try {
@@ -1964,9 +1976,9 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
         { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id,assistantEffectIntent:()=>receipt?.effect() ?? Promise.resolve() }, row, results ?? [], parseDuration(body?.durationSec),
         async text => {await receipt?.delta(text);await emit({type:'delta',text});}
       );
-      await receipt?.complete(guide.text);
-      await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop' });
-    } catch(error) {await receipt?.failed();throw error;}
+      if(cached)await receipt?.cached();else await receipt?.complete(guide.text);
+      await emit({ type: 'done', text: guide.text, model: guide.model, createdAt: guide.createdAt, cached, finishReason: 'stop',operationId:reservation?.operation.id,usage:await currentListeningUsage(c) });
+    } catch(error) {await receipt?.failed();if(receipt&&!guestPrincipal(principal))throw await failedListeningRequest(receipt,error);throw error;}
   });
 });
 
@@ -2049,7 +2061,7 @@ app.delete('/api/jobs/:id/listening-conversation', async (c) => {
     try { return c.json(await resetCourseConversation(c.env,id,principal.subject,(parsed.value as {revision?:unknown})?.revision)); }
     catch(error) { if(error instanceof CourseError)return courseErrorResponse(error);throw error; }
   }
-  const result = await c.env.DB.prepare(`
+  const reset = c.env.DB.prepare(`
     INSERT INTO ${conversationTable(principal)} (job_id, subject, entries, revision, expires_at)
     SELECT j.id, ?, '[]', 1, datetime(j.created_at, '+90 days') FROM jobs j
     JOIN ${ownershipTable(principal,'job')} o ON o.job_id = j.id AND o.subject = ?
@@ -2058,8 +2070,20 @@ app.delete('/api/jobs/:id/listening-conversation', async (c) => {
       revision = ${conversationTable(principal)}.revision + 1, updated_at = datetime('now')
     WHERE ${conversationTable(principal)}.expires_at > datetime('now')
     RETURNING revision
-  `).bind(principal.subject, principal.subject, id).first<{ revision: number }>();
-  if (!result) return c.json({ error: 'Split not found.' }, 404);
+  `).bind(principal.subject, principal.subject, id);
+  if(!guestPrincipal(principal)) {
+    const changed=await c.env.DB.batch([reset,
+      c.env.DB.prepare(`UPDATE app_operations SET state='cancelled',cancel_requested=1,lease_until=0,lease_owner=NULL,
+        result_json=NULL,error_code='conversation_reset',updated_at=? WHERE subject=? AND job_id=? AND kind='chat' AND course_id IS NULL
+        AND state NOT IN ('succeeded','partial','failed','cancelled')`).bind(Date.now(),principal.subject,id),
+      c.env.DB.prepare('DELETE FROM listening_reply_receipts WHERE job_id=? AND subject=?').bind(id,principal.subject),
+    ]);
+    if(!changed[0].meta.changes)return c.json({error:'Split not found.'},404);
+    const current=await c.env.DB.prepare('SELECT revision FROM listening_conversations WHERE job_id=? AND subject=?').bind(id,principal.subject).first<{revision:number}>();
+    return c.json({ok:true,revision:current!.revision});
+  }
+  const result=await reset.first<{revision:number}>();
+  if(!result)return c.json({error:'Split not found.'},404);
   return c.json({ ok: true, revision: result.revision });
 });
 
@@ -2102,6 +2126,15 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   const inputKey=typeof body?.messageId==='string'?body.messageId:c.req.header('Idempotency-Key') ?? '';
   const reservation=principal?await reserveAssistant(c.env,principal.subject,course?.course_id ?? null,'chat',inputKey,id,
     [id,course?.course_id ?? null,course?[turns.at(-1),body?.revision]:turns,parseDuration(body?.durationSec)],principal.quotaClass ?? 'member'):null;
+  if(reservation?.replay) {
+    const replay=await replayAssistant(c.env,reservation.operation);
+    if(!replay)throw new OperationError('listening_result_unavailable',409,'This reply already completed, but its saved result is no longer available. Refresh the conversation before continuing.',0,{newAttemptAllowed:false});
+    return sseResponse(c,async emit=>{
+      const {calls,...done}=replay;
+      if(Array.isArray(calls)&&calls.length)await emit({type:'tool_calls',calls,operationId:reservation.operation.id});
+      await emit({type:'done',...done,replayed:true,operationId:reservation.operation.id,usage:await currentListeningUsage(c)});
+    });
+  }
   const receipt=reservation?assistantReceipt(c.env,reservation.operation):null;
   let durable: Awaited<ReturnType<typeof beginCourseTurn>> | null = null;
   if (course) {
@@ -2133,13 +2166,14 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
         }
       }
       const calls=principal?result.toolCalls.filter(call=>call.name!=='add_note'):result.toolCalls;
-      await receipt?.complete(result.reply);
+      const done={text:result.reply,finishReason:result.finishReason,
+        ...(revision===undefined?{}:{revision}),notesChanged:!!principal&&result.toolCalls.some(call=>call.name==='add_note')};
+      await receipt?.complete(result.reply,{...done,calls});
       if(calls.length)await emit({type:'tool_calls',calls,operationId:reservation?.operation.id});
-      await emit({type:'done',text:result.reply,finishReason:result.finishReason,operationId:reservation?.operation.id,
-        ...(revision===undefined?{}:{revision}),notesChanged:!!principal&&result.toolCalls.some(call=>call.name==='add_note')});
+      await emit({type:'done',...done,operationId:reservation?.operation.id,usage:await currentListeningUsage(c)});
     } catch(error) {
       if(durable)await finishCourseTurn(c.env,id,principal!.subject,durable.turnId,durable.claimId,{reply:streamed,toolCalls:[],finishReason:'error'},true,principal!.displayName,reservation?.operation.id);
-      await receipt?.failed();throw error;
+      await receipt?.failed();if(receipt&&!guestPrincipal(principal))throw await failedListeningRequest(receipt,error);throw error;
     }
   });
 });
@@ -2225,12 +2259,14 @@ app.get('/api/files/*', async (c) => {
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
-app.onError((_error, c) => {
+app.onError(async(_error, c) => {
   if(_error instanceof CourseError)return courseErrorResponse(_error);
   if (_error instanceof OperationError) {
     if(_error.code==='guest_verification_required')return guestFailure(_error.code,403,_error.message);
     if(_error.retryAfter)c.header('Retry-After',String(_error.retryAfter));
-    return c.json({error:_error.message,code:_error.code,resetsAt:dailyWindow().resetsAt},_error.status);
+    const usage=await currentListeningUsage(c);
+    return c.json({error:_error.message,code:_error.code,resetsAt:dailyWindow().resetsAt,
+      ..._error.details,retryAfterSeconds:_error.retryAfter,...(usage?{usage,cooldownUntil:usage.cooldownUntil}:{})},_error.status);
   }
   console.error(JSON.stringify({ event: 'request_failed', method: c.req.method }));
   return c.json({ error: 'The service is temporarily unavailable. Please try again.' }, 503);
@@ -2240,6 +2276,20 @@ export default app;
 export async function runReliableJobs(env: Env) { await drainSplitQueue(env,ingestResult); await purgeDeletedRuns(env); }
 
 // --- helpers ------------------------------------------------------------
+
+async function currentListeningUsage(c:Context<AppContext>) {
+  const principal=c.get('principal');
+  if(!principal || guestPrincipal(principal))return null;
+  try {return await listeningUsage(c.env.DB,principal.subject);}catch{return null;}
+}
+async function failedListeningRequest(receipt:ReturnType<typeof assistantReceipt>,error:unknown) {
+  const failure=await receipt.failure();
+  if(error instanceof AssistantError) {
+    failure.message=`${error.studentMessage} This request did not use a successful turn.`;
+    Object.assign(failure.details,{providerCode:error.code,requestId:error.requestId,shouldRetry:error.shouldRetry});
+  }
+  return failure;
+}
 
 /** Download finished stems from the provider and store them in R2. */
 /** Queue messages name an existing operation; provider state and ownership remain authoritative. */
@@ -2589,8 +2639,10 @@ function sseResponse(
       await run(emit, signal);
     } catch (err) {
       if (!(err instanceof AssistantError) && !c.env.assistantTransport) console.error('assistant error', err);
-      const message = err instanceof AssistantError ? err.studentMessage : COACH_DOWN;
-      if (!signal.aborted) await emit({ type: 'error', message, ...(err instanceof AssistantError ? { code: err.code, shouldRetry: err.shouldRetry, requestId: err.requestId } : {}) }).catch(() => {});
+      const message = err instanceof AssistantError ? err.studentMessage : err instanceof OperationError ? err.message : COACH_DOWN;
+      if (!signal.aborted) await emit({ type: 'error', message, usage:await currentListeningUsage(c),
+        ...(err instanceof OperationError ? {code:err.code,retryAfterSeconds:err.retryAfter,...err.details} : {}),
+        ...(err instanceof AssistantError ? { code: err.code, shouldRetry: err.shouldRetry, requestId: err.requestId } : {}) }).catch(() => {});
     } finally {
       await writer.close().catch(() => {});
     }

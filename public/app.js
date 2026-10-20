@@ -333,11 +333,12 @@ async function readSongSearch(response, onResults) {
 async function streamApi(path, body, onEvent, signal) {
   await appReady;
   if (path.endsWith('/chat') && !body.messageId) body = { ...body, messageId: crypto.randomUUID() };
+  const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120000)]);
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode(), ...(body.messageId ? { 'Idempotency-Key': body.messageId } : {}) },
     body: JSON.stringify(body),
-    signal,
+    signal: deadline,
   });
   if (res.status === 401) {
     if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
@@ -347,7 +348,13 @@ async function streamApi(path, body, onEvent, signal) {
   }
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || err.error || `Request failed (${res.status})`);
+    acceptListeningUsage(err.usage);
+    const error = new Error(err.error?.message || err.error || `Request failed (${res.status})`);
+    error.status = res.status;
+    error.code = err.code || err.error?.code;
+    error.newAttemptAllowed = err.newAttemptAllowed === true;
+    error.retryAfterSeconds = Number(res.headers.get('retry-after')) || err.retryAfterSeconds;
+    throw error;
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -369,9 +376,14 @@ async function streamApi(path, body, onEvent, signal) {
           continue;
         }
         if (event.type === 'error') {
+          acceptListeningUsage(event.usage);
           const support = typeof event.requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(event.requestId) ? ` Support ID: ${event.requestId}` : '';
-          throw new Error((event.message || 'The Listening Guide could not complete this request. The mixer still works.') + support);
+          const error = new Error((event.message || 'The Listening Guide could not complete this request. The mixer still works.') + support);
+          error.code = event.code;
+          error.newAttemptAllowed = event.newAttemptAllowed === true;
+          throw error;
         }
+        if (event.type === 'done') acceptListeningUsage(event.usage);
         onEvent(event);
         // `done` is the application protocol's terminal event. Some proxies
         // keep an otherwise complete SSE response open, so waiting for the
@@ -383,6 +395,40 @@ async function streamApi(path, body, onEvent, signal) {
     reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+// The server owns the successful-turn count across tabs, songs and cue/chat.
+// This page keeps only a display clock; every generation is checked again there.
+let listeningUsage = null;
+let listeningUsageRequest = null;
+function acceptListeningUsage(value) {
+  if (!value || value.limit !== 5 || !Number.isInteger(value.remainingTurns)
+    || value.remainingTurns < 0 || value.remainingTurns > 5) return;
+  const serverTime = Date.parse(value.serverTime);
+  const cooldownUntil = value.cooldownUntil === null ? null : Date.parse(value.cooldownUntil);
+  if (!Number.isFinite(serverTime) || (cooldownUntil !== null && !Number.isFinite(cooldownUntil))) return;
+  if (listeningUsage && serverTime < listeningUsage.serverTime) return;
+  listeningUsage = { remainingTurns: value.remainingTurns, inProgress: Number.isInteger(value.inProgress) ? value.inProgress : 0, serverTime,
+    availableAt: cooldownUntil === null ? 0 : Date.now() + Math.max(0, cooldownUntil - serverTime) };
+  for (const mixer of mixers.values()) mixer.renderListeningUsage();
+}
+function listeningWaitSeconds() {
+  return listeningUsage ? Math.max(0, Math.ceil((listeningUsage.availableAt - Date.now()) / 1000)) : 0;
+}
+async function refreshListeningUsage() {
+  if (runtime.authMode !== 'cail' || guestSessionActive || !accountSubject) return;
+  if (listeningUsageRequest) return listeningUsageRequest;
+  listeningUsageRequest = (async () => {
+    try { acceptListeningUsage(await api('/api/listening-usage', { signal: AbortSignal.timeout(15000) })); }
+    catch { /* Generation still checks the authoritative limit before starting. */ }
+    finally { listeningUsageRequest = null; }
+  })();
+  return listeningUsageRequest;
+}
+function listeningFailure(error) {
+  if (error.name === 'TimeoutError') return 'The reply timed out. Your question is kept. Retry to check for the same reply.';
+  if (error.name === 'AbortError') return 'Request cancelled. Your question is kept. The mixer still works.';
+  return error.message || 'The Listening Guy is temporarily unavailable. Your question is kept. Please retry.';
 }
 
 // --- local job list -------------------------------------------------------
@@ -1677,6 +1723,7 @@ class Mixer {
           </div>
           <div class="coach-log" role="log" aria-live="polite"></div>
           <p class="coach-save-status" role="status" hidden></p>
+          <p class="coach-usage" hidden><span class="coach-usage-status" role="status"></span><span class="coach-cooldown-timer mono" role="timer" aria-live="off"></span></p>
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
             <button type="submit">ASK</button>
@@ -1777,6 +1824,7 @@ class Mixer {
     this.coachLog = li.querySelector('.coach-log');
     this.coachForm = li.querySelector('.coach-form');
     this.coachInput = this.coachForm.querySelector('input');
+    this.coachUsage = li.querySelector('.coach-usage');
     this.coachCancel = document.createElement('button');
     this.coachCancel.type = 'button';
     this.coachCancel.className = 'coach-cancel';
@@ -1793,6 +1841,8 @@ class Mixer {
       // is the moment that matters — pick up their guide, names, and notes.
       if (open) {
         if (runtime.authMode === 'cail') void this.loadConversation().catch(() => {});
+        void refreshListeningUsage();
+        this.renderListeningUsage();
         void this.refresh();
       }
       else this.coachAbort?.abort();
@@ -2849,6 +2899,29 @@ class Mixer {
     this.coachLed.classList.toggle('busy', state === 'busy');
   }
 
+  renderListeningUsage() {
+    if (!this.coachUsage) return;
+    const seconds = listeningWaitSeconds();
+    const show = runtime.authMode === 'cail' && !guestSessionActive && listeningUsage;
+    this.coachUsage.hidden = !show;
+    if (show) {
+      const summary = seconds ? 'Five turns used. You can continue in '
+        : listeningUsage.remainingTurns === 0 && listeningUsage.inProgress > 0 ? 'Replies are in progress. Please wait before continuing.'
+          : `${listeningUsage.remainingTurns || 5} of 5 turns left before a five-minute pause.`;
+      const status = this.coachUsage.querySelector('.coach-usage-status');
+      if (status.textContent !== summary) status.textContent = summary;
+      this.coachUsage.querySelector('.coach-cooldown-timer').textContent = seconds
+        ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}. Your draft stays here.` : '';
+    }
+    const submit = this.coachForm.querySelector('[type="submit"]');
+    const waiting = seconds > 0 || Boolean(listeningUsage?.inProgress && listeningUsage.remainingTurns === 0);
+    submit.disabled = this.coachBusy || (waiting && !this.pendingChat);
+    submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
+    const cue = this.coachGuide.querySelector('.coach-cue-btn');
+    if (cue) cue.disabled = this.coachBusy || (waiting && !this.pendingGuide);
+    this.coachResetBtn.disabled = this.coachBusy;
+  }
+
   renderGuide() {
     this.coachGuide.innerHTML = '';
     if (this.job.guide && this.job.guide.text) {
@@ -2867,10 +2940,11 @@ class Mixer {
     `;
     cue.querySelector('.coach-cue-btn').addEventListener('click', () => this.requestGuide());
     this.coachGuide.appendChild(cue);
+    this.renderListeningUsage();
   }
 
   async requestGuide() {
-    if (this.coachBusy) return;
+    if (this.coachBusy || (listeningWaitSeconds() && !this.pendingGuide)) return;
     this.coachBusy = true;
     this.coachInput.disabled = true;
     this.coachAbort = new AbortController();
@@ -2883,13 +2957,15 @@ class Mixer {
       hint.classList.remove('error');
     }
     this.setLed('busy');
+    this.pendingGuide ||= { durationSec: this.duration(), messageId: crypto.randomUUID() };
+    this.renderListeningUsage();
     // Stream: swap the cue for a live text block on the first delta, then do a
     // final formatted render (markdown-lite + timecode buttons) on completion.
     const live = document.createElement('div');
     live.className = 'coach-guide-text streaming';
     let acc = '';
     try {
-      await streamApi(`/api/jobs/${this.job.id}/guide`, { durationSec: this.duration() }, (ev) => {
+      await streamApi(`/api/jobs/${this.job.id}/guide`, this.pendingGuide, (ev) => {
         if (ev.type === 'delta') {
           if (!live.isConnected) this.coachGuide.replaceChildren(live);
           acc += ev.text;
@@ -2898,13 +2974,15 @@ class Mixer {
           this.job.guide = { text: ev.text || acc, model: ev.model, createdAt: ev.createdAt };
         }
       }, this.coachAbort.signal);
+      this.pendingGuide = null;
       this.renderGuide();
     } catch (err) {
+      if (err.newAttemptAllowed || err.status === 400) this.pendingGuide = null;
       this.setLed('idle');
       this.renderGuide(); // restore the cue; partial text is discarded
       const failHint = this.coachGuide.querySelector('.coach-hint');
       if (failHint) {
-        failHint.textContent = err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message;
+        failHint.textContent = listeningFailure(err);
         failHint.classList.add('error');
       }
     } finally {
@@ -2912,6 +2990,8 @@ class Mixer {
       this.coachInput.disabled = false;
       this.coachCancel.hidden = true;
       this.coachAbort = null;
+      this.renderListeningUsage();
+      void refreshListeningUsage();
     }
   }
 
@@ -3038,6 +3118,12 @@ class Mixer {
       try {
         await this.conversationLoading?.catch(() => {});
         await this.conversationSaveQueue;
+        // An accepted turn advances the course revision even if its stream was
+        // interrupted. Read it again before the server's atomic reset check.
+        if (this.durableConversation) {
+          this.conversationLoaded = false;
+          await this.loadConversation();
+        }
         const reset = await api(`/api/jobs/${this.job.id}/listening-conversation`, { method: 'DELETE', signal: AbortSignal.timeout(15000), ...(this.durableConversation ? { body: JSON.stringify({ revision: this.conversationRevision }) } : {}) });
         this.conversationEntries = [];
         this.conversationRevision = reset.revision;
@@ -3050,9 +3136,12 @@ class Mixer {
         }
         this.coachBusy = false;
         this.coachInput.disabled = false;
+        this.renderListeningUsage();
         return;
       }
     }
+    this.pendingChat = null;
+    this.coachInput.readOnly = false;
     this.chatHistory = [];
     this.coachLog.innerHTML = '';
     try {
@@ -3068,6 +3157,7 @@ class Mixer {
     this.coachBusy = false;
     this.coachInput.disabled = false;
     this.coachInput.focus();
+    this.renderListeningUsage();
   }
 
   addChatRow(kind, html) {
@@ -3080,22 +3170,30 @@ class Mixer {
   }
 
   async sendChat(text) {
-    if (this.coachBusy) return;
+    if (this.coachBusy || (listeningWaitSeconds() && !this.pendingChat)) return;
     this.coachBusy = true;
-    if (runtime.authMode === 'cail') {
+    if (runtime.authMode === 'cail' && !this.pendingChat) {
       try { await this.loadConversation(); }
       catch { this.coachBusy = false; return; }
     }
+    if (!this.pendingChat) {
+      const history = this.chatHistory.slice(-11);
+      this.pendingChat = { text, history, body: {
+        messages: [...history, { role: 'user', content: text }], durationSec: this.duration(),
+        messageId: crypto.randomUUID(), ...(this.durableConversation ? { revision: this.conversationRevision } : {}),
+      }, userRow: this.addChatRow('you', esc(text)) };
+    }
+    const pending = this.pendingChat;
+    pending.errorRow?.remove();
+    pending.partialRow?.remove();
     this.coachAbort = new AbortController();
     this.coachCancel.hidden = false;
-    this.chatHistory.push({ role: 'user', content: text });
-    this.chatHistory = this.chatHistory.slice(-12);
-    this.addChatRow('you', esc(text));
-    this.logChatEntry('you', text);
     const typing = this.addChatRow('typing', '···');
-    this.coachInput.value = '';
+    this.coachInput.value = pending.text;
     this.coachInput.disabled = true;
+    this.coachInput.readOnly = true;
     this.setLed('busy');
+    this.renderListeningUsage();
     // Stream: prose deltas render live as plain text, then the finished reply
     // gets its formatted render; tool calls arrive after the prose and run last.
     let row = null;
@@ -3106,7 +3204,7 @@ class Mixer {
     try {
       await streamApi(
         `/api/jobs/${this.job.id}/chat`,
-        { messages: this.chatHistory, durationSec: this.duration(), ...(this.durableConversation ? { messageId: crypto.randomUUID(), revision: this.conversationRevision } : {}) },
+        pending.body,
         (ev) => {
           if (ev.type === 'delta') {
             if (!row) {
@@ -3129,6 +3227,11 @@ class Mixer {
       this.coachAbort.signal.throwIfAborted();
       this.coachCancel.hidden = true;
       typing.remove();
+      this.pendingChat = null;
+      this.coachInput.value = '';
+      this.coachInput.readOnly = false;
+      this.chatHistory = [...pending.history, { role: 'user', content: pending.text }];
+      this.logChatEntry('you', pending.text);
       if (finalText) {
         this.chatHistory.push({ role: 'assistant', content: finalText });
         this.chatHistory = this.chatHistory.slice(-12);
@@ -3149,15 +3252,26 @@ class Mixer {
       if (row && !acc) row.remove();
       if (row) row.classList.remove('streaming');
       if (this.durableConversation) this.conversationLoaded = false;
-      this.addChatRow('error', esc(err.name === 'AbortError' ? 'Request cancelled. The mixer still works.' : err.message));
+      pending.partialRow = row;
+      const confirmedFailure = err.newAttemptAllowed || err.status === 400;
+      if (confirmedFailure && this.pendingChat) {
+        pending.userRow.remove();
+        row?.remove();
+        this.pendingChat = null;
+        this.coachInput.readOnly = false;
+      }
+      if (this.pendingChat) this.coachInput.value = pending.text;
+      pending.errorRow = this.addChatRow('error', esc(listeningFailure(err)));
       if (runtime.authMode === 'cail') await this.conversationSaveQueue;
     }
     this.coachBusy = false;
     this.coachCancel.hidden = true;
     this.coachAbort = null;
     this.coachInput.disabled = false;
-    this.coachInput.focus();
+    if (!this.coachBody.hidden) this.coachInput.focus();
     this.setLed(this.job.guide ? 'ready' : 'idle');
+    this.renderListeningUsage();
+    void refreshListeningUsage();
   }
 
   // Sequential with a short stagger so students can see each console move land.
@@ -4820,7 +4934,7 @@ async function initialize() {
       window.StemSessionGuard?.start(accountSubject, () => {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
-        mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null;
+        mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null; listeningUsage = null;
         selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
@@ -4855,6 +4969,15 @@ async function initialize() {
 }
 const appReady = initialize();
 void appReady.then(showSongSample);
+window.addEventListener('focus', () => { void refreshListeningUsage(); });
+setInterval(() => {
+  if (document.hidden || !listeningUsage) return;
+  if (listeningUsage.availableAt && !listeningWaitSeconds()) {
+    listeningUsage = null;
+    void refreshListeningUsage();
+  } else if (listeningUsage.inProgress && Date.now() % 5000 < 1000) void refreshListeningUsage();
+  for (const mixer of mixers.values()) mixer.renderListeningUsage();
+}, 1000);
 setInterval(() => {
   if (document.hidden) return;
   for (const mixer of mixers.values()) if (mixer.job.courseId && !mixer.job.readOnlyShared && mixer.el.isConnected) void mixer.refresh();
