@@ -59,19 +59,27 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
       const models = env.ASSISTANT_FALLBACK_MODELS ? GATEWAY_MODELS : [env.ASSISTANT_MODEL];
       for (const [modelIndex, model] of models.entries()) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-      let accepted = false, outputStarted = false;
+      let accepted = false, outputStarted = false, streamEnded = false, skipped = false;
       let attemptId: string | null = null, usage: unknown;
       const operation = env.ASSISTANT_OPERATION_ID ? await readOperation(env.DB,env.ASSISTANT_OPERATION_ID) : null;
       let requestId = correlation.request_id;
       let outcome: 'ok' | 'cancelled' | 'error' = 'error';
       try {
         if (operation) {
-          if (await cooldown(env.DB,`gateway:${model}`)>Date.now()) throw new AssistantError(503,COACH_DOWN,{code:'model_cooldown',shouldRetry:true});
+          if (await cooldown(env.DB,`gateway:${model}`)>Date.now()) {
+            // No request reached this model, so trying the existing backup
+            // cannot duplicate an accepted or possibly billable attempt.
+            if (modelIndex === 0 && models.length === 2) { skipped = true; continue; }
+            throw new AssistantError(503,COACH_DOWN,{code:'model_cooldown',shouldRetry:true});
+          }
           attemptId=await beginAttempt(env.DB,operation,'cail-gateway',model);
         }
         const response = await client.chatCompletions({
           model, messages: params.messages.map(({ role, content }) => ({ role, content })),
           ...(params.tools?.length ? { tools: params.tools.map(tool => ({ type: tool.type, function: { ...tool.function, parameters: JSON.parse(JSON.stringify(tool.function.parameters)) } })), tool_choice: 'auto' } : {}),
+          // These short listening turns need their existing output budget for
+          // the answer. Default reasoning can exhaust it before any prose.
+          reasoning: { enabled: false },
           stream: true, stream_options: { include_usage: true }, max_tokens: params.maxTokens, temperature: params.temperature,
         }, { kind: credentialKind, token }, { signal, correlation });
         accepted = true;
@@ -123,14 +131,18 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
           if (done) break;
         }
         if (buffer.trim()) await consume(buffer);
-        if (!finishReason) throw new AssistantError(502, COACH_DOWN);
+        streamEnded = true;
+        if (!['stop', 'tool_calls'].includes(finishReason)) throw new AssistantError(502, COACH_DOWN,
+          { code: 'incomplete_response', shouldRetry: false });
+        if (!content.trim() && calls.size === 0) throw new AssistantError(502, COACH_DOWN,
+          { code: 'empty_response', shouldRetry: false });
         const toolIds=[...calls.values()].map(call=>call.id).filter(Boolean);
         if (new Set(toolIds).size!==toolIds.length) throw new AssistantError(502,COACH_DOWN,{code:'invalid_tool_calls'});
         outcome = 'ok';
         if (attemptId) await finishAttempt(env.DB,attemptId,'succeeded',{usage});
         return { content: content.trim(), model, toolCalls: [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call), finishReason };
       } catch (error) {
-        if (attemptId) await finishAttempt(env.DB,attemptId,outputStarted?'partial':accepted||!(error instanceof CailError)?'uncertain':'rejected',{code:error instanceof CailError?error.code:'gateway_failure',status:error instanceof CailError?error.status:undefined,usage});
+        if (attemptId) await finishAttempt(env.DB,attemptId,outputStarted?'partial':streamEnded?'failed':accepted||!(error instanceof CailError)?'uncertain':'rejected',{code:error instanceof CailError||error instanceof AssistantError?error.code:'gateway_failure',status:error instanceof CailError?error.status:undefined,usage});
         if (!signal.aborted && !accepted && !outputStarted && modelIndex===0 && models.length===2 && eligibleGatewayFallback(error)) {
           if (operation) await setCooldown(env.DB,`gateway:${model}`,retryAt(error instanceof CailError ? String(error.extras.retry_after ?? error.extras.retry_after_seconds ?? '30') : '30'));
           continue;
@@ -146,7 +158,7 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
         const terminal = outcome === 'ok' ? { outcome: 'ok', reason: 'completed' } as const
           : outcome === 'cancelled' ? { outcome: 'cancelled', reason: 'cancelled' } as const
             : { outcome: 'error', reason: 'upstream_failure' } as const;
-        log.emit('stem-splitter.gateway.completed', { request_id: requestId, terminal });
+        if (!skipped) log.emit('stem-splitter.gateway.completed', { request_id: requestId, terminal });
       }
       }
       throw new AssistantError(503,COACH_DOWN);

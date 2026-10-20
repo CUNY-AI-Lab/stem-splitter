@@ -11,6 +11,7 @@ import { listeningUsage, recoverListeningOperations } from '../src/reliability/l
 import { purgeOperationContent } from '../src/reliability/retention.ts';
 import { courseFixture } from './course-fixture.ts';
 import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
+import { gatewayForRequest } from './gateway.ts';
 
 const alice=`cail-${'1'.repeat(32)}`,bob=`cail-${'2'.repeat(32)}`;
 async function setup() {
@@ -97,6 +98,39 @@ test('failures, partial streams and timeouts use no successful turn; uncertain r
  }
  assert.equal(f.calls(),3);f.mode('ok');const fresh=await f.events(await f.request('/api/jobs/failure/chat','POST',f.chat('failure','explicit-new-attempt-01')));
  assert.equal(fresh.at(-1).usage.successfulTurns,1);assert.equal(f.calls(),4);
+});
+
+test('real Gateway adapter rejects empty and truncated cue/chat output without charging or caching; complete output counts once',async()=>{
+ const f=await setup();await f.job('gateway-output');
+ let calls=0,content='',finishReason='length';
+ const transport=gatewayForRequest({fetch:async(outbound:Request)=>{
+  calls++;const body=await outbound.json() as any;
+  assert.deepEqual(body.reasoning,{enabled:false});
+  assert.equal(body.max_tokens,body.tools?600:500);
+  return new Response(`data: ${JSON.stringify({choices:[{delta:{content},finish_reason:finishReason}]})}\n\ndata: [DONE]\n\n`,
+   {headers:{'Content-Type':'text/event-stream'}});
+ }} as unknown as Fetcher,'synthetic-test-credential',new Request('https://split.test'),'test');
+ f.env.assistantTransport=transport.stream;f.env.ASSISTANT_MODEL='glm-5.2';f.env.ASSISTANT_FALLBACK_MODELS='deepseek-v4-flash-0731';
+ let index=0;
+ for(const [text,reason] of [['','length'],['Unfinished sentence','length'],['','stop']]) {
+  content=text;finishReason=reason;
+  for(const kind of ['guide','chat']) {
+   const messageId=`bad-output-${kind}-${index++}`;
+   const body=kind==='guide'?{messageId}:f.chat('gateway-output',messageId);
+   const events=await f.events(await f.request(`/api/jobs/gateway-output/${kind}`,'POST',body));
+   assert.equal(events.at(-1).type,'error');assert.equal(events.at(-1).usage.successfulTurns,0);
+   assert.equal(events.at(-1).newAttemptAllowed,true);
+   assert.equal((await f.request(`/api/jobs/gateway-output/${kind}`,'POST',body)).status,409);
+  }
+ }
+ assert.equal(calls,6);
+ assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM guides').first<any>()).n,0);
+ assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM app_operations WHERE state='succeeded'").first<any>()).n,0);
+ content='Listen for the bass.';finishReason='stop';
+ const result=await f.events(await f.request('/api/jobs/gateway-output/guide','POST',{messageId:'complete-output-guide-01'}));
+ assert.equal(result.at(-1).type,'done');assert.equal(result.at(-1).usage.successfulTurns,1);
+ const cached=await f.events(await f.request('/api/jobs/gateway-output/guide','POST',{messageId:'complete-output-guide-01'}));
+ assert.equal(cached.at(-1).cached,true);assert.equal(cached.at(-1).usage.successfulTurns,1);assert.equal(calls,7);
 });
 
 test('lost runner and in-flight retry cannot regenerate or deliver after their lease; expired identity cannot read replay',async()=>{
