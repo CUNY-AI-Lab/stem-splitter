@@ -8,3 +8,39 @@
 #classroom-messages li, #classroom-notes li { white-space: pre-wrap; overflow-wrap: anywhere; }
 #classroom-folder-detail { margin-top: 1.5rem; }
 #classroom-folder-sharing { margin: 1rem 0; }
+.instructor-console #account-status { color: var(--ink-dim); margin: .75rem 0 1.25rem; }
+.instructor-console #course-discovery { margin-top: 1.25rem; }
+.instructor-console .classroom-toolbar { margin-top: 1.25rem; }
+.instructor-console #classroom-refresh { margin-left: auto; }
+.instructor-console #classroom-refresh-status { color: var(--ink-dim); font-size: .75rem; }
+.instructor-console #classroom-usage { padding-bottom: .75rem; border-bottom: 1px solid var(--panel-edge); }
+.instructor-console #classroom-student-name { font-size: 1.05rem; }
+.instructor-console #classroom-roster .page-btn,
+.instructor-console #classroom-folders .page-btn {
+  display: block; width: 100%; text-align: left; padding: .5rem 0;
+  border: 0; background: transparent; color: var(--ink); font-size: .875rem;
+}
+.instructor-console #classroom-roster .page-btn:hover,
+.instructor-console #classroom-folders .page-btn:hover { color: var(--hot); }
+.instructor-console :is(#classroom-roster, #classroom-folders) .teacher-history-item { padding: .35rem 0; }
+.instructor-console .classroom-job-actions a { color: var(--hot); min-height: 44px; display: inline-flex; align-items: center; padding: .5rem 0; margin-right: .5rem; text-underline-offset: .2em; }
+.instructor-console .classroom-folder-assignment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; margin-top: 1rem; }
+.instructor-console #classroom-folder-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .5rem; margin-top: 1.25rem; }
+.instructor-console #classroom-folder-create > label { grid-column: 1 / -1; }
+.instructor-console #classroom-folder-detail { padding-top: 1.5rem; border-top: 1px solid var(--panel-edge); }
+.instructor-console #classroom-folder-sharing { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .5rem; }
+.instructor-console #classroom-folder-sharing > label { grid-column: 1 / -1; }
+.instructor-console #classroom-folder-items a { color: var(--hot); text-underline-offset: .2em; }
+.instructor-console #classroom-messages { max-height: 420px; overflow-y: auto; padding-right: .75rem; scrollbar-color: var(--panel-edge) transparent; }
+.instructor-console #classroom-messages:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
+.instructor-console #classroom-conversation-more { margin-top: 1rem; }
+.instructor-console .classroom-entry-meta { display: block; color: var(--ink-dim); font-size: .75rem; font-weight: 500; margin-bottom: .25rem; }
+@media (max-width: 600px) {
+  .instructor-console .classroom-toolbar { gap: .5rem; }
+  .instructor-console #classroom-refresh { border-color: transparent; padding-inline: 0; margin: 0; }
+  .instructor-console #classroom-folder-create { grid-template-columns: minmax(0, 1fr); }
+  .instructor-console #classroom-folder-create button { justify-self: start; }
+  .instructor-console .classroom-folder-assignment,
+  .instructor-console #classroom-folder-sharing { grid-template-columns: minmax(0, 1fr); }
+  .instructor-console :is(.classroom-folder-assignment, #classroom-folder-sharing) button { justify-self: start; }
+}

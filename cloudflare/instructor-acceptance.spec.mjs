@@ -45,10 +45,10 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name · 1 split', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Class fixture recording');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Private personal fixture');
-    await page.getByRole('button', { name: 'Review annotations', exact: true }).click();
+    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('0:03 · Alex Rivera: Listen to the bass entrance');
     await expect(page.locator('#classroom-notes')).not.toContainText('Private personal note');
-    await page.getByRole('button', { name: 'Review Listening Guy session' }).click();
+    await page.getByRole('button', { name: 'Listening Guy messages' }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(40);
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
@@ -68,9 +68,15 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await page.getByRole('button', { name: 'Add to folder', exact: true }).click();
     await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
     await expect(page.getByLabel('Class folder link')).toHaveValue(new URL(`/classroom.html?course=${course}&folder=${created.id}`, f.url).href);
-    for (const width of [390, 1280]) {
-      await page.setViewportSize({ width, height: 900 });
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(page.locator('.console-nav [aria-current="page"]')).toHaveText('Class work');
+      expect((await page.locator('#classroom-course').boundingBox()).height).toBeGreaterThanOrEqual(44);
+      if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(104);
+      await page.locator('#classroom-messages').focus();
+      await expect(page.locator('#classroom-messages')).toBeFocused();
+      expect(await page.locator('#classroom-messages').evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
       await mkdir('/tmp/stem-classroom-acceptance', { recursive: true });
       await page.screenshot({ path: `/tmp/stem-classroom-acceptance/instructor-${width}.png`, fullPage: true });
       await page.evaluate(() => scrollTo(0, 0));
@@ -105,7 +111,7 @@ test('an instructor outside the student roster can add their own course split to
     await page.getByRole('button', { name: 'My course splits', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Instructor course fixture');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Class fixture recording');
-    await page.getByRole('button', { name: 'Review annotations', exact: true }).click();
+    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('Alex Rivera: A student hears the melody');
     await page.getByLabel('Folder for Instructor course fixture').selectOption('shared-folder');
     await page.getByRole('button', { name: 'Add to folder', exact: true }).click();
@@ -134,9 +140,9 @@ test('automatic refresh reflects enrolled course work and attributed notes while
     await page.clock.install();
     await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`, f.url).href);
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name · 1 split', exact: true }).click();
-    await page.getByRole('button', { name: 'Review annotations', exact: true }).click();
+    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('Listen to the bass entrance');
-    await page.getByRole('button', { name: 'Review Listening Guy session', exact: true }).click();
+    await page.getByRole('button', { name: 'Listening Guy messages', exact: true }).click();
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
     await page.getByLabel('New folder name').fill('Unsaved folder draft');
@@ -192,7 +198,7 @@ test('selected annotation refresh fails closed when course access is revoked', a
     await page.clock.install();
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name · 1 split', exact: true }).click();
-    await page.getByRole('button', { name: 'Review annotations', exact: true }).click();
+    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('Listen to the bass entrance');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.alice, 'x-fixture-course-role': 'owner', 'x-fixture-course-state': 'revoked' });
     await page.clock.fastForward(15001);
@@ -235,7 +241,7 @@ test('annotation review rejects a response for a different or personal workspace
     await page.route('**/api/jobs/course-song', route => route.fulfill({ json: { courseId: null, annotations: [{ atSeconds: 0, text: 'Unexpected personal fixture' }] } }));
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name · 1 split', exact: true }).click();
-    await page.getByRole('button', { name: 'Review annotations', exact: true }).click();
+    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#console-panel')).toBeHidden();
     await expect(page.locator('#classroom-notes')).toBeEmpty();
     await expect(page.locator('body')).not.toContainText('Unexpected personal fixture');

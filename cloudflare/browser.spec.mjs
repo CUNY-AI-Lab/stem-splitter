@@ -175,7 +175,7 @@ test('CAIL student, instructor and admin surfaces; no Crate and attribution-bear
     await expect(page.locator('#console-panel')).toBeVisible();
     await page.locator('#amendment').fill('Ask students to compare two layers.');
     await page.locator('#change-note').fill('Listening exercise');
-    await page.getByRole('button', { name: 'SAVE', exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.locator('#prompt-status')).toContainText('Saved');
     expect(errors).toEqual([]);
   } finally { await server.close(); }

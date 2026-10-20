@@ -5,15 +5,15 @@
 <meta name="robots" content="noindex">
 <title>Stem Splitter · Instructor Console</title>
 <link rel="stylesheet" href="/styles.css?v=20261020-classroom">
+<link rel="stylesheet" href="/instructor-console.css?v=20261020">
 <link rel="stylesheet" href="/classroom.css?v=20261020">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
-<main class="teacher-main">
+<main class="teacher-main instructor-console">
   <header class="masthead"><div class="masthead-title">
     <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br><span>Splitter</span></a></h1>
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
   </div></header>
   <h2 class="page-title">Instructor Console</h2>
-  <p class="account-help">Course work and shared listening</p>
   <p id="account-status" role="status">Checking class access…</p>
   <button id="classroom-retry" class="page-btn" type="button" hidden>Retry class access</button>
   <p id="classroom-login" hidden><a class="account-button" href="/auth/login?next=/classroom.html">CUNY Login</a></p>
@@ -22,14 +22,18 @@
     <select id="classroom-course"><option value="">Choose a class</option></select>
   </section>
   <section id="console-panel" hidden>
-    <div class="classroom-actions">
-      <a id="classroom-create" class="account-button" href="/">Create a course split</a>
+    <nav class="console-nav" aria-label="Instructor Console">
+      <span aria-current="page">Class work</span>
+      <a id="classroom-guidance" href="/teacher.html" hidden>Settings</a>
+      <a href="/account.html">My account</a>
+    </nav>
+    <div class="classroom-actions classroom-toolbar">
+      <a id="classroom-create" class="account-button console-primary" href="/">Create a course split</a>
       <button id="classroom-own-splits" class="page-btn" type="button" hidden>My course splits</button>
-      <a id="classroom-guidance" class="account-button" href="/teacher.html" hidden>Listening Guy settings</a>
       <button id="classroom-refresh" class="page-btn" type="button">Refresh class work</button>
     </div>
-    <p class="account-help">Only newly assigned course splits appear here. Personal splits stay private. Shared folders are available only to current members of this class.</p>
-    <p id="classroom-refresh-status" class="account-help" role="status">Course work refreshes automatically while this page is visible.</p>
+    <p class="account-help">Splits created for this class appear here automatically. Personal splits stay private. Shared folders are limited to current class members.</p>
+    <p id="classroom-refresh-status" class="account-help" role="status">Updates automatically while this page is open.</p>
     <section id="classroom-roster-section" class="teacher-prompt-section" hidden>
       <h2>Class roster and usage</h2>
       <p id="classroom-usage" class="account-help"></p>
@@ -45,18 +49,18 @@
     </section>
     <section id="classroom-notes-section" class="teacher-prompt-section" hidden>
       <h2 id="classroom-notes-title">Course annotations</h2>
-      <p class="account-help">Notes from the selected course split, including classmates’ notes on instructor-shared work. Review only; authors manage their own notes in the split.</p>
+      <p class="account-help">Notes on this split, including students’ notes on instructor-shared work. Authors edit their own notes in the split.</p>
       <p id="classroom-notes-status" role="status"></p>
       <ol id="classroom-notes" class="teacher-history-list"></ol>
     </section>
     <section id="classroom-conversation" class="teacher-prompt-section" hidden>
       <h2 id="classroom-conversation-title">Listening Guy session</h2>
-      <p class="account-help">Read-only review of the split owner's course conversation. No new model response is generated.</p>
+      <p class="account-help">The split owner’s saved class conversation. Read only; opening it does not generate a response.</p>
       <p id="classroom-conversation-status" role="status"></p>
-      <ol id="classroom-messages" class="teacher-history-list"></ol>
+      <ol id="classroom-messages" class="teacher-history-list" tabindex="0" aria-label="Saved class conversation"></ol>
       <button id="classroom-conversation-more" class="page-btn" type="button" hidden>Load more messages</button>
     </section>
-    <section class="teacher-prompt-section">
+    <section id="classroom-folders-section" class="teacher-prompt-section">
       <h2>Shared class folders</h2>
       <p id="classroom-folders-status" role="status"></p>
       <ul id="classroom-folders" class="teacher-history-list"></ul>
@@ -72,13 +76,13 @@
           <label for="classroom-folder-permission">Who can use this folder?</label>
           <select id="classroom-folder-permission">
             <option value="private">Instructors only</option>
-            <option value="read">Class members can listen and read notes</option>
-            <option value="comment">Class members can listen and add their own notes</option>
+            <option value="read">Class: listen and read notes</option>
+            <option value="comment">Class: listen and add notes</option>
           </select>
           <button class="page-btn" type="submit">Save sharing</button>
         </form>
         <p><label for="classroom-folder-link">Class folder link</label><input id="classroom-folder-link" readonly></p>
-        <p class="account-help">This link requires current class access. It is different from an audio-only public link.</p>
+        <p class="account-help">Only current class members can open this link. Public audio links do not include class notes or conversations.</p>
         <ul id="classroom-folder-items" class="teacher-history-list"></ul>
       </section>
     </section>
