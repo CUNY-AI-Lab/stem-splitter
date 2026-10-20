@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Stem Splitter · Class workspace</title>
+<title>Stem Splitter · Instructor Console</title>
 <link rel="stylesheet" href="/styles.css?v=20261020-classroom">
 <link rel="stylesheet" href="/classroom.css?v=20261020">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
@@ -12,7 +12,8 @@
     <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br><span>Splitter</span></a></h1>
     <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
   </div></header>
-  <h2 class="page-title">Class workspace</h2>
+  <h2 class="page-title">Instructor Console</h2>
+  <p class="account-help">Course work and shared listening</p>
   <p id="account-status" role="status">Checking class access…</p>
   <button id="classroom-retry" class="page-btn" type="button" hidden>Retry class access</button>
   <p id="classroom-login" hidden><a class="account-button" href="/auth/login?next=/classroom.html">CUNY Login</a></p>
@@ -24,10 +25,11 @@
     <div class="classroom-actions">
       <a id="classroom-create" class="account-button" href="/">Create a course split</a>
       <button id="classroom-own-splits" class="page-btn" type="button" hidden>My course splits</button>
-      <a id="classroom-guidance" class="account-button" href="/teacher.html" hidden>Instructor Settings</a>
+      <a id="classroom-guidance" class="account-button" href="/teacher.html" hidden>Listening Guy settings</a>
       <button id="classroom-refresh" class="page-btn" type="button">Refresh class work</button>
     </div>
     <p class="account-help">Only newly assigned course splits appear here. Personal splits stay private. Shared folders are available only to current members of this class.</p>
+    <p id="classroom-refresh-status" class="account-help" role="status">Course work refreshes automatically while this page is visible.</p>
     <section id="classroom-roster-section" class="teacher-prompt-section" hidden>
       <h2>Class roster and usage</h2>
       <p id="classroom-usage" class="account-help"></p>
@@ -40,6 +42,12 @@
       <p id="classroom-jobs-status" role="status"></p>
       <ul id="classroom-jobs" class="teacher-history-list"></ul>
       <button id="classroom-jobs-more" class="page-btn" type="button" hidden>Load more splits</button>
+    </section>
+    <section id="classroom-notes-section" class="teacher-prompt-section" hidden>
+      <h2 id="classroom-notes-title">Course annotations</h2>
+      <p class="account-help">Notes from the selected course split, including classmates’ notes on instructor-shared work. Review only; authors manage their own notes in the split.</p>
+      <p id="classroom-notes-status" role="status"></p>
+      <ol id="classroom-notes" class="teacher-history-list"></ol>
     </section>
     <section id="classroom-conversation" class="teacher-prompt-section" hidden>
       <h2 id="classroom-conversation-title">Listening Guy session</h2>

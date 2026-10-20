@@ -10,25 +10,29 @@
   let student = null, jobsCursor = null, studentGeneration = 0;
   let conversationJob = null, conversationCursor = null, conversationRevision = null, conversationGeneration = 0;
   let folderGeneration = 0;
+  let annotationJob = null, annotationGeneration = 0, refreshTimer = null, refreshing = false;
+  let rosterPages = 1, jobsPages = 1, conversationPages = 1;
   const coursePath = suffix => `/api/classroom/courses/${encodeURIComponent(selected.classId)}${suffix}`;
   const link = (text, href) => { const node = document.createElement('a'); node.textContent = text; node.href = href; return node; };
   const button = (text, action) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'page-btn'; node.textContent = text; node.addEventListener('click', action); return node; };
   const row = text => { const node = document.createElement('li'); node.className = 'teacher-history-item'; if (text) node.textContent = text; return node; };
   function clearCourse() {
-    generation++; studentGeneration++; conversationGeneration++; folderGeneration++;
+    generation++; studentGeneration++; conversationGeneration++; folderGeneration++; annotationGeneration++;
+    clearTimeout(refreshTimer); refreshing = false;
     for (const controller of controllers) controller.abort(); controllers.clear();
     pendingRequests = 0; delete panel.dataset.checking;
-    panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null;
+    panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null; annotationJob = null;
+    rosterPages = jobsPages = conversationPages = 1;
     rosterCursor = jobsCursor = conversationCursor = conversationRevision = null;
-    for (const id of ['roster', 'jobs', 'messages', 'folders', 'folder-items']) el(id).replaceChildren();
-    for (const id of ['student', 'conversation', 'folder-detail']) el(id).hidden = true;
+    for (const id of ['roster', 'jobs', 'messages', 'folders', 'folder-items', 'notes']) el(id).replaceChildren();
+    for (const id of ['student', 'conversation', 'folder-detail', 'notes-section']) el(id).hidden = true;
     for (const id of ['roster-more', 'jobs-more', 'conversation-more']) el(id).hidden = true;
-    for (const id of ['roster-status', 'jobs-status', 'conversation-status', 'folders-status', 'folder-status', 'usage']) el(id).textContent = '';
+    for (const id of ['roster-status', 'jobs-status', 'conversation-status', 'folders-status', 'folder-status', 'usage', 'notes-status']) el(id).textContent = '';
     el('folder-create').reset(); el('folder-sharing').reset(); el('folder-link').value = '';
   }
   async function request(path, options = {}, expectedGeneration = generation) {
     const controller = new AbortController(); controllers.add(controller);
-    const scoped = path.startsWith('/api/classroom/courses/');
+    const scoped = path.startsWith('/api/classroom/courses/') || path.startsWith('/api/jobs/');
     const timer = setTimeout(() => controller.abort(), 8000);
     if (scoped) { pendingRequests++; panel.dataset.checking = 'true'; }
     try {
@@ -67,6 +71,7 @@
     try {
       const data = await request(coursePath(`/roster${append && rosterCursor ? `?cursor=${encodeURIComponent(rosterCursor)}` : ''}`));
       if (!append) { roster = []; el('roster').replaceChildren(); }
+      rosterPages = append ? rosterPages + 1 : 1;
       roster.push(...data.participants);
       for (const person of data.participants) {
         const item = row(); item.append(button(`${person.displayName || 'Student'} · ${person.splitCount} ${person.splitCount === 1 ? 'split' : 'splits'}`, () => void loadStudent(person)));
@@ -81,23 +86,30 @@
     } catch (error) { if (current === generation) report('roster-status', error); }
     finally { if (current === generation) el('roster-more').disabled = false; }
   }
-  async function loadStudent(person, append = false) {
+  async function loadStudent(person, append = false, preserveReview = false, savedFolderChoices = null) {
     const current = generation;
-    if (!append) { studentGeneration++; student = person; jobsCursor = null; el('jobs').replaceChildren(); resetConversation(); }
+    const folderChoices = savedFolderChoices || (preserveReview ? new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value])) : new Map());
+    if (!append) { studentGeneration++; student = person; jobsCursor = null; if (!preserveReview) el('jobs').replaceChildren();
+      if (!preserveReview) { resetConversation(); annotationGeneration++; annotationJob = null; el('notes').replaceChildren(); el('notes-section').hidden = true; }
+    }
     const view = studentGeneration;
     el('student').hidden = false; el('student-name').textContent = person.own ? 'My course splits' : `${person.displayName || 'Student'} · Course splits`;
     el('jobs-status').textContent = 'Loading splits…'; el('jobs-more').disabled = true;
     try {
       const data = await request(coursePath(`/participants/${encodeURIComponent(person.memberId)}/jobs${append && jobsCursor ? `?cursor=${encodeURIComponent(jobsCursor)}` : ''}`));
       if (view !== studentGeneration) return;
+      jobsPages = append ? jobsPages + 1 : 1;
+      if (!append) el('jobs').replaceChildren();
       for (const job of data.jobs) {
         const item = row(); const title = document.createElement('strong'); title.textContent = job.filename; item.append(title);
         const state = document.createElement('p'); state.className = 'account-help'; state.textContent = job.retained ? job.status : 'Audio expired'; item.append(state);
         if (job.retained && job.status === 'done') {
           const actions = document.createElement('div'); actions.className = 'classroom-actions';
-          actions.append(link('Open split and notes', `/?job=${encodeURIComponent(job.id)}`), button('Review Listening Guy session', () => void loadConversation(job)));
+          actions.append(link('Open split and notes', `/?job=${encodeURIComponent(job.id)}`), button('Review annotations', () => void loadAnnotations(job)), button('Review Listening Guy session', () => void loadConversation(job)));
           const select = document.createElement('select'); select.setAttribute('aria-label', `Folder for ${job.filename}`);
+          select.dataset.jobId = job.id;
           select.append(new Option('Choose a class folder', ''), ...folders.map(folder => new Option(folder.name, folder.id)));
+          if (folders.some(folder => folder.id === folderChoices.get(job.id))) select.value = folderChoices.get(job.id);
           const add = button('Add to folder', async () => {
             const folderId = select.value; if (!folderId) { state.textContent = 'Choose a class folder first.'; return; }
             add.disabled = true;
@@ -115,9 +127,32 @@
     } catch (error) { if (current === generation && view === studentGeneration) report('jobs-status', error); }
     finally { if (current === generation && view === studentGeneration) el('jobs-more').disabled = false; }
   }
-  async function loadConversation(job, append = false) {
+  async function loadAnnotations(job) {
+    const current = generation, view = ++annotationGeneration, courseId = selected.classId;
+    annotationJob = job; el('notes-section').hidden = false;
+    el('notes-title').textContent = `Course annotations · ${job.filename}`;
+    el('notes-status').textContent = 'Loading saved notes…';
+    try {
+      const data = await request(`/api/jobs/${encodeURIComponent(job.id)}`);
+      if (view !== annotationGeneration) return;
+      if (data.courseId !== courseId || !Array.isArray(data.annotations)) {
+        clearCourse(); status.textContent = 'Class access could not be confirmed. Retry to load your class work.'; el('retry').hidden = false; return;
+      }
+      el('notes').replaceChildren();
+      for (const note of data.annotations) {
+        const seconds = Math.max(0, Number(note.atSeconds) || 0), stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+        el('notes').append(row(`${stamp} · ${note.authorName || 'Author unavailable'}: ${note.text}`));
+      }
+      el('notes-status').textContent = data.annotations.length ? `${data.annotations.length} saved ${data.annotations.length === 1 ? 'note' : 'notes'}.` : 'No saved course notes yet.';
+    } catch (error) { if (current === generation && view === annotationGeneration) { el('notes').replaceChildren(); report('notes-status', error); } }
+  }
+  async function loadConversation(job, append = false, preserveDisplay = false) {
     const current = generation;
-    if (!append) { resetConversation(); conversationJob = job; }
+    if (!append) {
+      if (preserveDisplay) { conversationGeneration++; conversationCursor = conversationRevision = null; }
+      else resetConversation();
+      conversationJob = job;
+    }
     const view = conversationGeneration;
     el('conversation').hidden = false; el('conversation-title').textContent = `Listening Guy session · ${job.filename}`;
     el('conversation-status').textContent = 'Loading saved messages…'; el('conversation-more').disabled = true;
@@ -125,6 +160,8 @@
       const query = append && conversationCursor !== null ? `?cursor=${encodeURIComponent(conversationCursor)}&revision=${conversationRevision}` : '';
       const data = await request(coursePath(`/jobs/${encodeURIComponent(job.id)}/conversation${query}`));
       if (view !== conversationGeneration) return;
+      conversationPages = append ? conversationPages + 1 : 1;
+      if (!append) el('messages').replaceChildren();
       for (const entry of data.entries) el('messages').append(row(`${entry.kind === 'you' ? 'Student' : entry.kind === 'coach' ? 'Listening Guy' : 'Session status'}: ${entry.text}`));
       conversationCursor = data.nextCursor; conversationRevision = data.revision;
       el('conversation-more').hidden = conversationCursor === null || conversationCursor === undefined;
@@ -145,13 +182,15 @@
       el('folders-status').textContent = folders.length ? '' : 'No shared class folders yet.';
     } catch (error) { if (current === generation) report('folders-status', error); }
   }
-  async function loadFolder(id) {
+  async function loadFolder(id, preserveDisplay = false) {
     const current = generation, view = ++folderGeneration;
-    currentFolder = null; el('folder-detail').hidden = true; el('folder-items').replaceChildren();
+    currentFolder = null;
+    if (!preserveDisplay) { el('folder-detail').hidden = true; el('folder-items').replaceChildren(); }
     try {
       const data = await request(coursePath(`/folders/${encodeURIComponent(id)}`));
       if (view !== folderGeneration) return;
       currentFolder = data.folder; el('folder-title').textContent = currentFolder.name;
+      el('folder-items').replaceChildren();
       el('folder-status').textContent = currentFolder.permission === 'comment' ? 'Class members can add their own notes.' : currentFolder.permission === 'read' ? 'Class members can listen and read notes. Annotation is not enabled for this folder.' : 'Only current course instructors can open this folder.';
       el('folder-sharing').hidden = !selected.capabilities.instructorPanel;
       el('folder-permission').value = currentFolder.permission;
@@ -160,7 +199,7 @@
       for (const job of data.items) { const item = row(); if (job.available) item.append(link(job.filename, `/?job=${encodeURIComponent(job.jobId)}`)); else item.textContent = `${job.filename} · Audio expired or unavailable`; el('folder-items').append(item); }
       if (!data.items.length) el('folder-items').append(row('No splits in this folder yet.'));
       el('folder-detail').hidden = false;
-    } catch (error) { if (current === generation && view === folderGeneration) report('folders-status', error); }
+    } catch (error) { if (current === generation && view === folderGeneration) { el('folder-detail').hidden = true; el('folder-items').replaceChildren(); report('folders-status', error); } }
   }
   async function selectCourse(id) {
     clearCourse(); const course = courses.find(course => course.classId === id); if (!course) return;
@@ -177,14 +216,65 @@
     if (current !== generation) return;
     const query = new URLSearchParams(location.search);
     if (query.get('course') === id && query.get('folder')) await loadFolder(query.get('folder'));
+    if (current === generation) scheduleRefresh();
+  }
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer);
+    if (!selected || document.visibilityState !== 'visible') return;
+    // Keep loaded pagination while remaining below the 30-read/minute budget.
+    const reads = 1 + (selected.capabilities.rosterRead ? rosterPages : 0) + (student ? jobsPages : 0)
+      + (currentFolder ? 1 : 0) + (annotationJob ? 1 : 0) + (conversationJob ? conversationPages : 0);
+    refreshTimer = setTimeout(() => void refreshCourse(), Math.max(15000, reads * 2500));
+  }
+  async function refreshCourse() {
+    if (!selected || refreshing || pendingRequests) { scheduleRefresh(); return; }
+    clearTimeout(refreshTimer); refreshing = true;
+    const current = generation, person = student, folder = currentFolder, notes = annotationJob, conversation = conversationJob;
+    const pageCounts = { roster: rosterPages, jobs: jobsPages, conversation: conversationPages };
+    const folderChoices = new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value]));
+    const folderDraft = el('folder-permission').value;
+    pendingRequests++; panel.dataset.checking = 'true';
+    try {
+      await loadFolders();
+      if (current !== generation) return;
+      if (selected.capabilities.rosterRead) {
+        await loadRoster();
+        for (let i = 1; current === generation && i < pageCounts.roster && rosterCursor; i++) await loadRoster(true);
+      }
+      if (current !== generation) return;
+      if (person) {
+        await loadStudent(person, false, true, folderChoices);
+        for (let i = 1; current === generation && i < pageCounts.jobs && jobsCursor; i++) await loadStudent(person, true, true, folderChoices);
+      }
+      if (current !== generation) return;
+      if (folder) {
+        await loadFolder(folder.id, true);
+        if (current === generation && currentFolder?.id === folder.id && folderDraft !== folder.permission) {
+          el('folder-permission').value = folderDraft;
+          // A pending edit keeps its original revision, so another instructor's
+          // intervening change still produces a conflict instead of a silent overwrite.
+          currentFolder = { ...currentFolder, permission: folder.permission, revision: folder.revision };
+        }
+      }
+      if (current !== generation) return;
+      if (notes) await loadAnnotations(notes);
+      if (current !== generation) return;
+      if (conversation) {
+        await loadConversation(conversation, false, true);
+        for (let i = 1; current === generation && i < pageCounts.conversation && conversationCursor; i++) await loadConversation(conversation, true);
+      }
+      if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Course work refreshes automatically while this page is visible.`;
+    } finally {
+      if (current === generation) { refreshing = false; pendingRequests--; if (!pendingRequests) delete panel.dataset.checking; scheduleRefresh(); }
+    }
   }
   // App membership alone does not prove that a course grant is still current.
   // Returning to this page conceals old class data while its scoped APIs recheck it.
-  const recheckCourse = () => { if (selected) void selectCourse(selected.classId); };
+  const recheckCourse = () => { if (selected) void refreshCourse(); };
   window.addEventListener('focus', recheckCourse);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckCourse(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckCourse(); else clearTimeout(refreshTimer); });
   el('course').addEventListener('change', () => void selectCourse(el('course').value));
-  el('refresh').addEventListener('click', () => void selectCourse(el('course').value));
+  el('refresh').addEventListener('click', () => void refreshCourse());
   el('retry').addEventListener('click', () => void selectCourse(el('course').value));
   el('own-splits').addEventListener('click', () => selected && void loadStudent({ memberId: selected.memberId, displayName: selected.displayName, own: true }));
   el('roster-more').addEventListener('click', () => void loadRoster(true));
