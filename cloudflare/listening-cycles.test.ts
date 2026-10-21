@@ -155,7 +155,9 @@ test('ten failed attempts per rolling minute are bounded; same-key retry does no
 });
 
 test('continued signed-in usage exceeds historical daily caps while global cue protection stays in force',async t=>{
- const f=await setup();let now=Date.now();t.mock.method(Date,'now',()=>now);
+ // These 17 five-minute cycles must stay in one UTC day. Starting from the
+ // wall clock made the fixture's 43 guides span two days in late-evening CI.
+ const f=await setup();let now=Date.parse('2026-10-21T12:00:00Z');t.mock.method(Date,'now',()=>now);
  for(let i=0;i<85;i++) {
   const op=await reserveAssistant(f.env,alice,null,i%2?'chat':'guide',`continued-request-${String(i).padStart(4,'0')}`,'job',{});
   await assistantReceipt(f.env,op.operation).complete('Complete');if(i%5===4)now+=300000;
@@ -165,8 +167,17 @@ test('continued signed-in usage exceeds historical daily caps while global cue p
  const day=new Date(now).toISOString().slice(0,10);
  for(let i=0;i<157;i++)await f.db.prepare(`INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,request_json,deadline,created_at,updated_at)
    VALUES(?,?,'member','guide',?,'fixture',?,'failed','guide','{}',?,?,?)`).bind(`global-${i}`,bob,`global-guide-${i}`,day,now+1000,now-120000,now-120000).run();
+ assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM app_operations WHERE kind='guide' AND day=?").bind(day).first<any>()).n,200);
  await assert.rejects(reserveAssistant(f.env,alice,null,'guide','global-limit-request-01','job',{}),(e:any)=>e.code==='guide_attempt_limit');
  await reserveAssistant(f.env,alice,null,'chat','chat-after-guide-cap-01','job',{});
+ // The global protection really is daily: it holds through the last millisecond
+ // of this day and permits a fresh cue at midnight without changing its limit.
+ now=Date.parse(`${day}T23:59:59.999Z`);
+ await assert.rejects(reserveAssistant(f.env,alice,null,'guide','global-before-midnight-01','job',{}),
+  (e:any)=>e.code==='guide_attempt_limit'&&e.retryAfter===1);
+ now++;
+ const next=await reserveAssistant(f.env,alice,null,'guide','global-after-midnight-01','job',{});
+ assert.equal(next.operation.day,'2026-10-22');
 });
 
 test('course replay keeps exact owner scope, current usage and revision without a second model call',async()=>{
