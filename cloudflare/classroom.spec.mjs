@@ -30,7 +30,7 @@ async function setup(page){
  return {server,url,alice,bob,gateway,seed};
 }
 const get = async (page, path) => { const response = await page.request.get(new URL(path, page.url()).href); return { status: response.status(), body: await response.json() }; };
-test('existing pages expose class workspace and feedback while course APIs retain owner authorization', async ({ page, context }) => {
+test('existing pages expose class workspace without an unavailable reporting service while course APIs retain owner authorization', async ({ page, context }) => {
   const f = await setup(page), errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/classroom/')) requests.push({url:request.url(),method:request.method()}); });
@@ -40,7 +40,7 @@ test('existing pages expose class workspace and feedback while course APIs retai
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('main')).toBeVisible();
       await expect(page.locator('a[href="/classroom.html"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toHaveCount(0);
     }
     expect(requests.every(request => request.method === 'GET')).toBe(true);
     const roster = await get(page, `/api/classroom/courses/${course}/roster`);

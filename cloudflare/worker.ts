@@ -117,6 +117,8 @@ export default {
           ? await playlistSampleResponse(request, typeof caches !== 'undefined' ? caches.default : undefined, allowed)
           : Response.json({ results: [] }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } });
         }
+      } else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
+        response = Response.json({ enabled: Boolean(env.BUG_REPORTS) }, { headers: { 'Cache-Control': 'no-store' } });
       } else if (['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
         response = await handleBugReport(request, { origin: env.PUBLIC_BASE_URL,
           release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
