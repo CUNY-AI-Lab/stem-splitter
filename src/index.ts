@@ -197,6 +197,12 @@ async function sha256Text(value: string): Promise<string> {
 type AppContext = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const app = new Hono<AppContext>();
 
+// The shared footer also runs on the legacy host, which has no report receiver.
+app.get('/api/bug-reports/availability', (c) => {
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ enabled: false });
+});
+
 app.use('/api/*', async (c,next)=>{
   const started=Date.now();
   await next();

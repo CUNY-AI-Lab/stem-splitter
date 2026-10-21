@@ -27,7 +27,11 @@ duplicate sends after unknown outcomes. Only an explicit provider throttling
 refusal can permit a bounded retry; network/5xx/ambiguous failures cannot resend.
 Existing stored reports and prior receipt records remain intact.
 
-This release requires the updated Admission receiver through the shared
-Cloudflare coordinator before app deployment. Do not bypass the coordinator
-lock. Unit/Workers/browser tests use synthetic reports and a mocked email
-service. Deployed submission and mailbox readback are separate release checks.
+The app-only classroom release omits the production `BUG_REPORTS` binding.
+The public availability route returns `enabled: false`, so no report form is
+offered and the app cannot dispatch reports. Classroom and Listening Guy
+features can release independently. Restore the app-scoped binding only after
+the updated Admission receiver has passed its separate shared-coordinator
+release and readback. Do not bypass that coordinator's lock. Tests retain a
+mocked reporting binding to exercise the future form and delivery contract.
+Deployed submission and mailbox readback remain separate release checks.

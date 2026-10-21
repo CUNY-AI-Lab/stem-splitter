@@ -44,6 +44,10 @@ test('workerd: signed identities, write-once audio, full split ingestion, owners
     // Direct Worker dispatch avoids the development reload proxy; the actual
     // production entrypoint, private bindings, D1 and R2 still run in Workerd.
     const worker = server.getWorker('stem-preview-contract-test');
+    const reporting = await worker.fetch('/api/bug-reports/availability');
+    assert.equal(reporting.status, 200);
+    assert.deepEqual(await reporting.json(), { enabled: false });
+    assert.equal(reporting.headers.get('cache-control'), 'private, no-store');
     assert.equal((await (await worker.fetch('/healthz')).json()).courseAccess, null, 'Doorway keeps course launch unavailable before migration');
     const schema = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
     const setup = await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only', 'Content-Type': 'application/json' }, body: JSON.stringify(schema) });

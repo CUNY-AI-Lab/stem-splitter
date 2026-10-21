@@ -189,7 +189,7 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     const first = await account(page);
     expect(first.guest.verificationRequired).toBe(true);
     await expect(page.locator('#guest-panel, #guest-session, #course-context, .compact-masthead')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Continue as guest', exact: true })).toHaveCount(0);
     expect(f.counts()).toEqual({ providerStarts: 0, verifications: 0, widgetLoads: 0 });
     await startUpload(page); await completed(page, 1);
@@ -521,12 +521,14 @@ test('sample query streams translucently and Tab reveals preloaded results witho
     await input.press('Tab');
     await expect(input).toHaveValue('jazz piano');
     await expect(input).toBeFocused();
-    await expect(page.getByRole('option', {name: /Piano sample/})).toBeVisible();
+    const suggestion = page.getByRole('option', {name: /^piano — File artist: jazz/});
+    await expect(suggestion).toBeVisible();
+    await expect(suggestion).toHaveAttribute('data-value', 'piano — File artist: jazz');
     await expect(hint).toBeHidden();
     expect(searches).toBe(1);
     expect(f.requests.filter(r => r.path === '/api/jobs' && r.method === 'POST')).toHaveLength(0);
     await input.press('ArrowDown'); await input.press('Enter');
-    await expect(input).toHaveValue('Piano sample — File artist: Fixture ensemble');
+    await expect(input).toHaveValue('piano — File artist: jazz');
     await input.press('Tab'); await expect(page.locator('#yt-form button[type=submit]')).toBeFocused();
     expect(f.counts().providerStarts).toBe(0); expect(f.errors).toEqual([]);
   } finally { await f.close(); }
@@ -591,7 +593,9 @@ test('sample respects reduced motion, touch acceptance, Escape and Shift-Tab', a
     await input.focus();await input.press('Shift+Tab');await expect(input).not.toBeFocused();await expect(input).toHaveValue('');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-sample-mobile.png`,animations:'disabled'});
-    await page.locator('#yt-form .yt-go').click();await expect(page.getByRole('option',{name:/Piano sample/})).toBeVisible();
+    await page.locator('#yt-form .yt-go').click();
+    const suggestion=page.getByRole('option',{name:/^piano — File artist: jazz/});
+    await expect(suggestion).toBeVisible();await expect(suggestion).toHaveAttribute('data-value','piano — File artist: jazz');
     if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/search-results-mobile.png`,animations:'disabled'});
     await input.fill('');await expect(input).toHaveAttribute('placeholder','jazz piano');await input.press('Escape');await expect(hint).toBeHidden();
     await input.press('Tab');await expect(page.locator('#yt-form button[type=submit]')).toBeFocused();

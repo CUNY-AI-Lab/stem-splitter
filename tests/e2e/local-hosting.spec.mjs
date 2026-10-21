@@ -133,6 +133,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   network,
   server,
 }, testInfo) => {
+  const reporting = await e2eFetch(server, '/api/bug-reports/availability');
+  expect(reporting.status).toBe(200);
+  expect(await reporting.json()).toEqual({ enabled: false });
+  expect(reporting.headers.get('cache-control')).toBe('private, no-store');
   let signedSourceUrl = '';
 
   network.use(
