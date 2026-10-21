@@ -579,17 +579,34 @@ const sampleResults=document.getElementById('sample-search-results');
 const sampleSelected=document.getElementById('sample-selected');
 const sampleSettingsStatus=document.getElementById('sample-settings-status');
 let selectedSamples=[],sampleCatalog=[],sampleRevision=0,sampleSearchTimer=0,sampleSearchAbort=null,sampleEditorGeneration=0;
+let sampleVisibleChoices=[];
 const sampleKey=t=>`${t.archiveId}/${t.archiveFile}`;
 function sampleEditorStatus(message,error=false){sampleSettingsStatus.textContent=message;sampleSettingsStatus.classList.toggle('error',error);}
-function clearSongSampleEditor(){sampleEditorGeneration++;sampleSearchAbort?.abort();clearTimeout(sampleSearchTimer);selectedSamples=[];sampleCatalog=[];sampleRevision=0;sampleForm.reset();sampleSelected.replaceChildren();sampleResults.replaceChildren();document.getElementById('sample-search-status').textContent='';document.getElementById('sample-settings-meta').textContent='';sampleEditorStatus('');}
+function clearSongSampleEditor(){sampleEditorGeneration++;sampleSearchAbort?.abort();clearTimeout(sampleSearchTimer);selectedSamples=[];sampleCatalog=[];sampleVisibleChoices=[];sampleRevision=0;sampleForm.reset();sampleSelected.replaceChildren();sampleResults.replaceChildren();document.getElementById('sample-search-status').textContent='';document.getElementById('sample-settings-meta').textContent='';sampleEditorStatus('');}
 function renderSampleChoices(tracks){
+  sampleVisibleChoices=tracks;
   sampleResults.replaceChildren();
   for(const track of tracks.slice(0,24)){
     const button=document.createElement('button');button.type='button';button.setAttribute('role','option');
     const chosen=selectedSamples.some(t=>sampleKey(t)===sampleKey(track));button.disabled=chosen;button.setAttribute('aria-selected',String(chosen));
     const length=track.durationSec?` · ${Math.floor(Math.round(track.durationSec)/60)}:${String(Math.round(track.durationSec)%60).padStart(2,'0')}`:'';
-    button.textContent=`${track.artist} — ${track.title}${length}${track.itemTitle&&track.itemTitle!==track.title?' · '+track.itemTitle:''}${chosen?' · selected':''}`;
-    button.addEventListener('click',()=>{if(selectedSamples.length>=64)return sampleEditorStatus('Choose up to 64 songs.',true);selectedSamples.push({...track});renderSelectedSamples();renderSampleChoices(tracks);sampleEditorStatus('Unsaved song changes.');});
+    const source=track.itemTitle&&track.itemTitle!==track.title?track.itemTitle:'';
+    button.setAttribute('aria-label',`${track.artist} — ${track.title}${length}${source?' · '+source:''}${chosen?' · selected':''}`);
+    const copy=document.createElement('span');copy.className='sample-choice-copy';
+    const name=document.createElement('span');name.textContent=`${track.artist} — ${track.title}`;copy.append(name);
+    if(source){const context=document.createElement('span');context.className='sample-choice-source';context.textContent=source;copy.append(context);}
+    const meta=document.createElement('span');meta.className='sample-choice-meta';
+    if(length){const duration=document.createElement('span');duration.textContent=length.slice(3);meta.append(duration);}
+    if(chosen){const state=document.createElement('span');state.className='sample-choice-state';state.textContent='Selected';meta.append(state);}
+    button.append(copy,meta);
+    button.addEventListener('click',()=>{
+      if(selectedSamples.some(t=>sampleKey(t)===sampleKey(track)))return;
+      if(selectedSamples.length>=64)return sampleEditorStatus('Choose up to 64 songs.',true);
+      const index=[...sampleResults.children].indexOf(button);
+      selectedSamples.push({...track});renderSelectedSamples();renderSampleChoices(tracks);sampleEditorStatus('Unsaved song changes.');
+      const options=[...sampleResults.children],next=[...options.slice(index+1),...options.slice(0,index)].find(option=>!option.disabled);
+      (next||sampleSearch).focus({preventScroll:true});
+    });
     sampleResults.append(button);
   }
 }
@@ -604,7 +621,7 @@ function renderSelectedSamples(){
     meta.textContent=checked+(track.importTestedAt?' · complete import tested':'')+(track.durationSec?` · ${Math.round(track.durationSec)} seconds`:'')+(track.successfulRuns?` · ${track.successfulRuns} successful split${track.successfulRuns===1?'':'s'}`:'');
     const actions=document.createElement('div');actions.className='sample-card-actions';
     for(const [text,delta] of [['Move up',-1],['Move down',1]]){const b=document.createElement('button');b.type='button';b.className='page-btn';b.textContent=text;b.disabled=index+delta<0||index+delta>=selectedSamples.length;b.setAttribute('aria-label',`${text}: ${track.title}`);b.addEventListener('click',()=>moveSample(index,index+delta));actions.append(b);}
-    const remove=document.createElement('button');remove.type='button';remove.className='page-btn';remove.textContent='Remove';remove.setAttribute('aria-label',`Remove: ${track.title}`);remove.addEventListener('click',()=>{selectedSamples.splice(index,1);renderSelectedSamples();renderSampleChoices(sampleCatalog.filter(t=>`${t.artist} ${t.title}`.toLowerCase().includes(sampleSearch.value.toLowerCase())));sampleEditorStatus('Unsaved song changes.');});actions.append(remove);
+    const remove=document.createElement('button');remove.type='button';remove.className='page-btn';remove.textContent='Remove';remove.setAttribute('aria-label',`Remove: ${track.title}`);remove.addEventListener('click',()=>{selectedSamples.splice(index,1);renderSelectedSamples();renderSampleChoices(sampleVisibleChoices);sampleEditorStatus('Unsaved song changes.');});actions.append(remove);
     const grip=document.createElement('span');grip.className='sample-drag-handle';grip.draggable=false;grip.textContent='⠿';grip.setAttribute('aria-hidden','true');
     // Pointer dragging works with touch as well as a mouse; native card drag
     // remains a fallback. Capture keeps the gesture stable while auto-scrolling.

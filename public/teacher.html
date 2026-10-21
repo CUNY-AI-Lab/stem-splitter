@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor</title>
-<link rel="stylesheet" href="/styles.css?v=20261017-song-resource" />
+<link rel="stylesheet" href="/styles.css?v=20261021-song-controls" />
 
 <div class="grain" aria-hidden="true"></div>
 
@@ -90,14 +90,15 @@
       <h2 id="sample-editor-title">Search examples</h2>
       <p class="teacher-help">Search Internet Archive for complete recordings up to five minutes. Choose the songs suggested in the Splitter search field. The first pass follows this order, skipping unavailable recordings.</p>
       <form id="sample-settings-form" class="teacher-form">
-        <label><input type="checkbox" id="samples-enabled" /> Show song suggestions</label>
+        <label class="sample-check"><input type="checkbox" id="samples-enabled" /> Show song suggestions</label>
         <div class="sample-timing">
-          <label>Minimum fully displayed seconds<input id="samples-hold" type="number" min="3" max="15" step="0.5" required /></label>
-          <label>Seconds per song<input id="samples-cadence" type="number" min="3.6" max="30" step="0.1" required /></label>
+          <label class="teacher-field">Minimum fully displayed seconds<input id="samples-hold" type="number" min="3" max="15" step="0.5" required /></label>
+          <label class="teacher-field">Seconds per song<input id="samples-cadence" type="number" min="3.6" max="30" step="0.1" required /></label>
         </div>
-        <label><input type="checkbox" id="samples-reshuffle" /> Reshuffle after each complete pass</label>
-        <label for="sample-search">Find a song</label>
-        <input id="sample-search" type="search" placeholder="Search artist or song" autocomplete="off" aria-controls="sample-search-results" />
+        <label class="sample-check"><input type="checkbox" id="samples-reshuffle" /> Reshuffle after each complete pass</label>
+        <label class="teacher-field" for="sample-search">Find a song
+          <input id="sample-search" type="search" placeholder="Search artist or song" autocomplete="off" aria-controls="sample-search-results" />
+        </label>
         <p id="sample-search-status" class="teacher-help" role="status"></p>
         <div id="sample-search-results" class="sample-search-results" role="listbox" aria-label="Songs to add"></div>
         <p class="teacher-help" id="sample-order-help">Drag to reorder, or use the move buttons. Focus a card and press ↑ or ↓ to move it. Changes appear after saving.</p>
@@ -168,4 +169,4 @@
 
 <script src="/session-guard.js?v=20261016-student-review"></script>
 <script src="/guest-claim.js?v=20261012-carryover"></script>
-<script src="/teacher.js?v=20261017-song-resource"></script>
+<script src="/teacher.js?v=20261021-song-controls"></script>
