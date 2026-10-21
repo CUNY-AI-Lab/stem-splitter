@@ -55,6 +55,6 @@
     "QUERY_ISOLATION_ENABLED": "false",
     "QUERY_ISOLATION_MODE": "off",
     "REMIXER_ENABLED": "false",
-    "RELEASE": "cloudflare-song-controls-20261021"
+    "RELEASE": "cloudflare-editable-titles-20261021"
   }
 }

@@ -77,6 +77,90 @@ async function documentScreenshots(page){
  await page.setViewportSize({width:1280,height:900});
 }
 
+test('instructor edits imported names, cancels drafts and preserves the exact Archive file after saving',async({page,context})=>{
+ const f=await fixture(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const artist='Éléonore & friends',title='A quiet room — 夜の歌';
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.admin});
+  const before=await(await f.harness.fetch('/api/teacher/song-samples',{headers:{'x-fixture-identity':f.admin}})).json();
+  const original=before.settings.tracks[0];
+  await page.goto(new URL('/teacher.html',f.url).href);
+  const card=page.locator('#sample-selected .sample-card').first();
+  await card.getByRole('button',{name:`Edit names: ${original.title}`,exact:true}).click();
+  await card.getByLabel('Artist',{exact:true}).fill('Unfinished draft');
+  await card.getByLabel('Title',{exact:true}).fill('Discard this title');
+  await card.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(card).toContainText(original.artist);await expect(card).toContainText(original.title);
+  await expect(card).not.toContainText('Discard this title');
+  await card.getByRole('button',{name:`Edit names: ${original.title}`,exact:true}).click();
+  await card.getByLabel('Artist',{exact:true}).fill(artist);
+  await card.getByLabel('Title',{exact:true}).fill(title);
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  for(const label of ['Artist','Title'])expect((await card.getByLabel(label,{exact:true}).boundingBox()).height).toBeGreaterThanOrEqual(44);
+  if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await card.screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/editable-song-names-mobile.png',animations:'disabled'});}
+  await card.getByRole('button',{name:'Done',exact:true}).click();
+  await expect(card).toContainText(`${artist} — ${title}`);
+  await page.getByRole('button',{name:'Save songs',exact:true}).click();
+  await expect(page.locator('#sample-settings-status')).toContainText('Saved.',{timeout:5000});
+  const saved=await(await f.harness.fetch('/api/teacher/song-samples',{headers:{'x-fixture-identity':f.admin}})).json();
+  expect(saved.settings.tracks[0]).toMatchObject({artist,title,archiveId:original.archiveId,archiveFile:original.archiveFile,durationSec:original.durationSec});
+  expect(saved.catalog.find(track=>track.archiveId===original.archiveId&&track.archiveFile===original.archiveFile)).toMatchObject({artist,title});
+  const publicSongs=await(await f.harness.fetch('/api/song-samples')).json();
+  expect(publicSongs.tracks[0]).toMatchObject({artist,title,archiveId:original.archiveId,archiveFile:original.archiveFile});
+  await page.reload();await expect(card).toContainText(`${artist} — ${title}`);
+  await card.getByRole('button',{name:`Edit names: ${title}`,exact:true}).click();
+  await expect(card.getByLabel('Artist',{exact:true})).toHaveValue(artist);
+  await expect(card.getByLabel('Title',{exact:true})).toHaveValue(title);
+  await card.getByRole('button',{name:'Cancel',exact:true}).click();
+  // Return raw provider names to prove the saved instructor labels reach import.
+  // The job creation response is replaced locally, so this never starts inference.
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{...publicSongs,tracks:[publicSongs.tracks[0]]}}));
+  await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...original,id:'renamed-suggestion',bytes:100000,sourceUrl:'https://archive.org/details/'+original.archiveId}]}}));
+  await page.route('**/api/jobs',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'Local import assertion complete.'}}):route.continue());
+  await page.emulateMedia({reducedMotion:'reduce'});await page.goto(f.url.href);
+  await expect(page.locator('#yt-url')).toHaveAttribute('placeholder',`${artist} ${title}`);
+  await page.locator('#yt-form .yt-go').click();
+  const choice=page.locator('#source-songs [role="option"]');
+  await expect(choice).toContainText(title);await expect(choice).toContainText(artist);await choice.click();
+  const importRequest=page.waitForRequest(request=>new URL(request.url()).pathname==='/api/jobs'&&request.method()==='POST');
+  await page.locator('#yt-form .yt-go').click();
+  expect((await importRequest).postDataJSON()).toMatchObject({archiveId:original.archiveId,archiveFile:original.archiveFile,archiveSearch:true,displayTitle:`${artist} — ${title}`});
+  expect(errors).toEqual([]);
+ }finally{await f.harness.close();}
+});
+
+test('renamed suggestions refresh cached search labels for the same Archive file',async({page,context})=>{
+ const f=await fixture(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const original={artist:'Artist É',title:'Nocturne',archiveId:'same-source',archiveFile:'song.mp3'};
+ let snapshot={revision:1,version:'1-original',enabled:true,holdMs:3500,cadenceMs:6000,reshuffle:true,tracks:[original]};
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.admin});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.route('**/api/song-samples',route=>route.fulfill({json:snapshot}));
+  await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...original,id:'same-source/song.mp3',durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/same-source'}]}}));
+  await page.route('**/api/jobs',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'Local import assertion complete.'}}):route.continue());
+  await page.goto(f.url.href);
+  const input=page.locator('#yt-url'),choices=page.locator('#source-songs'),choice=choices.getByRole('option');
+  await expect(input).toHaveAttribute('placeholder','Artist É Nocturne');
+  await page.locator('#yt-form .yt-go').click();
+  await expect(choice).toContainText('Nocturne');await expect(choices).not.toHaveAttribute('aria-busy','true');
+  await input.fill('');
+  await expect(input).toHaveAttribute('placeholder','Artist É Nocturne');
+  const renamed={...original,artist:'ARTIST É',title:'NOCTURNE'};
+  snapshot={...snapshot,revision:2,version:'2-renamed',tracks:[renamed]};
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await expect(input).toHaveAttribute('placeholder','ARTIST É NOCTURNE');
+  await page.locator('#yt-form .yt-go').click();
+  await expect(choice).toContainText('NOCTURNE');await expect(choice).toContainText('ARTIST É');
+  await choice.click();await expect(input).toHaveValue('NOCTURNE — File artist: ARTIST É');
+  const importRequest=page.waitForRequest(request=>new URL(request.url()).pathname==='/api/jobs'&&request.method()==='POST');
+  await page.locator('#yt-form .yt-go').click();
+  expect((await importRequest).postDataJSON()).toMatchObject({archiveId:original.archiveId,archiveFile:original.archiveFile,displayTitle:'ARTIST É — NOCTURNE'});
+  expect(errors).toEqual([]);
+ }finally{await f.harness.close();}
+});
+
 for(const cadenceMs of [5000,6000])test(`configured hints reveal slowly at ${cadenceMs}ms cadence, preserve progress and refresh instructor changes`,async({page})=>{
  test.setTimeout(65000);const f=await fixture();let snapshot={revision:1,version:'1-first',enabled:true,holdMs:3500,cadenceMs,reshuffle:true,tracks:[0,1,2].map(i=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`steady-${i}`,archiveFile:'song.mp3'}))};
  const errors=[];page.on('pageerror',e=>errors.push(e.message));

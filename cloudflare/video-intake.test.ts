@@ -526,6 +526,113 @@ test('Archive search imports stay owner-only and a newly restricted file refunds
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<{n:number}>())!.n,0);
 });
 
+test('Archive display titles survive fresh and cached imports while source credits remain original',async t=>{
+  const {db,env}=await setup(t),guest=await guestRequests(db,env,'a');
+  const audio=new Uint8Array(readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url)));
+  const duration=mp3FrameInfo(audio.buffer)!.seconds;
+  let sourceReads=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=String(input);
+    if(url==='https://archive.org/metadata/title-fixture')return Response.json({
+      metadata:{title:'Long original Archive album title',creator:'Original Archive artist',mediatype:'audio',subject:'Music',licenseurl:'https://creativecommons.org/licenses/by/4.0/'},
+      files:[{name:'07-Original-Archive-filename.mp3',title:'Original Archive track title',artist:'Original track artist',creator:'Original track creator',size:String(audio.length),length:String(duration)}],
+    });
+    assert.equal(url,'https://archive.org/download/title-fixture/07-Original-Archive-filename.mp3');
+    sourceReads++;return new Response(audio,{headers:{'content-type':'audio/mpeg'}});
+  });
+  for(const [index,displayTitle] of ['心の歌 — Águas de Março 🎵','Renamed artist — Short title'].entries()){
+    const {operation}=await submitSplit(guest.env,guest.principal,{
+      archiveId:'title-fixture',archiveFile:'07-Original-Archive-filename.mp3',archiveSearch:true,displayTitle:`  ${displayTitle}  `,
+    },`archive-title-fixture-${index}`);
+    assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind(operation.id).first<{filename:string}>())!.filename,displayTitle);
+    await resumeOwnedSourceImport(guest.env,guest.principal,operation);
+    const imported=(await readOperation(db,operation.id))!;
+    assert.equal(imported.phase,'split',JSON.stringify(imported));assert.equal(imported.state,'queued');
+    assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind(operation.id).first<{filename:string}>())!.filename,displayTitle);
+    const request=JSON.parse(imported.request_json);
+    assert.equal(request.filename,displayTitle);assert.equal(request.displayTitle,displayTitle);
+    assert.equal(request.archiveId,'title-fixture');assert.equal(request.archiveFile,'07-Original-Archive-filename.mp3');
+    const attribution=JSON.parse((await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(operation.id).first<{attribution:string}>())!.attribution);
+    assert.equal(attribution.fileName,'07-Original-Archive-filename.mp3');
+    assert.equal(attribution.title,'Original Archive track title');assert.equal(attribution.creator,'Original track artist');
+    assert.equal(attribution.fileCreator,'Original track creator');assert.equal(attribution.itemCreator,'Original Archive artist');
+    assert.equal(attribution.sourceUrl,'https://archive.org/details/title-fixture');
+    await db.prepare("UPDATE app_operations SET state='succeeded' WHERE id=?").bind(operation.id).run();
+  }
+  assert.equal(sourceReads,1,'the second import uses the audio cache without inheriting its display title');
+});
+
+test('renaming a pending Archive recording survives the source import handoff',async t=>{
+  const {db,env}=await setup(t),guest=await guestRequests(db,env,'b');
+  const audio=new Uint8Array(readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url)));
+  const duration=mp3FrameInfo(audio.buffer)!.seconds;
+  let releaseDownload!:()=>void,downloadStarted!:()=>void;
+  const downloading=new Promise<void>(resolve=>{downloadStarted=resolve;});
+  const release=new Promise<void>(resolve=>{releaseDownload=resolve;});
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=String(input);
+    if(url==='https://archive.org/metadata/pending-title-fixture')return Response.json({
+      metadata:{title:'Original album',creator:'Original artist',mediatype:'audio',subject:'Music',licenseurl:'https://creativecommons.org/licenses/by/4.0/'},
+      files:[{name:'original.mp3',title:'Original track',size:String(audio.length),length:String(duration)}],
+    });
+    assert.equal(url,'https://archive.org/download/pending-title-fixture/original.mp3');
+    downloadStarted();await release;
+    return new Response(audio,{headers:{'content-type':'audio/mpeg'}});
+  });
+  const {operation}=await submitSplit(guest.env,guest.principal,{
+    archiveId:'pending-title-fixture',archiveFile:'original.mp3',archiveSearch:true,displayTitle:'Selected source title',
+  },'archive-pending-title-fixture');
+  const importing=resumeOwnedSourceImport(guest.env,guest.principal,operation);
+  await Promise.race([downloading,importing.then(async()=>assert.fail('Import ended before the download: '+JSON.stringify(await readOperation(db,operation.id))))]);
+  const title='My own title — 編集';
+  const renamed=await guest.request(`/api/jobs/${operation.id}/title`,{method:'PUT',body:JSON.stringify({title})});
+  assert.equal(renamed.status,200);
+  releaseDownload();await importing;
+  const imported=(await readOperation(db,operation.id))!;
+  assert.equal(imported.phase,'split');assert.equal(JSON.parse(imported.request_json).filename,title);
+  assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind(operation.id).first<{filename:string}>())!.filename,title);
+  const attribution=JSON.parse((await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(operation.id).first<{attribution:string}>())!.attribution);
+  assert.equal(attribution.fileName,'original.mp3');assert.equal(attribution.title,'Original track');
+});
+
+test('Archive display title validation precedes source access, reservations and legacy provider work',async t=>{
+  const {db,env,api}=await setup(t);
+  t.mock.method(globalThis,'fetch',async()=>assert.fail('Invalid display titles must stop before source access'));
+  for(const displayTitle of [null,7,{},[], '', '  ','a'.repeat(201),'Two\nlines','Hidden\u202eorder']){
+    const input={archiveId:'title-fixture',archiveFile:'original.mp3',archiveSearch:true,displayTitle};
+    await assert.rejects(()=>submitSplit(env,principal,input,'invalid-archive-title-fixture'),
+      (error:unknown)=>error instanceof OperationError&&error.code==='invalid_display_title');
+    const response=await api(input);assert.equal(response.status,400);
+    assert.equal((await response.json() as {code:string}).code,'invalid_display_title');
+  }
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<{n:number}>())!.n,0);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM jobs').first<{n:number}>())!.n,0);
+});
+
+test('legacy Archive imports preserve a selected Unicode display title and original attribution',async t=>{
+  const {db,api}=await setup(t);
+  const audio=new Uint8Array(readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url)));
+  const duration=mp3FrameInfo(audio.buffer)!.seconds;
+  let starts=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=String(input);
+    if(url==='https://archive.org/metadata/legacy-title-fixture')return Response.json({
+      metadata:{title:'Original Archive album',creator:'Original artist',mediatype:'audio',subject:'Music',licenseurl:'https://creativecommons.org/licenses/by/4.0/'},
+      files:[{name:'original.mp3',title:'Original track',size:String(audio.length),length:String(duration)}],
+    });
+    if(url==='https://archive.org/download/legacy-title-fixture/original.mp3')return new Response(audio,{headers:{'content-type':'audio/mpeg'}});
+    assert.equal(url,'https://api.replicate.com/v1/predictions');assert.equal(init?.method,'POST');starts++;
+    return Response.json({id:'legacy-archive-title-prediction',status:'processing'});
+  });
+  const filename='Selected artist — 短い曲名';
+  const response=await api({archiveId:'legacy-title-fixture',archiveFile:'original.mp3',archiveSearch:true,displayTitle:filename});
+  assert.equal(response.status,200);const job=await response.json() as {id:string;filename:string};
+  assert.equal(job.filename,filename);assert.equal(starts,1);
+  assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind(job.id).first<{filename:string}>())!.filename,filename);
+  const attribution=JSON.parse((await db.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(job.id).first<{attribution:string}>())!.attribution);
+  assert.equal(attribution.fileName,'original.mp3');assert.equal(attribution.title,'Original track');
+});
+
 test('retired Audius submissions stop before source access or quota reservation',async t=>{
   const {db,env}=await setup(t),guest=await guestRequests(db,env,'f');
   t.mock.method(globalThis,'fetch',async()=>{throw new Error('Retired provider was called');});

@@ -582,6 +582,10 @@ h1 span {
   flex: 1;
   min-width: 0;
 }
+.console-title-editable { border: 0; padding: 0; background: none; color: inherit; font-family: inherit; text-align: left; cursor: text; }
+.console-title-editable:hover { color: var(--hot); }
+.console-title-editable:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.console-title-input { flex: 1; min-width: 0; width: 100%; min-height: 44px; box-sizing: border-box; padding: .35rem .5rem; border: 1px solid var(--hot); border-radius: 6px; background: var(--bg-raise); color: var(--ink); font: 700 1rem/1.5 var(--font-body); }
 
 .head-btn {
   font-family: var(--font-mono);
@@ -2773,9 +2777,12 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .sample-card strong { display: block; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.5; }
 .sample-card .teacher-help { font-size: .75rem; margin: .4rem 0 .75rem; }
 .sample-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sample-name-editor { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap: .75rem; }
+.sample-card:has(.sample-name-editor:not([hidden])) { cursor: default; }
 .sample-editor .page-btn { min-height: 44px; padding: .6rem .8rem; border-radius: 6px; font: 500 .8125rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
 .sample-editor .teacher-actions { flex-wrap: wrap; gap: .5rem; }
 @media(max-width:600px) {
+  .sample-name-editor { grid-template-columns: 1fr; }
   .sample-editor .sample-timing { grid-template-columns: 1fr; }
   .sample-editor .teacher-field input { font-size: 1rem; }
   .sample-editor .sample-search-results button { grid-template-columns: minmax(0,1fr); gap: .25rem; }

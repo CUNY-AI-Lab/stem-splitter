@@ -1,5 +1,5 @@
 import catalog from '../public/search-samples.json' with { type: 'json' };
-import { verifyArchiveSample } from './archive.ts';
+import { verifyArchiveSampleFile } from './archive.ts';
 import type { Env } from './env';
 
 export type SampleTrack = { artist: string; title: string; archiveId: string; archiveFile: string; durationSec?: number; verifiedAt?: string; importTestedAt?: string; importBytes?: number; exampleEligible?: boolean; itemTitle?: string };
@@ -47,13 +47,13 @@ export async function saveSampleResource(db: Env['DB'], value: unknown, expected
   if(!Number.isSafeInteger(expectedRevision) || (expectedRevision as number)<0)throw new SampleResourceError('Reload the song resource before saving.',400);
   const settings=parseSampleSettings(value), current=await readSampleResource(db);
   if(current.revision!==expectedRevision)throw new SampleResourceError('Another instructor changed these songs. Reload before saving.',409);
-  // Reordering or changing cadence must work during an Archive outage. Verify
-  // newly selected/renamed files; the public player rechecks every displayed file.
+  // Display names, ordering and cadence can change during an Archive outage.
+  // Verify newly selected files; the public player rechecks every displayed file.
   let nextTrack=0;
   const verifyNext=async()=>{while(nextTrack<settings.tracks.length){
-    const i=nextTrack++,t=settings.tracks[i],old=current.settings.tracks.find(x=>sampleTrackKey(x)===sampleTrackKey(t)&&x.artist===t.artist&&x.title===t.title);
+    const i=nextTrack++,t=settings.tracks[i],old=current.settings.tracks.find(x=>sampleTrackKey(x)===sampleTrackKey(t));
     if(old&&old.durationSec&&old.durationSec<=300){settings.tracks[i]={...old,...t};continue;}
-    const data=await verifyArchiveSample(`${t.artist} ${t.title}`,t.archiveId,t.archiveFile,300).catch(()=>null);
+    const data=await verifyArchiveSampleFile(t.archiveId,t.archiveFile,300).catch(()=>null);
     if(!data?.results.length)throw new SampleResourceError(`Could not verify ${t.artist} — ${t.title}. Choose a complete recording of five minutes or less, or retry the verification.`,502);
     settings.tracks[i]={...t,durationSec:data.results[0].durationSec,itemTitle:data.results[0].itemTitle,verifiedAt:new Date().toISOString()};
   }};
@@ -70,7 +70,7 @@ export async function saveSampleResource(db: Env['DB'], value: unknown, expected
 
 export async function instructorSampleResource(db:Env['DB']) {
   const resource=await readSampleResource(db);
-  const tracks=[...catalog.map(uncategorized),...resource.settings.tracks].filter((t,i,a)=>a.findIndex(x=>sampleTrackKey(x)===sampleTrackKey(t))===i).filter(t=>t.durationSec&&t.durationSec<=300&&t.exampleEligible!==false);
+  const tracks=[...resource.settings.tracks,...catalog.map(uncategorized)].filter((t,i,a)=>a.findIndex(x=>sampleTrackKey(x)===sampleTrackKey(t))===i).filter(t=>t.durationSec&&t.durationSec<=300&&t.exampleEligible!==false);
   const urls=[...new Set(tracks.map(t=>'https://archive.org/details/'+encodeURIComponent(t.archiveId)))];
   const attribution="CASE WHEN json_valid(a.attribution) THEN a.attribution ELSE '{}' END";
   const rows=await db.prepare(`SELECT json_extract(${attribution},'$.sourceUrl') AS source_url, json_extract(${attribution},'$.fileName') AS file_name, COUNT(*) AS successful_runs

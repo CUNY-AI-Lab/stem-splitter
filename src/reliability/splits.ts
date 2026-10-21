@@ -1,4 +1,5 @@
 import { parseMediaUrl } from '../url-source.ts';
+import { JOB_TITLE_ERROR, normalizeRecordingTitle } from '../recording-title.ts';
 import { durationIsAllowed } from '../import-policy.ts';
 import type { Env } from '../env.ts';
 import { cancelReplicatePrediction } from '../separation/replicate.ts';
@@ -26,7 +27,7 @@ import { claimedOperationOwner, ownsClaimedOperation } from '../guest/claim.ts';
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
   sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
-  archiveId?: string; archiveFile?: string; archiveSearch?: boolean; model: string; auto: boolean; browserAnalysis?: unknown;
+  archiveId?: string; archiveFile?: string; archiveSearch?: boolean; displayTitle?: string; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: boolean;
   adaptive?: 4 | 'auto';
@@ -82,6 +83,11 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     const id=typeof value.archiveId==='string'&&parseArchiveIdentifier(value.archiveId);
     if (!id||value.archiveFile!==undefined&&(typeof value.archiveFile!=='string'||value.archiveFile.length>1024)) throw new OperationError('invalid_archive_id',400,'Choose an available Archive audio file.');
     input.sourceType='archive';input.archiveId=id;input.archiveFile=value.archiveFile as string|undefined;input.filename='Archive audio';
+    if (value.displayTitle !== undefined) {
+      const displayTitle=normalizeRecordingTitle(value.displayTitle);
+      if (!displayTitle) throw new OperationError('invalid_display_title',400,JOB_TITLE_ERROR);
+      input.displayTitle=displayTitle;input.filename=displayTitle;
+    }
     if(value.archiveSearch===true) {
       if(!input.archiveFile)throw new OperationError('invalid_archive_id',400,'Choose an available Archive audio file.');
       input.archiveSearch=true;
@@ -136,10 +142,13 @@ async function commitImported(env: Env,op: Operation,input: SplitInput,stored: {
     if(current?.fence===op.fence&&current.cancel_requested)await fail(env,op,'cancelled');
     return;
   }
-  input.key=key;input.filename=title(stored.title)||input.filename;
+  const originalFilename=input.filename;
+  input.key=key;input.filename=input.displayTitle||title(stored.title)||input.filename;
   await env.DB.batch([
-    env.DB.prepare(`UPDATE jobs SET source_key=?,source_hash=?,filename=?,status='queued' WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(key,sha,input.filename,op.job_id,op.id,op.fence),
-    env.DB.prepare(`UPDATE app_operations SET request_json=?,provider_id=NULL,phase='split',state='queued',error_code=NULL,lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL})`).bind(JSON.stringify(input),Date.now(),op.id,op.fence),
+    // A title saved while the source is fetching wins over importer metadata.
+    // The comparison runs inside this batch, so a concurrent rename also wins.
+    env.DB.prepare(`UPDATE jobs SET source_key=?,source_hash=?,filename=CASE WHEN filename=? THEN ? ELSE filename END,status='queued' WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(key,sha,originalFilename,input.filename,op.job_id,op.id,op.fence),
+    env.DB.prepare(`UPDATE app_operations SET request_json=json_set(?,'$.filename',(SELECT filename FROM jobs WHERE id=?)),provider_id=NULL,phase='split',state='queued',error_code=NULL,lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL})`).bind(JSON.stringify(input),op.job_id,Date.now(),op.id,op.fence),
     ...(stored.attribution?[env.DB.prepare(`INSERT OR REPLACE INTO job_attributions(job_id,attribution) SELECT ?,? WHERE EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND cancel_requested=0 AND state NOT IN (${TERMINAL}))`).bind(op.job_id,JSON.stringify(stored.attribution),op.id,op.fence)]:[]),
   ]);
   const saved=await env.DB.prepare('SELECT source_key FROM jobs WHERE id=?').bind(op.job_id).first<{source_key:string}>();
