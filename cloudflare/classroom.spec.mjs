@@ -40,7 +40,7 @@ test('existing pages expose class workspace and feedback while course APIs retai
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('main')).toBeVisible();
       await expect(page.locator('a[href="/classroom.html"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Report a bug', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toBeVisible();
     }
     expect(requests.every(request => request.method === 'GET')).toBe(true);
     const roster = await get(page, `/api/classroom/courses/${course}/roster`);
