@@ -27,6 +27,18 @@ test('public playlist suggestions verify before identity or account setup; arbit
     assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'public, max-age=60');
     const data=await response.json() as {results:{archiveId:string;archiveFile:string}[]};
     assert.equal(data.results.length,1);assert.equal(data.results[0].archiveId,track.archiveId);
+    const edited=defaultSampleSettings();edited.tracks[0]={...edited.tracks[0],artist:'Class listening example',title:'Opening selection'};
+    await worker.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify([
+      `UPDATE song_sample_settings SET revision=revision+1,settings='${JSON.stringify(edited).replaceAll("'","''")}' WHERE id=1`,
+    ])});
+    const renamedQuery=new URLSearchParams({q:'Class listening example Opening selection',sampleItem:track.archiveId,sampleFile:track.archiveFile});
+    const renamed=await worker.fetch('/api/music/search?'+renamedQuery);
+    assert.equal(renamed.status,200);
+    const renamedData=await renamed.json() as {results:{title:string;artist:string;sourceTitle:string;itemTitle:string;archiveFile:string}[]};
+    assert.equal(renamedData.results[0].title,'Opening selection');assert.equal(renamedData.results[0].artist,'Class listening example');
+    assert.equal(renamedData.results[0].sourceTitle,track.title);assert.equal(renamedData.results[0].itemTitle,track.title);
+    assert.equal(renamedData.results[0].archiveFile,track.archiveFile);
+    assert.equal((await worker.fetch('/api/music/search?'+query)).status,401,'retired labels do not qualify for the public allowlist');
     const unauthorized=await worker.fetch('/api/music/search?q=arbitrary');
     assert.equal(unauthorized.status,401);
   }finally{await server.close();network.close();}

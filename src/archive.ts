@@ -396,6 +396,9 @@ export interface ArchiveSong {
   archiveFile: string;
   title: string;
   artist: string;
+  /** Original file labels when an instructor supplies a display name. */
+  sourceTitle?: string;
+  sourceArtist?: string;
   fileCreator: string;
   itemCreator: string;
   itemDescription: string;
@@ -567,6 +570,16 @@ export async function verifyArchiveSample(query: string, identifier: string, fil
   return { results: [result] };
 }
 
+/** Verify an instructor-selected file by its source identity, independently of display labels. */
+export async function verifyArchiveSampleFile(identifier: string, file: string, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
+  if (!file || file.length > MAX_FILE_NAME_LENGTH) return { results: [] };
+  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: archiveDurationLimit(maximumSeconds), timeoutMs: 9000 });
+  const track = item.tracks.find(candidate => candidate.name === file && candidate.importable);
+  if (!track) return { results: [] };
+  const song = archiveSongMetadata(item, track);
+  return { results: await downloadableSong(song, songDeliveryLocations.get(item)) ? [song] : [] };
+}
+
 /** The main field searches public downloads. */
 export async function searchArchiveSongs(query: string, onResults?: SearchListener, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
   const normalized = archiveSongSearchKey(query);
@@ -602,6 +615,13 @@ export async function searchArchiveSongs(query: string, onResults?: SearchListen
   finally { if (onResults) entry.listeners.delete(onResults); }
 }
 
+function archiveSongMetadata(item: ArchiveItem, track: ArchiveTrack): ArchiveSong {
+  return { id: `${item.identifier}/${track.name}`, archiveId: item.identifier, archiveFile: track.name,
+    title: songTitle(item, track), artist: recordingCredit(track.artist), fileCreator: recordingCredit(track.creator),
+    itemCreator: item.creator, itemDescription: item.description || '', durationSec: track.durationSec,
+    bytes: track.bytes, sourceUrl: item.detailsUrl, itemTitle: item.title };
+}
+
 function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { score: number })[] {
   const candidates: (ArchiveSong & { score: number })[] = [];
   for (const track of item.tracks) {
@@ -627,9 +647,7 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
       + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
       - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
       - Math.abs(text.split(' ').length - tokens.length) * 0.2;
-    candidates.push({ id: `${item.identifier}/${track.name}`, archiveId: item.identifier, archiveFile: track.name,
-      title, artist, fileCreator, itemCreator: item.creator, itemDescription: item.description || '',
-      durationSec: track.durationSec, bytes: track.bytes, sourceUrl: item.detailsUrl, itemTitle: item.title, score });
+    candidates.push({ ...archiveSongMetadata(item, track), score });
   }
   return candidates;
 }

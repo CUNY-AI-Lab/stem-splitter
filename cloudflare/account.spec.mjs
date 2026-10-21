@@ -599,6 +599,9 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await expect(page.locator('.console-title')).toHaveText('Student recording');
   await expect(page.locator('.channel')).toHaveCount(1);
   await expect(page.locator('.shared-notice')).toHaveText('Student listening view.');
+  await expect(page.getByRole('button',{name:/^Rename recording:/})).toHaveCount(0);
+  await expect(page.getByRole('textbox',{name:'Recording title',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'RENAME',exact:true})).toHaveCount(0);
   await expect.poll(()=>audioReads).toBeGreaterThan(0);
   await expect(page.locator('.folder-btn')).toBeHidden();
   await expect(page.locator('.note-btn')).toBeHidden();

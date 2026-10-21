@@ -1,4 +1,5 @@
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
+import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
 import { isPlaylistSample, playlistSampleResponse } from './playlist-samples.ts';
 import { namedUsers, studentActivity, requireStudentReview } from './teacher-activity.ts';
 import { runDeletionEnabled, runWasDeleted, deleteOwnedRun, recordFailedRunSession, purgeDeletedRuns } from './run-deletion.ts';
@@ -1049,6 +1050,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
         archiveId?: string;
         archiveFile?: string;
         archiveSearch?: boolean;
+        displayTitle?: unknown;
         model?: string;
         routingRequest?: string;
         browserAnalysis?: unknown;
@@ -1059,6 +1061,8 @@ app.post('/api/jobs', requireClassCode, async (c) => {
       [body.sourceUrl,body.videoUrl,body.youtubeUrl,body.archiveId,body.audiusId,body.key].filter(value=>value!==undefined).length!==1) {
     return c.json({error:'Choose exactly one audio source.',code:'invalid_input'},400);
   }
+  const displayTitle = body.archiveId !== undefined && body.displayTitle !== undefined ? normalizeRecordingTitle(body.displayTitle) : undefined;
+  if (displayTitle === null) return c.json({ error: JOB_TITLE_ERROR, code: 'invalid_display_title' }, 400);
 
   if (c.get('principal')?.courseId && body?.coursePolicy !== 'course-work-v1') return c.json({ error: 'Confirm that your instructor can review new course work and Listening Guy conversations.' }, 400);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
@@ -1222,7 +1226,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     }
     const extension = audio.fileName.slice(audio.fileName.lastIndexOf('.')).toLowerCase();
     key = `uploads/${crypto.randomUUID()}/source${extension}`;
-    filename = sanitizeFilename(audio.title) || 'archive-audio';
+    filename = displayTitle || sanitizeFilename(audio.title) || 'archive-audio';
     sourceHash = await sha256Audio(audio.data);
     expectedSourceIdentity = {
       schemaVersion: '1',
@@ -1424,6 +1428,29 @@ app.post('/api/jobs/:id/cancel', requireClassCode, async (c) => {
   // A busy/unknown start is recovered by the existing cron on its same provider ID.
   if(operation)await reconcileSplit(c.env,operation,ingestResult);
   return c.json({ok:true});
+});
+
+app.put('/api/jobs/:id/title', requireClassCode, async (c) => {
+  const id = c.req.param('id');
+  const principal = c.get('principal');
+  // Shared listening, instructor review, and administrative visibility do not
+  // transfer the owner's authority to rename a saved recording.
+  if (c.env.AUTH_MODE === 'cail' && (!principal || !(await jobPermission(c.env, principal, id))?.owner)) {
+    return c.json({ error: 'Job not found' }, 404);
+  }
+  if (!await c.env.DB.prepare('SELECT id FROM jobs WHERE id = ?').bind(id).first()) {
+    return c.json({ error: 'Job not found' }, 404);
+  }
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if ('response' in parsed) return parsed.response;
+  const title = normalizeRecordingTitle((parsed.value as { title?: unknown } | null)?.title);
+  if (!title) return c.json({ error: JOB_TITLE_ERROR }, 400);
+  const [updated] = await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE jobs SET filename = ? WHERE id = ?').bind(title, id),
+    c.env.DB.prepare(`UPDATE folder_items SET filename = (SELECT filename FROM jobs WHERE id = ?)
+      WHERE job_id = ? AND EXISTS (SELECT 1 FROM jobs WHERE id = ?)`).bind(id, id, id),
+  ]);
+  return updated.meta.changes ? c.json({ filename: title }) : c.json({ error: 'Job not found' }, 404);
 });
 
 app.get('/api/jobs/:id', async (c) => {

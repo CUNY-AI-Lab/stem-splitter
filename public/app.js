@@ -596,11 +596,13 @@ async function refreshSongSampleSettings(){
       const changed=sampleConfigRevision!==(payload.version||payload.revision);
       sampleConfigSnapshot=payload;
       if(changed){
+        recentSongSearches.clear();
         sampleLoad?.abort();sampleStarted=false;samplePoolComplete=false;
-        const allowed=new Set(payload.tracks.map(sampleTrackKey));
-        for(let i=verifiedSongSamples.length-1;i>=0;i--)if(!allowed.has(sampleCacheKey(verifiedSongSamples[i])))verifiedSongSamples.splice(i,1);
+        const allowed=new Map(payload.tracks.map(track=>[sampleTrackKey(track),track]));
+        const isCurrent=cache=>{const track=allowed.get(sampleCacheKey(cache));return track&&cache.query===`${track.artist} ${track.title}`;};
+        for(let i=verifiedSongSamples.length-1;i>=0;i--)if(!isCurrent(verifiedSongSamples[i]))verifiedSongSamples.splice(i,1);
         configureSongSamples(payload);
-        if(!sampleSettings.enabled||!allowed.has(sampleCacheKey(sampleCache||{}))){stopSongSample(false);sampleCache=null;SAMPLE_SONG_QUERY='';}
+        if(!sampleSettings.enabled||!isCurrent(sampleCache||{})){stopSongSample(false);sampleCache=null;SAMPLE_SONG_QUERY='';}
         if(sampleSettings.enabled){preloadSongSample();if(sampleHint.hidden)showSongSample();}
       }else if(samplePoolComplete&&Date.now()-sampleCompletedAt>=60000){sampleStarted=false;preloadSongSample();}
     }catch{/* Preserve the last verified pool during a temporary settings outage. */}
@@ -634,7 +636,7 @@ function preloadSongSample() {
         const cache = { query, trackKey:sampleTrackKey(candidate), controller, batches: [], pending: true, createdAt: Date.now(), listener: null, promise: null };
         const receive = data => {
           if (controller.signal.aborted) return;
-          const results = (data.results || []).filter(track => track.archiveId === candidate.archiveId && track.archiveFile === candidate.archiveFile);
+          const results = (data.results || []).filter(track => track.archiveId === candidate.archiveId && track.archiveFile === candidate.archiveFile).map(track=>({...track,artist:candidate.artist,title:candidate.title}));
           if (!results.length) return;
           const first = !matches.size;
           for (const track of results) matches.set(track.id, track);
@@ -1401,7 +1403,7 @@ ytForm.addEventListener('submit', async (e) => {
       method: 'POST',
       courseContext,
       body: JSON.stringify({
-        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
+        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true, displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
@@ -1668,11 +1670,12 @@ class Mixer {
     this.el = li; // build() calls into methods that reach for it before it returns
     li.innerHTML = `
       <div class="console-head">
-        <span class="console-title">${esc(this.job.filename)}</span>
+        ${recordingTitleMarkup(this.job)}
         <div class="console-actions-wrap">
           <button type="button" class="head-btn actions-toggle" aria-expanded="false" aria-controls="${actionsId}" aria-label="Session actions" title="Show session actions"><span aria-hidden="true">▾</span></button>
           <div class="console-actions" id="${actionsId}">
             <span class="badge ready">READY</span>
+            ${canRenameRun(this.job) ? '<button type="button" class="head-btn rename-btn">RENAME</button>' : ''}
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
             <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
             <button class="head-btn folder-btn" title="Add this split to a class folder">+ FOLDER</button>
@@ -1734,6 +1737,8 @@ class Mixer {
     `;
 
     this.playBtn = li.querySelector('.play-btn');
+    bindRecordingTitle(li,this.job);
+    li.querySelector('.rename-btn')?.addEventListener('click',()=>{this.setActionsOpen(false);editRecordingTitle(this.job,li.querySelector('.console-title'));});
     this.transportNotice = li.querySelector('.transport-notice');
     this.readyBadge = li.querySelector('.badge');
     this.seek = li.querySelector('.seek');
@@ -2863,6 +2868,7 @@ class Mixer {
 
   merge(state) {
     if (state.permissions) this.job.permissions = state.permissions;
+    if(state.filename&&state.filename!==this.job.filename&&!titleEdits.has(this.job.id))rememberRecordingTitle(this.job.id,state.filename);
     if (state.labels) {
       this.job.labels = state.labels;
       this.renderChannelNames();
@@ -3524,6 +3530,7 @@ async function loadFolderItems(folder, container) {
   for (const item of detail.items) {
     const li = document.createElement('li');
     li.className = 'folder-item';
+    li.dataset.jobId = item.jobId;
     li.innerHTML = `
       <span class="folder-item-name">${esc(item.filename)}</span>
       ${
@@ -3753,6 +3760,44 @@ document.addEventListener('pointerdown', (event) => {
 // Owners delete the server copy before removing the local rack entry.
 // Viewers can only hide a shared run until the next account refresh.
 function canDeleteRun(state) { return runtime.authMode === 'cail' && runtime.runDeletion === true && state?.permissions?.owner === true; }
+function canRenameRun(state) { return !state?.readOnlyShared && (runtime.authMode !== 'cail' || state?.permissions?.owner === true); }
+const titleEdits=new Set();
+function recordingTitleMarkup(job){
+  return canRenameRun(job)?`<button type="button" class="console-title console-title-editable" aria-label="${esc('Rename recording: '+job.filename)}" title="Rename recording">${esc(job.filename)}</button>`:`<span class="console-title">${esc(job.filename)}</span>`;
+}
+function bindRecordingTitle(el,job){el.querySelector('.console-title-editable')?.addEventListener('click',()=>editRecordingTitle(job,el.querySelector('.console-title')));}
+function rememberRecordingTitle(id,filename){
+  const state=jobStates.get(id);if(state)state.filename=filename;
+  const mixer=mixers.get(id);if(mixer)mixer.job.filename=filename;
+  saveJobs(getJobs().map(job=>job.id===id?{...job,filename}:job));
+  const title=[...jobList.children].find(el=>el.dataset.jobId===id)?.querySelector('.console-title');
+  if(title){title.textContent=filename;if(title.matches('button'))title.setAttribute('aria-label','Rename recording: '+filename);}
+  for(const row of folderList.querySelectorAll('.folder-item'))if(row.dataset.jobId===id)row.querySelector('.folder-item-name').textContent=filename;
+  renderShelf();
+}
+function editRecordingTitle(job,titleEl){
+  if(!canRenameRun(job)||titleEdits.has(job.id)||!titleEl?.isConnected)return;
+  titleEdits.add(job.id);
+  const original=job.filename,input=document.createElement('input');input.type='text';input.className='console-title-input';input.maxLength=400;input.value=original;input.setAttribute('aria-label','Recording title');
+  titleEl.replaceWith(input);input.focus();input.select();
+  let finished=false;
+  const done=async(save)=>{
+    if(finished)return;
+    const value=input.value.trim();
+    if(save&&(!value||[...value].length>200||/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/.test(value))){input.setCustomValidity('Enter a title of up to 200 characters on one line.');input.reportValidity();return;}
+    finished=true;
+    if(save&&value!==original){
+      input.disabled=true;input.setAttribute('aria-busy','true');
+      try{const result=await api(`/api/jobs/${encodeURIComponent(job.id)}/title`,{method:'PUT',body:JSON.stringify({title:value})});job.filename=result.filename;rememberRecordingTitle(job.id,result.filename);}
+      catch(error){showUploadMessage(error.message,true);}
+    }
+    titleEdits.delete(job.id);titleEl.textContent=jobStates.get(job.id)?.filename||job.filename;titleEl.setAttribute('aria-label','Rename recording: '+titleEl.textContent);
+    input.replaceWith(titleEl);renderJobs();[...jobList.children].find(el=>el.dataset.jobId===job.id)?.querySelector('.console-title-editable')?.focus({preventScroll:true});
+  };
+  input.addEventListener('input',()=>input.setCustomValidity(''));
+  input.addEventListener('keydown',event=>{if(event.isComposing)return;if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();void done(event.key==='Enter');}});
+  input.addEventListener('blur',()=>{if(!input.validity.valid)void done(false);else void done(true);});
+}
 
 async function deleteJob(id) {
   if(canDeleteRun(jobStates.get(id))) {
@@ -3793,6 +3838,7 @@ function renderJobs() {
     ...(job.adaptiveOutput ? {adaptiveOutput:job.adaptiveOutput} : {}),
       autoRouting: job.autoRouting,
     };
+    if(titleEdits.has(job.id)&&previous.has(job.id)){cards.push(previous.get(job.id));continue;}
 
     if (state.status === 'done' && state.stems?.length) {
       let mixer = mixers.get(job.id);
@@ -3825,7 +3871,7 @@ function renderJobs() {
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();
     li.innerHTML = `
       <div class="console-head">
-        <span class="console-title">${esc(job.filename)}</span>
+        ${recordingTitleMarkup({...state,...job})}
         <span class="badge ${failed ? 'failed' : 'processing'}">${
           failed
             ? 'FAILED'
@@ -3843,6 +3889,7 @@ function renderJobs() {
           : `<p class="job-note" role="status">${esc(progressNote)}</p>`
       }
     `;
+    bindRecordingTitle(li,{...state,...job});
     const deleteBtn = li.querySelector('.delete-btn');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () =>

@@ -281,3 +281,57 @@ test('pending song titles keep their own full-width row on narrow screens', asyn
     await card.screenshot({path:'/tmp/stem-pending-title-mobile.png',animations:'disabled'});
   } finally {await server.close();}
 });
+
+for (const width of [1280,390]) test(`owned recording names persist in the rack and folders at ${width}px`,async({page,context})=>{
+  const issuer=await createTestIdentityIssuer();
+  const token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true',RUN_DELETION_ENABLED:'false'}}]});
+  const original='Archive imported recording',renamed='Mélodie — 夜の歌',folderTitle='Seminar listening — final take';
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  try{
+    const {url}=await server.listen();
+    const seed=async statements=>expect((await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status).toBe(200);
+    await seed([
+      ...schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')),
+      `INSERT INTO app_users(subject,role) VALUES('${TEST_SUBJECTS.alice}','instructor')`,
+      `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('remix-fixture','${original}','uploads/imported.mp3','done','htdemucs_ft','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+      `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO folders(id,name,created_by) VALUES('rename-folder','Listening notes','${TEST_SUBJECTS.alice}')`,
+    ]);
+    await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
+    await context.setExtraHTTPHeaders({'x-fixture-identity':token});
+    await page.setViewportSize({width,height:900});await page.goto(url.href);
+    const card=page.locator('#job-list .console'),input=page.getByRole('textbox',{name:'Recording title',exact:true});
+    await expect(card.locator('.badge.ready')).toHaveText('READY');
+    await page.getByRole('button',{name:`Rename recording: ${original}`,exact:true}).click();
+    await input.fill('Discard this title');await input.press('Escape');
+    await expect(input).toHaveCount(0);await expect(card.locator('.console-title')).toHaveText(original);
+    await page.getByRole('button',{name:`Rename recording: ${original}`,exact:true}).click();
+    await input.fill(renamed);await input.press('Enter');
+    await expect(card.locator('.console-title')).toHaveText(renamed);
+    await expect(input).toHaveCount(0);
+    const saved=await(await server.fetch('/api/jobs/remix-fixture',{headers:{'x-fixture-identity':token}})).json();
+    expect(saved.filename).toBe(renamed);
+    await page.reload();await expect(card.locator('.console-title')).toHaveText(renamed);
+    if(await card.locator('.actions-toggle').isVisible())await card.locator('.actions-toggle').click();
+    await card.locator('.folder-btn').click();
+    await page.getByRole('button',{name:'Listening notes',exact:true}).click();
+    await expect(card).toHaveCount(0);
+    await page.getByRole('button',{name:/Listening notes · 1/}).click();
+    await expect(page.locator('.folder-item-name')).toHaveText(renamed);
+    await page.getByRole('button',{name:'LOAD',exact:true}).click();
+    await expect(card.locator('.console-title')).toHaveText(renamed);
+    if(await card.locator('.actions-toggle').isVisible())await card.locator('.actions-toggle').click();
+    await card.getByRole('button',{name:'RENAME',exact:true}).click();
+    await input.fill(folderTitle);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await card.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/editable-recording-title-${width}.png`,animations:'disabled'});}
+    await input.press('Enter');await expect(card.locator('.console-title')).toHaveText(folderTitle);
+    await expect(page.locator('.folder-item-name')).toHaveText(folderTitle);
+    await page.reload();await page.getByRole('button',{name:/Listening notes · 1/}).click();
+    await expect(page.locator('.folder-item-name')).toHaveText(folderTitle);
+    await page.getByRole('button',{name:'LOAD',exact:true}).click();
+    await expect(card.locator('.console-title')).toHaveText(folderTitle);
+    expect(errors).toEqual([]);
+  }finally{await server.close();}
+});

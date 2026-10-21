@@ -59,3 +59,38 @@ test('only instructor-console roles configure songs; public readers see fresh se
   const publicView=await(await request('/api/song-samples','')).json() as any;assert.equal(publicView.enabled,false);assert.deepEqual(publicView.tracks,[]);assert.equal(publicView.holdMs,4500);assert.equal(publicView.cadenceMs,7000);assert.equal('catalog'in publicView,false);
   assert.equal((await request('/api/teacher/song-samples',teacher,'PUT',{expectedRevision:0,settings:edited})).status,409);
 });
+
+test('edited song labels persist through public and instructor views during an Archive outage',async t=>{
+  let archiveReads=0;
+  t.mock.method(globalThis,'fetch',async()=>{archiveReads++;throw new Error('Archive fixture outage');});
+  const {db,request}=await setup(),initial=await readSampleResource(db),original=initial.settings.tracks[0];
+  const edited={...initial.settings,tracks:initial.settings.tracks.map((track,index)=>index?track:{...track,artist:'Class listening selection',title:'A shorter title'})};
+  const saved=await saveSampleResource(db,edited,initial.revision,teacher);
+  assert.equal(saved.revision,1);assert.equal(archiveReads,0);
+  assert.equal(saved.settings.tracks[0].title,'A shorter title');
+  assert.equal(saved.settings.tracks[0].verifiedAt,original.verifiedAt);
+  assert.equal(saved.settings.tracks[0].durationSec,original.durationSec);
+  const publicView=await(await publicSampleResource(db,new Request('https://split.test/api/song-samples'))).json() as any;
+  assert.equal(publicView.tracks[0].artist,'Class listening selection');assert.equal(publicView.tracks[0].title,'A shorter title');
+  const instructorView=await(await request('/api/teacher/song-samples')).json() as any;
+  const catalogEntry=instructorView.catalog.find((track:any)=>track.archiveId===original.archiveId&&track.archiveFile===original.archiveFile);
+  assert.equal(catalogEntry.artist,'Class listening selection');assert.equal(catalogEntry.title,'A shorter title');
+  await assert.rejects(saveSampleResource(db,initial.settings,initial.revision,admin),(error:unknown)=>error instanceof SampleResourceError&&error.status===409);
+  assert.equal((await readSampleResource(db)).settings.tracks[0].title,'A shorter title');
+  assert.equal(archiveReads,0);
+});
+
+test('a newly selected source is verified independently of the instructor display labels',async t=>{
+  const audio=readFileSync(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+  let metadataReads=0,deliveryReads=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    if(String(input).includes('/metadata/')){metadataReads++;return Response.json({metadata:{title:'Archive concert',creator:'Original performer',mediatype:'audio',subject:'Music'},files:[{name:'original.mp3',title:'Original source title',artist:'Original performer',size:String(audio.length),length:'2'}]});}
+    deliveryReads++;return new Response(audio,{headers:{'content-type':'audio/mpeg','content-length':String(audio.length)}});
+  });
+  const {db}=await setup(),initial=await readSampleResource(db);
+  const settings={...initial.settings,tracks:[{artist:'Seminar selection',title:'Opening example',archiveId:'new-label-fixture',archiveFile:'original.mp3'}]};
+  const saved=await saveSampleResource(db,settings,0,teacher),track=saved.settings.tracks[0];
+  assert.equal(track.artist,'Seminar selection');assert.equal(track.title,'Opening example');assert.equal(track.itemTitle,'Archive concert');
+  assert.equal(track.durationSec,2);assert.ok(track.verifiedAt);assert.equal(metadataReads,1);assert.equal(deliveryReads,1);
+  assert.deepEqual((await readSampleResource(db)).settings.tracks,saved.settings.tracks);
+});

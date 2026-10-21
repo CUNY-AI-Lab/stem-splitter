@@ -662,10 +662,30 @@ const sampleSelected=document.getElementById('sample-selected');
 const sampleSettingsStatus=document.getElementById('sample-settings-status');
 let selectedSamples=[],sampleCatalog=[],sampleRevision=0,sampleSearchTimer=0,sampleSearchAbort=null,sampleEditorGeneration=0,sampleLoaded=false;
 let sampleVisibleChoices=[];
+let sampleNameEditor=null;
 const sampleKey=t=>`${t.archiveId}/${t.archiveFile}`;
 function sampleEditorStatus(message,error=false){sampleSettingsStatus.textContent=message;sampleSettingsStatus.classList.toggle('error',error);}
 function sampleAvailability(loaded){sampleLoaded=loaded;for(const control of sampleForm.querySelectorAll('input,select,button'))if(control.id!=='samples-reload')control.disabled=!loaded;}
-function clearSongSampleEditor(){sampleEditorGeneration++;sampleSearchAbort?.abort();clearTimeout(sampleSearchTimer);selectedSamples=[];sampleCatalog=[];sampleVisibleChoices=[];sampleRevision=0;sampleForm.reset();sampleSelected.replaceChildren();sampleResults.replaceChildren();document.getElementById('sample-search-status').textContent='';document.getElementById('sample-settings-meta').textContent='';sampleEditorStatus('');sampleAvailability(false);}
+function clearSongSampleEditor(){sampleEditorGeneration++;sampleSearchAbort?.abort();clearTimeout(sampleSearchTimer);selectedSamples=[];sampleCatalog=[];sampleVisibleChoices=[];sampleNameEditor=null;sampleRevision=0;sampleForm.reset();sampleSelected.replaceChildren();sampleResults.replaceChildren();document.getElementById('sample-search-status').textContent='';document.getElementById('sample-settings-meta').textContent='';sampleEditorStatus('');sampleAvailability(false);}
+function finishSampleNames(save,focus=true){
+  if(!sampleNameEditor)return true;
+  const editor=sampleNameEditor,track=selectedSamples.find(t=>sampleKey(t)===editor.key);
+  if(save&&track){
+    for(const key of ['artist','title']){
+      const value=editor[key].trim(),input=sampleSelected.querySelector(`[data-name-field="${key}"]`);
+      if(!value||value.length>180||/[\u0000-\u001f\u007f]/.test(value)){
+        input?.setCustomValidity('Enter a name of up to 180 characters on one line.');input?.reportValidity();input?.focus();return false;
+      }
+    }
+    track.artist=editor.artist.trim();track.title=editor.title.trim();
+    sampleCatalog=sampleCatalog.map(t=>sampleKey(t)===editor.key?{...t,artist:track.artist,title:track.title}:t);
+    sampleVisibleChoices=sampleVisibleChoices.map(t=>sampleKey(t)===editor.key?{...t,artist:track.artist,title:track.title}:t);
+    sampleEditorStatus('Unsaved song changes.');
+  }
+  sampleNameEditor=null;renderSelectedSamples();renderSampleChoices(sampleVisibleChoices);
+  if(focus)[...sampleSelected.children].find(card=>card.dataset.key===editor.key)?.querySelector('.sample-edit-names')?.focus({preventScroll:true});
+  return true;
+}
 function renderSampleChoices(tracks){
   sampleVisibleChoices=tracks;
   sampleResults.replaceChildren();
@@ -697,15 +717,33 @@ function moveSample(from,to){if(to<0||to>=selectedSamples.length||from===to)retu
 function renderSelectedSamples(){
   sampleSelected.replaceChildren();
   selectedSamples.forEach((track,index)=>{
-    const card=document.createElement('li');card.className='sample-card';card.draggable=true;card.tabIndex=0;card.dataset.key=sampleKey(track);card.setAttribute('aria-label',`${index+1}. ${track.artist} — ${track.title}`);
+    const editing=sampleNameEditor?.key===sampleKey(track);
+    const card=document.createElement('li');card.className='sample-card';card.draggable=!editing;card.tabIndex=0;card.dataset.key=sampleKey(track);card.setAttribute('aria-label',`${index+1}. ${track.artist} — ${track.title}`);
     const label=document.createElement('strong');label.textContent=`${index+1}. ${track.artist} — ${track.title}`;
+    const nameFields=document.createElement('div');nameFields.className='sample-name-editor';nameFields.hidden=!editing;
+    if(editing){
+      label.hidden=true;
+      for(const [key,text] of [['artist','Artist'],['title','Title']]){
+        const field=document.createElement('label');field.className='teacher-field';field.textContent=text;
+        const input=document.createElement('input');input.type='text';input.maxLength=180;input.required=true;input.dataset.nameField=key;input.value=sampleNameEditor[key];
+        input.addEventListener('input',()=>{sampleNameEditor[key]=input.value;input.setCustomValidity('');});
+        input.addEventListener('keydown',event=>{if(event.isComposing)return;if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();finishSampleNames(event.key==='Enter');}});
+        field.append(input);nameFields.append(field);
+      }
+    }
     const meta=document.createElement('p');meta.className='teacher-help';
     const checked=track.verifiedAt?`Archive checked ${formatUtc(track.verifiedAt)}`:'Archive delivery verified when selected';
     meta.textContent=checked+(track.importTestedAt?' · complete import tested':'')+(track.durationSec?` · ${Math.round(track.durationSec)} seconds`:'')+(track.successfulRuns?` · ${track.successfulRuns} successful split${track.successfulRuns===1?'':'s'}`:'');
     const actions=document.createElement('div');actions.className='sample-card-actions';
+    if(editing){
+      for(const [text,save] of [['Done',true],['Cancel',false]]){const b=document.createElement('button');b.type='button';b.className='page-btn';b.textContent=text;b.addEventListener('click',()=>finishSampleNames(save));actions.append(b);}
+    }
+    const edit=document.createElement('button');edit.type='button';edit.className='page-btn sample-edit-names';edit.textContent='Edit names';edit.hidden=editing;edit.setAttribute('aria-label',`Edit names: ${track.title}`);
+    edit.addEventListener('click',()=>{if(!finishSampleNames(true,false))return;sampleNameEditor={key:sampleKey(track),artist:track.artist,title:track.title};renderSelectedSamples();sampleSelected.querySelector('[data-name-field="title"]')?.focus({preventScroll:true});});actions.append(edit);
     for(const [text,delta] of [['Move up',-1],['Move down',1]]){const b=document.createElement('button');b.type='button';b.className='page-btn';b.textContent=text;b.disabled=index+delta<0||index+delta>=selectedSamples.length;b.setAttribute('aria-label',`${text}: ${track.title}`);b.addEventListener('click',()=>moveSample(index,index+delta));actions.append(b);}
-    const remove=document.createElement('button');remove.type='button';remove.className='page-btn';remove.textContent='Remove';remove.setAttribute('aria-label',`Remove: ${track.title}`);remove.addEventListener('click',()=>{selectedSamples.splice(index,1);renderSelectedSamples();renderSampleChoices(sampleVisibleChoices);sampleEditorStatus('Unsaved song changes.');});actions.append(remove);
-    const grip=document.createElement('span');grip.className='sample-drag-handle';grip.draggable=false;grip.textContent='⠿';grip.setAttribute('aria-hidden','true');
+    const remove=document.createElement('button');remove.type='button';remove.className='page-btn';remove.textContent='Remove';remove.setAttribute('aria-label',`Remove: ${track.title}`);remove.addEventListener('click',()=>{if(sampleNameEditor?.key===sampleKey(track))sampleNameEditor=null;selectedSamples.splice(index,1);renderSelectedSamples();renderSampleChoices(sampleVisibleChoices);sampleEditorStatus('Unsaved song changes.');});actions.append(remove);
+    if(editing)for(const button of [...actions.children].slice(3))button.hidden=true;
+    const grip=document.createElement('span');grip.className='sample-drag-handle';grip.draggable=false;grip.hidden=editing;grip.textContent='⠿';grip.setAttribute('aria-hidden','true');
     // Pointer dragging works with touch as well as a mouse; native card drag
     // remains a fallback. Capture keeps the gesture stable while auto-scrolling.
     let pointerDrag=null,dragFrame=0;
@@ -727,8 +765,8 @@ function renderSelectedSamples(){
     grip.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();pointerDrag={id:event.pointerId,x:event.clientX,y:event.clientY};grip.setPointerCapture(event.pointerId);card.classList.add('sample-dragging');dragFrame=requestAnimationFrame(paintDrag);});
     grip.addEventListener('pointermove',event=>{if(pointerDrag){pointerDrag.x=event.clientX;pointerDrag.y=event.clientY;}});
     grip.addEventListener('pointerup',finishDrag);grip.addEventListener('pointercancel',finishDrag);grip.addEventListener('lostpointercapture',finishDrag);
-    card.append(grip,label,meta,actions);
-    card.addEventListener('dragstart',event=>{event.dataTransfer.setData('text/plain',sampleKey(track));event.dataTransfer.effectAllowed='move';});
+    card.append(grip,label,nameFields,meta,actions);
+    card.addEventListener('dragstart',event=>{if(editing){event.preventDefault();return;}event.dataTransfer.setData('text/plain',sampleKey(track));event.dataTransfer.effectAllowed='move';});
     card.addEventListener('dragenter',event=>event.preventDefault());
     card.addEventListener('dragover',event=>{event.preventDefault();event.dataTransfer.dropEffect='move';});
     card.addEventListener('drop',event=>{event.preventDefault();const from=selectedSamples.findIndex(t=>sampleKey(t)===event.dataTransfer.getData('text/plain'));if(from>=0)moveSample(from,index);});
@@ -741,7 +779,7 @@ async function loadSongSampleEditor(){
   sampleAvailability(false);
   try{
     const resource=await api('/api/teacher/song-samples');if(generation!==sampleEditorGeneration)return;
-    sampleRevision=resource.revision;sampleCatalog=resource.catalog||[];
+    sampleNameEditor=null;sampleRevision=resource.revision;sampleCatalog=resource.catalog||[];
     selectedSamples=resource.settings.tracks.map(t=>({...sampleCatalog.find(c=>sampleKey(c)===sampleKey(t)),...t}));
     document.getElementById('samples-enabled').checked=resource.settings.enabled;
     document.getElementById('samples-reshuffle').checked=resource.settings.reshuffle;
@@ -781,7 +819,7 @@ sampleSearch.addEventListener('input',()=>{
   },250);
 });
 sampleForm.addEventListener('submit',async event=>{
-  event.preventDefault();if(!teacherAccessVerified||!sampleLoaded)return;const generation=sampleEditorGeneration;const button=document.getElementById('samples-save');button.disabled=true;sampleEditorStatus('Verifying new songs and saving…');
+  event.preventDefault();if(!teacherAccessVerified||!sampleLoaded||!finishSampleNames(true,false))return;const generation=sampleEditorGeneration;const button=document.getElementById('samples-save');button.disabled=true;sampleEditorStatus('Verifying new songs and saving…');
   try{
     const settings={enabled:document.getElementById('samples-enabled').checked,reshuffle:document.getElementById('samples-reshuffle').checked,holdMs:Math.round(Number(document.getElementById('samples-hold').value)*1000),cadenceMs:Math.round(Number(document.getElementById('samples-cadence').value)*1000),tracks:selectedSamples};
     await api('/api/teacher/song-samples',{method:'PUT',body:JSON.stringify({expectedRevision:sampleRevision,settings})});
