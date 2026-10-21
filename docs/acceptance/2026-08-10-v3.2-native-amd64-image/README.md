@@ -2,15 +2,19 @@
 
 This directory records native Linux amd64 evidence for the exact role-v4,
 source-scope-v2 analysis image. `evidence.json` was captured by the successful
-native `analysis-image` job in GitHub Actions run `35815336561` for the combined
-workshop/fleet source `3ede1244c77e8665f604e3ff291db89dd3511915`.
+native `analysis-image` job in GitHub Actions run `39631116325` for source
+`4bbbbdd22f7321a9b0e55c2968b065e6c2402550`.
 
-The artifact `audio-analysis-native-amd64-3ede1244c77e8665f604e3ff291db89dd3511915`
-(GitHub artifact ID `10731771044`) was downloaded unchanged. Its source hashes
-match this checkout. The image job succeeded; that first run's source job
-correctly rejected the previous artifact's source hashes before this import.
-After import all 329 Worker tests and the audio-pipeline validator passed
-locally. Full hosted source acceptance is a separate check on the import commit.
+The artifact `audio-analysis-native-amd64-4bbbbdd22f7321a9b0e55c2968b065e6c2402550`
+(GitHub artifact ID `12358913146`) was downloaded unchanged. The artifact archive
+SHA-256 is `8968909bb8083cee13892f7366e07070e6cc396af20d1cfc273724c617e2f04b`;
+the extracted `evidence.json` SHA-256 is
+`876a31aa84f13dd94f9853b5592e53f5a2c179ccb897bf742d9d29f61efe289a`.
+Its source hashes match this checkout. The image job succeeded after a native
+Linux amd64 build and constrained smoke. The source job correctly rejected the
+stale native evidence before this import; the YAMNet and EfficientAT receipts
+remain separate gates. Full hosted source acceptance is a separate check on the
+import commit.
 
 The `analysis-image` CI job:
 

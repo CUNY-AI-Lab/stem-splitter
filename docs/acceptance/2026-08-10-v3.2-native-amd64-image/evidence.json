@@ -1,16 +1,16 @@
 {
   "$schema": "stem-splitter.audio-analysis-native-amd64.v1",
   "status": "passed",
-  "commit": "3ede1244c77e8665f604e3ff291db89dd3511915",
-  "capturedAt": "2026-09-23T03:43:13.336Z",
+  "commit": "4bbbbdd22f7321a9b0e55c2968b065e6c2402550",
+  "capturedAt": "2026-10-21T16:04:01.785Z",
   "github": {
     "repository": "CUNY-AI-Lab/stem-splitter",
     "workflow": "CI",
     "job": "analysis-image",
     "eventName": "pull_request",
-    "runId": "35815336561",
+    "runId": "39631116325",
     "runAttempt": 1,
-    "sourceCommit": "3ede1244c77e8665f604e3ff291db89dd3511915"
+    "sourceCommit": "4bbbbdd22f7321a9b0e55c2968b065e6c2402550"
   },
   "runner": {
     "os": "Linux",
@@ -18,9 +18,9 @@
     "dockerPlatform": "linux/x86_64"
   },
   "image": {
-    "id": "sha256:238ae34cb8c5e894fe1234406c1ee8ca7c3e126ca169d8057f53953a8ca63205",
+    "id": "sha256:fdca69378f12f63b4ea9ea72a9a974d116fd4b8458140164a8656baa245cdb50",
     "platform": "linux/amd64",
-    "sizeBytes": 231074728,
+    "sizeBytes": 230790799,
     "maximumBytes": 251658240,
     "user": "node",
     "command": [
@@ -30,7 +30,7 @@
     ]
   },
   "pins": {
-    "node": "22.23.1",
+    "node": "22.23.4",
     "bun": "1.3.14",
     "ffmpeg": "8.0.3",
     "classifier": "autosplit-role-v4",
@@ -52,11 +52,11 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "0d1339d826172b6d792da4ae5032709957d871e1a5b245ff652a85775ef65c7d"
+      "sha256": "f53fd13b6d4398aadafbd26e120ae7859ddb539764f3170f61ec80339260b8b0"
     },
     {
       "path": "audio-analysis/Dockerfile",
-      "sha256": "ab2bf0b5c1eb6a0816263b5c540ba74c5045c4c2d178717f6487732dfc97e768"
+      "sha256": "96eb2ff890cc78eca922f7ae96f72875f030f00f015ffeb0cd6d151fe7a42fe6"
     },
     {
       "path": "audio-analysis/app.ts",
@@ -104,7 +104,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "2b63582e4c701866e39ae349bb8c24e5d5975f5d9227334608267156dbbf3e54"
+      "sha256": "fff134d9376d24dc5e9527994ec79c6f237f5c5cd3253092b5e0d0a9a63f1521"
     },
     {
       "path": "public/autosplit.js",
@@ -112,7 +112,7 @@
     },
     {
       "path": "scripts/capture-audio-analysis-image-evidence.mts",
-      "sha256": "3aaf8082a24e5e5891bec1caae692dbfbdfbc26f6669713da4df3a75859c1c6a"
+      "sha256": "4f52998e5f3cd5008bc0fe43924e0c01eae2f6bea652007dfed6f94377029530"
     },
     {
       "path": "scripts/fixtures/audio-analysis-source-server.mjs",
@@ -120,7 +120,7 @@
     },
     {
       "path": "scripts/lib/audio-analysis-image-evidence.mts",
-      "sha256": "7b277d2394538d26587a5d900251936a01319ed1f30856818ffbc435248f7e00"
+      "sha256": "5e02e4f8377c25c9b25f1aec91a2bfccd09f5b6e929bd362f6854a8bf6797c5f"
     },
     {
       "path": "scripts/smoke-audio-analysis-image.sh",

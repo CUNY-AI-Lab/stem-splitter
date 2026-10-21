@@ -669,7 +669,7 @@ test('container and build context freeze the runtime without shipping local audi
   const workflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8');
   const imageSmoke = readFileSync(resolve('scripts/smoke-audio-analysis-image.sh'), 'utf8');
 
-  assert.match(dockerfile, /FROM node:22\.23\.1-bookworm-slim@sha256:[a-f0-9]{64}/);
+  assert.match(dockerfile, /FROM node:22\.23\.4-bookworm-slim@sha256:[a-f0-9]{64}/);
   assert.match(dockerfile, /FROM oven\/bun:1\.3\.14-slim@sha256:[a-f0-9]{64}/);
   assert.match(dockerfile, /ARG FFMPEG_VERSION=8\.0\.3/);
   assert.match(dockerfile, /ARG MAKE_JOBS=1/);
