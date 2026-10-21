@@ -548,6 +548,17 @@ test('main seek control commits once for mouse, keyboard and playing stems at na
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const names = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'];
   const server = await fixture(page, names);
+  const beginDrag = async range => {
+    // Opening a shared split scrolls smoothly. Finish that scroll before using
+    // coordinates: a few pixels of movement can miss the four-pixel seek track.
+    await range.evaluate(control => control.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    const box = await range.boundingBox();
+    // Locator hover checks stability and hit targeting before native mouse input.
+    await range.hover({ position: { x: box.width * .2, y: box.height / 2 } });
+    await page.mouse.down();
+    await expect(range).toBeFocused();
+    return range.boundingBox();
+  };
   try {
     await page.evaluate(() => {
       const m = mixers.get('remix-fixture'), original = m.seekTo.bind(m);
@@ -558,9 +569,8 @@ test('main seek control commits once for mouse, keyboard and playing stems at na
       const range = page.getByRole('slider', { name: 'Seek', exact: true });
       await expect(range).toBeEnabled();
       await expect(range).toHaveAccessibleName('Seek');
-      await range.scrollIntoViewIfNeeded(); const box = await range.boundingBox();
       const before = await page.evaluate(() => { const m = mixers.get('remix-fixture'); return { time: m.audios[0].currentTime, calls: m.seekCalls }; });
-      await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2); await page.mouse.down();
+      const box = await beginDrag(range);
       await page.mouse.move(box.x + box.width * .6, box.y + box.height / 2, { steps: 8 });
       const preview = await page.evaluate(() => { const m = mixers.get('remix-fixture'); return { time: m.audios[0].currentTime, calls: m.seekCalls, scrubbing: m.scrubbing, target: m.scrubTarget }; });
       expect(preview.time).toBeCloseTo(before.time, 2); expect(preview.calls).toBe(before.calls);
@@ -580,8 +590,7 @@ test('main seek control commits once for mouse, keyboard and playing stems at na
     await mkdir('/tmp/stem-classroom-screenshots', { recursive: true });
     await page.locator('.console').screenshot({ path: `/tmp/stem-classroom-screenshots/main-seek-focus-${process.env.STEM_BROWSER || 'chrome'}.png` });
     await page.locator('.rate-opt[data-rate="0.75"]').click(); await page.locator('.play-btn').click(); await clockAdvances(page);
-    const box = await range.boundingBox();
-    await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2); await page.mouse.down();
+    const box = await beginDrag(range);
     await page.mouse.move(box.x + box.width * .5, box.y + box.height / 2, { steps: 6 });
     expect(await page.evaluate(() => mixers.get('remix-fixture').playing)).toBe(true);
     await page.mouse.up(); await clockAdvances(page);
