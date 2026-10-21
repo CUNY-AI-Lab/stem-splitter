@@ -26,9 +26,19 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
   await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);
   await expect(page.locator('#sample-selected')).toContainText('Bill Evans');await expect(page.locator('#sample-selected')).not.toContainText(/\b(jazz|electronic|country|funk|rock|folk) ·/);
   await expect(page.locator('#sample-selected')).toContainText('complete import tested');
+  const selected=page.locator('#sample-search-results [aria-selected="true"]').first();
+  await expect(selected).toBeDisabled();await expect(selected.locator('.sample-choice-state')).toHaveText('Selected');
+  expect(await selected.evaluate(node=>getComputedStyle(node).opacity)).toBe('1');
+  await documentScreenshots(page);
+  await page.locator('#samples-enabled').uncheck();await page.locator('#samples-reshuffle').uncheck();
   await page.locator('#sample-search').fill('https://archive.org/details/example');await expect(page.locator('#sample-search-status')).toHaveText('Search by artist or song title.');
   await page.locator('#sample-search').fill('Fixture piano');
   const option=page.getByRole('option',{name:/^Fixture ensemble — Fixture piano(?: ·|$)/});await expect(option).toBeVisible({timeout:4000});expect(slowStarted).toBe(true);
+  await option.focus();await option.press('Enter');await expect(page.locator('#sample-selected .sample-card')).toHaveCount(7);
+  await expect(option).toBeDisabled();await expect(option).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('#sample-search')).toBeFocused();
+  await page.getByRole('button',{name:'Remove: Fixture piano',exact:true}).click();
+  await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);await expect(option).toBeEnabled();
   await option.click();await expect(page.locator('#sample-selected .sample-card')).toHaveCount(7);
   const cards=page.locator('#sample-selected .sample-card');
   await cards.nth(1).locator('.sample-drag-handle').dragTo(cards.first().locator('.sample-drag-handle'));
@@ -42,14 +52,28 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
   await page.locator('#samples-hold').fill('4');await page.locator('#samples-cadence').fill('7');
   await page.getByRole('button',{name:'Save songs',exact:true}).click();await expect(page.locator('#sample-settings-status')).toContainText('Saved.',{timeout:5000});
   releaseSlow();
-  const snapshot=await(await f.harness.fetch('/api/song-samples')).json();expect(snapshot.revision).toBe(1);expect(snapshot.tracks[0].title).toBe('Fixture piano');expect(snapshot.holdMs).toBe(4000);expect(snapshot.cadenceMs).toBe(7000);expect(snapshot.updatedBy).toBeUndefined();
-  await page.reload();await expect(cards.first()).toContainText('Fixture piano');await expect(page.locator('#samples-hold')).toHaveValue('4');await expect(page.locator('#samples-cadence')).toHaveValue('7');
+  const saved=await(await f.harness.fetch('/api/teacher/song-samples',{headers:{'x-fixture-identity':f.admin}})).json(),snapshot=saved.settings;
+  expect(saved.revision).toBe(1);expect(snapshot.tracks[0].title).toBe('Fixture piano');expect(snapshot.holdMs).toBe(4000);expect(snapshot.cadenceMs).toBe(7000);expect(snapshot.enabled).toBe(false);expect(snapshot.reshuffle).toBe(false);
+  expect((await(await f.harness.fetch('/api/song-samples')).json()).updatedBy).toBeUndefined();
+  await page.reload();await expect(cards.first()).toContainText('Fixture piano');await expect(page.locator('#samples-hold')).toHaveValue('4');await expect(page.locator('#samples-cadence')).toHaveValue('7');await expect(page.locator('#samples-enabled')).not.toBeChecked();await expect(page.locator('#samples-reshuffle')).not.toBeChecked();
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('#sample-editor-title').scrollIntoViewIfNeeded();await page.screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/instructor-song-editor-mobile.png',animations:'disabled'});}
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});await page.reload();await expect(page.locator('#console-panel')).toBeHidden();
   expect(errors).toEqual([]);
  }finally{releaseSlow();network.close();await f.harness.close();}
 });
+
+async function documentScreenshots(page){
+ for(const width of [1280,390,320]){
+  await page.setViewportSize({width,height:900});await page.evaluate(()=>document.fonts.ready);
+  for(const id of ['samples-hold','samples-cadence','sample-search'])expect((await page.locator('#'+id).boundingBox()).height).toBeGreaterThanOrEqual(44);
+  const layout=await page.locator('.sample-timing').evaluate(node=>{const fields=[...node.querySelectorAll('input')].map(input=>input.getBoundingClientRect());return {sameRow:Math.abs(fields[0].top-fields[1].top)<1,stacked:fields[1].top>=fields[0].bottom};});
+  expect(width>600?layout.sameRow:layout.stacked).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('.sample-editor').evaluate(node=>node.scrollIntoView({block:'start'}));await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/song-settings-${width}.png`,animations:'disabled'});}
+ }
+ await page.setViewportSize({width:1280,height:900});
+}
 
 for(const cadenceMs of [5000,6000])test(`configured hints reveal slowly at ${cadenceMs}ms cadence, preserve progress and refresh instructor changes`,async({page})=>{
  test.setTimeout(65000);const f=await fixture();let snapshot={revision:1,version:'1-first',enabled:true,holdMs:3500,cadenceMs,reshuffle:true,tracks:[0,1,2].map(i=>({artist:`Artist ${i}`,title:`Song ${i}`,archiveId:`steady-${i}`,archiveFile:'song.mp3'}))};

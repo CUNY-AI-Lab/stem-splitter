@@ -133,6 +133,7 @@
 .instructor-console .sample-drag-handle { color: var(--ink-dim); }
 .instructor-console footer { margin-top: 2.5rem; font-size: .75rem; }
 @media (max-width: 600px) {
+  .instructor-console .sample-timing { grid-template-columns: 1fr; }
   .instructor-console { padding-top: 1.5rem; }
   .instructor-console .masthead { margin-bottom: 1.5rem; }
   .instructor-console .page-title { font-size: 1.65rem; }
