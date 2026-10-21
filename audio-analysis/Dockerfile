@@ -1,11 +1,11 @@
 # Build from the repository root:
 #   docker build --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN -f audio-analysis/Dockerfile .
 
-# Multi-architecture OCI index digests were resolved for these exact tags on
-# 2026-08-09. The FFmpeg tarball checksum below was captured only after its
+# The Node multi-architecture OCI index digest was resolved on 2026-10-21.
+# The FFmpeg tarball checksum below was captured only after its
 # official ffmpeg-devel.asc signature verified with release key fingerprint
 # FCF986EA15E6E293A5644F10B4322F04D67658D8.
-FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS ffmpeg-build
+FROM node:22.23.4-bookworm-slim@sha256:5991875dfb80938dd8a6ba3fe3e96fd04929e70792762b3319d8caadbbe229bc AS ffmpeg-build
 
 ARG FFMPEG_VERSION=8.0.3
 ARG FFMPEG_SHA256=6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818
@@ -78,7 +78,7 @@ COPY src/analysis/types.ts src/analysis/instrument-vocabulary.ts src/analysis/so
 COPY instrument-discovery/vocabulary.json ./instrument-discovery/vocabulary.json
 RUN bun build audio-analysis/server.ts --target=node --format=esm --outfile=dist/server.mjs
 
-FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3
+FROM node:22.23.4-bookworm-slim@sha256:5991875dfb80938dd8a6ba3fe3e96fd04929e70792762b3319d8caadbbe229bc
 
 LABEL org.opencontainers.image.title="STEM Splitter audio analysis" \
       org.opencontainers.image.description="Bounded private Auto routing analysis service" \

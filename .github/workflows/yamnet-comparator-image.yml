@@ -99,7 +99,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22.23.1"
+          node-version: "22.23.4"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.13"
@@ -125,7 +125,7 @@ jobs:
           test "$(uname -s)" = Linux
           test "$(uname -m)" = x86_64
           test "$(docker info --format '{{.OSType}}/{{.Architecture}}')" = linux/x86_64
-          test "$(node --version)" = v22.23.1
+          test "$(node --version)" = v22.23.4
           test "$(python --version)" = "Python 3.12.13"
       - name: Run dependency-light comparator contracts
         run: python -m unittest discover -s yamnet-comparator -p 'test_*.py'

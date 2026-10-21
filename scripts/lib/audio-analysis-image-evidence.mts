@@ -180,7 +180,7 @@ export function validateAudioAnalysisImageEvidence(
     ['node', 'bun', 'ffmpeg', 'classifier', 'sourceScope'],
     'image evidence pins'
   );
-  exactString(pins.node, '22.23.1', 'image evidence Node pin');
+  exactString(pins.node, '22.23.4', 'image evidence Node pin');
   exactString(pins.bun, '1.3.14', 'image evidence Bun pin');
   exactString(pins.ffmpeg, '8.0.3', 'image evidence FFmpeg pin');
   exactString(pins.classifier, PINNED_ROLE_CLASSIFIER_VERSION, 'image evidence classifier pin');
