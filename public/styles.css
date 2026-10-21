@@ -2749,6 +2749,8 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .sample-editor .teacher-field { gap: .45rem; min-width: 0; }
 .sample-editor .teacher-field input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; font: 400 .875rem/1.5 var(--font-body); color-scheme: dark; }
 .sample-editor input::placeholder { color: var(--ink-dim); }
+.sample-editor input[type="number"] { appearance: textfield; }
+.sample-editor input[type="number"]::-webkit-inner-spin-button, .sample-editor input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .sample-editor :is(input, button, .sample-card):focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .sample-editor :is(.teacher-help, .teacher-status):empty { display: none; }
 .sample-timing { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: end; gap: 1rem; }

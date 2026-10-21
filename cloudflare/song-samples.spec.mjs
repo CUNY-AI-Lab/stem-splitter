@@ -30,6 +30,8 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
   await expect(selected).toBeDisabled();await expect(selected.locator('.sample-choice-state')).toHaveText('Selected');
   expect(await selected.evaluate(node=>getComputedStyle(node).opacity)).toBe('1');
   await documentScreenshots(page);
+  await page.locator("#samples-hold").focus();await page.locator("#samples-hold").press("ArrowUp");await expect(page.locator("#samples-hold")).toHaveValue("4");
+  await page.locator("#samples-hold").press("ArrowDown");await expect(page.locator("#samples-hold")).toHaveValue("3.5");
   await page.locator('#samples-enabled').uncheck();await page.locator('#samples-reshuffle').uncheck();
   await page.locator('#sample-search').fill('https://archive.org/details/example');await expect(page.locator('#sample-search-status')).toHaveText('Search by artist or song title.');
   await page.locator('#sample-search').fill('Fixture piano');
