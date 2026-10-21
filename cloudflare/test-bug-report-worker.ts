@@ -19,15 +19,15 @@ export default {
     }
     const headers = new Headers(request.headers); headers.set('cf-connecting-ip', '192.0.2.5');
     request = new Request(request, { headers });
-    const service = { submitAuthenticated: async (report: any) => {
+    const service = { submitPublic: async (report: any) => {
       calls.push(report);
       if (mode === 'unavailable') return { ok: false, code: 'unavailable', retryable: true, retryAfterSeconds: 1 };
       if (mode === 'slow') await new Promise(resolve => setTimeout(resolve, 300));
-      const key = `${report.subject}:${report.reportId}`, previous = reports.get(key);
+      const key = report.reportId, previous = reports.get(key);
       if (previous && previous.description !== report.description) return { ok: false, code: 'idempotency_conflict', retryable: false };
-      if (!previous) reports.set(key, { ...report, createdAt: new Date().toISOString() });
+      if (!previous) reports.set(key, { ...report });
       if (mode === 'lost-ack') { mode = 'saved'; throw new Error('Injected lost acknowledgement after persistence'); }
-      return { ok: true, status: 'saved', reportId: report.reportId, createdAt: reports.get(key).createdAt };
+      return { ok: true, status: 'accepted', reportId: report.reportId };
     } };
     const identity = { identities: async (token: string) => !expired && [aliceSession, bobSession].includes(token)
       ? { ok: true, appJwt: token === aliceSession ? env.TEST_ALICE_JWT : env.TEST_BOB_JWT, gatewayJwt: '', workspaceJwt: null }

@@ -1,26 +1,24 @@
-/** Shared CAIL report footer: one field, existing SSO, memory-only drafts. */
-export function mountBugReport(container, { loginUrl = '/auth/start', path = () => location.pathname,
-  sessionEndpoint = '/api/bug-reports/session', endpoint = '/api/bug-reports' } = {}) {
+/** Shared CAIL report footer: one anonymous field, memory-only drafts. */
+export function mountBugReport(container, { path = () => location.pathname, endpoint = '/api/bug-reports' } = {}) {
   // Constant markup only. Report and service data are rendered as text/value.
   container.innerHTML = `<div class="bug-report">
-    <button class="bug-report__trigger" type="button" aria-label="Report a bug" aria-haspopup="dialog" aria-expanded="false">
+    <button class="bug-report__trigger" type="button" aria-label="Report a problem" aria-haspopup="dialog" aria-expanded="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 18H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6l-5 3v-3Z"/><path d="M8 9h8M8 13h5"/></svg>
-      <span>Report a bug</span><span class="bug-report__badge" aria-hidden="true" hidden>Draft</span>
+      <span>Report a problem</span><span class="bug-report__badge" aria-hidden="true" hidden>Draft</span>
     </button>
-    <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a bug" tabindex="-1" hidden>
+    <section class="bug-report__panel" popover="manual" role="dialog" aria-modal="false" aria-label="Report a problem" tabindex="-1" hidden>
       <header class="bug-report__heading">
-        <div><p class="bug-report__eyebrow">CUNY AI Lab · Support</p><h2>Report a bug</h2><p class="bug-report__intro">A private note for the Lab team.</p></div>
+        <div><p class="bug-report__eyebrow">CUNY AI Lab · Support</p><h2>Report a problem</h2></div>
         <button class="bug-report__close" type="button" aria-label="Close bug report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
-      <form class="bug-report__form" aria-label="Report a bug">
+      <form class="bug-report__form" aria-label="Report a problem">
         <p class="bug-report__context" role="group" aria-label="Report page context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>This page</span><strong></strong></p>
         <div class="bug-report__field">
-          <div class="bug-report__label"><label>Description of the bug<textarea name="description" required minlength="10" maxlength="4000" rows="4" readonly placeholder="What did you try, and what went wrong?" aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
+          <div class="bug-report__label"><label>What went wrong?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="What did you try, and what went wrong?" aria-describedby="bug-report-privacy"></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
         </div>
-        <p id="bug-report-privacy" class="bug-report__help">Your CUNY account, page category, app version and time are included. No maps, audio or chats are attached.</p>
+        <p id="bug-report-privacy" class="bug-report__help">No sign-in needed. Please leave out private information.</p>
         <p class="bug-report__status" role="status" aria-live="polite" aria-atomic="true"></p>
-        <div class="bug-report__session" hidden><a target="_blank" rel="noopener noreferrer">CUNY Login (opens a new tab)</a><button type="button">Check sign-in</button></div>
-        <div class="bug-report__actions"><span class="bug-report__draft-note">Draft kept in this tab until reload.</span><button type="submit" disabled>Send bug report</button></div>
+        <div class="bug-report__actions"><span class="bug-report__draft-note">Draft kept in this tab until reload.</span><button type="submit" disabled>Send report</button></div>
       </form>
     </section>
   </div>`;
@@ -36,10 +34,8 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
   form.querySelector('.bug-report__help').id = `${instanceId}-privacy`;
   const description = form.elements.namedItem('description'), status = form.querySelector('[role="status"]');
   description.setAttribute('aria-describedby', `${instanceId}-privacy`);
-  const submitButton = form.querySelector('[type="submit"]'), sessionControls = form.querySelector('.bug-report__session');
-  const signIn = sessionControls.querySelector('a'), checkButton = sessionControls.querySelector('button');
-  signIn.href = loginUrl;
-  let actor = null, report = null, snapshot = '', busy = false, checking = false, ready = false;
+  const submitButton = form.querySelector('[type="submit"]');
+  let report = null, snapshot = '', busy = false;
   let locked = false, done = false, terminal = false, disposed = false, cooldown = null, controller = null;
   let isOpen = false, layoutFrame = null;
   const nativePopover = typeof panel.showPopover === 'function';
@@ -55,27 +51,18 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     }
   };
   const render = () => {
-    description.readOnly = busy || checking || !ready || locked || done || terminal;
-    submitButton.disabled = busy || checking || !ready || done || terminal || Boolean(cooldown);
-    checkButton.disabled = busy || checking;
-    sessionControls.hidden = ready || done || terminal;
-    form.toggleAttribute('aria-busy', busy || checking);
-    if (busy || checking) form.setAttribute('aria-busy', 'true');
-    panel.dataset.state = done ? 'saved' : busy ? 'sending' : checking ? 'checking' : 'idle';
+    description.readOnly = busy || locked || done || terminal;
+    submitButton.disabled = busy || done || terminal || Boolean(cooldown);
+    form.toggleAttribute('aria-busy', busy);
+    if (busy) form.setAttribute('aria-busy', 'true');
+    panel.dataset.state = done ? 'saved' : busy ? 'sending' : 'idle';
     context.textContent = pageLabels.get(locked && report ? report.path : path()) || 'Current page';
     draftChanged();
     schedulePosition();
   };
-  const needsSignIn = (changed = false) => {
-    ready = false;
-    show(changed
-      ? 'The signed-in account changed. Your draft is still here and has not been sent as that account. Sign in to the account that started this draft, then choose Check sign-in.'
-      : 'Sign in with CUNY Login, then choose Check sign-in here. Keep this tab open to preserve your description.', 'attention');
-    render();
-  };
   const uncertain = () => {
     locked = true; submitButton.textContent = 'Check report status';
-    show(`We could not confirm whether your report was saved. Keep this tab open and check again with the same report. Reference: ${report.reportId}.`, 'attention');
+    show(`We could not confirm whether your report was sent. Keep this tab open and check again with the same report. Reference: ${report.reportId}.`, 'attention');
   };
   const wait = seconds => {
     clearTimeout(cooldown);
@@ -90,43 +77,24 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
       return { response, result: await response.json() };
     } finally { clearTimeout(deadline); controller = null; }
   }
-  async function checkSession() {
-    if (busy || checking || done || disposed) return;
-    checking = true; show('Checking CUNY Login…'); render();
-    try {
-      const { response, result } = await fetchJson(sessionEndpoint);
-      if (disposed) return;
-      if (response.ok && result?.ok === true && /^[0-9a-f]{64}$/.test(result.expectedActor)) {
-        if (actor && actor !== result.expectedActor) { needsSignIn(true); return; }
-        actor = result.expectedActor; ready = true;
-        show(locked ? 'Your original account is signed in. Choose Check report status to confirm this report.'
-          : 'Signed in with CUNY Login.');
-      } else if (response.status === 401 || response.status === 403) needsSignIn();
-      else { ready = false; show('We could not check CUNY Login. Your description is still here. Choose Check sign-in to try again.', 'attention'); }
-    } catch { if (!disposed) { ready = false; show('We could not check CUNY Login. Your description is still here. Choose Check sign-in to try again.', 'attention'); } }
-    finally { checking = false; if (!disposed) render(); }
-  }
   async function submit(event) {
     event.preventDefault();
-    if (busy || checking || done || terminal || cooldown || !ready || !actor) return;
+    if (busy || done || terminal || cooldown) return;
     if (!locked && !form.reportValidity()) return;
     if (!locked) {
       const data = { description: description.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').trim(), path: path() };
       const next = JSON.stringify(data);
-      if (snapshot !== next) { snapshot = next; report = { reportId: crypto.randomUUID(), ...data, expectedActor: actor }; }
+      if (snapshot !== next) { snapshot = next; report = { reportId: crypto.randomUUID(), ...data }; }
     }
-    busy = true; show(locked ? 'Checking your report…' : 'Saving your report…'); render();
+    busy = true; show(locked ? 'Checking your report…' : 'Sending your report…'); render();
     try {
       const { response, result } = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) });
       if (disposed) return;
       const code = codeOf(result);
-      if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
-        && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
-        done = true; locked = true; submitButton.textContent = 'Report saved';
-        show(`Your report was saved for the Lab administrators. Thank you. Reference: ${report.reportId}.`, 'success');
-      } else if (response.status === 401 || code === 'not_admitted' || code === 'admission_required') needsSignIn();
-      else if (code === 'account_changed') needsSignIn(true);
-      else if (code === 'idempotency_conflict') {
+      if (response.ok && result?.ok === true && result.status === 'accepted' && result.reportId === report.reportId) {
+        done = true; locked = true; submitButton.textContent = 'Report sent';
+        show(`Your report was accepted for email delivery. Thank you. Reference: ${report.reportId}.`, 'success');
+      } else if (code === 'idempotency_conflict') {
         terminal = true; show('This report reference already belongs to different report text. Your description is still here. Keep a copy before starting another report in a new tab.', 'attention');
       } else if (code === 'invalid' && !locked) {
         submitButton.textContent = 'Try again'; show('Check the description (10–4000 characters), then try again.', 'attention');
@@ -135,7 +103,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
         const seconds = Number.isSafeInteger(delay) && delay > 0 && delay <= 86400 ? delay : 60;
         submitButton.textContent = locked ? 'Check report status' : 'Try again';
         show(`Please wait ${Math.ceil(seconds / 60)} minute(s) before trying again. Your description is still here.`, 'attention'); wait(seconds);
-      } else if (code === 'forbidden' || response.status === 403) {
+      } else if ((code === 'unavailable' && result?.retryable === false) || code === 'forbidden' || response.status === 403) {
         terminal = true; show('This page could not submit the report. Your description is still here. Keep a copy before reopening the app.', 'attention');
       } else {
         uncertain();
@@ -186,7 +154,6 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     isOpen = true; panel.hidden = false; trigger.setAttribute('aria-expanded', 'true');
     if (nativePopover) panel.showPopover();
     render(); positionPanel(); closeButton.focus({ preventScroll: true });
-    if (!done && !terminal) void checkSession();
   }
   const closeClick = () => closePanel();
   const outside = event => { if (isOpen && !panel.contains(event.target) && !trigger.contains(event.target)) closePanel(false); };
@@ -196,7 +163,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
   const beforeUnload = event => { if (hasDraft()) { event.preventDefault(); event.returnValue = ''; } };
   const panelResize = typeof ResizeObserver === 'function' ? new ResizeObserver(schedulePosition) : null;
   panelResize?.observe(panel);
-  form.addEventListener('submit', submit); checkButton.addEventListener('click', checkSession);
+  form.addEventListener('submit', submit);
   description.addEventListener('input', draftChanged); trigger.addEventListener('click', togglePanel); closeButton.addEventListener('click', closeClick);
   document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape, true);
   window.addEventListener('resize', schedulePosition); window.addEventListener('scroll', schedulePosition, true);
@@ -204,7 +171,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
   window.addEventListener('beforeunload', beforeUnload); render();
   const dispose = () => {
     disposed = true; closePanel(false); panelResize?.disconnect(); controller?.abort(); clearTimeout(cooldown); cancelAnimationFrame(layoutFrame);
-    form.removeEventListener('submit', submit); checkButton.removeEventListener('click', checkSession);
+    form.removeEventListener('submit', submit);
     description.removeEventListener('input', draftChanged); trigger.removeEventListener('click', togglePanel); closeButton.removeEventListener('click', closeClick);
     document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape, true);
     window.removeEventListener('resize', schedulePosition); window.removeEventListener('scroll', schedulePosition, true);
@@ -212,6 +179,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', path = () 
     window.removeEventListener('beforeunload', beforeUnload); delete container.dataset.reportDraft; container.replaceChildren();
   };
   dispose.hasDraft = hasDraft;
-  dispose.sessionChanged = () => { if (!disposed && !done) needsSignIn(); };
+  // Reports contain no account identity; account changes do not change a draft.
+  dispose.sessionChanged = () => {};
   return dispose;
 }

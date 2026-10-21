@@ -189,7 +189,7 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     const first = await account(page);
     expect(first.guest.verificationRequired).toBe(true);
     await expect(page.locator('#guest-panel, #guest-session, #course-context, .compact-masthead')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Report a bug', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Continue as guest', exact: true })).toHaveCount(0);
     expect(f.counts()).toEqual({ providerStarts: 0, verifications: 0, widgetLoads: 0 });
     await startUpload(page); await completed(page, 1);

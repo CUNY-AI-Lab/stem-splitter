@@ -7,7 +7,7 @@ const path = paths.get(location.pathname) || '/';
 if (footer && !footer.querySelector('.bug-report')) {
   const container = document.createElement('section');
   footer.append(container);
-  const report = mountBugReport(container, { loginUrl: '/auth/login?next=' + encodeURIComponent(path), path: () => path });
-  // Session expiry clears private app contents while this owner-bound draft stays in memory.
+  const report = mountBugReport(container, { path: () => path });
+  // Session expiry clears private app contents while this anonymous draft stays in memory.
   window.StemReportDraft = { hasDraft: report.hasDraft, sessionChanged: report.sessionChanged };
 }

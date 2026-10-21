@@ -38,14 +38,14 @@ async function setup(page, signedIn = true) {
   return { harness, url, errors, control, signIn, stats: async () => (await (await harness.fetch('/__bug-fixture')).json()),
     close: async () => { await frontend.close(); await harness.close(); expect(frontend.errors).toEqual([]); } };
 }
-const field = page => page.getByRole('textbox', { name: 'Description of the bug', exact: true });
+const field = page => page.getByRole('textbox', { name: 'What went wrong?', exact: true });
 const status = page => page.locator('.bug-report__status');
-const trigger = page => page.getByRole('button', { name: 'Report a bug', exact: true });
-const panel = page => page.getByRole('dialog', { name: 'Report a bug', exact: true });
+const trigger = page => page.getByRole('button', { name: 'Report a problem', exact: true });
+const panel = page => page.getByRole('dialog', { name: 'Report a problem', exact: true });
 async function openReport(page) {
   await trigger(page).click();
   await expect(panel(page)).toBeVisible();
-  await expect(page.getByRole('form', { name: 'Report a bug', exact: true })).toBeVisible();
+  await expect(page.getByRole('form', { name: 'Report a problem', exact: true })).toBeVisible();
 }
 async function fillReport(page) {
   await openReport(page); await expect(field(page)).toBeEditable(); await field(page).fill(description);
@@ -64,7 +64,7 @@ test('all four footers expose one accessible description field without submittin
       await expect(field(page)).toBeEditable();
       await expect(page.locator('.bug-report input')).toHaveCount(0);
       await expect(page.locator('.bug-report textarea')).toHaveCount(1);
-      await expect(panel(page)).toContainText('No maps, audio or chats are attached.');
+      await expect(panel(page)).toContainText('No sign-in needed. Please leave out private information.');
       await expect(page.getByRole('group', { name: 'Report page context' })).toContainText(new Map([
         ['/account.html', 'My account'], ['/teacher.html', 'Instructor'], ['/', 'Workspace'], ['/classroom.html', 'Class workspace'],
       ]).get(path));
@@ -114,34 +114,32 @@ test('closing the compact panel preserves an unsent draft and returns keyboard f
   } finally { await f.close(); }
 });
 
-test('anonymous visitors use existing sign-in and cannot call the report API', async ({ page }) => {
-  const f = await setup(page, false);
+test('anonymous visitors submit reports while course and roster APIs remain protected', async ({ page }) => {
+  const f=await setup(page,false);
   try {
-    await openReport(page);
-    await expect(status(page)).toContainText('Sign in with CUNY Login');
-    await expect(page.getByRole('button', { name: 'Send bug report', exact: true })).toBeDisabled();
-    await expect(page.getByRole('link', { name: 'CUNY Login (opens a new tab)' })).toHaveAttribute('target', '_blank');
-    await expect(page.getByRole('link', { name: 'CUNY Login (opens a new tab)' })).toHaveAttribute('href', '/auth/login?next=%2Faccount.html');
-    const response = await page.evaluate(async () => {
-      const result = await fetch('/api/bug-reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      return result.status;
-    });
-    expect(response).toBe(401); expect((await f.stats()).calls).toEqual([]);
-  } finally { await f.close(); }
+    await fillReport(page);
+    await expect(panel(page).getByRole('link')).toHaveCount(0);
+    await page.getByRole('button',{name:'Send report',exact:true}).click();
+    await expect(status(page)).toContainText('accepted for email delivery');
+    const results=await page.evaluate(async()=>Promise.all(['/api/classroom/courses','/api/listening-usage'].map(async path=>(await fetch(path)).status)));
+    expect(results).toEqual([401,401]);
+    const {calls}=await f.stats();expect(calls).toHaveLength(1);expect(calls[0]).not.toHaveProperty('subject');
+    expect(calls[0]).not.toHaveProperty('email');expect(f.errors).toEqual([]);
+  } finally {await f.close();}
 });
 
-test('double click saves one report with server attribution and a route free of private parameters', async ({ page }) => {
+test('double click saves one report without account attribution and a route free of private parameters', async ({ page }) => {
   const f = await setup(page);
   try {
     await page.goto(new URL('/account.html?student=private&job=private#private-fragment', f.url).href);
     await f.control({ mode: 'slow' }); await fillReport(page);
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).dblclick();
-    await expect(status(page)).toContainText('Your report was saved for the Lab administrators.');
+    await page.getByRole('button', { name: 'Send report', exact: true }).dblclick();
+    await expect(status(page)).toContainText('Your report was accepted for email delivery.');
     const stats = await f.stats(); expect(stats.calls).toHaveLength(1); expect(stats.records).toHaveLength(1);
-    expect(stats.calls[0]).toMatchObject({ description, path: '/account.html', subject: TEST_SUBJECTS.alice, release: 'report-browser-20261020' });
-    expect(Object.keys(stats.calls[0]).sort()).toEqual(['description', 'origin', 'path', 'release', 'reportId', 'subject']);
+    expect(stats.calls[0]).toMatchObject({ description, path: '/account.html', release: 'report-browser-20261020' });
+    expect(Object.keys(stats.calls[0]).sort()).toEqual(['description', 'origin', 'path', 'rateDay', 'rateKey', 'release', 'reportId']);
     expect(JSON.stringify(stats.calls)).not.toContain('private');
-    await expect(page.getByRole('button', { name: 'Report saved', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Report sent', exact: true })).toBeDisabled();
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
@@ -150,12 +148,12 @@ test('lost storage acknowledgement retains the same immutable attempt and explic
   const f = await setup(page);
   try {
     await f.control({ mode: 'lost-ack' }); await fillReport(page);
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
-    await expect(status(page)).toContainText('We could not confirm whether your report was saved.');
+    await page.getByRole('button', { name: 'Send report', exact: true }).click();
+    await expect(status(page)).toContainText('We could not confirm whether your report was sent.');
     await expect(field(page)).not.toBeEditable(); await expect(field(page)).toHaveValue(description);
     const first = await f.stats(); expect(first.calls).toHaveLength(1); expect(first.records).toHaveLength(1);
     await page.getByRole('button', { name: 'Check report status', exact: true }).click();
-    await expect(status(page)).toContainText('Your report was saved');
+    await expect(status(page)).toContainText('Your report was accepted for email delivery');
     const recovered = await f.stats(); expect(recovered.calls).toHaveLength(2); expect(recovered.records).toHaveLength(1);
     expect(recovered.calls[1]).toEqual(first.calls[0]);
     expect(recovered.records).toEqual(first.records); expect(f.errors).toEqual([]);
@@ -166,7 +164,7 @@ test('an unavailable receiver keeps the draft and retries the same UUID only aft
   const f = await setup(page);
   try {
     await f.control({ mode: 'unavailable' }); await fillReport(page);
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
+    await page.getByRole('button', { name: 'Send report', exact: true }).click();
     await expect(status(page)).toContainText('We could not confirm');
     await expect(field(page)).toHaveValue(description); await expect(field(page)).not.toBeEditable();
     const first = (await f.stats()).calls[0];
@@ -174,65 +172,21 @@ test('an unavailable receiver keeps the draft and retries the same UUID only aft
     await expect(page.getByRole('button', { name: 'Check report status', exact: true })).toBeEnabled();
     expect((await f.stats()).calls).toHaveLength(1);
     await page.getByRole('button', { name: 'Check report status', exact: true }).click();
-    await expect(status(page)).toContainText('Your report was saved');
+    await expect(status(page)).toContainText('Your report was accepted for email delivery');
     expect((await f.stats()).calls[1]).toEqual(first); expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
 
-test('expired sessions retain the draft while private views stay cleared and same-account recheck never submits', async ({ page }) => {
-  const f = await setup(page);
+test('session expiry hides private work without attaching the old or new account to a report', async ({page})=>{
+  const f=await setup(page);
   try {
-    await fillReport(page); await f.control({ expired: true });
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(status(page)).toContainText('Sign in with CUNY Login');
-    await expect(field(page)).toHaveValue(description);
-    await expect(page.locator('#account-details')).toBeHidden();
-    const staleWrite = await page.evaluate(async () => (await fetch('/api/jobs', { method: 'POST', body: '{}' })).status);
-    expect(staleWrite).toBe(401); expect((await f.stats()).calls).toEqual([]);
-    await f.signIn(); await page.getByRole('button', { name: 'Check sign-in', exact: true }).click();
-    await expect(field(page)).toBeEditable(); expect((await f.stats()).calls).toEqual([]);
-    await expect(page.locator('#account-details')).toBeHidden();
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
-    await expect(status(page)).toContainText('Your report was saved');
-    expect((await f.stats()).records[0].subject).toBe(TEST_SUBJECTS.alice); expect(f.errors).toEqual([]);
-  } finally { await f.close(); }
-});
-
-test('account switch cannot attribute an existing draft to the next account', async ({ page }) => {
-  const f = await setup(page);
-  try {
-    await fillReport(page); await f.signIn('bob');
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
-    await expect(status(page)).toContainText('The signed-in account changed.');
-    await expect(field(page)).toHaveValue(description); expect((await f.stats()).calls).toEqual([]);
-    await page.getByRole('button', { name: 'Check sign-in', exact: true }).click();
-    await expect(status(page)).toContainText('The signed-in account changed.');
-    expect((await f.stats()).calls).toEqual([]);
-    await f.signIn('alice'); await page.getByRole('button', { name: 'Check sign-in', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Send bug report', exact: true })).toBeEnabled();
-    expect((await f.stats()).calls).toEqual([]);
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
-    await expect(status(page)).toContainText('Your report was saved');
-    expect((await f.stats()).records[0].subject).toBe(TEST_SUBJECTS.alice); expect(f.errors).toEqual([]);
-  } finally { await f.close(); }
-});
-
-test('a rate-limited session recheck keeps the draft and never submits automatically', async ({ page }) => {
-  const f = await setup(page);
-  try {
-    await fillReport(page); await f.control({ expired: true });
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
-    await expect(status(page)).toContainText('Sign in with CUNY Login');
-    await f.control({ expired: false, limitReports: true });
-    await page.getByRole('button', { name: 'Check sign-in', exact: true }).click();
-    await expect(status(page)).toContainText('We could not check CUNY Login. Your description is still here.');
-    await expect(field(page)).toHaveValue(description); expect((await f.stats()).calls).toEqual([]);
-    await f.control({ limitReports: false });
-    await page.getByRole('button', { name: 'Check sign-in', exact: true }).click();
-    await expect(field(page)).toBeEditable(); expect((await f.stats()).calls).toEqual([]);
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
-    await expect(status(page)).toContainText('Your report was saved'); expect(f.errors).toEqual([]);
-  } finally { await f.close(); }
+    await fillReport(page);await f.control({expired:true});
+    await page.evaluate(()=>window.StemReportDraft.sessionChanged());
+    await expect(field(page)).toBeEditable();
+    await page.getByRole('button',{name:'Send report',exact:true}).click();
+    await expect(status(page)).toContainText('accepted for email delivery');
+    expect((await f.stats()).calls[0]).not.toHaveProperty('subject');
+  } finally {await f.close();}
 });
 
 test('a network failure keeps the UUID for manual recovery and empty descriptions stay in the browser', async ({ page }) => {
@@ -240,16 +194,16 @@ test('a network failure keeps the UUID for manual recovery and empty description
   try {
     const attempts = [];
     await fillReport(page); await field(page).fill('Short');
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
+    await page.getByRole('button', { name: 'Send report', exact: true }).click();
     expect((await f.stats()).calls).toEqual([]);
     await field(page).fill(description);
     await page.route('**/api/bug-reports', async route => { attempts.push(route.request().postDataJSON()); await route.abort('failed'); });
-    await page.getByRole('button', { name: 'Send bug report', exact: true }).click();
+    await page.getByRole('button', { name: 'Send report', exact: true }).click();
     await expect(status(page)).toContainText('We could not confirm');
     expect(attempts).toHaveLength(1); await expect(field(page)).toHaveValue(description);
     await page.unroute('**/api/bug-reports');
     await page.getByRole('button', { name: 'Check report status', exact: true }).click();
-    await expect(status(page)).toContainText('Your report was saved');
+    await expect(status(page)).toContainText('Your report was accepted for email delivery');
     expect((await f.stats()).calls[0].reportId).toBe(attempts[0].reportId); expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
