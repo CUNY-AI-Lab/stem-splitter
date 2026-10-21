@@ -302,6 +302,15 @@ for (const width of [1280,390]) test(`owned recording names persist in the rack 
     await context.setExtraHTTPHeaders({'x-fixture-identity':token});
     await page.setViewportSize({width,height:900});await page.goto(url.href);
     const card=page.locator('#job-list .console'),input=page.getByRole('textbox',{name:'Recording title',exact:true});
+    const openReadyActions=async()=>{
+      // Cached titles render before the saved split has loaded its controls.
+      await expect(card.locator('.badge.ready')).toHaveText('READY');
+      if(width<=540){
+        const toggle=card.getByRole('button',{name:'Session actions',exact:true});
+        await expect(toggle).toBeVisible();await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded','true');
+      }
+    };
     await expect(card.locator('.badge.ready')).toHaveText('READY');
     await page.getByRole('button',{name:`Rename recording: ${original}`,exact:true}).click();
     await input.fill('Discard this title');await input.press('Escape');
@@ -313,7 +322,7 @@ for (const width of [1280,390]) test(`owned recording names persist in the rack 
     const saved=await(await server.fetch('/api/jobs/remix-fixture',{headers:{'x-fixture-identity':token}})).json();
     expect(saved.filename).toBe(renamed);
     await page.reload();await expect(card.locator('.console-title')).toHaveText(renamed);
-    if(await card.locator('.actions-toggle').isVisible())await card.locator('.actions-toggle').click();
+    await openReadyActions();
     await card.locator('.folder-btn').click();
     await page.getByRole('button',{name:'Listening notes',exact:true}).click();
     await expect(card).toHaveCount(0);
@@ -321,7 +330,7 @@ for (const width of [1280,390]) test(`owned recording names persist in the rack 
     await expect(page.locator('.folder-item-name')).toHaveText(renamed);
     await page.getByRole('button',{name:'LOAD',exact:true}).click();
     await expect(card.locator('.console-title')).toHaveText(renamed);
-    if(await card.locator('.actions-toggle').isVisible())await card.locator('.actions-toggle').click();
+    await openReadyActions();
     await card.getByRole('button',{name:'RENAME',exact:true}).click();
     await input.fill(folderTitle);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
