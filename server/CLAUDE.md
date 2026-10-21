@@ -144,7 +144,7 @@ the database and all audio. Confirm persistence after infrastructure changes by
 re-POSTing a key uploaded before a restart—`400 Upload not found` means the
 volume is not holding.
 
-`PUBLIC_BASE_URL` is derived from `RAILWAY_PUBLIC_DOMAIN` when unset, so the domain must exist before the container starts for webhooks to resolve. Builder is Railpack; `engines.node` is pinned to exact `22.23.1`, matching CI and the declared Node types, because `node:sqlite` is what the D1 shim is built on.
+`PUBLIC_BASE_URL` is derived from `RAILWAY_PUBLIC_DOMAIN` when unset, so the domain must exist before the container starts for webhooks to resolve. Builder is Railpack; `engines.node` is pinned to exact `22.23.4`, matching CI and the declared Node types, because `node:sqlite` is what the D1 shim is built on.
 
 ## Verifying a deploy
 
