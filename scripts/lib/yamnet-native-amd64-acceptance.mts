@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { verifyHistoricalWorkflow } from './historical-workflow.mts';
+
 export const YAMNET_NATIVE_AMD64_ACCEPTANCE_PATH =
   'docs/acceptance/2026-08-31-yamnet-native-amd64/evidence.json' as const;
 export const YAMNET_NATIVE_AMD64_ACCEPTANCE_SCHEMA =
@@ -177,8 +179,13 @@ export function loadYamnetNativeAmd64Acceptance(repositoryRoot = process.cwd()):
 
   const source = record(validated.source, 'source');
   const review = record(validated.humanReview, 'human review');
+  verifyHistoricalWorkflow(
+    repositoryRoot,
+    string(source.commit, 'source commit'),
+    string(source.workflowPath, 'workflow path'),
+    string(source.workflowSha256, 'workflow SHA-256')
+  );
   const expectedFiles = [
-    [string(source.workflowPath, 'workflow path'), string(source.workflowSha256, 'workflow SHA-256')],
     [string(review.coreListeningArtifact, 'core listening artifact'), string(review.coreListeningArtifactSha256, 'core listening SHA-256')],
   ] as const;
   for (const [path, expected] of expectedFiles) {
