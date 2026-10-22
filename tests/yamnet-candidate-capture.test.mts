@@ -142,7 +142,7 @@ function nativeReports() {
     candidate: identity.corpus,
     execution: structuredClone(execution),
     evaluationSources: {
-      nodeVersion: 'v22.23.1',
+      nodeVersion: 'v22.23.4',
       corpusPath: 'tests/corpus/corpus.json',
       corpusSha256: plan.partitions[0].manifestSha256,
       groundTruthPath: 'tests/corpus/instrument-discovery-expectations.json',

@@ -71,9 +71,9 @@ test('Railway and CI use one exact Node runtime for the active SQLite host', () 
     engines?: { node?: string };
   };
   const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
-  assert.equal(packageJson.engines?.node, '22.23.1');
-  assert.equal(process.versions.node, '22.23.1');
-  assert.match(workflow, /node-version: "22\.23\.1"/);
+  assert.equal(packageJson.engines?.node, '22.23.4');
+  assert.equal(process.versions.node, '22.23.4');
+  assert.match(workflow, /node-version: "22\.23\.4"/);
 });
 
 test('Railway D1 batches cannot interleave transactions on one connection', async () => {

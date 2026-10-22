@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { verifyHistoricalWorkflow } from './historical-workflow.mts';
+
 export const EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_PATH =
   'docs/acceptance/2026-08-31-efficientat-native-amd64/evidence.json' as const;
 export const EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_SCHEMA =
@@ -389,8 +391,13 @@ export function loadEfficientatNativeAmd64Acceptance(
 ): JsonRecord {
   const bytes = readFileSync(resolve(repositoryRoot, EFFICIENTAT_NATIVE_AMD64_ACCEPTANCE_PATH));
   const validated = validateEfficientatNativeAmd64Acceptance(JSON.parse(bytes.toString('utf8')));
+  verifyHistoricalWorkflow(
+    repositoryRoot,
+    SOURCE_COMMIT,
+    '.github/workflows/efficientat-comparator-image.yml',
+    WORKFLOW_SHA256
+  );
   const files = [
-    ['.github/workflows/efficientat-comparator-image.yml', WORKFLOW_SHA256],
     ['docs/acceptance/2026-08-10-v3.2-manual-listening/review.json', CORE_REVIEW_SHA256],
   ] as const;
   for (const [path, expected] of files) {

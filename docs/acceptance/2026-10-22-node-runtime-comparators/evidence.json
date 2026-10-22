@@ -1,0 +1,141 @@
+{
+  "$schema": "stem-splitter.node-runtime-comparator-verification.v1",
+  "capturedAt": "2026-10-22T05:29:00.499215+00:00",
+  "status": "native-comparison-passed",
+  "runnerNode": "v22.23.4",
+  "runnerPython": "3.12.13",
+  "observations": [
+    {
+      "classifier": "yamnet",
+      "sourceCommit": "518bd120b0efda280c27a2e5f2833e12a1a09403",
+      "branch": "agent/node_stem_splitter_patch/node-22-23-4",
+      "workflow": ".github/workflows/yamnet-comparator-image.yml",
+      "workflowSha256": "3e43defdf36edece79150ec67307b4e991cac9549c8be355bcbe75d80aa8920c",
+      "runId": "39727468114",
+      "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/39727468114",
+      "runConclusion": "success",
+      "jobId": "119654586233",
+      "artifact": {
+        "id": "12403896907",
+        "name": "yamnet-native-amd64-518bd120b0efda280c27a2e5f2833e12a1a09403",
+        "archiveBytes": 28593,
+        "archiveSha256": "e42fdda517368f02b5779b1686492e55e2325f660658c658de3c2a6e1215b41b",
+        "expiresAt": "2026-11-21T05:22:52Z",
+        "containsAudio": false,
+        "files": [
+          {
+            "name": "yamnet-native-amd64-candidate.json",
+            "bytes": 7573,
+            "sha256": "112be8d9ae18af26b63d292e083ce914fa28c45789fc32471f2f372fda92c549",
+            "schema": "stem-splitter.instrument-candidate-observations.v3"
+          },
+          {
+            "name": "yamnet-native-amd64-controls.json",
+            "bytes": 53256,
+            "sha256": "6a65aa3390a4b8fcc0625aa279206a0b4c6dd7b05f087341193b0f8f8d9d233e",
+            "schema": "stem-splitter.yamnet-control-evaluation.v1"
+          },
+          {
+            "name": "yamnet-native-amd64-corpus.json",
+            "bytes": 136829,
+            "sha256": "82cfb61e9364f94b3962e2b8b13d1c04c5370ce5dcb725885ac307ede81bdc41",
+            "schema": "stem-splitter.yamnet-comparator-evaluation.v2"
+          },
+          {
+            "name": "yamnet-native-amd64-source-report.json",
+            "bytes": 558,
+            "sha256": "cb28bff51c6bd4ec5ce760914a8836b87c4e1305d699d804d6b5ea95275ad4e3",
+            "schema": "stem-splitter.yamnet-candidate-source-report.v1"
+          }
+        ]
+      },
+      "execution": {
+        "id": "sha256:0d0b3b14a4da6bd7157590a52d2164433b4b4dbde709b5fd51a1d607b91a5e26",
+        "platform": "linux/amd64",
+        "sizeBytes": 739878508,
+        "host": "linux/x64",
+        "emulated": false,
+        "lockSha256": "b4cb15c5bf6fc4e68b9e3a7d617fc6ad81302ce35c3466cd70ba8f5626de4e3e",
+        "sourceSha256": {
+          "instrument-discovery/vocabulary.json": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+          "yamnet-comparator/Dockerfile": "f445e15af270a6104581173338cbeea73936bed3e558bfeff25e05718eb6a24b",
+          "yamnet-comparator/backend.py": "29bc8aedb22448407112886a24c5b8810512adf0d87743e5d78b2471f7e1d5a8",
+          "yamnet-comparator/cli.py": "04ed09cedf4e2f4abd5a5a88656df582975976bb08ed562788c0a7ca1fd24b4e",
+          "yamnet-comparator/constants.py": "ade425d97df99f89dba8a4b97431206542fd9162c1a819712bedb4028f0c6f35",
+          "yamnet-comparator/contract.py": "1e909097b01a383a187eb6db328276abada4215b18add056c07192ef66b2eec1",
+          "yamnet-comparator/download_model.py": "7fea299940051c5ab094aaa89f8f8ad993872e7d0f7cb85dd50787682e2f1c35",
+          "yamnet-comparator/mapping.json": "cda962367ff7cf0b65674b5cbd8cb8289a34789c671df83d4e27ba583e4b3318"
+        }
+      },
+      "corpusSources": 11,
+      "controlsSources": 8
+    },
+    {
+      "classifier": "efficientat",
+      "sourceCommit": "518bd120b0efda280c27a2e5f2833e12a1a09403",
+      "branch": "agent/node_stem_splitter_patch/node-22-23-4",
+      "workflow": ".github/workflows/efficientat-comparator-image.yml",
+      "workflowSha256": "a0d21c41433f36be1888efa885c92e99e6d27af4ff8d7468c010c75a020c7a8a",
+      "runId": "39727470389",
+      "runUrl": "https://github.com/CUNY-AI-Lab/stem-splitter/actions/runs/39727470389",
+      "runConclusion": "success",
+      "jobId": "119654592673",
+      "artifact": {
+        "id": "12403298051",
+        "name": "efficientat-native-amd64-518bd120b0efda280c27a2e5f2833e12a1a09403",
+        "archiveBytes": 26927,
+        "archiveSha256": "5cc9bc67a941e126af1de445c1b7b29dad03ca78c595bd771085ea1dd10a00d3",
+        "expiresAt": "2026-11-21T05:23:32Z",
+        "containsAudio": false,
+        "files": [
+          {
+            "name": "efficientat-native-amd64-controls.json",
+            "bytes": 54300,
+            "sha256": "1e49d71b748bbdcdc536b8b07812fc6238720297bebb3387e4eabed79c990e47",
+            "schema": "stem-splitter.efficientat-control-evaluation.v1"
+          },
+          {
+            "name": "efficientat-native-amd64-corpus.json",
+            "bytes": 137909,
+            "sha256": "e30d7bb7949168b16fa20cadd0aaf12a50e282538191bf4467004f75ca9943f8",
+            "schema": "stem-splitter.efficientat-comparator-evaluation.v2"
+          },
+          {
+            "name": "instrument-classifier-comparison.json",
+            "bytes": 3675,
+            "sha256": "abc9aea2c85ca5459f17f3f75a2cb10362d8f606f4a27db914156a8e3f5e7339",
+            "schema": "stem-splitter.instrument-classifier-comparison.v1"
+          }
+        ]
+      },
+      "execution": {
+        "id": "sha256:bbc84adb64c12919991f1bbafa602aa2b3ce62698f106f7c5be3ac06fc3a8b25",
+        "platform": "linux/amd64",
+        "sizeBytes": 1066431830,
+        "host": "linux/x64",
+        "emulated": false,
+        "lockSha256": "f643d38b73c995fead2836f71867603657e3ff5de2459f07d114105384398112",
+        "sourceSha256": {
+          "instrument-discovery/vocabulary.json": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+          "efficientat-comparator/LICENSE.EfficientAT": "7a45b1641304427db80df436cab61c04ddb634d97e9a8b7a93de41db940fa8b5",
+          "efficientat-comparator/Dockerfile": "50a2d95c9dbb85f6afe60c1988c51dd6b9052aa01fc847b2a80fdb70726deb60",
+          "efficientat-comparator/backend.py": "b79c70f4d57f8b5d2215a926111e3579e5391f537e9db66386272ec0121f12f6",
+          "efficientat-comparator/cli.py": "a43845bae7a4d15c1001df399edf9576765a2ff1f3a22e47fd54760e9dd0e09a",
+          "efficientat-comparator/constants.py": "b1298a63b85fab715fe00cbbef839bef7c282c036f54bc448c688f6f4ccfe8e5",
+          "efficientat-comparator/contract.py": "7444aa035fd4a4e54914d3c26d63717a23138dba279a6d382120dc62cb737a7d",
+          "efficientat-comparator/download_model.py": "c4cfbe93907d479ac4b83bec84976dd2b1fd0659a0e06173ba1c656fbb4ad651",
+          "efficientat-comparator/mapping.json": "b8aa419a47b612144655b2f3409fbb6eb27aabed79b49717a20f96a0f15ad50d",
+          "efficientat-comparator/model.py": "1197417d17e8dcfeba40406066c8c5a8d294ceb1514f04aa0d4551df130bb36f"
+        }
+      },
+      "corpusSources": 11,
+      "controlsSources": 8
+    }
+  ],
+  "sourceGate": "recorded separately by exact-tip GitHub Source gate; not asserted by this native receipt",
+  "historicalAcceptances": "unchanged; verified against their recorded source commits",
+  "promotionAuthorized": false,
+  "teacherReviewAccepted": false,
+  "audioCommitted": false,
+  "productionChanged": false
+}

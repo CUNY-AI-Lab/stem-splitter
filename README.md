@@ -161,7 +161,7 @@ A localhost-only path uses Audio Separator 0.44.5 and the pinned
 SHA-256 pins for both the checkpoint and its YAML configuration before
 deserializing the model.
 
-Prerequisites: Bun 1.3.14, Node 22.23.1, `uv`, and FFmpeg. On Apple Silicon,
+Prerequisites: Bun 1.3.14, Node 22.23.4, `uv`, and FFmpeg. On Apple Silicon,
 Audio Separator uses PyTorch MPS where the model supports it. The first run
 creates an isolated Python 3.11/3.12 environment and the first separation
 downloads the pinned model, so both take longer than later runs.

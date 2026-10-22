@@ -504,7 +504,7 @@ function validateCorpusEvaluator(
   const expectedPins = yamnetEvaluationSourcePins(repositoryRoot);
   validatePinMap(value.sourcePins, expectedPins, 'YAMNet corpus evaluator source pins');
   if (
-    value.nodeVersion !== 'v22.23.1' ||
+    value.nodeVersion !== 'v22.23.4' ||
     value.corpusPath !== CORPUS_PATH ||
     value.corpusSha256 !== corpusPartition.manifestSha256 ||
     value.groundTruthPath !== EXPECTATIONS_PATH ||

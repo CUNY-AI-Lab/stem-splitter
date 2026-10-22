@@ -96,7 +96,7 @@ const evidence = {
     command: inspected.Config?.Cmd,
   },
   pins: {
-    node: '22.23.1',
+    node: '22.23.4',
     bun: '1.3.14',
     ffmpeg: '8.0.3',
     classifier: PINNED_ROLE_CLASSIFIER_VERSION,
