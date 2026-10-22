@@ -27,11 +27,12 @@ duplicate sends after unknown outcomes. Only an explicit provider throttling
 refusal can permit a bounded retry; network/5xx/ambiguous failures cannot resend.
 Existing stored reports and prior receipt records remain intact.
 
-The app-only classroom release omits the production `BUG_REPORTS` binding.
-The public availability route returns `enabled: false`, so no report form is
-offered and the app cannot dispatch reports. Classroom and Listening Guy
-features can release independently. Restore the app-scoped binding only after
-the updated Admission receiver has passed its separate shared-coordinator
-release and readback. Do not bypass that coordinator's lock. Tests retain a
-mocked reporting binding to exercise the future form and delivery contract.
-Deployed submission and mailbox readback remain separate release checks.
+The production configuration includes the app-scoped `BUG_REPORTS` binding.
+Release this configuration only after Admission PR #335 has passed its hosted
+source check, shared-coordinator release and receiver readback. The previous
+classroom release omitted the binding and returned `enabled: false`.
+
+The availability route exposes the report form only when the binding exists.
+A production submission and corresponding mailbox readback are separate release
+checks; mocked tests establish neither. Keep the previous deployment available
+for rollback if the receiver refuses reports after activation.
