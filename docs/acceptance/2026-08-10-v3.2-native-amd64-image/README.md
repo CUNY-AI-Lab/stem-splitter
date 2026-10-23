@@ -2,8 +2,8 @@
 
 This directory records native Linux amd64 evidence for the exact role-v4,
 source-scope-v2 analysis image. `evidence.json` was captured by the successful
-native `analysis-image` job in GitHub Actions run `33353695281` for commit
-`431e21ffd627b1242abec640c09e3e383657ff6f`.
+native `analysis-image` job in GitHub Actions run `39897318926` for commit
+`a18e52405632bddccc20d051ce1f2ff5c19483e6`.
 
 The `analysis-image` CI job:
 
