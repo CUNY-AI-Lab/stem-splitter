@@ -147,6 +147,12 @@ test('only the claiming member can cancel a pending guest split and the original
 test('browser claim uses no client IDs, preserves cache on failure and merges only confirmed layout',async()=>{
  const source=readFileSync(new URL('../public/guest-claim.js',import.meta.url),'utf8');
  const guestKey=`jobs:${guest}`,memberKey=`jobs:${alice}`,data=new Map([[guestKey,JSON.stringify([{id:'saved',collapsed:true},{id:'foreign',collapsed:true}])],[memberKey,JSON.stringify([{id:'existing',collapsed:false}])]]);
+ const progressKey=`stem-listening:${guest}:saved`,memberProgress=`stem-listening:${alice}:saved`;
+ const progress={draft:'Keep listening at the bass entry',position:42,rate:0.75,muted:['drums'],solo:{stem:'bass',stage:'only'},guideOpen:true,loop:{start:40,end:50},
+  pendingConversation:{revision:2,entries:[{kind:'you',text:'Keep this transcript entry'}]},
+  pendingChat:{messageId:'recovery-request-001',messages:[{role:'user',content:'Keep this request key'}],durationSec:60},
+  pendingGuide:{messageId:'recovery-guide-001',durationSec:60}};
+ data.set(progressKey,JSON.stringify(progress));data.set(`stem-listening:${guest}:foreign`,JSON.stringify(progress));
  let fail=true,calls=0;
  const context={window:{} as any,AbortSignal,localStorage:{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)},fetch:async(path:string,options:any)=>{
   calls++;assert.equal(path,'/api/account/claim-guest');assert.equal(options.body,undefined);
@@ -157,6 +163,12 @@ test('browser claim uses no client IDs, preserves cache on failure and merges on
  fail=false;await context.window.StemGuestClaim.run(member());assert.equal(calls,2);
  assert.deepEqual(JSON.parse(data.get(memberKey)!),[{id:'saved',collapsed:true},{id:'existing',collapsed:false}]);
  assert.equal(data.get(guestKey),before);
+ assert.deepEqual(JSON.parse(data.get(memberProgress)!),progress);
+ assert.equal(data.get(`stem-listening:${alice}:foreign`),undefined,'unconfirmed work stays outside member cache');
+ assert.equal(data.get(progressKey),JSON.stringify(progress),'guest progress stays recoverable');
+ data.set(memberProgress,JSON.stringify({...progress,draft:'New signed-in draft'}));
+ await context.window.StemGuestClaim.run(member());
+ assert.equal(JSON.parse(data.get(memberProgress)!).draft,'New signed-in draft','repeated claim preserves subsequent member progress');
 });
 
 test('claim actor expectation refuses a switched or missing browser account before transferring work',async()=>{

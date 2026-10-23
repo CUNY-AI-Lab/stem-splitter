@@ -29,7 +29,7 @@ window.addEventListener('focus', async () => {
   finally { checkingAccount = false; }
 });
 async function request(path, options = {}) {
-  const response = await fetch(path, { credentials: 'same-origin', ...options });
+  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
@@ -175,7 +175,7 @@ function loadStudents() {
       button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName;
       button.addEventListener('click', () => void loadStudentJobs(student));
       count.className = 'student-count';
-      count.textContent = `${student.runs} ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} ${student.recordedVisits === 1 ? "visit" : "visits"}`;
+      count.textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits} recorded visits in 30 days`;
       row.append(button, count); return row;
     }));
     el('student-status').textContent = studentRows.length ? '' : 'Students appear here after they use Stem Splitter.';
@@ -212,7 +212,7 @@ async function loadStudentJobs(student, more = false) {
   studentSelection = student.subject;
   el('student-detail').hidden = false;
   el('student-name').textContent = student.displayName;
-  el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} recorded ${student.recordedVisits === 1 ? "visit" : "visits"} in 30 days`;
+  el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits} recorded visits in 30 days${student.lastActiveAt ? ` · Last activity ${new Date(student.lastActiveAt).toLocaleString()}` : ""}`;
   el('student-more').hidden = true;
   el('student-more').disabled = true;
   el('student-retry').hidden = true;
@@ -250,7 +250,7 @@ async function loadStudentJobs(student, more = false) {
   finally { if (requestId === studentRequest) el('student-more').disabled = false; }
 }
 el('student-review').addEventListener('toggle', () => {
-  if (el('student-review').open && !studentsLoaded && !studentSelection) void loadStudents();
+  if (el('student-review').open && !studentsLoading) void loadStudents();
 });
 el('student-retry').addEventListener('click', async () => {
   const selection = studentSelection;

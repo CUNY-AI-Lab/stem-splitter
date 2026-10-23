@@ -30,6 +30,14 @@ export async function claimGuestWork(env: Env, principal: AppPrincipal) {
     env.DB.prepare(`INSERT OR IGNORE INTO listening_conversations(job_id,subject,entries,revision,created_at,updated_at,expires_at)
       SELECT job_id,?,entries,revision,created_at,updated_at,expires_at FROM guest_listening_conversations
       WHERE subject=? AND job_id IN (${jobs}) AND expires_at>datetime('now') AND ${gate}`).bind(member,guest,guest,member,...args),
+    env.DB.prepare(`INSERT OR IGNORE INTO listening_reply_receipts(operation_id,job_id,subject,response_json,expires_at)
+      SELECT r.operation_id,r.job_id,?,r.response_json,
+        MIN(o.updated_at+86400000,CAST(strftime('%s',j.created_at,'+90 days') AS INTEGER)*1000)
+      FROM guest_listening_reply_receipts r JOIN app_operations o ON o.id=r.operation_id JOIN jobs j ON j.id=r.job_id
+      WHERE r.subject=? AND r.job_id IN (${jobs}) AND r.expires_at>? AND ${gate}`).bind(member,guest,guest,member,now,...args),
+    // Move ephemeral receipts so a later claim cannot restore a reset conversation.
+    env.DB.prepare(`DELETE FROM guest_listening_reply_receipts WHERE subject=? AND job_id IN (${jobs}) AND ${gate}`)
+      .bind(guest,guest,member,...args),
     env.DB.prepare(`UPDATE annotations SET author_subject=? WHERE author_subject=? AND job_id IN (${jobs}) AND ${gate}`)
       .bind(member,guest,guest,member,...args),
     // D1 batch is atomic: originals remain if any subsequent ownership write fails.

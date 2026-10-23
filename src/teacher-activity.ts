@@ -2,7 +2,7 @@ import type { Env } from './env.ts';
 import type { AppPrincipal } from './identity.ts';
 import { boundedRpc, cleanDisplayName, courseIds, resolveCourse, CourseError } from './classroom/access.ts';
 import { COURSE_APP, validAssignmentV2, validPage } from './classroom/contract.ts';
-import { fingerprint } from './reliability/ledger.ts';
+import { usageBySubject } from './classroom/activity.ts';
 
 export async function rememberDisplayName(env:Env,subject:string,value:unknown) {
   const name=cleanDisplayName(value);
@@ -76,19 +76,6 @@ export async function requireStudentReview(env:Env,actor:AppPrincipal,subject:st
 export async function studentActivity(env:Env,actor:AppPrincipal) {
   if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');
   const users=await namedUsers(env,actor,true);
-  const {results}=await env.DB.prepare(`SELECT subject,COUNT(*) AS runs,SUM(completed) AS completed FROM (
-    SELECT o.subject,j.id,j.status='done' AS completed FROM job_owners o JOIN jobs j ON j.id=o.job_id
-      WHERE NOT EXISTS(SELECT 1 FROM app_operations op WHERE op.job_id=j.id AND op.kind='split')
-    UNION ALL SELECT subject,id,state='succeeded' FROM app_operations WHERE kind='split' AND quota_class='member'
-  ) GROUP BY subject`).all<{subject:string;runs:number;completed:number}>();
-  const counts=new Map(results.map(row=>[row.subject,row]));
-  const since=Date.now()-30*86400000;
-  const visits=(await env.DB.prepare(`SELECT actor_key,COUNT(*) AS visits FROM usage_events
-    WHERE event_type='session_start' AND source='client' AND actor_class='member' AND at>=? GROUP BY actor_key`).bind(since).all<{actor_key:string;visits:number}>()).results;
-  const byActor=new Map(visits.map(row=>[row.actor_key,row.visits]));
-  return await Promise.all(users.map(async user=>{
-    let recordedVisits=0;
-    for(let day=0;day<=30;day++)recordedVisits+=byActor.get(await fingerprint(['usage-actor-v1',new Date(Date.now()-day*86400000).toISOString().slice(0,10),user.subject]))??0;
-    return {subject:user.subject,displayName:user.displayName,runs:counts.get(user.subject)?.runs??0,completed:counts.get(user.subject)?.completed??0,recordedVisits};
-  }));
+  const usage=await usageBySubject(env,users.map(user=>user.subject));
+  return users.map(user=>({subject:user.subject,displayName:user.displayName,...usage.get(user.subject)!}));
 }

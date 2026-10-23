@@ -50,7 +50,7 @@ async function setup(page, chatAvailable = false) {
   });
   await page.route('**/api/music/search?*', route => new URL(route.request().url()).searchParams.has('sampleItem') ? route.fulfill({json:{results:[]}}) : route.fallback());
   await page.route('**/api/song-samples', route => route.fulfill({json:[{artist:'jazz',title:'piano',archiveId:'sample',archiveFile:'sample.mp3'}]}));
-  return { origin, errors, requests, issuer, network, counts: () => ({ providerStarts, verifications, widgetLoads }),
+  return { origin, errors, requests, issuer, network, worker, counts: () => ({ providerStarts, verifications, widgetLoads }),
     close: async () => { await page.unrouteAll({ behavior: 'wait' }); await page.close(); await harness.close(); network.close(); } };
 }
 const account = page => page.evaluate(async () => (await fetch('/api/account')).json());
@@ -798,4 +798,125 @@ test('refreshing the only available song preserves its full title instead of typ
     expect(titles.every(title=>title==='Artist Only song')).toBe(true);
     expect(f.errors).toEqual([]);
   } finally {await f.close();}
+});
+
+test('guest Guide stops at five turns and sign-in restores its draft, player and saved conversation',async({page})=>{
+ const f=await setup(page,true);
+ try {
+  await page.goto(f.origin);
+  await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+  await startUpload(page);await completed(page,1);
+  await page.locator('.coach-toggle').click();
+  const input=page.getByRole('textbox',{name:'Ask the Listening Guide'});
+  const ask=page.getByRole('button',{name:'ASK',exact:true});
+  await input.fill('Question 1');await ask.click();
+  await page.getByRole('button',{name:'Complete fixture guest check'}).click();
+  await expect(page.locator('.coach-row.coach').last()).toContainText('Listen for the bass');
+  for(let i=2;i<=5;i++) {
+   if(i===5)await page.route('**/api/jobs/*/listening-conversation',route=>route.request().method()==='PUT'
+    ?route.fulfill({status:503,json:{error:'Fixture connection interrupted while saving'}}):route.fallback());
+   await expect(ask).toBeEnabled();await input.fill(`Question ${i}`);await ask.click();
+   await expect(page.locator('.coach-row.coach')).toHaveCount(i);
+  }
+  await expect(ask).toBeDisabled();
+  await expect(page.locator('.coach-sign-in')).toBeVisible();
+  await expect(page.locator('.coach-usage-status')).toHaveText('Five turns used for this split.');
+  await input.fill('Continue with this draft after sign-in');
+  const saved=await page.evaluate(async()=>{
+   const mixer=[...mixers.values()][0];await mixer.conversationSaveQueue;
+   mixer.cycleSolo('bass');mixer.setRate(0.75);mixer.seekTo(Math.min(1,mixer.audios[0].duration/2));mixer.saveListeningProgress();
+   return {id:mixer.job.id,position:mixer.audios[0].currentTime};
+  });
+  await page.reload();
+  await expect(input).toHaveValue('Continue with this draft after sign-in');
+  await expect(ask).toBeDisabled();
+  await expect(page.locator('.coach-sign-in')).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>[...mixers.values()][0]?.audios[0].currentTime)).toBeCloseTo(saved.position,1);
+  expect(await page.evaluate(()=>[...mixers.values()][0].soloState)).toEqual({stem:'bass',stage:'behind'});
+  expect(await page.evaluate(()=>[...mixers.values()][0].rate)).toBe(0.75);
+  const beforeSignIn=await page.evaluate(async id=>(await fetch(`/api/jobs/${id}/listening-conversation`)).json(),saved.id);
+  expect(beforeSignIn.entries.filter(entry=>entry.kind==='you')).toHaveLength(4);
+  await page.unroute('**/api/jobs/*/listening-conversation');
+  const jwt=await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+  await page.setExtraHTTPHeaders({'x-fixture-identity':jwt});
+  await page.route('**/auth/login?*',async route=>{
+   await route.fulfill({status:302,headers:{location:`/?job=${saved.id}`}});
+  });
+  await page.locator('.coach-sign-in').click();
+  await expect.poll(async()=>(await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
+  await expect(input).toHaveValue('Continue with this draft after sign-in');
+  await expect(ask).toBeEnabled();
+  await expect.poll(async()=>{
+   const conversation=await page.evaluate(async id=>(await fetch(`/api/jobs/${id}/listening-conversation`)).json(),saved.id);
+   return conversation.entries.filter(entry=>entry.kind==='you').length;
+  }).toBe(5);
+  await page.reload();
+  await expect(input).toHaveValue('Continue with this draft after sign-in');
+  expect(await page.evaluate(()=>[...mixers.values()][0].soloState)).toEqual({stem:'bass',stage:'behind'});
+  await expect.poll(()=>page.evaluate(()=>[...mixers.values()][0]?.audios[0].currentTime)).toBeCloseTo(saved.position,1);
+  expect(f.counts().verifications).toBe(1);
+  expect(f.errors).toEqual([]);
+ } finally {await f.close();}
+});
+
+for (const signIn of [false,true]) test(`guest fifth reply survives a lost completion and reload${signIn?' through sign-in':''}`,async({page})=>{
+ const f=await setup(page,true);
+ try {
+  await page.goto(f.origin);
+  await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+  await startUpload(page);await completed(page,1);
+  await page.locator('.coach-toggle').click();
+  const input=page.getByRole('textbox',{name:'Ask the Listening Guide'});
+  const ask=page.getByRole('button',{name:'ASK',exact:true});
+  for(let i=1;i<=4;i++) {
+   await expect(ask).toBeEnabled();await input.fill(`Saved question ${i}`);await ask.click();
+   if(i===1)await page.getByRole('button',{name:'Complete fixture guest check'}).click();
+   await expect(page.locator('.coach-row.coach')).toHaveCount(i);
+  }
+  let fifthBody;
+  await page.route('**/api/jobs/*/chat',async route=>{
+   fifthBody=route.request().postDataJSON();
+   const completedReply=await route.fetch();
+   expect(completedReply.status()).toBe(200);
+   expect(await completedReply.text()).toContain('"type":"done"');
+   // The server finishes and stores the reply, but the browser loses its final event.
+   await route.fulfill({status:200,contentType:'text/event-stream',body:'data: {"type":"delta","text":"Listen for the bass"}\n\n'});
+  });
+  await expect(ask).toBeEnabled();await input.fill('Recover the fifth question');await ask.click();
+  await expect(page.locator('.coach-row.error')).toContainText('ended before completion');
+  await expect(page.locator('.coach-usage-status')).toHaveText('Five turns used for this split.');
+  const retry=page.getByRole('button',{name:'RETRY REPLY',exact:true});
+  await expect(retry).toBeEnabled();
+  await page.unroute('**/api/jobs/*/chat');
+  await page.reload();
+  await expect(input).toHaveValue('Recover the fifth question');
+  await expect(retry).toBeEnabled();
+  const jobId=await page.evaluate(()=>[...mixers.keys()][0]);
+  if(signIn) {
+   const jwt=await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+   const gateway=await f.issuer.mintIdentityJwt({audience:'cail:gateway',subject:TEST_SUBJECTS.alice});
+   await page.setExtraHTTPHeaders({'x-fixture-identity':jwt,'x-fixture-gateway-identity':gateway});
+   await page.route('**/auth/login?*',route=>route.fulfill({status:302,headers:{location:`/?job=${jobId}`}}));
+   await page.locator('.coach-sign-in').click();
+   await expect.poll(async()=>(await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
+   await expect(input).toHaveValue('Recover the fifth question');await expect(retry).toBeEnabled();
+  }
+  const replay=page.waitForRequest(request=>new URL(request.url()).pathname===`/api/jobs/${jobId}/chat`);
+  await retry.click();
+  expect((await replay).postDataJSON()).toEqual(fifthBody);
+  await expect(page.locator('.coach-log .coach-row.coach')).toHaveText('Listen for the bass against the drums.');
+  await expect(input).toHaveValue('');
+  await expect.poll(async()=>{
+   const result=await page.evaluate(async id=>(await fetch(`/api/jobs/${id}/listening-conversation`)).json(),jobId);
+   return result.entries.filter(entry=>entry.kind==='you').length;
+  }).toBe(5);
+  const stats=await f.worker.fetch('/__fixture/gateway-stats',{headers:{'x-fixture':'local-only'}});
+  expect((await stats.json()).gatewayCalls).toBe(5);
+  await page.reload();
+  await expect(input).toHaveValue('');
+  const saved=await page.evaluate(async id=>(await fetch(`/api/jobs/${id}/listening-conversation`)).json(),jobId);
+  expect(saved.entries.filter(entry=>entry.kind==='you')).toHaveLength(5);
+  expect(saved.entries.filter(entry=>entry.kind==='coach')).toHaveLength(5);
+  expect(f.errors).toEqual([]);
+ } finally {await f.close();}
 });

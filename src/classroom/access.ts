@@ -61,7 +61,7 @@ export async function jobPermission(env: Env, principal: AppPrincipal, id: strin
   const course = principal.course?.classId === row.course_id ? principal.course : await resolveCourse(env, principal.subject, row.course_id);
   const owner = row.subject === principal.subject;
   if (env.CAIL_CLASSROOM_ENABLED === 'false') return owner ? {owner:true,read:true,comment:false,courseId:row.course_id,instructor:false} : null;
-  if (owner || course.owner) return { owner, read: true, comment: true, courseId: row.course_id, instructor: course.owner };
+  if (owner || course.capabilities.instructorPanel) return { owner, read: true, comment: true, courseId: row.course_id, instructor: course.capabilities.instructorPanel };
   const grant = await env.DB.prepare(`SELECT MAX(f.permission='comment') AS comment FROM course_folders f
     JOIN course_folder_items i ON i.folder_id=f.id WHERE i.job_id=? AND f.course_id=? AND f.permission IN ('read','comment')
     HAVING COUNT(*)>0`).bind(id, row.course_id).first<{ comment: number }>();

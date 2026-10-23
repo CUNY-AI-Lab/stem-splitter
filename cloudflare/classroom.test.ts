@@ -16,6 +16,7 @@ import { saveCoursePrompt } from '../src/classroom/prompts.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
 import { recoverExpired } from '../src/reliability/queue.ts';
+import { recordClientUses } from '../src/reliability/observability.ts';
 const B='another-reviewed-course';
 const ids={alice:`cail-${'1'.repeat(32)}`,bob:`cail-${'2'.repeat(32)}`,ownerA:`cail-${'3'.repeat(32)}`,ownerB:`cail-${'4'.repeat(32)}`,outsider:`cail-${'5'.repeat(32)}`,admin:`cail-${'6'.repeat(32)}`,guestA:`cail-${'7'.repeat(32)}`};
 type Person=keyof typeof ids;
@@ -92,14 +93,51 @@ test('guest instructors get only their scoped class panel, roster and versioned 
   assert.equal((await request(`/api/classroom/courses/${DEMO}/prompt`,'guestA','PUT',{amendment:'stale write',changeNote:'Stale',expectedRevision:initial.revision})).status,409);
   assert.equal((await request(`/api/classroom/courses/${DEMO}/prompt/history?before=${revision+1}`,'guestA')).status,200);
 });
+test('guest instructors can open and annotate their class splits while personal and other-course work stay private',async()=>{
+  const {request,job,revoked}=await setup();
+  await job('demo-split','alice',DEMO);await job('ordinary-course','alice',A);await job('private-split','alice',null);
+  assert.equal((await request('/api/jobs/demo-split','guestA')).status,200);
+  const note=await request('/api/jobs/demo-split/annotations','guestA','POST',{atSeconds:2,text:'Hear the change in the bass.'});
+  assert.equal(note.status,200);
+  assert.equal((await request('/api/jobs/ordinary-course','guestA')).status,403);
+  assert.equal((await request('/api/jobs/private-split','guestA')).status,404);
+  assert.equal((await request('/api/jobs/demo-split/listening-conversation','guestA')).status,404);
+  revoked.add(`${ids.guestA}:${DEMO}`);
+  assert.equal((await request('/api/jobs/demo-split','guestA')).status,403);
+});
 test('roster includes zero-work students and stable pages; scoped counts and split cursors',async()=>{
   const {request,job,db}=await setup();await job('a');await job('b','alice',B);
   let queries=0;const original=db.prepare.bind(db);db.prepare=((sql:string)=>{queries++;return original(sql);}) as typeof db.prepare;
   const first=await(await request(`/api/classroom/courses/${A}/roster`,'ownerA')).json() as any;
-  assert.equal(first.participants.length,40);assert.equal(first.participants[0].splitCount,1);assert.equal(first.participants[1].splitCount,0);assert.ok(queries<=5,`queries ${queries}`);
+  assert.equal(first.participants.length,40);assert.equal(first.participants[0].splitCount,1);assert.equal(first.participants[1].splitCount,0);assert.ok(queries<=8,`queries ${queries}`);
   const second=await(await request(`/api/classroom/courses/${A}/roster?cursor=next`,'ownerA')).json() as any;assert.equal(second.participants.length,5);assert.equal(new Set([...first.participants,...second.participants].map(p=>p.memberId)).size,45);
   const member=first.participants[0].memberId;const jobs=await(await request(`/api/classroom/courses/${A}/participants/${member}/jobs`,'ownerA')).json() as any;assert.deepEqual(jobs.jobs.map((j:any)=>j.id),['a']);
   const forged=btoa(JSON.stringify({courseId:B,memberId:member,id:'a'}));assert.equal((await request(`/api/classroom/courses/${A}/participants/${member}/jobs?cursor=${encodeURIComponent(forged)}`,'ownerA')).status,400);
+});
+test('current roster reports older personal app use without exposing recordings or changing their course assignment',async()=>{
+  const {request,job,db,env,principal,revoked}=await setup();
+  await job('older-personal','alice',null);await job('course-recording','alice',A);await job('other-personal','outsider',null);
+  const p=await principal();
+  await recordClientUses(db,{...p,quotaClass:'member'},[{id:'classroom-recorded-visit-01',type:'session_start'}]);
+  const {operation}=await reserveAssistant(env,p.subject,null,'chat','completed-guide-turn-01','older-personal',[]);
+  await db.prepare("UPDATE app_operations SET state='succeeded',updated_at=? WHERE id=?").bind(Date.now(),operation.id).run();
+  const result=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(result.status,200);
+  const page=await result.json() as any,alice=page.participants[0];
+  assert.equal(alice.splitCount,1);assert.equal(alice.completedCount,1);
+  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined},{runs:2,completed:2,guideTurns:1,recordedVisits:1,lastActiveAt:undefined});
+  assert.ok(Date.now()-Date.parse(alice.appUsage.lastActiveAt)<60000);
+  assert.equal(page.participants[1].appUsage,null);
+  assert.equal(page.activityScope.recordedVisitsDays,30);
+  assert.doesNotMatch(JSON.stringify(page),/older-personal|other-personal|private title|cail-[0-9a-f]{32}/);
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM job_courses WHERE job_id='older-personal'").first<any>()).n,0);
+  assert.equal((await request('/api/jobs/older-personal','ownerA')).status,404);
+  revoked.add(`${ids.ownerA}:${A}`);
+  assert.equal((await request(`/api/classroom/courses/${A}/roster`,'ownerA')).status,403);
+});
+test('an unavailable account-to-roster check returns an error rather than zero recorded app use',async()=>{
+  const {request,env}=await setup(),resolve=env.ADMISSION_RESOLVER!.resolveCourseAccessV2!;
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async input=>input.subject===ids.alice?Promise.reject(new Error('fixture outage')):resolve(input);
+  assert.equal((await request(`/api/classroom/courses/${A}/roster`,'ownerA')).status,503);
 });
 test('new course conversations are complete, server-produced, paginated, private and reset-fenced',async()=>{
   const {env,request,job,principal,calls}=await setup();await job('a');const p=await principal();let revision=0;
@@ -255,6 +293,7 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const samples=readFileSync(new URL('../migrations/0026-song-samples.sql',import.meta.url),'utf8');db.applySchema(samples);db.applySchema(samples);
   const live=readFileSync(new URL('../migrations/0027-classroom-live.sql',import.meta.url),'utf8');db.applySchema(live);db.applySchema(live);
   const listening=readFileSync(new URL('../migrations/0028-listening-cycles.sql',import.meta.url),'utf8');db.applySchema(listening);db.applySchema(listening);
+  const guestReplies=readFileSync(new URL('../migrations/0029-guest-listening-replies.sql',import.meta.url),'utf8');db.applySchema(guestReplies);db.applySchema(guestReplies);
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);

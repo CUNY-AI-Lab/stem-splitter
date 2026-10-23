@@ -3,30 +3,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Stem Splitter · Account</title>
-<link rel="stylesheet" href="/styles.css?v=20261016-shared-header">
+<title>Stem Splitter · Settings</title>
+<link rel="stylesheet" href="/styles.css?v=20261023-refined-workspace">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
-<main class="teacher-main account-main">
+<main class="teacher-main account-main refined-ui">
   <header class="masthead">
     <div class="masthead-title">
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
       <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
     </div>
+    <nav class="workspace-nav" aria-label="Stem Splitter">
+      <a href="/">Splitter</a>
+      <a href="/classroom.html">Workspace</a>
+      <a href="/account.html" aria-current="page">Settings</a>
+    </nav>
   </header>
-  <h2 class="page-title">My account</h2>
+  <h2 class="page-title">Settings</h2>
   <p id="account-status" role="status">Loading…</p>
   <p id="account-login" hidden><a class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
   <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
-    <p id="account-splits">Daily split allowance unavailable.</p>
-    <p id="account-listening">Listening Guy allows five successful turns, followed by a five-minute pause.</p>
-    <p id="account-quota">Model usage unavailable.</p>
+    <p class="account-links"><a id="account-guidance" class="account-button" href="/teacher.html" hidden>Instructor Console</a></p>
+    <div class="account-allowances">
+      <section aria-labelledby="account-splits-label">
+        <h3 id="account-splits-label">Split runs</h3>
+        <p id="account-splits">Daily allowance unavailable.</p>
+      </section>
+      <section aria-labelledby="account-listening-label">
+        <h3 id="account-listening-label">Listening Guy</h3>
+        <p id="account-listening">Five turns, then a five-minute pause.</p>
+      </section>
+      <section aria-labelledby="account-quota-label">
+        <h3 id="account-quota-label">Lab model allowance</h3>
+        <p id="account-quota">Model usage unavailable.</p>
+      </section>
+    </div>
     <p class="account-help">Successful splits count toward your daily allowance. Listening Guy uses your Lab allowance separately.</p>
-    <nav class="account-links" aria-label="Stem Splitter">
-      <a class="account-button" href="/">← Back to Stem Splitter</a>
-      <a class="account-button" href="/classroom.html">Class workspace</a>
-      <a class="account-button" id="account-guidance" href="/teacher.html" hidden>Instructor Console</a>
-    </nav>
   </section>
   <details id="student-review" class="account-disclosure" hidden>
     <summary>Student activity</summary>
@@ -79,7 +91,7 @@
   </footer>
 </main>
 <script src="/session-guard.js?v=20261020-report-draft"></script>
-<script src="/guest-claim.js?v=20261012-carryover"></script>
-<script src="/account.js?v=20261020-report-draft"></script>
-<script type="module" src="/classroom-feedback.js?v=20261020-sso"></script>
+<script src="/guest-claim.js?v=20261022-workspace-progress"></script>
+<script src="/account.js?v=20261022-workspace-progress"></script>
+<script type="module" src="/classroom-feedback.js?v=20261022-workspace-progress"></script>
 </html>

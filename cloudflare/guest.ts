@@ -113,5 +113,5 @@ export async function startGuestSession(request: Request,env: GuestAdapterEnv): 
     return guestFailure('guest_session_unavailable',503,'The session could not be saved. Try again shortly.');
   }
   const chatAvailable=guestChatConfigured(env);
-  return Response.json({ok:true,expiresAt,splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable,chatLimit:chatAvailable?25:null},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});
+  return Response.json({ok:true,expiresAt,splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable,chatLimit:chatAvailable?5:null,chatLimitScope:'recording'},{headers:{'Cache-Control':'private, no-store','Set-Cookie':cookie(`${id}.${expiresAt}.${signature}`,Math.floor((expiresAt-now)/1000))}});
 }

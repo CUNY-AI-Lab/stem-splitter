@@ -21,7 +21,7 @@ import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOw
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation, expireSplitOperations } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt, replayAssistant } from './reliability/assistant.ts';
-import { listeningUsage, recoverListeningOperations } from './reliability/listening.ts';
+import { guestListeningUsage, listeningUsage, recoverListeningOperations } from './reliability/listening.ts';
 import { validMp3Frames } from './reliability/media.ts';
 import {
   getRetainedAudio,
@@ -259,7 +259,7 @@ app.get('/api/runtime', (c) => c.json({
   remixer: c.env.REMIXER_ENABLED === 'true',
   runDeletion: runDeletionEnabled(c.env),
   guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,
-    splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?25:null} : null,
+    splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?5:null,chatLimitScope:'recording'} : null,
 }));
 
 // Explicit sharing exposes only finished audio and its title, never account
@@ -1966,6 +1966,15 @@ app.get('/api/listening-usage', async(c)=>{
   return c.json(await listeningUsage(c.env.DB,principal.subject));
 });
 
+app.get('/api/jobs/:id/listening-usage', async(c)=>{
+  const principal=c.get('principal');
+  if(!principal)return c.json({error:'Open a saved split to view its Listening Guide allowance.'},401);
+  await recoverListeningOperations(c.env.DB,principal.subject);
+  return c.json(guestPrincipal(principal)
+    ? await guestListeningUsage(c.env.DB,principal.subject,c.req.param('id'))
+    : await listeningUsage(c.env.DB,principal.subject));
+});
+
 // Generate (once) and return the class-shared listening guide, streamed as
 // SSE (`data: {type: delta|done|error}` events); the done event carries the
 // full cached record. Generation is class-code-gated because it costs money;
@@ -2104,20 +2113,18 @@ app.delete('/api/jobs/:id/listening-conversation', async (c) => {
     WHERE ${conversationTable(principal)}.expires_at > datetime('now')
     RETURNING revision
   `).bind(principal.subject, principal.subject, id);
-  if(!guestPrincipal(principal)) {
-    const changed=await c.env.DB.batch([reset,
-      c.env.DB.prepare(`UPDATE app_operations SET state='cancelled',cancel_requested=1,lease_until=0,lease_owner=NULL,
-        result_json=NULL,error_code='conversation_reset',updated_at=? WHERE subject=? AND job_id=? AND kind='chat' AND course_id IS NULL
-        AND state NOT IN ('succeeded','partial','failed','cancelled')`).bind(Date.now(),principal.subject,id),
-      c.env.DB.prepare('DELETE FROM listening_reply_receipts WHERE job_id=? AND subject=?').bind(id,principal.subject),
-    ]);
-    if(!changed[0].meta.changes)return c.json({error:'Split not found.'},404);
-    const current=await c.env.DB.prepare('SELECT revision FROM listening_conversations WHERE job_id=? AND subject=?').bind(id,principal.subject).first<{revision:number}>();
-    return c.json({ok:true,revision:current!.revision});
-  }
-  const result=await reset.first<{revision:number}>();
-  if(!result)return c.json({error:'Split not found.'},404);
-  return c.json({ ok: true, revision: result.revision });
+  const receiptTable=guestPrincipal(principal)?'guest_listening_reply_receipts':'listening_reply_receipts';
+  const changed=await c.env.DB.batch([reset,
+    c.env.DB.prepare(`UPDATE app_operations SET state='cancelled',cancel_requested=1,lease_until=0,lease_owner=NULL,
+      result_json=NULL,error_code='conversation_reset',updated_at=? WHERE job_id=? AND kind='chat' AND course_id IS NULL
+      AND (subject=? OR EXISTS(SELECT 1 FROM guest_job_claims c WHERE c.job_id=app_operations.job_id
+        AND c.guest_subject=app_operations.subject AND c.member_subject=?))
+      AND state NOT IN ('succeeded','partial','failed','cancelled')`).bind(Date.now(),id,principal.subject,principal.subject),
+    c.env.DB.prepare(`DELETE FROM ${receiptTable} WHERE job_id=? AND subject=?`).bind(id,principal.subject),
+  ]);
+  if(!changed[0].meta.changes)return c.json({error:'Split not found.'},404);
+  const current=await c.env.DB.prepare(`SELECT revision FROM ${conversationTable(principal)} WHERE job_id=? AND subject=?`).bind(id,principal.subject).first<{revision:number}>();
+  return c.json({ok:true,revision:current!.revision});
 });
 
 // Chat with the Listening Guide about one song, streamed as SSE. The conversation lives
@@ -2160,7 +2167,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
   const reservation=principal?await reserveAssistant(c.env,principal.subject,course?.course_id ?? null,'chat',inputKey,id,
     [id,course?.course_id ?? null,course?[turns.at(-1),body?.revision]:turns,parseDuration(body?.durationSec)],principal.quotaClass ?? 'member'):null;
   if(reservation?.replay) {
-    const replay=await replayAssistant(c.env,reservation.operation);
+    const replay=await replayAssistant(c.env,reservation.operation,principal!.subject);
     if(!replay)throw new OperationError('listening_result_unavailable',409,'This reply already completed, but its saved result is no longer available. Refresh the conversation before continuing.',0,{newAttemptAllowed:false});
     return sseResponse(c,async emit=>{
       const {calls,...done}=replay;
@@ -2312,8 +2319,8 @@ export async function runReliableJobs(env: Env) { await drainSplitQueue(env,inge
 
 async function currentListeningUsage(c:Context<AppContext>) {
   const principal=c.get('principal');
-  if(!principal || guestPrincipal(principal))return null;
-  try {return await listeningUsage(c.env.DB,principal.subject);}catch{return null;}
+  if(!principal)return null;
+  try {return guestPrincipal(principal) ? c.req.param('id') ? await guestListeningUsage(c.env.DB,principal.subject,c.req.param('id')!) : null : await listeningUsage(c.env.DB,principal.subject);}catch{return null;}
 }
 async function failedListeningRequest(receipt:ReturnType<typeof assistantReceipt>,error:unknown) {
   const failure=await receipt.failure();

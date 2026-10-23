@@ -15,12 +15,15 @@ import { guestFailure } from '../src/guest/access.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
 import { handleBugReport, type BugReportService } from './bug-reports.ts';
+import { handleBugReport as handleDevBugReport, handleGuestBugReport, bugReportActor } from './dev-bug-reports.ts';
+import { redmineReports } from './redmine-reports.ts';
+import { authorizeCailRequest, type AppPrincipal } from '../src/identity.ts';
 import { intakeEnvironment, intakePauseResponse, type IntakePauseEnv } from './intake-pause.ts';
 import { youtubeBrowserLoader } from './youtube-browser.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
-  { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService };
+  { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService; REDMINE_API_KEY?: string };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -118,7 +121,26 @@ export default {
           : Response.json({ results: [] }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } });
         }
       } else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
-        response = Response.json({ enabled: Boolean(env.BUG_REPORTS) }, { headers: { 'Cache-Control': 'no-store' } });
+        response = Response.json({ enabled: Boolean(env.REDMINE_API_KEY || env.BUG_REPORTS), ...(env.REDMINE_API_KEY ? { mode: 'dev-contact' } : {}) }, { headers: { 'Cache-Control': 'no-store' } });
+      } else if (env.REDMINE_API_KEY && url.pathname === '/api/bug-reports/guest') {
+        const ip = request.headers.get('cf-connecting-ip');
+        response = ip && /^[0-9a-fA-F:.]{3,45}$/.test(ip)
+          ? await handleGuestBugReport(request, { origin: env.PUBLIC_BASE_URL, release: env.RELEASE,
+            rateKey: await bugReportActor(`guest-report-ip:v1\n${env.REDMINE_API_KEY}\n${ip}`),
+            service: redmineReports(env.DB, env.REDMINE_API_KEY), limiter: env.REQUEST_LIMIT })
+          : Response.json({ ok: false, code: 'unavailable' }, { status: 503 });
+      } else if (env.REDMINE_API_KEY && ['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
+        const internal = await authenticatedRequest(request, env);
+        if (internal instanceof Response) response = internal;
+        else {
+          let principal: AppPrincipal | undefined;
+          const denied = await authorizeCailRequest(internal, { ...env, verifyCailIdentity }, value => { principal = value; });
+          response = denied ?? (principal
+            ? await handleDevBugReport(internal, { origin: env.PUBLIC_BASE_URL, subject: principal.subject,
+              preferredName: principal.preferredName, release: env.RELEASE,
+              service: redmineReports(env.DB, env.REDMINE_API_KEY), limiter: env.REQUEST_LIMIT })
+            : Response.json({ ok: false, code: 'unavailable' }, { status: 503 }));
+        }
       } else if (['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
         response = await handleBugReport(request, { origin: env.PUBLIC_BASE_URL,
           release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });

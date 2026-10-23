@@ -1,4 +1,3 @@
-import { mountBugReport } from './bug-report/form.js';
 
 const footer = document.querySelector('main footer') || document.querySelector('footer');
 const paths = new Map([['/', '/'], ['/index.html', '/'], ['/account', '/account.html'], ['/account.html', '/account.html'],
@@ -8,14 +7,25 @@ const path = paths.get(location.pathname) || '/';
 async function reportingAvailable() {
   try {
     const response = await fetch('/api/bug-reports/availability', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
-    return response.ok && (await response.json()).enabled === true;
-  } catch { return false; }
+    if (!response.ok) return null;
+    const state = await response.json();
+    return state.enabled === true ? state : null;
+  } catch { return null; }
 }
 async function mountAvailableReport() {
-  if (!footer || footer.querySelector('.bug-report') || !await reportingAvailable()) return;
+  if (!footer || footer.querySelector('.bug-report')) return;
+  const availability = await reportingAvailable();
+  if (!availability) return;
+  const dev = availability.mode === 'dev-contact';
+  const { mountBugReport } = await import(dev ? './bug-report/dev-form.js' : './bug-report/form.js');
+  if (dev) {
+    const style = document.createElement('link'); style.rel = 'stylesheet';
+    style.href = '/bug-report/dev-form.css'; document.head.append(style);
+  }
   const container = document.createElement('section');
+  container.className = 'footer-feedback-slot';
   footer.append(container);
-  const report = mountBugReport(container, { path: () => path });
+  const report = mountBugReport(container, { path: () => path, loginUrl: '/auth/login?next=' + encodeURIComponent(path), loginClassName: 'account-button' });
   // Session expiry clears private app contents while this anonymous draft stays in memory.
   window.StemReportDraft = { hasDraft: report.hasDraft, sessionChanged: report.sessionChanged };
 }

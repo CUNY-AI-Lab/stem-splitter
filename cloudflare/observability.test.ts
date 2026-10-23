@@ -49,7 +49,9 @@ test('guest and member usage summaries keep immutable accounting classes separat
  const db=setup(),now=Date.now(),guest={...principal,subject:'guest-'+ 'a'.repeat(64),role:'guest' as const,quotaClass:'guest' as const};
  await db.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
    .bind(guest.subject,now,now+86400000,new Date(now).toISOString().slice(0,10)).run();
- const {operation}=await reserveOperation(db,{subject:guest.subject,quotaClass:'guest',courseId:null,kind:'chat',phase:'chat',key:'guest-observed-input-01',fingerprint:'hash'});
+ await db.prepare("INSERT INTO jobs(id,filename,source_key,status) VALUES('observed-guest-recording','Fixture audio','uploads/fixture.wav','done')").run();
+ await db.prepare('INSERT INTO guest_job_owners(job_id,subject) VALUES(?,?)').bind('observed-guest-recording',guest.subject).run();
+ const {operation}=await reserveOperation(db,{subject:guest.subject,quotaClass:'guest',courseId:null,jobId:'observed-guest-recording',kind:'chat',phase:'chat',key:'guest-observed-input-01',fingerprint:'hash'});
  await settleOperation(db,operation.id,'partial','partial_response');
  for(let i=0;i<260;i++)await recordClientUses(db,guest,[{id:`guest-usage-${String(i).padStart(12,'0')}`,type:'page_view'}]);
  const summary=await usageSummary(db,7);
