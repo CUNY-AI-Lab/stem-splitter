@@ -11,7 +11,8 @@ const failure = (code: 'unavailable' | 'redmine_rejected' | 'rate_limited' | 'id
 async function redmine(key: string, resource: string, signal: AbortSignal, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json'); headers.set('X-Redmine-API-Key', key);
-  const response = await fetch(new URL(resource, BASE), { ...init, headers, redirect: 'error', signal });
+  // Workers supports manual/follow only. Never forward the API key on redirects.
+  const response = await fetch(new URL(resource, BASE), { ...init, headers, redirect: 'manual', signal });
   const reader = response.body?.getReader();
   let length = 0, text = '';
   const decoder = new TextDecoder();
@@ -102,7 +103,7 @@ export function redmineReports(db: D1Database, key: string): BugReportService {
         await db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).bind(owner, id).run();
         return failure('rate_limited', true, 60);
       }
-      if ([400,401,403,404,422].includes(result.status)) {
+      if ([301,302,303,307,308,400,401,403,404,422].includes(result.status)) {
         await db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).bind(owner, id).run();
         return failure('redmine_rejected');
       }
