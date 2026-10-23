@@ -2,6 +2,7 @@ import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { guestOwnsJob } from '../guest/access.ts';
 import { COURSE_APP, STEM_COURSE_ID, validAssignmentV2, validClassId, validFailure, type CourseAssignmentV2 } from './contract.ts';
+import { rememberCourseUsageAccount } from './usage-accounts.ts';
 
 export class CourseError extends Error {
   status: 400 | 403 | 404 | 409 | 503;
@@ -25,6 +26,7 @@ export async function resolveCourse(env: Env, subject: string, classId: string):
   const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId }));
   if (validFailure(value)) throw new CourseError(403, value.code);
   if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAssignmentV2(value,Date.now(),true) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
+  try { await rememberCourseUsageAccount(env,subject,value); } catch { /* Supplemental matching cannot block authorized access. */ }
   return value;
 }
 /** Used again by delayed operation workers; a remembered launch is not permission. */

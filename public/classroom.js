@@ -84,7 +84,7 @@
         const use = person.appUsage;
         activity.textContent = use
           ? `App use: ${use.runs} split ${use.runs === 1 ? 'attempt' : 'attempts'} · ${use.completed} completed · ${use.guideTurns} Guide ${use.guideTurns === 1 ? 'turn' : 'turns'} · ${use.recordedVisits} recorded ${use.recordedVisits === 1 ? 'visit' : 'visits'} in 30 days`
-          : 'First app visit pending';
+          : data.appUsageStatus === 'unavailable' ? 'App usage temporarily unavailable' : 'App usage pending';
         if (use?.lastActiveAt) activity.title = `Last recorded activity: ${new Date(use.lastActiveAt).toLocaleString()}`;
         item.append(name,course,activity); el('roster').append(item);
       }

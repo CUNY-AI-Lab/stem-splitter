@@ -1,5 +1,5 @@
 import type { Env } from '../env.ts';
-import { CourseError, resolveCourse } from './access.ts';
+import { CourseError, courseIds, resolveCourse } from './access.ts';
 import { fingerprint } from '../reliability/ledger.ts';
 
 export interface StudentUsage {
@@ -48,24 +48,37 @@ export async function usageBySubject(env: Env, subjects: string[], now = Date.no
   })));
 }
 
-/** Admission roster identifiers deliberately omit the account subject. Resolve
- * known local accounts against the same current course before attaching totals. */
+/** Join only this fresh roster page against previously verified identities.
+ * Roster requests never resolve unrelated accounts through Admission. */
 export async function rosterAppUsage(env: Env, courseId: string, memberIds: string[]) {
-  const wanted = new Set(memberIds), byMember = new Map<string,string>();
-  if (!wanted.size) return new Map<string,StudentUsage>();
-  const users = (await env.DB.prepare('SELECT subject FROM app_users ORDER BY subject').all<{subject:string}>()).results;
-  let next = 0;
-  await Promise.all(Array.from({length:Math.min(6,users.length)},async () => {
-    while (next < users.length) {
-      const {subject} = users[next++];
-      try {
-        const course = await resolveCourse(env,subject,courseId);
-        if (wanted.has(course.memberId)) byMember.set(course.memberId,subject);
-      } catch (error) {
-        if (!(error instanceof CourseError) || error.status === 503) throw error;
-      }
-    }
-  }));
+  if (!memberIds.length) return new Map<string,StudentUsage>();
+  const rows=(await env.DB.prepare(`SELECT member_id,subject FROM course_usage_accounts
+    WHERE course_id=? AND member_id IN (${memberIds.map(()=>'?').join(',')}) LIMIT 100`)
+    .bind(courseId,...memberIds).all<{member_id:string;subject:string}>()).results;
+  const byMember=new Map(rows.map(row=>[row.member_id,row.subject]));
   const usage = await usageBySubject(env,[...byMember.values()]);
   return new Map([...byMember].map(([memberId,subject]) => [memberId,usage.get(subject)!]));
+}
+
+/** Gradually match historical accounts outside the roster request. Six bounded
+ * lookups per scheduled invocation keep growth and individual outages isolated. */
+export async function refreshCourseUsageAccounts(env: Env, now=Date.now()) {
+  if(env.CAIL_CLASSROOM_ENABLED==='false'||!env.ADMISSION_RESOLVER?.resolveCourseAccessV2)return;
+  const classes=courseIds(env);
+  const rows=(await env.DB.prepare(`WITH classes(course_id) AS (${classes.map(()=> 'SELECT ?').join(' UNION ALL ')})
+    SELECT c.course_id,u.subject FROM app_users u CROSS JOIN classes c
+    LEFT JOIN course_usage_accounts m ON m.course_id=c.course_id AND m.subject=u.subject
+    WHERE m.next_lookup_at IS NULL OR m.next_lookup_at<=?
+    ORDER BY COALESCE(m.next_lookup_at,0),u.created_at,u.subject,c.course_id LIMIT 6`)
+    .bind(...classes,now).all<{course_id:string;subject:string}>()).results;
+  await Promise.allSettled(rows.map(async row=>{
+    try { await resolveCourse(env,row.subject,row.course_id); }
+    catch(error) {
+      const denied=error instanceof CourseError&&error.status===403;
+      await env.DB.prepare(`INSERT INTO course_usage_accounts(course_id,subject,member_id,next_lookup_at) VALUES(?,?,NULL,?)
+        ON CONFLICT(course_id,subject) DO UPDATE SET next_lookup_at=excluded.next_lookup_at,
+          member_id=CASE WHEN ? THEN NULL ELSE member_id END`)
+        .bind(row.course_id,row.subject,now+(denied?86400000:300000),denied?1:0).run();
+    }
+  }));
 }

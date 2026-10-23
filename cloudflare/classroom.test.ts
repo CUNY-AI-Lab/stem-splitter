@@ -17,6 +17,7 @@ import { purgeExpiredListeningConversations } from './retention.ts';
 import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
 import { recoverExpired } from '../src/reliability/queue.ts';
 import { recordClientUses } from '../src/reliability/observability.ts';
+import { refreshCourseUsageAccounts } from '../src/classroom/activity.ts';
 const B='another-reviewed-course';
 const ids={alice:`cail-${'1'.repeat(32)}`,bob:`cail-${'2'.repeat(32)}`,ownerA:`cail-${'3'.repeat(32)}`,ownerB:`cail-${'4'.repeat(32)}`,outsider:`cail-${'5'.repeat(32)}`,admin:`cail-${'6'.repeat(32)}`,guestA:`cail-${'7'.repeat(32)}`};
 type Person=keyof typeof ids;
@@ -121,6 +122,7 @@ test('current roster reports older personal app use without exposing recordings 
   await recordClientUses(db,{...p,quotaClass:'member'},[{id:'classroom-recorded-visit-01',type:'session_start'}]);
   const {operation}=await reserveAssistant(env,p.subject,null,'chat','completed-guide-turn-01','older-personal',[]);
   await db.prepare("UPDATE app_operations SET state='succeeded',updated_at=? WHERE id=?").bind(Date.now(),operation.id).run();
+  await refreshCourseUsageAccounts(env);
   const result=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(result.status,200);
   const page=await result.json() as any,alice=page.participants[0];
   assert.equal(alice.splitCount,1);assert.equal(alice.completedCount,1);
@@ -134,10 +136,39 @@ test('current roster reports older personal app use without exposing recordings 
   revoked.add(`${ids.ownerA}:${A}`);
   assert.equal((await request(`/api/classroom/courses/${A}/roster`,'ownerA')).status,403);
 });
-test('an unavailable account-to-roster check returns an error rather than zero recorded app use',async()=>{
-  const {request,env}=await setup(),resolve=env.ADMISSION_RESOLVER!.resolveCourseAccessV2!;
-  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async input=>input.subject===ids.alice?Promise.reject(new Error('fixture outage')):resolve(input);
-  assert.equal((await request(`/api/classroom/courses/${A}/roster`,'ownerA')).status,503);
+test('roster loading resolves only its instructor while unrelated account lookup is unavailable',async()=>{
+  const {request,env,job}=await setup(),resolve=env.ADMISSION_RESOLVER!.resolveCourseAccessV2!,subjects:string[]=[];
+  await job('course-recording');
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async input=>{subjects.push(input.subject);return input.subject===ids.alice?Promise.reject(new Error('fixture outage')):resolve(input);};
+  const response=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(response.status,200);
+  const page=await response.json() as any;assert.equal(page.participants[0].splitCount,1);assert.equal(page.participants[0].appUsage,null);
+  assert.deepEqual(subjects,[ids.ownerA]);assert.equal(page.nextCursor,'next');
+});
+test('supplemental usage storage failure preserves the authorized roster and assigned counts',async()=>{
+  const {request,db,job}=await setup();await job('course-recording');const prepare=db.prepare.bind(db);
+  db.prepare=((sql:string)=>{if(sql.includes('course_usage_accounts'))throw new Error('fixture usage outage');return prepare(sql);}) as typeof db.prepare;
+  const response=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(response.status,200);
+  const page=await response.json() as any;assert.equal(page.appUsageStatus,'unavailable');assert.equal(page.participants.length,40);
+  assert.equal(page.participants[0].splitCount,1);assert.equal(page.participants[0].completedCount,1);assert.equal(page.participants[0].appUsage,null);
+});
+test('historical identity matching bounds each batch and defers failed accounts without stalling later batches',async()=>{
+  const {env,db}=await setup(),resolve=env.ADMISSION_RESOLVER!.resolveCourseAccessV2!;
+  for(let i=100;i<150;i++)await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(`cail-${i.toString(16).padStart(32,'0')}`).run();
+  const calls:string[]=[];env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async input=>{calls.push(`${input.subject}:${input.classId}`);throw new Error('fixture authority outage');};
+  await refreshCourseUsageAccounts(env);assert.equal(calls.length,6);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM course_usage_accounts').first<any>()).n,6);
+  const first=[...calls];await refreshCourseUsageAccounts(env);assert.equal(calls.length,12);
+  assert.ok(calls.slice(6).every(key=>!first.includes(key)));
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=resolve;
+  await refreshCourseUsageAccounts(env);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM course_usage_accounts').first<any>()).n,18);
+});
+test('fresh roster membership fences cached aggregate identities after enrollment changes',async()=>{
+  const {env,db,request,job}=await setup();await job('personal-history','alice',null);await refreshCourseUsageAccounts(env);
+  const list=env.ADMISSION_RESOLVER!.listCourseRosterV2!;
+  env.ADMISSION_RESOLVER!.listCourseRosterV2=async input=>{const page=await list(input) as any;return {...page,participants:page.participants.slice(1)};};
+  const page=await(await request(`/api/classroom/courses/${A}/roster`,'ownerA')).json() as any;
+  assert.equal(page.participants.length,39);assert.ok(page.participants.every((person:any)=>person.appUsage===null));
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM job_courses WHERE job_id='personal-history'").first<any>()).n,0);
 });
 test('new course conversations are complete, server-produced, paginated, private and reset-fenced',async()=>{
   const {env,request,job,principal,calls}=await setup();await job('a');const p=await principal();let revision=0;
@@ -294,6 +325,7 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const live=readFileSync(new URL('../migrations/0027-classroom-live.sql',import.meta.url),'utf8');db.applySchema(live);db.applySchema(live);
   const listening=readFileSync(new URL('../migrations/0028-listening-cycles.sql',import.meta.url),'utf8');db.applySchema(listening);db.applySchema(listening);
   const guestReplies=readFileSync(new URL('../migrations/0029-guest-listening-replies.sql',import.meta.url),'utf8');db.applySchema(guestReplies);db.applySchema(guestReplies);
+  const usageAccounts=readFileSync(new URL('../migrations/0030-course-usage-accounts.sql',import.meta.url),'utf8');db.applySchema(usageAccounts);db.applySchema(usageAccounts);
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);

@@ -45,7 +45,9 @@ fences remain in force. Accounting and activity summaries contain counters and
 request state, while reply text stays within the existing owner-only paths.
 The member allowance correction needs no new table. The accompanying guest reply
 recovery requires additive migration `0029-guest-listening-replies.sql`, which
-creates exact-owner guest receipts before this worker is released.
+creates exact-owner guest receipts before this worker is released. The roster
+availability correction also requires additive migration
+`0030-course-usage-accounts.sql` before release.
 
 Synthetic checks cover continued member use beyond five replies, daily and burst
 limits, failed and partial refunds, shared guest cue/chat capacity, concurrent

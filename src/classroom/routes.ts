@@ -9,6 +9,7 @@ import { conversationPage } from './conversations.ts';
 import { coursePrompt, promptView, saveCoursePrompt } from './prompts.ts';
 import liveRoutes from './live.ts';
 import { rosterAppUsage } from './activity.ts';
+import type { StudentUsage } from './activity.ts';
 
 type State = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const routes = new Hono<State>();
@@ -53,8 +54,10 @@ routes.get('/courses/:courseId/roster',async c=>{
     FROM job_courses c JOIN jobs j ON j.id=c.job_id WHERE c.course_id=? AND c.member_id IN (${participants.map(()=>'?').join(',')}) GROUP BY c.member_id`)
     .bind(courseId,...participants.map(p=>p.memberId)).all<{member_id:string;total:number;completed:number;retained:number}>()).results : [];
   const byMember=new Map(counts.map(row=>[row.member_id,row]));
-  const appUsage=await rosterAppUsage(c.env,courseId,participants.map(row=>row.memberId));
-  return c.json({course:p.course,activityScope:{splits:'recorded-history',guideTurns:'recorded-history',recordedVisitsDays:30,visitsCapture:'best_effort'},
+  let appUsage=new Map<string,StudentUsage>(),appUsageStatus:'available'|'unavailable'='available';
+  try { appUsage=await rosterAppUsage(c.env,courseId,participants.map(row=>row.memberId)); }
+  catch { appUsageStatus='unavailable'; }
+  return c.json({course:p.course,appUsageStatus,activityScope:{splits:'recorded-history',guideTurns:'recorded-history',recordedVisitsDays:30,visitsCapture:'best_effort'},
     participants:participants.map(row=>({...row,splitCount:byMember.get(row.memberId)?.total??0,completedCount:byMember.get(row.memberId)?.completed??0,retainedCount:byMember.get(row.memberId)?.retained??0,appUsage:appUsage.get(row.memberId)??null})),
     demonstrationParticipants:courseId===DEMO_COURSE_ID?[{displayName:'Sample student',splitCount:3,retainedCount:2,demonstration:true}]:[],nextCursor:value.nextCursor});
 });

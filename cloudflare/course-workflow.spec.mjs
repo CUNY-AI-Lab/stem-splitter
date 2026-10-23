@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 const course = 'msh-245-the-american-musical-experience-fall-2026-01';
-async function fixture(browser) {
+async function fixture(browser,vars={}) {
   const issuer = await createTestIdentityIssuer();
-  const server = createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true'}}]});
+  const server = createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true',...vars}}]});
   const {url} = await server.listen();
   const seed = async statements => expect((await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status).toBe(200);
   const member = 'stem-member-v1-' + createHash('sha256').update(`fixture:${course}:${TEST_SUBJECTS.alice}`).digest('hex');
@@ -56,6 +56,20 @@ test('course creation requires disclosure and sends an exact course with the ack
     await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});}catch{}});
     expect(received.headers['x-stem-course']).toBe('personal');expect(received.body.coursePolicy).toBeUndefined();expect(received.headers['idempotency-key']).not.toBe(courseKey);
   }finally{await f.close();}
+});
+
+test('instructors retain roster and class controls when supplemental usage storage is unavailable',async({browser})=>{
+ const f=await fixture(browser,{TEST_ROSTER_SUBJECT:TEST_SUBJECTS.alice});
+ try {
+  await f.seed(['DROP TABLE course_usage_accounts']);
+  const page=await f.pageFor(TEST_SUBJECTS.alice,true);
+  await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+  await expect(page.locator('#classroom-roster')).toContainText('App usage temporarily unavailable');
+  await expect(page.locator('#classroom-roster-status')).toHaveText('');
+  await expect(page.getByRole('link',{name:'Create a split',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Course record',exact:true})).toBeVisible();
+  await expect(page.locator('#classroom-folders')).toContainText('Class comments');
+ } finally {await f.close();}
 });
 
 test('shared class notes refresh across students, preserve failed drafts, attribute authors, and stop on revocation',async({browser})=>{

@@ -20,6 +20,7 @@ import { redmineReports } from './redmine-reports.ts';
 import { authorizeCailRequest, type AppPrincipal } from '../src/identity.ts';
 import { intakeEnvironment, intakePauseResponse, type IntakePauseEnv } from './intake-pause.ts';
 import { youtubeBrowserLoader } from './youtube-browser.ts';
+import { refreshCourseUsageAccounts } from '../src/classroom/activity.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
@@ -77,6 +78,7 @@ export default {
     env = intakeEnvironment(env);
     ctx.waitUntil(runReliableJobs({...env,...adaptiveHandoff(env),guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio,composeStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
+    ctx.waitUntil(refreshCourseUsageAccounts(env).catch(()=>{}));
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
