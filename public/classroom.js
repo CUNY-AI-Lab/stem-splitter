@@ -21,7 +21,7 @@
     generation++; studentGeneration++; conversationGeneration++; folderGeneration++; annotationGeneration++;
     clearTimeout(refreshTimer); refreshing = false;
     for (const controller of controllers) controller.abort(); controllers.clear();
-    pendingRequests = 0; delete panel.dataset.checking; delete panel.dataset.backgroundRefresh;
+    pendingRequests = 0; panel.inert = false; delete panel.dataset.checking; delete panel.dataset.backgroundRefresh;
     panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null; annotationJob = null;
     rosterPages = jobsPages = conversationPages = 1;
     rosterCursor = jobsCursor = conversationCursor = conversationRevision = null;
@@ -260,6 +260,8 @@
   async function refreshCourse(background = false) {
     if (!selected || refreshing || pendingRequests) { scheduleRefresh(); return; }
     clearTimeout(refreshTimer); refreshing = true;
+    const focusedControl = panel.contains(document.activeElement) ? document.activeElement : null;
+    panel.inert = true;
     const current = generation, person = student, folder = currentFolder, notes = annotationJob, conversation = conversationJob;
     const pageCounts = { roster: rosterPages, jobs: jobsPages, conversation: conversationPages };
     const folderChoices = new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value]));
@@ -297,7 +299,9 @@
       }
       if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Updates automatically while this page is open.`;
     } finally {
-      if (current === generation) { refreshing = false; pendingRequests--; if (!pendingRequests) delete panel.dataset.checking; delete panel.dataset.backgroundRefresh; scheduleRefresh(); }
+      if (current === generation) { refreshing = false; panel.inert = false;
+        if (focusedControl?.isConnected && document.activeElement === document.body) focusedControl.focus({preventScroll:true});
+        pendingRequests--; if (!pendingRequests) delete panel.dataset.checking; delete panel.dataset.backgroundRefresh; scheduleRefresh(); }
     }
   }
   // App membership alone does not prove that a course grant is still current.

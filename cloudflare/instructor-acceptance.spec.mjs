@@ -380,3 +380,23 @@ test('an open folder rename draft retains automatic course access checks', async
   await expect(page.locator('#classroom-folder-items')).toBeEmpty();
  } finally {await f.harness.close();}
 });
+
+
+test('background refresh keeps sharing visible and blocks keyboard changes until its values are restored',async({page,context})=>{
+ const f=await fixture(context);let release;
+ try {
+  await page.clock.install();
+  await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
+  const sharing=page.getByLabel('Who can use this folder?');
+  await sharing.selectOption('read');await sharing.focus();
+  const waiting=new Promise(resolve=>release=resolve);
+  await page.route('**/api/classroom/courses/*/folders',async route=>{await waiting;await route.continue();});
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#console-panel')).toHaveJSProperty('inert',true);
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await page.keyboard.press('ArrowDown');await expect(sharing).toHaveValue('read');
+  release();
+  await expect(page.locator('#console-panel')).toHaveJSProperty('inert',false);
+  await expect(sharing).toHaveValue('read');await expect(sharing).toBeFocused();
+ } finally {release?.();await f.harness.close();}
+});
