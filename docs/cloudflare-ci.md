@@ -28,4 +28,6 @@ The general source and native audio-image gates remain separate workflows.
 
 FFmpeg installation first tries the runner's existing package index with a
 short deadline. An outdated or missing index falls back to the bounded metadata
-refresh and installation retries.
+refresh and installation retries. Both Ubuntu source configuration formats,
+including `/etc/apt/apt-mirrors.txt`, use the official Ubuntu archive in place
+of the slow Azure package mirror, with the same signed package metadata.

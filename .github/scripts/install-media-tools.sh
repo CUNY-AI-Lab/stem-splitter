@@ -2,6 +2,21 @@
 # Avoid an unbounded apt mirror wait when the hosted image has the tool already.
 set -euo pipefail
 
+configure_apt_mirrors() {
+  local config replacement
+  for config in "$@"; do
+    if [[ -f "$config" ]]; then
+      replacement=$(sed \
+        -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+        -e 's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$config")
+      printf '%s\n' "$replacement" | sudo tee "$config" >/dev/null
+    fi
+  done
+}
+
+# Allow the mirror conversion to be exercised against temporary fixture files.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
+
 case "${1:-}" in
   ffmpeg)
     if command -v ffmpeg >/dev/null 2>&1; then
@@ -10,8 +25,8 @@ case "${1:-}" in
     fi
     # Hosted Azure package downloads can exhaust the setup deadline. Use the
     # official Ubuntu archive with the same signed package metadata instead.
-    if [[ "${GITHUB_ACTIONS:-}" == true && -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
-      sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+    if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+      configure_apt_mirrors /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt
     fi
     # Hosted runners usually have a usable package index. Refresh it only when
     # installation needs newer metadata, rather than waiting on every mirror.

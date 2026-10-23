@@ -64,3 +64,25 @@ test('exhausted installation attempts fail the job', () => {
   assert.equal(result.calls.filter(call => / update$/.test(call)).length, 2);
   assert.match(result.stderr, /Required media dependency is unavailable/);
 });
+
+test('both Ubuntu source formats use the official archive while preserving signed metadata', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stem-apt-mirrors-'));
+  try {
+    const bin = join(root, 'bin'); mkdirSync(bin);
+    writeFileSync(join(bin, 'sudo'), '#!/bin/bash\nexec "$@"\n', { mode: 0o755 });
+    const sources = join(root, 'ubuntu.sources'), mirrors = join(root, 'apt-mirrors.txt');
+    writeFileSync(sources, 'URIs: http://azure.archive.ubuntu.com/ubuntu\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n');
+    writeFileSync(mirrors, 'https://azure.archive.ubuntu.com/ubuntu\nhttp://security.ubuntu.com/ubuntu\n');
+    const result = spawnSync('/bin/bash', ['-c',
+      'source "$1"; configure_apt_mirrors "$2" "$3" "$4"', 'fixture', installer,
+      sources, mirrors, join(root, 'missing.sources')], { encoding: 'utf8',
+      env: { PATH: `${bin}:/usr/bin:/bin` } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(sources, 'utf8'),
+      'URIs: https://archive.ubuntu.com/ubuntu\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n');
+    assert.equal(readFileSync(mirrors, 'utf8'),
+      'https://archive.ubuntu.com/ubuntu\nhttp://security.ubuntu.com/ubuntu\n');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
