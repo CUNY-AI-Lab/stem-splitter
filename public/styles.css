@@ -2835,9 +2835,11 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui #dropzone .deck-arrow { font-size: .65rem; animation: none; }
 .refined-ui #dropzone .deck-meta { margin-top: .6rem; color: var(--ink-dim); font-size: .62rem; letter-spacing: .035em; }
 .refined-ui #dropzone:hover, .refined-ui #dropzone:focus-visible { transform: none; }
-.refined-ui #course-context { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem .75rem; margin-bottom: .75rem; }
+.refined-ui #course-context { display: grid; grid-template-columns: auto minmax(0, max-content); justify-content: start; align-items: center; gap: .5rem .75rem; margin-bottom: .75rem; }
 .refined-ui #course-context > label { color: var(--ink-dim); font-size: .8rem; }
-.refined-ui #course-context select { width: 100%; margin: 0; min-height: 44px; padding: .45rem .7rem; border: 1px solid var(--panel-edge); border-radius: 6px; background: var(--bg-raise); color: var(--ink); font: .8rem var(--font-body); }
+.refined-ui #course-context .course-choice { display: inline-grid; justify-self: start; min-width: 0; max-width: 100%; font: .8rem var(--font-body); }
+.refined-ui #course-context .course-choice-label { grid-area: 1 / 1; visibility: hidden; overflow: hidden; white-space: pre; padding: .45rem 2rem .45rem .7rem; }
+.refined-ui #course-context select { grid-area: 1 / 1; width: 0; min-width: 100%; margin: 0; min-height: 44px; padding: .45rem .7rem; border: 1px solid var(--panel-edge); border-radius: 6px; background: var(--bg-raise); color: var(--ink); font: inherit; }
 .refined-ui #course-context > p { grid-column: 1 / -1; margin: 0; font-size: .8rem; }
 .refined-ui #course-context > p:empty { display: none; }
 .refined-ui :is(.console, .split-opt, .shelf-item) { border-radius: 8px; }
@@ -2879,8 +2881,8 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .workspace-nav .account-nav, .workspace-nav > a[href="/account.html"] { margin-left: 0; }
   .workspace-nav .account-nav { grid-column: 1 / -1; }
   .workspace-nav .account-nav .account-button { flex: 1; justify-content: flex-start; }
-  .refined-ui #course-context { grid-template-columns: 1fr; gap: .35rem; }
-  .refined-ui #course-context select { font-size: 1rem; }
+  .refined-ui #course-context { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
+  .refined-ui #course-context .course-choice { font-size: 1rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
   .account-allowances { grid-template-columns: 1fr; }
   .account-allowances section { padding: .85rem 1rem; }

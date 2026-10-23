@@ -217,11 +217,11 @@ function creationCourse() {
 }
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
-  const subject = accountSubject, storageKey = `stem-workspace-choice:v1:${subject}`;
+  const subject = accountSubject;
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
-  region.innerHTML = '<label for="new-split-course">New splits belong to </label><select id="new-split-course" aria-label="New split workspace"><option value="personal">Personal</option></select><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
+  region.innerHTML = '<label for="new-split-course">New splits belong to </label><span class="course-choice"><span class="course-choice-label" aria-hidden="true">Personal</span><select id="new-split-course" aria-label="New split workspace"><option value="personal">Personal</option></select></span><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
   const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
   courseAcknowledgment = region.querySelector('input');
@@ -230,13 +230,10 @@ async function initializeCourseSelection() {
     if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
     selectedCourse = value; select.value = value;
     courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
-    try { if (value) localStorage.setItem(storageKey,value); else localStorage.removeItem(storageKey); } catch {}
+    region.querySelector('.course-choice-label').textContent = select.selectedOptions[0]?.textContent || 'Personal';
   };
   select.addEventListener('change', () => {
     choose(select.value); status.textContent = '';
-    const url = new URL(location.href);
-    if (select.value) url.searchParams.set('course',select.value); else url.searchParams.delete('course');
-    history.replaceState(null,'',url);
   });
   const refresh = async () => {
     if (accountSubject !== subject || !region.isConnected) return;
@@ -251,23 +248,19 @@ async function initializeCourseSelection() {
       } while (cursor && courses.length < 1000);
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
       const valid = new Set(['personal',...courses.map(course=>course.classId)]);
-      let previous = initialized ? selectedCourse : null;
-      if (!initialized) { try { previous = localStorage.getItem(storageKey); } catch {} }
-      const requested = initialized ? null : new URLSearchParams(location.search).get('course');
-      const choice = requested && valid.has(requested) ? requested
-        : previous && valid.has(previous) ? previous : courses.length === 1 ? courses[0].classId
-        : courses.length ? '' : 'personal';
+      const previous = initialized ? selectedCourse : 'personal';
+      const choice = previous === '' || valid.has(previous) ? previous : 'personal';
       select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
         ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
       select.options[0].disabled = true;
       choose(choice); initialized = true;
-      status.textContent = requested && !valid.has(requested) ? 'The linked class is unavailable to this account.'
-        : previous && !valid.has(previous) ? 'Class access changed. Review the selected workspace.' : '';
+      status.textContent = !valid.has(previous) ? 'Class access changed. Review the selected workspace.' : '';
       region.hidden = !courses.length && !status.textContent;
     } catch (error) {
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
-      choose(''); select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
-      select.value = ''; select.options[0].disabled = true;
+      const needsChoice = initialized && selectedCourse !== 'personal';
+      select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
+      select.options[0].disabled = true; choose(needsChoice ? '' : 'personal');
       region.hidden = false; status.textContent = error.message;
     } finally {
       if (sequence === courseSelectionSequence && accountSubject === subject) { courseSelectionPending = false; select.disabled = false; }
@@ -5169,15 +5162,15 @@ async function initialize() {
       try { await window.StemGuestClaim.run(principal); }
       catch (error) { showUploadMessage(error.message, true); }
       await initializeCourseSelection();
-    } else if (runtime.loginUrl) {
+    } else if (runtime.loginUrl && !accountNeedsHelp) {
       const link = document.createElement('a');
       link.className = 'account-button';
       const linkedJob = new URLSearchParams(location.search).get('job');
-      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
-      link.textContent = accountNeedsHelp ? 'Settings' : 'CUNY Login';
+      link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      link.textContent = 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
       account.append(link);
-    } else account.textContent = 'CUNY Login will be available here soon.';
+    } else if (!runtime.loginUrl) account.textContent = 'CUNY Login will be available here soon.';
     if (account.childNodes.length) (document.getElementById('workspace-nav') || document.querySelector('.masthead-meta')).append(account);
   }
   separationOptionsReady = loadSeparationOptions();
