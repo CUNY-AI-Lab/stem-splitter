@@ -14,7 +14,7 @@
 .instructor-console .classroom-toolbar { align-items: center; gap: .5rem; margin-top: 1rem; }
 .instructor-console .classroom-toolbar :is(#classroom-create, #classroom-own-splits) {
   display: inline-flex; align-items: center; justify-content: center;
-  box-sizing: border-box; min-height: 44px; padding: .45rem .7rem;
+  box-sizing: border-box; min-height: 44px; padding: .4rem .55rem;
   font: 500 .75rem/1.35 var(--font-mono); letter-spacing: 0;
 }
 .instructor-console #classroom-refresh { margin-left: auto; }
@@ -87,4 +87,11 @@
   .refined-ui.instructor-console #classroom-roster .classroom-roster-person { grid-area: name; align-self: center; }
   .refined-ui.instructor-console .classroom-roster-metrics { grid-area: metrics; }
   .refined-ui.instructor-console .classroom-roster-app-usage { grid-area: activity; }
+}
+
+/* Ordinary workspace actions fit their labels while retaining touch targets. */
+.refined-ui.instructor-console .classroom-toolbar > :is(a, button),
+.refined-ui.instructor-console #classroom-folder-create > button {
+  flex: 0 1 auto; width: fit-content; min-width: 44px; max-width: 100%;
+  min-height: 44px; padding: .4rem .55rem;
 }
