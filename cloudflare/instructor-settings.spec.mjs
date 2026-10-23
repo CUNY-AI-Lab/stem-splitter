@@ -65,7 +65,7 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
 test('class discovery excludes students and course settings fail closed on role loss',async({page,context})=>{
  const f=await fixture(context);
  try{
-  await page.goto(new URL('/teacher.html',f.url).href);await expect(page).toHaveURL(new URL(`/teacher.html?course=${course}`,f.url).href);
+  await page.goto(new URL('/teacher.html',f.url).href);await expect(page).toHaveURL(new URL(`/teacher?course=${course}`,f.url).href);
   await expect(page.locator('#console-panel')).toBeVisible();
   await savePrompt(page,'Private course fixture','Synthetic setting');await page.locator('#preview-btn').click();
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.alice,'x-fixture-course-state':'revoked'});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));

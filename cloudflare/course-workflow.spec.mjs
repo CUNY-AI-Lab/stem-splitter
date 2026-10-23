@@ -28,7 +28,7 @@ async function fixture(browser) {
     await page.route('**/api/files/stems/shared-course/*',route=>route.fulfill({contentType:'audio/mpeg',body:Buffer.alloc(0)}));
     return page;
   };
-  return {url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
+  return {issuer,url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
 }
 
 test('course creation requires disclosure and sends an exact course with the acknowledged policy',async({browser})=>{
@@ -130,8 +130,13 @@ test('multiple verified courses require a choice and retain only a valid account
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
   await expect(page.getByLabel('New split workspace')).toHaveValue(course);
   await expect(page.locator('#course-work-ack')).not.toBeChecked();
-  const other=await f.pageFor(TEST_SUBJECTS.bob);
-  await other.goto(f.url.href);await expect(other.getByLabel('New split workspace')).toHaveValue(course);
+  await page.getByLabel('New split workspace').selectOption('personal');
+  await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.bob})});
+  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue(course);
+  await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice})});
+  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  classes=[];await page.goto(f.url.href);await expect(page.locator('#course-context')).toBeHidden();
+  expect(await page.evaluate(()=>creationCourse())).toBe('personal');
  } finally {await f.close();}
 });
 
