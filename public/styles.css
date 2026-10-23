@@ -2897,3 +2897,7 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .coach-sign-in:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 
 .refined-ui #course-context select:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+
+@media (max-width: 540px) {
+  .refined-ui .actions-toggle { box-sizing: border-box; min-height: 28px; height: 28px; padding: .2rem .45rem; line-height: 1; }
+}

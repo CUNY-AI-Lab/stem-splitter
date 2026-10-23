@@ -452,10 +452,11 @@ let listeningUsage = null;
 const guestListeningUsages = new Map();
 let listeningUsageRequest = null;
 function acceptListeningUsage(value) {
-  if (!value || value.limit !== 50 || !Number.isInteger(value.remainingTurns)
+  const recording = value?.scope === 'recording' && typeof value.jobId === 'string' && guestSessionActive;
+  if (!value || value.limit !== (recording ? 5 : 50) || guestSessionActive && !recording || !Number.isInteger(value.remainingTurns)
     || value.remainingTurns < 0 || value.remainingTurns > value.limit) return;
   const serverTime = Date.parse(value.serverTime);
-  if (value.scope === 'recording' && typeof value.jobId === 'string' && guestSessionActive) {
+  if (recording) {
     const existing = guestListeningUsages.get(value.jobId);
     if (!Number.isFinite(serverTime) || existing && serverTime < existing.serverTime) return;
     guestListeningUsages.set(value.jobId, {...value,serverTime});
