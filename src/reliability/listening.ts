@@ -1,6 +1,6 @@
 import { operationAllowance } from '../daily-allowance.ts';
 /** Daily member input accounting is independent of Gateway spend. */
-export const LISTENING_TURNS = 5;
+export const GUEST_LISTENING_REPLIES = 2;
 export const LISTENING_ATTEMPT_WINDOW_MS = 60_000;
 export const LISTENING_ATTEMPTS_PER_WINDOW = 10;
 const terminal = "'succeeded','partial','failed','cancelled'";
@@ -22,17 +22,17 @@ export async function listeningUsage(db: D1Database, subject: string, now=Date.n
     resetsAt:allowance.resetsAt,retryAfterSeconds:0};
 }
 
-/** Guest preview stays attached to one saved split across reloads and UTC days.
- * Pending requests hold places, while failed and cached requests release them. */
+/** The anonymous demo spans one browser session across recordings and UTC days.
+ * Pending requests hold places; failed and incomplete replies release them. */
 export async function guestListeningUsage(db: D1Database, subject: string, jobId: string, now=Date.now()) {
   const row=await db.prepare(`SELECT
-    SUM(CASE WHEN state IN ('succeeded','partial') THEN 1 ELSE 0 END) AS completed,
+    SUM(CASE WHEN state='succeeded' THEN 1 ELSE 0 END) AS completed,
     SUM(CASE WHEN state NOT IN (${terminal}) THEN 1 ELSE 0 END) AS active
-    FROM app_operations WHERE subject=? AND quota_class='guest' AND job_id=? AND kind IN ('chat','guide')`)
-    .bind(subject,jobId).first<{completed:number|null;active:number|null}>();
+    FROM app_operations WHERE subject=? AND quota_class='guest' AND kind IN ('chat','guide')`)
+    .bind(subject).first<{completed:number|null;active:number|null}>();
   const successfulTurns=row?.completed??0,inProgress=row?.active??0;
-  return {ok:true,scope:'recording' as const,jobId,limit:LISTENING_TURNS,successfulTurns,inProgress,
-    remainingTurns:Math.max(0,LISTENING_TURNS-successfulTurns-inProgress),
-    signInRequired:successfulTurns>=LISTENING_TURNS,cooldownUntil:null,serverTime:new Date(now).toISOString(),
-    retryAfterSeconds:inProgress>0 && successfulTurns+inProgress>=LISTENING_TURNS?2:0};
+  return {ok:true,scope:'session' as const,jobId,limit:GUEST_LISTENING_REPLIES,successfulTurns,inProgress,
+    remainingTurns:Math.max(0,GUEST_LISTENING_REPLIES-successfulTurns-inProgress),
+    showSignIn:successfulTurns>=2,signInRequired:successfulTurns>=GUEST_LISTENING_REPLIES,cooldownUntil:null,serverTime:new Date(now).toISOString(),
+    retryAfterSeconds:inProgress>0 && successfulTurns+inProgress>=GUEST_LISTENING_REPLIES?2:0};
 }

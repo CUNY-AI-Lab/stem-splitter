@@ -33,12 +33,15 @@ async function fixture() {
   return {db,env,request,events,body,expiresAt,calls:()=>calls};
 }
 
-test('guest retries recover a completed fifth reply without a model call or an extra turn',async()=>{
+test('guest retries recover a completed second reply without a model call or an extra turn',async()=>{
   const f=await fixture();
-  for(let i=0;i<5;i++)assert.equal((await f.events(await f.request('/api/jobs/recording/chat','POST',f.body(`guest-replay-message-${i}`)))).at(-1).type,'done');
-  const replay=await f.events(await f.request('/api/jobs/recording/chat','POST',f.body('guest-replay-message-4')));
+  for(let i=0;i<2;i++)assert.equal((await f.events(await f.request('/api/jobs/recording/chat','POST',f.body(`guest-replay-message-${i}`)))).at(-1).type,'done');
+  const blocked=await f.request('/api/jobs/recording/chat','POST',f.body('guest-third-blocked'));
+  assert.equal(blocked.status,403);assert.equal((await blocked.json() as any).code,'guest_listening_signin_required');
+  assert.equal(f.calls(),2,'the third interaction never reaches Gateway');
+  const replay=await f.events(await f.request('/api/jobs/recording/chat','POST',f.body('guest-replay-message-1')));
   assert.equal(replay.at(-1).replayed,true);assert.equal(replay.at(-1).text,'Saved guest reply.');
-  assert.equal(replay.at(-1).usage.successfulTurns,5);assert.equal(f.calls(),5);
+  assert.equal(replay.at(-1).usage.successfulTurns,2);assert.equal(replay.at(-1).usage.showSignIn,true);assert.equal(f.calls(),2);
   const receipt=await f.db.prepare('SELECT * FROM guest_listening_reply_receipts LIMIT 1').first<any>();
   assert.ok(receipt.expires_at<=f.expiresAt);
   assert.doesNotMatch(JSON.stringify((await f.db.prepare('SELECT * FROM app_operations').all()).results),/Saved guest reply/);

@@ -8,9 +8,14 @@ case "${1:-}" in
       ffmpeg -version
       exit 0
     fi
+    # Hosted Azure package downloads can exhaust the setup deadline. Use the
+    # official Ubuntu archive with the same signed package metadata instead.
+    if [[ "${GITHUB_ACTIONS:-}" == true && -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+      sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+    fi
     for attempt in 1 2; do
       if timeout --kill-after=10s 180s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update &&
-         timeout --kill-after=10s 180s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install --yes ffmpeg; then
+         timeout --kill-after=10s 240s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install --yes --no-install-recommends ffmpeg; then
         ffmpeg -version
         exit 0
       fi

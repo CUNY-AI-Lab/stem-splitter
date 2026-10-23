@@ -259,7 +259,7 @@ app.get('/api/runtime', (c) => c.json({
   remixer: c.env.REMIXER_ENABLED === 'true',
   runDeletion: runDeletionEnabled(c.env),
   guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,
-    splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?5:null,chatLimitScope:'recording'} : null,
+    splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?2:null,chatLimitScope:'session'} : null,
 }));
 
 // Explicit sharing exposes only finished audio and its title, never account

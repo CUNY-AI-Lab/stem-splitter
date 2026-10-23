@@ -2888,12 +2888,12 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .refined-ui.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: .9rem; }
 }
 .refined-ui .coach-sign-in {
-  display: inline-flex; align-items: center; min-height: 40px;
-  margin: 0 0 .65rem; padding: .45rem .7rem;
-  border: 1px solid var(--hot); border-radius: 6px; background: var(--hot-soft);
-  color: var(--hot); font: 500 .72rem/1.4 var(--font-mono); text-decoration: none;
+  display: inline-flex; align-items: center; min-height: 24px;
+  margin: .25rem 0 0; padding: 0; border: 0; background: transparent;
+  color: var(--hot); font: 400 .75rem/1.4 var(--font-body);
+  text-decoration: underline; text-underline-offset: .2em;
 }
-.refined-ui .coach-sign-in:hover { background: var(--panel); }
+.refined-ui .coach-sign-in:hover { color: var(--ink); }
 .refined-ui .coach-sign-in:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 
 .refined-ui #course-context select:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }

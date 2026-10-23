@@ -1,9 +1,13 @@
 # Listening Guide allowances and recovery
 
-Guests receive five generated turns for each saved split. Cue and chat requests
-share those five places across tabs, reloads and UTC days. After the fifth turn,
-sign-in is required to continue and save progress. Failed requests release their
-place; a cached cue or readback of an existing request uses no additional turn.
+Anonymous browser guests receive two successful real replies for the entire
+session. Cue and chat share those places across recordings, tabs, reloads and
+UTC days. The first reply appears normally. The second includes a subtle
+application-provided sign-in link inside the chat. A third interaction displays
+only a sign-in request before any model call. Failed, empty and incomplete
+replies release demo places; cached cues and exact-request readback use no
+additional place. The source is ready for funded activation, which remains
+disabled pending its specifically approved sponsorship and spending contract.
 
 Signed-in accounts use the existing daily allowances: 50 successful chat replies
 and 20 guide attempts per UTC day. Chat failures and incomplete replies release
@@ -14,7 +18,7 @@ minute and the shared 200 guide attempts per day protect the service.
 
 ## Accounting and client state
 
-The operation ledger enforces the daily member allowances and the five-turn guest
+The operation ledger enforces the daily member allowances and the two-reply guest
 limit in the same D1 batch that reserves each request. Guest reservations require
 a saved recording identifier. Claiming a guest session keeps its original guest
 accounting class while transferring ownership through the existing claim path.

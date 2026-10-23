@@ -452,15 +452,17 @@ let listeningUsage = null;
 const guestListeningUsages = new Map();
 let listeningUsageRequest = null;
 function acceptListeningUsage(value) {
-  const recording = value?.scope === 'recording' && typeof value.jobId === 'string' && guestSessionActive;
-  if (!value || value.limit !== (recording ? 5 : 50) || guestSessionActive && !recording || !Number.isInteger(value.remainingTurns)
+  const recording = value?.scope === 'session' && typeof value.jobId === 'string' && guestSessionActive;
+  if (!value || value.limit !== (recording ? 2 : 50) || guestSessionActive && !recording || !Number.isInteger(value.remainingTurns)
     || value.remainingTurns < 0 || value.remainingTurns > value.limit) return;
   const serverTime = Date.parse(value.serverTime);
   if (recording) {
     const existing = guestListeningUsages.get(value.jobId);
     if (!Number.isFinite(serverTime) || existing && serverTime < existing.serverTime) return;
-    guestListeningUsages.set(value.jobId, {...value,serverTime});
-    mixers.get(value.jobId)?.renderListeningUsage();
+    for (const mixer of mixers.values()) {
+      guestListeningUsages.set(mixer.job.id,{...value,jobId:mixer.job.id,serverTime});
+      mixer.renderListeningUsage();
+    }
     return;
   }
   const cooldownUntil = value.cooldownUntil === null ? null : Date.parse(value.cooldownUntil);
@@ -1944,7 +1946,7 @@ class Mixer {
     this.coachSignIn.href = `${runtime.loginUrl || '/auth/login'}?next=${encodeURIComponent('/?job=' + this.job.id)}`;
     this.coachSignIn.hidden = true;
     this.coachSignIn.addEventListener('click', event => preserveProgressBeforeSignIn(event, this.coachSignIn.href));
-    this.coachUsage.after(this.coachSignIn);
+    this.coachLog.append(this.coachSignIn);
     this.coachInput.addEventListener('input', () => this.saveListeningProgress());
     this.coachCancel = document.createElement('button');
     this.coachCancel.type = 'button';
@@ -3035,12 +3037,14 @@ class Mixer {
     const guestUsage = guestSessionActive ? guestListeningUsages.get(this.job.id) : null;
     if (guestSessionActive) {
       this.coachUsage.hidden = false;
-      const remaining = guestUsage?.remainingTurns ?? 5;
+      const remaining = guestUsage?.remainingTurns ?? 2;
       this.coachUsage.querySelector('.coach-usage-status').textContent = guestUsage?.signInRequired
-        ? 'Five turns used for this split.' : `${remaining} of 5 guest turns left for this split.`;
+        ? 'Two demo replies used.' : `${remaining} of 2 demo replies left.`;
       this.coachUsage.querySelector('.coach-cooldown-timer').textContent = '';
-      this.coachSignIn.hidden = !guestUsage?.signInRequired || this.coachBusy;
-      this.coachForm.querySelector('[type="submit"]').disabled = this.coachBusy || (remaining === 0 && !this.pendingChat);
+      this.coachSignIn.hidden = !guestUsage?.showSignIn || this.coachBusy;
+      this.coachSignIn.textContent = this.guestSignInRequested ? 'Please sign in to continue' : 'Sign in to continue';
+      if (!this.coachSignIn.hidden) (this.guestSignInNotice || this.coachLog).append(this.coachSignIn);
+      this.coachForm.querySelector('[type="submit"]').disabled = this.coachBusy || (this.guestSignInRequested && !this.pendingChat);
       this.coachForm.querySelector('[type="submit"]').textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
       const cue = this.coachGuide.querySelector('.coach-cue-btn');
       if (cue) cue.disabled = this.coachBusy || (remaining === 0 && !this.pendingGuide);
@@ -3330,6 +3334,12 @@ class Mixer {
   }
 
   async sendChat(text) {
+    if (guestSessionActive && !this.pendingChat && guestListeningUsages.get(this.job.id)?.signInRequired) {
+      this.guestSignInRequested = true;
+      this.guestSignInNotice ||= this.addChatRow('signin-request','');
+      this.guestSignInNotice.append(this.coachSignIn);
+      this.saveListeningProgress(); this.renderListeningUsage(); return;
+    }
     if (this.coachBusy || (listeningWaitSeconds() && !this.pendingChat)) return;
     this.coachBusy = true;
     if (runtime.authMode === 'cail' && !this.pendingChat) {
