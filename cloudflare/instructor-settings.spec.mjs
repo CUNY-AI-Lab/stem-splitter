@@ -162,3 +162,32 @@ test('a stalled course write times out after eight seconds and stays concealed',
   await page.locator('#amendment').fill('Timeout draft');await page.locator('#change-note').fill('Synthetic timeout');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#teacher-protected-region')).toBeHidden();await page.clock.fastForward(8001);await expect(page.locator('#teacher-access-status')).toContainText('could not be verified');await expect(page.locator('#amendment')).toHaveValue('Timeout draft');await expect(page.locator('#teacher-protected-region')).toBeHidden();
  }finally{release();await f.harness.close();}
 });
+
+
+test('instructor roster separates personal app activity, class work and unavailable usage',async({page,context})=>{
+ const f=await fixture(context), errors=[];page.on('pageerror',e=>errors.push(e.message));
+ let usageStatus='available';
+ try{
+  await page.route(`**/api/classroom/courses/${course}/roster`,async route=>{
+   const response=await route.fetch(),data=await response.json();
+   data.appUsageStatus=usageStatus;
+   data.participants=[{displayName:'Fixture Student',memberId:'fixture-member',splitCount:0,completedCount:0,
+    appUsage:usageStatus==='available'?{runs:3,completed:2,guideTurns:4,recordedVisits:5,lastActiveAt:null}:null}];
+   data.demonstrationParticipants=[{displayName:'Sample student',splitCount:3}];
+   await route.fulfill({response,json:data});
+  });
+  await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);
+  await expect(page).toHaveTitle('Stem Splitter · Instructor Console');
+  await expect(page.locator('#course-roster')).toContainText('0 splits for this class · 0 completed');
+  await expect(page.locator('#course-roster')).toContainText('App use: 3 split attempts · 2 completed · 4 Guide turns · 5 recorded visits in 30 days');
+  await expect(page.locator('#course-roster-status')).toHaveText('1 enrolled student shown.');
+  await page.locator('#course-roster').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'/tmp/stem-instructor-usage-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/stem-instructor-usage-phone.png'});
+  usageStatus='pending';await page.reload();await expect(page.locator('#course-roster')).toContainText('App usage pending');
+  usageStatus='unavailable';await page.reload();await expect(page.locator('#course-roster')).toContainText('App usage temporarily unavailable');
+  expect(errors).toEqual([]);
+ }finally{await f.harness.close();}
+});

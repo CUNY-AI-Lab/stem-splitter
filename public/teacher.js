@@ -408,7 +408,19 @@ async function loadCourseRoster(append = false) {
     for (const participant of page.participants || []) {
       const item = document.createElement('li');
       item.className = 'teacher-history-item';
-      item.textContent = `${participant.displayName || 'Student'} · ${participant.splitCount || 0} saved splits`;
+      const name = document.createElement('strong');
+      name.textContent = participant.displayName || 'Student';
+      const assigned = document.createElement('div');
+      const count = participant.splitCount ?? 0;
+      assigned.textContent = `${count} ${count === 1 ? 'split' : 'splits'} for this class · ${participant.completedCount ?? 0} completed`;
+      const activity = document.createElement('div');
+      const use = participant.appUsage;
+      activity.textContent = use
+        ? `App use: ${use.runs} split ${use.runs === 1 ? 'attempt' : 'attempts'} · ${use.completed} completed · ${use.guideTurns} Guide ${use.guideTurns === 1 ? 'turn' : 'turns'} · ${use.recordedVisits} recorded ${use.recordedVisits === 1 ? 'visit' : 'visits'} in 30 days`
+        : page.appUsageStatus === 'unavailable' ? 'App usage temporarily unavailable' : 'App usage pending';
+      if (use?.lastActiveAt) activity.title = `Last recorded activity: ${new Date(use.lastActiveAt).toLocaleString()}`;
+      item.dataset.participant = 'true';
+      item.append(name, assigned, activity);
       list.appendChild(item);
     }
     if (!append) for (const sample of page.demonstrationParticipants || []) {
@@ -419,7 +431,10 @@ async function loadCourseRoster(append = false) {
     }
     rosterNextCursor = page.nextCursor || null;
     more.hidden = !rosterNextCursor;
-    status.textContent = list.children.length ? `${list.children.length} roster item${list.children.length === 1 ? '' : 's'} shown.` : 'No enrolled students are listed yet.';
+    const count = list.querySelectorAll('[data-participant]').length;
+    status.textContent = count
+      ? `${count} enrolled ${count === 1 ? 'student' : 'students'} shown.${rosterNextCursor ? ' Load more students for the remaining roster.' : ''}`
+      : 'No enrolled students are listed for this class.';
   } catch (error) {
     status.textContent = error.message;
     if (!append && ([401, 403].includes(error.status) || error.name === 'AbortError')) throw error;
