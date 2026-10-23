@@ -119,6 +119,7 @@ test('instructor edits imported names, cancels drafts and preserves the exact Ar
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...original,id:'renamed-suggestion',bytes:100000,sourceUrl:'https://archive.org/details/'+original.archiveId}]}}));
   await page.route('**/api/jobs',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'Local import assertion complete.'}}):route.continue());
   await page.emulateMedia({reducedMotion:'reduce'});await page.goto(f.url.href);
+  await page.getByLabel('New split workspace').selectOption('personal');
   await expect(page.locator('#yt-url')).toHaveAttribute('placeholder',`${artist} ${title}`);
   await page.locator('#yt-form .yt-go').click();
   const choice=page.locator('#source-songs [role="option"]');
@@ -141,6 +142,7 @@ test('renamed suggestions refresh cached search labels for the same Archive file
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...original,id:'same-source/song.mp3',durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/same-source'}]}}));
   await page.route('**/api/jobs',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'Local import assertion complete.'}}):route.continue());
   await page.goto(f.url.href);
+  await page.getByLabel('New split workspace').selectOption('personal');
   const input=page.locator('#yt-url'),choices=page.locator('#source-songs'),choice=choices.getByRole('option');
   await expect(input).toHaveAttribute('placeholder','Artist É Nocturne');
   await page.locator('#yt-form .yt-go').click();

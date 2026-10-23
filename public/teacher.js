@@ -133,7 +133,7 @@ function showPanel(signedIn, teacher) {
   if (signedIn) {
     if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = '';
     const displayName = String(teacher.displayName || '').trim();
-    teacherWho.textContent = /^instructor$/i.test(displayName) ? '' : displayName;
+    teacherWho.textContent = /^(instructor|student)$/i.test(displayName) ? '' : displayName;
   }
 }
 

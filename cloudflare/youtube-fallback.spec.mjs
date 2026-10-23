@@ -59,6 +59,7 @@ test('enabled link router turns YouTube metadata into Archive search and a local
     const input = page.getByRole('combobox', { name: 'Song or link' });
     await expect(page.locator('#source-import-help')).toHaveCount(0);
     await expect(page.locator('#dropzone')).toBeVisible();await expect(page.locator('#yt-url')).toBeVisible();
+    await page.getByLabel('New split workspace').selectOption('personal');
     await input.fill(sourceUrl);
     await page.locator('#yt-form .yt-go').click();
     await expect(input).toHaveValue(query);

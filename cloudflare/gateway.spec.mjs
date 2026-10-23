@@ -102,10 +102,10 @@ test('Listening Guide preserves the mixer and syncs private CUNY history across 
     await page.locator('.coach-reset').click();
     await page.locator('.coach-reset').click();
     await expect(page.locator('.coach-archive')).toBeHidden();
+    const restored = page.waitForResponse(response => response.url().endsWith('/listening-conversation') && response.request().method() === 'GET');
     await page.reload();
     await expect(page.locator('.badge.ready')).toBeVisible();
-    const restored = page.waitForResponse(response => response.url().endsWith('/listening-conversation') && response.request().method() === 'GET');
-    await page.locator('.coach-toggle').click();
+    await expect(page.locator('.coach-toggle')).toHaveAttribute('aria-expanded','true');
     expect((await (await restored).json()).entries).toEqual([]);
     await expect(page.locator('.coach-archive')).toBeHidden();
     await expect(page.locator('.coach-guide')).toContainText('Listen for the bass');
