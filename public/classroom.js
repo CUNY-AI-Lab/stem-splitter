@@ -5,7 +5,7 @@
   const panel = document.getElementById('console-panel');
   const status = document.getElementById('account-status');
   let courses = [], selected = null, generation = 0, controllers = new Set(), choiceKey = null;
-  let pendingRequests = 0;
+  let pendingRequests = 0, renameFolder = null;
   let roster = [], rosterCursor = null, folders = [], currentFolder = null;
   let student = null, jobsCursor = null, studentGeneration = 0;
   let conversationJob = null, conversationCursor = null, conversationRevision = null, conversationGeneration = 0;
@@ -17,10 +17,11 @@
   const button = (text, action) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'page-btn'; node.textContent = text; node.addEventListener('click', action); return node; };
   const row = text => { const node = document.createElement('li'); node.className = 'teacher-history-item'; if (text) node.textContent = text; return node; };
   function clearCourse() {
+    renameFolder = null; el('rename-form').hidden = true; el('rename-toggle').hidden = true;
     generation++; studentGeneration++; conversationGeneration++; folderGeneration++; annotationGeneration++;
     clearTimeout(refreshTimer); refreshing = false;
     for (const controller of controllers) controller.abort(); controllers.clear();
-    pendingRequests = 0; delete panel.dataset.checking;
+    pendingRequests = 0; delete panel.dataset.checking; delete panel.dataset.backgroundRefresh;
     panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null; annotationJob = null;
     rosterPages = jobsPages = conversationPages = 1;
     rosterCursor = jobsCursor = conversationCursor = conversationRevision = null;
@@ -209,7 +210,7 @@
   async function loadFolder(id, preserveDisplay = false) {
     const current = generation, view = ++folderGeneration;
     currentFolder = null;
-    if (!preserveDisplay) { el('folder-detail').hidden = true; el('folder-items').replaceChildren(); }
+    if (!preserveDisplay) { renameFolder = null; el('rename-form').hidden = true; el('folder-detail').hidden = true; el('folder-items').replaceChildren(); }
     try {
       const data = await request(coursePath(`/folders/${encodeURIComponent(id)}`));
       if (view !== folderGeneration) return;
@@ -218,6 +219,7 @@
       el('folder-status').textContent = currentFolder.permission === 'comment' ? 'Class members can listen and add notes.' : currentFolder.permission === 'read' ? 'Class members can listen and read notes.' : 'Instructors only';
       if (el('copy-status')) el('copy-status').textContent = '';
       el('folder-sharing').hidden = !selected.capabilities.instructorPanel;
+      el('rename-toggle').hidden = !selected.capabilities.instructorPanel || !el('rename-form').hidden;
       el('folder-permission').value = currentFolder.permission;
       const url = new URL('/classroom.html', location.origin); url.searchParams.set('course', selected.classId); url.searchParams.set('folder', id);
       el('folder-link').value = url.href;
@@ -253,16 +255,17 @@
     // Keep loaded pagination while remaining below the 30-read/minute budget.
     const reads = 1 + (selected.capabilities.rosterRead ? rosterPages : 0) + (student ? jobsPages : 0)
       + (currentFolder ? 1 : 0) + (annotationJob ? 1 : 0) + (conversationJob ? conversationPages : 0);
-    refreshTimer = setTimeout(() => void refreshCourse(), Math.max(15000, reads * 2500));
+    refreshTimer = setTimeout(() => void refreshCourse(true), Math.max(15000, reads * 2500));
   }
-  async function refreshCourse() {
-    if (!selected || refreshing || pendingRequests) { scheduleRefresh(); return; }
+  async function refreshCourse(background = false) {
+    if (!selected || refreshing || pendingRequests || (background && renameFolder)) { scheduleRefresh(); return; }
     clearTimeout(refreshTimer); refreshing = true;
     const current = generation, person = student, folder = currentFolder, notes = annotationJob, conversation = conversationJob;
     const pageCounts = { roster: rosterPages, jobs: jobsPages, conversation: conversationPages };
     const folderChoices = new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value]));
     const folderDraft = el('folder-permission').value;
     pendingRequests++; panel.dataset.checking = 'true';
+    if (background) panel.dataset.backgroundRefresh = 'true';
     try {
       await loadFolders();
       if (current !== generation) return;
@@ -294,12 +297,12 @@
       }
       if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Updates automatically while this page is open.`;
     } finally {
-      if (current === generation) { refreshing = false; pendingRequests--; if (!pendingRequests) delete panel.dataset.checking; scheduleRefresh(); }
+      if (current === generation) { refreshing = false; pendingRequests--; if (!pendingRequests) delete panel.dataset.checking; delete panel.dataset.backgroundRefresh; scheduleRefresh(); }
     }
   }
   // App membership alone does not prove that a course grant is still current.
   // Returning to this page conceals old class data while its scoped APIs recheck it.
-  const recheckCourse = () => { if (selected) void refreshCourse(); };
+  const recheckCourse = () => { delete panel.dataset.backgroundRefresh; if (selected) void refreshCourse(); };
   window.addEventListener('focus', recheckCourse);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckCourse(); else clearTimeout(refreshTimer); });
   el('course').addEventListener('change', () => void selectCourse(el('course').value));
@@ -327,6 +330,50 @@
       }
     } catch (error) { if (current === generation && view === folderGeneration) report('folder-status', error); }
     finally { submit.disabled = false; }
+  });
+  const cancelRename = () => { renameFolder = null; el('rename-form').hidden = true; el('rename-toggle').hidden = !selected?.capabilities.instructorPanel; el('rename-toggle').focus(); };
+  el('rename-toggle').addEventListener('click', () => {
+    if (!currentFolder || !selected?.capabilities.instructorPanel) return;
+    el('rename-reload').hidden = true;
+    renameFolder = {...currentFolder}; el('rename-name').value = currentFolder.name; el('rename-status').textContent = '';
+    el('rename-form').hidden = false; el('rename-toggle').hidden = true; el('rename-name').focus(); el('rename-name').select();
+  });
+  el('rename-cancel').addEventListener('click', cancelRename);
+  el('rename-reload').addEventListener('click', async () => {
+    if (!renameFolder) return;
+    const folder = renameFolder, current = generation;
+    el('rename-reload').disabled = true;
+    await loadFolder(folder.id, true);
+    if (current === generation && renameFolder === folder && currentFolder?.id === folder.id) {
+      renameFolder = {...currentFolder};
+      el('rename-reload').hidden = true;
+      el('rename-status').textContent = 'Folder reloaded. Review your name, then save.';
+      el('rename-name').focus();
+    }
+    el('rename-reload').disabled = false;
+  });
+  el('rename-form').addEventListener('keydown', event => { if (event.key === 'Escape' && !el('rename-cancel').disabled) { event.preventDefault(); cancelRename(); } });
+  el('rename-form').addEventListener('submit', async event => {
+    event.preventDefault(); if (!renameFolder || !selected?.capabilities.instructorPanel) return;
+    const name = el('rename-name').value.trim(), folder = renameFolder, current = generation;
+    if (!name) { el('rename-status').textContent = 'Enter a folder name.'; return; }
+    if (name === folder.name) { cancelRename(); return; }
+    const submit = event.currentTarget.querySelector('[type="submit"]'); submit.disabled = el('rename-cancel').disabled = true;
+    el('rename-status').textContent = 'Saving…';
+    try {
+      await request(coursePath(`/folders/${encodeURIComponent(folder.id)}`), {method:'PUT',body:JSON.stringify({name,revision:folder.revision})});
+      if (current !== generation || renameFolder !== folder) return;
+      cancelRename(); await loadFolders(); if (current === generation) await loadFolder(folder.id);
+    } catch (error) {
+      if (current === generation) {
+        report('rename-status', error);
+        if (error.status === 409) {
+          el('rename-reload').hidden = false;
+          el('rename-status').textContent = 'This folder changed. Reload it to review and save your name.';
+        }
+      }
+    }
+    finally { submit.disabled = el('rename-cancel').disabled = false; }
   });
   el('copy-link')?.addEventListener('click', async () => {
     if (!selected || !currentFolder) return;

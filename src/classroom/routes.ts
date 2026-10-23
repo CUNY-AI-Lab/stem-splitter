@@ -107,6 +107,15 @@ routes.get('/courses/:courseId/folders/:id',async c=>{
 });
 routes.put('/courses/:courseId/folders/:id',async c=>{
   const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));const b=await body(c.req.raw);
+  if (b.name !== undefined) {
+    const name = typeof b.name === 'string' ? b.name.trim() : '';
+    if (!name || name.length > 80 || !Number.isSafeInteger(b.revision) || b.permission !== undefined) throw new CourseError(400,'invalid_folder');
+    if (f.revision !== b.revision) throw new CourseError(409,'folder_changed');
+    if (name === f.name) return c.json({ok:true,revision:f.revision});
+    const renamed = await c.env.DB.prepare('UPDATE course_folders SET name=?,revision=revision+1 WHERE id=? AND course_id=? AND revision=?').bind(name,f.id,f.course_id,b.revision).run();
+    if (!renamed.meta.changes) throw new CourseError(409,'folder_changed');
+    return c.json({ok:true,revision:f.revision+1});
+  }
   if(!['private','read','comment'].includes(String(b.permission))||!Number.isSafeInteger(b.revision))throw new CourseError(400,'invalid_grant');
   const result=await c.env.DB.prepare('UPDATE course_folders SET permission=?,revision=revision+1,created_by=? WHERE id=? AND course_id=? AND revision=?').bind(b.permission,p.subject,f.id,f.course_id,b.revision).run();
   if(!result.meta.changes)throw new CourseError(409,'folder_changed');return c.json({ok:true,revision:Number(b.revision)+1,url:`/classroom.html?course=${encodeURIComponent(f.course_id)}&folder=${f.id}`});

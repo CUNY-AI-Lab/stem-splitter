@@ -422,3 +422,22 @@ test('storage failures before and after finish remain recoverable and never dupl
  await assert.rejects(finishCourseTurn(env,'storage',p.subject,fresh.turnId,fresh.claimId,{reply:'Saved once',toolCalls:[],finishReason:'stop'}));db.batch=original;
  const retry=await beginCourseTurn(env,'storage',p,'Another request',fresh.turnId,fresh.revision);assert.ok(retry.replay);assert.equal(retry.replay.reply,'Saved once');assert.equal((await conversationPage(env,'storage',p.subject)).entries.length,4);
 });
+
+test('class folder rename retains sharing, contents and course while rejecting students and stale revisions',async()=>{
+ const {request,db,job}=await setup();await job('rename-kept');
+ const root=`/api/classroom/courses/${A}/folders`;
+ const made=await(await request(root,'ownerA','POST',{name:'Original name'})).json() as any;
+ const path=root+'/'+made.folder.id;
+ await request(path,'ownerA','PUT',{permission:'comment',revision:0});
+ await request(path+'/items','ownerA','POST',{jobId:'rename-kept'});
+ for(const name of ['', '  ', 'x'.repeat(81),null])assert.equal((await request(path,'ownerA','PUT',{name,revision:1})).status,400);
+ assert.equal((await request(path,'alice','PUT',{name:'Student edit',revision:1})).status,403);
+ assert.equal((await request(path,'ownerB','PUT',{name:'Wrong course',revision:1})).status,403);
+ assert.equal((await request(path,'ownerA','PUT',{name:'  New name  ',revision:1})).status,200);
+ assert.equal((await request(path,'ownerA','PUT',{name:'Stale name',revision:1})).status,409);
+ assert.equal((await request(path,'ownerA','PUT',{name:'New name',revision:2})).status,200);
+ const detail=await(await request(path,'alice')).json() as any;
+ assert.deepEqual(detail.folder,{id:made.folder.id,name:'New name',permission:'comment',revision:2});
+ assert.equal(detail.items[0].jobId,'rename-kept');
+ assert.equal((await db.prepare('SELECT course_id FROM course_folders WHERE id=?').bind(made.folder.id).first())?.course_id,A);
+});

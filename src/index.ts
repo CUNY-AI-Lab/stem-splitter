@@ -912,6 +912,23 @@ app.get('/api/teacher/folders/:id', requireTeacher, async (c) => {
   });
 });
 
+app.put('/api/teacher/folders/:id', requireTeacher, async c => {
+  const parsed = await boundedJson(c, MAX_SMALL_JSON_BYTES);
+  if (parsed.response) return parsed.response;
+  const body = parsed.value as {name?:unknown;expectedName?:unknown} | null;
+  const name = normalizeFolderName(body?.name);
+  if (!name || typeof body?.expectedName !== 'string') return c.json({error:'A folder needs a name (up to 80 characters).'},400);
+  const id = c.req.param('id');
+  const folder = await c.env.DB.prepare('SELECT * FROM folders WHERE id=?').bind(id).first<FolderRow>();
+  if (!folder) return c.json({error:'Folder not found'},404);
+  if (folder.name !== body.expectedName) return c.json({error:'This folder changed. Reload it before renaming.'},409);
+  if (folder.name !== name) {
+    const result = await c.env.DB.prepare('UPDATE folders SET name=? WHERE id=? AND name=?').bind(name,id,body.expectedName).run();
+    if (!result.meta.changes) return c.json({error:'This folder changed. Reload it before renaming.'},409);
+  }
+  return c.json({ok:true,name});
+});
+
 app.delete('/api/teacher/folders/:id', requireTeacher, async (c) => {
   const id = c.req.param('id');
   // No FK cascade on purpose: delete items explicitly so the shim never
