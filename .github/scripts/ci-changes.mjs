@@ -44,6 +44,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     `Source gate: **${result.source ? 'run' : 'skip'}**`,
     `Native audio image: **${result.image ? 'run' : 'skip'}**`,
     `General browser suites: **${result.browsers ? 'run' : 'skip'}**`,
+    process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? `Manual dispatch: **${process.env.CI_SCOPE || 'all'}**.` :
     files === null ? 'Change history unavailable; full checks selected.' :
       `Compared ${files.length} changed path(s), including both sides of renames.`,
   ].join('\n\n');
