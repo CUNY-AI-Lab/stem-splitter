@@ -345,3 +345,33 @@ for (const width of [1280,390]) test(`owned recording names persist in the rack 
     expect(errors).toEqual([]);
   }finally{await server.close();}
 });
+
+for (const width of [1280, 390]) test(`account access failures keep one Settings destination at ${width}px`, async ({ page }) => {
+  const issuer = await createTestIdentityIssuer();
+  const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
+    vars: { TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true' } }] });
+  try {
+    const { url } = await server.listen();
+    await page.setViewportSize({ width, height: 900 });
+    let accountStatus = 403;
+    await page.route('**/api/account', route => accountStatus === 0 ? route.abort('failed') : route.fulfill({
+      status: accountStatus, json: { error: 'Account fixture unavailable' },
+    }));
+    for (const status of [403, 503, 0, 401]) {
+      accountStatus = status;
+      await page.goto(url.href);
+      if (status === 401) await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
+      else await expect(page.locator('#rack-status')).toContainText(status === 403 ? 'Open Settings for details.' : 'Reload to try again.');
+      const settings = page.getByRole('link', { name: 'Settings', exact: true });
+      await expect(settings).toHaveCount(1);
+      await expect(settings).toHaveAttribute('href', '/account.html');
+      await expect(page.locator('#workspace-nav > a')).toHaveText(['Splitter', 'Workspace', 'Settings']);
+      await expect(page.locator('footer .footer-teacher-link')).toHaveText('Instructor Console');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (status !== 401) await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
+    }
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await expect(page).toHaveURL(new URL('/account.html', url).href);
+    await expect(page).toHaveTitle('Stem Splitter · Settings');
+  } finally { await server.close(); }
+});

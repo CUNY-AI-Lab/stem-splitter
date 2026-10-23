@@ -5169,15 +5169,15 @@ async function initialize() {
       try { await window.StemGuestClaim.run(principal); }
       catch (error) { showUploadMessage(error.message, true); }
       await initializeCourseSelection();
-    } else if (runtime.loginUrl) {
+    } else if (runtime.loginUrl && !accountNeedsHelp) {
       const link = document.createElement('a');
       link.className = 'account-button';
       const linkedJob = new URLSearchParams(location.search).get('job');
-      link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
-      link.textContent = accountNeedsHelp ? 'Settings' : 'CUNY Login';
+      link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      link.textContent = 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
       account.append(link);
-    } else account.textContent = 'CUNY Login will be available here soon.';
+    } else if (!runtime.loginUrl) account.textContent = 'CUNY Login will be available here soon.';
     if (account.childNodes.length) (document.getElementById('workspace-nav') || document.querySelector('.masthead-meta')).append(account);
   }
   separationOptionsReady = loadSeparationOptions();
