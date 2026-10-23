@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Checks to run (image refreshes native evidence)
+        type: choice
+        options: [all, source, image]
+        default: all
 
 concurrency:
   group: stem-splitter-ci-${{ github.workflow }}-${{ github.ref }}
@@ -13,8 +21,35 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Select general CI checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.changes.outputs.source }}
+      image: ${{ steps.changes.outputs.image }}
+      browsers: ${{ steps.changes.outputs.browsers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+      - name: Select checks from changed files
+        id: changes
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD_SHA: ${{ github.sha }}
+          CI_PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
+          CI_SCOPE: ${{ inputs.scope }}
+        run: node --experimental-strip-types .github/scripts/ci-changes.mjs
+
   source-gate:
     name: Source gate
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.source != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -45,6 +80,7 @@ jobs:
       - name: Verify instrument-discovery dependency lock
         run: uv lock --check --project instrument-discovery
       - name: Install Chrome for Playwright
+        if: needs.changes.outputs.browsers != 'false'
         run: bash .github/scripts/install-media-tools.sh chrome
       - name: Run unit and Python tests
         run: bun run test
@@ -58,16 +94,21 @@ jobs:
       - name: Run audio-analysis contract and parity tests
         run: bun run typecheck:analysis && bun run test:analysis-service
       - name: Run local browser E2E tests
+        if: needs.changes.outputs.browsers != 'false'
         run: bun run test:e2e
       - name: Run server-authoritative Auto E2E tests
+        if: needs.changes.outputs.browsers != 'false'
         run: bun run test:e2e:auto
       - name: Run teacher-isolation shadow E2E tests
+        if: needs.changes.outputs.browsers != 'false'
         run: bun run test:e2e:isolation-shadow
       - name: Validate Wrangler bundle (no deployment)
         run: bun run wrangler -- deploy --dry-run --outdir "$RUNNER_TEMP/stem-splitter-wrangler-dry-run"
 
   analysis-image:
     name: Pinned analysis image (native amd64)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.image != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

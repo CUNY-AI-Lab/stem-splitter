@@ -24,7 +24,8 @@ scheduled in parallel. Each test creates its own harness, database and browser
 context. The local configuration continues to default to one worker.
 
 Missing Git history or an unfamiliar file path requests full verification.
-The general source and native audio-image gates remain separate workflows.
+The general source and native audio-image gates are selected separately in
+the `CI` workflow; see [General CI](general-ci.md).
 
 FFmpeg installation first tries the runner's existing package index with a
 short deadline. An outdated or missing index falls back to the bounded metadata
