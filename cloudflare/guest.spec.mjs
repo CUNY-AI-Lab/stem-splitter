@@ -813,6 +813,13 @@ test('guest Guide stops at two successful replies and sign-in restores its draft
   await page.getByRole('button',{name:'Complete fixture guest check'}).click();
   await expect(page.locator('.coach-row.coach').last()).toContainText('Listen for the bass');
   await expect(page.locator('.coach-sign-in')).toBeHidden();
+  // The interruption below belongs to the second reply. Wait for the first
+  // asynchronous save so it cannot be intercepted by that failure fixture.
+  await expect.poll(() => page.evaluate(async () => {
+   const id = [...mixers.values()][0].job.id;
+   const conversation = await fetch(`/api/jobs/${id}/listening-conversation`).then(response => response.json());
+   return conversation.entries.filter(entry => entry.kind === 'you').length;
+  })).toBe(1);
   for(let i=2;i<=2;i++) {
    if(i===2)await page.route('**/api/jobs/*/listening-conversation',route=>route.request().method()==='PUT'
     ?route.fulfill({status:503,json:{error:'Fixture connection interrupted while saving'}}):route.fallback());

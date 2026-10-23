@@ -2,10 +2,12 @@ name: Cloudflare candidate checks
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [codex/cloudflare-migration]
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -20,47 +22,84 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Verify workflow change detection
+        run: node --test .github/scripts/cloudflare-ci-changes.test.mjs
+      - name: Select Cloudflare checks
+        id: changes
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD_SHA: ${{ github.sha }}
+          CI_PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/cloudflare-ci-changes.mjs
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changes.outputs.required == 'true'
         with:
           node-version: '22.23.1'
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.changes.outputs.required == 'true'
         with:
           bun-version: 1.4.0
       - name: Install frozen application and adapter dependencies
+        if: steps.changes.outputs.required == 'true'
         run: |
           set -euo pipefail
           bun install --frozen-lockfile
           cd cloudflare
           bun install --frozen-lockfile
       - name: Install the local audio validation oracle
+        if: steps.changes.outputs.required == 'true'
         run: bash .github/scripts/install-media-tools.sh ffmpeg
       - name: Verify private identity and Gateway boundaries in Workerd
+        if: steps.changes.outputs.required == 'true'
         working-directory: cloudflare
         run: bun run typecheck && bun run test
       - name: Install Chrome
+        if: steps.changes.outputs.browsers == 'true'
         run: bash .github/scripts/install-media-tools.sh chrome
       - name: Install Chromium for native browser zoom
+        if: steps.changes.outputs.browsers == 'true'
         run: ./node_modules/.bin/playwright install --with-deps --no-shell chromium
       - name: Exercise recording, account and Listening Guide browser paths
+        if: steps.changes.outputs.browsers == 'true'
         working-directory: cloudflare
-        run: ../node_modules/.bin/playwright test --config playwright.config.mjs
+        run: ../node_modules/.bin/playwright test --config playwright.config.mjs --workers=2 --fully-parallel
       - name: Install Firefox for mixer regression checks
+        if: steps.changes.outputs.browsers == 'true'
         timeout-minutes: 3
         run: ./node_modules/.bin/playwright install --with-deps firefox
       - name: Exercise Firefox seeking and instrument switching
+        if: steps.changes.outputs.browsers == 'true'
         working-directory: cloudflare
         env:
           STEM_BROWSER: firefox
         run: |
           bash ../.github/scripts/start-test-audio.sh
-          ../node_modules/.bin/playwright test --config playwright.config.mjs playback.spec.mjs
+          ../node_modules/.bin/playwright test --config playwright.config.mjs playback.spec.mjs --workers=2 --fully-parallel
       - name: Validate the isolated candidate bundle
+        if: steps.changes.outputs.required == 'true'
         working-directory: cloudflare
         run: ./node_modules/.bin/wrangler deploy --config wrangler.jsonc --dry-run --outdir "$RUNNER_TEMP/stem-cloudflare"
       - name: Validate the link import bundle
+        if: steps.changes.outputs.required == 'true'
         working-directory: cloudflare
         run: ./node_modules/.bin/wrangler deploy --config link-import.jsonc --dry-run --outdir "$RUNNER_TEMP/stem-link-import"
+      - name: Record successful browser checks for this exact tree
+        if: steps.changes.outputs.browsers == 'true' && github.event_name == 'pull_request'
+        env:
+          CI_SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node .github/scripts/cloudflare-ci-changes.mjs receipt "$RUNNER_TEMP/cloudflare-ci-receipt.json"
+      - name: Preserve successful browser checks for merge verification
+        if: steps.changes.outputs.browsers == 'true' && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cloudflare-browser-checks-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/cloudflare-ci-receipt.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
       - name: Preserve browser failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
