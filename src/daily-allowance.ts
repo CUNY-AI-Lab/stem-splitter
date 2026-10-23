@@ -27,8 +27,9 @@ export async function splitAllowance(db: D1Database, subject: string, now = new 
 
 export async function operationAllowance(db: D1Database, subject: string, kind: 'split' | 'chat', now = new Date(), quotaClass: QuotaClass = 'member', role: AllowanceRole = 'member') {
   const { day, resetsAt } = dailyWindow(now);
+  const completedStates = kind === 'chat' && quotaClass === 'member' ? "'succeeded'" : "'succeeded','partial'";
   const row = await db.prepare(`SELECT
-    COALESCE(SUM(CASE WHEN state IN ('succeeded','partial') THEN 1 ELSE 0 END),0) AS completed,
+    COALESCE(SUM(CASE WHEN state IN (${completedStates}) THEN 1 ELSE 0 END),0) AS completed,
     COALESCE(SUM(CASE WHEN state NOT IN ('succeeded','partial','failed','cancelled') THEN 1 ELSE 0 END),0) AS inProgress
     FROM app_operations WHERE kind=? AND day=? AND subject=?`)
     .bind(kind, day, subject).first<{ completed: number; inProgress: number }>();

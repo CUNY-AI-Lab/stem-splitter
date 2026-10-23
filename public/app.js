@@ -208,34 +208,73 @@ async function ensureClassCode() {
 
 let selectedCourse = 'personal';
 let courseAcknowledgment = null;
+let courseSelectionPending = false, courseSelectionSequence = 0;
 function creationCourse() {
+  if (courseSelectionPending) throw new Error('Checking your class access. Try again shortly.');
+  if (!selectedCourse) throw new Error('Choose a workspace for this split.');
   if (selectedCourse !== 'personal' && !courseAcknowledgment?.checked) throw new Error('Confirm the course-work disclosure before creating a class split.');
   return selectedCourse;
 }
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
+  const subject = accountSubject, storageKey = `stem-workspace-choice:v1:${subject}`;
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
   region.innerHTML = '<label for="new-split-course">New splits belong to </label><select id="new-split-course" aria-label="New split workspace"><option value="personal">Personal</option></select><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
-  const select = region.querySelector('select');
+  const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
   courseAcknowledgment = region.querySelector('input');
-  const choose = () => { selectedCourse = select.value; courseAcknowledgment.checked = false; courseAcknowledgment.closest('p').hidden = selectedCourse === 'personal'; };
-  select.addEventListener('change', choose);
-  try {
-    const response = await fetch('/api/classroom/courses', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
-    if (!response.ok) throw new Error('Course work is unavailable. Personal work remains available.');
-    const data = await response.json();
-    for (const course of data.courses || []) {
-      const option = document.createElement('option'); option.value = course.classId;
-      option.textContent = `${course.className} · ${course.term} · ${course.section}`; select.append(option);
+  let initialized = false;
+  const choose = value => {
+    if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
+    selectedCourse = value; select.value = value;
+    courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
+    try { if (value) localStorage.setItem(storageKey,value); else localStorage.removeItem(storageKey); } catch {}
+  };
+  select.addEventListener('change', () => {
+    choose(select.value); status.textContent = '';
+    const url = new URL(location.href);
+    if (select.value) url.searchParams.set('course',select.value); else url.searchParams.delete('course');
+    history.replaceState(null,'',url);
+  });
+  const refresh = async () => {
+    if (accountSubject !== subject || !region.isConnected) return;
+    const sequence = ++courseSelectionSequence;
+    courseSelectionPending = true; select.disabled = true;
+    try {
+      const courses = []; let cursor = null;
+      do {
+        const response = await fetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
+        if (!response.ok) throw new Error('Class access is temporarily unavailable. Choose Personal or reload to retry.');
+        const data = await response.json(); courses.push(...(data.courses || [])); cursor = data.nextCursor;
+      } while (cursor && courses.length < 1000);
+      if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
+      const valid = new Set(['personal',...courses.map(course=>course.classId)]);
+      let previous = initialized ? selectedCourse : null;
+      if (!initialized) { try { previous = localStorage.getItem(storageKey); } catch {} }
+      const requested = initialized ? null : new URLSearchParams(location.search).get('course');
+      const choice = requested && valid.has(requested) ? requested
+        : previous && valid.has(previous) ? previous : courses.length === 1 ? courses[0].classId
+        : courses.length ? '' : 'personal';
+      select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
+        ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
+      select.options[0].disabled = true;
+      choose(choice); initialized = true;
+      status.textContent = requested && !valid.has(requested) ? 'The linked class is unavailable to this account.'
+        : previous && !valid.has(previous) ? 'Class access changed. Review the selected workspace.' : '';
+      region.hidden = !courses.length && !status.textContent;
+    } catch (error) {
+      if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
+      choose(''); select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
+      select.value = ''; select.options[0].disabled = true;
+      region.hidden = false; status.textContent = error.message;
+    } finally {
+      if (sequence === courseSelectionSequence && accountSubject === subject) { courseSelectionPending = false; select.disabled = false; }
     }
-    const requested = new URLSearchParams(location.search).get('course');
-    if (requested && [...select.options].some(option => option.value === requested)) { select.value = requested; choose(); }
-    else if (requested) region.querySelector('.course-load-status').textContent = 'This course is not available to your account. New splits remain Personal.';
-    if (!data.courses?.length && !requested) region.hidden = true;
-  } catch (error) { region.querySelector('.course-load-status').textContent = error.message; }
+  };
+  addEventListener('focus', () => void refresh());
+  await refresh();
 }
 
 async function splitRequestKey(body, course = 'personal') {
@@ -334,12 +373,22 @@ async function streamApi(path, body, onEvent, signal) {
   await appReady;
   if (path.endsWith('/chat') && !body.messageId) body = { ...body, messageId: crypto.randomUUID() };
   const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120000)]);
-  const res = await fetch(path, {
+  const send = () => fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode(), ...(body.messageId ? { 'Idempotency-Key': body.messageId } : {}) },
     body: JSON.stringify(body),
     signal: deadline,
   });
+  let res = await send();
+  if (res.status === 403 && guestSessionActive) {
+    const denied = await res.clone().json().catch(() => ({}));
+    if (denied.error?.code === 'guest_verification_required') {
+      const jobId = /^\/api\/jobs\/([^/]+)/.exec(path)?.[1];
+      await window.StemGuest.verify(runtime.guest, mixers.get(jobId)?.coachBody || document.getElementById('upload-status'));
+      deadline.throwIfAborted();
+      res = await send();
+    }
+  }
   if (res.status === 401) {
     if (runtime.authMode === 'cail') throw new Error('Sign in with CUNY Login to continue.');
     localStorage.removeItem('classCode');
@@ -400,23 +449,42 @@ async function streamApi(path, body, onEvent, signal) {
 // The server owns the successful-turn count across tabs, songs and cue/chat.
 // This page keeps only a display clock; every generation is checked again there.
 let listeningUsage = null;
+const guestListeningUsages = new Map();
 let listeningUsageRequest = null;
 function acceptListeningUsage(value) {
-  if (!value || value.limit !== 5 || !Number.isInteger(value.remainingTurns)
-    || value.remainingTurns < 0 || value.remainingTurns > 5) return;
+  const recording = value?.scope === 'session' && typeof value.jobId === 'string' && guestSessionActive;
+  if (!value || value.limit !== (recording ? 2 : 50) || guestSessionActive && !recording || !Number.isInteger(value.remainingTurns)
+    || value.remainingTurns < 0 || value.remainingTurns > value.limit) return;
   const serverTime = Date.parse(value.serverTime);
+  if (recording) {
+    const existing = guestListeningUsages.get(value.jobId);
+    if (!Number.isFinite(serverTime) || existing && serverTime < existing.serverTime) return;
+    for (const mixer of mixers.values()) {
+      guestListeningUsages.set(mixer.job.id,{...value,jobId:mixer.job.id,serverTime});
+      mixer.renderListeningUsage();
+    }
+    return;
+  }
   const cooldownUntil = value.cooldownUntil === null ? null : Date.parse(value.cooldownUntil);
+  const resetsAt = value.resetsAt === undefined ? null : Date.parse(value.resetsAt);
   if (!Number.isFinite(serverTime) || (cooldownUntil !== null && !Number.isFinite(cooldownUntil))) return;
+  if (resetsAt !== null && !Number.isFinite(resetsAt)) return;
   if (listeningUsage && serverTime < listeningUsage.serverTime) return;
-  listeningUsage = { remainingTurns: value.remainingTurns, inProgress: Number.isInteger(value.inProgress) ? value.inProgress : 0, serverTime,
-    availableAt: cooldownUntil === null ? 0 : Date.now() + Math.max(0, cooldownUntil - serverTime) };
+  listeningUsage = { limit: value.limit, remainingTurns: value.remainingTurns, inProgress: Number.isInteger(value.inProgress) ? value.inProgress : 0, serverTime,
+    availableAt: 0, resetsAt, refreshAfter: resetsAt === null ? 0 : Date.now() + Math.max(0,resetsAt-serverTime) };
   for (const mixer of mixers.values()) mixer.renderListeningUsage();
 }
 function listeningWaitSeconds() {
   return listeningUsage ? Math.max(0, Math.ceil((listeningUsage.availableAt - Date.now()) / 1000)) : 0;
 }
 async function refreshListeningUsage() {
-  if (runtime.authMode !== 'cail' || guestSessionActive || !accountSubject) return;
+  if (runtime.authMode !== 'cail' || !accountSubject) return;
+  if (guestSessionActive) {
+    await Promise.all([...mixers.values()].filter(mixer => !mixer.coachBody.hidden).map(async mixer => {
+      try { acceptListeningUsage(await api(`/api/jobs/${mixer.job.id}/listening-usage`, {signal:AbortSignal.timeout(15000)})); } catch {}
+    }));
+    return;
+  }
   if (listeningUsageRequest) return listeningUsageRequest;
   listeningUsageRequest = (async () => {
     try { acceptListeningUsage(await api('/api/listening-usage', { signal: AbortSignal.timeout(15000) })); }
@@ -1623,6 +1691,8 @@ function processingMessage(job, noun = 'splits') {
 class Mixer {
   constructor(job) {
     this.job = job;
+    this.progressSubject = accountSubject;
+    this.savedProgress = window.StemListeningProgress?.read(accountSubject, job.id);
     this.audios = [];
     this.playing = false;
     this.starting = false;
@@ -1644,6 +1714,7 @@ class Mixer {
     this.loop = null; // { start, end }
     this.rate = 1;
     this.el = this.build();
+    this.restoreListeningProgress();
     this.waveformAbort = new AbortController();
     this.waveformResize = new ResizeObserver(() => {
       for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
@@ -1654,6 +1725,47 @@ class Mixer {
     }, { rootMargin: '100px' });
     this.waveformObserver.observe(this.el);
     window.StemClassLive?.attach(this);
+  }
+
+  saveListeningProgress() {
+    if (!this.progressSubject || this.progressSubject !== accountSubject || this.job.readOnlyShared) return;
+    window.StemListeningProgress?.save(this.progressSubject, this.job.id, {
+      draft: this.coachInput?.value || '', position: this.audios[0]?.readyState >= 1 ? this.audios[0].currentTime : this.savedProgress?.position || 0,
+      rate: this.rate, muted: [...this.userMuted].filter(([,muted]) => muted).map(([name]) => name),
+      solo: this.soloState, loop: this.loop, guideOpen: this.coachBody?.hidden === false,
+      ...(this.pendingChat ? {pendingChat:this.pendingChat.body} : {}), ...(this.pendingGuide ? {pendingGuide:this.pendingGuide} : {}),
+      ...(this.conversationDirty ? {pendingConversation:{entries:this.conversationEntries,revision:this.conversationRevision}}
+        : !this.conversationLoaded && this.savedProgress?.pendingConversation ? {pendingConversation:this.savedProgress.pendingConversation} : {}),
+    });
+  }
+
+  restoreListeningProgress() {
+    const saved = this.savedProgress;
+    if (!saved || this.job.readOnlyShared) return;
+    this.coachInput.value = saved.draft;
+    if (saved.pendingChat) {
+      const messages = saved.pendingChat.messages, text = messages.at(-1).content;
+      this.pendingChat = {text,history:messages.slice(0,-1),body:saved.pendingChat,userRow:this.addChatRow('you',esc(text))};
+      this.coachInput.value = text;
+      this.coachInput.readOnly = true;
+    }
+    if (saved.pendingGuide) this.pendingGuide = saved.pendingGuide;
+    this.coachBody.hidden = !saved.guideOpen;
+    this.coachToggle.setAttribute('aria-expanded', String(saved.guideOpen));
+    for (const name of saved.muted) if (this.channelsByName.has(name)) this.userMuted.set(name, true);
+    if (saved.solo && this.channelsByName.has(saved.solo.stem)) this.soloState = saved.solo;
+    if (SPEEDS.includes(saved.rate)) this.setRate(saved.rate);
+    this.applyMix();
+    for (const audio of this.audios) {
+      const restore = () => { if (Number.isFinite(audio.duration)) audio.currentTime = Math.min(saved.position, audio.duration); };
+      if (audio.readyState >= 1) restore(); else audio.addEventListener('loadedmetadata', restore, {once:true});
+    }
+    if (saved.loop) this.setLoop(saved.loop);
+    if (saved.guideOpen) {
+      void this.loadConversation().catch(() => {});
+      if (guestSessionActive) void api(`/api/jobs/${this.job.id}/listening-usage`).then(acceptListeningUsage).catch(() => {});
+      else void refreshListeningUsage();
+    }
   }
 
   build() {
@@ -1830,6 +1942,14 @@ class Mixer {
     this.coachForm = li.querySelector('.coach-form');
     this.coachInput = this.coachForm.querySelector('input');
     this.coachUsage = li.querySelector('.coach-usage');
+    this.coachSignIn = document.createElement('a');
+    this.coachSignIn.className = 'coach-sign-in';
+    this.coachSignIn.textContent = 'Sign in to continue';
+    this.coachSignIn.href = `${runtime.loginUrl || '/auth/login'}?next=${encodeURIComponent('/?job=' + this.job.id)}`;
+    this.coachSignIn.hidden = true;
+    this.coachSignIn.addEventListener('click', event => preserveProgressBeforeSignIn(event, this.coachSignIn.href));
+    this.coachLog.append(this.coachSignIn);
+    this.coachInput.addEventListener('input', () => this.saveListeningProgress());
     this.coachCancel = document.createElement('button');
     this.coachCancel.type = 'button';
     this.coachCancel.className = 'coach-cancel';
@@ -1851,6 +1971,7 @@ class Mixer {
         void this.refresh();
       }
       else this.coachAbort?.abort();
+      this.saveListeningProgress();
     });
     this.coachForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1945,7 +2066,12 @@ class Mixer {
     // Media events remain a clock source when animation frames are throttled
     // or a decorative meter cannot render. Always display actual media time.
     for (const event of ['timeupdate', 'seeked', 'pause']) {
-      master.addEventListener(event, () => this.paint());
+      master.addEventListener(event, () => {
+        this.paint();
+        if (event !== 'timeupdate' || Date.now() - (this.progressSavedAt || 0) > 1000) {
+          this.progressSavedAt = Date.now(); this.saveListeningProgress();
+        }
+      });
     }
 
     this.playBtn.addEventListener('click', () => (this.playing || this.starting ? this.pause() : this.play()));
@@ -2150,6 +2276,7 @@ class Mixer {
     for (const btn of this.rateGroup.querySelectorAll('.rate-opt')) {
       btn.setAttribute('aria-pressed', String(Number(btn.dataset.rate) === rate));
     }
+    this.saveListeningProgress();
   }
 
   setActionsOpen(open) {
@@ -2717,6 +2844,7 @@ class Mixer {
   setLoop(range) {
     this.loop = range;
     this.renderLoop();
+    this.saveListeningProgress();
     if (!range) return;
     const now = this.audios[0].currentTime;
     if (now < range.start || now >= range.end) this.seekTo(range.start);
@@ -2908,23 +3036,39 @@ class Mixer {
   renderListeningUsage() {
     if (!this.coachUsage) return;
     const seconds = listeningWaitSeconds();
-    const show = runtime.authMode === 'cail' && !guestSessionActive && listeningUsage;
+    const guestUsage = guestSessionActive ? guestListeningUsages.get(this.job.id) : null;
+    if (guestSessionActive) {
+      this.coachUsage.hidden = false;
+      const remaining = guestUsage?.remainingTurns ?? 2;
+      this.coachUsage.querySelector('.coach-usage-status').textContent = guestUsage?.signInRequired
+        ? 'Two demo replies used.' : `${remaining} of 2 demo replies left.`;
+      this.coachUsage.querySelector('.coach-cooldown-timer').textContent = '';
+      this.coachSignIn.hidden = !guestUsage?.showSignIn || this.coachBusy;
+      this.coachSignIn.textContent = this.guestSignInRequested ? 'Please sign in to continue' : 'Sign in to continue';
+      if (!this.coachSignIn.hidden) (this.guestSignInNotice || this.coachLog).append(this.coachSignIn);
+      this.coachForm.querySelector('[type="submit"]').disabled = this.coachBusy || (this.guestSignInRequested && !this.pendingChat);
+      this.coachForm.querySelector('[type="submit"]').textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
+      const cue = this.coachGuide.querySelector('.coach-cue-btn');
+      if (cue) cue.disabled = this.coachBusy || (remaining === 0 && !this.pendingGuide);
+      this.coachResetBtn.disabled = this.coachBusy;
+      return;
+    }
+    this.coachSignIn.hidden = true;
+    const show = runtime.authMode === 'cail' && listeningUsage;
     this.coachUsage.hidden = !show;
     if (show) {
-      const summary = seconds ? 'Five turns used. You can continue in '
-        : listeningUsage.remainingTurns === 0 && listeningUsage.inProgress > 0 ? 'Replies are in progress. Please wait before continuing.'
-          : `${listeningUsage.remainingTurns || 5} of 5 turns left before a five-minute pause.`;
+      const summary = `${listeningUsage.remainingTurns} of ${listeningUsage.limit} chat turns left today.`;
       const status = this.coachUsage.querySelector('.coach-usage-status');
       if (status.textContent !== summary) status.textContent = summary;
       this.coachUsage.querySelector('.coach-cooldown-timer').textContent = seconds
         ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}. Your draft stays here.` : '';
     }
     const submit = this.coachForm.querySelector('[type="submit"]');
-    const waiting = seconds > 0 || Boolean(listeningUsage?.inProgress && listeningUsage.remainingTurns === 0);
+    const waiting = Boolean(listeningUsage && listeningUsage.remainingTurns === 0);
     submit.disabled = this.coachBusy || (waiting && !this.pendingChat);
     submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
     const cue = this.coachGuide.querySelector('.coach-cue-btn');
-    if (cue) cue.disabled = this.coachBusy || (waiting && !this.pendingGuide);
+    if (cue) cue.disabled = this.coachBusy;
     this.coachResetBtn.disabled = this.coachBusy;
   }
 
@@ -2964,6 +3108,7 @@ class Mixer {
     }
     this.setLed('busy');
     this.pendingGuide ||= { durationSec: this.duration(), messageId: crypto.randomUUID() };
+    this.saveListeningProgress();
     this.renderListeningUsage();
     // Stream: swap the cue for a live text block on the first delta, then do a
     // final formatted render (markdown-lite + timecode buttons) on completion.
@@ -2983,7 +3128,7 @@ class Mixer {
       this.pendingGuide = null;
       this.renderGuide();
     } catch (err) {
-      if (err.newAttemptAllowed || err.status === 400) this.pendingGuide = null;
+      if (err.newAttemptAllowed || err.status === 400 || err.code === 'guest_listening_signin_required') this.pendingGuide = null;
       this.setLed('idle');
       this.renderGuide(); // restore the cue; partial text is discarded
       const failHint = this.coachGuide.querySelector('.coach-hint');
@@ -2996,6 +3141,7 @@ class Mixer {
       this.coachInput.disabled = false;
       this.coachCancel.hidden = true;
       this.coachAbort = null;
+      this.saveListeningProgress();
       this.renderListeningUsage();
       void refreshListeningUsage();
     }
@@ -3033,6 +3179,13 @@ class Mixer {
         }
         this.conversationRevision = Number(result.revision) || 0;
         this.conversationLoaded = true;
+        const pending = this.savedProgress?.pendingConversation;
+        if (!this.durableConversation && pending && pending.revision === this.conversationRevision) {
+          this.conversationEntries = pending.entries;
+          this.conversationDirty = true;
+          this.savedProgress.pendingConversation = null;
+          void this.queueConversationSave();
+        }
         this.chatHistory = this.conversationEntries
           .filter((entry) => entry.kind === 'you' || entry.kind === 'coach')
           .slice(-12)
@@ -3060,6 +3213,8 @@ class Mixer {
     if (this.durableConversation) return;
     if (runtime.authMode === 'cail') {
       this.conversationEntries = [...this.conversationEntries, { kind, text }].slice(-60);
+      this.conversationDirty = true;
+      this.saveListeningProgress();
       this.queueConversationSave();
       return;
     }
@@ -3073,12 +3228,15 @@ class Mixer {
   queueConversationSave() {
     this.conversationSaveQueue = this.conversationSaveQueue.then(async () => {
       if (!this.conversationLoaded) await this.loadConversation();
+      const entries = this.conversationEntries;
       const result = await api(`/api/jobs/${this.job.id}/listening-conversation`, {
         method: 'PUT',
         signal: AbortSignal.timeout(15000),
-        body: JSON.stringify({ entries: this.conversationEntries, revision: this.conversationRevision }),
+        body: JSON.stringify({ entries, revision: this.conversationRevision }),
       });
       this.conversationRevision = result.revision;
+      if (entries === this.conversationEntries) this.conversationDirty = false;
+      this.saveListeningProgress();
       if (this.conversationSaveStatus) {
         this.conversationSaveStatus.hidden = false;
         this.conversationSaveStatus.textContent = guestSessionActive ? 'Saved.' : 'Saved to your CUNY account.';
@@ -3132,6 +3290,7 @@ class Mixer {
         }
         const reset = await api(`/api/jobs/${this.job.id}/listening-conversation`, { method: 'DELETE', signal: AbortSignal.timeout(15000), ...(this.durableConversation ? { body: JSON.stringify({ revision: this.conversationRevision }) } : {}) });
         this.conversationEntries = [];
+        this.conversationDirty = false;
         this.conversationRevision = reset.revision;
         this.conversationLoaded = true;
       } catch {
@@ -3163,6 +3322,7 @@ class Mixer {
     this.coachBusy = false;
     this.coachInput.disabled = false;
     this.coachInput.focus();
+    this.saveListeningProgress();
     this.renderListeningUsage();
   }
 
@@ -3176,9 +3336,15 @@ class Mixer {
   }
 
   async sendChat(text) {
+    if (guestSessionActive && !this.pendingChat && guestListeningUsages.get(this.job.id)?.signInRequired) {
+      this.guestSignInRequested = true;
+      this.guestSignInNotice ||= this.addChatRow('signin-request','');
+      this.guestSignInNotice.append(this.coachSignIn);
+      this.saveListeningProgress(); this.renderListeningUsage(); return;
+    }
     if (this.coachBusy || (listeningWaitSeconds() && !this.pendingChat)) return;
     this.coachBusy = true;
-    if (runtime.authMode === 'cail' && !this.pendingChat) {
+    if (runtime.authMode === 'cail') {
       try { await this.loadConversation(); }
       catch { this.coachBusy = false; return; }
     }
@@ -3190,6 +3356,7 @@ class Mixer {
       }, userRow: this.addChatRow('you', esc(text)) };
     }
     const pending = this.pendingChat;
+    this.saveListeningProgress();
     pending.errorRow?.remove();
     pending.partialRow?.remove();
     this.coachAbort = new AbortController();
@@ -3259,7 +3426,7 @@ class Mixer {
       if (row) row.classList.remove('streaming');
       if (this.durableConversation) this.conversationLoaded = false;
       pending.partialRow = row;
-      const confirmedFailure = err.newAttemptAllowed || err.status === 400;
+      const confirmedFailure = err.newAttemptAllowed || err.status === 400 || err.code === 'guest_listening_signin_required';
       if (confirmedFailure && this.pendingChat) {
         pending.userRow.remove();
         row?.remove();
@@ -3274,6 +3441,7 @@ class Mixer {
     this.coachCancel.hidden = true;
     this.coachAbort = null;
     this.coachInput.disabled = false;
+    this.saveListeningProgress();
     if (!this.coachBody.hidden) this.coachInput.focus();
     this.setLed(this.job.guide ? 'ready' : 'idle');
     this.renderListeningUsage();
@@ -3373,6 +3541,7 @@ class Mixer {
       this.paintWaveform(channel);
     }
     this.el.classList.toggle('soloing', Boolean(solo));
+    this.saveListeningProgress();
   }
 
   flashChannel(stemName) {
@@ -4937,6 +5106,17 @@ function fmt(sec) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+// Finish pending transcript writes before leaving for sign-in, preserving the
+// same recording and the cached player state through the callback.
+async function preserveProgressBeforeSignIn(event, url) {
+  if (!guestSessionActive) return;
+  event.preventDefault();
+  for (const mixer of mixers.values()) mixer.saveListeningProgress();
+  await Promise.all([...mixers.values()].map(mixer => mixer.conversationSaveQueue));
+  location.assign(url);
+}
+window.addEventListener('pagehide', () => { for (const mixer of mixers.values()) mixer.saveListeningProgress(); });
+
 // --- init -------------------------------------------------------------
 window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail') location.reload(); });
 
@@ -4966,7 +5146,7 @@ async function initialize() {
       else if (response.status !== 401) {
         accountNeedsHelp = true;
         rackStatus.hidden = false;
-        rackStatus.textContent = response.status === 403 ? 'Your Lab access needs attention. Open My account for details.' : 'Account access is temporarily unavailable. Reload to try again.';
+        rackStatus.textContent = response.status === 403 ? 'Your Lab access needs attention. Open Settings for details.' : 'Account access is temporarily unavailable. Reload to try again.';
       }
     } catch {
       accountNeedsHelp = true;
@@ -4981,28 +5161,24 @@ async function initialize() {
       window.StemSessionGuard?.start(accountSubject, () => {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
-        mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null; listeningUsage = null;
-        selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
+        mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null; listeningUsage = null; guestListeningUsages.clear();
+        courseSelectionSequence++; courseSelectionPending = false; selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
     if (accountSubject && !guestSessionActive) {
       try { await window.StemGuestClaim.run(principal); }
       catch (error) { showUploadMessage(error.message, true); }
-      const link = document.createElement('a');
-      link.className = 'account-button';
-      link.href = '/account.html';
-      link.textContent = 'My account';
-      account.append(link);
       await initializeCourseSelection();
     } else if (runtime.loginUrl) {
       const link = document.createElement('a');
       link.className = 'account-button';
       const linkedJob = new URLSearchParams(location.search).get('job');
       link.href = accountNeedsHelp ? '/account.html' : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
-      link.textContent = accountNeedsHelp ? 'My account' : 'CUNY Login';
+      link.textContent = accountNeedsHelp ? 'Settings' : 'CUNY Login';
+      link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
       account.append(link);
     } else account.textContent = 'CUNY Login will be available here soon.';
-    document.querySelector('.masthead-meta').append(account);
+    if (account.childNodes.length) (document.getElementById('workspace-nav') || document.querySelector('.masthead-meta')).append(account);
   }
   separationOptionsReady = loadSeparationOptions();
   void ensureClassCode();
@@ -5018,9 +5194,16 @@ const appReady = initialize();
 void appReady.then(showSongSample);
 window.addEventListener('focus', () => { void refreshListeningUsage(); });
 setInterval(() => {
-  if (document.hidden || !listeningUsage) return;
-  if (listeningUsage.availableAt && !listeningWaitSeconds()) {
-    listeningUsage = null;
+  if (document.hidden) return;
+  if (guestSessionActive) {
+    if ([...guestListeningUsages.values()].some(usage => usage.inProgress) && Date.now() % 5000 < 1000) void refreshListeningUsage();
+    return;
+  }
+  if (!listeningUsage) return;
+  if (listeningUsage.refreshAfter && Date.now() >= listeningUsage.refreshAfter) {
+    // Keep the last confirmed count while checking the new day. An outage
+    // retries after five seconds without briefly enabling an exhausted input.
+    listeningUsage.refreshAfter = Date.now() + 5000;
     void refreshListeningUsage();
   } else if (listeningUsage.inProgress && Date.now() % 5000 < 1000) void refreshListeningUsage();
   for (const mixer of mixers.values()) mixer.renderListeningUsage();

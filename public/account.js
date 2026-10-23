@@ -29,7 +29,7 @@ window.addEventListener('focus', async () => {
   finally { checkingAccount = false; }
 });
 async function request(path, options = {}) {
-  const response = await fetch(path, { credentials: 'same-origin', ...options });
+  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
@@ -143,11 +143,8 @@ el('access-form').addEventListener('submit', async (event) => {
       const reset = new Date(splitAllowance.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
       el('account-splits').textContent = `${splitAllowance.remaining} of ${splitAllowance.limit} runs left today. Resets ${reset}.`;
     }
-    if (listeningUsage?.limit === 5 && Number.isInteger(listeningUsage.remainingTurns)) {
-      const until = Date.parse(listeningUsage.cooldownUntil);
-      el('account-listening').textContent = Number.isFinite(until) && until > Date.now()
-        ? `Listening Guy is taking a five-minute pause. You can continue after ${new Date(until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
-        : `Listening Guy: ${listeningUsage.remainingTurns} of 5 turns available before a five-minute pause. Failed replies do not use a turn.`;
+    if (listeningUsage?.limit === 50 && Number.isInteger(listeningUsage.remainingTurns)) {
+      el('account-listening').textContent = `Listening Guy: ${listeningUsage.remainingTurns} of ${listeningUsage.limit} chat turns left today.`;
     }
     try {
       const { quota } = await request('/api/model-quota');
@@ -165,23 +162,29 @@ let studentRows = [], studentsLoading = null, studentsLoaded = false;
 function loadStudents() {
   if (studentsLoading) return studentsLoading;
   el('student-status').textContent = 'Loading students…';
+  el('guest-activity').textContent='Loading guest activity…';
   el('student-retry').hidden = true;
   studentsLoading = (async () => { try {
     const result = await request('/api/teacher/students');
     studentRows = result.students;
+    const guests=result.guestActivity;
+    el('guest-activity').textContent=guests && Number.isInteger(guests.completedSplits) && Number.isInteger(guests.browserSessions)
+      ? `${guests.completedSplits} completed ${guests.completedSplits === 1 ? "split" : "splits"} · ${guests.browserSessions} browser sessions · ${guests.splitsSavedToAccounts} splits saved to accounts`
+      : 'Guest activity unavailable.';
     studentsLoaded = true;
     el('student-list').replaceChildren(...studentRows.map(student => {
       const row = document.createElement('li'), button = document.createElement('button'), count = document.createElement('span');
       button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName;
       button.addEventListener('click', () => void loadStudentJobs(student));
       count.className = 'student-count';
-      count.textContent = `${student.runs} ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} ${student.recordedVisits === 1 ? "visit" : "visits"}`;
+      count.textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits ? `${student.recordedVisits} recorded visits in 30 days` : "Visits not recorded"}`;
       row.append(button, count); return row;
     }));
     el('student-status').textContent = studentRows.length ? '' : 'Students appear here after they use Stem Splitter.';
     return true;
   } catch (error) {
     el('student-status').textContent = error.message;
+    el('guest-activity').textContent='Guest activity unavailable.';
     el('student-retry').hidden = false;
     return false;
   } finally { studentsLoading = null; } })();
@@ -212,7 +215,7 @@ async function loadStudentJobs(student, more = false) {
   studentSelection = student.subject;
   el('student-detail').hidden = false;
   el('student-name').textContent = student.displayName;
-  el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "run" : "runs"} · ${student.completed} completed · ${student.recordedVisits} recorded ${student.recordedVisits === 1 ? "visit" : "visits"} in 30 days`;
+  el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits ? `${student.recordedVisits} recorded visits in 30 days` : "Visits not recorded"}${student.lastActiveAt ? ` · Last activity ${new Date(student.lastActiveAt).toLocaleString()}` : ""}`;
   el('student-more').hidden = true;
   el('student-more').disabled = true;
   el('student-retry').hidden = true;
@@ -250,7 +253,7 @@ async function loadStudentJobs(student, more = false) {
   finally { if (requestId === studentRequest) el('student-more').disabled = false; }
 }
 el('student-review').addEventListener('toggle', () => {
-  if (el('student-review').open && !studentsLoaded && !studentSelection) void loadStudents();
+  if (el('student-review').open && !studentsLoading) void loadStudents();
 });
 el('student-retry').addEventListener('click', async () => {
   const selection = studentSelection;

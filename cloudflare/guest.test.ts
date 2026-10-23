@@ -92,7 +92,7 @@ for(const chatAvailable of [true,false])test(`workerd guests: five daily splits,
     assert.equal((await first.clone().json() as any).chatAvailable,chatAvailable);
     const runtime=await(await call('/api/runtime')).json() as any;
     assert.equal(runtime.guest.enabled,true);assert.equal(runtime.guest.chatAvailable,chatAvailable);
-    assert.equal(runtime.guest.chatLimit,chatAvailable?25:null);
+    assert.equal(runtime.guest.chatLimit,chatAvailable?2:null);
     assert.match(first.headers.get('set-cookie')!,/Secure; HttpOnly; SameSite=Lax/);
     const cookieA=first.headers.get('set-cookie')!.split(';')[0];
     const resumed=await begin(undefined,cookieA);assert.equal(resumed.status,200);
@@ -175,11 +175,12 @@ for(const chatAvailable of [true,false])test(`workerd guests: five daily splits,
     response=await chat('guest-chat-empty-0001','empty');await response.text();
     assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.completed,0);
     assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.inProgress,0);
-    for(let i=0;i<25;i++){response=await chat(`guest-chat-human-${String(i).padStart(4,'0')}`);assert.equal(response.status,200);assert.match(await response.text(),/Listen for the bass/);}
-    assert.equal((await chat('guest-chat-human-0000')).status,409,'human replay has no extra inference');
-    assert.equal((await chat('guest-chat-human-0026')).status,429);
-    assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.completed,25);
-    const stats=await worker.fetch('/__fixture/gateway-stats',{headers:{'x-fixture':'local-only'}});assert.equal((await stats.json() as any).gatewayCalls,26);
+    for(let i=0;i<2;i++){response=await chat(`guest-chat-human-${String(i).padStart(4,'0')}`);assert.equal(response.status,200);assert.match(await response.text(),/Listen for the bass/);}
+    const recovered=await chat('guest-chat-human-0000');assert.equal(recovered.status,200);
+    assert.match(await recovered.text(),/"replayed":true/,'completed guest reply is available without extra inference');
+    assert.equal((await chat('guest-chat-human-0006')).status,403);
+    assert.equal((await(await call('/api/account',cookieA)).json() as any).chatAllowance.completed,2);
+    const stats=await worker.fetch('/__fixture/gateway-stats',{headers:{'x-fixture':'local-only'}});assert.equal((await stats.json() as any).gatewayCalls,3);
     }else{
       for(const path of [`/api/jobs/${job.id}/guide`,`/api/jobs/${job.id}/chat`]) {
         const denied=await call(path,cookieA,{method:'POST',body:'{}'});
@@ -265,20 +266,20 @@ test('guest expiry, signing scope, immutable quota class, atomic reservations an
   await assert.rejects(db.prepare("UPDATE app_operations SET quota_class='member' WHERE id=?").bind(first.operation.id).run(),/immutable/);
   await assert.rejects(db.prepare("INSERT INTO app_users(subject) VALUES(?)").bind(subject).run(),/CHECK/);
   await assert.rejects(reserveOperation(db,{subject,quotaClass:'member',courseId:null,kind:'chat',key:'guest-member-forgery',fingerprint:'x',phase:'chat'}),/FOREIGN KEY/);
-  await assert.rejects(reserveOperation(db,{subject,quotaClass:'guest',courseId:'course-a',kind:'chat',key:'guest-course-forgery',fingerprint:'x',phase:'chat'}),/course/);
+  await assert.rejects(reserveOperation(db,{subject,quotaClass:'guest',courseId:'course-a',kind:'chat',jobId:'guest-job',key:'guest-course-forgery',fingerprint:'x',phase:'chat'}),/course/);
   const tomorrow=now+86400000;
   assert.equal((await splitAllowance(db,subject,new Date(tomorrow),'guest')).remaining,5,'UTC-day allowance is separate');
   const chats=await Promise.allSettled(Array.from({length:30},(_,i)=>reserveOperation(db,{subject,quotaClass:'guest',courseId:null,
-    kind:'chat',phase:'chat',key:`guest-parallel-chat-${String(i).padStart(4,'0')}`,fingerprint:String(i),now})));
+    kind:'chat',phase:'chat',jobId:'guest-job',key:`guest-parallel-chat-${String(i).padStart(4,'0')}`,fingerprint:String(i),now})));
   const admitted=chats.flatMap(result=>result.status==='fulfilled'?[result.value.operation]:[]);
-  assert.equal(admitted.length,25,'parallel 25th/26th input cannot oversubscribe');
+  assert.equal(admitted.length,2,'parallel second/third demo input cannot oversubscribe');
   for(const [index,operation] of admitted.entries())await settleOperation(db,operation.id,index===0?'failed':index===1?'partial':'succeeded');
-  assert.equal((await operationAllowance(db,subject,'chat',new Date(now),'guest')).completed,24);
+  assert.equal((await operationAllowance(db,subject,'chat',new Date(now),'guest')).completed,1);
   assert.equal((await operationAllowance(db,subject,'chat',new Date(tomorrow),'guest')).completed,0,'late settlement remains on submission day');
-  const replacement=await reserveOperation(db,{subject,quotaClass:'guest',courseId:null,kind:'chat',phase:'chat',key:'guest-chat-replacement-01',fingerprint:'replacement',now});
+  const replacement=await reserveOperation(db,{subject,quotaClass:'guest',courseId:null,kind:'chat',phase:'chat',jobId:'guest-job',key:'guest-chat-replacement-01',fingerprint:'replacement',now});
   await settleOperation(db,replacement.operation.id,'succeeded');
   await settleOperation(db,admitted[1].id,'failed');
-  assert.equal((await operationAllowance(db,subject,'chat',new Date(now),'guest')).completed,25,'partial replay cannot refund a charged input');
+  assert.equal((await operationAllowance(db,subject,'chat',new Date(now),'guest')).completed,2,'daily partial accounting stays separate from successful demo replies');
   await db.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(now,subject).run();
   assert.equal(await readGuestSession(new Request(origin,{headers:{Cookie:cookie}}),env),null,'revoked copied cookie');
   await assert.rejects(db.prepare('UPDATE guest_sessions SET revoked_at=NULL WHERE subject=?').bind(subject).run(),/immutable/);

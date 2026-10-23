@@ -10,6 +10,7 @@ const courseDiscovery = document.getElementById('course-discovery');
 const courseList = document.getElementById('course-list');
 const courseDiscoveryStatus = document.getElementById('course-discovery-status');
 const teacherWho = document.getElementById('teacher-who');
+let teacherAccountSubject = null;
 const signoutBtn = document.getElementById('signout');
 const requestedCourse = (() => {
   const value = new URLSearchParams(location.search).get('course');
@@ -132,7 +133,7 @@ function showPanel(signedIn, teacher) {
   if (signedIn) {
     if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = '';
     const displayName = String(teacher.displayName || '').trim();
-    teacherWho.textContent = /^instructor$/i.test(displayName) ? '' : displayName;
+    teacherWho.textContent = /^(instructor|student)$/i.test(displayName) ? '' : displayName;
   }
 }
 
@@ -582,6 +583,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
         signinPanel.append(link);
       }
       const account = await api('/api/account');
+      teacherAccountSubject = account.account.subject;
       window.StemSessionGuard?.start(account.account.subject, () => denyTeacherAccess('Your account changed. Reload to check Instructor Console access.'));
       try { await window.StemGuestClaim.run(account.account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
       if (requestedCourse) {
@@ -589,6 +591,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
         const course = response.courses.find(row => row.classId === requestedCourse && row.capabilities?.instructorPanel);
         if (!course) throw new Error('Instructor access is not available for this class.');
         courseModeId = course.classId;
+        try { localStorage.setItem(`stem-workspace-choice:v1:${teacherAccountSubject}`,courseModeId); } catch {}
         courseModeName = course.className;
         document.getElementById('teacher-classroom').href = `/classroom.html?course=${encodeURIComponent(courseModeId)}`;
         document.getElementById('sample-editor-title').closest('.sample-editor').hidden = true;
@@ -607,6 +610,9 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
       if (cail) {
         const { courses } = await api('/api/classroom/courses');
         const instructorCourses = courses.filter(row => row.capabilities?.instructorPanel);
+        let prior = null; try { prior = localStorage.getItem(`stem-workspace-choice:v1:${teacherAccountSubject}`); } catch {}
+        const choice = instructorCourses.find(course=>course.classId===prior) || (instructorCourses.length===1 ? instructorCourses[0] : null);
+        if (choice) { location.replace(`/teacher.html?course=${encodeURIComponent(choice.classId)}`); return; }
         signinPanel.hidden = true;
         courseDiscovery.hidden = false;
         courseList.replaceChildren();
@@ -656,6 +662,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // Public song metadata only; teacher credentials remain in the existing session.
 const sampleForm=document.getElementById('sample-settings-form');
+const sampleEditor=document.getElementById('sample-editor');
+sampleEditor.addEventListener('toggle',()=>{document.getElementById('sample-editor-summary').setAttribute('aria-expanded',String(sampleEditor.open));});
 const sampleSearch=document.getElementById('sample-search');
 const sampleResults=document.getElementById('sample-search-results');
 const sampleSelected=document.getElementById('sample-selected');

@@ -1,5 +1,5 @@
 // Session creation is silent. The server may ask for a check before guest
-// Listening Guy use; guest split allowances stop at three per UTC day.
+// Listening Guy use; guest split allowances stop at five per UTC day.
 (() => {
   let scriptReady;
   let verification;

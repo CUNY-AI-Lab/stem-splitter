@@ -9,7 +9,7 @@ import type {AppPrincipal} from '../src/identity.ts';
 import {verifyCailIdentity} from './verify.ts';
 import {courseFixture} from './course-fixture.ts';
 import {recordClientUses} from '../src/reliability/observability.ts';
-import {namedUsers} from '../src/teacher-activity.ts';
+import {namedUsers,guestActivity} from '../src/teacher-activity.ts';
 const issuer=await createTestIdentityIssuer();
 const [alice,bob,teacher,admin]=[TEST_SUBJECTS.alice,TEST_SUBJECTS.bob,TEST_SUBJECTS.carol,'cail-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'];
 const tokens=new Map(await Promise.all([alice,bob,teacher,admin].map(async subject=>[subject,await issuer.mintIdentityJwt({subject,audience:'cail:stem-splitter'})] as const)));
@@ -32,7 +32,9 @@ test('student review uses names, counts visits and runs, and confines audio to t
  const list=await call('/api/teacher/students');assert.equal(list.status,200);
  const students=(await list.json() as any).students;
  assert.equal(students.find((r:any)=>r.subject===alice).displayName,'Alice Rivera');
- assert.deepEqual({...students.find((r:any)=>r.subject===alice),subject:undefined},{subject:undefined,displayName:'Alice Rivera',runs:2,completed:1,recordedVisits:2});
+ const activity=students.find((r:any)=>r.subject===alice);
+ assert.deepEqual({...activity,subject:undefined,lastActiveAt:undefined},{subject:undefined,displayName:'Alice Rivera',runs:2,completed:1,guideTurns:0,recordedVisits:2,lastActiveAt:undefined});
+ assert.ok(Date.now()-Date.parse(activity.lastActiveAt)<60000);
  assert.equal(students.some((r:any)=>r.subject===bob),false);
  const jobs=await call(`/api/teacher/students/${alice}/jobs`);assert.equal(jobs.status,200);assert.equal((await jobs.json() as any).jobs.length,2);
  const review=await call(`/api/teacher/students/${alice}/jobs/one`);assert.equal(review.status,200);
@@ -63,4 +65,26 @@ test('verified names from another current course fill historical accounts withou
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM account_display_names').first<any>())!.n,0);
  invalid=false;assert.equal((await namedUsers(env,actor))[0].displayName,'Bob Morgan');
  assert.equal((await namedUsers(env,{subject:teacher,role:'instructor'} as AppPrincipal,true)).length,0);
+});
+
+test('claimed guest work contributes to account activity once while retaining its original quota owner',async()=>{
+ const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ const guest=`guest-${'a'.repeat(64)}`,now=Date.now();
+ await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(alice).run();
+ await db.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)').bind(guest,now,now+86400000,'2026-10-22').run();
+ await db.prepare("INSERT INTO jobs(id,filename,source_key,status) VALUES('saved-guest','Private guest recording','uploads/source.wav','done')").run();
+ await db.prepare('INSERT INTO job_owners(job_id,subject) VALUES(?,?)').bind('saved-guest',alice).run();
+ await db.prepare('INSERT INTO guest_account_claims(guest_subject,member_subject) VALUES(?,?)').bind(guest,alice).run();
+ await db.prepare('INSERT INTO guest_job_claims(job_id,guest_subject,member_subject) VALUES(?,?,?)').bind('saved-guest',guest,alice).run();
+ for(const kind of ['split','chat']) await db.prepare(`INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,job_id,deadline,created_at,updated_at)
+  VALUES(?,?,'guest',?,?,?,'2026-10-22','succeeded',?,'saved-guest',?,?,?)`).bind(`guest-${kind}`,guest,kind,`guest-${kind}-key`,'a'.repeat(64),kind,now+60000,now-1000,now).run();
+ const {usageBySubject}=await import('../src/classroom/activity.ts');
+ const usage=(await usageBySubject({DB:db} as Env,[alice],now)).get(alice)!;
+ assert.equal(usage.runs,1);assert.equal(usage.completed,1);assert.equal(usage.guideTurns,1);
+ assert.equal(usage.lastActiveAt,new Date(now-1000).toISOString());
+ const guests=await guestActivity({DB:db} as Env,{subject:admin,role:'admin'} as AppPrincipal);
+ assert.deepEqual(guests,{days:30,browserSessions:1,splitAttempts:1,completedSplits:1,sessionsWithSplits:1,splitsSavedToAccounts:1});
+ assert.doesNotMatch(JSON.stringify(guests),/Private guest|guest-[a-f0-9]{64}|cail-/);
+ await assert.rejects(guestActivity({DB:db} as Env,{subject:alice,role:'student'} as AppPrincipal),(error:any)=>error.status===403);
+ assert.equal((await db.prepare("SELECT subject FROM app_operations WHERE id='guest-split'").first<any>()).subject,guest);
 });

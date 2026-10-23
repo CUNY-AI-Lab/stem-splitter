@@ -8,13 +8,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20261021-editable-titles" />
+  <link rel="stylesheet" href="/styles.css?v=20261023-two-reply-demo" />
   <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
 
-  <main>
+  <main class="refined-ui">
     <nav class="bench-tabs mono" role="tablist" aria-label="Workshop stations" hidden>
       <button type="button" id="tab-splitter" class="bench-tab current" role="tab" aria-selected="true" aria-controls="view-splitter">01 · SPLITTER</button>
       <button type="button" id="tab-remixer" class="bench-tab" role="tab" aria-selected="false" aria-controls="view-remixer" tabindex="-1">02 · REMIXER</button>
@@ -31,6 +31,11 @@
       <div class="masthead-meta">
         <p id="station-tagline" class="tagline">Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.</p>
       </div>
+      <nav id="workspace-nav" class="workspace-nav" aria-label="Stem Splitter">
+        <a href="/" aria-current="page">Splitter</a>
+        <a href="/classroom.html">Workspace</a>
+        <a href="/account.html">Settings</a>
+      </nav>
     </header>
 
     <div id="view-splitter" role="tabpanel" aria-labelledby="tab-splitter">
@@ -48,13 +53,12 @@
         <summary class="yt-summary mono">Search for songs via Internet Archive</summary>
         <form id="yt-form" class="yt-form">
           <div class="source-field">
-            <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" aria-describedby="source-import-help" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
+            <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
             <button id="source-sample-hint" class="source-sample-hint" type="button" aria-label="Use suggested song. Tab to accept." hidden><kbd>Tab</kbd> to accept</button>
             <ul id="source-songs" role="listbox" aria-label="Songs" hidden></ul>
           </div>
           <button type="submit" class="yt-go">FETCH</button>
         </form>
-        <p id="source-import-help" class="account-help">YouTube links look for matching Internet Archive recordings. To use an exact recording, upload your audio file.</p>
       </details>
 
       <section class="split-picker">
@@ -137,8 +141,9 @@
         Uploaded files are deleted after 90 days.
         Only upload music you&rsquo;re entitled to use for class.
       </p>
+      <p><a class="mono footer-teacher-link" href="/teacher.html">Instructor Console</a></p>
       <p id="engine-summary" class="mono footer-sig">SEPARATION MODELS: LOADING…</p>
-      <a class="mono footer-teacher-link" href="/teacher.html">Instructor Console</a>
+
     </footer>
   </main>
 
@@ -159,10 +164,10 @@
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
   <script src="/session-guard.js?v=20261020-report-draft"></script>
-<script src="/guest.js?v=20261011-background"></script>
-  <script src="/guest-claim.js?v=20261012-carryover"></script>
+<script src="/guest.js?v=20261023-two-reply-demo"></script>
+  <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
   <script src="/classroom-live.js?v=20261020"></script>
-  <script src="/app.js?v=20261021-editable-titles"></script>
-  <script type="module" src="/classroom-feedback.js?v=20261020-sso"></script>
+  <script src="/app.js?v=20261023-two-reply-demo"></script>
+  <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </body>
 </html>

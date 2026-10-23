@@ -100,7 +100,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
 
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': tokens.alice });
     await page.reload();
-    await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveClass('account-button');
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute('href', '/account.html');
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.locator('#job-list .console')).toHaveCount(40);
     await expect(page.locator('#job-list .badge').filter({ hasText: 'CHECKING STATUS' })).toHaveCount(0);
@@ -116,6 +116,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
       await route.fulfill({ json: { id: 'saved-message', filename: 'Saved example', model: 'htdemucs_ft', status: 'processing', savedToAccount: true } });
     });
     await page.route('**/api/jobs/saved-message', route => route.fulfill({ json: { id: 'saved-message', filename: 'Saved example', model: 'htdemucs_ft', status: 'processing', stems: [] } }));
+    await page.getByLabel('New split workspace').selectOption('personal');
     await page.locator('#yt-url').fill('https://www.youtube.com/watch?v=fixture1234');
     await page.locator('#yt-form button[type=submit]').click();
     await expect(page.locator('#upload-message')).toContainText('Saved to your account.');
@@ -129,9 +130,9 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
     await expect(page.locator('#upload-message')).toContainText("You've used today's runs.");
     await expect(page.locator('#upload-message')).not.toContainText('Saved to your account');
     await page.unroute('**/api/jobs');
-    await page.getByRole('link', { name: 'My account', exact: true }).click();
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(page.locator('#account-role')).toHaveText('Student access');
-    await page.getByRole('link', { name: '← Back to Stem Splitter', exact: true }).click();
+    await page.getByRole('link', { name: 'Splitter', exact: true }).click();
     await expect(page.locator('.badge.ready')).toBeVisible();
     await page.evaluate(() => localStorage.clear());
     await page.reload();

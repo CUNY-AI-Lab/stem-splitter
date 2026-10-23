@@ -1684,7 +1684,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);
   expect(await page.locator('link[rel="stylesheet"][href^="/styles.css"]').getAttribute('href')).toMatch(/\?v=/);
-  await expect(page.getByRole('link', { name: 'Back to Stem Splitter' })).toHaveAttribute('href', '/');
+  await expect(page.locator('.workspace-nav').getByRole('link', { name: 'Splitter', exact: true })).toHaveAttribute('href', '/');
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'Sign in' });
   const signInButtonBox = await signInButton.boundingBox();
@@ -1907,20 +1907,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
   await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
-  await expect
-    .poll(() =>
-      page.locator('#fixed-prompt-scroll').evaluate((node) =>
-        Math.round(node.getBoundingClientRect().top)
-      )
-    )
-    .toBeGreaterThanOrEqual(0);
-  await expect
-    .poll(() =>
-      page.locator('#fixed-prompt-scroll').evaluate((node) =>
-        Math.round(node.getBoundingClientRect().top)
-      )
-    )
-    .toBeLessThanOrEqual(16);
+  await expect(page.locator('#fixed-prompt-scroll')).toBeInViewport({ratio:1});
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);

@@ -89,7 +89,7 @@ test('Expired sign-in links give students readable recovery on desktop and mobil
     expect(response.status()).toBe(401);
     await expect(page.getByRole('heading', { name: 'Start sign-in again', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText(/private-code|private-state|admission_required/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (process.env.STEM_SCREENSHOT_DIR) {
@@ -102,7 +102,7 @@ test('Expired sign-in links give students readable recovery on desktop and mobil
   await expect(page.getByRole('heading', { name: 'Sign-in is temporarily unavailable', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Retry', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'My account', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -140,7 +140,7 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     expect(unavailable.status()).toBe(503);
     await expect(page.getByRole('heading', { name: 'Sign-in is temporarily unavailable', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Retry', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: /CUNY Login|My account/i })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /CUNY Login|Settings/i })).toHaveCount(0);
     expect(identityChecks).toBe(1);
     available = true;
     const [retry] = await Promise.all([
@@ -150,7 +150,7 @@ test('Verified sessions return to Splitter directly; unavailable verification of
     expect(retry.status()).toBe(303); expect(retry.headers().location).toBe('/');
     await expect(page).toHaveURL(origin + '/');
     await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'My account', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await page.goto(expiredLink);
     await expect(page).toHaveURL(origin + '/');
     await expect(page.getByRole('heading', { name: 'Stem Splitter', exact: true })).toBeVisible();
@@ -232,12 +232,12 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
-    await expect(page).toHaveTitle('Stem Splitter · Account');
-    await expect(page.getByRole('heading', { name: 'My account', exact: true })).toBeVisible();
+    await expect(page).toHaveTitle('Stem Splitter · Settings');
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('25 of 25 runs left today. Resets');
     await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toHaveAttribute('href', '/');
+    await expect(page.getByRole('link', { name: 'Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
     await expect(page.locator('#account-id')).toHaveCount(0);
     expect(memberReads).toBe(0);
@@ -321,12 +321,12 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today'); // historical attempts are not manufactured successes
     await expect(page.locator('#account-chat')).toHaveCount(0);
     const listeningAccount=await(await page.request.get(new URL('/api/account',url).href)).json();
-    expect(listeningAccount.chatAllowance).toBeNull();expect(listeningAccount.listeningUsage.remainingTurns).toBe(5);
+    expect(listeningAccount.chatAllowance).toBeNull();expect(listeningAccount.listeningUsage.remainingTurns).toBe(50);
     const clock=Date.now();
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();
     await expect(page.locator('#account-splits')).toContainText('0 of 15 runs left today. Resets');
-    await expect(page.getByRole('link', { name: '← Back to Stem Splitter', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Splitter', exact: true })).toBeVisible();
     if (receipts) await page.screenshot({ path: `${receipts}/account-exhausted-mobile-fixture.png`, fullPage: true });
     // A counter outage is not zero usage, a failed sign-in, or a full allowance.
     await page.route('**/api/account', async route => {
@@ -335,7 +335,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
       await route.fulfill({ response: upstream, json: { ...body, splitAllowance: null } });
     });
     await page.reload();
-    await expect(page.locator('#account-splits')).toHaveText('Daily split allowance unavailable.');
+    await expect(page.locator('#account-splits')).toHaveText('Daily allowance unavailable.');
     await expect(page.locator('#account-role')).toHaveText('Student access');
     await expect(page.locator('#account-login')).toBeHidden();
     await page.unroute('**/api/account');
@@ -538,12 +538,17 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
    `INSERT INTO account_display_names(subject,display_name,updated_at) VALUES('${TEST_SUBJECTS.bob}','Bob Morgan',${Date.now()})`,
    `INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('remix-fixture','Student recording','uploads/fixture.wav','done','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
    `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`);
+  for(const [index,state] of ['succeeded','failed'].entries()) {
+   const guest='guest-'+String(index).repeat(64),now=Date.now();
+   sql.push(`INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES('${guest}',${now},${now+86400000},'2026-10-23')`,
+    `INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('guest-activity-${index}','${guest}','guest','split','guest-activity-request-${index}','hash','2026-10-23','${state}','split',${now+86400000},${now},${now})`);
+  }
   await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(sql)});
   await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
   await context.setExtraHTTPHeaders({'x-fixture-identity':identity});
   await page.setViewportSize({width,height:900});
   await page.goto(new URL('/account.html',url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Account');
+  await expect(page).toHaveTitle('Stem Splitter · Settings');
   await page.getByText('Manage access',{exact:true}).click();
   await expect(page.locator('#access-member')).toContainText('Alice Rivera');
   await expect(page.locator('#access-member')).not.toContainText('cail-');
@@ -558,15 +563,18 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await expect(page.locator('#student-name')).toBeInViewport();
   await expect(page.locator('#student-status')).toHaveText('Activity is temporarily unavailable.');
   await expect(page.locator('#student-summary')).toBeEmpty();
+  await expect(page.locator('#guest-activity')).toHaveText('Guest activity unavailable.');
   expect(activityReads).toBe(1);
   await page.unroute('**/api/teacher/students');
   await page.locator('#student-retry').click();
-  await expect(page.locator('#student-summary')).toContainText('1 split run · 1 completed');
+  await expect(page.locator('#student-summary')).toContainText('1 split attempt · 1 completed');
+  await expect(page.locator('#student-summary')).toContainText('Visits not recorded');
+  await expect(page.locator('#guest-activity')).toHaveText('1 completed split · 2 browser sessions · 0 splits saved to accounts');
   await expect(page.locator('#student-jobs')).toContainText('Student recording');
 
   // A slower recording response must not replace the next selected person's work.
   await page.locator('#access-member').selectOption(TEST_SUBJECTS.bob);
-  await expect(page.locator('#student-summary')).toContainText('0 split runs · 0 completed');
+  await expect(page.locator('#student-summary')).toContainText('0 split attempts · 0 completed');
   let releaseAlice, aliceStarted, aliceFinished;
   const heldAlice=new Promise(resolve=>{releaseAlice=resolve;});
   const startedAlice=new Promise(resolve=>{aliceStarted=resolve;});

@@ -2,22 +2,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor Console</title>
-<link rel="stylesheet" href="/styles.css?v=20261021-editable-titles" />
-<link rel="stylesheet" href="/instructor-console.css?v=20261021-song-controls-r2" />
+<link rel="stylesheet" href="/styles.css?v=20261023-two-reply-demo" />
+<link rel="stylesheet" href="/instructor-console.css?v=20261023-two-reply-demo" />
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso" />
 
 <div class="grain" aria-hidden="true"></div>
 
-<main class="teacher-main instructor-console">
+<main class="teacher-main instructor-console refined-ui">
   <header class="masthead">
     <div class="masthead-title">
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
       <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
     </div>
+    <nav class="workspace-nav" aria-label="Stem Splitter">
+      <a href="/">Splitter</a>
+      <a id="teacher-classroom" href="/classroom.html">Workspace</a>
+      <a href="/account.html" aria-current="page">Settings</a>
+    </nav>
   </header>
   <h2 class="page-title" id="class-guidance-title">Instructor Console</h2>
   <p id="teacher-access-status" role="status"></p>
-  <nav class="console-nav" aria-label="Instructor Console"><a id="teacher-classroom" href="/classroom.html">Class work</a><span aria-current="page">Settings</span><a href="/account.html">My account</a></nav>
 
   <section id="course-discovery" class="deck teacher-panel" hidden aria-labelledby="course-discovery-title">
     <h2 id="course-discovery-title">Choose a class</h2>
@@ -94,9 +98,11 @@
       </form>
     </section>
 
-    <section class="teacher-prompt-section sample-editor" aria-labelledby="sample-editor-title">
-      <h2 id="sample-editor-title">Search examples</h2>
-      <p class="teacher-help">Choose the songs suggested in the Splitter search field. Search Internet Archive for complete recordings up to five minutes. Songs appear in this order first; unavailable recordings are skipped.</p>
+    <details id="sample-editor" class="teacher-prompt-section sample-editor" aria-labelledby="sample-editor-title">
+      <summary id="sample-editor-summary" aria-expanded="false">
+        <h2 id="sample-editor-title">Search examples</h2>
+        <p class="teacher-help">Choose the songs suggested in the Splitter search field.</p>
+      </summary>
       <form id="sample-settings-form" class="teacher-form">
         <label class="sample-check"><input type="checkbox" id="samples-enabled" /> Show song suggestions</label>
         <div class="sample-timing">
@@ -116,7 +122,7 @@
         <p id="sample-settings-meta" class="teacher-help"></p>
         <p id="sample-settings-status" class="teacher-status mono" role="status"></p>
       </form>
-    </section>
+    </details>
 
     <details id="preview-wrap" class="teacher-preview" hidden>
       <summary>Saved prompt preview</summary>
@@ -174,11 +180,10 @@
   <footer>
     <p class="project-credit">Built through the Critical AI Literacy Institute. A continuing project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
-    <p><a href="/">&larr; Back to Stem Splitter</a></p>
   </footer>
 </main>
 
 <script src="/session-guard.js?v=20261020-report-draft"></script>
-<script src="/guest-claim.js?v=20261012-carryover"></script>
-<script src="/teacher.js?v=20261021-editable-titles"></script>
-<script type="module" src="/classroom-feedback.js?v=20261020-sso"></script>
+<script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
+<script src="/teacher.js?v=20261023-two-reply-demo"></script>
+<script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>

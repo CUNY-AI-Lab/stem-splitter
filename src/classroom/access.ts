@@ -2,6 +2,7 @@ import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { guestOwnsJob } from '../guest/access.ts';
 import { COURSE_APP, STEM_COURSE_ID, validAssignmentV2, validClassId, validFailure, type CourseAssignmentV2 } from './contract.ts';
+import { rememberCourseUsageAccount } from './usage-accounts.ts';
 
 export class CourseError extends Error {
   status: 400 | 403 | 404 | 409 | 503;
@@ -25,6 +26,7 @@ export async function resolveCourse(env: Env, subject: string, classId: string):
   const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId }));
   if (validFailure(value)) throw new CourseError(403, value.code);
   if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAssignmentV2(value,Date.now(),true) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
+  try { await rememberCourseUsageAccount(env,subject,value); } catch { /* Supplemental matching cannot block authorized access. */ }
   return value;
 }
 /** Used again by delayed operation workers; a remembered launch is not permission. */
@@ -61,7 +63,7 @@ export async function jobPermission(env: Env, principal: AppPrincipal, id: strin
   const course = principal.course?.classId === row.course_id ? principal.course : await resolveCourse(env, principal.subject, row.course_id);
   const owner = row.subject === principal.subject;
   if (env.CAIL_CLASSROOM_ENABLED === 'false') return owner ? {owner:true,read:true,comment:false,courseId:row.course_id,instructor:false} : null;
-  if (owner || course.owner) return { owner, read: true, comment: true, courseId: row.course_id, instructor: course.owner };
+  if (owner || course.capabilities.instructorPanel) return { owner, read: true, comment: true, courseId: row.course_id, instructor: course.capabilities.instructorPanel };
   const grant = await env.DB.prepare(`SELECT MAX(f.permission='comment') AS comment FROM course_folders f
     JOIN course_folder_items i ON i.folder_id=f.id WHERE i.job_id=? AND f.course_id=? AND f.permission IN ('read','comment')
     HAVING COUNT(*)>0`).bind(id, row.course_id).first<{ comment: number }>();

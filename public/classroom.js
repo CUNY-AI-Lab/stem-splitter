@@ -1,10 +1,10 @@
 // Course views use the existing current-authority APIs. No identity, grant,
-// conversation, or roster is stored in browser storage.
+// conversation, or roster is stored in browser storage; only the selected class ID is remembered.
 (() => {
   const el = id => document.getElementById(`classroom-${id}`);
   const panel = document.getElementById('console-panel');
   const status = document.getElementById('account-status');
-  let courses = [], selected = null, generation = 0, controllers = new Set();
+  let courses = [], selected = null, generation = 0, controllers = new Set(), choiceKey = null;
   let pendingRequests = 0;
   let roster = [], rosterCursor = null, folders = [], currentFolder = null;
   let student = null, jobsCursor = null, studentGeneration = 0;
@@ -25,6 +25,8 @@
     rosterPages = jobsPages = conversationPages = 1;
     rosterCursor = jobsCursor = conversationCursor = conversationRevision = null;
     for (const id of ['roster', 'jobs', 'messages', 'folders', 'folder-items', 'notes']) el(id).replaceChildren();
+    if (el('demo')) { el('demo').hidden = true; el('demo').open = false; el('demo-roster').replaceChildren(); }
+    if (el('copy-status')) el('copy-status').textContent = '';
     for (const id of ['student', 'conversation', 'folder-detail', 'notes-section']) el(id).hidden = true;
     for (const id of ['roster-more', 'jobs-more', 'conversation-more']) el(id).hidden = true;
     for (const id of ['roster-status', 'jobs-status', 'conversation-status', 'folders-status', 'folder-status', 'usage', 'notes-status']) el(id).textContent = '';
@@ -74,15 +76,30 @@
       rosterPages = append ? rosterPages + 1 : 1;
       roster.push(...data.participants);
       for (const person of data.participants) {
-        const item = row(); item.append(button(`${person.displayName || 'Student'} · ${person.splitCount} ${person.splitCount === 1 ? 'split' : 'splits'}`, () => void loadStudent(person)));
-        el('roster').append(item);
+        const item = row(), name = button(person.displayName || 'Student', () => void loadStudent(person));
+        name.classList.add('classroom-roster-person');
+        const course = document.createElement('span'); course.className = 'classroom-roster-metrics';
+        course.textContent = `${person.splitCount} ${person.splitCount === 1 ? 'split' : 'splits'} for this class · ${person.completedCount ?? 0} completed`;
+        const activity = document.createElement('span'); activity.className = 'classroom-roster-app-usage';
+        const use = person.appUsage;
+        activity.textContent = use
+          ? `App use: ${use.runs} split ${use.runs === 1 ? 'attempt' : 'attempts'} · ${use.completed} completed · ${use.guideTurns} Guide ${use.guideTurns === 1 ? 'turn' : 'turns'} · ${use.recordedVisits} recorded ${use.recordedVisits === 1 ? 'visit' : 'visits'} in 30 days`
+          : data.appUsageStatus === 'unavailable' ? 'App usage temporarily unavailable' : 'App usage pending';
+        if (use?.lastActiveAt) activity.title = `Last recorded activity: ${new Date(use.lastActiveAt).toLocaleString()}`;
+        item.append(name,course,activity); el('roster').append(item);
       }
-      if (!append) for (const sample of data.demonstrationParticipants || []) el('roster').append(row(`DEMO DATA · ${sample.displayName} · ${sample.splitCount} sample splits`));
+      if (!append && el('demo')) {
+        const samples = data.demonstrationParticipants || [];
+        el('demo').hidden = !samples.length;
+        el('demo-roster').replaceChildren(...samples.map(sample => row(`${sample.displayName} · ${sample.splitCount} sample splits`)));
+      }
       rosterCursor = data.nextCursor; el('roster-more').hidden = !rosterCursor;
       const splits = roster.reduce((total, person) => total + person.splitCount, 0);
       const retained = roster.reduce((total, person) => total + person.retainedCount, 0);
       el('usage').textContent = `${roster.length} enrolled students shown · ${splits} assigned ${splits === 1 ? 'split' : 'splits'} · ${retained} within the 90-day retention period${rosterCursor ? ' · Load more students for the remaining totals.' : '.'}`;
-      el('roster-status').textContent = roster.length ? '' : 'No enrolled students are listed yet.';
+      const active = roster.filter(person => person.appUsage).length;
+      if (roster.length) el('usage').textContent += ` ${active} with recorded app access.`;
+      el('roster-status').textContent = roster.length ? '' : `${selected.className} has 0 enrolled students.`;
     } catch (error) { if (current === generation) report('roster-status', error); }
     finally { if (current === generation) el('roster-more').disabled = false; }
   }
@@ -93,7 +110,7 @@
       if (!preserveReview) { resetConversation(); annotationGeneration++; annotationJob = null; el('notes').replaceChildren(); el('notes-section').hidden = true; }
     }
     const view = studentGeneration;
-    el('student').hidden = false; el('student-name').textContent = person.own ? 'My course splits' : `${person.displayName || 'Student'} · Course splits`;
+    el('student').hidden = false; el('student-name').textContent = person.own ? 'Course record' : `${person.displayName || 'Student'} · Course splits`;
     el('jobs-status').textContent = 'Loading splits…'; el('jobs-more').disabled = true;
     try {
       const data = await request(coursePath(`/participants/${encodeURIComponent(person.memberId)}/jobs${append && jobsCursor ? `?cursor=${encodeURIComponent(jobsCursor)}` : ''}`));
@@ -124,7 +141,7 @@
         el('jobs').append(item);
       }
       jobsCursor = data.nextCursor; el('jobs-more').hidden = !jobsCursor;
-      el('jobs-status').textContent = el('jobs').children.length ? '' : 'No course-assigned splits yet. Personal splits are not included.';
+      el('jobs-status').textContent = el('jobs').children.length ? '' : 'Course splits will appear here when this class is selected for a new split.';
     } catch (error) { if (current === generation && view === studentGeneration) report('jobs-status', error); }
     finally { if (current === generation && view === studentGeneration) el('jobs-more').disabled = false; }
   }
@@ -180,13 +197,13 @@
     const current = generation; el('folders-status').textContent = 'Loading folders…';
     try {
       const data = await request(coursePath('/folders')); folders = data.folders;
-      el('folders').replaceChildren(...folders.map(folder => { const item = row(); item.append(button(folder.name, () => void loadFolder(folder.id))); return item; }));
+      el('folders').replaceChildren(...folders.map(folder => { const item = row(), scope = document.createElement('span'); scope.className = 'classroom-entry-meta'; scope.textContent = folder.permission === 'private' ? 'Instructors only' : folder.permission === 'comment' ? 'Class · can add notes' : 'Class · can listen'; item.append(button(folder.name, () => void loadFolder(folder.id)),scope); return item; }));
       for (const select of el('jobs').querySelectorAll('select')) {
         const previous = select.value;
         select.replaceChildren(new Option('Choose a class folder', ''), ...folders.map(folder => new Option(folder.name, folder.id)));
         if (folders.some(folder => folder.id === previous)) select.value = previous;
       }
-      el('folders-status').textContent = folders.length ? '' : 'No shared class folders yet.';
+      el('folders-status').textContent = folders.length ? '' : 'Create a folder to organize class splits.';
     } catch (error) { if (current === generation) report('folders-status', error); }
   }
   async function loadFolder(id, preserveDisplay = false) {
@@ -198,7 +215,8 @@
       if (view !== folderGeneration) return;
       currentFolder = data.folder; el('folder-title').textContent = currentFolder.name;
       el('folder-items').replaceChildren();
-      el('folder-status').textContent = currentFolder.permission === 'comment' ? 'Class members can add their own notes.' : currentFolder.permission === 'read' ? 'Class members can listen and read notes. Annotation is not enabled for this folder.' : 'Only current course instructors can open this folder.';
+      el('folder-status').textContent = currentFolder.permission === 'comment' ? 'Class members can listen and add notes.' : currentFolder.permission === 'read' ? 'Class members can listen and read notes.' : 'Instructors only';
+      if (el('copy-status')) el('copy-status').textContent = '';
       el('folder-sharing').hidden = !selected.capabilities.instructorPanel;
       el('folder-permission').value = currentFolder.permission;
       const url = new URL('/classroom.html', location.origin); url.searchParams.set('course', selected.classId); url.searchParams.set('folder', id);
@@ -212,6 +230,10 @@
     clearCourse(); const course = courses.find(course => course.classId === id); if (!course) return;
     el('retry').hidden = true;
     selected = course; status.textContent = course.className; panel.hidden = false;
+    try { if (choiceKey) localStorage.setItem(choiceKey,id); } catch {}
+    const url = new URL(location.href); url.searchParams.set('course',id);
+    if (new URLSearchParams(location.search).get('course') !== id) url.searchParams.delete('folder');
+    history.replaceState(null,'',url);
     el('guidance').hidden = !course.capabilities.instructorPanel;
     el('own-splits').hidden = !course.capabilities.instructorPanel;
     el('guidance').href = `/teacher.html?course=${encodeURIComponent(id)}`;
@@ -306,18 +328,27 @@
     } catch (error) { if (current === generation && view === folderGeneration) report('folder-status', error); }
     finally { submit.disabled = false; }
   });
+  el('copy-link')?.addEventListener('click', async () => {
+    if (!selected || !currentFolder) return;
+    try { await navigator.clipboard.writeText(el('folder-link').value); el('copy-status').textContent = 'Link copied'; }
+    catch { el('folder-link').focus(); el('folder-link').select(); el('copy-status').textContent = 'Select and copy this link'; }
+  });
   (async () => {
     try {
       const { account } = await request('/api/account');
       if (account.quotaClass === 'guest') { status.textContent = 'Sign in with your CUNY account to open your classes.'; el('login').hidden = false; return; }
       window.StemSessionGuard?.start(account.subject, clearCourse);
+      choiceKey = `stem-workspace-choice:v1:${account.subject}`;
       let cursor = null;
       do { const data = await request(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`); courses.push(...data.courses); cursor = data.nextCursor; } while (cursor && courses.length < 1000);
+      courses.sort((a,b) => Number(a.classId === 'cail-teaching-tools-demo') - Number(b.classId === 'cail-teaching-tools-demo') || a.className.localeCompare(b.className));
       el('course').append(...courses.map(course => new Option(`${course.className} · ${course.term} · ${course.section}`, course.classId)));
       document.getElementById('course-discovery').hidden = !courses.length;
       status.textContent = courses.length ? 'Choose a class to view its shared work.' : 'No current classes are available to this account.';
       const requested = new URLSearchParams(location.search).get('course');
-      if (requested && courses.some(course => course.classId === requested)) { el('course').value = requested; await selectCourse(requested); }
+      let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
+      const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
+      if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
     } catch (error) { clearCourse(); status.textContent = error.message; el('login').hidden = false; }
   })();
 })();

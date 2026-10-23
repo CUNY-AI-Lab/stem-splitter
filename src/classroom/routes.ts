@@ -8,6 +8,8 @@ import { COURSE_APP, DEMO_COURSE_ID, validAssignmentV2, validFailure, validMembe
 import { conversationPage } from './conversations.ts';
 import { coursePrompt, promptView, saveCoursePrompt } from './prompts.ts';
 import liveRoutes from './live.ts';
+import { rosterAppUsage } from './activity.ts';
+import type { StudentUsage } from './activity.ts';
 
 type State = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const routes = new Hono<State>();
@@ -48,11 +50,15 @@ routes.get('/courses/:courseId/roster',async c=>{
   if (!validPage(value)||result.classId!==courseId||!Array.isArray(result.participants)||result.participants.length>100||!result.participants.every(validMember)) throw new CourseError(503,'course_authority_unavailable');
   const participants=result.participants as CourseMember[];
   // One aggregate query for the whole authority page; students with no work remain present.
-  const counts=participants.length ? (await c.env.DB.prepare(`SELECT c.member_id,COUNT(*) AS total,SUM(j.created_at>datetime('now','-90 days')) AS retained
+  const counts=participants.length ? (await c.env.DB.prepare(`SELECT c.member_id,COUNT(*) AS total,SUM(j.status='done') AS completed,SUM(j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)) AS retained
     FROM job_courses c JOIN jobs j ON j.id=c.job_id WHERE c.course_id=? AND c.member_id IN (${participants.map(()=>'?').join(',')}) GROUP BY c.member_id`)
-    .bind(courseId,...participants.map(p=>p.memberId)).all<{member_id:string;total:number;retained:number}>()).results : [];
+    .bind(courseId,...participants.map(p=>p.memberId)).all<{member_id:string;total:number;completed:number;retained:number}>()).results : [];
   const byMember=new Map(counts.map(row=>[row.member_id,row]));
-  return c.json({course:p.course,participants:participants.map(row=>({...row,splitCount:byMember.get(row.memberId)?.total??0,retainedCount:byMember.get(row.memberId)?.retained??0})),
+  let appUsage=new Map<string,StudentUsage>(),appUsageStatus:'available'|'unavailable'='available';
+  try { appUsage=await rosterAppUsage(c.env,courseId,participants.map(row=>row.memberId)); }
+  catch { appUsageStatus='unavailable'; }
+  return c.json({course:p.course,appUsageStatus,activityScope:{splits:'recorded-history',guideTurns:'recorded-history',recordedVisitsDays:30,visitsCapture:'best_effort'},
+    participants:participants.map(row=>({...row,splitCount:byMember.get(row.memberId)?.total??0,completedCount:byMember.get(row.memberId)?.completed??0,retainedCount:byMember.get(row.memberId)?.retained??0,appUsage:appUsage.get(row.memberId)??null})),
     demonstrationParticipants:courseId===DEMO_COURSE_ID?[{displayName:'Sample student',splitCount:3,retainedCount:2,demonstration:true}]:[],nextCursor:value.nextCursor});
 });
 routes.get('/courses/:courseId/participants/:memberId/jobs',async c=>{

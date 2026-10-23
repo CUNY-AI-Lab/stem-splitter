@@ -16,7 +16,9 @@ When required, `POST /auth/guest` accepts `{ "token": "..." }`. The server verif
 
 Guests can upload/import and split their own audio, play/download results, and annotate them. Listening Guy is optional, as described below. A fixed route allowlist and live ownership checks protect other guests' work, member/private jobs, course content, rosters, prompts, transcripts, instructor/admin operations, public-link creation, and sponsor quota reads. Existing explicitly shared audio-only links retain their public projection. Delayed provider starts recheck the stored guest session or the member/course authority associated with the operation.
 
-A successful CUNY login revokes the browser's guest session and clears its cookie. Guest content remains separate from the member account and courses. Logout revokes the server session before clearing the cookie, so a copied cookie cannot reopen it. Private responses carry the account identity for browser-side checks when a session changes in another tab.
+After a successful CUNY login, the app claims guest recordings through the verified guest cookie. The atomic claim transfers ownership, notes, and saved conversations to that member account. The browser then copies its cached draft, playback position, solo/mute settings, loop, and speed only for server-confirmed recordings; originals remain recoverable. Course assignment stays explicit. Logout revokes the server session before clearing the cookie, so a copied cookie cannot reopen it. Private responses carry the account identity for browser-side checks when a session changes in another tab.
+
+An interrupted reply keeps its request key in the recording's browser cache. The server stores an owned reply receipt for up to 24 hours, bounded by guest-session and recording expiry. A retry retrieves that receipt, including at the fifth turn, and successful sign-in transfers the receipt with the recording. Guest and member retries use the same original operation without charging a second turn or starting another model request. Unsaved transcript entries retry from the cache only while their revision matches the authoritative conversation.
 
 Guest access lasts seven days in the same browser. Clearing the cookie or ending the session removes access to its saved work. Uploaded audio and stems retain the existing 90-day deletion boundary; daily retention removes guest transcripts after session expiry or revocation.
 
@@ -37,17 +39,45 @@ Guest splitting uses the existing audio provider connection. Readiness requires:
 | `GUEST_TURNSTILE_SITE_KEY` and `GUEST_TURNSTILE_SECRET` | Verification for guest Listening Guy requests on the exact application hostname |
 | Existing `REQUEST_LIMIT` | Ingress control for guest bootstrap, verification, and application requests |
 
-Listening Guy has separate optional readiness: `GUEST_GATEWAY_API_KEY`, the existing private `GATEWAY` binding, and the exact configured primary/fallback model pair must all be present. Runtime and account responses expose `chatAvailable`. An unavailable guest assistant returns a clear error before reserving chat/guide allowance or calling Gateway. Signed-in Listening Guy requests keep their existing app/Gateway identity pair.
+The anonymous Listening Guy demo is **ready but disabled** while its funding and
+activation approval remain unresolved. The installed optional adapter uses a
+Registry-managed application credential and private `GATEWAY` binding. That
+mechanism charges an app principal, rather than assigning a personal allowance
+to a browser guest. Its absence must continue to reject assistant requests before
+reserving demo capacity or dispatching a model call. A new application credential,
+a personal key substitution or paid activation requires the exact approved
+funding contract and action-specific authority. Registered users and admitted
+guest instructors retain matching Doorway app/Gateway identities and their own
+person-scoped CAIL allowances.
 
-When enabled, the guest assistant uses the installed client's application-key transport, `{kind:'key',token}`, with the dedicated Registry-managed credential. Gateway reauthorizes that principal on each request. Guest requests cannot reuse a member identity or inspect sponsor quota, and persistent provider credentials remain server-side. Assistant starts retain their daily human-check requirement. The optional allowance is **25 human inputs per UTC day**: replies without usable output release their place, usable partial replies count once, and guide generation/cache reads remain separate. App counts do not replace Gateway spending limits.
+When approved and enabled, the demo allows **two successful real replies for the
+entire guest browser session**, shared by cue/chat across recordings and tabs.
+The first reply is ordinary; the second includes a small application-owned Sign
+in link in the chat. A third submitted question displays only a sign-in request
+and makes no model call. Direct third-generation requests are rejected by the
+server before Gateway. Failed, empty, cancelled and incomplete replies release
+demo places, while attempt protection continues to count admitted attempts.
+Cached cues and completed-request replay use no extra place. Reloads, resets and
+UTC rollover keep the same successful-reply count. Verified sign-in preserves
+exploration and changes future calls to the registered person's normal path.
 
-Only the widget site key is public. The CSP permits `https://challenges.cloudflare.com` for the script, connection, and frame needed by Turnstile. The browser loads the widget after a server verification response, using the existing submission status area. Server verification follows the [Turnstile validation contract](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
+The sign-in affordance is application UI, not text invented by a model. It is
+reconstructed from durable successful-operation state on normal completion and
+same-key readback, including interrupted second replies. Guest-owned receipts
+remain exact-owner only and transfer through the verified claim path without
+rewriting guest accounting provenance. Existing schema migration 0029 must be
+applied before the worker that reads those receipts.
 
-The reliable-operation schema, including guest ownership and accounting provenance, must be installed before new intake begins. Use the release's drain, backup, migration, and recovery procedure for the actual bound runtime. Existing installations based on an earlier unreleased schema draft require a reviewed upgrade; `CREATE TABLE IF NOT EXISTS` alone cannot update old columns or constraints.
+A browser session is not a person: clearing cookies can establish a new session.
+The two-reply limit therefore needs an approved aggregate spend cap/window and
+stop point. Zach has identified his administrator funds as the desired sponsor;
+the supported mapping, exposure cap, end date and any exact credential operation
+remain for the shared-service owners to resolve. No personal JWT/key is silently
+substituted and no paid acceptance call is implied by fixture tests.
 
 ## Verification
 
-Focused local tests cover silent bootstrap/resumption, five successful splits without verification, the hard sixth-place rejection, same-session assistant proof renewal, failure refunds, concurrent reservation at the fifth place, UTC rollover, optional assistant behavior, member transport, and guest/member/course isolation. They also cover rate rejection without side effects, cookie tampering/expiry, unavailable storage, revocation, and replay protection.
+Focused local tests cover silent bootstrap/resumption, five successful splits without verification, the hard sixth-place rejection, same-session assistant proof renewal, failure refunds, concurrent split reservation at the fifth place and demo reservation at the second reply, UTC rollover, optional assistant behavior, member transport, and guest/member/course isolation. They also cover rate rejection without side effects, cookie tampering/expiry, unavailable storage, revocation, and replay protection.
 
 Tests use fixture credentials and mocked external bot/provider responses. They establish the app contract rather than real bot resistance, sponsor entitlement, paid output, production cost, or live deployment. Production acceptance should verify a real permitted upload through the canonical host, its resulting playable stems and remaining allowance, and isolation from a separate browser session. A real Turnstile check and a separate permitted YouTube import establish those external paths.
 

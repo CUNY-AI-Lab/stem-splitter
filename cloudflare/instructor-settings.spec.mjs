@@ -23,7 +23,13 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
   await expect(page).toHaveTitle('Stem Splitter · Instructor Console');await expect(page.getByRole('heading',{name:'Instructor Console',exact:true})).toBeVisible();
   await expect(page.locator('#console-panel')).toBeVisible();
   if(mode==='course'){await expect(page.locator('.sample-editor')).toBeHidden();await expect(page.locator('#teacher-classroom')).toHaveAttribute('href',`/classroom.html?course=${course}`);await expect(page.locator('#course-roster')).toContainText('Fixture Student');}
-  else {await expect(page.locator('.sample-editor')).toBeVisible();await expect(page.locator('#prompt-scope-note')).toContainText('Applies across Stem Splitter');}
+  else {
+   await expect(page.locator('.sample-editor')).toBeVisible();await expect(page.locator('#sample-settings-form')).toBeHidden();
+   const summary=page.locator('#sample-editor-summary');await expect(summary).toHaveAttribute('aria-expanded','false');
+   await summary.focus();await summary.press('Enter');await expect(summary).toHaveAttribute('aria-expanded','true');await expect(page.locator('#sample-settings-form')).toBeVisible();
+   await summary.press('Space');await expect(summary).toHaveAttribute('aria-expanded','false');await summary.press('Enter');
+   await expect(page.locator('#prompt-scope-note')).toContainText('Applies across Stem Splitter');
+  }
   await page.locator('#amendment').fill('Fixture teaching instructions');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Add a change note');
   await savePrompt(page,'Fixture teaching instructions','First synthetic revision');
   if(mode==='global'){
@@ -41,13 +47,14 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
   if(mode==='course'){await page.getByRole('button',{name:'Restore revision 1 as a new version',exact:true}).click();await expect(page.locator('#amendment')).toHaveValue('Fixture teaching instructions');await expect(page.locator('#change-note')).toHaveValue('Restored revision 1');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Saved.');await expect(page.locator('#prompt-history')).toContainText('Revision 3');}
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await expect(page.getByRole('textbox',{name:'Teaching instructions',exact:true})).toBeVisible();
-  await expect(page.locator('.console-nav [aria-current="page"]')).toHaveText('Settings');
+  await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Settings');
   const instructionCount=await page.locator('#amendment-count').boundingBox(),noteLabel=await page.locator('label[for="change-note"]').boundingBox();
   expect(instructionCount.y+instructionCount.height).toBeLessThan(noteLabel.y);
   await expect(page.locator('#amendment')).toHaveAttribute('aria-describedby','amendment-count');
   await expect(page.locator('#change-note')).toHaveAttribute('aria-describedby','change-note-count');
   for(const selector of ['#change-note','#preview-btn','#prompt-form button[type="submit"]']) expect((await page.locator(selector).boundingBox()).height).toBeGreaterThanOrEqual(44);
   if(mode==='global'){
+   await page.locator('#sample-editor-summary').click();
    for(const selector of ['#samples-hold','#samples-cadence','#sample-search']) expect((await page.locator(selector).boundingBox()).height).toBeGreaterThanOrEqual(44);
    const options=await page.locator('#sample-search-results button').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,scroll:node.scrollHeight,client:node.clientHeight};}));
    for(let index=0;index<options.length;index++){expect(options[index].height).toBeGreaterThanOrEqual(44);expect(options[index].scroll).toBeLessThanOrEqual(options[index].client+1);if(index)expect(options[index].top).toBeGreaterThanOrEqual(options[index-1].bottom);}
@@ -58,8 +65,8 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
 test('class discovery excludes students and course settings fail closed on role loss',async({page,context})=>{
  const f=await fixture(context);
  try{
-  await page.goto(new URL('/teacher.html',f.url).href);await expect(page.locator('#course-list a')).toHaveAttribute('href',`/teacher.html?course=${course}`);
-  await page.locator('#course-list a').click();await expect(page.locator('#console-panel')).toBeVisible();
+  await page.goto(new URL('/teacher.html',f.url).href);await expect(page).toHaveURL(new URL(`/teacher?course=${course}`,f.url).href);
+  await expect(page.locator('#console-panel')).toBeVisible();
   await savePrompt(page,'Private course fixture','Synthetic setting');await page.locator('#preview-btn').click();
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.alice,'x-fixture-course-state':'revoked'});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(page.locator('#teacher-protected-region')).toBeHidden();await expect(page.locator('#amendment')).toHaveValue('');await expect(page.locator('#fixed-prompt-body')).toBeEmpty();await expect(page.locator('#preview-body')).toBeEmpty();await expect(page.locator('#course-roster')).toBeEmpty();
@@ -81,11 +88,11 @@ test('failed prompt saves retain the draft and uncertain authority conceals prio
 test('global song controls persist enable, reshuffle, remove and timing; reload discards drafts',async({page,context})=>{
  const f=await fixture(context);
  try{
-  await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.carol});await page.goto(new URL('/teacher.html',f.url).href);await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.carol});await page.goto(new URL('/teacher.html',f.url).href);await page.locator('#sample-editor-summary').click();await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);
   const cards=page.locator('#sample-selected .sample-card');
   await expect(cards.first().getByRole('button',{name:/Move up:/})).toBeDisabled();await expect(cards.last().getByRole('button',{name:/Move down:/})).toBeDisabled();
   await page.locator('#samples-enabled').uncheck();await page.locator('#samples-reshuffle').uncheck();await page.locator('#samples-hold').fill('4');await page.locator('#samples-cadence').fill('7');await cards.first().getByRole('button',{name:/Remove:/}).click();await expect(cards).toHaveCount(5);
-  await page.getByRole('button',{name:'Save songs',exact:true}).click();await expect(page.locator('#sample-settings-status')).toContainText('Saved.');await page.reload();await expect(cards).toHaveCount(5);await expect(page.locator('#samples-enabled')).not.toBeChecked();await expect(page.locator('#samples-reshuffle')).not.toBeChecked();await expect(page.locator('#samples-hold')).toHaveValue('4');await expect(page.locator('#samples-cadence')).toHaveValue('7');
+  await page.getByRole('button',{name:'Save songs',exact:true}).click();await expect(page.locator('#sample-settings-status')).toContainText('Saved.');await page.reload();await page.locator('#sample-editor-summary').click();await expect(cards).toHaveCount(5);await expect(page.locator('#samples-enabled')).not.toBeChecked();await expect(page.locator('#samples-reshuffle')).not.toBeChecked();await expect(page.locator('#samples-hold')).toHaveValue('4');await expect(page.locator('#samples-cadence')).toHaveValue('7');
   await page.locator('#samples-enabled').check();await page.locator('#samples-hold').fill('9');await page.getByRole('button',{name:'Reload saved songs'}).click();await expect(page.locator('#samples-enabled')).not.toBeChecked();await expect(page.locator('#samples-hold')).toHaveValue('4');
  }finally{await f.harness.close();}
 });
@@ -93,7 +100,7 @@ test('song loading and readback failures disable unsafely initialized controls a
  const f=await fixture(context),path='**/api/teacher/song-samples';let failure=true;
  try{
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.carol});await page.route(path,route=>route.request().method()==='GET'&&failure?route.fulfill({status:503,json:{error:{message:'Fixture songs unavailable'}}}):route.continue());
-  await page.goto(new URL('/teacher.html',f.url).href);await expect(page.locator('#console-panel')).toBeVisible();await expect(page.locator('#samples-save')).toBeDisabled();await expect(page.locator('#samples-hold')).toBeDisabled();await expect(page.locator('#samples-reload')).toBeEnabled();
+  await page.goto(new URL('/teacher.html',f.url).href);await page.locator('#sample-editor-summary').click();await expect(page.locator('#console-panel')).toBeVisible();await expect(page.locator('#samples-save')).toBeDisabled();await expect(page.locator('#samples-hold')).toBeDisabled();await expect(page.locator('#samples-reload')).toBeEnabled();
   failure=false;await page.locator('#samples-reload').click();await expect(page.locator('#samples-save')).toBeEnabled();await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);
   failure=true;await page.locator('#samples-enabled').uncheck();await page.locator('#samples-save').click();await expect(page.locator('#sample-settings-status')).toContainText('readback failed');await expect(page.locator('#samples-save')).toBeDisabled();
   failure=false;await page.locator('#samples-reload').click();await expect(page.locator('#samples-save')).toBeEnabled();await expect(page.locator('#samples-enabled')).not.toBeChecked();

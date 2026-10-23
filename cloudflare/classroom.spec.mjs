@@ -141,7 +141,7 @@ test('original Listening Guy archive loads every durable course page and keeps p
     await expect(page.locator('.coach-log')).toContainText('Listen for the bass against the drums.');
     await expect.poll(() => page.evaluate(() => mixers.get('course-song').conversationEntries.length)).toBe(72);
     expect(writes).toEqual([]);
-    await page.reload(); await page.locator('.coach-toggle').click();
+    await page.reload(); await expect(page.locator('.coach-toggle')).toHaveAttribute('aria-expanded','true');
     await expect.poll(() => page.evaluate(() => mixers.get('course-song').conversationEntries.length)).toBe(72);
     const reset = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes('/listening-conversation'));
     await page.locator('.coach-reset').click();

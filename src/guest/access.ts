@@ -58,7 +58,7 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
   const read = method === 'GET' || method === 'HEAD';
   if (!read && (request.headers.get('origin') !== new URL(request.url).origin || request.headers.get('sec-fetch-site') === 'cross-site')) return guestFailure('guest_origin_invalid',403,'Open Stem Splitter directly to continue.');
   if (request.headers.has('x-stem-course') && request.headers.get('x-stem-course') !== 'personal') return guestFailure('guest_course_forbidden',403,'Sign in with an enrolled account to use course work.');
-  const job = /^\/api\/jobs\/([a-zA-Z0-9-]+)(?:\/(title|labels|annotations|guide|chat|cancel|listening-conversation)(?:\/([a-zA-Z0-9-]+))?)?$/.exec(path);
+  const job = /^\/api\/jobs\/([a-zA-Z0-9-]+)(?:\/(title|labels|annotations|guide|chat|cancel|listening-conversation|listening-usage)(?:\/([a-zA-Z0-9-]+))?)?$/.exec(path);
   const file = /^\/api\/files\/stems\/([a-zA-Z0-9-]+)\/(?:[a-zA-Z0-9_-]+\/)?[a-zA-Z0-9_.-]+$/.exec(path);
   const general = read && ['/api/import-options','/api/account','/api/auth-check','/api/jobs','/api/teacher/me','/api/archive/scopes','/api/archive/search','/api/music/search'].includes(path)
     || read && /^\/api\/archive\/items\/[a-zA-Z0-9_.-]+$/.test(path)
@@ -66,6 +66,7 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
     || method === 'PUT' && path.startsWith('/api/local-uploads/');
   const jobAllowed = job && (!job[2] ? read || method === 'DELETE' : ['title','labels'].includes(job[2]) ? method === 'PUT' && !job[3]
     : ['guide','chat','cancel'].includes(job[2]) ? method === 'POST' && !job[3]
+    : job[2] === 'listening-usage' ? read && !job[3]
     : job[2] === 'listening-conversation' ? ['GET','PUT','DELETE'].includes(method) && !job[3]
     : job[2] === 'annotations' ? job[3] ? ['PUT','DELETE'].includes(method) : method === 'POST' : false);
   if (!general && !jobAllowed && !(file && read)) return guestFailure('guest_route_forbidden',403,'This feature requires an authorized signed-in account.');

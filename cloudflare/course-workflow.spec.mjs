@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 const course = 'msh-245-the-american-musical-experience-fall-2026-01';
-async function fixture(browser) {
+async function fixture(browser,vars={}) {
   const issuer = await createTestIdentityIssuer();
-  const server = createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true'}}]});
+  const server = createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true',...vars}}]});
   const {url} = await server.listen();
   const seed = async statements => expect((await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status).toBe(200);
   const member = 'stem-member-v1-' + createHash('sha256').update(`fixture:${course}:${TEST_SUBJECTS.alice}`).digest('hex');
@@ -28,7 +28,7 @@ async function fixture(browser) {
     await page.route('**/api/files/stems/shared-course/*',route=>route.fulfill({contentType:'audio/mpeg',body:Buffer.alloc(0)}));
     return page;
   };
-  return {url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
+  return {issuer,url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
 }
 
 test('course creation requires disclosure and sends an exact course with the acknowledged policy',async({browser})=>{
@@ -56,6 +56,20 @@ test('course creation requires disclosure and sends an exact course with the ack
     await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});}catch{}});
     expect(received.headers['x-stem-course']).toBe('personal');expect(received.body.coursePolicy).toBeUndefined();expect(received.headers['idempotency-key']).not.toBe(courseKey);
   }finally{await f.close();}
+});
+
+test('instructors retain roster and class controls when supplemental usage storage is unavailable',async({browser})=>{
+ const f=await fixture(browser,{TEST_ROSTER_SUBJECT:TEST_SUBJECTS.alice});
+ try {
+  await f.seed(['DROP TABLE course_usage_accounts']);
+  const page=await f.pageFor(TEST_SUBJECTS.alice,true);
+  await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+  await expect(page.locator('#classroom-roster')).toContainText('App usage temporarily unavailable');
+  await expect(page.locator('#classroom-roster-status')).toHaveText('');
+  await expect(page.getByRole('link',{name:'Create a split',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Course record',exact:true})).toBeVisible();
+  await expect(page.locator('#classroom-folders')).toContainText('Class comments');
+ } finally {await f.close();}
 });
 
 test('shared class notes refresh across students, preserve failed drafts, attribute authors, and stop on revocation',async({browser})=>{
@@ -92,4 +106,75 @@ test('owner Listening Guy cue recovers visibly after a failed stream and can be 
     await expect(page.locator('.coach-cue-btn')).toBeEnabled();await page.locator('.coach-cue-btn').click();
     await expect(page.locator('.coach-guide-text')).toContainText('Listen for the bass.');
   }finally{await f.close();}
+});
+
+
+for (const owner of [false,true]) test(`a sole verified course is selected for ${owner?'instructors':'students'} while Personal remains explicit`,async({browser})=>{
+ const f=await fixture(browser);
+ try {
+  const page=await f.pageFor(TEST_SUBJECTS.alice,owner);
+  await page.goto(f.url.href);
+  await expect(page.getByLabel('New split workspace')).toHaveValue(course);
+  await expect(page.locator('#course-work-ack')).toBeVisible();
+  await expect(page.locator('#course-work-ack')).not.toBeChecked();
+  await page.getByLabel('New split workspace').selectOption('personal');
+  await page.reload();await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  await expect(page.locator('#course-work-ack')).toBeHidden();
+  await page.goto(new URL(`/classroom.html`,f.url).href);
+  await expect(page.locator('#classroom-course')).toHaveValue(course);
+  await expect(page.locator('#console-panel')).toBeVisible();
+ } finally {await f.close();}
+});
+
+test('multiple verified courses require a choice and retain only a valid account-specific choice',async({browser})=>{
+ const f=await fixture(browser);
+ try {
+  const page=await f.pageFor(TEST_SUBJECTS.alice);
+  let classes=[{classId:course,className:'First class',term:'Fall',section:'01'},
+   {classId:'second-fixture-course',className:'Second class',term:'Fall',section:'02'}];
+  await page.route('**/api/classroom/courses',route=>route.fulfill({json:{courses:classes,nextCursor:null}}));
+  await page.goto(f.url.href);
+  await expect(page.getByLabel('New split workspace')).toHaveValue('');
+  const blocked=await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}});
+  expect(blocked).toContain('Choose a workspace');
+  await page.getByLabel('New split workspace').selectOption('second-fixture-course');
+  await page.reload();await expect(page.getByLabel('New split workspace')).toHaveValue('second-fixture-course');
+  await expect(page.locator('#course-work-ack')).not.toBeChecked();
+  classes=[classes[0]];
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));
+  await expect(page.getByLabel('New split workspace')).toHaveValue(course);
+  await expect(page.locator('#course-work-ack')).not.toBeChecked();
+  await page.getByLabel('New split workspace').selectOption('personal');
+  await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.bob})});
+  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue(course);
+  await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice})});
+  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  classes=[];await page.goto(f.url.href);await expect(page.locator('#course-context')).toBeHidden();
+  expect(await page.evaluate(()=>creationCourse())).toBe('personal');
+ } finally {await f.close();}
+});
+
+test('membership refresh fences old responses, blocks creation while checking and preserves personal recordings',async({browser})=>{
+ const f=await fixture(browser);
+ try {
+  await f.seed([`INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('personal-kept','Personal recording','uploads/personal.wav','done','[]')`,
+   `INSERT INTO job_owners(job_id,subject) VALUES('personal-kept','${TEST_SUBJECTS.alice}')`]);
+  const page=await f.pageFor(TEST_SUBJECTS.alice);
+  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue(course);
+  await expect(page.locator('#job-list')).toContainText('Personal recording');
+  let release,started;const waiting=new Promise(resolve=>release=resolve),ready=new Promise(resolve=>started=resolve);let reads=0;
+  await page.route('**/api/classroom/courses',async route=>{
+   if(++reads===1){started();await waiting;await route.fulfill({json:{courses:[{classId:course,className:'Old class',term:'Fall',section:'01'}]}});}
+   else await route.fulfill({json:{courses:[],nextCursor:null}});
+  });
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));await ready;
+  await expect(page.getByLabel('New split workspace')).toBeDisabled();
+  expect(await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}})).toContain('Checking your class access');
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));
+  await expect.poll(()=>page.evaluate(()=>selectedCourse)).toBe('personal');
+  release();await expect.poll(()=>page.evaluate(()=>courseSelectionPending)).toBe(false);
+  await expect(page.locator('#job-list')).toContainText('Personal recording');
+  expect(await page.evaluate(()=>selectedCourse)).toBe('personal');
+  expect((await page.request.get(new URL('/api/jobs/personal-kept',f.url).href)).status()).toBe(200);
+ } finally {await f.close();}
 });

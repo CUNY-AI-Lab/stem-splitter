@@ -1,11 +1,30 @@
 import type { Env } from '../env.ts';
-import { fingerprint, OperationError, readOperation, reserveOperation, settleOperation, type Operation } from './ledger.ts';
+import { fingerprint, findOperation, OperationError, readOperation, reserveOperation, settleOperation, type Operation } from './ledger.ts';
 import type { QuotaClass } from '../daily-allowance.ts';
+import { recoverListeningOperations } from './listening.ts';
 
 /** One reservation surrounds the human message, tools, and both model attempts.
  * This ledger contains no transcript text. Conversation storage owns readback. */
 export async function reserveAssistant(env: Env, subject: string, courseId: string | null, kind: 'chat'|'guide', key: string, jobId: string, input: unknown, quotaClass: QuotaClass = 'member') {
-  const reserved=await reserveOperation(env.DB,{subject,quotaClass,courseId,kind,key,jobId,fingerprint:await fingerprint(input),phase:kind,request:{}});
+  const inputFingerprint=await fingerprint(input);
+  // A pending browser retry may cross sign-in. Its original guest accounting
+  // stays immutable, while current ownership authorizes the saved result.
+  if(quotaClass==='member' && courseId===null && !await findOperation(env.DB,subject,kind,key)) {
+    const claimed=await env.DB.prepare(`SELECT o.* FROM app_operations o
+      JOIN guest_job_claims c ON c.job_id=o.job_id AND c.guest_subject=o.subject
+      JOIN job_owners own ON own.job_id=c.job_id AND own.subject=c.member_subject
+      WHERE c.member_subject=? AND o.job_id=? AND o.kind=? AND o.idempotency_key=?
+      AND o.quota_class='guest' AND o.course_id IS NULL`).bind(subject,jobId,kind,key).first<Operation>();
+    if(claimed) {
+      if(claimed.fingerprint!==inputFingerprint)throw new OperationError('idempotency_conflict',409,'This request identifier belongs to different input. Submit a new request.');
+      await recoverListeningOperations(env.DB,claimed.subject);
+      const original=(await readOperation(env.DB,claimed.id))!;
+      if(original.state==='succeeded')return {operation:original,replay:true};
+      if(['failed','partial','cancelled'].includes(original.state))throw await assistantFailure(env,original);
+      throw new OperationError('listening_in_progress',409,'This request is still being processed. Retry the same request to check its result.',2,{newAttemptAllowed:false,retryable:true});
+    }
+  }
+  const reserved=await reserveOperation(env.DB,{subject,quotaClass,courseId,kind,key,jobId,fingerprint:inputFingerprint,phase:kind,request:{}});
   const op=reserved.operation;
   if(!reserved.created) {
     if(op.state==='succeeded')return {operation:op,replay:true};
@@ -34,8 +53,23 @@ export async function assistantFailure(env:Env, operation:Operation) {
 
 /** Called only after current request authorization. SQL repeats the exact
  * owner and retention boundary; no instructor or administrative read path. */
-export async function replayAssistant(env:Env,operation:Operation):Promise<Record<string,unknown>|null> {
-  if(operation.state!=='succeeded'||operation.quota_class!=='member')return null;
+export async function replayAssistant(env:Env,operation:Operation,actorSubject=operation.subject):Promise<Record<string,unknown>|null> {
+  if(operation.state!=='succeeded')return null;
+  if(operation.quota_class==='guest' && actorSubject===operation.subject) {
+    const row=await env.DB.prepare(`SELECT r.response_json FROM guest_listening_reply_receipts r
+      JOIN jobs j ON j.id=r.job_id JOIN guest_job_owners own ON own.job_id=j.id AND own.subject=r.subject
+      JOIN guest_sessions s ON s.subject=r.subject WHERE r.operation_id=? AND r.subject=? AND r.job_id=?
+      AND r.expires_at>? AND s.expires_at>? AND s.revoked_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM guest_account_claims c WHERE c.guest_subject=r.subject)
+      AND j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)`)
+      .bind(operation.id,actorSubject,operation.job_id,Date.now(),Date.now()).first<{response_json:string}>();
+    return row?JSON.parse(row.response_json):null;
+  }
+  if(operation.quota_class==='guest') {
+    const claim=await env.DB.prepare(`SELECT 1 FROM guest_job_claims c JOIN job_owners o ON o.job_id=c.job_id AND o.subject=c.member_subject
+      WHERE c.job_id=? AND c.guest_subject=? AND c.member_subject=?`).bind(operation.job_id,operation.subject,actorSubject).first();
+    if(!claim)return null;
+  } else if(actorSubject!==operation.subject)return null;
   if(operation.course_id && operation.kind==='chat') {
     const row=await env.DB.prepare(`SELECT t.reply,t.finish_reason,c.revision,t.tools FROM course_turns t
       JOIN course_conversations c ON c.job_id=t.job_id AND c.subject=t.subject
@@ -53,7 +87,7 @@ export async function replayAssistant(env:Env,operation:Operation):Promise<Recor
     JOIN jobs j ON j.id=r.job_id JOIN job_owners o ON o.job_id=j.id AND o.subject=r.subject
     WHERE r.operation_id=? AND r.subject=? AND r.job_id=? AND r.expires_at>?
       AND j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)`)
-    .bind(operation.id,operation.subject,operation.job_id,Date.now()).first<{response_json:string}>();
+    .bind(operation.id,actorSubject,operation.job_id,Date.now()).first<{response_json:string}>();
   return row?JSON.parse(row.response_json):null;
 }
 export function assistantReceipt(env: Env,operation: Operation) {
@@ -102,6 +136,26 @@ export function assistantReceipt(env: Env,operation: Operation) {
           WHERE o.id=? AND o.state='succeeded' AND o.updated_at=? AND j.created_at>datetime('now','-90 days')
           AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id) ON CONFLICT(operation_id) DO NOTHING`)
           .bind(JSON.stringify(response),now+86400000,operation.id,now));
+      }
+      if(response && operation.quota_class==='guest' && !operation.course_id && operation.kind==='chat') {
+        const payload=JSON.stringify(response);
+        statements.push(env.DB.prepare(`INSERT INTO guest_listening_reply_receipts(operation_id,job_id,subject,response_json,expires_at)
+          SELECT o.id,j.id,o.subject,?,MIN(?,s.expires_at,CAST(strftime('%s',j.created_at,'+90 days') AS INTEGER)*1000)
+          FROM app_operations o JOIN jobs j ON j.id=o.job_id JOIN guest_job_owners own ON own.job_id=j.id AND own.subject=o.subject
+          JOIN guest_sessions s ON s.subject=o.subject WHERE o.id=? AND o.state='succeeded' AND o.updated_at=?
+          AND s.expires_at>? AND s.revoked_at IS NULL AND j.created_at>datetime('now','-90 days')
+          AND NOT EXISTS(SELECT 1 FROM guest_account_claims c WHERE c.guest_subject=o.subject)
+          AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id) ON CONFLICT(operation_id) DO NOTHING`)
+          .bind(payload,now+86400000,operation.id,now,now));
+        // A guest request can finish while sign-in transfers its recording.
+        statements.push(env.DB.prepare(`INSERT INTO listening_reply_receipts(operation_id,job_id,subject,response_json,expires_at)
+          SELECT o.id,j.id,c.member_subject,?,MIN(?,CAST(strftime('%s',j.created_at,'+90 days') AS INTEGER)*1000)
+          FROM app_operations o JOIN jobs j ON j.id=o.job_id
+          JOIN guest_job_claims c ON c.job_id=j.id AND c.guest_subject=o.subject
+          JOIN job_owners own ON own.job_id=j.id AND own.subject=c.member_subject
+          WHERE o.id=? AND o.state='succeeded' AND o.updated_at=? AND j.created_at>datetime('now','-90 days')
+          AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id) ON CONFLICT(operation_id) DO NOTHING`)
+          .bind(payload,now+86400000,operation.id,now));
       }
       const result=await env.DB.batch(statements);
       if(!result[0].meta.changes)throw new OperationError('input_no_longer_active',409,'This input ended. Reload the conversation before continuing.');
