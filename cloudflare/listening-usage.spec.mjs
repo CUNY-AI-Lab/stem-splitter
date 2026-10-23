@@ -31,9 +31,30 @@ async function fixture(browser) {
 }
 function usage(remainingTurns, seconds = 0) {
   const now = Date.now();
-  return { ok: true, limit: 50, remainingTurns, inProgress: 0, serverTime: new Date(now).toISOString(), cooldownUntil: seconds ? new Date(now + seconds * 1000).toISOString() : null };
+  const reset=new Date(now);reset.setUTCHours(24,0,0,0);
+  return { ok: true, limit: 50, remainingTurns, inProgress: 0, serverTime: new Date(now).toISOString(), resetsAt:reset.toISOString(), cooldownUntil: seconds ? new Date(now + seconds * 1000).toISOString() : null };
 }
 const reply = (text, state) => `data: ${JSON.stringify({ type: 'done', text, model: 'fixture', usage: state })}\n\n`;
+
+test('an open exhausted workspace resumes at the daily reset and retains its draft through a refresh outage',async({browser})=>{
+ const f=await fixture(browser);
+ try {
+  const edge='2026-10-23T23:59:57.000Z',reset='2026-10-24T00:00:00.000Z';
+  await f.page.clock.install({time:new Date(edge)});await f.open();
+  const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'ASK',exact:true});
+  await input.fill('Keep this question for the new day.');
+  f.setUsage({...usage(0),serverTime:edge,resetsAt:reset});
+  await f.page.evaluate(()=>refreshListeningUsage());await expect(ask).toBeDisabled();
+  let reads=0;
+  await f.page.route('**/api/listening-usage',route=>++reads===1
+   ?route.fulfill({status:503,json:{error:'Fixture reset check unavailable'}})
+   :route.fulfill({json:{...usage(50),serverTime:'2026-10-24T00:00:09.000Z',resetsAt:'2026-10-25T00:00:00.000Z'}}));
+  await f.page.clock.fastForward(4000);await expect.poll(()=>reads).toBe(1);await expect(ask).toBeDisabled();
+  await f.page.clock.fastForward(6000);await expect(ask).toBeEnabled();expect(reads).toBe(2);
+  await expect(input).toHaveValue('Keep this question for the new day.');
+  await expect(f.page.locator('.coach-usage-status')).toHaveText('50 of 50 chat turns left today.');
+ } finally {await f.close();}
+});
 
 test('authenticated accounts continue after five replies and preserve the next draft without a five-minute pause', async ({ browser }) => {
  const f=await fixture(browser);

@@ -466,10 +466,12 @@ function acceptListeningUsage(value) {
     return;
   }
   const cooldownUntil = value.cooldownUntil === null ? null : Date.parse(value.cooldownUntil);
+  const resetsAt = value.resetsAt === undefined ? null : Date.parse(value.resetsAt);
   if (!Number.isFinite(serverTime) || (cooldownUntil !== null && !Number.isFinite(cooldownUntil))) return;
+  if (resetsAt !== null && !Number.isFinite(resetsAt)) return;
   if (listeningUsage && serverTime < listeningUsage.serverTime) return;
   listeningUsage = { limit: value.limit, remainingTurns: value.remainingTurns, inProgress: Number.isInteger(value.inProgress) ? value.inProgress : 0, serverTime,
-    availableAt: 0 };
+    availableAt: 0, resetsAt, refreshAfter: resetsAt === null ? 0 : Date.now() + Math.max(0,resetsAt-serverTime) };
   for (const mixer of mixers.values()) mixer.renderListeningUsage();
 }
 function listeningWaitSeconds() {
@@ -5198,8 +5200,10 @@ setInterval(() => {
     return;
   }
   if (!listeningUsage) return;
-  if (listeningUsage.availableAt && !listeningWaitSeconds()) {
-    listeningUsage = null;
+  if (listeningUsage.refreshAfter && Date.now() >= listeningUsage.refreshAfter) {
+    // Keep the last confirmed count while checking the new day. An outage
+    // retries after five seconds without briefly enabling an exhausted input.
+    listeningUsage.refreshAfter = Date.now() + 5000;
     void refreshListeningUsage();
   } else if (listeningUsage.inProgress && Date.now() % 5000 < 1000) void refreshListeningUsage();
   for (const mixer of mixers.values()) mixer.renderListeningUsage();
