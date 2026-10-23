@@ -2881,7 +2881,7 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .workspace-nav .account-nav, .workspace-nav > a[href="/account.html"] { margin-left: 0; }
   .workspace-nav .account-nav { grid-column: 1 / -1; }
   .workspace-nav .account-nav .account-button { flex: 1; justify-content: flex-start; }
-  .refined-ui #course-context { grid-template-columns: 1fr; gap: .35rem; }
+  .refined-ui #course-context { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
   .refined-ui #course-context .course-choice { font-size: 1rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
   .account-allowances { grid-template-columns: 1fr; }

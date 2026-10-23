@@ -249,7 +249,7 @@ async function initializeCourseSelection() {
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
       const valid = new Set(['personal',...courses.map(course=>course.classId)]);
       const previous = initialized ? selectedCourse : 'personal';
-      const choice = valid.has(previous) ? previous : 'personal';
+      const choice = previous === '' || valid.has(previous) ? previous : 'personal';
       select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
         ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
       select.options[0].disabled = true;
@@ -258,7 +258,9 @@ async function initializeCourseSelection() {
       region.hidden = !courses.length && !status.textContent;
     } catch (error) {
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
-      select.replaceChildren(new Option('Personal','personal')); choose('personal');
+      const needsChoice = initialized && selectedCourse !== 'personal';
+      select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
+      select.options[0].disabled = true; choose(needsChoice ? '' : 'personal');
       region.hidden = false; status.textContent = error.message;
     } finally {
       if (sequence === courseSelectionSequence && accountSubject === subject) { courseSelectionPending = false; select.disabled = false; }
