@@ -910,8 +910,21 @@ for (const signIn of [false,true]) test(`guest second reply survives a lost comp
    await expect.poll(async()=>(await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
    await expect(input).toHaveValue('Recover the second question');await expect(retry).toBeEnabled();
   }
+  // Hold the older saved history across reload. Replaying before it arrives
+  // would append to an empty archive and then overwrite the recovered exchange.
+  let delayedHistory,chatRequests=0;
+  await page.route('**/api/jobs/*/listening-conversation',route=>route.request().method()==='GET'&&!delayedHistory
+   ?(delayedHistory=route,undefined):route.continue());
+  page.on('request',request=>{if(new URL(request.url()).pathname===`/api/jobs/${jobId}/chat`)chatRequests++;});
+  await page.reload();await expect(retry).toBeEnabled();
+  await expect.poll(()=>Boolean(delayedHistory)).toBe(true);
+  const olderHistory=await delayedHistory.fetch();
   const replay=page.waitForRequest(request=>new URL(request.url()).pathname===`/api/jobs/${jobId}/chat`);
   await retry.click();
+  await expect.poll(()=>page.evaluate(id=>mixers.get(id).coachBusy,jobId)).toBe(true);
+  expect(chatRequests).toBe(0);
+  await delayedHistory.fulfill({response:olderHistory});
+  await page.unroute('**/api/jobs/*/listening-conversation');
   expect((await replay).postDataJSON()).toEqual(secondBody);
   await expect(page.locator('.coach-log .coach-row.coach')).toHaveText('Listen for the bass against the drums.');
   await expect(input).toHaveValue('');

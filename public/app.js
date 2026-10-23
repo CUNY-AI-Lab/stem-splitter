@@ -3344,7 +3344,7 @@ class Mixer {
     }
     if (this.coachBusy || (listeningWaitSeconds() && !this.pendingChat)) return;
     this.coachBusy = true;
-    if (runtime.authMode === 'cail' && !this.pendingChat) {
+    if (runtime.authMode === 'cail') {
       try { await this.loadConversation(); }
       catch { this.coachBusy = false; return; }
     }
