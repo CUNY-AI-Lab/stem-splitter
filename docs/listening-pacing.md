@@ -39,7 +39,9 @@ capacity.
 Existing exact-owner receipt and conversation access, expiry, deletion and reset
 fences remain in force. Accounting and activity summaries contain counters and
 request state, while reply text stays within the existing owner-only paths.
-This correction needs no additional schema migration.
+The member allowance correction needs no new table. The accompanying guest reply
+recovery requires additive migration `0029-guest-listening-replies.sql`, which
+creates exact-owner guest receipts before this worker is released.
 
 Synthetic checks cover continued member use beyond five replies, daily and burst
 limits, failed and partial refunds, shared guest cue/chat capacity, concurrent

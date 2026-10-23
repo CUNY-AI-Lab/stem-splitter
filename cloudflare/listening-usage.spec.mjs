@@ -99,36 +99,36 @@ test('confirmed failure permits a fresh attempt while a sign-in failure retains 
   } finally { await f.close(); }
 });
 
-test('a lost fifth-reply acknowledgement remains readable during cooldown with the same request ID', async ({ browser }) => {
+test('a lost final daily reply remains readable with its original request ID after the allowance is full', async ({ browser }) => {
   const f = await fixture(browser);
   try {
-    const keys = [], state = usage(0, 300);
+    const keys = [], state = usage(0);
     await f.page.route('**/api/jobs/listening-fixture/chat', route => {
       keys.push(route.request().headers()['idempotency-key']);
       f.setUsage(state);
       return route.fulfill({ contentType: 'text/event-stream', body: keys.length === 1
-        ? 'data: {"type":"delta","text":"A saved fifth reply"}\n\n'
-        : reply('A saved fifth reply.', state) });
+        ? 'data: {"type":"delta","text":"A saved final daily reply"}\n\n'
+        : reply('A saved final daily reply.', state) });
     });
     await f.open();
-    await f.page.getByRole('textbox', { name: 'Ask the Listening Guide' }).fill('Recover the fifth reply.');
+    await f.page.getByRole('textbox', { name: 'Ask the Listening Guide' }).fill('Recover the final daily reply.');
     await f.page.getByRole('button', { name: 'ASK', exact: true }).click();
-    await expect(f.page.locator('.coach-usage-status')).toContainText('Five turns used');
+    await expect(f.page.locator('.coach-usage-status')).toContainText('0 of 50 chat turns left today.');
     await expect(f.page.getByRole('button', { name: 'RETRY REPLY' })).toBeEnabled();
     await f.page.getByRole('button', { name: 'RETRY REPLY' }).click();
-    await expect(f.page.locator('.coach-row.coach')).toHaveText('A saved fifth reply.');
+    await expect(f.page.locator('.coach-row.coach')).toHaveText('A saved final daily reply.');
     expect(keys).toHaveLength(2); expect(keys[1]).toBe(keys[0]);
     await expect(f.page.getByRole('button', { name: 'ASK', exact: true })).toBeDisabled();
   } finally { await f.close(); }
 });
 
-test('cue retry keeps its original key and uses the same cooldown display as chat', async ({ browser }) => {
+test('cue retry keeps its original key and leaves remaining daily chat available', async ({ browser }) => {
   const f = await fixture(browser);
   try {
     const keys = [];
     await f.page.route('**/api/jobs/listening-fixture/guide', route => {
       keys.push(route.request().headers()['idempotency-key']);
-      const state = usage(0, 300); if (keys.length > 1) f.setUsage(state);
+      const state = usage(49); if (keys.length > 1) f.setUsage(state);
       return route.fulfill(keys.length === 1 ? { status: 503, json: { error: 'Temporary cue outage.' } }
         : { contentType: 'text/event-stream', body: reply('Listen to this entrance.', state) });
     });
@@ -138,7 +138,7 @@ test('cue retry keeps its original key and uses the same cooldown display as cha
     await f.page.locator('.coach-cue-btn').click();
     await expect(f.page.locator('.coach-guide-text')).toContainText('Listen to this entrance.');
     expect(keys).toHaveLength(2); expect(keys[1]).toBe(keys[0]);
-    await expect(f.page.getByRole('button', { name: 'ASK', exact: true })).toBeDisabled();
-    await expect(f.page.locator('.coach-usage-status')).toContainText('Five turns used');
+    await expect(f.page.getByRole('button', { name: 'ASK', exact: true })).toBeEnabled();
+    await expect(f.page.locator('.coach-usage-status')).toContainText('49 of 50 chat turns left today.');
   } finally { await f.close(); }
 });

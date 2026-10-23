@@ -108,7 +108,7 @@ test('instructor edits imported names, cancels drafts and preserves the exact Ar
   expect(saved.catalog.find(track=>track.archiveId===original.archiveId&&track.archiveFile===original.archiveFile)).toMatchObject({artist,title});
   const publicSongs=await(await f.harness.fetch('/api/song-samples')).json();
   expect(publicSongs.tracks[0]).toMatchObject({artist,title,archiveId:original.archiveId,archiveFile:original.archiveFile});
-  await page.reload();await expect(card).toContainText(`${artist} — ${title}`);
+  await page.reload();await page.locator('#sample-editor-summary').click();await expect(card).toContainText(`${artist} — ${title}`);
   await card.getByRole('button',{name:`Edit names: ${title}`,exact:true}).click();
   await expect(card.getByLabel('Artist',{exact:true})).toHaveValue(artist);
   await expect(card.getByLabel('Title',{exact:true})).toHaveValue(title);

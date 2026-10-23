@@ -54,6 +54,7 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
   await expect(page.locator('#change-note')).toHaveAttribute('aria-describedby','change-note-count');
   for(const selector of ['#change-note','#preview-btn','#prompt-form button[type="submit"]']) expect((await page.locator(selector).boundingBox()).height).toBeGreaterThanOrEqual(44);
   if(mode==='global'){
+   await page.locator('#sample-editor-summary').click();
    for(const selector of ['#samples-hold','#samples-cadence','#sample-search']) expect((await page.locator(selector).boundingBox()).height).toBeGreaterThanOrEqual(44);
    const options=await page.locator('#sample-search-results button').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,scroll:node.scrollHeight,client:node.clientHeight};}));
    for(let index=0;index<options.length;index++){expect(options[index].height).toBeGreaterThanOrEqual(44);expect(options[index].scroll).toBeLessThanOrEqual(options[index].client+1);if(index)expect(options[index].top).toBeGreaterThanOrEqual(options[index-1].bottom);}
@@ -64,8 +65,8 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
 test('class discovery excludes students and course settings fail closed on role loss',async({page,context})=>{
  const f=await fixture(context);
  try{
-  await page.goto(new URL('/teacher.html',f.url).href);await expect(page.locator('#course-list a')).toHaveAttribute('href',`/teacher.html?course=${course}`);
-  await page.locator('#course-list a').click();await expect(page.locator('#console-panel')).toBeVisible();
+  await page.goto(new URL('/teacher.html',f.url).href);await expect(page).toHaveURL(new URL(`/teacher.html?course=${course}`,f.url).href);
+  await expect(page.locator('#console-panel')).toBeVisible();
   await savePrompt(page,'Private course fixture','Synthetic setting');await page.locator('#preview-btn').click();
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.alice,'x-fixture-course-state':'revoked'});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(page.locator('#teacher-protected-region')).toBeHidden();await expect(page.locator('#amendment')).toHaveValue('');await expect(page.locator('#fixed-prompt-body')).toBeEmpty();await expect(page.locator('#preview-body')).toBeEmpty();await expect(page.locator('#course-roster')).toBeEmpty();
