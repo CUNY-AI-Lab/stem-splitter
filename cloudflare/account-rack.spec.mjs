@@ -371,7 +371,7 @@ for (const width of [1280, 390]) test(`account access failures keep one Settings
       if (status !== 401) await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
     }
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    await expect(page).toHaveURL(new URL('/account.html', url).href);
+    await expect(page).toHaveURL(new URL('/account', url).href);
     await expect(page).toHaveTitle('Stem Splitter · Settings');
   } finally { await server.close(); }
 });
