@@ -24,8 +24,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify workflow change detection
-        run: node --test .github/scripts/cloudflare-ci-changes.test.mjs
+      - name: Verify workflow helpers
+        run: node --test .github/scripts/*.test.mjs
       - name: Select Cloudflare checks
         id: changes
         env:

@@ -25,3 +25,7 @@ context. The local configuration continues to default to one worker.
 
 Missing Git history or an unfamiliar file path requests full verification.
 The general source and native audio-image gates remain separate workflows.
+
+FFmpeg installation first tries the runner's existing package index with a
+short deadline. An outdated or missing index falls back to the bounded metadata
+refresh and installation retries.

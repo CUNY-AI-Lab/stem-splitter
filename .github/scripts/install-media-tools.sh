@@ -13,6 +13,12 @@ case "${1:-}" in
     if [[ "${GITHUB_ACTIONS:-}" == true && -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
       sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
     fi
+    # Hosted runners usually have a usable package index. Refresh it only when
+    # installation needs newer metadata, rather than waiting on every mirror.
+    if timeout --kill-after=10s 45s sudo apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 install --yes --no-install-recommends ffmpeg; then
+      ffmpeg -version
+      exit 0
+    fi
     for attempt in 1 2; do
       if timeout --kill-after=10s 180s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update &&
          timeout --kill-after=10s 240s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install --yes --no-install-recommends ffmpeg; then
