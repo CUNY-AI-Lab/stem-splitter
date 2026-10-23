@@ -576,9 +576,9 @@ h1 span {
 .console-title {
   font-weight: 700;
   font-size: 1rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
   flex: 1;
   min-width: 0;
 }
@@ -1512,15 +1512,13 @@ footer a:hover { color: var(--hot); }
 /* A compact control line above a full-width, unobscured source waveform. */
 .channel {
   display: grid;
-  /* One shared name column keeps every waveform aligned. It fits the longest
-     stem name ("instrumental") on one line; longer custom names end in an
-     ellipsis rather than splitting a word onto a second line. */
+  /* Keep waveforms aligned while long custom names wrap in their column. */
   grid-template-columns: 7.25rem minmax(0, 1fr);
   gap: .2rem .75rem;
   padding: .35rem .1rem;
 }
 .channel .ch-id { grid-column: 1; grid-row: 2; min-width: 0; align-self: center; }
-.channel .ch-name { font-size: .72rem; letter-spacing: .08em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channel .ch-name { font-size: .72rem; letter-spacing: .08em; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
 .channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
 .channel .meter {
   grid-column: 2;
@@ -2302,9 +2300,9 @@ body.instructor .folder-btn { display: inline-block; }
 .folder-item-name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .folder-item-expired {
   color: var(--ink-faint);
@@ -2414,9 +2412,9 @@ body.instructor .folder-btn { display: inline-block; }
 .shelf-title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
   font-weight: 500;
   font-size: 0.9rem;
 }
@@ -2572,9 +2570,9 @@ body.instructor .folder-btn { display: inline-block; }
   font-size: 0.6rem;
   letter-spacing: 0.06em;
   color: var(--ink-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
   max-width: 15ch;
 }
 .rlayer-ctls {
@@ -2827,6 +2825,7 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui #dropzone { border-radius: 8px; padding: .7rem; }
 .refined-ui #dropzone .deck-slot {
   position: relative; border-radius: 4px; border-style: solid;
+  border-color: rgba(255, 220, 166, .32);
   padding: 1.15rem .75rem 1rem;
   background: linear-gradient(90deg, transparent 0 47%, var(--panel-edge) 47% 48%, transparent 48% 49%, var(--panel-edge) 49% 50%, transparent 50% 51%, var(--panel-edge) 51% 52%, transparent 52%) center bottom / 5rem 3px no-repeat;
 }

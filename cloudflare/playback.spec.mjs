@@ -715,3 +715,34 @@ test('main seek control and time display follow media events while paused and pl
     expect(errors).toEqual([]);
   } finally { await server.close(); }
 });
+
+
+test('full recording and split names wrap while waveforms fit the available width', async ({page}) => {
+ const server = await fixture(page, ['vocals','instrumental'], {owned:true});
+ const title = 'A complete recording title with a long movement name and performance description for listening';
+ const stemName = 'A very long custom instrumental split';
+ try {
+  await page.locator('.console-title').click();
+  await page.getByRole('textbox',{name:'Recording title',exact:true}).fill(title);
+  await page.getByRole('textbox',{name:'Recording title',exact:true}).press('Enter');
+  await expect(page.locator('.console-title')).toHaveText(title);
+  await page.locator('.ch-name').last().click();
+  await page.getByRole('textbox',{name:'Split name',exact:true}).fill(stemName);
+  await page.getByRole('textbox',{name:'Split name',exact:true}).press('Enter');
+  await expect(page.locator('.ch-name').last()).toHaveText(stemName);
+  for (const width of [320,390,768,1280]) {
+   await page.setViewportSize({width,height:1000});
+   for (const name of [page.locator('.console-title'),page.locator('.ch-name').last()]) {
+    expect(await name.evaluate(el=>getComputedStyle(el).whiteSpace)).toBe('normal');
+    expect(await name.evaluate(el=>el.scrollWidth<=el.clientWidth+1&&el.scrollHeight<=el.clientHeight+1)).toBe(true);
+   }
+   const row=await page.locator('.channel').last().boundingBox();
+   const wave=await page.locator('.channel .meter').last().boundingBox();
+   const name=await page.locator('.ch-name').last().boundingBox();
+   expect(wave.x).toBeGreaterThanOrEqual(name.x+name.width);
+   expect(wave.x+wave.width).toBeLessThanOrEqual(row.x+row.width+1);
+   expect(wave.width).toBeGreaterThan(70);
+   if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('.console').screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/full-names-${width}.png`});}
+  }
+ } finally {await server.close();}
+});
