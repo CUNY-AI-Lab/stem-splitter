@@ -31,15 +31,16 @@ test('two connections atomically admit fifteen across courses; failures release 
  await reserve(db[1],400,bob);assert.equal((await splitAllowance(db[1],bob,new Date(now))).remaining,14);
  assert.equal(await settleOperation(db[0],admitted[8].id,'succeeded'),false);
 });
-test('two connections atomically reserve five assistant turns across courses; partial and failed requests release capacity',async t=>{
+test('two connections enforce the shared attempt protection while failed member replies release daily capacity',async t=>{
  const db=setup(t);await user(db[0],alice);
- const results=await Promise.allSettled(Array.from({length:60},(_,i)=>reserve(db[i%2],i,alice,'chat')));assert.equal(results.filter(r=>r.status==='fulfilled').length,5);
+ const results=await Promise.allSettled(Array.from({length:60},(_,i)=>reserve(db[i%2],i,alice,'chat')));assert.equal(results.filter(r=>r.status==='fulfilled').length,10);
  const first=await reserve(db[1],0,alice,'chat');assert.equal(first.created,false);
  await assert.rejects(reserveOperation(db[1],{subject:alice,courseId:'course-b',kind:'chat',key:'request-number-0000',fingerprint:'different',phase:'chat',now}),OperationError);
  await settleOperation(db[0],first.operation.id,'partial',null,{text:'Partial answer'});
  const second=await reserve(db[0],1,alice,'chat');await settleOperation(db[0],second.operation.id,'failed');
- const count=await listeningUsage(db[0],alice,now);assert.equal(count.successfulTurns,0);assert.equal(count.inProgress,3);assert.equal(count.remainingTurns,2);
- await reserve(db[1],70,alice,'chat');await reserve(db[0],71,alice,'chat');await assert.rejects(reserve(db[0],72,alice,'chat'),OperationError);
+ const count=await listeningUsage(db[0],alice,now);assert.equal(count.successfulTurns,0);assert.equal(count.inProgress,8);assert.equal(count.remainingTurns,42);
+ await assert.rejects(reserve(db[0],72,alice,'chat'),(error:any)=>error.code==='listening_attempt_limit');
+ await reserve(db[1],70,alice,'chat',now+60001);await reserve(db[0],71,alice,'chat',now+60001);
 });
 test('every verified role enforces the same daily cap in reservations and account readback',async t=>{
  const db=setup(t);

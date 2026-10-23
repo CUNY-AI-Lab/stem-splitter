@@ -110,7 +110,7 @@
       if (!preserveReview) { resetConversation(); annotationGeneration++; annotationJob = null; el('notes').replaceChildren(); el('notes-section').hidden = true; }
     }
     const view = studentGeneration;
-    el('student').hidden = false; el('student-name').textContent = person.own ? 'My course splits' : `${person.displayName || 'Student'} · Course splits`;
+    el('student').hidden = false; el('student-name').textContent = person.own ? 'Course record' : `${person.displayName || 'Student'} · Course splits`;
     el('jobs-status').textContent = 'Loading splits…'; el('jobs-more').disabled = true;
     try {
       const data = await request(coursePath(`/participants/${encodeURIComponent(person.memberId)}/jobs${append && jobsCursor ? `?cursor=${encodeURIComponent(jobsCursor)}` : ''}`));

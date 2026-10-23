@@ -22,7 +22,7 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
  network.listen({onUnhandledRequest(request,print){if(new URL(request.url).origin===f.url.origin)return;print.error();}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{
-  await context.setExtraHTTPHeaders({'x-fixture-identity':f.admin});await page.goto(new URL('/teacher.html',f.url).href);
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.admin});await page.goto(new URL('/teacher.html',f.url).href);await page.locator('#sample-editor-summary').click();
   await expect(page.locator('#sample-selected .sample-card')).toHaveCount(6);
   await expect(page.locator('#sample-selected')).toContainText('Bill Evans');await expect(page.locator('#sample-selected')).not.toContainText(/\b(jazz|electronic|country|funk|rock|folk) ·/);
   await expect(page.locator('#sample-selected')).toContainText('complete import tested');
@@ -57,7 +57,7 @@ test('instructor searches Archive incrementally, selects songs, drags and saves 
   const saved=await(await f.harness.fetch('/api/teacher/song-samples',{headers:{'x-fixture-identity':f.admin}})).json(),snapshot=saved.settings;
   expect(saved.revision).toBe(1);expect(snapshot.tracks[0].title).toBe('Fixture piano');expect(snapshot.holdMs).toBe(4000);expect(snapshot.cadenceMs).toBe(7000);expect(snapshot.enabled).toBe(false);expect(snapshot.reshuffle).toBe(false);
   expect((await(await f.harness.fetch('/api/song-samples')).json()).updatedBy).toBeUndefined();
-  await page.reload();await expect(cards.first()).toContainText('Fixture piano');await expect(page.locator('#samples-hold')).toHaveValue('4');await expect(page.locator('#samples-cadence')).toHaveValue('7');await expect(page.locator('#samples-enabled')).not.toBeChecked();await expect(page.locator('#samples-reshuffle')).not.toBeChecked();
+  await page.reload();await page.locator('#sample-editor-summary').click();await expect(cards.first()).toContainText('Fixture piano');await expect(page.locator('#samples-hold')).toHaveValue('4');await expect(page.locator('#samples-cadence')).toHaveValue('7');await expect(page.locator('#samples-enabled')).not.toBeChecked();await expect(page.locator('#samples-reshuffle')).not.toBeChecked();
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('#sample-editor-title').scrollIntoViewIfNeeded();await page.screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/instructor-song-editor-mobile.png',animations:'disabled'});}
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});await page.reload();await expect(page.locator('#console-panel')).toBeHidden();
@@ -84,7 +84,7 @@ test('instructor edits imported names, cancels drafts and preserves the exact Ar
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.admin});
   const before=await(await f.harness.fetch('/api/teacher/song-samples',{headers:{'x-fixture-identity':f.admin}})).json();
   const original=before.settings.tracks[0];
-  await page.goto(new URL('/teacher.html',f.url).href);
+  await page.goto(new URL('/teacher.html',f.url).href);await page.locator('#sample-editor-summary').click();
   const card=page.locator('#sample-selected .sample-card').first();
   await card.getByRole('button',{name:`Edit names: ${original.title}`,exact:true}).click();
   await card.getByLabel('Artist',{exact:true}).fill('Unfinished draft');

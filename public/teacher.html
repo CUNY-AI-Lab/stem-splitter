@@ -2,8 +2,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor Console</title>
-<link rel="stylesheet" href="/styles.css?v=20261023-refined-workspace" />
-<link rel="stylesheet" href="/instructor-console.css?v=20261021-song-controls-r2" />
+<link rel="stylesheet" href="/styles.css?v=20261023-workspace-release" />
+<link rel="stylesheet" href="/instructor-console.css?v=20261023-workspace-release" />
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso" />
 
 <div class="grain" aria-hidden="true"></div>
@@ -98,9 +98,11 @@
       </form>
     </section>
 
-    <section class="teacher-prompt-section sample-editor" aria-labelledby="sample-editor-title">
-      <h2 id="sample-editor-title">Search examples</h2>
-      <p class="teacher-help">Choose the songs suggested in the Splitter search field. Search Internet Archive for complete recordings up to five minutes. Songs appear in this order first; unavailable recordings are skipped.</p>
+    <details id="sample-editor" class="teacher-prompt-section sample-editor" aria-labelledby="sample-editor-title">
+      <summary id="sample-editor-summary" aria-expanded="false">
+        <h2 id="sample-editor-title">Search examples</h2>
+        <p class="teacher-help">Choose the songs suggested in the Splitter search field.</p>
+      </summary>
       <form id="sample-settings-form" class="teacher-form">
         <label class="sample-check"><input type="checkbox" id="samples-enabled" /> Show song suggestions</label>
         <div class="sample-timing">
@@ -120,7 +122,7 @@
         <p id="sample-settings-meta" class="teacher-help"></p>
         <p id="sample-settings-status" class="teacher-status mono" role="status"></p>
       </form>
-    </section>
+    </details>
 
     <details id="preview-wrap" class="teacher-preview" hidden>
       <summary>Saved prompt preview</summary>
@@ -182,6 +184,6 @@
 </main>
 
 <script src="/session-guard.js?v=20261020-report-draft"></script>
-<script src="/guest-claim.js?v=20261022-workspace-progress"></script>
-<script src="/teacher.js?v=20261021-editable-titles"></script>
-<script type="module" src="/classroom-feedback.js?v=20261022-workspace-progress"></script>
+<script src="/guest-claim.js?v=20261023-workspace-release"></script>
+<script src="/teacher.js?v=20261023-workspace-release"></script>
+<script type="module" src="/classroom-feedback.js?v=20261023-workspace-release"></script>

@@ -76,6 +76,11 @@ test('instructor reviews course roster, splits and paginated conversations and e
       await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Workspace');
       expect((await page.locator('#classroom-course').boundingBox()).height).toBeGreaterThanOrEqual(44);
       if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(104);
+      for (const id of ['#classroom-create','#classroom-own-splits']) {
+        const box=await page.locator(id).boundingBox();
+        expect(box.height).toBeGreaterThanOrEqual(44); expect(box.height).toBeLessThanOrEqual(46);
+      }
+      await expect(page.locator('#classroom-own-splits')).toHaveText('Course record');
       await page.locator('#classroom-messages').focus();
       await expect(page.locator('#classroom-messages')).toBeFocused();
       expect(await page.locator('#classroom-messages').evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
@@ -110,7 +115,7 @@ test('an instructor outside the student roster can add their own course split to
   try {
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.bob, 'x-fixture-course-role': 'owner' });
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
-    await page.getByRole('button', { name: 'My course splits', exact: true }).click();
+    await page.getByRole('button', { name: 'Course record', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Instructor course fixture');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Class fixture recording');
     await page.getByRole('button', { name: 'Annotations', exact: true }).click();

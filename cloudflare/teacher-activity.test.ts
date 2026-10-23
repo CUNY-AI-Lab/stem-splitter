@@ -9,7 +9,7 @@ import type {AppPrincipal} from '../src/identity.ts';
 import {verifyCailIdentity} from './verify.ts';
 import {courseFixture} from './course-fixture.ts';
 import {recordClientUses} from '../src/reliability/observability.ts';
-import {namedUsers} from '../src/teacher-activity.ts';
+import {namedUsers,guestActivity} from '../src/teacher-activity.ts';
 const issuer=await createTestIdentityIssuer();
 const [alice,bob,teacher,admin]=[TEST_SUBJECTS.alice,TEST_SUBJECTS.bob,TEST_SUBJECTS.carol,'cail-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'];
 const tokens=new Map(await Promise.all([alice,bob,teacher,admin].map(async subject=>[subject,await issuer.mintIdentityJwt({subject,audience:'cail:stem-splitter'})] as const)));
@@ -82,5 +82,9 @@ test('claimed guest work contributes to account activity once while retaining it
  const usage=(await usageBySubject({DB:db} as Env,[alice],now)).get(alice)!;
  assert.equal(usage.runs,1);assert.equal(usage.completed,1);assert.equal(usage.guideTurns,1);
  assert.equal(usage.lastActiveAt,new Date(now-1000).toISOString());
+ const guests=await guestActivity({DB:db} as Env,{subject:admin,role:'admin'} as AppPrincipal);
+ assert.deepEqual(guests,{days:30,browserSessions:1,splitAttempts:1,completedSplits:1,sessionsWithSplits:1,splitsSavedToAccounts:1});
+ assert.doesNotMatch(JSON.stringify(guests),/Private guest|guest-[a-f0-9]{64}|cail-/);
+ await assert.rejects(guestActivity({DB:db} as Env,{subject:alice,role:'student'} as AppPrincipal),(error:any)=>error.status===403);
  assert.equal((await db.prepare("SELECT subject FROM app_operations WHERE id='guest-split'").first<any>()).subject,guest);
 });

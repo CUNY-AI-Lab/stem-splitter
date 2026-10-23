@@ -79,3 +79,18 @@ export async function studentActivity(env:Env,actor:AppPrincipal) {
   const usage=await usageBySubject(env,users.map(user=>user.subject));
   return users.map(user=>({subject:user.subject,displayName:user.displayName,...usage.get(user.subject)!}));
 }
+
+export async function guestActivity(env:Env,actor:AppPrincipal) {
+  if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');
+  const since=Date.now()-30*86400000;
+  const [sessions,splits,claims]=await Promise.all([
+    env.DB.prepare('SELECT COUNT(*) AS n FROM guest_sessions WHERE created_at>=?').bind(since).first<{n:number}>(),
+    env.DB.prepare(`SELECT COUNT(*) AS attempts,SUM(state='succeeded') AS completed,COUNT(DISTINCT subject) AS sessions
+      FROM app_operations WHERE quota_class='guest' AND kind='split' AND created_at>=?`).bind(since).first<{attempts:number;completed:number|null;sessions:number}>(),
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM guest_job_claims c JOIN app_operations o ON o.job_id=c.job_id
+      AND o.subject=c.guest_subject WHERE o.kind='split' AND o.state='succeeded' AND o.created_at>=?`).bind(since).first<{n:number}>(),
+  ]);
+  if(!sessions||!splits||!claims)throw new Error('Guest activity unavailable');
+  return {days:30,browserSessions:sessions.n,splitAttempts:splits.attempts,completedSplits:splits.completed??0,
+    sessionsWithSplits:splits.sessions,splitsSavedToAccounts:claims.n};
+}

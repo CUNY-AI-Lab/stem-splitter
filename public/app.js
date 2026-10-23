@@ -452,8 +452,8 @@ let listeningUsage = null;
 const guestListeningUsages = new Map();
 let listeningUsageRequest = null;
 function acceptListeningUsage(value) {
-  if (!value || value.limit !== 5 || !Number.isInteger(value.remainingTurns)
-    || value.remainingTurns < 0 || value.remainingTurns > 5) return;
+  if (!value || value.limit !== 50 || !Number.isInteger(value.remainingTurns)
+    || value.remainingTurns < 0 || value.remainingTurns > value.limit) return;
   const serverTime = Date.parse(value.serverTime);
   if (value.scope === 'recording' && typeof value.jobId === 'string' && guestSessionActive) {
     const existing = guestListeningUsages.get(value.jobId);
@@ -465,8 +465,8 @@ function acceptListeningUsage(value) {
   const cooldownUntil = value.cooldownUntil === null ? null : Date.parse(value.cooldownUntil);
   if (!Number.isFinite(serverTime) || (cooldownUntil !== null && !Number.isFinite(cooldownUntil))) return;
   if (listeningUsage && serverTime < listeningUsage.serverTime) return;
-  listeningUsage = { remainingTurns: value.remainingTurns, inProgress: Number.isInteger(value.inProgress) ? value.inProgress : 0, serverTime,
-    availableAt: cooldownUntil === null ? 0 : Date.now() + Math.max(0, cooldownUntil - serverTime) };
+  listeningUsage = { limit: value.limit, remainingTurns: value.remainingTurns, inProgress: Number.isInteger(value.inProgress) ? value.inProgress : 0, serverTime,
+    availableAt: 0 };
   for (const mixer of mixers.values()) mixer.renderListeningUsage();
 }
 function listeningWaitSeconds() {
@@ -3050,20 +3050,18 @@ class Mixer {
     const show = runtime.authMode === 'cail' && listeningUsage;
     this.coachUsage.hidden = !show;
     if (show) {
-      const summary = seconds ? 'Five turns used. You can continue in '
-        : listeningUsage.remainingTurns === 0 && listeningUsage.inProgress > 0 ? 'Replies are in progress. Please wait before continuing.'
-          : `${listeningUsage.remainingTurns ?? 5} of 5 turns left before a five-minute pause.`;
+      const summary = `${listeningUsage.remainingTurns} of ${listeningUsage.limit} chat turns left today.`;
       const status = this.coachUsage.querySelector('.coach-usage-status');
       if (status.textContent !== summary) status.textContent = summary;
       this.coachUsage.querySelector('.coach-cooldown-timer').textContent = seconds
         ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}. Your draft stays here.` : '';
     }
     const submit = this.coachForm.querySelector('[type="submit"]');
-    const waiting = seconds > 0 || Boolean(listeningUsage?.inProgress && listeningUsage.remainingTurns === 0);
+    const waiting = Boolean(listeningUsage && listeningUsage.remainingTurns === 0);
     submit.disabled = this.coachBusy || (waiting && !this.pendingChat);
     submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
     const cue = this.coachGuide.querySelector('.coach-cue-btn');
-    if (cue) cue.disabled = this.coachBusy || (waiting && !this.pendingGuide);
+    if (cue) cue.disabled = this.coachBusy;
     this.coachResetBtn.disabled = this.coachBusy;
   }
 

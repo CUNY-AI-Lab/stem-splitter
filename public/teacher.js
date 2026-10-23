@@ -656,6 +656,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // Public song metadata only; teacher credentials remain in the existing session.
 const sampleForm=document.getElementById('sample-settings-form');
+const sampleEditor=document.getElementById('sample-editor');
+sampleEditor.addEventListener('toggle',()=>{document.getElementById('sample-editor-summary').setAttribute('aria-expanded',String(sampleEditor.open));});
 const sampleSearch=document.getElementById('sample-search');
 const sampleResults=document.getElementById('sample-search-results');
 const sampleSelected=document.getElementById('sample-selected');

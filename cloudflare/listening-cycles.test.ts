@@ -46,39 +46,34 @@ async function setup() {
  return {db,env,request,job,chat,events,calls:()=>calls,mode:(v:string)=>{mode=v;},expire:()=>{valid=false;}};
 }
 
-test('cue and chat share five successful turns; sixth waits, cached/replayed reads remain free, exact cooldown boundary resumes',async t=>{
- const f=await setup();await f.job('personal');let now=Date.now();t.mock.method(Date,'now',()=>now);
+test('signed-in cue and chat continue beyond five replies without a pause; cached and replayed reads stay free',async()=>{
+ const f=await setup();await f.job('personal');
  const cue=await f.events(await f.request('/api/jobs/personal/guide','POST',{messageId:'cue-request-number-0001'}));
- assert.equal(cue.at(-1).usage.successfulTurns,1);
+ assert.equal(cue.at(-1).type,'done');assert.equal(cue.at(-1).usage.successfulTurns,0,'cues retain their separate daily allowance');
  const body=f.chat('personal','chat-request-number-0001');
- for(let i=1;i<=4;i++) {
-  const response=await f.events(await f.request('/api/jobs/personal/chat','POST',{...body,messageId:`chat-request-number-000${i}`}));
-  assert.equal(response.at(-1).type,'done');assert.equal(response.at(-1).usage.successfulTurns,i+1);
+ for(let i=1;i<=6;i++) {
+  const events=await f.events(await f.request('/api/jobs/personal/chat','POST',{...body,messageId:`chat-request-number-000${i}`}));
+  assert.equal(events.at(-1).type,'done');assert.equal(events.at(-1).usage.successfulTurns,i);
+  assert.equal(events.at(-1).usage.remainingTurns,50-i);assert.equal(events.at(-1).usage.cooldownUntil,null);
  }
- const rejected=await f.request('/api/jobs/personal/chat','POST',{...body,messageId:'chat-request-number-0005'});
- assert.equal(rejected.status,429);assert.equal(rejected.headers.get('retry-after'),'300');
- const failure=await rejected.json() as any;assert.equal(failure.code,'listening_cooldown');assert.equal(failure.usage.remainingTurns,0);
- assert.equal(failure.cooldownUntil,new Date(now+300000).toISOString());assert.equal(f.calls(),5);
  const replay=await f.events(await f.request('/api/jobs/personal/chat','POST',body));
- assert.equal(replay.at(-1).replayed,true);assert.equal(replay.at(-1).usage.successfulTurns,5);assert.equal(f.calls(),5);
+ assert.equal(replay.at(-1).replayed,true);assert.equal(replay.at(-1).usage.successfulTurns,6);assert.equal(f.calls(),7);
  const cached=await f.events(await f.request('/api/jobs/personal/guide','POST',{messageId:'cue-request-number-0001'}));
- assert.equal(cached.at(-1).cached,true);assert.equal(cached.at(-1).usage.successfulTurns,5);assert.equal(f.calls(),5);
- now+=299999;assert.equal((await f.request('/api/jobs/personal/chat','POST',{...body,messageId:'chat-request-number-0005'})).status,429);
- now++;const refreshed=await(await f.request('/api/listening-usage')).json() as any;
- assert.equal(refreshed.remainingTurns,5);assert.equal(refreshed.cooldownUntil,null);
- const next=await f.events(await f.request('/api/jobs/personal/chat','POST',{...body,messageId:'chat-request-number-0005'}));
- assert.equal(next.at(-1).usage.successfulTurns,1);assert.equal(f.calls(),6);
+ assert.equal(cached.at(-1).cached,true);assert.equal(f.calls(),7);
+ const usage=await(await f.request('/api/listening-usage')).json() as any;
+ assert.equal(usage.limit,50);assert.equal(usage.remainingTurns,44);assert.equal(usage.cooldownUntil,null);
 });
 
-test('parallel tabs reserve at most five across jobs and kinds; completion is charged once despite late retries',async()=>{
+test('parallel signed-in requests retain burst protection beyond five and charge completion once',async()=>{
  const f=await setup();
  const results=await Promise.allSettled(Array.from({length:16},(_,i)=>reserveAssistant(f.env,alice,null,i%2?'chat':'guide',`parallel-request-${String(i).padStart(4,'0')}`,`job-${i}`,{i})));
- const admitted=results.flatMap(r=>r.status==='fulfilled'?[r.value.operation]:[]);assert.equal(admitted.length,5);
- const held=await listeningUsage(f.db,alice);assert.equal(held.inProgress,5);assert.equal(held.remainingTurns,0);assert.equal(held.cooldownUntil,null);
- for(const r of results)if(r.status==='rejected')assert.equal(r.reason.code,'listening_in_progress');
+ const admitted=results.flatMap(r=>r.status==='fulfilled'?[r.value.operation]:[]);assert.equal(admitted.length,10);
+ const chatCount=admitted.filter(op=>op.kind==='chat').length;
+ const held=await listeningUsage(f.db,alice);assert.equal(held.inProgress,chatCount);assert.equal(held.remainingTurns,50-chatCount);assert.equal(held.cooldownUntil,null);
+ for(const r of results)if(r.status==='rejected')assert.equal(r.reason.code,'listening_attempt_limit');
  await Promise.all(admitted.map(op=>assistantReceipt(f.env,op).complete('Successful reply')));
  await assert.rejects(assistantReceipt(f.env,admitted[0]).complete('Duplicate'),/ended/);
- const used=await listeningUsage(f.db,alice);assert.equal(used.successfulTurns,5);assert.equal(used.inProgress,0);assert.ok(used.cooldownUntil);
+ const used=await listeningUsage(f.db,alice);assert.equal(used.successfulTurns,chatCount);assert.equal(used.inProgress,0);assert.equal(used.cooldownUntil,null);
  const other=await reserveAssistant(f.env,bob,null,'chat','another-user-request-01','job',{});assert.equal(other.replay,false);
 });
 
@@ -87,7 +82,7 @@ test('failures, partial streams and timeouts use no successful turn; uncertain r
  for(const mode of ['failed','partial','uncertain']) {
   f.mode(mode);const body=f.chat('failure',`failure-request-${mode}-01`);
   const result=await f.events(await f.request('/api/jobs/failure/chat','POST',body));
-  assert.equal(result.at(-1).type,'error');assert.equal(result.at(-1).usage.successfulTurns,0);assert.equal(result.at(-1).usage.remainingTurns,5);
+  assert.equal(result.at(-1).type,'error');assert.equal(result.at(-1).usage.successfulTurns,0);assert.equal(result.at(-1).usage.remainingTurns,50);
   const retry=await f.request('/api/jobs/failure/chat','POST',body);assert.equal(retry.status,409);
   const failure=await retry.json() as any;assert.equal(failure.newAttemptAllowed,mode!=='uncertain');
   if(mode==='uncertain') {
@@ -128,9 +123,9 @@ test('real Gateway adapter rejects empty and truncated cue/chat output without c
  assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM app_operations WHERE state='succeeded'").first<any>()).n,0);
  content='Listen for the bass.';finishReason='stop';
  const result=await f.events(await f.request('/api/jobs/gateway-output/guide','POST',{messageId:'complete-output-guide-01'}));
- assert.equal(result.at(-1).type,'done');assert.equal(result.at(-1).usage.successfulTurns,1);
+ assert.equal(result.at(-1).type,'done');assert.equal(result.at(-1).usage.successfulTurns,0);
  const cached=await f.events(await f.request('/api/jobs/gateway-output/guide','POST',{messageId:'complete-output-guide-01'}));
- assert.equal(cached.at(-1).cached,true);assert.equal(cached.at(-1).usage.successfulTurns,1);assert.equal(calls,7);
+ assert.equal(cached.at(-1).cached,true);assert.equal(cached.at(-1).usage.successfulTurns,0);assert.equal(calls,7);
 });
 
 test('lost runner and in-flight retry cannot regenerate or deliver after their lease; expired identity cannot read replay',async()=>{
@@ -139,7 +134,7 @@ test('lost runner and in-flight retry cannot regenerate or deliver after their l
  await assert.rejects(reserveAssistant(f.env,alice,null,'chat',key,'lease',input),(e:any)=>e.code==='listening_in_progress'&&!e.details.newAttemptAllowed);
  await recoverListeningOperations(f.db,alice,Date.now()+90001);
  await assert.rejects(assistantReceipt(f.env,reserved.operation).complete('Too late'),/ended/);
- assert.equal((await listeningUsage(f.db,alice)).remainingTurns,5);
+ assert.equal((await listeningUsage(f.db,alice)).remainingTurns,50);
  const body=f.chat('lease','saved-before-expiry-01');await f.events(await f.request('/api/jobs/lease/chat','POST',body));
  f.expire();assert.equal((await f.request('/api/listening-usage')).status,401);
  assert.equal((await f.request('/api/jobs/lease/chat','POST',body)).status,401);assert.equal(f.calls(),1);
@@ -154,18 +149,16 @@ test('ten failed attempts per rolling minute are bounded; same-key retry does no
  now+=60000;await reserveAssistant(f.env,alice,null,'chat','short-window-request-10','job',{});
 });
 
-test('continued signed-in usage exceeds historical daily caps while global cue protection stays in force',async t=>{
- // These 17 five-minute cycles must stay in one UTC day. Starting from the
- // wall clock made the fixture's 43 guides span two days in late-evening CI.
+test('signed-in use continues beyond five while daily and global cue protection stay in force',async t=>{
  const f=await setup();let now=Date.parse('2026-10-21T12:00:00Z');t.mock.method(Date,'now',()=>now);
- for(let i=0;i<85;i++) {
+ for(let i=0;i<30;i++) {
   const op=await reserveAssistant(f.env,alice,null,i%2?'chat':'guide',`continued-request-${String(i).padStart(4,'0')}`,'job',{});
-  await assistantReceipt(f.env,op.operation).complete('Complete');if(i%5===4)now+=300000;
+  await assistantReceipt(f.env,op.operation).complete('Complete');now+=6000;
  }
- assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<any>()).n,85);
- // Existing shared guide protection is independent of the per-person cycle.
+ assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<any>()).n,30);
+ // Existing shared guide protection is independent of the per-person allowance.
  const day=new Date(now).toISOString().slice(0,10);
- for(let i=0;i<157;i++)await f.db.prepare(`INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,request_json,deadline,created_at,updated_at)
+ for(let i=0;i<185;i++)await f.db.prepare(`INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,request_json,deadline,created_at,updated_at)
    VALUES(?,?,'member','guide',?,'fixture',?,'failed','guide','{}',?,?,?)`).bind(`global-${i}`,bob,`global-guide-${i}`,day,now+1000,now-120000,now-120000).run();
  assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM app_operations WHERE kind='guide' AND day=?").bind(day).first<any>()).n,200);
  await assert.rejects(reserveAssistant(f.env,alice,null,'guide','global-limit-request-01','job',{}),(e:any)=>e.code==='guide_attempt_limit');
@@ -214,7 +207,7 @@ test('personal reset atomically fences a live runner and cannot recreate erased 
  await assert.rejects(receipt.effect(),/ended/);
  await assert.rejects(receipt.complete('Discarded private reply',{text:'Discarded private reply'}),/ended/);
  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM listening_reply_receipts').first<any>()).n,0);
- assert.equal((await readOperation(f.db,operation.id))?.state,'cancelled');assert.equal((await listeningUsage(f.db,alice)).remainingTurns,5);
+ assert.equal((await readOperation(f.db,operation.id))?.state,'cancelled');assert.equal((await listeningUsage(f.db,alice)).remainingTurns,50);
 });
 
 test('lost database acknowledgement after completion preserves the same key for free readback',async()=>{
@@ -248,4 +241,18 @@ test('personal and course completion readback repeats local mixer calls but neve
   assert.equal(replay.at(-1).replayed,true);assert.equal(calls,1);
   assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM annotations WHERE job_id='tools'").first<any>()).n,1);
  }
+});
+
+test('authenticated accounts retain fifty successful daily chat turns and failed turns release their place',async()=>{
+ const f=await setup(), now=Date.now(), day=new Date(now).toISOString().slice(0,10);
+ for(let i=0;i<49;i++) await f.db.prepare(`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at)
+ VALUES(?,?,'chat',?,'fixture',?,'succeeded','chat',?,?,?)`).bind(`daily-${i}`,alice,`daily-member-chat-${i}`,day,now+100000,now-120000,now-120000).run();
+ const failed=await reserveAssistant(f.env,alice,null,'chat','daily-failure-request-01','job',{});
+ await assistantReceipt(f.env,failed.operation).failed();
+ assert.equal((await listeningUsage(f.db,alice)).remainingTurns,1);
+ const last=await reserveAssistant(f.env,alice,null,'chat','daily-final-request-001','job',{});
+ await assistantReceipt(f.env,last.operation).complete('Complete reply');
+ assert.equal((await listeningUsage(f.db,alice)).remainingTurns,0);
+ await assert.rejects(reserveAssistant(f.env,alice,null,'chat','daily-over-cap-request-1','job',{}),{code:'chat_daily_limit'});
+ await reserveAssistant(f.env,alice,null,'guide','daily-cue-independent-01','job',{});
 });

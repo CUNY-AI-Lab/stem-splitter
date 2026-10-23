@@ -1,7 +1,7 @@
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
 import { isPlaylistSample, playlistSampleResponse } from './playlist-samples.ts';
-import { namedUsers, studentActivity, requireStudentReview } from './teacher-activity.ts';
+import { namedUsers, studentActivity, guestActivity, requireStudentReview } from './teacher-activity.ts';
 import { runDeletionEnabled, runWasDeleted, deleteOwnedRun, recordFailedRunSession, purgeDeletedRuns } from './run-deletion.ts';
 import { fetchUrlAudio, parseMediaUrl, UrlImportError } from './url-import.ts';
 import { importDurationLimit } from './import-policy.ts';
@@ -343,7 +343,11 @@ app.get('/api/admin/users', async (c) => {
 });
 
 app.get('/api/teacher/students', async c=>{
-  try {return c.json({students:await studentActivity(c.env,c.get('principal')!),visitsDays:30});}
+  try {
+    const students=await studentActivity(c.env,c.get('principal')!);
+    let guests=null;try {guests=await guestActivity(c.env,c.get('principal')!);}catch {}
+    return c.json({students,guestActivity:guests,visitsDays:30});
+  }
   catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 app.get('/api/teacher/students/:subject/jobs', async c=>{

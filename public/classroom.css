@@ -10,7 +10,12 @@
 #classroom-folder-sharing { margin: 1rem 0; }
 .instructor-console #account-status { color: var(--ink-dim); margin: .75rem 0 1.25rem; }
 .instructor-console #course-discovery { margin-top: 1.25rem; }
-.instructor-console .classroom-toolbar { margin-top: 1.25rem; }
+.instructor-console .classroom-toolbar { align-items: center; gap: .5rem; margin-top: 1rem; }
+.instructor-console .classroom-toolbar :is(#classroom-create, #classroom-own-splits) {
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; min-height: 44px; padding: .45rem .7rem;
+  font: 500 .75rem/1.35 var(--font-mono); letter-spacing: 0;
+}
 .instructor-console #classroom-refresh { margin-left: auto; }
 .instructor-console #classroom-refresh-status { color: var(--ink-dim); font-size: .75rem; }
 .instructor-console #classroom-usage { padding-bottom: .75rem; border-bottom: 1px solid var(--panel-edge); }

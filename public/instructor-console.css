@@ -143,3 +143,8 @@
   .instructor-console :is(input:not([type="checkbox"]), select, textarea) { font-size: 1rem; }
   .console-nav { gap: 0 1.1rem; }
 }
+
+.instructor-console .sample-editor > summary { cursor: pointer; }
+.instructor-console .sample-editor > summary h2 { display: inline; }
+.instructor-console .sample-editor > summary .teacher-help { margin-bottom: 0; }
+.instructor-console .sample-editor[open] > summary { margin-bottom: 1rem; }

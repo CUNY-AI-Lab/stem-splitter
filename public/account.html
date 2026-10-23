@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Stem Splitter · Settings</title>
-<link rel="stylesheet" href="/styles.css?v=20261023-refined-workspace">
+<link rel="stylesheet" href="/styles.css?v=20261023-workspace-release">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 <main class="teacher-main account-main refined-ui">
   <header class="masthead">
@@ -31,7 +31,7 @@
       </section>
       <section aria-labelledby="account-listening-label">
         <h3 id="account-listening-label">Listening Guy</h3>
-        <p id="account-listening">Five turns, then a five-minute pause.</p>
+        <p id="account-listening">Listening Guy uses your Lab model allowance.</p>
       </section>
       <section aria-labelledby="account-quota-label">
         <h3 id="account-quota-label">Lab model allowance</h3>
@@ -43,6 +43,12 @@
   <details id="student-review" class="account-disclosure" hidden>
     <summary>Student activity</summary>
     <p class="account-help">Select a student to see their split runs and load a recording. Visits reflect the past 30 days.</p>
+    <section aria-labelledby="guest-activity-title">
+      <h3 id="guest-activity-title">Guest activity · past 30 days</h3>
+      <p id="guest-activity" role="status">Guest activity unavailable.</p>
+      <p class="account-help">Browser sessions include repeat use and testing. Splits saved to accounts also appear under those accounts.</p>
+    </section>
+    <h3>Signed-in accounts</h3>
     <p id="student-status" role="status"></p>
     <button id="student-retry" class="account-button" type="button" hidden>Try again</button>
     <section id="student-detail" hidden aria-live="polite">
@@ -91,7 +97,7 @@
   </footer>
 </main>
 <script src="/session-guard.js?v=20261020-report-draft"></script>
-<script src="/guest-claim.js?v=20261022-workspace-progress"></script>
-<script src="/account.js?v=20261022-workspace-progress"></script>
-<script type="module" src="/classroom-feedback.js?v=20261022-workspace-progress"></script>
+<script src="/guest-claim.js?v=20261023-workspace-release"></script>
+<script src="/account.js?v=20261023-workspace-release"></script>
+<script type="module" src="/classroom-feedback.js?v=20261023-workspace-release"></script>
 </html>

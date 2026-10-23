@@ -98,7 +98,7 @@ test('ninety-day purge redacts private request/cache content but preserves an un
  assert.equal((await db.prepare('SELECT outcome FROM operation_attempts WHERE id=?').bind(attempt).first<{outcome:string}>())!.outcome,'uncertain');
 });
 
-test('chat accounting never copies content; failed or partial replies release cycle capacity and settled retry cannot call a model',async t=>{
+test('chat accounting never copies content; failed or partial replies release daily capacity and settled retry cannot call a model',async t=>{
  const {db,env}=await setup(t);
  const first=await reserveAssistant(env,subject,null,'chat','human-message-0001','job',[]);const receipt=assistantReceipt(env,first.operation);
  await receipt.delta('Secret transcript');await receipt.failed();await assert.rejects(receipt.complete('Late secret'),/input ended/);
@@ -109,8 +109,8 @@ test('chat accounting never copies content; failed or partial replies release cy
  assert.equal((await readOperation(db,third.operation.id))!.error_code,'no_usable_response');
  await assert.rejects(assistantReceipt(env,third.operation).delta('Late output'));
  const fourth=await reserveAssistant(env,subject,null,'chat','human-message-0004','job',[]);await assistantReceipt(env,fourth.operation).effect();await recoverExpired(db,Date.now()+90001);
- assert.equal((await readOperation(db,fourth.operation.id))!.error_code,'delivery_uncertain');assert.equal((await operationAllowance(db,subject,'chat')).completed,2);
- assert.equal((await listeningUsage(db,subject)).successfulTurns,0);assert.equal((await listeningUsage(db,subject)).remainingTurns,5);
+ assert.equal((await readOperation(db,fourth.operation.id))!.error_code,'delivery_uncertain');assert.equal((await operationAllowance(db,subject,'chat')).completed,0);
+ assert.equal((await listeningUsage(db,subject)).successfulTurns,0);assert.equal((await listeningUsage(db,subject)).remainingTurns,50);
  await assert.rejects(assistantReceipt(env,fourth.operation).complete('Late usable result'),/input ended/);
  const fifth=await reserveAssistant(env,subject,null,'chat','human-message-0005','job',[]);
  await assert.rejects(assistantReceipt(env,fifth.operation).complete('  '),/could not finish/);

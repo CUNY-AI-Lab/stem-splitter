@@ -20,49 +20,36 @@ async function fixture(browser) {
   } });
   const page = await context.newPage();
   await page.route('**/api/files/stems/listening-fixture/*', route => route.fulfill({ contentType: 'audio/mpeg', body: Buffer.alloc(0) }));
-  let currentUsage = usage(5);
+  let currentUsage = usage(50);
   await page.route('**/api/listening-usage', route => route.fulfill({ json: currentUsage }));
   return { page, setUsage: value => { currentUsage = value; }, open: async () => {
     await page.goto(new URL('/?job=listening-fixture', url).href);
     await expect(page.locator('.console')).toBeVisible();
     await page.locator('.coach-toggle').click();
-    await expect(page.locator('.coach-usage')).toContainText('5 of 5');
+    await expect(page.locator('.coach-usage')).toContainText('50 of 50');
   }, close: async () => { await context.close(); await server.close(); } };
 }
 function usage(remainingTurns, seconds = 0) {
   const now = Date.now();
-  return { ok: true, limit: 5, remainingTurns, inProgress: 0, serverTime: new Date(now).toISOString(), cooldownUntil: seconds ? new Date(now + seconds * 1000).toISOString() : null };
+  return { ok: true, limit: 50, remainingTurns, inProgress: 0, serverTime: new Date(now).toISOString(), cooldownUntil: seconds ? new Date(now + seconds * 1000).toISOString() : null };
 }
 const reply = (text, state) => `data: ${JSON.stringify({ type: 'done', text, model: 'fixture', usage: state })}\n\n`;
 
-test('the fifth completed reply starts a visible cooldown and automatically enables continued use without sending', async ({ browser }) => {
-  const f = await fixture(browser);
-  try {
-    await f.page.clock.install();
-    let calls = 0;
-    await f.page.route('**/api/jobs/listening-fixture/chat', async route => {
-      const state = usage(Math.max(0, 5 - ++calls), calls === 5 ? 300 : 0);
-      f.setUsage(state);
-      await route.fulfill({ contentType: 'text/event-stream', body: reply(`Reply ${calls}.`, state) });
-    });
-    await f.open();
-    const input = f.page.getByRole('textbox', { name: 'Ask the Listening Guide' });
-    const ask = f.page.getByRole('button', { name: 'ASK', exact: true });
-    for (let turn = 1; turn <= 5; turn++) {
-      await input.fill(`Question ${turn}`); await ask.click();
-      await expect(f.page.locator('.coach-row.coach').last()).toContainText(`Reply ${turn}.`);
-    }
-    await expect(ask).toBeDisabled();
-    await expect(f.page.locator('.coach-usage-status')).toContainText('Five turns used');
-    await input.fill('My next question stays here.');
-    f.setUsage(usage(5));
-    await f.page.clock.fastForward(300100);
-    await expect(ask).toBeEnabled();
-    await expect(input).toHaveValue('My next question stays here.');
-    expect(calls).toBe(5);
-    await ask.click();
-    await expect.poll(() => calls).toBe(6);
-  } finally { await f.close(); }
+test('authenticated accounts continue after five replies and preserve the next draft without a five-minute pause', async ({ browser }) => {
+ const f=await fixture(browser);
+ try {
+  await f.page.clock.install();let calls=0;
+  await f.page.route('**/api/jobs/listening-fixture/chat',async route=>{
+   const state=usage(50-++calls);f.setUsage(state);
+   await route.fulfill({contentType:'text/event-stream',body:reply(`Reply ${calls}.`,state)});
+  });
+  await f.open();const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'ASK',exact:true});
+  for(let turn=1;turn<=5;turn++) {await input.fill(`Question ${turn}`);await ask.click();await expect(f.page.locator('.coach-row.coach').last()).toContainText(`Reply ${turn}.`);}
+  await expect(ask).toBeEnabled();await expect(f.page.locator('.coach-usage-status')).toHaveText('45 of 50 chat turns left today.');
+  await input.fill('My next question stays here.');await f.page.clock.fastForward(300100);
+  await expect(input).toHaveValue('My next question stays here.');expect(calls).toBe(5);
+  await ask.click();await expect.poll(()=>calls).toBe(6);await expect(ask).toBeEnabled();
+ }finally{await f.close();}
 });
 
 test('an interrupted reply keeps one question and retries its exact request without a second local turn', async ({ browser }) => {
@@ -72,7 +59,7 @@ test('an interrupted reply keeps one question and retries its exact request with
     await f.page.route('**/api/jobs/listening-fixture/chat', route => {
       requests.push({ body: route.request().postDataJSON(), key: route.request().headers()['idempotency-key'] });
       return route.fulfill({ contentType: 'text/event-stream', body: requests.length === 1
-        ? 'data: {"type":"delta","text":"An incomplete reply"}\n\n' : reply('The recovered reply.', usage(4)) });
+        ? 'data: {"type":"delta","text":"An incomplete reply"}\n\n' : reply('The recovered reply.', usage(49)) });
     });
     await f.open();
     const input = f.page.getByRole('textbox', { name: 'Ask the Listening Guide' });
@@ -96,7 +83,7 @@ test('confirmed failure permits a fresh attempt while a sign-in failure retains 
     await f.page.route('**/api/jobs/listening-fixture/chat', route => {
       keys.push(route.request().headers()['idempotency-key']);
       return route.fulfill(keys.length === 1
-        ? { status: 503, json: { error: 'This attempt did not finish. You can retry.', code: 'listening_attempt_failed', newAttemptAllowed: true, usage: usage(5) } }
+        ? { status: 503, json: { error: 'This attempt did not finish. You can retry.', code: 'listening_attempt_failed', newAttemptAllowed: true, usage: usage(50) } }
         : { status: 401, json: { error: 'Sign in with CUNY Login to continue.' } });
     });
     await f.open();

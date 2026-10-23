@@ -321,7 +321,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today'); // historical attempts are not manufactured successes
     await expect(page.locator('#account-chat')).toHaveCount(0);
     const listeningAccount=await(await page.request.get(new URL('/api/account',url).href)).json();
-    expect(listeningAccount.chatAllowance).toBeNull();expect(listeningAccount.listeningUsage.remainingTurns).toBe(5);
+    expect(listeningAccount.chatAllowance).toBeNull();expect(listeningAccount.listeningUsage.remainingTurns).toBe(50);
     const clock=Date.now();
     await seed(Array.from({length:15},(_,index)=>`INSERT INTO app_operations(id,subject,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('account-operation-${index}','${TEST_SUBJECTS.alice}','split','account-operation-${index}','fixture-${index}','${day}','${index<8?'succeeded':'queued'}','split',${clock+86400000},${clock},${clock})`));
     await page.reload();
@@ -538,6 +538,11 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
    `INSERT INTO account_display_names(subject,display_name,updated_at) VALUES('${TEST_SUBJECTS.bob}','Bob Morgan',${Date.now()})`,
    `INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('remix-fixture','Student recording','uploads/fixture.wav','done','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
    `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`);
+  for(const [index,state] of ['succeeded','failed'].entries()) {
+   const guest='guest-'+String(index).repeat(64),now=Date.now();
+   sql.push(`INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES('${guest}',${now},${now+86400000},'2026-10-23')`,
+    `INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at) VALUES('guest-activity-${index}','${guest}','guest','split','guest-activity-request-${index}','hash','2026-10-23','${state}','split',${now+86400000},${now},${now})`);
+  }
   await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(sql)});
   await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
   await context.setExtraHTTPHeaders({'x-fixture-identity':identity});
@@ -558,10 +563,13 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await expect(page.locator('#student-name')).toBeInViewport();
   await expect(page.locator('#student-status')).toHaveText('Activity is temporarily unavailable.');
   await expect(page.locator('#student-summary')).toBeEmpty();
+  await expect(page.locator('#guest-activity')).toHaveText('Guest activity unavailable.');
   expect(activityReads).toBe(1);
   await page.unroute('**/api/teacher/students');
   await page.locator('#student-retry').click();
   await expect(page.locator('#student-summary')).toContainText('1 split attempt · 1 completed');
+  await expect(page.locator('#student-summary')).toContainText('Visits not recorded');
+  await expect(page.locator('#guest-activity')).toHaveText('1 completed split · 2 browser sessions · 0 splits saved to accounts');
   await expect(page.locator('#student-jobs')).toContainText('Student recording');
 
   // A slower recording response must not replace the next selected person's work.
