@@ -97,7 +97,7 @@ test('an interrupted accepted course reply can be reset using its current server
     await page.locator('.coach-toggle').click();
     const input = page.getByRole('textbox', { name: 'Ask the Listening Guide' });
     await input.fill('Reset after this interrupted course reply.');
-    await page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(page.getByRole('button', { name: 'RETRY REPLY' })).toBeEnabled();
     const accepted = await get(page, '/api/jobs/course-song/listening-conversation');
     expect(accepted.body.entries).toHaveLength(2);
@@ -107,7 +107,7 @@ test('an interrupted accepted course reply can be reset using its current server
     const response = await reset;
     expect(response.request().postDataJSON().revision).toBe(accepted.body.revision);
     expect(response.status()).toBe(200);
-    await expect(page.getByRole('button', { name: 'ASK', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
     await expect(input).not.toHaveAttribute('readonly');
     await expect(page.locator('.coach-row')).toHaveCount(0);
     expect((await get(page, '/api/jobs/course-song/listening-conversation')).body.entries).toEqual([]);
@@ -133,7 +133,7 @@ test('original Listening Guy archive loads every durable course page and keeps p
     expect(writes).toEqual([]);
     const sent = page.waitForRequest(request => new URL(request.url()).pathname === '/api/jobs/course-song/chat');
     await page.getByRole('textbox', { name: 'Ask the Listening Guide' }).fill('How does the bass relate to the drums?');
-    await page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     const chat = await sent;
     expect(chat.postDataJSON().revision).toBe(1);
     expect(chat.postDataJSON().messageId).toBeTruthy();

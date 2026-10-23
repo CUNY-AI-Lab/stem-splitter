@@ -153,3 +153,21 @@ test('guest owners can rename their recording while other guest and member recor
   assert.deepEqual(await response.json(), { filename: 'Guest’s chosen title' });
   assert.equal((await db.prepare('SELECT filename FROM jobs WHERE id=?').bind('guest-recording').first())?.filename, 'Guest’s chosen title');
 });
+
+test('folder rename preserves identity and contents, validates names and enforces existing ownership', async () => {
+  const {db,call}=await fixture();
+  const path='/api/teacher/folders/lesson';
+  const update=(name:unknown,expectedName='lesson',subject:string|null=owner)=>call(path,subject,{method:'PUT',body:JSON.stringify({name,expectedName})});
+  const before=await db.prepare('SELECT * FROM folder_items WHERE folder_id=?').bind('lesson').all();
+  for(const name of ['', '  ', 'x'.repeat(81),null])assert.equal((await update(name)).status,400);
+  assert.equal((await update('Forbidden','lesson',instructor)).status,404);
+  assert.equal((await update('Forbidden','lesson',other)).status,403);
+  assert.equal((await update('Forbidden','lesson',null)).status,401);
+  assert.equal((await update('  New teaching folder  ')).status,200);
+  assert.equal((await update('Stale edit')).status,409);
+  assert.equal((await update('New teaching folder','New teaching folder')).status,200);
+  const detail=await(await call(path)).json() as any;
+  assert.equal(detail.folder.id,'lesson');assert.equal(detail.folder.name,'New teaching folder');
+  assert.equal((await db.prepare('SELECT created_by FROM folders WHERE id=?').bind('lesson').first())?.created_by,owner);
+  assert.deepEqual(await db.prepare('SELECT * FROM folder_items WHERE folder_id=?').bind('lesson').all(),before);
+});

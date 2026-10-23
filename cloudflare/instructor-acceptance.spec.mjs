@@ -299,3 +299,104 @@ test('changing course selection clears in-flight roster and conversation results
     await expect(page.locator('body')).not.toContainText('Late private roster');
   } finally { release(); await f.harness.close(); }
 });
+
+test('routine class refresh keeps loaded content, scroll and sharing selections visible across two real cycles',async({page,context})=>{
+ test.setTimeout(60000);
+ const f=await fixture(context);let reads=0;
+ page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('/folders'))reads++;});
+ try {
+  await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
+  await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await page.getByLabel('New private folder').fill('Unsaved folder name');
+  await page.getByLabel('Who can use this folder?').selectOption('read');
+  await page.evaluate(()=>{scrollTo(0,document.body.scrollHeight);window.refreshSamples=[];window.refreshSampleTimer=setInterval(()=>{const panel=document.querySelector('#console-panel');window.refreshSamples.push({visible:getComputedStyle(panel).visibility,scroll:scrollY,text:document.querySelector('#classroom-folder-items').textContent});},20);});
+  const scroll=await page.evaluate(()=>scrollY),before=reads;
+  await page.waitForTimeout(35000);
+  const samples=await page.evaluate(()=>{clearInterval(window.refreshSampleTimer);return window.refreshSamples;});
+  expect(reads-before).toBeGreaterThanOrEqual(2);
+  expect(samples.every(s=>s.visible==='visible'&&s.text.includes('Class fixture recording'))).toBe(true);
+  expect(await page.evaluate(()=>scrollY)).toBe(scroll);
+  await expect(page.getByLabel('New private folder')).toHaveValue('Unsaved folder name');
+  await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
+  let release;const waiting=new Promise(resolve=>release=resolve);
+  await page.route('**/api/classroom/courses/*/folders',async route=>{await waiting;await route.fulfill({status:403,json:{error:'Access changed'}});});
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));
+  await expect(page.locator('#console-panel')).toBeHidden();release();
+  await expect(page.locator('#classroom-folder-items')).toBeEmpty();
+ } finally {await f.harness.close();}
+});
+
+test('instructors rename class folders with cancel, validation, conflict recovery and persisted sharing',async({page,context})=>{
+ const f=await fixture(context);let writes=0;
+ page.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname.endsWith('/folders/shared-folder'))writes++;});
+ try {
+  await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByLabel('Folder name',{exact:true}).fill('Cancelled draft');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(page.locator('#classroom-folder-title')).toHaveText('Shared listening');expect(writes).toBe(0);
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByRole('button',{name:'Save name',exact:true}).click();expect(writes).toBe(0);
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByLabel('Folder name',{exact:true}).fill('   ');
+  await page.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(page.locator('#classroom-rename-status')).toContainText('Enter a folder name');expect(writes).toBe(0);
+  await page.getByLabel('Folder name',{exact:true}).fill('Rhythm listening');
+  await f.seed(["UPDATE course_folders SET name='Updated by another instructor',permission='read',revision=revision+1 WHERE id='shared-folder'"]);
+  await page.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(page.locator('#classroom-rename-status')).toContainText('This folder changed');
+  await expect(page.getByLabel('Folder name',{exact:true})).toHaveValue('Rhythm listening');
+  await page.getByRole('button',{name:'Reload folder',exact:true}).click();
+  await expect(page.locator('#classroom-folder-title')).toHaveText('Updated by another instructor');
+  await expect(page.getByLabel('Folder name',{exact:true})).toHaveValue('Rhythm listening');
+  await page.getByRole('button',{name:'Save name',exact:true}).click();
+  await expect(page.locator('#classroom-folder-title')).toHaveText('Rhythm listening');
+  await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
+  await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(page.locator('#classroom-folder-title')).toHaveText('Rhythm listening');
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.bob});
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(page.locator('#classroom-folder-title')).toHaveText('Rhythm listening');
+  await expect(page.getByRole('button',{name:'Rename',exact:true})).toHaveCount(0);
+ } finally {await f.harness.close();}
+});
+
+
+test('an open folder rename draft retains automatic course access checks', async ({page,context}) => {
+ const f = await fixture(context);
+ try {
+  await page.clock.install();
+  await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByLabel('Folder name',{exact:true}).fill('Unfinished name');
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#classroom-refresh-status')).toContainText('Updated');
+  await expect(page.getByLabel('Folder name',{exact:true})).toHaveValue('Unfinished name');
+  await page.route('**/api/classroom/courses/*/folders',route=>route.fulfill({status:403,json:{error:'Access changed'}}));
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#console-panel')).toBeHidden();
+  await expect(page.locator('#classroom-folder-items')).toBeEmpty();
+ } finally {await f.harness.close();}
+});
+
+
+test('background refresh keeps sharing visible and blocks keyboard changes until its values are restored',async({page,context})=>{
+ const f=await fixture(context);let release;
+ try {
+  await page.clock.install();
+  await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
+  const sharing=page.getByLabel('Who can use this folder?');
+  await sharing.selectOption('read');await sharing.focus();
+  const waiting=new Promise(resolve=>release=resolve);
+  await page.route('**/api/classroom/courses/*/folders',async route=>{await waiting;await route.continue();});
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#console-panel')).toHaveJSProperty('inert',true);
+  await expect(page.locator('#console-panel')).toBeVisible();
+  await page.keyboard.press('ArrowDown');await expect(sharing).toHaveValue('read');
+  release();
+  await expect(page.locator('#console-panel')).toHaveJSProperty('inert',false);
+  await expect(sharing).toHaveValue('read');await expect(sharing).toBeFocused();
+ } finally {release?.();await f.harness.close();}
+});

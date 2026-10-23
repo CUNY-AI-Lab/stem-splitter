@@ -1,5 +1,6 @@
 .classroom-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
-#console-panel[data-checking="true"] { visibility: hidden !important; pointer-events: none; }
+#console-panel[data-checking="true"] { pointer-events: none; }
+#console-panel[data-checking="true"]:not([data-background-refresh="true"]) { visibility: hidden !important; }
 #course-discovery select, #console-panel select, #console-panel input { max-width: 100%; min-width: 0; }
 #classroom-folder-link { display: block; width: 100%; margin-top: .5rem; }
 #classroom-course { display: block; width: 100%; margin-top: .5rem; }

@@ -76,6 +76,13 @@
       </form>
       <section id="classroom-folder-detail" hidden>
         <h3 id="classroom-folder-title"></h3>
+        <button id="classroom-rename-toggle" class="page-btn" type="button" hidden>Rename</button>
+        <form id="classroom-rename-form" class="teacher-form" hidden>
+          <label for="classroom-rename-name">Folder name</label>
+          <input id="classroom-rename-name" maxlength="80" required>
+          <div class="classroom-actions"><button class="page-btn" type="submit">Save name</button><button id="classroom-rename-reload" class="page-btn" type="button" hidden>Reload folder</button><button id="classroom-rename-cancel" class="page-btn" type="button">Cancel</button></div>
+          <p id="classroom-rename-status" role="status"></p>
+        </form>
         <p id="classroom-folder-status" role="status"></p>
         <form id="classroom-folder-sharing" class="teacher-form" hidden>
           <label for="classroom-folder-permission">Who can use this folder?</label>

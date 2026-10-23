@@ -1834,7 +1834,7 @@ class Mixer {
           <p class="coach-usage" hidden><span class="coach-usage-status" role="status"></span><span class="coach-cooldown-timer mono" role="timer" aria-live="off"></span></p>
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
-            <button type="submit">ASK</button>
+            <button type="submit">Send</button>
             <button type="button" class="coach-reset" title="Clear this conversation and start fresh — the opening guide stays">RESET</button>
           </form>
         </div>
@@ -3040,7 +3040,7 @@ class Mixer {
       this.coachSignIn.textContent = this.guestSignInRequested ? 'Please sign in to continue' : 'Sign in to continue';
       if (!this.coachSignIn.hidden) (this.guestSignInNotice || this.coachLog).append(this.coachSignIn);
       this.coachForm.querySelector('[type="submit"]').disabled = this.coachBusy || (this.guestSignInRequested && !this.pendingChat);
-      this.coachForm.querySelector('[type="submit"]').textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
+      this.coachForm.querySelector('[type="submit"]').textContent = this.pendingChat ? 'RETRY REPLY' : 'Send';
       const cue = this.coachGuide.querySelector('.coach-cue-btn');
       if (cue) cue.disabled = this.coachBusy || (remaining === 0 && !this.pendingGuide);
       this.coachResetBtn.disabled = this.coachBusy;
@@ -3059,7 +3059,7 @@ class Mixer {
     const submit = this.coachForm.querySelector('[type="submit"]');
     const waiting = Boolean(listeningUsage && listeningUsage.remainingTurns === 0);
     submit.disabled = this.coachBusy || (waiting && !this.pendingChat);
-    submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
+    submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'Send';
     const cue = this.coachGuide.querySelector('.coach-cue-btn');
     if (cue) cue.disabled = this.coachBusy;
     this.coachResetBtn.disabled = this.coachBusy;
@@ -3635,6 +3635,7 @@ function renderFolders() {
           <span class="folder-name">${esc(folder.name)}</span>
           <span class="mono folder-count">· ${folder.itemCount}</span>
         </button>
+        <button class="head-btn folder-rename" type="button">Rename</button>
         <button class="head-btn folder-load-all" title="Load every split in this folder into the rack">LOAD ALL</button>
         <button class="head-btn folder-del" title="Delete this folder (the splits themselves are untouched)">✕</button>
       </div>
@@ -3651,6 +3652,26 @@ function renderFolders() {
     });
     li.querySelector('.folder-load-all').addEventListener('click', (e) => {
       void loadWholeFolder(folder, e.currentTarget);
+    });
+    const rename = li.querySelector('.folder-rename');
+    const renameForm = document.createElement('form'); renameForm.className = 'folder-rename-form'; renameForm.hidden = true;
+    renameForm.innerHTML = '<label>Folder name <input maxlength="80" required /></label><button class="head-btn" type="submit">Save</button><button class="head-btn" type="button">Cancel</button><span role="status"></span>';
+    li.insertBefore(renameForm, items);
+    const nameInput = renameForm.querySelector('input'), saveName = renameForm.querySelector('[type="submit"]'), cancelName = renameForm.querySelector('[type="button"]'), renameStatus = renameForm.querySelector('[role="status"]');
+    const closeRename = () => { renameForm.hidden = true; rename.hidden = false; rename.focus(); };
+    rename.addEventListener('click', () => { nameInput.value = folder.name; renameStatus.textContent = ''; renameForm.hidden = false; rename.hidden = true; nameInput.focus(); nameInput.select(); });
+    cancelName.addEventListener('click', closeRename);
+    renameForm.addEventListener('keydown', event => { if (event.key === 'Escape' && !saveName.disabled) { event.preventDefault(); closeRename(); } });
+    renameForm.addEventListener('submit', async event => {
+      event.preventDefault(); const name = nameInput.value.trim();
+      if (!name) { renameStatus.textContent = 'Enter a folder name.'; return; }
+      if (name === folder.name) { closeRename(); return; }
+      saveName.disabled = cancelName.disabled = true; renameStatus.textContent = 'Saving…';
+      try {
+        const saved = await api(`/api/teacher/folders/${encodeURIComponent(folder.id)}`, {method:'PUT',body:JSON.stringify({name,expectedName:folder.name})});
+        folder.name = saved.name; li.querySelector('.folder-name').textContent = saved.name; closeRename();
+      } catch (error) { renameStatus.textContent = error.message; }
+      finally { saveName.disabled = cancelName.disabled = false; }
     });
     const delBtn = li.querySelector('.folder-del');
     delBtn.addEventListener('click', () =>

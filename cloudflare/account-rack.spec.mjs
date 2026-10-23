@@ -375,3 +375,41 @@ for (const width of [1280, 390]) test(`account access failures keep one Settings
     await expect(page).toHaveTitle('Stem Splitter · Settings');
   } finally { await server.close(); }
 });
+
+test('instructor folder names support cancel, failed-save retry and persisted readback',async({page,context})=>{
+ const issuer=await createTestIdentityIssuer();
+ const subject=TEST_SUBJECTS.carol;
+ const token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject});
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true',TEST_ADMIN:subject}}]});
+ try {
+  const {url}=await server.listen();
+  await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify([...schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')),`INSERT INTO app_users(subject,role) VALUES('${subject}','instructor')`,`INSERT INTO folders(id,name,created_by) VALUES('rename-folder','Original folder','${subject}')`])});
+  await context.setExtraHTTPHeaders({'x-fixture-identity':token});
+  let writes=0,fail=true;
+  await page.route('**/api/teacher/folders/rename-folder',route=>{
+   if(route.request().method()!=='PUT')return route.continue();
+   writes++;return fail?route.fulfill({status:503,json:{error:'Temporary save failure'}}):route.continue();
+  });
+  await page.goto(url.href,{waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByLabel('Folder name',{exact:true}).fill('Cancelled name');
+  await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(writes).toBe(0);
+  await expect(page.locator('.folder-name')).toHaveText('Original folder');
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.locator('.folder-rename-form [type="submit"]').click();expect(writes).toBe(0);
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByLabel('Folder name',{exact:true}).fill('   ');
+  await page.locator('.folder-rename-form [type="submit"]').click();
+  await expect(page.locator('.folder-rename-form [role="status"]')).toHaveText('Enter a folder name.');expect(writes).toBe(0);
+  await page.getByLabel('Folder name',{exact:true}).fill('Rhythm examples');
+  await page.locator('.folder-rename-form [type="submit"]').click();
+  await expect(page.locator('.folder-rename-form [role="status"]')).toHaveText('Temporary save failure');
+  await expect(page.getByLabel('Folder name',{exact:true})).toHaveValue('Rhythm examples');
+  fail=false;await page.locator('.folder-rename-form [type="submit"]').click();
+  await expect(page.locator('.folder-name')).toHaveText('Rhythm examples');
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(page.locator('.folder-name')).toHaveText('Rhythm examples');
+  const result=await(await page.request.get(new URL('/api/teacher/folders/rename-folder',url).href)).json();
+  expect(result.folder.id).toBe('rename-folder');expect(result.folder.name).toBe('Rhythm examples');
+ }finally{await server.close();}
+});
