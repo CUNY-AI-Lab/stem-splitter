@@ -1834,7 +1834,7 @@ class Mixer {
           <p class="coach-usage" hidden><span class="coach-usage-status" role="status"></span><span class="coach-cooldown-timer mono" role="timer" aria-live="off"></span></p>
           <form class="coach-form">
             <input maxlength="500" placeholder="ask about this song…" aria-label="Ask the Listening Guide" />
-            <button type="submit">ASK</button>
+            <button type="submit">Send</button>
             <button type="button" class="coach-reset" title="Clear this conversation and start fresh — the opening guide stays">RESET</button>
           </form>
         </div>
@@ -3040,7 +3040,7 @@ class Mixer {
       this.coachSignIn.textContent = this.guestSignInRequested ? 'Please sign in to continue' : 'Sign in to continue';
       if (!this.coachSignIn.hidden) (this.guestSignInNotice || this.coachLog).append(this.coachSignIn);
       this.coachForm.querySelector('[type="submit"]').disabled = this.coachBusy || (this.guestSignInRequested && !this.pendingChat);
-      this.coachForm.querySelector('[type="submit"]').textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
+      this.coachForm.querySelector('[type="submit"]').textContent = this.pendingChat ? 'RETRY REPLY' : 'Send';
       const cue = this.coachGuide.querySelector('.coach-cue-btn');
       if (cue) cue.disabled = this.coachBusy || (remaining === 0 && !this.pendingGuide);
       this.coachResetBtn.disabled = this.coachBusy;
@@ -3059,7 +3059,7 @@ class Mixer {
     const submit = this.coachForm.querySelector('[type="submit"]');
     const waiting = Boolean(listeningUsage && listeningUsage.remainingTurns === 0);
     submit.disabled = this.coachBusy || (waiting && !this.pendingChat);
-    submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'ASK';
+    submit.textContent = this.pendingChat ? 'RETRY REPLY' : 'Send';
     const cue = this.coachGuide.querySelector('.coach-cue-btn');
     if (cue) cue.disabled = this.coachBusy;
     this.coachResetBtn.disabled = this.coachBusy;

@@ -808,7 +808,7 @@ test('guest Guide stops at two successful replies and sign-in restores its draft
   await startUpload(page);await completed(page,1);
   await page.locator('.coach-toggle').click();
   const input=page.getByRole('textbox',{name:'Ask the Listening Guide'});
-  const ask=page.getByRole('button',{name:'ASK',exact:true});
+  const ask=page.getByRole('button',{name:'Send',exact:true});
   await input.fill('Question 1');await ask.click();
   await page.getByRole('button',{name:'Complete fixture guest check'}).click();
   await expect(page.locator('.coach-row.coach').last()).toContainText('Listen for the bass');
@@ -876,7 +876,7 @@ for (const signIn of [false,true]) test(`guest second reply survives a lost comp
   await startUpload(page);await completed(page,1);
   await page.locator('.coach-toggle').click();
   const input=page.getByRole('textbox',{name:'Ask the Listening Guide'});
-  const ask=page.getByRole('button',{name:'ASK',exact:true});
+  const ask=page.getByRole('button',{name:'Send',exact:true});
   for(let i=1;i<=1;i++) {
    await expect(ask).toBeEnabled();await input.fill(`Saved question ${i}`);await ask.click();
    if(i===1)await page.getByRole('button',{name:'Complete fixture guest check'}).click();

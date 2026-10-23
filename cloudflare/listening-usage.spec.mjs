@@ -43,7 +43,7 @@ test('an open exhausted workspace resumes at the daily reset and retains its dra
   const edge=new Date(resetDate.getTime()-3000).toISOString(),reset=resetDate.toISOString();
   const renewedAt=new Date(resetDate.getTime()+9000).toISOString(),nextReset=new Date(resetDate.getTime()+86400000).toISOString();
   await f.page.clock.install({time:new Date(edge)});await f.open();
-  const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'ASK',exact:true});
+  const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'Send',exact:true});
   await input.fill('Keep this question for the new day.');
   f.setUsage({...usage(0),serverTime:edge,resetsAt:reset});
   await f.page.evaluate(()=>refreshListeningUsage());await expect(ask).toBeDisabled();
@@ -66,7 +66,7 @@ test('authenticated accounts continue after five replies and preserve the next d
    const state=usage(50-++calls);f.setUsage(state);
    await route.fulfill({contentType:'text/event-stream',body:reply(`Reply ${calls}.`,state)});
   });
-  await f.open();const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'ASK',exact:true});
+  await f.open();const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'Send',exact:true});
   for(let turn=1;turn<=5;turn++) {await input.fill(`Question ${turn}`);await ask.click();await expect(f.page.locator('.coach-row.coach').last()).toContainText(`Reply ${turn}.`);}
   await expect(ask).toBeEnabled();await expect(f.page.locator('.coach-usage-status')).toHaveText('45 of 50 chat turns left today.');
   await input.fill('My next question stays here.');await f.page.clock.fastForward(300100);
@@ -87,7 +87,7 @@ test('an interrupted reply keeps one question and retries its exact request with
     await f.open();
     const input = f.page.getByRole('textbox', { name: 'Ask the Listening Guide' });
     await input.fill('Where does the bass enter?');
-    await f.page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(f.page.getByRole('button', { name: 'RETRY REPLY' })).toBeEnabled();
     await expect(input).toHaveValue('Where does the bass enter?');
     await expect(input).toHaveAttribute('readonly', '');
@@ -112,10 +112,10 @@ test('confirmed failure permits a fresh attempt while a sign-in failure retains 
     await f.open();
     const input = f.page.getByRole('textbox', { name: 'Ask the Listening Guide' });
     await input.fill('Keep my question after a failed attempt.');
-    await f.page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(input).toBeEnabled(); await expect(input).not.toHaveAttribute('readonly');
     await expect(input).toHaveValue('Keep my question after a failed attempt.');
-    await f.page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(f.page.locator('.coach-row.error').last()).toContainText('Sign in with CUNY Login');
     expect(keys).toHaveLength(2); expect(keys[1]).not.toBe(keys[0]);
     await expect(input).toHaveValue('Keep my question after a failed attempt.');
@@ -135,13 +135,13 @@ test('a lost final daily reply remains readable with its original request ID aft
     });
     await f.open();
     await f.page.getByRole('textbox', { name: 'Ask the Listening Guide' }).fill('Recover the final daily reply.');
-    await f.page.getByRole('button', { name: 'ASK', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(f.page.locator('.coach-usage-status')).toContainText('0 of 50 chat turns left today.');
     await expect(f.page.getByRole('button', { name: 'RETRY REPLY' })).toBeEnabled();
     await f.page.getByRole('button', { name: 'RETRY REPLY' }).click();
     await expect(f.page.locator('.coach-row.coach')).toHaveText('A saved final daily reply.');
     expect(keys).toHaveLength(2); expect(keys[1]).toBe(keys[0]);
-    await expect(f.page.getByRole('button', { name: 'ASK', exact: true })).toBeDisabled();
+    await expect(f.page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
   } finally { await f.close(); }
 });
 
@@ -161,7 +161,7 @@ test('cue retry keeps its original key and leaves remaining daily chat available
     await f.page.locator('.coach-cue-btn').click();
     await expect(f.page.locator('.coach-guide-text')).toContainText('Listen to this entrance.');
     expect(keys).toHaveLength(2); expect(keys[1]).toBe(keys[0]);
-    await expect(f.page.getByRole('button', { name: 'ASK', exact: true })).toBeEnabled();
+    await expect(f.page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
     await expect(f.page.locator('.coach-usage-status')).toContainText('49 of 50 chat turns left today.');
   } finally { await f.close(); }
 });

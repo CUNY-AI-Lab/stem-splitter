@@ -362,3 +362,21 @@ test('instructors rename class folders with cancel, validation, conflict recover
   await expect(page.getByRole('button',{name:'Rename',exact:true})).toHaveCount(0);
  } finally {await f.harness.close();}
 });
+
+
+test('an open folder rename draft retains automatic course access checks', async ({page,context}) => {
+ const f = await fixture(context);
+ try {
+  await page.clock.install();
+  await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'Rename',exact:true}).click();
+  await page.getByLabel('Folder name',{exact:true}).fill('Unfinished name');
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#classroom-refresh-status')).toContainText('Updated');
+  await expect(page.getByLabel('Folder name',{exact:true})).toHaveValue('Unfinished name');
+  await page.route('**/api/classroom/courses/*/folders',route=>route.fulfill({status:403,json:{error:'Access changed'}}));
+  await page.clock.fastForward(15001);
+  await expect(page.locator('#console-panel')).toBeHidden();
+  await expect(page.locator('#classroom-folder-items')).toBeEmpty();
+ } finally {await f.harness.close();}
+});

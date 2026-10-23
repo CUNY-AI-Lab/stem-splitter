@@ -258,7 +258,7 @@
     refreshTimer = setTimeout(() => void refreshCourse(true), Math.max(15000, reads * 2500));
   }
   async function refreshCourse(background = false) {
-    if (!selected || refreshing || pendingRequests || (background && renameFolder)) { scheduleRefresh(); return; }
+    if (!selected || refreshing || pendingRequests) { scheduleRefresh(); return; }
     clearTimeout(refreshTimer); refreshing = true;
     const current = generation, person = student, folder = currentFolder, notes = annotationJob, conversation = conversationJob;
     const pageCounts = { roster: rosterPages, jobs: jobsPages, conversation: conversationPages };
