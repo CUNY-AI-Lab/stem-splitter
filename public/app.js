@@ -208,34 +208,73 @@ async function ensureClassCode() {
 
 let selectedCourse = 'personal';
 let courseAcknowledgment = null;
+let courseSelectionPending = false, courseSelectionSequence = 0;
 function creationCourse() {
+  if (courseSelectionPending) throw new Error('Checking your class access. Try again shortly.');
+  if (!selectedCourse) throw new Error('Choose a workspace for this split.');
   if (selectedCourse !== 'personal' && !courseAcknowledgment?.checked) throw new Error('Confirm the course-work disclosure before creating a class split.');
   return selectedCourse;
 }
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
+  const subject = accountSubject, storageKey = `stem-workspace-choice:v1:${subject}`;
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
   region.innerHTML = '<label for="new-split-course">New splits belong to </label><select id="new-split-course" aria-label="New split workspace"><option value="personal">Personal</option></select><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
-  const select = region.querySelector('select');
+  const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
   courseAcknowledgment = region.querySelector('input');
-  const choose = () => { selectedCourse = select.value; courseAcknowledgment.checked = false; courseAcknowledgment.closest('p').hidden = selectedCourse === 'personal'; };
-  select.addEventListener('change', choose);
-  try {
-    const response = await fetch('/api/classroom/courses', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
-    if (!response.ok) throw new Error('Course work is unavailable. Personal work remains available.');
-    const data = await response.json();
-    for (const course of data.courses || []) {
-      const option = document.createElement('option'); option.value = course.classId;
-      option.textContent = `${course.className} · ${course.term} · ${course.section}`; select.append(option);
+  let initialized = false;
+  const choose = value => {
+    if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
+    selectedCourse = value; select.value = value;
+    courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
+    try { if (value) localStorage.setItem(storageKey,value); else localStorage.removeItem(storageKey); } catch {}
+  };
+  select.addEventListener('change', () => {
+    choose(select.value); status.textContent = '';
+    const url = new URL(location.href);
+    if (select.value) url.searchParams.set('course',select.value); else url.searchParams.delete('course');
+    history.replaceState(null,'',url);
+  });
+  const refresh = async () => {
+    if (accountSubject !== subject || !region.isConnected) return;
+    const sequence = ++courseSelectionSequence;
+    courseSelectionPending = true; select.disabled = true;
+    try {
+      const courses = []; let cursor = null;
+      do {
+        const response = await fetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
+        if (!response.ok) throw new Error('Class access is temporarily unavailable. Choose Personal or reload to retry.');
+        const data = await response.json(); courses.push(...(data.courses || [])); cursor = data.nextCursor;
+      } while (cursor && courses.length < 1000);
+      if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
+      const valid = new Set(['personal',...courses.map(course=>course.classId)]);
+      let previous = initialized ? selectedCourse : null;
+      if (!initialized) { try { previous = localStorage.getItem(storageKey); } catch {} }
+      const requested = initialized ? null : new URLSearchParams(location.search).get('course');
+      const choice = requested && valid.has(requested) ? requested
+        : previous && valid.has(previous) ? previous : courses.length === 1 ? courses[0].classId
+        : courses.length ? '' : 'personal';
+      select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
+        ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
+      select.options[0].disabled = true;
+      choose(choice); initialized = true;
+      status.textContent = requested && !valid.has(requested) ? 'The linked class is unavailable to this account.'
+        : previous && !valid.has(previous) ? 'Class access changed. Review the selected workspace.' : '';
+      region.hidden = !courses.length && !status.textContent;
+    } catch (error) {
+      if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
+      choose(''); select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
+      select.value = ''; select.options[0].disabled = true;
+      region.hidden = false; status.textContent = error.message;
+    } finally {
+      if (sequence === courseSelectionSequence && accountSubject === subject) { courseSelectionPending = false; select.disabled = false; }
     }
-    const requested = new URLSearchParams(location.search).get('course');
-    if (requested && [...select.options].some(option => option.value === requested)) { select.value = requested; choose(); }
-    else if (requested) region.querySelector('.course-load-status').textContent = 'This course is not available to your account. New splits remain Personal.';
-    if (!data.courses?.length && !requested) region.hidden = true;
-  } catch (error) { region.querySelector('.course-load-status').textContent = error.message; }
+  };
+  addEventListener('focus', () => void refresh());
+  await refresh();
 }
 
 async function splitRequestKey(body, course = 'personal') {
@@ -5112,7 +5151,7 @@ async function initialize() {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null; listeningUsage = null; guestListeningUsages.clear();
-        selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
+        courseSelectionSequence++; courseSelectionPending = false; selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
     if (accountSubject && !guestSessionActive) {

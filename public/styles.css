@@ -2843,7 +2843,6 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui :is(.console, .split-opt, .shelf-item) { border-radius: 8px; }
 .refined-ui .console-actions { gap: .5rem; }
 .refined-ui .head-btn { min-height: 32px; padding: .35rem .6rem; }
-.refined-ui .channel :is(.solo-btn, .mute-btn, .dl) { min-height: 32px; }
 .refined-ui .rack { margin-top: 1.5rem; }
 .refined-ui .rack-title { font-size: .85rem; letter-spacing: .1em; margin-bottom: .5rem; }
 .refined-ui .rack > .empty { font-size: .8rem; padding-block: .4rem; }
@@ -2883,8 +2882,6 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .refined-ui #course-context { grid-template-columns: 1fr; gap: .35rem; }
   .refined-ui #course-context select { font-size: 1rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
-  .refined-ui .channel :is(.solo-btn, .mute-btn, .dl) { min-height: 36px; }
-  .refined-ui .channel .dl { width: 36px; }
   .account-allowances { grid-template-columns: 1fr; }
   .account-allowances section { padding: .85rem 1rem; }
   .account-allowances section + section { border-left: 0; border-top: 1px solid var(--panel-edge); }

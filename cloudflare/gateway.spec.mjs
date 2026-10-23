@@ -68,7 +68,7 @@ test('Listening Guide preserves the mixer and syncs private CUNY history across 
     expect(await stats()).toBe(3);
     await page.reload();
     await expect(page.locator('.badge.ready')).toBeVisible();
-    await page.locator('.coach-toggle').click();
+    await expect(page.locator('.coach-toggle')).toHaveAttribute('aria-expanded','true');
     await expect(page.locator('.coach-archive-toggle')).toContainText('EARLIER SESSION · 4');
     await context.setExtraHTTPHeaders({ ...headers, 'x-fixture-gateway-mode': 'trailing-error' });
     await page.locator('.coach-form input').fill('Compare these layers.');

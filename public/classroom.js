@@ -1,10 +1,10 @@
 // Course views use the existing current-authority APIs. No identity, grant,
-// conversation, or roster is stored in browser storage.
+// conversation, or roster is stored in browser storage; only the selected class ID is remembered.
 (() => {
   const el = id => document.getElementById(`classroom-${id}`);
   const panel = document.getElementById('console-panel');
   const status = document.getElementById('account-status');
-  let courses = [], selected = null, generation = 0, controllers = new Set();
+  let courses = [], selected = null, generation = 0, controllers = new Set(), choiceKey = null;
   let pendingRequests = 0;
   let roster = [], rosterCursor = null, folders = [], currentFolder = null;
   let student = null, jobsCursor = null, studentGeneration = 0;
@@ -230,6 +230,7 @@
     clearCourse(); const course = courses.find(course => course.classId === id); if (!course) return;
     el('retry').hidden = true;
     selected = course; status.textContent = course.className; panel.hidden = false;
+    try { if (choiceKey) localStorage.setItem(choiceKey,id); } catch {}
     const url = new URL(location.href); url.searchParams.set('course',id);
     if (new URLSearchParams(location.search).get('course') !== id) url.searchParams.delete('folder');
     history.replaceState(null,'',url);
@@ -337,6 +338,7 @@
       const { account } = await request('/api/account');
       if (account.quotaClass === 'guest') { status.textContent = 'Sign in with your CUNY account to open your classes.'; el('login').hidden = false; return; }
       window.StemSessionGuard?.start(account.subject, clearCourse);
+      choiceKey = `stem-workspace-choice:v1:${account.subject}`;
       let cursor = null;
       do { const data = await request(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`); courses.push(...data.courses); cursor = data.nextCursor; } while (cursor && courses.length < 1000);
       courses.sort((a,b) => Number(a.classId === 'cail-teaching-tools-demo') - Number(b.classId === 'cail-teaching-tools-demo') || a.className.localeCompare(b.className));
@@ -344,7 +346,9 @@
       document.getElementById('course-discovery').hidden = !courses.length;
       status.textContent = courses.length ? 'Choose a class to view its shared work.' : 'No current classes are available to this account.';
       const requested = new URLSearchParams(location.search).get('course');
-      if (requested && courses.some(course => course.classId === requested)) { el('course').value = requested; await selectCourse(requested); }
+      let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
+      const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
+      if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
     } catch (error) { clearCourse(); status.textContent = error.message; el('login').hidden = false; }
   })();
 })();

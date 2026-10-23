@@ -41,7 +41,7 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
   if(mode==='course'){await page.getByRole('button',{name:'Restore revision 1 as a new version',exact:true}).click();await expect(page.locator('#amendment')).toHaveValue('Fixture teaching instructions');await expect(page.locator('#change-note')).toHaveValue('Restored revision 1');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Saved.');await expect(page.locator('#prompt-history')).toContainText('Revision 3');}
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await expect(page.getByRole('textbox',{name:'Teaching instructions',exact:true})).toBeVisible();
-  await expect(page.locator('.console-nav [aria-current="page"]')).toHaveText('Settings');
+  await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Settings');
   const instructionCount=await page.locator('#amendment-count').boundingBox(),noteLabel=await page.locator('label[for="change-note"]').boundingBox();
   expect(instructionCount.y+instructionCount.height).toBeLessThan(noteLabel.y);
   await expect(page.locator('#amendment')).toHaveAttribute('aria-describedby','amendment-count');
