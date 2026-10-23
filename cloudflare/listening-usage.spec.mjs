@@ -39,7 +39,9 @@ const reply = (text, state) => `data: ${JSON.stringify({ type: 'done', text, mod
 test('an open exhausted workspace resumes at the daily reset and retains its draft through a refresh outage',async({browser})=>{
  const f=await fixture(browser);
  try {
-  const edge='2026-10-23T23:59:57.000Z',reset='2026-10-24T00:00:00.000Z';
+  const resetDate=new Date();resetDate.setUTCHours(48,0,0,0);
+  const edge=new Date(resetDate.getTime()-3000).toISOString(),reset=resetDate.toISOString();
+  const renewedAt=new Date(resetDate.getTime()+9000).toISOString(),nextReset=new Date(resetDate.getTime()+86400000).toISOString();
   await f.page.clock.install({time:new Date(edge)});await f.open();
   const input=f.page.getByRole('textbox',{name:'Ask the Listening Guide'}),ask=f.page.getByRole('button',{name:'ASK',exact:true});
   await input.fill('Keep this question for the new day.');
@@ -48,7 +50,7 @@ test('an open exhausted workspace resumes at the daily reset and retains its dra
   let reads=0;
   await f.page.route('**/api/listening-usage',route=>++reads===1
    ?route.fulfill({status:503,json:{error:'Fixture reset check unavailable'}})
-   :route.fulfill({json:{...usage(50),serverTime:'2026-10-24T00:00:09.000Z',resetsAt:'2026-10-25T00:00:00.000Z'}}));
+   :route.fulfill({json:{...usage(50),serverTime:renewedAt,resetsAt:nextReset}}));
   await f.page.clock.fastForward(4000);await expect.poll(()=>reads).toBe(1);await expect(ask).toBeDisabled();
   await f.page.clock.fastForward(6000);await expect(ask).toBeEnabled();expect(reads).toBe(2);
   await expect(input).toHaveValue('Keep this question for the new day.');
