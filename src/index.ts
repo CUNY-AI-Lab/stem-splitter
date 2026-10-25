@@ -74,7 +74,7 @@ import {
   DEFAULT_DEMUCS_MODEL,
   allSeparationOptions,
   getSeparationOption,
-  getSeparationOptions,
+  getSeparationOptions, defaultSplitChoice,
   adaptiveOutputEnabled,
   modelIsAllowed,
   StemContractError,
@@ -475,9 +475,10 @@ app.get('/api/separation-options', (c) => {
   const adaptive = adaptiveOutputEnabled(c.env);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND, adaptive);
   const auto = serverAutoCapability(c.env);
-  if (adaptive) return c.json({ ...options, routing: { auto: 'adaptive' } });
+  const defaultChoice = defaultSplitChoice(options.defaultModel, adaptive || auto?.mode === 'authoritative');
+  if (adaptive) return c.json({ ...options, defaultChoice, routing: { auto: 'adaptive' } });
   // Flags off must keep the pre-change response shape byte-for-byte compatible.
-  return auto ? c.json({ ...options, routing: { auto: auto.mode } }) : c.json(options);
+  return auto ? c.json({ ...options, defaultChoice, routing: { auto: auto.mode } }) : c.json(options);
 });
 
 // --- uploads ----------------------------------------------------------
@@ -1094,8 +1095,8 @@ app.post('/api/jobs', requireClassCode, async (c) => {
 
   if (c.get('principal')?.courseId && body?.coursePolicy !== 'course-work-v1') return c.json({ error: 'Confirm that your instructor can review new course work and Listening Guy conversations.' }, 400);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
-  const submittedModel = body?.model ?? options.defaultModel;
   const autoCapability = serverAutoCapability(c.env);
+  const submittedModel = body?.model ?? defaultSplitChoice(options.defaultModel, autoCapability?.mode === 'authoritative');
   const autoRequested = Boolean(
     autoCapability &&
       (submittedModel === AUTO_ROUTING_REQUEST || body?.routingRequest === AUTO_ROUTING_REQUEST)

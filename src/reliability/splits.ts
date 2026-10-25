@@ -11,7 +11,7 @@ import { fetchVimeoAudio, vimeoFailureDiagnostic } from '../vimeo.ts';
 import { importLinkViaService, linkImportEnabled } from '../link-import-client.ts';
 import type { ImportResult } from '../link-import.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
-import { getSeparationOptions, modelIsAllowed, getReplicateRunner, replicateVersion, ADAPTIVE_FOUR_MODEL, adaptiveOutputEnabled } from '../separation/options.ts';
+import { getSeparationOptions, defaultSplitChoice, modelIsAllowed, getReplicateRunner, replicateVersion, ADAPTIVE_FOUR_MODEL, adaptiveOutputEnabled } from '../separation/options.ts';
 import { presignDownload, presignAnalysisDownload } from '../r2.ts';
 import { serverAutoCapability, configuredAudioAnalysisProvider, resolveAutoRoutingWithSource, audioAnalysisTimeoutMs, AUTO_ROUTING_REQUEST, prepareAuthoritativeAutoSource } from '../analysis/index.ts';
 import { parseBrowserAutoSummary } from '../analysis/contract.ts';
@@ -45,10 +45,10 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const courseId=principal.courseId ?? null;
   if (courseId && value.coursePolicy!=='course-work-v1') throw new OperationError('course_policy_required',400,'Review the course sharing notice before submitting.');
   const adaptiveAvailable=adaptiveOutputEnabled(env);
-  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? options.defaultModel;
+  const capability=serverAutoCapability(env);
+  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? defaultSplitChoice(options.defaultModel,adaptiveAvailable||capability?.mode==='authoritative');
   const adaptive=adaptiveAvailable && (submitted===ADAPTIVE_FOUR_MODEL || submitted===AUTO_ROUTING_REQUEST)
     ? submitted===AUTO_ROUTING_REQUEST ? 'auto' as const : 4 as const : undefined;
-  const capability=serverAutoCapability(env);
   const auto=Boolean(!adaptive&&capability&&(submitted===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST));
   if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !adaptive&&(!auto||capability?.mode!=='authoritative') : !modelIsAllowed(env.SEPARATION_BACKEND,submitted,adaptiveAvailable))) throw new OperationError('invalid_model',400,'Choose an available split model.');
   const input: SplitInput={sourceType:'upload',filename:'Audio',model:adaptive?'htdemucs_6s':submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto,...(adaptive?{adaptive}:{})};

@@ -1004,6 +1004,7 @@ const engineSummary = document.getElementById('engine-summary');
 let separationOptionsReady;
 let youtubeFetchInProgress = false;
 const AUTO_MODEL = 'auto';
+const SPLIT_CHOICE_STORAGE = 'stem-split-choice-v1';
 const BROWSER_AUDIO_DECODE_TIMEOUT_MS = 20_000;
 const BROWSER_AUDIO_METADATA_TIMEOUT_MS = 5_000;
 let catalogueModels = [];
@@ -1250,17 +1251,26 @@ async function loadSeparationOptions() {
     serverAutoMode = ['shadow', 'authoritative', 'adaptive'].includes(options.routing?.auto)
       ? options.routing.auto
       : 'off';
+    const validChoices = new Set([AUTO_MODEL, ...options.models.map(model => model.id)]);
+    let savedChoice = '';
+    try { savedChoice = localStorage.getItem(SPLIT_CHOICE_STORAGE) || ''; } catch {}
+    const initialChoice = [selectedModel(), savedChoice, options.defaultChoice, options.defaultModel, AUTO_MODEL]
+      .find(choice => validChoices.has(choice));
     stemChoice.replaceChildren();
     stemChoice.appendChild(buildAutoOption());
     for (const model of options.models) {
       splitMeta.set(model.id, model);
-      stemChoice.appendChild(buildSplitOption(model, model.id === options.defaultModel));
+      stemChoice.appendChild(buildSplitOption(model, model.id === initialChoice));
     }
     // Consoles can finish rendering before the catalogue lands; give any that
     // did the engine name they were missing.
     for (const mixer of mixers.values()) mixer.renderSplitMeta();
+    if (initialChoice === AUTO_MODEL) stemChoice.querySelector('input[value="auto"]').checked = true;
     if (!selectedModel()) stemChoice.querySelector('input').checked = true;
-    stemChoice.addEventListener('change', renderSplitLegend);
+    stemChoice.onchange = () => {
+      try { localStorage.setItem(SPLIT_CHOICE_STORAGE, selectedModel()); } catch {}
+      renderSplitLegend();
+    };
     renderSplitLegend();
     renderSeparationSummary(options.models);
     return true;
