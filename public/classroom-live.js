@@ -24,7 +24,7 @@
       this.generation = 0;
       this.ready = false;
       this.pending = false;
-      this.message = 'Class listening is independent unless you choose to follow an instructor.';
+      this.message = 'Playback is independent unless you choose to follow an instructor.';
       this.disabled = new Map();
       this.original = {};
       this.lastFocus = JSON.stringify(mixer.soloState);
@@ -50,7 +50,7 @@
           if (this.leading) {
             this.publishFinalPause();
             this.leading = false;
-            this.message = 'Class leadership paused while this page is hidden. Resume class session when you return.';
+            this.message = 'Session leadership paused while this page is hidden. Resume shared session when you return.';
           }
           this.render();
         } else { void this.read(); }
@@ -64,7 +64,7 @@
     makeControls() {
       const bar = document.createElement('div');
       bar.className = 'class-live';
-      bar.setAttribute('aria-label', 'Class listening session');
+      bar.setAttribute('aria-label', 'Shared session');
       bar.style.cssText = 'margin:.75rem 0;padding:.65rem;border:1px solid var(--line,#777)';
       const status = document.createElement('p');
       status.className = 'class-live-status';
@@ -77,12 +77,12 @@
         node.style.cssText = 'margin:.4rem .5rem 0 0;white-space:normal;text-align:left';
         node.addEventListener('click', action); bar.append(node); return node;
       };
-      this.startButton = button('Start class session', () => void this.start(), 'class-live-start');
-      this.endButton = button('End class session', () => void this.end(), 'class-live-end');
+      this.startButton = button('Start shared session', () => void this.start(), 'class-live-start');
+      this.endButton = button('End shared session', () => void this.end(), 'class-live-end');
       this.followButton = button('Follow instructor', () => void this.follow(), 'class-live-follow');
-      this.leaveButton = button('Leave class session', () => this.leave(), 'class-live-leave');
-      this.joinButton = button('Join class audio', () => void this.joinAudio(), 'class-live-join');
-      this.retryButton = button('Retry class connection', () => void this.read(), 'class-live-retry');
+      this.leaveButton = button('Leave shared session', () => this.leave(), 'class-live-leave');
+      this.joinButton = button('Join shared audio', () => void this.joinAudio(), 'class-live-join');
+      this.retryButton = button('Retry session connection', () => void this.read(), 'class-live-retry');
       this.bar = bar; this.status = status;
       this.mixer.el.querySelector('.transport').before(bar);
       this.render();
@@ -112,7 +112,7 @@
         // work. A follower must explicitly rejoin after one of these pauses.
         if (this.following && !this.internal) {
           this.audioBlocked = true;
-          this.message = 'Class audio paused on this device. Join class audio to continue.';
+          this.message = 'Shared audio paused on this device. Join shared audio to continue.';
         }
         const result = this.original.pause(...args);
         if (!this.internal) this.queueUpdate();
@@ -172,7 +172,7 @@
       const active = this.active();
       this.status.textContent = this.message;
       this.startButton.hidden = !this.ready || !this.canControl || (active && !this.isHost) || this.leading;
-      this.startButton.textContent = active && this.isHost ? 'Resume class session' : 'Start class session';
+      this.startButton.textContent = active && this.isHost ? 'Resume shared session' : 'Start shared session';
       this.endButton.hidden = !active || !this.isHost;
       this.followButton.hidden = !active || this.following || this.isHost;
       this.leaveButton.hidden = !this.following;
@@ -207,16 +207,16 @@
           headers: { 'Content-Type': 'application/json', 'X-Stem-Course': this.mixer.job.courseId },
           ...(body ? { body: JSON.stringify(body) } : {}),
         });
-        if (!response.ok) throw Object.assign(new Error('Class connection unavailable.'), { status: response.status });
+        if (!response.ok) throw Object.assign(new Error('Session connection unavailable.'), { status: response.status });
         const value = await response.json();
-        if (!Number.isSafeInteger(value.revision) || !finite(value.serverTime) || typeof value.canControl !== 'boolean' || typeof value.isHost !== 'boolean') throw new Error('Invalid class session.');
+        if (!Number.isSafeInteger(value.revision) || !finite(value.serverTime) || typeof value.canControl !== 'boolean' || typeof value.isHost !== 'boolean') throw new Error('Invalid shared session.');
         const session = value.session;
         if (session && (!Number.isSafeInteger(session.revision) || typeof session.active !== 'boolean' || typeof session.playing !== 'boolean' ||
           !finite(session.position) || session.position < 0 || session.position > 900 || !finite(session.playbackRate) || session.playbackRate < .5 || session.playbackRate > 2 ||
           !finite(session.updatedAt) || !finite(session.expiresAt) ||
           !(session.focusStem === null || this.mixer.channelsByName.has(session.focusStem)) ||
           !(session.focusStem === null ? session.focusMode === null : ['behind', 'only'].includes(session.focusMode)) ||
-          !(session.selection === null || finite(session.selection?.start) && finite(session.selection?.end) && session.selection.start >= 0 && session.selection.end <= 900 && session.selection.end > session.selection.start))) throw new Error('Invalid class session.');
+          !(session.selection === null || finite(session.selection?.start) && finite(session.selection?.end) && session.selection.start >= 0 && session.selection.end <= 900 && session.selection.end > session.selection.start))) throw new Error('Invalid shared session.');
         this.offset = value.serverTime - (began + Date.now()) / 2;
         return value;
       } finally { clearTimeout(timer); if (this.abort === controller) this.abort = null; }
@@ -235,12 +235,12 @@
       }
       if (this.leading && !this.isHost) this.leading = false;
       if (!this.active()) {
-        if (this.following) this.leave('The instructor ended this class session. Playback is independent again.');
+        if (this.following) this.leave('The instructor ended this shared session. Playback is independent again.');
         if (this.leading) this.leading = false;
-        this.message = 'Class listening is independent unless you choose to follow an instructor.';
-      } else if (this.leading) this.message = 'You are leading class playback, focus and selected sections.';
+        this.message = 'Playback is independent unless you choose to follow an instructor.';
+      } else if (this.leading) this.message = 'You are leading shared playback, focus and selected sections.';
       else if (this.following && !this.audioBlocked) this.message = 'Following instructor playback. Your mute switches stay on this device; course notes remain shared.';
-      else if (!this.following) this.message = this.isHost ? 'Your class session is available. Resume to lead from this device.' : 'An instructor is leading this split. Choose Follow instructor to join.';
+      else if (!this.following) this.message = this.isHost ? 'Your shared session is available. Resume to lead from this device.' : 'An instructor is leading this split. Choose Follow instructor to join.';
       this.render();
     }
 
@@ -277,9 +277,9 @@
         for (const [node] of this.concealed) node.hidden = true;
       }
       this.message = [401, 403, 404].includes(error?.status)
-        ? 'This class session is no longer available to your account. Reload to check course access.'
-        : error?.status === 429 ? 'Class connection is busy. Playback paused; retry in a minute.'
-        : 'Class connection was lost. Playback paused. Retry before joining again.';
+        ? 'This shared session is no longer available to your account. Reload to check course access.'
+        : error?.status === 429 ? 'Session connection is busy. Playback paused; retry in a minute.'
+        : 'Session connection was lost. Playback paused. Retry before joining again.';
       if ([401, 403, 404].includes(error?.status)) {
         // A failed authority check conceals this recording immediately; the
         // ordinary account guard cannot substitute for a course recheck.
@@ -328,7 +328,7 @@
         if (generation === this.generation && this.usable()) {
           if (error?.status === 409) {
             this.pauseLocally(); this.leading = false; this.pending = false;
-            this.message = 'The class session changed. Refreshing its current state.';
+            this.message = 'The shared session changed. Refreshing its current state.';
           } else this.fail(error);
         }
         return false;
@@ -362,7 +362,7 @@
       this.render(); await this.apply(true);
     }
 
-    leave(message = 'You left the class session. Playback is independent again.') {
+    leave(message = 'You left the shared session. Playback is independent again.') {
       const wasFollowing = this.following;
       this.following = false; this.audioBlocked = false;
       this.pauseLocally();
@@ -406,7 +406,7 @@
           await started;
           if (!mixer.playing) {
             this.audioBlocked = true;
-            this.message = 'Your browser paused class audio. Join class audio to continue.';
+            this.message = 'Your browser paused shared audio. Join shared audio to continue.';
           } else this.audioBlocked = false;
         }
       } finally { this.internal--; this.applying = false; this.render(); }
