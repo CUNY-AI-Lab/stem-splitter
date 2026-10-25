@@ -327,6 +327,7 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const guestReplies=readFileSync(new URL('../migrations/0029-guest-listening-replies.sql',import.meta.url),'utf8');db.applySchema(guestReplies);db.applySchema(guestReplies);
   const usageAccounts=readFileSync(new URL('../migrations/0030-course-usage-accounts.sql',import.meta.url),'utf8');db.applySchema(usageAccounts);db.applySchema(usageAccounts);
   const reports=readFileSync(new URL('../migrations/0031-bug-report-receipts.sql',import.meta.url),'utf8');db.applySchema(reports);db.applySchema(reports);
+  const deliveries=readFileSync(new URL('../migrations/0032-bug-report-deliveries.sql',import.meta.url),'utf8');db.applySchema(deliveries);db.applySchema(deliveries);
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);

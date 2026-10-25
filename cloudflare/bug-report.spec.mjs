@@ -267,3 +267,28 @@ test('production Redmine mode never falls back to email without its secret', asy
     expect((await f.stats()).calls).toHaveLength(0);
   } finally { await f.close(); }
 });
+
+test('production fallback records authenticated and validated guest reports with truthful email status', async ({ page }) => {
+  const f = await setup(page);
+  try {
+    await f.control({ reportMode: 'redmine-fallback' });
+    await page.reload();
+    await page.getByRole('button', { name: 'Report a bug', exact: true }).click();
+    await page.getByRole('textbox', { name: 'What went wrong?', exact: true }).fill(description);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(status(page)).toHaveText('Report recorded. Email accepted for delivery.');
+    expect((await f.stats()).records).toHaveLength(1);
+    await page.context().clearCookies(); await page.reload();
+    await page.getByRole('button', { name: 'Report a bug', exact: true }).click();
+    await page.getByRole('button', { name: 'No account?', exact: true }).click();
+    await page.getByLabel('First name').fill('Synthetic'); await page.getByLabel('Last name').fill('Guest');
+    await page.locator('input[name="email"]').fill('synthetic@example.com');
+    await page.getByRole('textbox', { name: 'What went wrong?', exact: true }).fill(description);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(page.locator('[data-error="email"]')).toBeVisible(); expect((await f.stats()).records).toHaveLength(1);
+    await page.locator('input[name="email"]').fill('synthetic@example.edu');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(status(page)).toHaveText('Report recorded. Email accepted for delivery.');
+    expect((await f.stats()).records).toHaveLength(2);
+  } finally { await f.close(); }
+});

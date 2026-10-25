@@ -173,7 +173,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
       const code = codeOf(result);
       if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
-        done = true; locked = true; submitButton.textContent = 'Sent'; show('Sent. Thank you.', 'success');
+        done = true; locked = true; submitButton.textContent = 'Sent'; show(result.delivery === 'email' ? 'Report recorded. Email accepted for delivery.' : 'Sent. Thank you.', 'success');
       } else if (code === 'account_changed' || response.status === 401 || code === 'not_admitted' || code === 'admission_required') {
         actor = null; preferredName = ''; session = 'signed-out'; show('Sign in again to send this draft.', 'attention');
       } else if (code === 'invalid_contact' && !locked) {
