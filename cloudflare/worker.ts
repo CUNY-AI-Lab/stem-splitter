@@ -24,7 +24,7 @@ import { refreshCourseUsageAccounts } from '../src/classroom/activity.ts';
 export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Pick<PreviewBindings, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
-  { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService; REDMINE_API_KEY?: string };
+  { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService; REDMINE_API_KEY?: string; BUG_REPORT_MODE?: string };
 
 const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -123,7 +123,9 @@ export default {
           : Response.json({ results: [] }, { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } });
         }
       } else if (request.method === 'GET' && url.pathname === '/api/bug-reports/availability') {
-        response = Response.json({ enabled: Boolean(env.REDMINE_API_KEY || env.BUG_REPORTS), ...(env.REDMINE_API_KEY ? { mode: 'dev-contact' } : {}) }, { headers: { 'Cache-Control': 'no-store' } });
+        response = Response.json({ enabled: env.BUG_REPORT_MODE === 'redmine' ? Boolean(env.REDMINE_API_KEY) : Boolean(env.REDMINE_API_KEY || env.BUG_REPORTS), ...(env.BUG_REPORT_MODE === 'redmine' || env.REDMINE_API_KEY ? { mode: 'contact', delivery: 'redmine' } : {}) }, { headers: { 'Cache-Control': 'no-store' } });
+      } else if (env.BUG_REPORT_MODE === 'redmine' && !env.REDMINE_API_KEY && url.pathname.startsWith('/api/bug-reports')) {
+        response = Response.json({ ok: false, code: 'unavailable' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
       } else if (env.REDMINE_API_KEY && url.pathname === '/api/bug-reports/guest') {
         const ip = request.headers.get('cf-connecting-ip');
         response = ip && /^[0-9a-fA-F:.]{3,45}$/.test(ip)

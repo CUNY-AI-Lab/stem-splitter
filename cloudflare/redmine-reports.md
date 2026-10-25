@@ -38,3 +38,14 @@ public release `d69851a1`. The shared navigation includes Class workspace.
 Provider starts remain disabled until dev has its provider credentials, and
 existing dev bindings are preserved. Form and routing checks do not establish
 successful ticket delivery; verify that separately when submitting an authorized report.
+
+## Production
+
+The production configuration now pins `BUG_REPORT_MODE=redmine`. It uses the same
+contact form and adapter as Dev. Provision `REDMINE_API_KEY` on
+`cail-stem-splitter-preview`, apply `redmine-reports.sql` to its existing D1, and
+release the checked Cloudflare merge. Missing credentials disable delivery; they
+must never select the email-only form. The alias Worker requires no secret.
+
+Check an authorized report through the public app and read back its private
+Redmine issue. A success toast or configured secret alone is insufficient.

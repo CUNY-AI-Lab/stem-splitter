@@ -252,3 +252,15 @@ test('disabled reporting stays absent and repeated offline/focus events coalesce
     expect((await f.stats()).calls).toHaveLength(0);
   }finally{release();await f.close();}
 });
+
+test('production Redmine mode never falls back to email without its secret', async ({ page }) => {
+  const f = await setup(page, false);
+  try {
+    await f.control({ reportMode: 'redmine' });
+    const availability = await (await f.harness.fetch('/api/bug-reports/availability')).json();
+    expect(availability).toEqual({ enabled: false, mode: 'contact', delivery: 'redmine' });
+    const response = await f.harness.fetch('/api/bug-reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reportId: crypto.randomUUID(), description, path: '/' }) });
+    expect(response.status).toBe(503);
+    expect((await f.stats()).calls).toHaveLength(0);
+  } finally { await f.close(); }
+});
