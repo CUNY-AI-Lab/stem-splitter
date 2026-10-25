@@ -621,3 +621,46 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   expect(errors).toEqual([]);
  }finally{await server.close();}
 });
+
+test('account pagination loads an older account beyond 200, reports completeness, and opens its activity',async({page,context})=>{
+ const issuer=await createTestIdentityIssuer();
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol}}]});
+ try {
+  const {url}=await server.listen();
+  const sql=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
+  const oldest='cail-'+ '0'.repeat(32);
+  for(let i=0;i<201;i++){
+   const person='cail-'+i.toString(16).padStart(32,'0'),name=i===0?'Older eligible student':`Synthetic account ${i}`;
+   sql.push(`INSERT INTO app_users(subject,created_at) VALUES('${person}','${new Date(1700000000000+i*1000).toISOString()}')`,
+    `INSERT INTO account_display_names(subject,display_name,updated_at) VALUES('${person}','${name}',${Date.now()})`);
+  }
+  for(let i=0;i<41;i++)sql.push(`INSERT INTO jobs(id,filename,source_key,status,stems,created_at) VALUES('older-job-${i}','Older recording ${i}','uploads/fixture.wav','done','[]','${new Date(Date.now()-i*1000).toISOString().slice(0,19).replace('T',' ')}')`,`INSERT INTO job_owners(job_id,subject) VALUES('older-job-${i}','${oldest}')`);
+  await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(sql)});
+  await context.setExtraHTTPHeaders({'x-fixture-identity':await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.carol})});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(new URL('/account.html',url).href);
+  await page.getByText('Manage access',{exact:true}).click();
+  const more=page.locator('#access-more');
+  await expect(more).toBeVisible();await expect(page.locator('#access-list-status')).toContainText('More accounts');
+  await expect(page.locator('#access-member')).not.toContainText('Older eligible student');
+  for(let i=0;i<10&&await more.isVisible();i++){
+   const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/admin/users'&&new URL(r.url()).searchParams.has('cursor'));
+   await more.click();expect((await response).ok()).toBe(true);await expect(more).toBeEnabled();
+  }
+  await expect(more).toBeHidden();await expect(page.locator('#access-list-status')).toHaveText('All available accounts loaded.');
+  await expect(page.locator('#access-member')).toContainText('Older eligible student');
+  const options=await page.locator('#access-member option').evaluateAll(nodes=>nodes.map(node=>node.value).filter(Boolean));
+  expect(options).toHaveLength(201);expect(new Set(options).size).toBe(201);
+  await page.locator('#access-member').selectOption(oldest);
+  await expect(page.locator('#student-summary')).toContainText('41 split attempts');
+  await expect(page.locator('#student-name')).toHaveText('Older eligible student');
+  await expect(page.locator('#student-list-status')).toHaveText('All available accounts loaded.');
+  await expect(page.locator('#student-list-more')).toBeHidden();
+  await expect(page.locator('#student-jobs > li')).toHaveCount(40);
+  await page.locator('#student-review > summary').click();
+  await page.locator('#student-review > summary').click();
+  await page.locator('#student-more').click();
+  await expect(page.locator('#student-jobs > li')).toHaveCount(41);
+  await expect(page.locator('#student-more')).toBeHidden();expect(errors).toEqual([]);
+ }finally{await server.close();}
+});

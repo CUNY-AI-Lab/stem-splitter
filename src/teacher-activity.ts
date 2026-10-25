@@ -51,20 +51,37 @@ async function profile(env:Env,subject:string,classes:string[],requireParticipan
   }
   return {allowed,displayName:name??'Name unavailable'};
 }
-export async function namedUsers(env:Env,actor:AppPrincipal,review=false) {
+// Bound each authority lookup page; a raw-account cursor also advances through
+// pages containing no currently eligible course members.
+const ACCOUNT_PAGE_SIZE = 25;
+function accountCursor(value?: string): number | null {
+  if (value === undefined) return null;
+  // The raw page boundary must not disclose a filtered account's subject/name.
+  if (!/^[1-9][0-9]{0,15}$/.test(value) || !Number.isSafeInteger(Number(value))) throw new CourseError(400, 'invalid_cursor');
+  return Number(value);
+}
+export async function namedUsers(env:Env,actor:AppPrincipal,review=false,cursor?:string) {
+  const before=accountCursor(cursor);
   const classes=actor.role==='admin'?courseIds(env):await teachingCourses(env,actor);
-  const {results}=await env.DB.prepare(`SELECT subject,role,disabled,role_expires_at,revision FROM app_users ORDER BY created_at DESC,subject LIMIT 200`).all<{subject:string;role:string;disabled:number}>();
+  const query = env.DB.prepare(`SELECT rowid AS account_cursor,subject,role,disabled,role_expires_at,revision FROM app_users
+    ${before !== null ? 'WHERE rowid < ?' : ''}
+    ORDER BY rowid DESC LIMIT ?`);
+  const {results}=await (before !== null ? query.bind(before,ACCOUNT_PAGE_SIZE+1)
+    : query.bind(ACCOUNT_PAGE_SIZE+1)).all<{subject:string;role:string;disabled:number;account_cursor:number}>();
+  const page=results.slice(0,ACCOUNT_PAGE_SIZE);
   const out:Array<Record<string,unknown>&{subject:string;displayName:string}>=[];
   let next=0;
-  await Promise.all(Array.from({length:Math.min(6,results.length)},async()=>{
-    while(next<results.length){
-      const user=results[next++];
+  await Promise.all(Array.from({length:Math.min(6,page.length)},async()=>{
+    while(next<page.length){
+      const {account_cursor,...user}=page[next++];
       if(review&&user.subject===actor.subject)continue;
       const details=await profile(env,user.subject,classes,actor.role!=='admin');
       if(details.allowed)out.push({...user,displayName:details.displayName});
     }
   }));
-  return out.sort((a,b)=>a.displayName.localeCompare(b.displayName)||a.subject.localeCompare(b.subject));
+  const last=page.at(-1);
+  const nextCursor=results.length>ACCOUNT_PAGE_SIZE&&last ? String(last.account_cursor) : null;
+  return {users:out.sort((a,b)=>a.displayName.localeCompare(b.displayName)||a.subject.localeCompare(b.subject)),nextCursor,complete:nextCursor===null};
 }
 export async function requireStudentReview(env:Env,actor:AppPrincipal,subject:string) {
   if(!/^cail-[0-9a-f]{32}$/.test(subject)||!await env.DB.prepare('SELECT 1 FROM app_users WHERE subject=?').bind(subject).first())throw new CourseError(404,'not_found');
@@ -73,11 +90,12 @@ export async function requireStudentReview(env:Env,actor:AppPrincipal,subject:st
   if(!person.allowed)throw new CourseError(404,'not_found');
   return person;
 }
-export async function studentActivity(env:Env,actor:AppPrincipal) {
+export async function studentActivity(env:Env,actor:AppPrincipal,cursor?:string) {
   if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');
-  const users=await namedUsers(env,actor,true);
+  const page=await namedUsers(env,actor,true,cursor);
+  const users=page.users;
   const usage=await usageBySubject(env,users.map(user=>user.subject));
-  return users.map(user=>({subject:user.subject,displayName:user.displayName,...usage.get(user.subject)!}));
+  return {students:users.map(user=>({subject:user.subject,displayName:user.displayName,...usage.get(user.subject)!})),nextCursor:page.nextCursor,complete:page.complete};
 }
 
 export async function guestActivity(env:Env,actor:AppPrincipal) {

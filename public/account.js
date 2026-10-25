@@ -4,6 +4,7 @@ let users = [];
 let subject = '';
 let membersLoaded = false;
 let membersLoading = false;
+let membersNextCursor = null;
 let saving = false;
 let accountRole = '';
 let checkingAccount = false;
@@ -56,13 +57,20 @@ function showExpiry() {
   el('access-expiry').disabled = !needsDate;
   el('access-expiry').required = needsDate;
 }
-async function loadMembers() {
+async function loadMembers(more = false) {
   if (membersLoading) return;
   membersLoading = true;
+  el('access-more').disabled = true;
   el('access-retry').hidden = true;
   const previous = el('access-member').value;
   try {
-    users = (await request('/api/admin/users')).users.filter((user) => user.subject !== subject);
+    const result = await request('/api/admin/users' + (more && membersNextCursor ? `?cursor=${encodeURIComponent(membersNextCursor)}` : ''));
+    if (more && result.nextCursor && result.nextCursor === membersNextCursor) throw new Error('Account page did not advance. Try again.');
+    const rows = result.users.filter((user) => user.subject !== subject);
+    users = more ? [...new Map([...users, ...rows].map(user => [user.subject, user])).values()] : rows;
+    membersNextCursor = result.nextCursor || null;
+    el('access-more').hidden = !membersNextCursor;
+    el('access-list-status').textContent = membersNextCursor ? 'More accounts are available.' : 'All available accounts loaded.';
     const placeholder = new Option('Choose an account', '');
     placeholder.disabled = true;
     placeholder.selected = true;
@@ -81,8 +89,9 @@ async function loadMembers() {
     el('access-retry').hidden = false;
     membersLoaded = false;
     return false;
-  } finally { membersLoading = false; }
+  } finally { membersLoading = false; el('access-more').disabled = false; }
 }
+el('access-more').addEventListener('click', () => void loadMembers(true));
 el('access-member').addEventListener('change', selectMember);
 el('access-role').addEventListener('change', () => {
   // Selecting a new role never silently selects a permanent grant.
@@ -158,15 +167,20 @@ el('access-form').addEventListener('submit', async (event) => {
 })();
 
 let studentSelection = '', studentCursor = null, studentRequest = 0;
-let studentRows = [], studentsLoading = null, studentsLoaded = false;
-function loadStudents() {
+let studentRows = [], studentsLoading = null, studentsLoaded = false, studentsNextCursor = null;
+function loadStudents(more = false) {
   if (studentsLoading) return studentsLoading;
   el('student-status').textContent = 'Loading students…';
+  el('student-list-more').disabled = true;
   el('guest-activity').textContent='Loading guest activity…';
   el('student-retry').hidden = true;
   studentsLoading = (async () => { try {
-    const result = await request('/api/teacher/students');
-    studentRows = result.students;
+    const result = await request('/api/teacher/students' + (more && studentsNextCursor ? `?cursor=${encodeURIComponent(studentsNextCursor)}` : ''));
+    if (more && result.nextCursor && result.nextCursor === studentsNextCursor) throw new Error('Account page did not advance. Try again.');
+    studentRows = more ? [...new Map([...studentRows, ...result.students].map(user => [user.subject, user])).values()] : result.students;
+    studentsNextCursor = result.nextCursor || null;
+    el('student-list-more').hidden = !studentsNextCursor;
+    el('student-list-status').textContent = studentsNextCursor ? 'More accounts may be available. Load the next page to continue.' : 'All available accounts loaded.';
     const guests=result.guestActivity;
     el('guest-activity').textContent=guests && Number.isInteger(guests.completedSplits) && Number.isInteger(guests.browserSessions)
       ? `${guests.completedSplits} completed ${guests.completedSplits === 1 ? "split" : "splits"} · ${guests.browserSessions} browser sessions · ${guests.splitsSavedToAccounts} splits saved to accounts`
@@ -180,14 +194,14 @@ function loadStudents() {
       count.textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits ? `${student.recordedVisits} recorded visits in 30 days` : "Visits not recorded"}`;
       row.append(button, count); return row;
     }));
-    el('student-status').textContent = studentRows.length ? '' : 'Students appear here after they use Stem Splitter.';
+    el('student-status').textContent = studentRows.length ? '' : studentsNextCursor ? 'No eligible accounts on these pages yet.' : 'Students appear here after they use Stem Splitter.';
     return true;
   } catch (error) {
     el('student-status').textContent = error.message;
     el('guest-activity').textContent='Guest activity unavailable.';
     el('student-retry').hidden = false;
     return false;
-  } finally { studentsLoading = null; } })();
+  } finally { studentsLoading = null; el('student-list-more').disabled = false; } })();
   return studentsLoading;
 }
 async function openAccountActivity(user) {
@@ -206,6 +220,9 @@ async function openAccountActivity(user) {
   });
   if (!studentsLoaded && !await loadStudents()) return;
   if (requestId !== studentRequest) return;
+  while (!studentRows.some(row => row.subject === user.subject) && studentsNextCursor) {
+    if (!await loadStudents(true) || requestId !== studentRequest) return;
+  }
   const student = studentRows.find(row => row.subject === user.subject);
   if (!student) { el('student-status').textContent = 'Activity is unavailable for this account.'; return; }
   await loadStudentJobs(student);
@@ -252,12 +269,16 @@ async function loadStudentJobs(student, more = false) {
   }
   finally { if (requestId === studentRequest) el('student-more').disabled = false; }
 }
+el('student-list-more').addEventListener('click', () => void loadStudents(true));
 el('student-review').addEventListener('toggle', () => {
-  if (el('student-review').open && !studentsLoading) void loadStudents();
+  if (el('student-review').open && !studentsLoaded && !studentsLoading) void loadStudents();
 });
 el('student-retry').addEventListener('click', async () => {
   const selection = studentSelection;
   if (!await loadStudents() || selection !== studentSelection) return;
+  while (!studentRows.some(row => row.subject === selection) && studentsNextCursor) {
+    if (!await loadStudents(true) || selection !== studentSelection) return;
+  }
   const student = studentRows.find(row => row.subject === selection);
   if (student) await loadStudentJobs(student);
 });
