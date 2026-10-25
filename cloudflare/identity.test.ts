@@ -154,3 +154,12 @@ test('a null instructor end date is distinct from expired, empty or malformed da
     assert.equal((await authorizeCailRequest(req('/api/teacher/folders'), env))?.status, 403);
   }
 });
+
+test('the report principal preserves the verified student preferred name', async () => {
+  const { env } = setup();
+  const jwt = await issuer.mintIdentityJwt({ audience: STEM_AUDIENCE, subject: TEST_SUBJECTS.alice, name: 'Sam Student' });
+  const principals: AppPrincipal[] = [];
+  assert.equal(await authorizeCailRequest(req('/api/bug-reports/session', jwt), env, value => principals.push(value)), null);
+  assert.equal(principals[0].preferredName, 'Sam Student');
+  assert.notEqual(principals[0].role, 'admin');
+});

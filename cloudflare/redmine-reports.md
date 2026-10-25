@@ -38,3 +38,31 @@ public release `d69851a1`. The shared navigation includes Class workspace.
 Provider starts remain disabled until dev has its provider credentials, and
 existing dev bindings are preserved. Form and routing checks do not establish
 successful ticket delivery; verify that separately when submitting an authorized report.
+
+## Production
+
+Production pins `BUG_REPORT_MODE=redmine-fallback`. The shared SSO / `.edu`
+guest form remains available through the existing `BUG_REPORTS` binding when
+Redmine is unconfigured. That Admission service sends to `zmuhlbauer1@gmail.com`;
+this release adds no credential, email permission, or shared service deployment.
+
+Apply additive migrations 0031 and 0032 to the existing production D1 before
+publishing this mode. `bug_report_deliveries` stores report UUID, description,
+page, release, timestamp, hashed owner/rate references, selected transport and
+pending/accepted/unknown state. Guest contact fields and raw account/IP values
+are not copied into this table or the fallback email. Description text is
+user-supplied and may itself contain personal information. Records are private
+and retained; do not drop receipt tables on rollback or replay old reports.
+
+When configured, Redmine remains the first transport. Only a definite rejected
+Redmine receipt permits email fallback. Timeouts, unreadable replies, lost
+acknowledgments and pending receipts stay on Redmine, including if its key is
+later removed. Existing receipt fingerprints are reconciled before a transport
+is selected. The shared email service durably claims each report before sending
+and owns email duplicate protection; retries preserve UUID and description.
+
+The UI distinguishes email acceptance from mailbox receipt: “Report recorded.
+Email accepted for delivery.” Actual delivery requires separate mailbox readback.
+A missing sender or failed/uncertain send must not produce that success message.
+Rollback the Worker while retaining these additive tables and delivery records;
+rolling code back does not retract mail or erase reports already accepted.

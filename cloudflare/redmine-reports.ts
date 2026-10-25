@@ -52,7 +52,7 @@ async function findIssue(key: string, owner: string, id: string, at: string, sig
   throw new Error('lookup_incomplete');
 }
 
-/** Dev-only delivery: account-bound receipts contain no report description. */
+/** Private Redmine delivery: account-bound receipts contain no report description. */
 export function redmineReports(db: D1Database, key: string): BugReportService {
   async function deliver(report: Parameters<BugReportService['submitAuthenticated']>[0] & { contact?: GuestContact; rateKey?: string }): Promise<BugReportResult> {
     const owner = await bugReportActor(report.contact ? `guest-report-email:v1\n${report.contact.email}` : report.subject), id = report.reportId;

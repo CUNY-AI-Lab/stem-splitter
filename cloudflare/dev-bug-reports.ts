@@ -1,8 +1,8 @@
 /** The Worker supplies a verified principal; the delivery adapter owns receipts. */
 import { parseGuestContact, type GuestContact } from '../public/bug-report/contact.js';
 export type BugReport = { reportId: string; description: string; path: string; expectedActor: string };
-type FailureCode = 'invalid' | 'forbidden' | 'not_admitted' | 'idempotency_conflict' | 'rate_limited' | 'unavailable' | 'redmine_rejected';
-export type BugReportResult = { ok: true; status: 'saved'; reportId: string; createdAt: string } |
+type FailureCode = 'invalid' | 'forbidden' | 'not_admitted' | 'idempotency_conflict' | 'rate_limited' | 'unavailable' | 'delivery_unknown' | 'redmine_rejected';
+export type BugReportResult = { ok: true; status: 'saved'; delivery?: 'redmine' | 'email'; reportId: string; createdAt: string } |
   { ok: false; code: FailureCode; retryable: boolean; retryAfterSeconds?: number };
 export type BugReportService = {
   submitAuthenticated(report: { reportId: string; subject: string; preferredName?: string | null; description: string; origin: string; path: string; release: string }): Promise<BugReportResult>;
@@ -14,8 +14,8 @@ type Options = {
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PATHS = new Set(['/', '/teacher.html', '/account.html', '/classroom.html']);
-const CODES = new Set<FailureCode>(['invalid', 'forbidden', 'not_admitted', 'idempotency_conflict', 'rate_limited', 'unavailable', 'redmine_rejected']);
-const statuses = { invalid: 400, forbidden: 403, not_admitted: 403, idempotency_conflict: 409, rate_limited: 429, unavailable: 503, account_changed: 409, redmine_rejected: 502 };
+const CODES = new Set<FailureCode>(['invalid', 'forbidden', 'not_admitted', 'idempotency_conflict', 'rate_limited', 'unavailable', 'delivery_unknown', 'redmine_rejected']);
+const statuses = { invalid: 400, forbidden: 403, not_admitted: 403, idempotency_conflict: 409, rate_limited: 429, unavailable: 503, delivery_unknown: 503, account_changed: 409, redmine_rejected: 502 };
 function response(result: unknown, status = 200, retryAfterSeconds?: number) {
   return Response.json(result, { status, headers: {
     'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
@@ -112,7 +112,7 @@ async function deliveryResponse(delivery: Promise<BugReportResult>, reportId: st
     const result = await within(delivery, 20000);
     if (result?.ok === true && result.status === 'saved' && result.reportId === reportId &&
         typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt)) && new Date(result.createdAt).toISOString() === result.createdAt) {
-      return response({ ok: true, status: 'saved', reportId, createdAt: result.createdAt });
+      return response({ ok: true, status: 'saved', reportId, createdAt: result.createdAt, ...(result.delivery === 'email' || result.delivery === 'redmine' ? { delivery: result.delivery } : {}) });
     }
     if (result?.ok === false && CODES.has(result.code) && typeof result.retryable === 'boolean') {
       const retryAfterSeconds = Number.isSafeInteger(result.retryAfterSeconds) && result.retryAfterSeconds! > 0 && result.retryAfterSeconds! <= 86400 ? result.retryAfterSeconds : undefined;

@@ -34,7 +34,7 @@ async function mountAvailableReport(explicit = false) {
     // A deliberately disabled receiver has no form or automatic retries.
     if (availability.enabled === false) { recovery?.remove(); recovery = null; attempts = 3; return; }
     if (availability.enabled !== true) throw new Error('availability');
-    const dev = availability.mode === 'dev-contact';
+    const dev = ['contact', 'dev-contact'].includes(availability.mode);
     const { mountBugReport } = await import(dev ? './bug-report/dev-form.js' : './bug-report/form.js');
     if (dev && !document.querySelector('link[href="/bug-report/dev-form.css"]')) {
       const style = document.createElement('link');

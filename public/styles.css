@@ -2851,6 +2851,7 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui footer > p { grid-column: 1; }
 .refined-ui .footer-feedback-slot { grid-column: 2; grid-row: 1 / span 3; align-self: center; justify-self: end; min-width: 44px; }
 .refined-ui .footer-feedback-slot .bug-report { padding-top: 0; }
+.refined-ui footer:has(.footer-teacher-link) .footer-feedback-slot { grid-row: 3; }
 .refined-ui footer p { margin: 0 0 .6rem; }
 .refined-ui footer .project-credit { padding-bottom: 0; border-bottom: 0; }
 .refined-ui .footer-sig { font-size: .65rem; letter-spacing: .05em; color: var(--ink-dim); }

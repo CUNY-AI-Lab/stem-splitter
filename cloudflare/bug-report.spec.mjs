@@ -26,7 +26,14 @@ async function setup(page, signedIn = true) {
   await harness.listen();
   const frontend = await localHttpsFixture(request => fixtureFetch(harness, request));
   const url = new URL(frontend.origin);
-  const control = input => harness.fetch('/__bug-fixture', { method: 'POST', body: JSON.stringify(input) });
+  // Keep setup, assertions and browser requests on the same HTTPS origin.
+  const control = input => page.request.post(new URL('/__bug-fixture', url).href, { data: input });
+  const stats = async () => {
+    const response = await page.request.get(new URL('/__bug-fixture', url).href);
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toContain('application/json');
+    return response.json();
+  };
   await control({ sql: schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8')) });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const signIn = async (actor = 'alice') => {
@@ -35,7 +42,7 @@ async function setup(page, signedIn = true) {
   };
   if (signedIn) await signIn();
   await page.goto(new URL('/account.html', url).href);
-  return { harness, url, errors, control, signIn, stats: async () => (await (await harness.fetch('/__bug-fixture')).json()),
+  return { harness, url, errors, control, signIn, stats,
     close: async () => { await frontend.close(); await harness.close(); expect(frontend.errors).toEqual([]); } };
 }
 const field = page => page.getByRole('textbox', { name: 'What went wrong?', exact: true });
@@ -251,4 +258,44 @@ test('disabled reporting stays absent and repeated offline/focus events coalesce
     await expect(page.getByRole('button',{name:'Retry problem reporting',exact:true})).toHaveCount(0);
     expect((await f.stats()).calls).toHaveLength(0);
   }finally{release();await f.close();}
+});
+
+test('explicit Redmine-only mode remains unavailable without its secret', async ({ page }) => {
+  const f = await setup(page, false);
+  try {
+    await f.control({ reportMode: 'redmine' });
+    // Exercise the same HTTPS listener as the browser instead of a second
+    // request origin through the parallel Workerd harness proxy.
+    const availability = await page.request.get(new URL('/api/bug-reports/availability', f.url).href);
+    expect(availability.status()).toBe(200);
+    expect(await availability.json()).toEqual({ enabled: false, mode: 'contact', delivery: 'redmine' });
+    const response = await page.request.post(new URL('/api/bug-reports', f.url).href, { data: { reportId: crypto.randomUUID(), description, path: '/' } });
+    expect(response.status()).toBe(503);
+    expect((await f.stats()).calls).toHaveLength(0);
+  } finally { await f.close(); }
+});
+
+test('production fallback records authenticated and validated guest reports with truthful email status', async ({ page }) => {
+  const f = await setup(page);
+  try {
+    await f.control({ reportMode: 'redmine-fallback' });
+    await page.reload();
+    await page.getByRole('button', { name: 'Report a bug', exact: true }).click();
+    await page.getByRole('textbox', { name: 'What went wrong?', exact: true }).fill(description);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(status(page)).toHaveText('Report recorded. Email accepted for delivery.');
+    expect((await f.stats()).records).toHaveLength(1);
+    await page.context().clearCookies(); await page.reload();
+    await page.getByRole('button', { name: 'Report a bug', exact: true }).click();
+    await page.getByRole('button', { name: 'No account?', exact: true }).click();
+    await page.getByLabel('First name').fill('Synthetic'); await page.getByLabel('Last name').fill('Guest');
+    await page.locator('input[name="email"]').fill('synthetic@example.com');
+    await page.getByRole('textbox', { name: 'What went wrong?', exact: true }).fill(description);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(page.locator('[data-error="email"]')).toBeVisible(); expect((await f.stats()).records).toHaveLength(1);
+    await page.locator('input[name="email"]').fill('synthetic@example.edu');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(status(page)).toHaveText('Report recorded. Email accepted for delivery.');
+    expect((await f.stats()).records).toHaveLength(2);
+  } finally { await f.close(); }
 });
