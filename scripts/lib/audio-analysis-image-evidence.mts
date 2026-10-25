@@ -13,6 +13,8 @@ export const AUDIO_ANALYSIS_MAX_IMAGE_BYTES = 251_658_240 as const;
 
 export const AUDIO_ANALYSIS_IMAGE_EVIDENCE_SOURCES = [
   '.dockerignore',
+  '.github/scripts/ci-changes.mjs',
+  '.github/scripts/cloudflare-ci-changes.mjs',
   '.github/workflows/ci.yml',
   'audio-analysis/Dockerfile',
   'audio-analysis/app.ts',

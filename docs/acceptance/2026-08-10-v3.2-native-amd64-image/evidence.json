@@ -1,16 +1,16 @@
 {
   "$schema": "stem-splitter.audio-analysis-native-amd64.v1",
   "status": "passed",
-  "commit": "a18e52405632bddccc20d051ce1f2ff5c19483e6",
-  "capturedAt": "2026-10-23T03:54:57.914Z",
+  "commit": "093a6bac611f84b5c53d44bc8e90f6a04235fe34",
+  "capturedAt": "2026-10-23T23:24:55.566Z",
   "github": {
     "repository": "CUNY-AI-Lab/stem-splitter",
     "workflow": "CI",
     "job": "analysis-image",
-    "eventName": "pull_request",
-    "runId": "39897318926",
+    "eventName": "workflow_dispatch",
+    "runId": "40039301021",
     "runAttempt": 1,
-    "sourceCommit": "a18e52405632bddccc20d051ce1f2ff5c19483e6"
+    "sourceCommit": "093a6bac611f84b5c53d44bc8e90f6a04235fe34"
   },
   "runner": {
     "os": "Linux",
@@ -18,7 +18,7 @@
     "dockerPlatform": "linux/x86_64"
   },
   "image": {
-    "id": "sha256:ade1e62124e5017570a8e974ffc554f36eb7588533ae06179e997be09f7da455",
+    "id": "sha256:2727f8dab6bcd4d9eb08181f02a0e7f41e7f5de993e7c23306d74be5dbb1311e",
     "platform": "linux/amd64",
     "sizeBytes": 231074728,
     "maximumBytes": 251658240,
@@ -51,8 +51,16 @@
       "sha256": "4c36ee307d361da684858f431794234efcbda39dd5307dc8f15e180356fd2015"
     },
     {
+      "path": ".github/scripts/ci-changes.mjs",
+      "sha256": "29925382b669ec7bd906365fd31fe45752ce48c68958b3915a451631cadce2aa"
+    },
+    {
+      "path": ".github/scripts/cloudflare-ci-changes.mjs",
+      "sha256": "208151fb385c49c6ae1b411c28cdd3036363a17417d9bd984e549a0bd6230e38"
+    },
+    {
       "path": ".github/workflows/ci.yml",
-      "sha256": "a7300371ff029f4718712050d577236d4a334dd6e78a224556beda7d21d87629"
+      "sha256": "193339e7c817f1079d04e7b43b3c7fe8974c7455a93e6f2706d1288d66379135"
     },
     {
       "path": "audio-analysis/Dockerfile",
@@ -120,7 +128,7 @@
     },
     {
       "path": "scripts/lib/audio-analysis-image-evidence.mts",
-      "sha256": "7b277d2394538d26587a5d900251936a01319ed1f30856818ffbc435248f7e00"
+      "sha256": "baf3f8b1f752dce34281edcf1a23d35dd781e71749af9dcfd8c8018d5cfe677c"
     },
     {
       "path": "scripts/smoke-audio-analysis-image.sh",
