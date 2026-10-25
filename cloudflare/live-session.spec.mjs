@@ -78,12 +78,12 @@ test('eight independent browsers opt into instructor playback, focus and section
   test.setTimeout(120000);
   const f = await setup(browser, 8), [host, ...students] = f.pages;
   try {
-    await expect(host.getByRole('button', { name: 'Start class session', exact: true })).toBeVisible();
+    await expect(host.getByRole('button', { name: 'Start shared session', exact: true })).toBeVisible();
     await students[0].locator('.seek').fill('400');
     await students[0].locator('.seek').dispatchEvent('change');
     expect((await state(host)).time).toBeLessThan(1);
     expect(f.writes).toEqual([]);
-    await host.getByRole('button', { name: 'Start class session', exact: true }).click();
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
     await expect.poll(async () => (await state(host)).leading).toBe(true);
     for (const page of students) {
       await expect(page.getByRole('button', { name: 'Follow instructor', exact: true })).toBeVisible();
@@ -100,7 +100,7 @@ test('eight independent browsers opt into instructor playback, focus and section
     await host.locator('.play-btn').click();
     for (const page of students) {
       await expect.poll(async () => { const current = await state(page); return current.playing || current.blocked; }, { timeout: 10000 }).toBe(true);
-      if ((await state(page)).blocked) await page.getByRole('button', { name: 'Join class audio', exact: true }).click();
+      if ((await state(page)).blocked) await page.getByRole('button', { name: 'Join shared audio', exact: true }).click();
     }
     await convergence(f.pages, current => current.playing);
     await expect.poll(async () => {
@@ -113,14 +113,14 @@ test('eight independent browsers opt into instructor playback, focus and section
     await convergence(f.pages, current => !current.playing);
     const denied = await students[0].request.put(new URL(path, f.url).href, { data: { action: 'end', expectedRevision: (await state(students[0])).revision } });
     expect(denied.status()).toBe(403);
-    await students[0].getByRole('button', { name: 'Leave class session', exact: true }).click();
+    await students[0].getByRole('button', { name: 'Leave shared session', exact: true }).click();
     await expect(students[0].locator('.seek')).toBeEnabled();
     const independent = (await state(students[0])).time;
     await host.locator('.loop-clear').click();
     await host.locator('.seek').fill('500'); await host.locator('.seek').dispatchEvent('change');
     await convergence(students.slice(1), current => Math.abs(current.time - 35) < .4 && current.loop === null);
     expect(Math.abs((await state(students[0])).time - independent)).toBeLessThan(.1);
-    await host.getByRole('button', { name: 'End class session', exact: true }).click();
+    await host.getByRole('button', { name: 'End shared session', exact: true }).click();
     await convergence(students.slice(1), current => !current.following);
     expect(f.writes.filter(write => write.actor !== 0)).toEqual([]); // request.put is intentionally outside browser UI
     expect(f.errors).toEqual([]);
@@ -132,7 +132,7 @@ test('eight independent browsers opt into instructor playback, focus and section
 test('a failed class authority read pauses and conceals the course split', async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start class session', exact: true }).click();
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
     await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
     await f.contexts[1].setExtraHTTPHeaders({ 'x-fixture-identity': f.identities[1], 'x-fixture-course-state': 'revoked' });
     await expect(student.locator('.class-live-status')).toContainText('no longer available', { timeout: 10000 });
@@ -147,22 +147,22 @@ test('a failed class authority read pauses and conceals the course split', async
 test('autoplay rejection offers an explicit audio join and temporary outage requires a fresh opt-in', async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start class session', exact: true }).click();
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
     await host.locator('.play-btn').click();
     await student.evaluate(() => {
       const original = HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play = function () { return window.fixtureAllowAudio ? original.call(this) : Promise.reject(new DOMException('Fixture autoplay policy', 'NotAllowedError')); };
     });
     await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
-    await expect(student.getByRole('button', { name: 'Join class audio', exact: true })).toBeVisible();
+    await expect(student.getByRole('button', { name: 'Join shared audio', exact: true })).toBeVisible();
     await student.evaluate(() => { window.fixtureAllowAudio = true; });
-    await student.getByRole('button', { name: 'Join class audio', exact: true }).click();
+    await student.getByRole('button', { name: 'Join shared audio', exact: true }).click();
     await expect.poll(async () => (await state(student)).playing).toBe(true);
     await student.route(`**${path}`, route => route.fulfill({ status: 503, json: { error: 'fixture outage' } }));
     await expect(student.locator('.class-live-status')).toContainText('connection was lost', { timeout: 10000 });
     expect((await state(student)).playing).toBe(false);
     await student.unroute(`**${path}`);
-    await student.getByRole('button', { name: 'Retry class connection', exact: true }).click();
+    await student.getByRole('button', { name: 'Retry session connection', exact: true }).click();
     await expect(student.getByRole('button', { name: 'Follow instructor', exact: true })).toBeVisible();
     expect((await state(student)).following).toBe(false);
     expect((await state(student)).playing).toBe(false);
@@ -173,7 +173,7 @@ test('autoplay rejection offers an explicit audio join and temporary outage requ
 test('page visibility lifecycle pauses leadership once and stops hidden polling', async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start class session', exact: true }).click();
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
     await host.locator('.play-btn').click();
     await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
     await expect.poll(async () => (await state(student)).playing).toBe(true);
@@ -188,7 +188,7 @@ test('page visibility lifecycle pauses leadership once and stops hidden polling'
     expect((await state(student)).playing).toBe(false);
     expect((await state(host)).leading).toBe(false);
     await host.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
-    await expect(host.getByRole('button', { name: 'Resume class session', exact: true })).toBeVisible();
+    await expect(host.getByRole('button', { name: 'Resume shared session', exact: true })).toBeVisible();
     expect((await state(host)).leading).toBe(false);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
