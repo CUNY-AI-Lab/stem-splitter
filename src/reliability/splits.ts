@@ -58,6 +58,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if(value.openAudio!==undefined){
     const selected=parseOpenAudioSelection(value.openAudio);
     if(!selected)throw new OperationError('invalid_input',400,'Choose a verified open recording.');
+    if(selected.provider==='ccmixter')throw new OperationError('source_unavailable',503,'This provider is unavailable. Choose Wikimedia Commons or Internet Archive.');
     input.openAudio=selected;input.filename='Open audio';
   } else if (value.sourceUrl !== undefined) {
     const url = parseMediaUrl(value.sourceUrl);

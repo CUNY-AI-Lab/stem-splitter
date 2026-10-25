@@ -2908,3 +2908,7 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .folder-rename-form label { flex: 1 1 10rem; min-width: 0; }
 .folder-rename-form input { display: block; width: 100%; min-height: 44px; }
 .folder-rename-form [role="status"] { flex-basis: 100%; }
+
+.audio-source-picker { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; margin-top:.55rem; font-size:.8rem; }
+.audio-source-picker select { max-width:100%; color:var(--text); background:var(--bg-raise); border:1px solid var(--panel-edge); border-radius:5px; padding:.3rem; font:inherit; }
+.recording-credit { font-size:.75rem; max-width:100%; overflow-wrap:anywhere; }

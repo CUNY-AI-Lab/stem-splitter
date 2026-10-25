@@ -1028,7 +1028,8 @@ app.get('/api/music/search', async (c, next) => {
 
   const provider=c.req.query('provider');
   if(provider&&provider!=='archive'){
-    if(provider!=='commons'&&provider!=='ccmixter')return c.json({error:'unsupported_source'},400);
+    if(provider==='ccmixter')return c.json({error:'source_unavailable',message:'This provider is unavailable.'},503);
+    if(provider!=='commons')return c.json({error:'unsupported_source'},400);
     try{return c.json(await searchOpenAudio(provider,c.req.query('q')??'',{db:c.env.DB,maximumSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):300,signal:c.req.raw.signal}),200,{'Cache-Control':'private, no-store'});}
     catch(error){const known=error instanceof OpenAudioError;return c.json({error:known?error.code:'source_unavailable',message:known?error.message:'Search is temporarily unavailable.'},known&&error.code==='source_rate_limited'?429:503,{'Cache-Control':'private, no-store',...(known&&error.retryAfterSeconds?{'Retry-After':String(error.retryAfterSeconds)}:{})});}
   }

@@ -231,7 +231,8 @@ test('open audio selector keeps provider search and submitted recording IDs toge
   await page.route('**/api/jobs',async route=>{if(route.request().method()!=='POST')return route.continue();request=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Synthetic import stopped before processing.'}});});
   await page.goto(f.url.href);await page.getByLabel('New split workspace').selectOption('personal');
   await expect(page.getByLabel('Audio source',{exact:true})).toHaveValue('archive');
-  for(const provider of ['commons','ccmixter']){
+  await expect(page.locator('#audio-source option[value=ccmixter]')).toHaveCount(0);
+  for(const provider of ['commons']){
    await page.getByLabel('Audio source',{exact:true}).selectOption(provider);await expect(page.locator('#source-sample-hint')).toBeHidden();
    await page.locator('#yt-url').fill('Synthetic music');await expect(page.locator('#source-songs')).toContainText('CC BY 4.0');
    await page.locator('#source-songs [role="option"]').first().click();await page.locator('#yt-form').evaluate(form=>form.requestSubmit());

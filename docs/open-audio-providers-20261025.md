@@ -1,6 +1,9 @@
 # Open audio source integration — October 25, 2026
 
-Draft feature; not merged or deployed. Internet Archive remains the default.
+Commons release candidate; Internet Archive remains the default. ccMixter is hidden
+from the selector and rejected by search/submission entry points with503. Its
+internal adapter and three failed receipts remain available for future review,
+without another download attempt.
 Commons and ccMixter share the existing selection/import path. Client selections
 contain only provider/item/file IDs. Imports resolve recording metadata afresh,
 require CC BY, CC0 or verified public-domain recording metadata, and reject NC,
@@ -44,7 +47,7 @@ errors. ccMixter's public metadata/license check succeeded (CC BY2.5), but each
 canonical audio URL returned403. No audio persisted and no retry was made; the
 three failures remain in the denominator. The reason for the remote refusal is
 unknown. No referrer spoofing, protected-page scraping or alternate download
-bypass was attempted. ccMixter is blocked for release pending provider-supported
+bypass was attempted. ccMixter is disabled pending provider-supported
 public download access. Three Commons successes do not establish production
 reliability or parity with Archive.
 
