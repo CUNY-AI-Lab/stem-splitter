@@ -1,3 +1,4 @@
+import {searchOpenAudio,OpenAudioError} from './open-audio.ts';
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
 import { isPlaylistSample, playlistSampleResponse } from './playlist-samples.ts';
@@ -292,9 +293,12 @@ async function sharedSplit(env: Env, id: string) {
 app.get('/api/shared-jobs/:id', async (c) => {
   const row = await sharedSplit(c.env, c.req.param('id'));
   if (!row) return c.json({ error: 'This shared split is unavailable or has expired.' }, 404);
+  const savedCredit=await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(row.id).first<{attribution:string}>();
+  const recordingCredit=savedCredit?JSON.parse(savedCredit.attribution):null;
+  const publicCredit=recordingCredit&&['commons','ccmixter'].includes(recordingCredit.provider)?Object.fromEntries(['provider','providerName','creator','title','sourceUrl','licenseUrl','licenseName','recordingCredit','attributionText'].map(key=>[key,recordingCredit[key]])):null;
   const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
   return c.json({ id: row.id, filename: row.filename, status: 'done', model: row.model,
-    readOnlyShared: true, labels: {}, annotations: [], guide: null,
+    readOnlyShared: true, labels: {}, annotations: [], guide: null, ...(publicCredit?{attribution:publicCredit}:{}),
     stems: stems.map((stem, i) => ({ name: stem.name, url: `/api/shared-jobs/${row.id}/stems/${i}` })) });
 });
 
@@ -1022,6 +1026,12 @@ app.get('/api/music/search', async (c, next) => {
     }
   }
 
+  const provider=c.req.query('provider');
+  if(provider&&provider!=='archive'){
+    if(provider!=='commons'&&provider!=='ccmixter')return c.json({error:'unsupported_source'},400);
+    try{return c.json(await searchOpenAudio(provider,c.req.query('q')??'',{db:c.env.DB,maximumSeconds:c.env.AUTH_MODE==='cail'?importDurationLimit(c.get('principal')):300,signal:c.req.raw.signal}),200,{'Cache-Control':'private, no-store'});}
+    catch(error){const known=error instanceof OpenAudioError;return c.json({error:known?error.code:'source_unavailable',message:known?error.message:'Search is temporarily unavailable.'},known&&error.code==='source_rate_limited'?429:503,{'Cache-Control':'private, no-store',...(known&&error.retryAfterSeconds?{'Retry-After':String(error.retryAfterSeconds)}:{})});}
+  }
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   return archiveSongSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson',
     storage ? { storage, origin: new URL(c.req.url).origin } : undefined,

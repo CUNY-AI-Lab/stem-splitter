@@ -571,7 +571,9 @@ let sampleCache = null;
 let sampleLoad = null;
 const verifiedSongSamples = [];
 const recentSongSearches = new Map();
-const songSearchKey = term => term.toLowerCase().replace(/\s+/g, ' ').trim();
+const audioSource = document.getElementById('audio-source');
+audioSource?.addEventListener('change',()=>{stopSongSample();songSearchAbort?.abort();clearSongSuggestions();songQuery='';if(ytUrlInput.value.trim())void searchSourceSongs(ytUrlInput.value.trim(),++songSearchSequence);});
+const songSearchKey = term => (audioSource?.value||'archive')+':'+term.toLowerCase().replace(/\s+/g, ' ').trim();
 function rememberSongSearch(term, data) {
   if (!data?.results?.length) return;
   const key = songSearchKey(term);
@@ -580,7 +582,7 @@ function rememberSongSearch(term, data) {
   recentSongSearches.set(key, { data, expires: Date.now() + 60000 });
 }
 function sampleVisible() {
-  return !ytUrlInput.value && !ytUrlInput.disabled && !sampleDismissed &&
+  return (!audioSource||audioSource.value==='archive') && !ytUrlInput.value && !ytUrlInput.disabled && !sampleDismissed &&
     !document.hidden && ytDisclosure.open && ytUrlInput.getClientRects().length > 0;
 }
 function stopSongSample(cancelPreload = true) {
@@ -884,7 +886,7 @@ async function searchSourceSongs(term, sequence) {
       option.dataset.value = value;
       option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · Internet Archive: ${track.itemTitle || track.title}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
       sourceSongs.appendChild(option);
     }
@@ -897,7 +899,7 @@ async function searchSourceSongs(term, sequence) {
       songSearchStatus = 'ready';
       return;
     }
-    const cached = term === SAMPLE_SONG_QUERY && sampleCache &&
+    const cached = (!audioSource||audioSource.value==='archive') && term === SAMPLE_SONG_QUERY && sampleCache &&
       Date.now() - sampleCache.createdAt < 600000 ? sampleCache : null;
     let data;
     if (cached) {
@@ -914,7 +916,7 @@ async function searchSourceSongs(term, sequence) {
       if (!current()) return;
       data = outcome.data;
     }
-    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
+    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}${audioSource?.value&&audioSource.value!=='archive'?'&provider='+encodeURIComponent(audioSource.value):''}`, {
       signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
     });
     if (!current()) return;
@@ -1474,7 +1476,7 @@ ytForm.addEventListener('submit', async (e) => {
       method: 'POST',
       courseContext,
       body: JSON.stringify({
-        ...(song ? { archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true, displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
+        ...(song ? { ...(song.openAudio?{openAudio:song.openAudio}:{archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true}), displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
@@ -2315,6 +2317,7 @@ class Mixer {
     if (this.job.model) lines.push(`- Model: ${this.job.model}`);
     lines.push(`- Tracks: ${this.job.stems.map((s) => this.label(s.name)).join(', ')}`, '');
 
+    if (this.job.attribution && ['commons','ccmixter'].includes(this.job.attribution.provider)) lines.push('## Source and recording license', '', this.job.attribution.attributionText || '', '');
     if (this.job.guide && this.job.guide.text) {
       lines.push('## Listening guide', '', this.job.guide.text, '');
     }
@@ -2355,6 +2358,7 @@ class Mixer {
         used.add(base);
         entries.push({ name: `stems/${base}.mp3`, data: new Uint8Array(await res.arrayBuffer()) });
       }
+      if(this.job.attribution && ['commons','ccmixter'].includes(this.job.attribution.provider)) entries.push({name:'source-attribution.json',data:new TextEncoder().encode(JSON.stringify(this.job.attribution,null,2))});
       entries.push({
         name: 'guide-chat-and-notes.md',
         data: new TextEncoder().encode(this.exportMarkdown()),
@@ -3956,7 +3960,10 @@ function canDeleteRun(state) { return runtime.authMode === 'cail' && runtime.run
 function canRenameRun(state) { return !state?.readOnlyShared && (runtime.authMode !== 'cail' || state?.permissions?.owner === true); }
 const titleEdits=new Set();
 function recordingTitleMarkup(job){
-  return canRenameRun(job)?`<button type="button" class="console-title console-title-editable" aria-label="${esc('Rename recording: '+job.filename)}" title="Rename recording">${esc(job.filename)}</button>`:`<span class="console-title">${esc(job.filename)}</span>`;
+  const title=canRenameRun(job)?`<button type="button" class="console-title console-title-editable" aria-label="${esc('Rename recording: '+job.filename)}" title="Rename recording">${esc(job.filename)}</button>`:`<span class="console-title">${esc(job.filename)}</span>`;
+  const a=job.attribution;
+  if(!a||!['commons','ccmixter'].includes(a.provider))return title;
+  return title+`<details class="recording-credit"><summary>Source and recording license</summary><p>${esc(a.attributionText||'')}</p><a download="source-attribution.json" href="data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(a,null,2))}">Download attribution</a></details>`;
 }
 function bindRecordingTitle(el,job){el.querySelector('.console-title-editable')?.addEventListener('click',()=>editRecordingTitle(job,el.querySelector('.console-title')));}
 function rememberRecordingTitle(id,filename){

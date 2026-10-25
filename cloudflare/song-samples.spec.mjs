@@ -221,3 +221,23 @@ test('mobile streams inside the search field with no hint or extra box',async({p
   await input.fill('jazz');await expect(input).toHaveValue('jazz');
  }finally{releaseSamples();await f.harness.close();}
 });
+
+test('open audio selector keeps provider search and submitted recording IDs together',async({page,context})=>{
+ const f=await fixture();const errors=[];page.on('pageerror',e=>errors.push(e.message));let request;
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:0,tracks:[]}}));
+  await page.route('**/api/music/search?*',route=>{const provider=new URL(route.request().url()).searchParams.get('provider');return route.fulfill({json:{results:[{id:provider+':123',title:'Synthetic music',artist:'Fixture creator',durationSec:10,sourceUrl:'https://commons.wikimedia.org/wiki/File:Fixture.mp3',providerName:provider==='commons'?'Wikimedia Commons':'ccMixter',licenseName:'CC BY 4.0',openAudio:{provider,itemId:'123',fileId:provider==='commons'?'original':'456'}}]}});});
+  await page.route('**/api/jobs',async route=>{if(route.request().method()!=='POST')return route.continue();request=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Synthetic import stopped before processing.'}});});
+  await page.goto(f.url.href);await page.getByLabel('New split workspace').selectOption('personal');
+  await expect(page.getByLabel('Audio source',{exact:true})).toHaveValue('archive');
+  for(const provider of ['commons','ccmixter']){
+   await page.getByLabel('Audio source',{exact:true}).selectOption(provider);await expect(page.locator('#source-sample-hint')).toBeHidden();
+   await page.locator('#yt-url').fill('Synthetic music');await expect(page.locator('#source-songs')).toContainText('CC BY 4.0');
+   await page.locator('#source-songs [role="option"]').first().click();await page.locator('#yt-form').evaluate(form=>form.requestSubmit());
+   await expect.poll(()=>request?.openAudio?.provider).toBe(provider);expect(request.openAudio).toEqual({provider,itemId:'123',fileId:provider==='commons'?'original':'456'});expect(request.archiveId).toBeUndefined();
+   await expect(page.locator('#yt-url')).toBeEnabled();request=undefined;
+  }
+  expect(errors).toEqual([]);
+ }finally{await f.harness.close();}
+});

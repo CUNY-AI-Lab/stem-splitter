@@ -9,10 +9,11 @@ export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Da
   return claimQueuedSplit(db,phase,now);
 }
 
-export const isOwnedSourceImport=(request:{sourceType?:unknown;browserAudio?:unknown;archiveSearch?:unknown})=>
-  request.sourceType==='archive'&&request.archiveSearch===true||request.sourceType==='audius'||request.sourceType==='vimeo'||request.sourceType==='youtube'&&request.browserAudio===true;
+export const isOwnedSourceImport=(request:{sourceType?:unknown;browserAudio?:unknown;archiveSearch?:unknown;openAudio?:unknown})=>
+  Boolean(request.openAudio)||request.sourceType==='archive'&&request.archiveSearch===true||request.sourceType==='audius'||request.sourceType==='vimeo'||request.sourceType==='youtube'&&request.browserAudio===true;
 // Keep absent legacy markers false in SQL, including when this predicate is negated.
 const nativeSourceSql=(row:'q'|'app_operations')=>`(COALESCE(json_extract(${row}.request_json,'$.sourceType'),'') IN ('vimeo','audius')
+  OR COALESCE(json_type(${row}.request_json,'$.openAudio'),'')='object'
   OR (COALESCE(json_extract(${row}.request_json,'$.sourceType'),'')='archive' AND COALESCE(json_type(${row}.request_json,'$.archiveSearch'),'')='true')
   OR (COALESCE(json_extract(${row}.request_json,'$.sourceType'),'')='youtube'
     AND COALESCE(json_type(${row}.request_json,'$.browserAudio'),'')='true'))`;
