@@ -32,7 +32,7 @@ async function fixture(context,page,dense=false){
 test('four-layer upload shows guitar instead of faint bass and plays the real encoded result',async({page,context})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));const f=await fixture(context,page);
  try{
-  await expect(page.getByRole('radio',{name:'4 splits: strongest musical layers, the rest',exact:true})).toBeChecked();
+  await page.getByRole('radio',{name:'4 splits: strongest musical layers, the rest',exact:true}).check();
   await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav',import.meta.url)));
   const console=page.locator('.console').first();await expect(console.getByText('READY',{exact:true})).toBeVisible({timeout:20000});
   await expect(console.locator('.ch-name')).toHaveText(['vocals','drums','guitar','other']);
@@ -74,5 +74,25 @@ test('Auto publishes and plays two real layers for a sparse source',async({page,
   await expect.poll(async()=>Number(await console.getByRole('slider',{name:'Seek',exact:true}).inputValue())).toBeGreaterThan(0);
   await console.getByRole('button',{name:'Play all stems',exact:true}).click();
   expect(f.starts()).toBe(1);expect(errors).toEqual([]);
+ }finally{await f.close();}
+});
+
+test('new splitting sessions default to Auto, preserve explicit/saved choices and retain the choice for the next job',async({page,context})=>{
+ const f=await fixture(context,page);
+ try{
+  const auto=page.locator('input[name="stem-model"][value="auto"]');
+  await expect(auto).toBeChecked();
+  const options=await(await f.harness.fetch('/api/separation-options')).json();expect(options.defaultChoice).toBe('auto');expect(options.defaultModel).toBe('adaptive_four');
+  const explicit=page.locator('input[name="stem-model"][value="vocals_instrumental"]');
+  await explicit.check();
+  await page.evaluate(()=>document.getElementById('yt-form').reset());await expect(explicit).toBeChecked();
+  let submitted;
+  await page.route('**/api/jobs',async route=>{if(route.request().method()!=='POST')return route.continue();submitted=route.request().postDataJSON();return route.fulfill({status:202,json:{id:'choice-fixture',filename:'Choice fixture',status:'failed',error:'Synthetic job stops before processing',model:submitted.model,stems:[]}});});
+  await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav',import.meta.url)));
+  await expect.poll(()=>submitted?.model).toBe('vocals_instrumental');await expect(explicit).toBeChecked();expect(f.starts()).toBe(0);
+  await page.reload();await expect(explicit).toBeChecked();
+  await page.evaluate(()=>localStorage.setItem('stem-split-choice-v1','not-a-current-choice'));
+  await page.reload();await expect(auto).toBeChecked();
+  await explicit.check();await auto.check();await page.reload();await expect(auto).toBeChecked();
  }finally{await f.close();}
 });

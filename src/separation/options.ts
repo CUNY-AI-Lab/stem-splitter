@@ -153,6 +153,12 @@ export function getSeparationOptions(backend = 'replicate', adaptive = false): {
   };
 }
 
+/** The initial request choice is separate from the concrete fallback profile.
+ * Auto reuses the already-enabled route; it never enables a provider/feature. */
+export function defaultSplitChoice(fallbackModel: string, automaticAvailable: boolean): string {
+  return automaticAvailable ? 'auto' : fallbackModel;
+}
+
 export function modelIsAllowed(backend: string | undefined, model: string, adaptive = false): boolean {
   return getSeparationOptions(backend, model === ADAPTIVE_FOUR_MODEL && adaptive).models.some((option) => option.id === model);
 }
