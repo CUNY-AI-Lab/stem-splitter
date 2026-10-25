@@ -43,7 +43,7 @@ successful ticket delivery; verify that separately when submitting an authorized
 
 The production configuration now pins `BUG_REPORT_MODE=redmine`. It uses the same
 contact form and adapter as Dev. Provision `REDMINE_API_KEY` on
-`cail-stem-splitter-preview`, apply `redmine-reports.sql` to its existing D1, and
+`cail-stem-splitter-preview`, run `bun run db:migrate:31` against its existing D1, and
 release the checked Cloudflare merge. Missing credentials disable delivery; they
 must never select the email-only form. The alias Worker requires no secret.
 

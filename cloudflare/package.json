@@ -16,7 +16,9 @@
     "db:migrate:28:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0028-listening-cycles.sql",
     "db:migrate:dev": "node migrate-dev.mjs",
     "deploy:dev:check": "wrangler deploy -c wrangler.dev.jsonc --dry-run --outdir /tmp/stem-splitter-dev-dry-run",
-    "deploy:dev": "wrangler deploy -c wrangler.dev.jsonc"
+    "deploy:dev": "wrangler deploy -c wrangler.dev.jsonc",
+    "db:migrate:31": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0031-bug-report-receipts.sql",
+    "db:migrate:31:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0031-bug-report-receipts.sql"
   },
   "dependencies": {
     "@breezystack/lamejs": "1.2.7",
