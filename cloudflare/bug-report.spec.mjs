@@ -26,7 +26,14 @@ async function setup(page, signedIn = true) {
   await harness.listen();
   const frontend = await localHttpsFixture(request => fixtureFetch(harness, request));
   const url = new URL(frontend.origin);
-  const control = input => harness.fetch('/__bug-fixture', { method: 'POST', body: JSON.stringify(input) });
+  // Keep setup, assertions and browser requests on the same HTTPS origin.
+  const control = input => page.request.post(new URL('/__bug-fixture', url).href, { data: input });
+  const stats = async () => {
+    const response = await page.request.get(new URL('/__bug-fixture', url).href);
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toContain('application/json');
+    return response.json();
+  };
   await control({ sql: schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8')) });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const signIn = async (actor = 'alice') => {
@@ -35,7 +42,7 @@ async function setup(page, signedIn = true) {
   };
   if (signedIn) await signIn();
   await page.goto(new URL('/account.html', url).href);
-  return { harness, url, errors, control, signIn, stats: async () => (await (await harness.fetch('/__bug-fixture')).json()),
+  return { harness, url, errors, control, signIn, stats,
     close: async () => { await frontend.close(); await harness.close(); expect(frontend.errors).toEqual([]); } };
 }
 const field = page => page.getByRole('textbox', { name: 'What went wrong?', exact: true });
@@ -253,7 +260,7 @@ test('disabled reporting stays absent and repeated offline/focus events coalesce
   }finally{release();await f.close();}
 });
 
-test('production Redmine mode never falls back to email without its secret', async ({ page }) => {
+test('explicit Redmine-only mode remains unavailable without its secret', async ({ page }) => {
   const f = await setup(page, false);
   try {
     await f.control({ reportMode: 'redmine' });
