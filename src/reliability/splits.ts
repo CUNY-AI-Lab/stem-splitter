@@ -1,3 +1,4 @@
+import {fetchOpenAudio,parseOpenAudioSelection,OpenAudioError,type OpenAudioSelection} from '../open-audio.ts';
 import { parseMediaUrl } from '../url-source.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from '../recording-title.ts';
 import { durationIsAllowed } from '../import-policy.ts';
@@ -27,7 +28,7 @@ import { claimedOperationOwner, ownsClaimedOperation } from '../guest/claim.ts';
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
   sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
-  archiveId?: string; archiveFile?: string; archiveSearch?: boolean; displayTitle?: string; model: string; auto: boolean; browserAnalysis?: unknown;
+  openAudio?: OpenAudioSelection; archiveId?: string; archiveFile?: string; archiveSearch?: boolean; displayTitle?: string; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: boolean;
   adaptive?: 4 | 'auto';
@@ -53,8 +54,13 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   if (typeof submitted!=='string'||(submitted===AUTO_ROUTING_REQUEST ? !adaptive&&(!auto||capability?.mode!=='authoritative') : !modelIsAllowed(env.SEPARATION_BACKEND,submitted,adaptiveAvailable))) throw new OperationError('invalid_model',400,'Choose an available split model.');
   const input: SplitInput={sourceType:'upload',filename:'Audio',model:adaptive?'htdemucs_6s':submitted===AUTO_ROUTING_REQUEST?options.defaultModel:submitted,auto,...(adaptive?{adaptive}:{})};
   if (auto) input.browserAnalysis=parseBrowserAutoSummary(value.browserAnalysis,options.models);
-  if ([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
-  if (value.sourceUrl !== undefined) {
+  if ([value.sourceUrl,value.videoUrl,value.youtubeUrl,value.archiveId,value.audiusId,value.key,value.openAudio].filter(v=>v!==undefined).length!==1) throw new OperationError('invalid_input',400,'Choose exactly one audio source.');
+  if(value.openAudio!==undefined){
+    const selected=parseOpenAudioSelection(value.openAudio);
+    if(!selected)throw new OperationError('invalid_input',400,'Choose a verified open recording.');
+    if(selected.provider==='ccmixter')throw new OperationError('source_unavailable',503,'This provider is unavailable. Choose Wikimedia Commons or Internet Archive.');
+    input.openAudio=selected;input.filename='Open audio';
+  } else if (value.sourceUrl !== undefined) {
     const url = parseMediaUrl(value.sourceUrl);
     if (!url) throw new OperationError('invalid_source_url',400,'Paste a public HTTPS media link.');
     if (env.URL_IMPORT_ENABLED !== 'true' || !replicateConfiguration(env)) throw new OperationError('url_import_unavailable',503,'URL import is temporarily unavailable. Upload an audio file.');
@@ -104,11 +110,11 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const requestFingerprint=await fingerprint(input);
   if(input.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function')input.browserAudio=true;
   const id=crypto.randomUUID();
-  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',role:principal.role,courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl?'split':'fetch',jobId:id,request:input,
+  return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',role:principal.role,courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl&&!input.openAudio?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
       const statements=[env.DB.prepare(`INSERT INTO jobs(id,filename,source_key,status,model,source_type,routing_request)
         SELECT id,?,?,'queued',?,?,? FROM app_operations WHERE id=?`)
-        .bind(input.filename,input.key ?? `uploads/${id}/source.m4a`,input.model,input.sourceType,input.adaptive?`adaptive:${input.adaptive}`:null,opId),
+        .bind(input.filename,input.key ?? `uploads/${id}/source.m4a`,input.model,input.openAudio?.provider??input.sourceType,input.adaptive?`adaptive:${input.adaptive}`:null,opId),
         env.DB.prepare(`INSERT INTO ${ownershipTable(principal,'job')}(job_id,subject) SELECT id,subject FROM app_operations WHERE id=?`).bind(opId)];
       const course=courseAssignmentStatement(env,id,principal);
       if (course) statements.push(course);
@@ -122,7 +128,7 @@ async function fail(env: Env, op: Operation, code: string, message='This split c
     env.DB.prepare(`UPDATE jobs SET status='failed',error=? WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL}))`).bind(message,op.job_id,op.id,op.fence),
   ]);
 }
-async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:'audio/webm'|'audio/mp4';attribution?:unknown;durationSec?:number}) {
+async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:string;attribution?:unknown;durationSec?:number}) {
   const maximum = op.quota_class === 'guest' ? 300 : 900;
   if (!durationIsAllowed(audio.durationSec,maximum)) throw new YouTubeError(`Audio exceeds your ${maximum/60}-minute import limit or has no valid duration.`, 'source_too_long');
   if (!audio.data.byteLength||audio.data.byteLength>MAX_BYTES) throw new YouTubeError('Audio is empty or too large.','invalid_audio_response');
@@ -218,6 +224,11 @@ async function start(env: Env,op: Operation) {
   }
   catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No allowance was used.');return; }
   if (op.cancel_requested) {await fail(env,op,'cancelled');return;}
+  if(op.phase==='fetch'&&input.openAudio){
+    try{await imported(env,op,input,await fetchOpenAudio(input.openAudio,{db:env.DB,maximumSeconds:op.quota_class==='guest'?300:900,deadline:op.deadline}));}
+    catch(error){await fail(env,op,error instanceof OpenAudioError?error.code:'open_audio_failed',error instanceof OpenAudioError?error.message+' No allowance was used.':undefined);}
+    return;
+  }
   if (op.phase==='fetch'&&input.sourceType==='archive') {
     try {await storeArchive(env,op,input);} catch(error) {
       await fail(env,op,error instanceof ArchiveError?error.code:'archive_import_failed',
@@ -262,7 +273,7 @@ async function start(env: Env,op: Operation) {
       if (input.auto&&capability) {
         const options=getSeparationOptions(env.SEPARATION_BACKEND);
         let expectedSourceBytes: number | undefined;
-        if (input.sourceType==='upload'&&capability.mode==='authoritative') {
+        if (input.sourceType==='upload'&&!input.openAudio&&capability.mode==='authoritative') {
           const snapshot=await prepareAuthoritativeAutoSource(env,{jobId:op.id,sourceKey,allowExisting:true,isCurrent:async()=>{const current=await readOperation(env.DB,op.id);return current?.fence===op.fence&&current.lease_owner===op.lease_owner&&current.state==='running'&&!current.cancel_requested;}});sourceKey=snapshot.snapshotKey;expectedSourceBytes=snapshot.bytes;
         }
         const stored=await env.DB.prepare('SELECT source_hash FROM jobs WHERE id=?').bind(op.job_id).first<{source_hash:string|null}>();

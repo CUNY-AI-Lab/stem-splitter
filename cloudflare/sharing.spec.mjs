@@ -16,6 +16,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     const sql = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
     sql.push(`INSERT INTO app_users (subject) VALUES ('${TEST_SUBJECTS.alice}')`,
       `INSERT INTO jobs (id, filename, source_key, status, model, stems, labels) VALUES ('remix-fixture', 'Shared audio', 'uploads/private.wav', 'done', 'htdemucs_ft', '[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]', '{"vocals":"PRIVATE LABEL"}')`,
+      `INSERT INTO job_attributions(job_id,attribution) VALUES ('remix-fixture','{"provider":"commons","creator":"Fixture creator","licenseName":"CC BY 4.0","sourceUrl":"https://commons.wikimedia.org/wiki/File:Fixture.mp3","attributionText":"Fixture recording — Fixture creator. CC BY 4.0.","privateFixture":"DO NOT SHARE"}')`,
       `INSERT INTO job_owners (job_id, subject) VALUES ('remix-fixture', '${TEST_SUBJECTS.alice}')`);
     await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) });
     await server.fetch('/__fixture/audio', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url)) });
@@ -30,8 +31,13 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await expect(page.locator('footer .project-credit')).toContainText('Critical AI Literacy Institute');
     expect(await page.locator('main > footer').evaluate(el => getComputedStyle(el).borderTopWidth)).toBe('1px');
     expect(await page.locator('.project-credit').evaluate(el => getComputedStyle(el).borderBottomWidth)).toBe('0px');
+    await page.locator('.recording-credit summary').click();
+    await expect(page.locator('.recording-credit')).toContainText('Fixture creator');
+    await page.locator('.session-actions-toggle').count().then(async n=>{if(n)await page.locator('.session-actions-toggle').click();});
+    const zipDownload=page.waitForEvent('download');await page.locator('.export-btn').click({force:true});const zip=await zipDownload;const stream=await zip.createReadStream();const chunks=[];for await(const chunk of stream)chunks.push(chunk);const zipBytes=Buffer.concat(chunks);expect(zipBytes.includes(Buffer.from('source-attribution.json'))).toBe(true);expect(zipBytes.includes(Buffer.from('Fixture creator'))).toBe(true);
     await page.locator('.share-btn:not(.to-remix-btn)').click();
     await expect.poll(async () => (await server.fetch('/api/shared-jobs/remix-fixture')).status).toBe(200);
+    const sharedCredit=await(await server.fetch('/api/shared-jobs/remix-fixture')).json();expect(sharedCredit.attribution.creator).toBe('Fixture creator');expect(JSON.stringify(sharedCredit)).not.toContain('DO NOT SHARE');
     const fixture = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
     for (const route of ['/api/shared-jobs/remix-fixture/stems/0', '/api/files/stems/remix-fixture/vocals.mp3']) {
       const headers = route.includes('/files/') ? { 'x-fixture-identity': token } : {};
@@ -74,6 +80,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await page.goto(new URL('/?job=remix-fixture', url).href);
     await expect(page.locator('.console-title')).toHaveText('Shared audio');
     await expect(page.locator('.badge')).toHaveText('SHARED');
+    await page.locator('.recording-credit summary').click();await expect(page.locator('.recording-credit')).toContainText('CC BY 4.0');
     await expect(page.locator('#upload-message')).toBeHidden();
     await expect(page.getByText('Shared split · Listen and mix. Notes and conversations stay private.', { exact: true })).toHaveCount(0);
     await expect(page.locator('.coach')).toBeHidden();

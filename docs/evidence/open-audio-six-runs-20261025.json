@@ -1,0 +1,321 @@
+{
+  "checkedAt": "2026-10-25T15:54:15.040Z",
+  "processing": "Not started: no provider credentials or model calls; stopped after application reservation/native import/persistence",
+  "results": [
+    {
+      "provider": "commons",
+      "itemId": "64734368",
+      "fileId": "original",
+      "query": "Exit the Premises",
+      "startedAt": "2026-10-25T15:54:04.326Z",
+      "operation": {
+        "phase": "split",
+        "state": "queued",
+        "error_code": null
+      },
+      "provenance": {
+        "provider": "commons",
+        "providerName": "Wikimedia Commons",
+        "itemId": "64734368",
+        "fileId": "original",
+        "title": "Exit the Premises (ISRC USUAN1500029)",
+        "creator": "Kevin MacLeod",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Exit_the_Premises_(ISRC_USUAN1500029).mp3",
+        "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+        "licenseName": "CC BY 3.0",
+        "fileName": "Exit the Premises (ISRC USUAN1500029).mp3",
+        "recordingCredit": "Exit the Premises Kevin MacLeod (incompetech.com)",
+        "attributionText": "Exit the Premises (ISRC USUAN1500029) \u2014 Kevin MacLeod. CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ Source: https://commons.wikimedia.org/wiki/File:Exit_the_Premises_(ISRC_USUAN1500029).mp3. Recording credit: Exit the Premises Kevin MacLeod (incompetech.com)",
+        "rightsEvidence": {
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+          "licenseCode": "cc-by-3.0",
+          "creator": "Kevin MacLeod \u00b7 https://en.wikipedia.org/wiki/en:Kevin_MacLeod",
+          "credit": "Exit the Premises Kevin MacLeod (incompetech.com)",
+          "recordingPage": "https://commons.wikimedia.org/wiki/File:Exit_the_Premises_(ISRC_USUAN1500029).mp3"
+        },
+        "verifiedAt": "2026-10-25T15:54:05.898Z"
+      },
+      "outcome": "imported",
+      "bytes": 6724725,
+      "mime": "audio/mpeg",
+      "sha256": "441d1b594a15b0acdac531495e9c56906e3df5d4002fc651b5a0b763f679c70b",
+      "decode": {
+        "status": 0,
+        "error": ""
+      },
+      "elapsedMs": 1751,
+      "requests": [
+        {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cmediatype%7Cextmetadata&maxlag=5&pageids=64734368",
+          "status": 200,
+          "mime": "application/json; charset=utf-8",
+          "contentLength": "1162",
+          "elapsedMs": 388,
+          "redirectMode": "manual"
+        },
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/3/3e/Exit_the_Premises_%28ISRC_USUAN1500029%29.mp3",
+          "status": 200,
+          "mime": "audio/mpeg",
+          "contentLength": "6724725",
+          "elapsedMs": 133,
+          "redirectMode": "manual"
+        }
+      ]
+    },
+    {
+      "provider": "commons",
+      "itemId": "64736120",
+      "fileId": "original",
+      "query": "Hitman",
+      "startedAt": "2026-10-25T15:54:06.077Z",
+      "operation": {
+        "phase": "split",
+        "state": "queued",
+        "error_code": null
+      },
+      "provenance": {
+        "provider": "commons",
+        "providerName": "Wikimedia Commons",
+        "itemId": "64736120",
+        "fileId": "original",
+        "title": "Hitman (ISRC USUAN1300013)",
+        "creator": "Kevin MacLeod",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Hitman_(ISRC_USUAN1300013).mp3",
+        "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+        "licenseName": "CC BY 3.0",
+        "fileName": "Hitman (ISRC USUAN1300013).mp3",
+        "recordingCredit": "Hitman Kevin MacLeod (incompetech.com)",
+        "attributionText": "Hitman (ISRC USUAN1300013) \u2014 Kevin MacLeod. CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ Source: https://commons.wikimedia.org/wiki/File:Hitman_(ISRC_USUAN1300013).mp3. Recording credit: Hitman Kevin MacLeod (incompetech.com)",
+        "rightsEvidence": {
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+          "licenseCode": "cc-by-3.0",
+          "creator": "Kevin MacLeod \u00b7 https://en.wikipedia.org/wiki/en:Kevin_MacLeod",
+          "credit": "Hitman Kevin MacLeod (incompetech.com)",
+          "recordingPage": "https://commons.wikimedia.org/wiki/File:Hitman_(ISRC_USUAN1300013).mp3"
+        },
+        "verifiedAt": "2026-10-25T15:54:08.045Z"
+      },
+      "outcome": "imported",
+      "bytes": 8035387,
+      "mime": "audio/mpeg",
+      "sha256": "005d6e28345e3c50a0715f5cf887c4cf02c3fa70910cdacc312bf348a3f2a647",
+      "decode": {
+        "status": 0,
+        "error": ""
+      },
+      "elapsedMs": 2127,
+      "requests": [
+        {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cmediatype%7Cextmetadata&maxlag=5&pageids=64736120",
+          "status": 200,
+          "mime": "application/json; charset=utf-8",
+          "contentLength": "1011",
+          "elapsedMs": 74,
+          "redirectMode": "manual"
+        },
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/Hitman_%28ISRC_USUAN1300013%29.mp3",
+          "status": 200,
+          "mime": "audio/mpeg",
+          "contentLength": "8035387",
+          "elapsedMs": 203,
+          "redirectMode": "manual"
+        }
+      ]
+    },
+    {
+      "provider": "commons",
+      "itemId": "64739672",
+      "fileId": "original",
+      "query": "Merry Go",
+      "startedAt": "2026-10-25T15:54:08.204Z",
+      "operation": {
+        "phase": "split",
+        "state": "queued",
+        "error_code": null
+      },
+      "provenance": {
+        "provider": "commons",
+        "providerName": "Wikimedia Commons",
+        "itemId": "64739672",
+        "fileId": "original",
+        "title": "Merry Go (ISRC USUAN1100731)",
+        "creator": "Kevin MacLeod",
+        "sourceUrl": "https://commons.wikimedia.org/wiki/File:Merry_Go_(ISRC_USUAN1100731).mp3",
+        "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+        "licenseName": "CC BY 3.0",
+        "fileName": "Merry Go (ISRC USUAN1100731).mp3",
+        "recordingCredit": "Merry Go Kevin MacLeod (incompetech.com)",
+        "attributionText": "Merry Go (ISRC USUAN1100731) \u2014 Kevin MacLeod. CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ Source: https://commons.wikimedia.org/wiki/File:Merry_Go_(ISRC_USUAN1100731).mp3. Recording credit: Merry Go Kevin MacLeod (incompetech.com)",
+        "rightsEvidence": {
+          "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+          "licenseCode": "cc-by-3.0",
+          "creator": "Kevin MacLeod \u00b7 https://en.wikipedia.org/wiki/en:Kevin_MacLeod",
+          "credit": "Merry Go Kevin MacLeod (incompetech.com)",
+          "recordingPage": "https://commons.wikimedia.org/wiki/File:Merry_Go_(ISRC_USUAN1100731).mp3"
+        },
+        "verifiedAt": "2026-10-25T15:54:09.598Z"
+      },
+      "outcome": "imported",
+      "bytes": 4821076,
+      "mime": "audio/mpeg",
+      "sha256": "c592ca0a9e2312280ea54070831a216c58ab7242890c0742eb95be5365b6e307",
+      "decode": {
+        "status": 0,
+        "error": ""
+      },
+      "elapsedMs": 1501,
+      "requests": [
+        {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cmediatype%7Cextmetadata&maxlag=5&pageids=64739672",
+          "status": 200,
+          "mime": "application/json; charset=utf-8",
+          "contentLength": null,
+          "elapsedMs": 81,
+          "redirectMode": "manual"
+        },
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/f/fb/Merry_Go_%28ISRC_USUAN1100731%29.mp3",
+          "status": 200,
+          "mime": "audio/mpeg",
+          "contentLength": "4821076",
+          "elapsedMs": 60,
+          "redirectMode": "manual"
+        }
+      ]
+    },
+    {
+      "provider": "ccmixter",
+      "itemId": "5847",
+      "fileId": "5176",
+      "query": "Body banging Inst",
+      "startedAt": "2026-10-25T15:54:09.705Z",
+      "operation": {
+        "phase": "fetch",
+        "state": "failed",
+        "error_code": "source_access_refused"
+      },
+      "provenance": null,
+      "outcome": "failed",
+      "elapsedMs": 1389,
+      "requests": [
+        {
+          "url": "https://ccmixter.org/api/query?f=json&ids=5847&limit=1",
+          "status": 200,
+          "mime": "text/plain",
+          "contentLength": "722",
+          "elapsedMs": 496,
+          "redirectMode": "manual"
+        },
+        {
+          "url": "https://ccmixter.org/content/djlang59/djlang59_-_Body_banging_Inst.mp3",
+          "status": 403,
+          "mime": "text/html",
+          "contentLength": "30",
+          "elapsedMs": 377,
+          "redirectMode": "manual"
+        }
+      ],
+      "preflightLicenseEvidence": {
+        "upload_id": 5847,
+        "upload_name": "Body banging Inst",
+        "license_url": "http://creativecommons.org/licenses/by/2.5/",
+        "license_name": "Attribution",
+        "file_page_url": "https://ccmixter.org/files/djlang59/5847",
+        "user_name": "djlang59",
+        "user_real_name": "J.Lang",
+        "upload_tags": ",media,original,trackback,in_album,ccplus,attribution,audio,mp3,44k,stereo,CBR,instrumental,"
+      },
+      "preflightEvidenceSource": "Saved public metadata research before application run; application independently revalidated metadata, then audio GET403"
+    },
+    {
+      "provider": "ccmixter",
+      "itemId": "5843",
+      "fileId": "5172",
+      "query": "Mystro Soul Instumental",
+      "startedAt": "2026-10-25T15:54:11.095Z",
+      "operation": {
+        "phase": "fetch",
+        "state": "failed",
+        "error_code": "source_access_refused"
+      },
+      "provenance": null,
+      "outcome": "failed",
+      "elapsedMs": 1954,
+      "requests": [
+        {
+          "url": "https://ccmixter.org/api/query?f=json&ids=5843&limit=1",
+          "status": 200,
+          "mime": "text/plain",
+          "contentLength": "679",
+          "elapsedMs": 151,
+          "redirectMode": "manual"
+        },
+        {
+          "url": "https://ccmixter.org/content/mystro/mystro_-_Mystro_Soul_Instumental.mp3",
+          "status": 403,
+          "mime": "text/html",
+          "contentLength": "30",
+          "elapsedMs": 320,
+          "redirectMode": "manual"
+        }
+      ],
+      "preflightLicenseEvidence": {
+        "upload_id": 5843,
+        "upload_name": "Mystro Soul Instumental",
+        "license_url": "http://creativecommons.org/licenses/by/2.5/",
+        "license_name": "Attribution",
+        "file_page_url": "https://ccmixter.org/files/mystro/5843",
+        "user_name": "mystro",
+        "user_real_name": "mystro",
+        "upload_tags": ",media,original,trackback,in_video,attribution,audio,mp3,44k,stereo,VBR,classical,drums,funky,hip_hop,instrumental,"
+      },
+      "preflightEvidenceSource": "Saved public metadata research before application run; application independently revalidated metadata, then audio GET403"
+    },
+    {
+      "provider": "ccmixter",
+      "itemId": "5734",
+      "fileId": "5060",
+      "query": "After Winter Dreams",
+      "startedAt": "2026-10-25T15:54:13.050Z",
+      "operation": {
+        "phase": "fetch",
+        "state": "failed",
+        "error_code": "source_access_refused"
+      },
+      "provenance": null,
+      "outcome": "failed",
+      "elapsedMs": 1990,
+      "requests": [
+        {
+          "url": "https://ccmixter.org/api/query?f=json&ids=5734&limit=1",
+          "status": 200,
+          "mime": "text/plain",
+          "contentLength": "667",
+          "elapsedMs": 121,
+          "redirectMode": "manual"
+        },
+        {
+          "url": "https://ccmixter.org/content/click/click_-_After_Winter_Dreams.mp3",
+          "status": 403,
+          "mime": "text/html",
+          "contentLength": "30",
+          "elapsedMs": 301,
+          "redirectMode": "manual"
+        }
+      ],
+      "preflightLicenseEvidence": {
+        "upload_id": 5734,
+        "upload_name": "After Winter Dreams",
+        "license_url": "http://creativecommons.org/licenses/by/2.5/",
+        "license_name": "Attribution",
+        "file_page_url": "https://ccmixter.org/files/click/5734",
+        "user_name": "click",
+        "user_real_name": "Click",
+        "upload_tags": ",media,original,trackback,in_video,attribution,audio,mp3,44k,stereo,CBR,electronic,instrumental,piano,"
+      },
+      "preflightEvidenceSource": "Saved public metadata research before application run; application independently revalidated metadata, then audio GET403"
+    }
+  ]
+}

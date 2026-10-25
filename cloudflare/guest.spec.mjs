@@ -108,7 +108,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
     await expect(input).toHaveAttribute('placeholder', 'Search songs');
-    await expect(page.locator('#yt-disclosure summary')).toHaveText('Search for songs via Internet Archive');
+    await expect(page.locator('#yt-disclosure summary')).toHaveText('Search for songs via Internet Archive or Wikimedia Commons');
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
     await input.fill('https://vimeo.com/76979871');
@@ -335,9 +335,9 @@ test('song suggestions support keyboard selection and stay closed after Escape o
     await delayed.fulfill({json:{results:tracks}});delayed=undefined;
     await expect(page.locator('#source-songs [role="option"]')).toHaveCount(2);await expect(list).toBeHidden();
     await input.press('ArrowDown');await expect(list).toBeVisible();
-    await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');
-    await expect(input).toHaveAttribute('aria-activedescendant',await page.getByRole('option').first().getAttribute('id'));
-    await input.press('ArrowDown');await expect(page.getByRole('option').nth(1)).toHaveAttribute('aria-selected','true');
+    await expect(page.locator('#source-songs').getByRole('option').first()).toHaveAttribute('aria-selected','true');
+    await expect(input).toHaveAttribute('aria-activedescendant',await page.locator('#source-songs').getByRole('option').first().getAttribute('id'));
+    await input.press('ArrowDown');await expect(page.locator('#source-songs').getByRole('option').nth(1)).toHaveAttribute('aria-selected','true');
     await input.press('Enter');await expect(input).toHaveValue("Huntin' Koch (remix) — File artist: De köchunterzZ");
     await expect(list).toBeHidden();
     expect(f.requests.filter(r=>r.path==='/api/jobs'&&r.method==='POST')).toHaveLength(0);
@@ -417,7 +417,7 @@ test('Archive results distinguish source credits and submit the exact choice on 
       for(let index=0;index<tracks.length;index++) {
         const before=await page.locator('#stem-choice').boundingBox();
         await input.fill('Jefferson Airplane white rabbit');
-        const options=page.getByRole('option');await expect(options).toHaveCount(3);
+        const options=page.locator('#source-songs').getByRole('option');await expect(options).toHaveCount(3);
         await expect(options.nth(0)).toContainText('Item creator: Jefferson Airplane');
         await expect(options.nth(0)).toContainText('Item note: my best effort');
         await expect(options.nth(0)).not.toContainText('File artist:');
@@ -454,7 +454,7 @@ test('streamed song choices are usable before discovery finishes and stay in pla
     await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
     const input=page.getByRole('combobox',{name:'Song or link',exact:true});
     await input.fill('Song fixture');
-    const option=page.getByRole('option').first();
+    const option=page.locator('#source-songs').getByRole('option').first();
     await expect(option).toBeVisible();
     await expect(page.locator('#source-songs')).toHaveAttribute('aria-busy','true');
     await input.press('ArrowDown');const selected=await input.getAttribute('aria-activedescendant');
@@ -488,15 +488,15 @@ test('partial song streams preserve visible choices through later updates and in
     const first={id:'first',title:'First song',artist:'Musician',durationSec:150};
     const second={id:'second',title:'Second song',artist:'Musician',durationSec:160};
     await page.evaluate(song=>window.pushSearch({results:[song],done:false}),first);
-    await expect(page.getByRole('option')).toHaveCount(1);await input.press('ArrowDown');
+    await expect(page.locator('#source-songs').getByRole('option')).toHaveCount(1);await input.press('ArrowDown');
     const selected=await input.getAttribute('aria-activedescendant');
     await page.evaluate(songs=>window.pushSearch({results:songs,done:false}),[second,first]);
-    await expect(page.getByRole('option')).toHaveCount(2);
-    await expect(page.getByRole('option').first()).toContainText('First song');
+    await expect(page.locator('#source-songs').getByRole('option')).toHaveCount(2);
+    await expect(page.locator('#source-songs').getByRole('option').first()).toContainText('First song');
     await expect(input).toHaveAttribute('aria-activedescendant',selected);
     await page.evaluate(()=>window.endSearch());
     await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
-    await expect(page.getByRole('option')).toHaveCount(2);
+    await expect(page.locator('#source-songs').getByRole('option')).toHaveCount(2);
     await input.press('Enter');await expect(input).toHaveValue('First song — File artist: Musician');
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{await f.close();}
@@ -625,12 +625,12 @@ test('verified streamed sample keeps its selection and excludes unrelated later 
     await page.waitForFunction(()=>sampleCache.batches.length===1);
     await expect(page.locator('#source-songs')).toBeHidden();
     const input=page.locator('#yt-url');await input.focus();await input.press('Tab');
-    await expect(page.getByRole('option')).toHaveCount(1);await expect(page.locator('#source-songs')).toHaveAttribute('aria-busy','true');
+    await expect(page.locator('#source-songs').getByRole('option')).toHaveCount(1);await expect(page.locator('#source-songs')).toHaveAttribute('aria-busy','true');
     await input.press('ArrowDown');const selected=await input.getAttribute('aria-activedescendant');
     await page.evaluate(track=>{
       window.pushSample({results:[track,{...track,id:'sample-2',title:'Another piano sample',archiveFile:'unrelated.mp3'}],done:true});window.endSample();
     },sampleTrack);
-    await expect(page.getByRole('option')).toHaveCount(1);await expect(input).toHaveAttribute('aria-activedescendant',selected);
+    await expect(page.locator('#source-songs').getByRole('option')).toHaveCount(1);await expect(input).toHaveAttribute('aria-activedescendant',selected);
     await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
     expect(await page.evaluate(()=>window.sampleSearches)).toBe(1);
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
@@ -677,7 +677,7 @@ test('playlist samples randomize candidates and skip missing or unrelated Archiv
     await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Playlist artist Available song');
     expect(queries).toEqual(['Playlist artist Missing song','Playlist artist Available song']);
     await page.locator('#source-sample-hint').click();
-    await expect(page.getByRole('option')).toHaveCount(1);
+    await expect(page.locator('#source-songs').getByRole('option')).toHaveCount(1);
     expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
   }finally{await f.close();}
 });
