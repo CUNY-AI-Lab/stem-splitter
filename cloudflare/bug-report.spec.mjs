@@ -207,3 +207,48 @@ test('a network failure keeps the UUID for manual recovery and empty description
     expect((await f.stats()).calls[0].reportId).toBe(attempts[0].reportId); expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
+
+test('an initial availability outage exposes a keyboard retry, mounts once after recovery, and preserves the report draft', async ({ page }) => {
+  let available=false,checks=0;
+  await page.route('**/api/bug-reports/availability', route=>{
+    checks++;
+    return route.fulfill(available?{json:{enabled:true}}:{status:503,json:{error:'Fixture unavailable'}});
+  });
+  const f=await setup(page,false);
+  try {
+    const retry=page.getByRole('button',{name:'Retry problem reporting',exact:true});
+    await expect(retry).toBeVisible();
+    await expect(page.getByRole('status').filter({hasText:'Problem reporting is temporarily unavailable.'})).toBeVisible();
+    await expect(trigger(page)).toHaveCount(0);
+    expect((await f.stats()).calls).toHaveLength(0);
+    available=true;await retry.focus();await page.keyboard.press('Enter');
+    await expect(trigger(page)).toBeFocused();
+    await expect(page.locator('.bug-report')).toHaveCount(1);
+    await expect(retry).toHaveCount(0);
+    await fillReport(page);await field(page).fill('An unsent synthetic report draft.');
+    await page.getByRole('button',{name:'Close bug report',exact:true}).click();
+    const completedChecks=checks;available=false;
+    await page.evaluate(()=>{window.dispatchEvent(new Event('online'));window.dispatchEvent(new Event('focus'));});
+    await openReport(page);
+    await expect(field(page)).toHaveValue('An unsent synthetic report draft.');
+    expect(checks).toBe(completedChecks);
+    await expect(page.locator('.bug-report')).toHaveCount(1);
+    expect((await f.stats()).calls).toHaveLength(0);
+    expect(f.errors).toEqual([]);
+  } finally {await f.close();}
+});
+
+test('disabled reporting stays absent and repeated offline/focus events coalesce while availability is pending',async({page})=>{
+  let checks=0,release;
+  const held=new Promise(resolve=>{release=resolve;});
+  await page.route('**/api/bug-reports/availability',async route=>{checks++;await held;await route.fulfill({json:{enabled:false}});});
+  const f=await setup(page,false);
+  try {
+    await expect.poll(()=>checks).toBe(1);
+    await page.evaluate(()=>{for(let i=0;i<5;i++){window.dispatchEvent(new Event('online'));window.dispatchEvent(new Event('focus'));}});
+    expect(checks).toBe(1);release();
+    await expect(trigger(page)).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Retry problem reporting',exact:true})).toHaveCount(0);
+    expect((await f.stats()).calls).toHaveLength(0);
+  }finally{release();await f.close();}
+});

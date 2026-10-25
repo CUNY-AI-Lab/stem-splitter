@@ -339,14 +339,15 @@ app.get('/api/model-quota', async (c) => {
 
 app.get('/api/admin/users', async (c) => {
   if (c.get('principal')?.role !== 'admin') return c.json({ error: 'Not found' }, 404);
-  return c.json({ users: await namedUsers(c.env, c.get('principal')!) });
+  try { return c.json(await namedUsers(c.env, c.get('principal')!,false,c.req.query('cursor'))); }
+  catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 
 app.get('/api/teacher/students', async c=>{
   try {
-    const students=await studentActivity(c.env,c.get('principal')!);
+    const page=await studentActivity(c.env,c.get('principal')!,c.req.query('cursor'));
     let guests=null;try {guests=await guestActivity(c.env,c.get('principal')!);}catch {}
-    return c.json({students,guestActivity:guests,visitsDays:30});
+    return c.json({...page,guestActivity:guests,visitsDays:30});
   }
   catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });

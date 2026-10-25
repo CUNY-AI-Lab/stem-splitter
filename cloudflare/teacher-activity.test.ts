@@ -61,10 +61,10 @@ test('verified names from another current course fill historical accounts withou
   listCourseAssignmentsV2:async()=>({ok:true,checkedAt:assignment.checkedAt,expiresAt:assignment.expiresAt,revision:assignment.revision,nextCursor:null,
    assignments:[{...assignment,displayName:'Bob Morgan',...(invalid?{expiresAt:'2020-01-01T00:00:00.000Z'}:{})}]})}} as unknown as Env;
  const actor={subject:admin,role:'admin'} as AppPrincipal;
- invalid=true;assert.equal((await namedUsers(env,actor))[0].displayName,'Name unavailable');
+ invalid=true;assert.equal((await namedUsers(env,actor)).users[0].displayName,'Name unavailable');
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM account_display_names').first<any>())!.n,0);
- invalid=false;assert.equal((await namedUsers(env,actor))[0].displayName,'Bob Morgan');
- assert.equal((await namedUsers(env,{subject:teacher,role:'instructor'} as AppPrincipal,true)).length,0);
+ invalid=false;assert.equal((await namedUsers(env,actor)).users[0].displayName,'Bob Morgan');
+ assert.equal((await namedUsers(env,{subject:teacher,role:'instructor'} as AppPrincipal,true)).users.length,0);
 });
 
 test('claimed guest work contributes to account activity once while retaining its original quota owner',async()=>{
@@ -87,4 +87,34 @@ test('claimed guest work contributes to account activity once while retaining it
  assert.doesNotMatch(JSON.stringify(guests),/Private guest|guest-[a-f0-9]{64}|cail-/);
  await assert.rejects(guestActivity({DB:db} as Env,{subject:alice,role:'student'} as AppPrincipal),(error:any)=>error.status===403);
  assert.equal((await db.prepare("SELECT subject FROM app_operations WHERE id='guest-split'").first<any>()).subject,guest);
+});
+
+test('account pages reach eligible members beyond 200 accounts, advance through empty pages, and reject malformed cursors',async()=>{
+ const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ const people=Array.from({length:201},(_,i)=>'cail-'+i.toString(16).padStart(32,'0'));
+ const target=people[0];
+ for(const person of people)await db.prepare("INSERT INTO app_users(subject,created_at) VALUES(?,'2026-10-01 00:00:00')").bind(person).run();
+ let active=true,calls=0;
+ const env={DB:db,CAIL_COURSE_IDS:'synthetic-course',ADMISSION_RESOLVER:{resolveCourseAccessV2:async({subject,classId}:any)=>{
+  calls++;return subject===teacher||subject===target&&active?{...await courseFixture(subject,classId,subject===teacher),displayName:'Older Student'}:{ok:false,code:'not_enrolled',retryable:false};
+ }}} as unknown as Env;
+ const actor={subject:teacher,role:'instructor'} as AppPrincipal;
+ let cursor:string|undefined, pages=0;const seen:string[]=[];
+ do {
+  const before=calls,page=await namedUsers(env,actor,true,cursor);pages++;
+  assert.ok(calls-before<=26,'at most 25 candidates plus the current instructor authority per page');
+  seen.push(...page.users.map(user=>user.subject));
+  if(pages===1){assert.equal(page.users.length,0);assert.equal(page.complete,false);assert.ok(page.nextCursor);assert.match(page.nextCursor!,/^[0-9]+$/);assert.doesNotMatch(page.nextCursor!,/cail-|Older Student|2026/);}
+  assert.equal(page.complete,page.nextCursor===null);assert.notEqual(page.nextCursor,cursor);
+  cursor=page.nextCursor??undefined;
+ }while(cursor);
+ assert.equal(pages,9);assert.deepEqual(seen,[target]);
+ // Admin pagination must also expose every account exactly once when timestamps tie.
+ cursor=undefined;const all:string[]=[];
+ do {const page=await namedUsers(env,{subject:admin,role:'admin'} as AppPrincipal,false,cursor);all.push(...page.users.map(user=>user.subject));cursor=page.nextCursor??undefined;}while(cursor);
+ assert.equal(all.length,201);assert.equal(new Set(all).size,201);assert.deepEqual([...all].sort(),people);
+ const first=await namedUsers(env,actor,true);active=false;
+ const next=await namedUsers(env,actor,true,first.nextCursor!);assert.equal(next.users.length,0);
+ for(const invalid of ['', 'invalid',btoa('{}'),btoa(JSON.stringify({createdAt:'bad',subject:target})),btoa(JSON.stringify({createdAt:'2026-10-01',subject:target,extra:true}))])
+  await assert.rejects(namedUsers(env,actor,true,invalid),(error:any)=>error.status===400&&error.code==='invalid_cursor');
 });

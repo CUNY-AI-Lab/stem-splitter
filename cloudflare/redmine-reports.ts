@@ -4,6 +4,7 @@ import type { GuestContact } from '../public/bug-report/contact.js';
 const BASE = 'https://tools.ailab.gc.cuny.edu/help/';
 const PROJECT = 15, TRACKER = 2;
 type Receipt = { fingerprint: string; state: string; created_at: string; issue_id: number | null };
+const REDIRECTS = new Set([301,302,303,307,308]);
 const subject = (owner: string, id: string) => `Stem Splitter bug report [stem-report:${owner.slice(0,16)}:${id}]`;
 const failure = (code: 'unavailable' | 'redmine_rejected' | 'rate_limited' | 'idempotency_conflict', retryable = false, retryAfterSeconds?: number): BugReportResult =>
   ({ ok: false, code, retryable, ...(retryAfterSeconds ? { retryAfterSeconds } : {}) });
@@ -13,6 +14,11 @@ async function redmine(key: string, resource: string, signal: AbortSignal, init:
   headers.set('Accept', 'application/json'); headers.set('X-Redmine-API-Key', key);
   // Workers supports manual/follow only. Never forward the API key on redirects.
   const response = await fetch(new URL(resource, BASE), { ...init, headers, redirect: 'manual', signal });
+  // A definite rejection needs no body; upstream streams may stall or be huge.
+  if (REDIRECTS.has(response.status)) {
+    void response.body?.cancel().catch(() => {});
+    return { status: response.status, ok: false, data: null };
+  }
   const reader = response.body?.getReader();
   let length = 0, text = '';
   const decoder = new TextDecoder();
@@ -103,7 +109,7 @@ export function redmineReports(db: D1Database, key: string): BugReportService {
         await db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).bind(owner, id).run();
         return failure('rate_limited', true, 60);
       }
-      if ([301,302,303,307,308,400,401,403,404,422].includes(result.status)) {
+      if (REDIRECTS.has(result.status) || [400,401,403,404,422].includes(result.status)) {
         await db.prepare(`UPDATE ${table} SET state='rejected' WHERE owner=? AND report_id=?`).bind(owner, id).run();
         return failure('redmine_rejected');
       }
