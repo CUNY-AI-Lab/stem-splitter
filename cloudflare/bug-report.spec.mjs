@@ -257,10 +257,13 @@ test('production Redmine mode never falls back to email without its secret', asy
   const f = await setup(page, false);
   try {
     await f.control({ reportMode: 'redmine' });
-    const availability = await (await f.harness.fetch('/api/bug-reports/availability')).json();
-    expect(availability).toEqual({ enabled: false, mode: 'contact', delivery: 'redmine' });
-    const response = await f.harness.fetch('/api/bug-reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reportId: crypto.randomUUID(), description, path: '/' }) });
-    expect(response.status).toBe(503);
+    // Exercise the same HTTPS listener as the browser instead of a second
+    // request origin through the parallel Workerd harness proxy.
+    const availability = await page.request.get(new URL('/api/bug-reports/availability', f.url).href);
+    expect(availability.status()).toBe(200);
+    expect(await availability.json()).toEqual({ enabled: false, mode: 'contact', delivery: 'redmine' });
+    const response = await page.request.post(new URL('/api/bug-reports', f.url).href, { data: { reportId: crypto.randomUUID(), description, path: '/' } });
+    expect(response.status()).toBe(503);
     expect((await f.stats()).calls).toHaveLength(0);
   } finally { await f.close(); }
 });
