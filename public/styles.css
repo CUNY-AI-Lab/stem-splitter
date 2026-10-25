@@ -1626,7 +1626,7 @@ footer a:hover { color: var(--hot); }
 .signin-recovery a:not(.account-button):not(.home-brand) { color: var(--hot); text-underline-offset: .2em; }
 .signin-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
 .account-main { max-width: 780px; }
-.account-main .masthead h1, .account-main .lab-brand { animation: none; }
+.masthead h1, .masthead .lab-brand { animation: none; }
 .account-main .page-btn { min-height: 44px; }
 .account-main a { color: var(--hot); text-underline-offset: .2em; }
 .account-main #account-status:empty, .account-main #access-status:empty { display: none; }
