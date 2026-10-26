@@ -34,6 +34,18 @@ for (const remixer of [false, true]) test(`No Crate and no adversarial panel; Re
       await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-mobile.png` });
       await page.setViewportSize({ width: 1280, height: 900 });
     }
+    // Preserve compact Dev controls alongside production's open-audio picker.
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const search = page.locator('.yt-form > .yt-go');
+      await expect(search).toBeVisible();
+      const button = await search.boundingBox();
+      const form = await page.locator('.yt-form').boundingBox();
+      expect(button.height).toBeGreaterThanOrEqual(44);
+      expect(button.width).toBeGreaterThanOrEqual(44);
+      expect(button.width).toBeLessThan(form.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
     if (remixer) await page.getByRole('tab', { name: /REMIXER/ }).click();
     await expect(page.locator(remixer ? '#remix-deck' : '#jobs')).toBeVisible();
     await expect(page.locator('#crate, [id^="crate-"], [class*="crate"]')).toHaveCount(0);
