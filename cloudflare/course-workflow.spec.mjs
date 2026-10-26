@@ -176,6 +176,10 @@ test('multiple courses default to Personal while explicit choices remain usable 
   await expect(page.locator('#course-work-ack')).toBeHidden();
   await page.getByLabel('Share with').selectOption(course);
   await page.reload();await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  // Leave the old document before switching fixture identities: its session guard
+  // may otherwise reload concurrently with the explicit navigation below.
+  // The same browser context retains storage for the course-default assertion.
+  await page.goto('about:blank');
   await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.bob})});
   await page.goto(f.url.href);await expect(page.getByLabel('Share with')).toHaveValue('personal');
   classes=[];await page.goto(f.url.href);await expect(page.locator('#course-context')).toBeHidden();
