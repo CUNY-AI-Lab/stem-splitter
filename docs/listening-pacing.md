@@ -1,11 +1,13 @@
 # Listening Guide allowances and recovery
 
-Anonymous browser guests receive two successful real replies for the entire
-session. Cue and chat share those places across recordings, tabs, reloads and
-UTC days. The first reply appears normally. The second includes a subtle
+At the October 26, 2026, 03:22 UTC runtime check, guest Listening Guy was
+disabled (`chatAvailable: false`, `chatLimit: null`). The implemented demo
+allows anonymous browser guests two successful real replies for the entire
+session when activated. Cue and chat share that allowance across recordings,
+tabs, reloads, resets and UTC days. The first reply appears normally. The second includes a subtle
 application-provided sign-in link inside the chat. A third interaction displays
-only a sign-in request before any model call. Failed, empty and incomplete
-replies release demo places; cached cues and exact-request readback use no
+only a sign-in request before any model call. Failed, empty, cancelled and incomplete
+replies release their reserved places; cached cues and exact-request readback use no
 additional place. The source is ready for funded activation, which remains
 disabled pending its specifically approved sponsorship and spending contract.
 

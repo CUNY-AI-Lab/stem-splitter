@@ -53,17 +53,22 @@ owns their recordings; class enrollment alone does not share everyone's audio.
 | Separate audio with Replicate | Provider spend, not yet deducted from the Lab allowance |
 | Replicate YouTube fallback | Additional provider prediction, not yet deducted from the Lab allowance |
 
-The daily splitter limits are **15 runs per current STEM course student**,
-**5 runs per other signed-in CUNY AI Lab member**, and **3 runs per guest browser
+The daily splitter limits are **25 runs per app instructor or administrator**,
+**15 runs per other signed-in CUNY AI Lab member**, and **5 runs per guest browser
 session**, per UTC day. There is no shared class or app split-count cap. The app
 reserves successful and in-progress runs atomically; failed or cancelled work
 releases its place. Existing reads do not use a run. My account displays the
 applicable daily count and reset time separately from the estimated Lab model
 allowance. These run counts do not represent provider costs.
 
-Guests receive three runs without a challenge. Turnstile does not unlock more
-splits; the guest Listening Guide still requires its existing daily check. Guest
-work remains isolated to the browser session. See the
+Guests receive five runs without a challenge. Turnstile does not unlock more
+splits. At the October 26, 2026, 03:22 UTC runtime check, guest Listening Guy
+was disabled (`chatAvailable: false`, `chatLimit: null`). When activated, its
+implemented limit is two successful replies for the entire browser session,
+shared across cue and chat. Failed, empty, cancelled or incomplete replies
+release their places.
+The third request requires sign-in before a model call. Guest work remains
+isolated to the browser session. See the
 [current access and allowance specification](superpowers/specs/2026-10-17-lab-access-and-daily-splits.md).
 The app run limits do not change the existing Replicate billing path or Lab
 Gateway model allowance.

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Listening Guy · Stem Splitter Docs</title>
+  <meta name="description" content="Listening Guy writes a guide for each recording and answers questions in a chat. It can change the mixer, but it cannot hear the audio, so check its descriptions against the stems.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎚️</text></svg>">
+  <link rel="stylesheet" href="docs.css?v=20261025">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+  <a class="brand" href="index.html"><span class="brand-word">Stem Splitter</span><span class="brand-docs">Docs</span></a>
+  <nav class="masthead-links" aria-label="Site">
+    <a href="/">Open the app</a>
+    <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>
+  </nav>
+</header>
+<div class="layout">
+  <nav class="sidebar" aria-label="Documentation"><div class="nav-group"><h3>Home</h3><ul><li><a href="index.html">Home</a></li></ul></div><div class="nav-group"><h3>Getting Started</h3><ul><li><a href="getting-started.html">Getting Started</a></li><li><a href="splitter-basics.html">Splitter Basics</a></li></ul></div><div class="nav-group"><h3>Listen & Analyze</h3><ul><li><a href="mixer.html">The Mixer</a></li><li><a href="notes.html">Notes</a></li><li><a href="listening-guy.html" aria-current="page">Listening Guy</a></li><li><a href="export-and-sharing.html">Export & Sharing</a></li></ul></div><div class="nav-group"><h3>Teach & Share</h3><ul><li><a href="classroom.html">Class Workspace</a></li><li><a href="live-sessions.html">Live Sessions</a></li><li><a href="instructor-console.html">Instructor Console</a></li><li><a href="teaching-tips.html">Teaching Tips</a></li><li><a href="sample-activities.html">Sample Activities</a></li><li><a href="student-onboarding.html">Student Onboarding</a></li><li><a href="use-cases.html">Use Cases</a></li></ul></div><div class="nav-group"><h3>Related</h3><ul><li><a href="privacy-and-limits.html">Privacy & Limits</a></li></ul></div></nav>
+  <main id="main" class="content">
+<h1>Listening Guy</h1>
+<p class="lede">Listening Guy writes a guide for each recording and answers questions in a chat. It can change the mixer, but it cannot hear the audio, so check its descriptions against the stems.</p>
+<figure><img alt="The Listening Guy panel with an opening guide, a question from students, and executed mute actions" loading="lazy" src="img/listening-guy.png"/><figcaption>Listening Guy opens with a guide, then answers a question by muting bass, other, and guitar so students hear vocals against drums.</figcaption></figure>
+<h2>From the Guide to the Mixer</h2>
+<p>When a split is ready, Listening Guy writes an opening guide about the recording, its genre, and possible listening questions. The app saves the guide for the song and shares it across the class. Reading that guide costs no turn.</p>
+<p>Use the chat to ask about an instrument, a section, or an unfamiliar term. Listening Guy can read pinned notes and suggest a next step. When an answer calls for a mixer action, it can mute or solo a stem, move the playhead, or pin a note. A chip such as <em>MUTE · BASS</em> appears in the transcript to record the change. Press <kbd>Esc</kbd> to clear solos and the active loop.</p>
+<h2>Using the Chat</h2>
+<p>Type into <em>ask about this song…</em> and press Send. The line above the input shows how many turns remain today. A failed reply costs no turn, and you can retry an interrupted reply without a second charge. If the provider becomes unavailable, the panel explains the problem while the mixer remains available.</p>
+<p><strong>Reset</strong> clears your saved conversation for that split and starts again. Earlier session shows saved history restored when you return to a recording; it does not preserve conversations you reset. Reset does not restore spent turns.</p>
+<h2>What an Answer Can Support</h2>
+<p>Listening Guy uses the song's title and artist, the stem layout, your notes, and the conversation. A statement about a backbeat may come from its general knowledge of a style. The model has no direct evidence from the audio.</p>
+<p>In the demonstrated session, Listening Guy acknowledged that it could not identify an exact moment and suggested that students find it together. The model could mute the requested stems, but students had to listen for the passage. <a href="sample-activities.html">Ask, Then Verify</a> turns that division of work into an exercise with a claim, a mixer action, and a note about what students heard.</p>
+<h2>Turns and Pacing</h2>
+<p>At the October 26, 2026 check, Listening Guy required CUNY Login. Guest splitting was available, but the guest Listening Guy demo remained disabled. See <a href="privacy-and-limits.html">Privacy &amp; Limits</a> for the implemented two-reply guest limit and its activation status.</p>
+<p>Signed-in members receive a daily allowance of successful turns. <a href="splitter-basics.html">Settings</a> and the chat panel show the remaining count. It resets at midnight UTC, which falls at 8:00 PM Eastern during daylight time and 7:00 PM during standard time. Generated guides and existing conversations cost no turn to read.</p>
+<h2>For Instructors</h2>
+<p>Add teaching instructions in the <a href="instructor-console.html">Instructor Console</a> when you want answers to use particular vocabulary or ask students to try a mixer action. The demo instruction asks Listening Guy to explain monophonic and polyphonic texture in plain language. A course Console applies the instruction to that course's work. The application-wide Console applies it to non-course work; check the scope shown before saving.</p>
+<p>You can read conversations attached to your course's splits through the <a href="classroom.html">Class Workspace</a>. Students acknowledge that access before assigning work to the course. The review view costs no turn and allows no edits.</p>
+<p>Listening Guy uses the Lab's model gateway. The Console shows the fixed system prompt under <strong>Prompt reference</strong>, where you can inspect the instructions that frame its answers.</p>
+
+<footer class="page-foot">
+<p>The Critical AI Literacy Institute developed this project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
+<p>The app deletes uploaded files after 90 days. Upload only music you are entitled to use for class.</p>
+</footer>
+</main>
+</div>
+</body>
+</html>

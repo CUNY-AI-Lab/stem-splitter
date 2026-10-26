@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Mixer · Stem Splitter Docs</title>
+  <meta name="description" content="Use the mixer to hear a musical part alone, compare it with another part, or repeat a passage until you can describe what changed.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎚️</text></svg>">
+  <link rel="stylesheet" href="docs.css?v=20261025">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+  <a class="brand" href="index.html"><span class="brand-word">Stem Splitter</span><span class="brand-docs">Docs</span></a>
+  <nav class="masthead-links" aria-label="Site">
+    <a href="/">Open the app</a>
+    <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>
+  </nav>
+</header>
+<div class="layout">
+  <nav class="sidebar" aria-label="Documentation"><div class="nav-group"><h3>Home</h3><ul><li><a href="index.html">Home</a></li></ul></div><div class="nav-group"><h3>Getting Started</h3><ul><li><a href="getting-started.html">Getting Started</a></li><li><a href="splitter-basics.html">Splitter Basics</a></li></ul></div><div class="nav-group"><h3>Listen & Analyze</h3><ul><li><a href="mixer.html" aria-current="page">The Mixer</a></li><li><a href="notes.html">Notes</a></li><li><a href="listening-guy.html">Listening Guy</a></li><li><a href="export-and-sharing.html">Export & Sharing</a></li></ul></div><div class="nav-group"><h3>Teach & Share</h3><ul><li><a href="classroom.html">Class Workspace</a></li><li><a href="live-sessions.html">Live Sessions</a></li><li><a href="instructor-console.html">Instructor Console</a></li><li><a href="teaching-tips.html">Teaching Tips</a></li><li><a href="sample-activities.html">Sample Activities</a></li><li><a href="student-onboarding.html">Student Onboarding</a></li><li><a href="use-cases.html">Use Cases</a></li></ul></div><div class="nav-group"><h3>Related</h3><ul><li><a href="privacy-and-limits.html">Privacy & Limits</a></li></ul></div></nav>
+  <main id="main" class="content">
+<h1>The Mixer</h1>
+<p class="lede">Use the mixer to hear a musical part alone, compare it with another part, or repeat a passage until you can describe what changed.</p>
+<figure><img alt="The mixer with drums soloed and the other five stems muted" loading="lazy" src="img/mixer.png"/><figcaption>When you solo Drums, its Only button lights up and the other stems show Mute engaged.</figcaption></figure>
+<h2>Transport</h2>
+<p>Press the round play button or the space bar to play and pause the stems together. Drag the scrub handle or click a waveform to move to another passage. The left and right arrow keys move the playhead five seconds at a time.</p>
+<p>The speed controls offer 0.5×, 0.75×, and 1× playback. The mixer preserves pitch when you slow the recording, so a fast bass line stays in the same key. Try a slower speed when you need to count a rhythm or follow a short phrase.</p>
+<h2>Solo and Mute</h2>
+<p><strong>Mute</strong> silences one stem. Solo silences the other stems and changes the chosen stem's button to Only. You can solo several stems to hear a subset of the mix, such as vocals with drums. Compare that pair with the full recording before describing how the parts relate.</p>
+<p>Your mix stays local to your browser during independent listening. In a <a href="live-sessions.html">live session</a>, the instructor sends an instrument focus to followers. Each follower's mute switches still apply to that shared focus.</p>
+<h2>Loop</h2>
+<p>Press <kbd>L</kbd> to set a loop around the current region. The mixer repeats the passage so you can follow a riff, cadence, or drum fill. Press <kbd>Esc</kbd> to clear the loop and any solo.</p>
+<h2>Keyboard Shortcuts</h2>
+<table>
+<thead><tr><th>Key</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
+<tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back or forward five seconds</td></tr>
+<tr><td><kbd>1</kbd>–<kbd>9</kbd></td><td>Mute or unmute stem 1–9, top to bottom</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>9</kbd></td><td>Solo stem 1–9</td></tr>
+<tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous or next note</td></tr>
+<tr><td><kbd>L</kbd></td><td>Set a loop</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Clear the loop and any solo</td></tr>
+</tbody>
+</table>
+<p>The shortcut legend also appears below the notes in an expanded session. Focus the mixer before using a shortcut; the keys belong to that recording and leave text fields available for typing.</p>
+<h2>Stem Labels and Colors</h2>
+<table>
+<thead><tr><th>Stem</th><th>What the model places here</th></tr></thead>
+<tbody>
+<tr><td><span class="sw" style="background:#ffb648"></span>Vocals</td><td>Lead and backing voices. Spoken word and crowd noise usually land here too.</td></tr>
+<tr><td><span class="sw" style="background:#ff6b5e"></span>Drums</td><td>Drum kit and most percussion.</td></tr>
+<tr><td><span class="sw" style="background:#5ee0a0"></span>Bass</td><td>Electric and upright bass, low synth bass.</td></tr>
+<tr><td><span class="sw" style="background:#6aa6ff"></span>Other</td><td>Horns, strings, organ, synths, and other sounds the model leaves outside the named stems.</td></tr>
+<tr><td><span class="sw" style="background:#d98cff"></span>Guitar</td><td>Six-stem only. Acoustic and electric guitar.</td></tr>
+<tr><td><span class="sw" style="background:#6ee7e0"></span>Piano</td><td>Six-stem only. Piano and some keyboard parts.</td></tr>
+</tbody>
+</table>
+<p>In a two-stem split, <span class="sw" style="background:#6aa6ff"></span>Instrumental contains the accompaniment. A course can rename labels so students share a vocabulary for the recording. For example, a class might call an Other stem “fiddle” after listening to its contents. <a href="classroom.html">Class Workspace</a> explains the course settings.</p>
+<h2>Check the Split Against the Recording</h2>
+<p>A stem can contain sounds that its label does not name. Reverb and room sound may remain in Other, where brass and reeds also share a track. On an older recording with surface noise or a narrow mono mix, the vocal stem may carry hiss while the drum stem contains little sound.</p>
+<p>A six-stem split can distribute a piano chord across Piano and Other, or leave some guitar in another stem. Listen to the full recording as well as the isolated part before deciding which instrument you hear. <a href="sample-activities.html">Sample Activities</a> includes exercises that ask students to check a description against the stems and explain where the split makes listening harder.</p>
+
+<footer class="page-foot">
+<p>The Critical AI Literacy Institute developed this project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
+<p>The app deletes uploaded files after 90 days. Upload only music you are entitled to use for class.</p>
+</footer>
+</main>
+</div>
+</body>
+</html>

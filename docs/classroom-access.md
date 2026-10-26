@@ -1,4 +1,32 @@
-# Prospective classroom work
+# Classroom work and sharing
+
+## Current interface — October 26, 2026
+
+Release `aa12a79b29011c5193faa97c1a8c58287f1e2ea3` labels the new-work
+selector **Share with**. It starts at Personal even through a `?course=` link.
+Selecting a course and checking its acknowledgment permits instructor review
+of new course splits and their Listening Guy conversations. Changing courses
+clears the checkbox. Existing personal work stays personal.
+
+Instructors control folder sharing. The choices are **Instructors only**,
+**Class: listen and read notes**, and **Class: listen and add notes**.
+**Save sharing** applies the choice; class viewers must still have current course
+membership. The acknowledgment itself grants no classmate access. Original
+uploads and Listening Guy conversations remain outside the class folder view.
+
+A current course instructor or authorized guest instructor can lead a readable
+course split with **Start shared session**. Students explicitly choose
+**Follow instructor**. Cues carry playback state, position, speed, focus stem,
+and selected section; each device plays its own audio and keeps local mute
+choices. Followers poll every 2.5 seconds, so allow a short delay. Hidden tabs
+pause audio; leaders use **Resume shared session**, and followers use
+**Join shared audio**. **End shared session** and **Leave shared session**
+return participants to independent listening.
+
+The candidate contract and historical implementation details below retain their
+original scope.
+
+## Original candidate contract
 
 This candidate uses the existing private `AdmissionResolver` binding. The wire
 contract and byte-for-byte fixture are pinned to cail-tools-admission commit
