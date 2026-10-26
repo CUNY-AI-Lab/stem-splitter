@@ -24,13 +24,20 @@ async function setup(page, signedIn = true) {
     ratelimits: [{ name: 'REQUEST_LIMIT', namespace_id: '884476', simple: { limit: 1000, period: 60 } }],
   } }] });
   await harness.listen();
-  const frontend = await localHttpsFixture(request => fixtureFetch(harness, request));
+  // Dispatch to the actual Workerd fixture; the dev proxy can lose its internal
+  // connection during overlapping browser requests and return a synthetic 500.
+  const worker = harness.getWorker('bug-report-test');
+  const frontend = await localHttpsFixture(request => fixtureFetch(worker, request));
   const url = new URL(frontend.origin);
   // Keep setup, assertions and browser requests on the same HTTPS origin.
-  const control = input => page.request.post(new URL('/__bug-fixture', url).href, { data: input });
+  const control = async input => {
+    const response = await page.request.post(new URL('/__bug-fixture', url).href, { data: input });
+    expect(response.status(), await response.text()).toBe(200);
+    return response;
+  };
   const stats = async () => {
     const response = await page.request.get(new URL('/__bug-fixture', url).href);
-    expect(response.status()).toBe(200);
+    expect(response.status(), await response.text()).toBe(200);
     expect(response.headers()['content-type']).toContain('application/json');
     return response.json();
   };
