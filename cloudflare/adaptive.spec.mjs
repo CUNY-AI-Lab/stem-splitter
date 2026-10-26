@@ -25,7 +25,7 @@ async function fixture(context,page,dense=false){
  await context.setExtraHTTPHeaders({'x-fixture-identity':jwt});
  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:0,tracks:[]}}));
  await page.goto(url.href);
- await page.getByLabel('New split workspace').selectOption('personal');
+ await page.getByLabel('Share with').selectOption('personal');
  return {harness,url,starts:()=>starts,close:async()=>{network.close();await harness.close();}};
 }
 

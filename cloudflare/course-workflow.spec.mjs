@@ -41,8 +41,9 @@ test('course creation requires disclosure and sends an exact course with the ack
       return route.fulfill({status:400,json:{error:'Fixture stops before any provider job.'}});
     });
     await page.goto(new URL(`/?course=${course}`,f.url).href);
-    await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
-    await page.getByLabel('New split workspace').selectOption(course);
+    await expect(page.locator('label[for="new-split-course"]')).toHaveText('Share with');
+    await expect(page.getByLabel('Share with')).toHaveValue('personal');
+    await page.getByLabel('Share with').selectOption(course);
     await expect(page.locator('#course-work-ack')).not.toBeChecked();
     const blocked=await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});return null;}catch(error){return error.message;}});
     expect(blocked).toContain('disclosure');expect(received).toBeUndefined();
@@ -53,7 +54,7 @@ test('course creation requires disclosure and sends an exact course with the ack
     await page.locator('#course-work-ack').uncheck();
     const withdrawn=await page.evaluate(async courseContext=>{try{await api('/api/jobs',{method:'POST',courseContext,body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});return null;}catch(error){return error.message;}},course);
     expect(withdrawn).toContain('disclosure');expect(received.headers['idempotency-key']).toBe(courseKey);
-    await page.getByLabel('New split workspace').selectOption('personal');
+    await page.getByLabel('Share with').selectOption('personal');
     await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});}catch{}});
     expect(received.headers['x-stem-course']).toBe('personal');expect(received.body.coursePolicy).toBeUndefined();expect(received.headers['idempotency-key']).not.toBe(courseKey);
   }finally{await f.close();}
@@ -117,7 +118,7 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`new spli
   await page.setViewportSize({width,height:900});
   await page.addInitScript(({subject,course})=>localStorage.setItem(`stem-workspace-choice:v1:${subject}`,course),{subject:TEST_SUBJECTS.alice,course});
   await page.goto(new URL(`/?course=${course}`,f.url).href);
-  const select=page.getByLabel('New split workspace');
+  const select=page.getByLabel('Share with');
   await expect(select).toBeEnabled();
   await expect(select).toHaveValue('personal');
   await expect(page.locator('#course-work-ack')).toBeHidden();
@@ -163,20 +164,20 @@ test('multiple courses default to Personal while explicit choices remain usable 
    {classId:'second-fixture-course',className:'Second class',term:'Fall',section:'02'}];
   await page.route('**/api/classroom/courses',route=>route.fulfill({json:{courses:classes,nextCursor:null}}));
   await page.goto(f.url.href);
-  await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  await expect(page.getByLabel('Share with')).toHaveValue('personal');
   expect(await page.evaluate(()=>creationCourse())).toBe('personal');
-  await page.getByLabel('New split workspace').selectOption('second-fixture-course');
+  await page.getByLabel('Share with').selectOption('second-fixture-course');
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
-  await expect(page.getByLabel('New split workspace')).toBeEnabled();
-  await expect(page.getByLabel('New split workspace')).toHaveValue('second-fixture-course');
+  await expect(page.getByLabel('Share with')).toBeEnabled();
+  await expect(page.getByLabel('Share with')).toHaveValue('second-fixture-course');
   classes=[classes[0]];
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
-  await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  await expect(page.getByLabel('Share with')).toHaveValue('personal');
   await expect(page.locator('#course-work-ack')).toBeHidden();
-  await page.getByLabel('New split workspace').selectOption(course);
-  await page.reload();await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  await page.getByLabel('Share with').selectOption(course);
+  await page.reload();await expect(page.getByLabel('Share with')).toHaveValue('personal');
   await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.bob})});
-  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
+  await page.goto(f.url.href);await expect(page.getByLabel('Share with')).toHaveValue('personal');
   classes=[];await page.goto(f.url.href);await expect(page.locator('#course-context')).toBeHidden();
   expect(await page.evaluate(()=>creationCourse())).toBe('personal');
  } finally {await f.close();}
@@ -188,8 +189,8 @@ test('membership refresh fences old responses, blocks creation while checking an
   await f.seed([`INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('personal-kept','Personal recording','uploads/personal.wav','done','[]')`,
    `INSERT INTO job_owners(job_id,subject) VALUES('personal-kept','${TEST_SUBJECTS.alice}')`]);
   const page=await f.pageFor(TEST_SUBJECTS.alice);
-  await page.goto(f.url.href);await expect(page.getByLabel('New split workspace')).toHaveValue('personal');
-  await page.getByLabel('New split workspace').selectOption(course);
+  await page.goto(f.url.href);await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  await page.getByLabel('Share with').selectOption(course);
   await expect(page.locator('#job-list')).toContainText('Personal recording');
   let release,started;const waiting=new Promise(resolve=>release=resolve),ready=new Promise(resolve=>started=resolve);let reads=0;
   await page.route('**/api/classroom/courses',async route=>{
@@ -197,7 +198,7 @@ test('membership refresh fences old responses, blocks creation while checking an
    else await route.fulfill({json:{courses:[],nextCursor:null}});
   });
   await page.evaluate(()=>dispatchEvent(new Event('focus')));await ready;
-  await expect(page.getByLabel('New split workspace')).toBeDisabled();
+  await expect(page.getByLabel('Share with')).toBeDisabled();
   expect(await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}})).toContain('Checking your class access');
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
   await expect.poll(()=>page.evaluate(()=>selectedCourse)).toBe('personal');
