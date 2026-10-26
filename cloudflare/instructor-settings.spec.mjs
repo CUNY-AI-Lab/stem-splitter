@@ -164,7 +164,7 @@ test('a stalled course write times out after eight seconds and stays concealed',
 });
 
 
-test('instructor roster separates personal app activity, class work and unavailable usage',async({page,context})=>{
+test('instructor roster separates personal app activity, class work and unavailable usage',async({page,context},testInfo)=>{
  const f=await fixture(context), errors=[];page.on('pageerror',e=>errors.push(e.message));
  let usageStatus='available';
  try{
@@ -182,10 +182,10 @@ test('instructor roster separates personal app activity, class work and unavaila
   await expect(page.locator('#course-roster')).toContainText('App use: 3 split attempts · 2 completed · 4 Guide turns · 5 recorded visits in 30 days');
   await expect(page.locator('#course-roster-status')).toHaveText('1 enrolled student shown.');
   await page.locator('#course-roster').scrollIntoViewIfNeeded();
-  await page.screenshot({path:'/tmp/stem-instructor-usage-desktop.png'});
+  await page.screenshot({path:testInfo.outputPath('instructor-usage-desktop.png')});
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.screenshot({path:'/tmp/stem-instructor-usage-phone.png'});
+  await page.screenshot({path:testInfo.outputPath('instructor-usage-phone.png')});
   usageStatus='pending';await page.reload();await expect(page.locator('#course-roster')).toContainText('App usage pending');
   usageStatus='unavailable';await page.reload();await expect(page.locator('#course-roster')).toContainText('App usage temporarily unavailable');
   expect(errors).toEqual([]);
