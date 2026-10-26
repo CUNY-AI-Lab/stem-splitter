@@ -57,7 +57,8 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
    await page.locator('#sample-editor-summary').click();
    for(const selector of ['#samples-hold','#samples-cadence','#sample-search']) expect((await page.locator(selector).boundingBox()).height).toBeGreaterThanOrEqual(44);
    const options=await page.locator('#sample-search-results button').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,scroll:node.scrollHeight,client:node.clientHeight};}));
-   for(let index=0;index<options.length;index++){expect(options[index].height).toBeGreaterThanOrEqual(44);expect(options[index].scroll).toBeLessThanOrEqual(options[index].client+1);if(index)expect(options[index].top).toBeGreaterThanOrEqual(options[index-1].bottom);}
+   // Firefox rounds adjoining DOMRect edges independently; allow 0.001 CSS px.
+   for(let index=0;index<options.length;index++){expect(options[index].height).toBeGreaterThanOrEqual(44);expect(options[index].scroll).toBeLessThanOrEqual(options[index].client+1);if(index)expect(options[index].top).toBeGreaterThanOrEqual(options[index-1].bottom-0.001);}
   }
   expect(modelCalls).toEqual([]);expect(errors).toEqual([]);
  }finally{await f.harness.close();}
