@@ -116,7 +116,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
       await route.fulfill({ json: { id: 'saved-message', filename: 'Saved example', model: 'htdemucs_ft', status: 'processing', savedToAccount: true } });
     });
     await page.route('**/api/jobs/saved-message', route => route.fulfill({ json: { id: 'saved-message', filename: 'Saved example', model: 'htdemucs_ft', status: 'processing', stems: [] } }));
-    await page.getByLabel('New split workspace').selectOption('personal');
+    await page.getByLabel('Share with').selectOption('personal');
     await page.locator('#yt-url').fill('https://www.youtube.com/watch?v=fixture1234');
     await page.locator('#yt-form button[type=submit]').click();
     await expect(page.locator('#upload-message')).toContainText('Saved to your account.');

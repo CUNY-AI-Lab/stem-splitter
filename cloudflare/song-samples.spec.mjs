@@ -119,7 +119,7 @@ test('instructor edits imported names, cancels drafts and preserves the exact Ar
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...original,id:'renamed-suggestion',bytes:100000,sourceUrl:'https://archive.org/details/'+original.archiveId}]}}));
   await page.route('**/api/jobs',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'Local import assertion complete.'}}):route.continue());
   await page.emulateMedia({reducedMotion:'reduce'});await page.goto(f.url.href);
-  await page.getByLabel('New split workspace').selectOption('personal');
+  await page.getByLabel('Share with').selectOption('personal');
   await expect(page.locator('#yt-url')).toHaveAttribute('placeholder',`${artist} ${title}`);
   await page.locator('#yt-form .yt-go').click();
   const choice=page.locator('#source-songs [role="option"]');
@@ -142,7 +142,7 @@ test('renamed suggestions refresh cached search labels for the same Archive file
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...original,id:'same-source/song.mp3',durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/same-source'}]}}));
   await page.route('**/api/jobs',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'Local import assertion complete.'}}):route.continue());
   await page.goto(f.url.href);
-  await page.getByLabel('New split workspace').selectOption('personal');
+  await page.getByLabel('Share with').selectOption('personal');
   const input=page.locator('#yt-url'),choices=page.locator('#source-songs'),choice=choices.getByRole('option');
   await expect(input).toHaveAttribute('placeholder','Artist É Nocturne');
   await page.locator('#yt-form .yt-go').click();
@@ -229,7 +229,7 @@ test('open audio selector keeps provider search and submitted recording IDs toge
   await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:0,tracks:[]}}));
   await page.route('**/api/music/search?*',route=>{const provider=new URL(route.request().url()).searchParams.get('provider');return route.fulfill({json:{results:[{id:provider+':123',title:'Synthetic music',artist:'Fixture creator',durationSec:10,sourceUrl:'https://commons.wikimedia.org/wiki/File:Fixture.mp3',providerName:provider==='commons'?'Wikimedia Commons':'ccMixter',licenseName:'CC BY 4.0',openAudio:{provider,itemId:'123',fileId:provider==='commons'?'original':'456'}}]}});});
   await page.route('**/api/jobs',async route=>{if(route.request().method()!=='POST')return route.continue();request=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Synthetic import stopped before processing.'}});});
-  await page.goto(f.url.href);await page.getByLabel('New split workspace').selectOption('personal');
+  await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
   await expect(page.getByLabel('Audio source',{exact:true})).toHaveValue('archive');
   await expect(page.locator('#audio-source option[value=ccmixter]')).toHaveCount(0);
   for(const provider of ['commons']){

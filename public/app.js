@@ -221,7 +221,7 @@ async function initializeCourseSelection() {
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
-  region.innerHTML = '<label for="new-split-course">New splits belong to </label><span class="course-choice"><span class="course-choice-label" aria-hidden="true">Personal</span><select id="new-split-course" aria-label="New split workspace"><option value="personal">Personal</option></select></span><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
+  region.innerHTML = '<label for="new-split-course">Share with </label><span class="course-choice"><span class="course-choice-label" aria-hidden="true">Personal</span><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></span><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
   const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
   courseAcknowledgment = region.querySelector('input');
