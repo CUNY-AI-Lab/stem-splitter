@@ -1,5 +1,25 @@
 # Stem Splitter
 
+The current Cloudflare application is documented in [the Cloudflare runbook](cloudflare/README.md). The Node/Railway setup below describes the retained legacy host; its deployment commands do not release the Cloudflare app.
+
+The current interface uses **Share with** for new split assignment. It starts at
+Personal; selecting a course and checking the acknowledgment allows instructor
+review of new course work and its Listening Guy conversations. Instructors grant
+classmates access through course folder permissions and **Save sharing**. See
+[Class Workspace](public/docs/classroom.html) and
+[Live Sessions](public/docs/live-sessions.html) for the current controls.
+
+On October 26, 2026 at 03:22 UTC, the canonical app reported release
+`aa12a79b29011c5193faa97c1a8c58287f1e2ea3`. Guest splitting was enabled
+with a five-split daily limit; guest Listening Guy was disabled
+(`chatAvailable: false`, `chatLimit: null`, `chatLimitScope: session`).
+The two-successful-reply guest contract is implemented, but this check does not
+establish its activation.
+
+## Retained legacy host
+
+The overview and setup below describe the retained Node/Railway host.
+
 A stem-separation web app for music students. Upload a song — or paste a
 YouTube link, or pull an openly licensed track from the Internet Archive —
 and get back isolated stems as MP3s (2-stem vocals / instrumental, 4-stem

@@ -1,5 +1,23 @@
 # Cloudflare deployment
 
+## Current production check — October 26, 2026
+
+On October 26, 2026 at 03:22 UTC, the canonical app reported release
+`aa12a79b29011c5193faa97c1a8c58287f1e2ea3`. Guest splitting was enabled
+with a five-split daily limit; guest Listening Guy was disabled
+(`chatAvailable: false`, `chatLimit: null`, `chatLimitScope: session`).
+The two-successful-reply guest contract is implemented, but this check does not
+establish its activation.
+
+The live **Share with** selector applies to new work and starts at Personal,
+including visits through a course link. Its acknowledgment permits instructor
+review. Classmate access requires an instructor's folder permission and
+**Save sharing**. Shared playback uses **Start shared session** and explicit
+**Follow instructor**; periodic cues allow a short delay between devices.
+See [classroom access](../docs/classroom-access.md) and
+[guest access](../docs/guest-access.md). The dated candidate and release records
+below retain their original scope.
+
 ## Reliability and guest candidate — October 6, 2026
 
 The PR3 source replaces historical attempt counting with 15 successful member
@@ -51,7 +69,7 @@ with the existing provider-configuration message until they exist. `/healthz`,
 anonymous denial and a real CUNY sign-in on the dev origin are the acceptance
 checks; they do not attest to production.
 
-## Current authority — October 17, 2026
+## Release authority and October 17, 2026 receipt
 
 The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from
 `codex/cloudflare-migration`, not Railway's `main`. The current source baseline includes PR #41 for instructor-controlled Archive

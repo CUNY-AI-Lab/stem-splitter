@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy &amp; Limits · Stem Splitter Docs</title>
+  <meta name="description" content="Personal work stays private to your account. Course work gives the instructor access after you acknowledge the course policy, and instructors choose classmates' access through shared folders.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎚️</text></svg>">
+  <link rel="stylesheet" href="docs.css?v=20261025">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+  <a class="brand" href="index.html"><span class="brand-word">Stem Splitter</span><span class="brand-docs">Docs</span></a>
+  <nav class="masthead-links" aria-label="Site">
+    <a href="/">Open the app</a>
+    <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>
+  </nav>
+</header>
+<div class="layout">
+  <nav class="sidebar" aria-label="Documentation"><div class="nav-group"><h3>Home</h3><ul><li><a href="index.html">Home</a></li></ul></div><div class="nav-group"><h3>Getting Started</h3><ul><li><a href="getting-started.html">Getting Started</a></li><li><a href="splitter-basics.html">Splitter Basics</a></li></ul></div><div class="nav-group"><h3>Listen & Analyze</h3><ul><li><a href="mixer.html">The Mixer</a></li><li><a href="notes.html">Notes</a></li><li><a href="listening-guy.html">Listening Guy</a></li><li><a href="export-and-sharing.html">Export & Sharing</a></li></ul></div><div class="nav-group"><h3>Teach & Share</h3><ul><li><a href="classroom.html">Class Workspace</a></li><li><a href="live-sessions.html">Live Sessions</a></li><li><a href="instructor-console.html">Instructor Console</a></li><li><a href="teaching-tips.html">Teaching Tips</a></li><li><a href="sample-activities.html">Sample Activities</a></li><li><a href="student-onboarding.html">Student Onboarding</a></li><li><a href="use-cases.html">Use Cases</a></li></ul></div><div class="nav-group"><h3>Related</h3><ul><li><a href="privacy-and-limits.html" aria-current="page">Privacy & Limits</a></li></ul></div></nav>
+  <main id="main" class="content">
+<h1>Privacy &amp; Limits</h1>
+<p class="lede">Personal work stays private to your account. Course work gives the instructor access after you acknowledge the course policy, and instructors choose classmates' access through shared folders.</p>
+<h2>Who Can See Your Work</h2>
+<table>
+<thead><tr><th>Item</th><th>Personal split</th><th>Course split</th><th>Split in a shared folder</th></tr></thead>
+<tbody>
+<tr><td>Stems and playback</td><td>Owner only</td><td>Owner and instructor</td><td>Owner, instructor, class members</td></tr>
+<tr><td>Notes</td><td>Owner only</td><td>Owner and instructor</td><td>Class members (read, or read and add)</td></tr>
+<tr><td>Listening Guy conversation</td><td>Owner only</td><td>Owner and instructor (read-only)</td><td>Owner and instructor only</td></tr>
+<tr><td>Original upload</td><td>Owner only</td><td>Owner only</td><td>Owner only</td></tr>
+</tbody>
+</table>
+<p>Students select a course under <strong>Share with</strong> and check its acknowledgment before the app assigns new work to that course. Earlier work stays personal. Instructors can read course conversations without generating an answer, editing the transcript, or forwarding it. Classmates need current course membership and an instructor's folder grant. <strong>Class: listen and add notes</strong>, followed by <strong>Save sharing</strong>, permits class annotation.</p>
+<h2>Retention</h2>
+<p>The app deletes uploaded audio and stems 90 days after the split. Public listening links expire at the same time. A shared folder keeps an expired split as a placeholder so the surrounding work retains its context; the folder does not extend the recording's lifetime.</p>
+<p><strong>Delete</strong> hides your split and blocks further access after the server accepts the request. Cleanup removes its private content after active processing settles; audio still used by another run is preserved. Download any stems you need before you delete the split or its retention period ends.</p>
+<h2>Daily Allowances</h2>
+<p>For signed-in members, Settings shows the remaining <strong>split runs</strong> and Listening Guy turns, together with the reset time. Both reset at midnight UTC, which falls at 8:00 PM Eastern during daylight time and 7:00 PM during standard time. Successful splits count toward the allowance. A failed or cancelled split releases its place.</p>
+<p>Generated guides and existing conversations cost no turn to read. Settings also estimates the separate Lab model allowance that covers use across CUNY AI Lab tools.</p>
+<h2>Sources and Licensing</h2>
+<p>The app accepts MP3, WAV, FLAC, M4A, OGG, and AIFF uploads up to 100 MB. Use music you are entitled to use for class. Internet Archive search returns public, downloadable MP3s with music metadata and a credited source. The app applies a duration limit that gives verified students and instructors more time than visitors. Metadata alone does not establish permission to reuse a recording.</p>
+<p>When you paste a YouTube link into the Splitter, the current link flow looks up the video's title and offers an Internet Archive search. That interface path does not retrieve the YouTube audio; signing in to YouTube does not change it.</p>
+<p>The Audio source selector also offers Wikimedia Commons. The app accepts supported audio with verified public-domain, CC0, or CC BY recording rights, preserves the creator, source page, license, and credit, and includes attribution in exports. A composition's age alone does not establish the recording's rights. ccMixter remains unavailable.</p>
+<h2>Guest Access</h2>
+<p>At the October 26, 2026 check, guests could start a browser session with an allowance of five successful splits per UTC day. Guest Listening Guy was disabled, so visitors needed CUNY Login to use it. Guest work stays private to that browser and follows the same retention rules. After signing in, visitors can claim their work into an account. Course features require a signed-in member.</p>
+<p>The implemented guest Listening Guy demo allows two successful replies for the entire browser session when activated. Cue and chat share that total across recordings, tabs, reloads, resets, and UTC days. Failed, empty, cancelled, or incomplete replies release their places. The third request asks the visitor to sign in before generating another reply. This demo remained disabled at the October 26 check.</p>
+<h2>Reporting a Problem</h2>
+<p><strong>Report a bug</strong> in the footer opens a form for your description. Use CUNY Login, or choose <strong>No account?</strong> and enter your first name, last name, and a .edu email address. The form verifies signed-in identity; guest contact details remain self-reported and grant no app access. Reports include the description, page, and app release, without automatically attaching audio, notes, or conversations.</p>
+<p>Reports and delivery records are stored privately for support. Redmine is the preferred destination, with an email fallback when it is unconfigured or has definitely rejected the report. An uncertain delivery stays pending to avoid duplicate reports. “Email accepted for delivery” confirms acceptance by the mail service, not arrival in a mailbox. For access questions, email <a href="mailto:ailab@gc.cuny.edu">ailab@gc.cuny.edu</a>.</p>
+
+<footer class="page-foot">
+<p>The Critical AI Literacy Institute developed this project with the <a href="https://ailab.gc.cuny.edu/">CUNY AI Lab</a>.</p>
+<p>The app deletes uploaded files after 90 days. Upload only music you are entitled to use for class.</p>
+</footer>
+</main>
+</div>
+</body>
+</html>

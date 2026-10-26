@@ -2,7 +2,10 @@
 
 The current request supersedes the earlier five-turn and three-reply proposals.
 This implementation is ready for a separately approved activation; it does not
-establish a live funded demo.
+establish a live funded demo. The canonical runtime check on October 26, 2026
+at 03:22 UTC confirmed guest splitting enabled and guest Listening Guy disabled
+(`chatAvailable: false`, `chatLimit: null`, `chatLimitScope: session`) on release
+`aa12a79b29011c5193faa97c1a8c58287f1e2ea3`.
 
 | Interaction | Application behavior |
 | --- | --- |

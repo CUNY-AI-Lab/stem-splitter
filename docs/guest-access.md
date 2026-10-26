@@ -1,6 +1,17 @@
 # Public guest access
 
-Guests receive **five successful splits per browser session per UTC day**. Pending work holds a place; failed or cancelled work releases it. Turnstile does not increase the split allowance. The guest Listening Guide continues to require a current-day check. Page reloads preserve the session and its counters.
+## Live status — October 26, 2026
+
+On October 26, 2026 at 03:22 UTC, the canonical app reported release
+`aa12a79b29011c5193faa97c1a8c58287f1e2ea3`. Guest splitting was enabled
+with a five-split daily limit; guest Listening Guy was disabled
+(`chatAvailable: false`, `chatLimit: null`, `chatLimitScope: session`).
+The two-successful-reply guest contract is implemented, but this check does not
+establish its activation.
+
+## Source contract
+
+Guests receive **five successful splits per browser session per UTC day**. Pending work holds a place; failed or cancelled work releases it. Turnstile does not increase the split allowance. When enabled, the guest Listening Guide requires a current-day check. Page reloads preserve the session and its counters.
 
 This document describes the source contract. Live activation and acceptance must be established against the canonical application, `https://stem-splitter.ailab-452.workers.dev/`, and its bound runtime. Configuration, a passing local test, and a deployment attempt are separate from a verified production outcome.
 
@@ -18,7 +29,7 @@ Guests can upload/import and split their own audio, play/download results, and a
 
 After a successful CUNY login, the app claims guest recordings through the verified guest cookie. The atomic claim transfers ownership, notes, and saved conversations to that member account. The browser then copies its cached draft, playback position, solo/mute settings, loop, and speed only for server-confirmed recordings; originals remain recoverable. Course assignment stays explicit. Logout revokes the server session before clearing the cookie, so a copied cookie cannot reopen it. Private responses carry the account identity for browser-side checks when a session changes in another tab.
 
-An interrupted reply keeps its request key in the recording's browser cache. The server stores an owned reply receipt for up to 24 hours, bounded by guest-session and recording expiry. A retry retrieves that receipt, including at the fifth turn, and successful sign-in transfers the receipt with the recording. Guest and member retries use the same original operation without charging a second turn or starting another model request. Unsaved transcript entries retry from the cache only while their revision matches the authoritative conversation.
+An interrupted reply keeps its request key in the recording's browser cache. The server stores an owned reply receipt for up to 24 hours, bounded by guest-session and recording expiry. A retry retrieves that receipt, including after the second successful reply, and successful sign-in transfers the receipt with the recording. Guest and member retries use the same original operation without charging a second turn or starting another model request. Unsaved transcript entries retry from the cache only while their revision matches the authoritative conversation.
 
 Guest access lasts seven days in the same browser. Clearing the cookie or ending the session removes access to its saved work. Uploaded audio and stems retain the existing 90-day deletion boundary; daily retention removes guest transcripts after session expiry or revocation.
 
