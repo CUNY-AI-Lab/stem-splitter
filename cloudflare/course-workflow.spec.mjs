@@ -42,8 +42,7 @@ test('course creation requires disclosure and sends an exact course with the ack
     });
     await page.goto(new URL(`/?course=${course}`,f.url).href);
     await expect(page.locator('label[for="new-split-course"]')).toHaveText('Share with');
-    await expect(page.getByLabel('Share with')).toHaveValue('personal');
-    await page.getByLabel('Share with').selectOption(course);
+    await expect(page.getByLabel('Share with')).toHaveValue(course);
     await expect(page.locator('#course-work-ack')).not.toBeChecked();
     const blocked=await page.evaluate(async()=>{try{await api('/api/jobs',{method:'POST',body:JSON.stringify({key:'uploads/fixture.wav',filename:'Fixture',model:'htdemucs_ft'})});return null;}catch(error){return error.message;}});
     expect(blocked).toContain('disclosure');expect(received).toBeUndefined();
@@ -111,13 +110,66 @@ test('owner Listening Guy cue recovers visibly after a failed stream and can be 
 });
 
 
+for (const owner of [false,true]) for (const width of [1280,390]) test(`workspace Create a split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
+ const f=await fixture(browser);
+ try {
+  const page=await f.pageFor(TEST_SUBJECTS.alice,owner),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.setViewportSize({width,height:900});
+  await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+  await expect(page.locator('#classroom-course')).toHaveValue(course);
+  await page.getByRole('link',{name:'Create a split',exact:true}).click();
+  await expect(page).toHaveURL(new URL(`/?course=${course}`,f.url).href);
+  await expect(page).toHaveTitle(/Stem Splitter/);
+  const select=page.getByLabel('Share with');
+  await expect(select).toBeEnabled();await expect(select).toHaveValue(course);
+  await expect(page.locator('#course-work-ack')).toBeVisible();
+  await expect(page.locator('#course-work-ack')).not.toBeChecked();
+  expect(await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}})).toContain('disclosure');
+  await page.evaluate(()=>document.fonts.ready);
+  await page.screenshot({path:testInfo.outputPath('workspace-class.png'),animations:'disabled'});
+  const box=await select.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width+.1);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.locator('#course-work-ack').check();
+  expect(await page.evaluate(()=>creationCourse())).toBe(course);
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));
+  await expect(select).toBeEnabled();await expect(select).toHaveValue(course);
+  await expect(page.locator('#course-work-ack')).toBeChecked();
+  await page.reload();await expect(select).toHaveValue(course);
+  await expect(page.locator('#course-work-ack')).not.toBeChecked();
+  await select.selectOption('personal');
+  expect(new URL(page.url()).searchParams.has('course')).toBe(false);
+  await page.reload();await expect(select).toHaveValue('personal');
+  expect(errors).toEqual([]);
+ } finally {await f.close();}
+});
+
+for (const failure of ['unavailable','outage']) test(`a course link requires a workspace choice after ${failure}`,async({browser})=>{
+ const f=await fixture(browser);
+ try {
+  const page=await f.pageFor(TEST_SUBJECTS.alice);
+  await page.route('**/api/classroom/courses',route=>route.fulfill(failure==='outage'
+   ?{status:503,json:{error:'Fixture outage'}}:{json:{courses:[],nextCursor:null}}));
+  await page.goto(new URL(`/?course=${course}`,f.url).href);
+  const select=page.getByLabel('Share with');
+  await expect(select).toBeEnabled();await expect(select).toHaveValue('');
+  await expect(page.locator('#course-context')).toBeVisible();
+  expect(await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}})).toContain('Choose a workspace');
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));
+  await expect(select).toBeEnabled();await expect(select).toHaveValue('');
+  await select.selectOption('personal');
+  expect(await page.evaluate(()=>creationCourse())).toBe('personal');
+ } finally {await f.close();}
+});
+
 for (const owner of [false,true]) for (const width of [1280,390]) test(`new splits default to Personal for ${owner?'instructors':'students'} at ${width}px`,async({browser})=>{
  const f=await fixture(browser);
  try {
   const page=await f.pageFor(TEST_SUBJECTS.alice,owner);
   await page.setViewportSize({width,height:900});
   await page.addInitScript(({subject,course})=>localStorage.setItem(`stem-workspace-choice:v1:${subject}`,course),{subject:TEST_SUBJECTS.alice,course});
-  await page.goto(new URL(`/?course=${course}`,f.url).href);
+  await page.goto(f.url.href);
   const select=page.getByLabel('Share with');
   await expect(select).toBeEnabled();
   await expect(select).toHaveValue('personal');
@@ -173,7 +225,8 @@ test('multiple courses default to Personal while explicit choices remain usable 
   await expect(page.getByLabel('Share with')).toHaveValue('second-fixture-course');
   classes=[classes[0]];
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
-  await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  await expect(page.getByLabel('Share with')).toHaveValue('');
+  expect(await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}})).toContain('Choose a workspace');
   await expect(page.locator('#course-work-ack')).toBeHidden();
   await page.getByLabel('Share with').selectOption(course);
   await page.reload();await expect(page.getByLabel('Share with')).toHaveValue('personal');
@@ -210,10 +263,11 @@ test('membership refresh fences old responses, blocks creation while checking an
   await expect(page.getByLabel('Share with')).toBeDisabled();
   expect(await page.evaluate(()=>{try{creationCourse();return '';}catch(error){return error.message;}})).toContain('Checking your class access');
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
-  await expect.poll(()=>page.evaluate(()=>selectedCourse)).toBe('personal');
+  await expect.poll(()=>page.evaluate(()=>selectedCourse)).toBe('');
   release();await expect.poll(()=>page.evaluate(()=>courseSelectionPending)).toBe(false);
   await expect(page.locator('#job-list')).toContainText('Personal recording');
-  expect(await page.evaluate(()=>selectedCourse)).toBe('personal');
+  expect(await page.evaluate(()=>selectedCourse)).toBe('');
+  await expect(page.locator('#course-context')).toBeVisible();
   expect((await page.request.get(new URL('/api/jobs/personal-kept',f.url).href)).status()).toBe(200);
  } finally {await f.close();}
 });

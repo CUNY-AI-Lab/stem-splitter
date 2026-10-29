@@ -1,12 +1,19 @@
 # Classroom work and sharing
 
-## Current interface — October 26, 2026
+## Current interface — October 29, 2026
 
-Release `aa12a79b29011c5193faa97c1a8c58287f1e2ea3` labels the new-work
-selector **Share with**. It starts at Personal even through a `?course=` link.
-Selecting a course and checking its acknowledgment permits instructor review
-of new course splits and their Listening Guy conversations. Changing courses
-clears the checkbox. Existing personal work stays personal.
+The new-work selector is labeled **Share with**. Opening the Splitter directly
+starts at Personal. **Create a split** in a class workspace carries its selected
+class through the `?course=` link and checks current class access. Checking the
+acknowledgment permits instructor review of new course splits and their Listening
+Guy conversations. Changing courses clears the checkbox. Choosing Personal
+removes the class from the link so a reload respects that choice. Existing
+personal work stays personal.
+
+If the requested class is unavailable or a class-access check fails, the selector
+asks the user to choose a workspace before creating a split. A successful refresh
+preserves the current choice; losing access to a selected class requires a new
+choice.
 
 Instructors control folder sharing. The choices are **Instructors only**,
 **Class: listen and read notes**, and **Class: listen and add notes**.
@@ -59,7 +66,8 @@ Course selections also have independent request generations: pending/failed
 loads clear and disable prior course data, and late reads or writes cannot
 replace the newly selected course's prompt, history, roster or folder state.
 
-New work defaults to Personal. Course work requires explicit selection and the
+Opening the Splitter directly defaults to Personal; a course link selects its
+class after checking current access. Course work requires the
 `course-work-v1` disclosure acknowledgment before creation. Job ownership and
 course association are inserted together. Associations are immutable. Existing
 jobs, annotations, and `listening_conversations` documents are never assigned,
