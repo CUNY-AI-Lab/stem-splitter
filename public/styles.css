@@ -2740,6 +2740,13 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .student-select:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .student-count, .student-jobs small { color: var(--ink-dim); font-size: .75rem; line-height: 1.5; }
 .student-count { text-align: right; }
+.student-select { max-width: 40%; flex-shrink: 0; overflow-wrap: anywhere; }
+.student-count { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .student-list li { align-items: flex-start; flex-direction: column; gap: .15rem; }
+  .student-list .student-select { max-width: 100%; }
+  .student-list .student-count { text-align: left; }
+}
 .student-jobs li > div { min-width: 0; overflow-wrap: anywhere; }
 .student-jobs small { display: block; margin-top: .25rem; }
 #student-detail { margin: 1.5rem 0; }

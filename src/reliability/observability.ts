@@ -14,7 +14,8 @@ export function parseClientUses(value:unknown):ClientUse[]|null {
     if(!event||typeof event!=='object'||Array.isArray(event)||Object.keys(event).some(k=>!['id','type','jobId','durationMs','positionBucket'].includes(k)))return null;
     if(!identifier(event.id)||!CLIENT_USAGE_TYPES.includes(event.type))return null;
     if(event.jobId!==undefined&&(typeof event.jobId!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(event.jobId)))return null;
-    if(['playback_start','playback_stop','seek','download_intent'].includes(event.type)&&!event.jobId)return null;
+    // Playback totals can be observed without retaining which recording was heard.
+    if(['seek','download_intent'].includes(event.type)&&!event.jobId)return null;
     if(event.durationMs!==undefined&&(!Number.isSafeInteger(event.durationMs)||event.durationMs<0||event.durationMs>86400000))return null;
     if(event.positionBucket!==undefined&&(!Number.isSafeInteger(event.positionBucket)||event.positionBucket<0||event.positionBucket>90))return null;
   }
@@ -47,6 +48,12 @@ export async function recordClientUses(db:D1Database,principal:AppPrincipal,even
 export async function recordServerUse(env:Env,request:Request,response:Response,principal:AppPrincipal|undefined,started:number) {
   if(env.AUTH_MODE!=='cail')return;
   const url=new URL(request.url),path=url.pathname;
+  // Existing open pages also supply verified access evidence. Coalesce routine
+  // requests by account/minute; this observation never counts as a browser visit.
+  if(principal&&response.ok&&path!=='/api/usage-events') {
+    try {await persist(env.DB,principal,[{id:`app-access-${Math.floor(started/60000)}`,type:'app_access',source:'server',outcome:'observed'}],started);}
+    catch {console.warn(JSON.stringify({event:'usage_record_failed',type:'app_access'}));}
+  }
   const split=path==='/api/jobs'&&request.method==='POST';
   const chat=/^\/api\/jobs\/[^/]+\/chat$/.test(path)&&request.method==='POST';
   const guide=/^\/api\/jobs\/[^/]+\/guide$/.test(path)&&request.method==='POST';

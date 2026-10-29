@@ -343,7 +343,7 @@ app.get('/api/model-quota', async (c) => {
 
 app.get('/api/admin/users', async (c) => {
   if (c.get('principal')?.role !== 'admin') return c.json({ error: 'Not found' }, 404);
-  try { return c.json(await namedUsers(c.env, c.get('principal')!,false,c.req.query('cursor'))); }
+  try { return c.json(await namedUsers(c.env, c.get('principal')!,c.req.query('cursor'))); }
   catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 

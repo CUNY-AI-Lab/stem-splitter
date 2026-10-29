@@ -43,13 +43,15 @@
   </section>
   <details id="student-review" class="account-disclosure" hidden>
     <summary>Student activity</summary>
-    <p class="account-help">Select a student to see their split runs and load a recording. Visits reflect the past 30 days.</p>
+    <p class="account-help">Select an account to see its recorded splits and load a recording. Listening to an existing recording also counts as app use.</p>
     <section aria-labelledby="guest-activity-title">
       <h3 id="guest-activity-title">Guest activity · past 30 days</h3>
       <p id="guest-activity" role="status">Guest activity unavailable.</p>
-      <p class="account-help">Browser sessions include repeat use and testing. Splits saved to accounts also appear under those accounts.</p>
+      <p id="guest-sessions" class="account-help"></p>
+      <p class="account-help">Guest sessions include repeat use and testing. Saved guest splits also appear under their accounts; other guest work remains associated with its browser session.</p>
     </section>
     <h3>Signed-in accounts</h3>
+    <p class="account-help">Includes your account and Personal work. Splits and Guide turns cover recorded history. Visits and plays cover the past 30 days, with collection beginning October 29, 2026. First account access records when each account entered the app.</p>
     <p id="student-status" role="status"></p>
     <button id="student-retry" class="account-button" type="button" hidden>Try again</button>
     <section id="student-detail" hidden aria-live="polite">
@@ -101,8 +103,8 @@
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
   </footer>
 </main>
-<script src="/session-guard.js?v=20261020-report-draft"></script>
+<script src="/session-guard.js?v=20261029-activity"></script>
 <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-<script src="/account.js?v=20261023-two-reply-demo"></script>
+<script src="/account.js?v=20261029-activity-20261023-two-reply-demo"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </html>

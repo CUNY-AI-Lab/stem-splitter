@@ -28,6 +28,9 @@ test('enabled link router turns YouTube metadata into Archive search and a local
       const request = route.request(), target = new URL(request.url());
       // Keep browser traffic local, including fonts; no real source/provider request is allowed.
       if (target.origin !== url.origin) return route.abort();
+      // Keep observations on the real authenticated path while work creation
+      // remains blocked below.
+      if (target.pathname === '/api/usage-events' && request.method() === 'POST') return route.continue();
       if (target.pathname === '/api/import-options') return route.fulfill({ json: { linkRouter: true, urlImport: true } });
       if (target.pathname === '/api/link-info') {
         metadataRequests.push({ method: request.method(), body: request.postDataJSON() });
@@ -55,6 +58,7 @@ test('enabled link router turns YouTube metadata into Archive search and a local
       }
       return route.continue();
     });
+    const recordedVisit = page.waitForResponse(response => new URL(response.url()).pathname === '/api/usage-events' && response.request().method() === 'POST');
     await page.goto(url.href);
     const input = page.getByRole('combobox', { name: 'Song or link' });
     await expect(page.locator('#source-import-help')).toHaveCount(0);
@@ -75,6 +79,7 @@ test('enabled link router turns YouTube metadata into Archive search and a local
     expect((await chooser).isMultiple()).toBe(false);
     expect(metadataRequests).toEqual([{ method: 'POST', body: { url: sourceUrl } }]);
     expect(searchQueries).toEqual([query]);
+    expect((await recordedVisit).ok()).toBe(true);
     expect(blockedMutations).toEqual([]);
     await expect(page.locator('.console')).toHaveCount(0);
     expect(errors).toEqual([]);

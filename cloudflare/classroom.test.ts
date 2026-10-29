@@ -126,7 +126,7 @@ test('current roster reports older personal app use without exposing recordings 
   const result=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(result.status,200);
   const page=await result.json() as any,alice=page.participants[0];
   assert.equal(alice.splitCount,1);assert.equal(alice.completedCount,1);
-  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined},{runs:2,completed:2,guideTurns:1,recordedVisits:1,lastActiveAt:undefined});
+  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined},{runs:2,completed:2,guideTurns:1,recordedVisits:1,recordedPlays:0,lastActiveAt:undefined});
   assert.ok(Date.now()-Date.parse(alice.appUsage.lastActiveAt)<60000);
   assert.equal(page.participants[1].appUsage,null);
   assert.equal(page.activityScope.recordedVisitsDays,30);

@@ -6,6 +6,65 @@
   let subject = null, clearing = false, checking = null, suspended = false;
   let cleanup = () => {}, pause = () => {};
   let regions = [], recovery = null;
+  let usageActor = null, usageSession = null, usageQueue = [], usageTimer = null, usageSending = false, usageFailures = 0;
+
+  function scheduleUsage(delay = 250) {
+    if (!usageTimer && !usageSending && usageQueue.length && usageFailures < 3) {
+      usageTimer = setTimeout(() => { usageTimer = null; void flushUsage(); }, delay);
+    }
+  }
+
+  async function flushUsage() {
+    if (usageSending || !usageQueue.length || !usageActor || clearing) return;
+    const actor = usageActor, batch = usageQueue.slice(0, 10);
+    usageSending = true;
+    try {
+      const response = await originalFetch('/api/usage-events', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', keepalive: true,
+        headers: { 'Content-Type': 'application/json', 'X-Stem-Usage-Actor': actor },
+        body: JSON.stringify({ events: batch }), signal: AbortSignal.timeout(5000),
+      });
+      if (actor !== usageActor) return;
+      if ([401, 403, 409].includes(response.status)) { usageQueue = []; return; }
+      if (!response.ok) throw new Error('Usage unavailable');
+      usageQueue.splice(0, batch.length);
+      usageFailures = 0;
+    } catch {
+      if (actor === usageActor) usageFailures++;
+    } finally {
+      usageSending = false;
+      scheduleUsage(usageFailures ? 1000 * usageFailures : 250);
+    }
+  }
+
+  function observeUsage(value, pageView = false) {
+    if (clearing || !/^(?:cail-[0-9a-f]{32}|guest-[0-9a-f]{64})$/.test(value)) return;
+    if (usageActor !== value) { usageActor = value; usageSession = null; usageQueue = []; }
+    const day = new Date().toISOString().slice(0, 10), slot = `stem-usage-visit:${value}:${day}`;
+    let visit;
+    try { visit = sessionStorage.getItem(slot); } catch {}
+    if (!/^[0-9a-f-]{36}$/.test(visit || '')) {
+      visit = usageSession?.day === day ? usageSession.id : crypto.randomUUID();
+      try { sessionStorage.setItem(slot, visit); } catch {}
+    }
+    if (usageSession?.id !== visit) {
+      usageSession = { id: visit, day };
+      usageQueue.push({ id: `visit-${visit}`, type: 'session_start' });
+    }
+    if (pageView) usageQueue.push({ id: crypto.randomUUID(), type: 'page_view' });
+    usageFailures = 0;
+    scheduleUsage();
+  }
+
+  // Counts contain no recording titles, conversation text or media identifiers.
+  window.StemUsage = {
+    record(type) {
+      if (!usageActor || clearing || suspended || !['playback_start', 'playback_stop'].includes(type)) return;
+      if (usageQueue.length < 30) usageQueue.push({ id: crypto.randomUUID(), type });
+      scheduleUsage();
+    },
+  };
+  window.addEventListener('pagehide', () => void flushUsage());
 
   function suspend() {
     if (!suspended) {
@@ -105,6 +164,7 @@
         if (!account || typeof account.subject !== 'string') throw new Error('Invalid account');
         if (account.subject !== subject) { clear(); return; }
         restore();
+        observeUsage(subject);
       } catch {
         if (!clearing) showRecovery();
       } finally { clearTimeout(timer); checking = null; }
@@ -113,7 +173,11 @@
   }
 
   window.StemSessionGuard = {
-    start(value, onClear, onPause) { subject = value; cleanup = onClear || cleanup; pause = onPause || pause; },
+    start(value, onClear, onPause) {
+      const firstView = subject !== value;
+      subject = value; cleanup = onClear || cleanup; pause = onPause || pause;
+      observeUsage(value, firstView);
+    },
     observe, check, clear,
   };
   document.getElementById('rack-retry')?.addEventListener('click', event => {

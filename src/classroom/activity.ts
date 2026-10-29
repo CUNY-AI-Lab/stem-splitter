@@ -7,6 +7,7 @@ export interface StudentUsage {
   completed: number;
   guideTurns: number;
   recordedVisits: number;
+  recordedPlays: number;
   lastActiveAt: string | null;
 }
 
@@ -28,22 +29,24 @@ export async function usageBySubject(env: Env, subjects: string[], now = Date.no
       FROM app_operations op LEFT JOIN guest_job_claims c ON c.job_id=op.job_id AND c.guest_subject=op.subject
       WHERE op.kind IN ('chat','guide') AND op.state='succeeded' AND (op.quota_class='member' OR c.member_subject IS NOT NULL) GROUP BY 1`)
       .all<{subject:string;turns:number;last_at:number|null}>(),
-    env.DB.prepare(`SELECT actor_key,COUNT(*) AS visits,MAX(at) AS last_at FROM usage_events
-      WHERE event_type='session_start' AND source='client' AND actor_class='member' AND at>=? GROUP BY actor_key`)
-      .bind(now - 30 * 86400000).all<{actor_key:string;visits:number;last_at:number}>(),
+    env.DB.prepare(`SELECT actor_key,SUM(event_type='session_start') AS visits,SUM(event_type='playback_start') AS plays,MAX(at) AS last_at FROM usage_events
+      WHERE ((event_type IN ('session_start','page_view','playback_start','playback_stop') AND source='client')
+        OR (event_type='app_access' AND source='server')) AND actor_class='member' AND at>=? GROUP BY actor_key`)
+      .bind(now - 30 * 86400000).all<{actor_key:string;visits:number;plays:number;last_at:number}>(),
   ]);
   const splitCounts = new Map(splits.results.filter(row => wanted.has(row.subject)).map(row => [row.subject,row]));
   const guideCounts = new Map(guides.results.filter(row => wanted.has(row.subject)).map(row => [row.subject,row]));
   const visitCounts = new Map(visits.results.map(row => [row.actor_key,row]));
   return new Map(await Promise.all(subjects.map(async subject => {
     const split = splitCounts.get(subject), guide = guideCounts.get(subject);
-    let recordedVisits = 0, lastAt = Math.max(Number(split?.last_at) || 0, Number(guide?.last_at) || 0);
+    let recordedVisits = 0, recordedPlays = 0, lastAt = Math.max(Number(split?.last_at) || 0, Number(guide?.last_at) || 0);
     for (let day=0;day<=30;day++) {
       const visit = visitCounts.get(await fingerprint(['usage-actor-v1',new Date(now-day*86400000).toISOString().slice(0,10),subject]));
       recordedVisits += visit?.visits ?? 0;
+      recordedPlays += visit?.plays ?? 0;
       lastAt = Math.max(lastAt, visit?.last_at ?? 0);
     }
-    return [subject,{runs:split?.runs??0,completed:split?.completed??0,guideTurns:guide?.turns??0,recordedVisits,
+    return [subject,{runs:split?.runs??0,completed:split?.completed??0,guideTurns:guide?.turns??0,recordedVisits,recordedPlays,
       lastActiveAt:lastAt ? new Date(lastAt).toISOString() : null}] as const;
   })));
 }
