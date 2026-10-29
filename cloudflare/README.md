@@ -9,9 +9,11 @@ with a five-split daily limit; guest Listening Guy was disabled
 The two-successful-reply guest contract is implemented, but this check does not
 establish its activation.
 
-The live **Share with** selector applies to new work and starts at Personal,
-including visits through a course link. Its acknowledgment permits instructor
-review. Classmate access requires an instructor's folder permission and
+The **Share with** selector applies to new work and starts at Personal when
+opening the Splitter directly. **Create a split** from a class workspace carries
+the selected class into the Splitter after checking current access. Its
+acknowledgment permits instructor review. A failed class-access check requires
+an explicit workspace choice. Classmate access requires an instructor's folder permission and
 **Save sharing**. Shared playback uses **Start shared session** and explicit
 **Follow instructor**; periodic cues allow a short delay between devices.
 See [classroom access](../docs/classroom-access.md) and

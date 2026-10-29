@@ -2,9 +2,10 @@
 
 The current Cloudflare application is documented in [the Cloudflare runbook](cloudflare/README.md). The Node/Railway setup below describes the retained legacy host; its deployment commands do not release the Cloudflare app.
 
-The current interface uses **Share with** for new split assignment. It starts at
-Personal; selecting a course and checking the acknowledgment allows instructor
-review of new course work and its Listening Guy conversations. Instructors grant
+The current interface uses **Share with** for new split assignment. Opening the
+Splitter directly starts at Personal. **Create a split** in a class workspace
+selects that class after checking current access; checking the acknowledgment allows
+instructor review of new course work and its Listening Guy conversations. Instructors grant
 classmates access through course folder permissions and **Save sharing**. See
 [Class Workspace](public/docs/classroom.html) and
 [Live Sessions](public/docs/live-sessions.html) for the current controls.
