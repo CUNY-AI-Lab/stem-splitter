@@ -218,6 +218,7 @@ function creationCourse() {
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
   const subject = accountSubject;
+  const requestedCourse = new URLSearchParams(location.search).get('course') || 'personal';
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
@@ -230,10 +231,16 @@ async function initializeCourseSelection() {
     if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
     selectedCourse = value; select.value = value;
     courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
-    region.querySelector('.course-choice-label').textContent = select.selectedOptions[0]?.textContent || 'Personal';
+    region.querySelector('.course-choice-label').textContent = select.selectedOptions[0]?.textContent || 'Choose a workspace';
   };
   select.addEventListener('change', () => {
-    choose(select.value); status.textContent = '';
+    choose(select.value); initialized = true; status.textContent = '';
+    const url = new URL(location.href);
+    if (url.searchParams.has('course')) {
+      if (selectedCourse === 'personal') url.searchParams.delete('course');
+      else url.searchParams.set('course', selectedCourse);
+      history.replaceState(history.state, '', url);
+    }
   });
   const refresh = async () => {
     if (accountSubject !== subject || !region.isConnected) return;
@@ -248,17 +255,17 @@ async function initializeCourseSelection() {
       } while (cursor && courses.length < 1000);
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
       const valid = new Set(['personal',...courses.map(course=>course.classId)]);
-      const previous = initialized ? selectedCourse : 'personal';
-      const choice = previous === '' || valid.has(previous) ? previous : 'personal';
+      const previous = initialized ? selectedCourse : requestedCourse;
+      const choice = valid.has(previous) ? previous : '';
       select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
         ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
       select.options[0].disabled = true;
       choose(choice); initialized = true;
-      status.textContent = !valid.has(previous) ? 'Class access changed. Review the selected workspace.' : '';
-      region.hidden = !courses.length && !status.textContent;
+      status.textContent = previous && !valid.has(previous) ? 'Class access changed. Choose a workspace for this split.' : '';
+      region.hidden = !courses.length && choice === 'personal' && !status.textContent;
     } catch (error) {
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
-      const needsChoice = initialized && selectedCourse !== 'personal';
+      const needsChoice = (initialized ? selectedCourse : requestedCourse) !== 'personal';
       select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
       select.options[0].disabled = true; choose(needsChoice ? '' : 'personal');
       region.hidden = false; status.textContent = error.message;
