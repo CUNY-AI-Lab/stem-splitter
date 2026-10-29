@@ -168,12 +168,12 @@ el('access-form').addEventListener('submit', async (event) => {
 
 let studentSelection = '', studentCursor = null, studentRequest = 0;
 let studentRows = [], studentsLoading = null, studentsLoaded = false, studentsNextCursor = null;
-function studentSummary(student, detail = false) {
+function studentSummary(student) {
   const visits = student.recordedVisits || student.recordedPlays
     ? `${student.recordedVisits} recorded ${student.recordedVisits === 1 ? 'visit' : 'visits'} · ${student.recordedPlays ?? 0} recorded ${(student.recordedPlays ?? 0) === 1 ? 'play' : 'plays'}`
     : 'Visit and playback history begins Oct 29';
   const first = typeof student.firstSeenAt === 'string' ? Date.parse(student.firstSeenAt.replace(' ', 'T') + (student.firstSeenAt.endsWith('Z') ? '' : 'Z')) : NaN;
-  return `${student.runs} recorded split ${student.runs === 1 ? 'attempt' : 'attempts'} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide ${(student.guideTurns ?? 0) === 1 ? 'turn' : 'turns'} · ${visits}${Number.isFinite(first) ? ` · First account access ${new Date(first).toLocaleDateString()}` : ''}${detail && student.lastActiveAt ? ` · Last recorded activity ${new Date(student.lastActiveAt).toLocaleString()}` : ''}`;
+  return `${student.runs} recorded split ${student.runs === 1 ? 'attempt' : 'attempts'} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide ${(student.guideTurns ?? 0) === 1 ? 'turn' : 'turns'} · ${visits}${Number.isFinite(first) ? ` · First account access ${new Date(first).toLocaleDateString()}` : ''}${student.lastActiveAt ? ` · Last recorded activity ${new Date(student.lastActiveAt).toLocaleString()}` : ''}`;
 }
 function loadStudents(more = false) {
   if (studentsLoading) return studentsLoading;
@@ -243,7 +243,7 @@ async function loadStudentJobs(student, more = false) {
   studentSelection = student.subject;
   el('student-detail').hidden = false;
   el('student-name').textContent = student.displayName;
-  el('student-summary').textContent = studentSummary(student, true);
+  el('student-summary').textContent = studentSummary(student);
   el('student-more').hidden = true;
   el('student-more').disabled = true;
   el('student-retry').hidden = true;

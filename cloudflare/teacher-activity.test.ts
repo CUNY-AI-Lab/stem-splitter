@@ -29,6 +29,10 @@ test('student review uses names, counts visits and runs, and confines audio to t
  for(const id of ['one','two','other'])await db.prepare('INSERT INTO job_owners(job_id,subject) VALUES(?,?)').bind(id,id==='other'?bob:alice).run();
  await db.prepare("INSERT INTO annotations(id,job_id,at_seconds,text) VALUES('private-note','one',1,'Private listening note')").run();
  await recordClientUses(db,{subject:alice,role:'student',quotaClass:'member'} as AppPrincipal,[{id:'recorded-visit-0001',type:'session_start'},{id:'recorded-visit-0002',type:'session_start'}]);
+ assert.equal((await call('/api/account',bob)).status,200);
+ const adminActivity=(await (await call('/api/teacher/students',admin)).json() as any).students.find((row:any)=>row.subject===bob);
+ assert.equal(adminActivity.recordedVisits,0);assert.equal(adminActivity.recordedPlays,0);
+ assert.ok(Date.now()-Date.parse(adminActivity.lastActiveAt)<60000,'verified access is recorded even without client observations');
  const list=await call('/api/teacher/students');assert.equal(list.status,200);
  const students=(await list.json() as any).students;
  assert.equal(students.find((r:any)=>r.subject===alice).displayName,'Alice Rivera');

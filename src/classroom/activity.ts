@@ -30,7 +30,8 @@ export async function usageBySubject(env: Env, subjects: string[], now = Date.no
       WHERE op.kind IN ('chat','guide') AND op.state='succeeded' AND (op.quota_class='member' OR c.member_subject IS NOT NULL) GROUP BY 1`)
       .all<{subject:string;turns:number;last_at:number|null}>(),
     env.DB.prepare(`SELECT actor_key,SUM(event_type='session_start') AS visits,SUM(event_type='playback_start') AS plays,MAX(at) AS last_at FROM usage_events
-      WHERE event_type IN ('session_start','page_view','playback_start','playback_stop') AND source='client' AND actor_class='member' AND at>=? GROUP BY actor_key`)
+      WHERE ((event_type IN ('session_start','page_view','playback_start','playback_stop') AND source='client')
+        OR (event_type='app_access' AND source='server')) AND actor_class='member' AND at>=? GROUP BY actor_key`)
       .bind(now - 30 * 86400000).all<{actor_key:string;visits:number;plays:number;last_at:number}>(),
   ]);
   const splitCounts = new Map(splits.results.filter(row => wanted.has(row.subject)).map(row => [row.subject,row]));

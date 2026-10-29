@@ -48,6 +48,12 @@ export async function recordClientUses(db:D1Database,principal:AppPrincipal,even
 export async function recordServerUse(env:Env,request:Request,response:Response,principal:AppPrincipal|undefined,started:number) {
   if(env.AUTH_MODE!=='cail')return;
   const url=new URL(request.url),path=url.pathname;
+  // Existing open pages also supply verified access evidence. Coalesce routine
+  // requests by account/minute; this observation never counts as a browser visit.
+  if(principal&&response.ok&&path!=='/api/usage-events') {
+    try {await persist(env.DB,principal,[{id:`app-access-${Math.floor(started/60000)}`,type:'app_access',source:'server',outcome:'observed'}],started);}
+    catch {console.warn(JSON.stringify({event:'usage_record_failed',type:'app_access'}));}
+  }
   const split=path==='/api/jobs'&&request.method==='POST';
   const chat=/^\/api\/jobs\/[^/]+\/chat$/.test(path)&&request.method==='POST';
   const guide=/^\/api\/jobs\/[^/]+\/guide$/.test(path)&&request.method==='POST';

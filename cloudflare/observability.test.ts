@@ -67,3 +67,19 @@ test('server request rejection retries coalesce and never retain request content
  const rows=(await db.prepare('SELECT * FROM usage_events').all<any>()).results!;assert.equal(rows.length,1);assert.equal(rows[0].code,'split_daily_limit');
  assert.equal(JSON.stringify(rows).includes('private'),false);
 });
+
+test('verified app access survives missing client collection and coalesces without inventing visits or plays',async()=>{
+ const db=setup(),env={AUTH_MODE:'cail',DB:db} as Env,now=Date.now();
+ const request=new Request('https://app.test/api/account');
+ await recordServerUse(env,request,Response.json({account:{subject:principal.subject}}),principal,now);
+ await recordServerUse(env,request,Response.json({account:{subject:principal.subject}}),principal,now);
+ await recordServerUse(env,request,new Response(null,{status:401}),undefined,now);
+ await recordServerUse(env,new Request('https://app.test/api/usage-events'),Response.json({accepted:true}),principal,now+60000);
+ const {usageBySubject}=await import('../src/classroom/activity.ts');
+ const use=(await usageBySubject(env,[principal.subject],now)).get(principal.subject)!;
+ assert.equal(use.runs,0);assert.equal(use.completed,0);assert.equal(use.recordedVisits,0);assert.equal(use.recordedPlays,0);
+ assert.equal(use.lastActiveAt,new Date(now).toISOString());
+ const rows=(await db.prepare('SELECT * FROM usage_events').all<any>()).results!;
+ assert.equal(rows.length,1);assert.equal(rows[0].event_type,'app_access');assert.equal(rows[0].source,'server');
+ assert.doesNotMatch(JSON.stringify(rows),/Do not store me|cail-|\/api\/account/);
+});
