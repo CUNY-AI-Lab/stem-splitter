@@ -2445,6 +2445,7 @@ class Mixer {
     if (attempt !== this.playAttempt) return;
     this.starting = false;
     this.playing = true;
+    window.StemUsage?.record('playback_start');
     this.playBtn.textContent = '❚❚';
     this.playBtn.classList.add('playing');
     this.el.classList.add('playing');
@@ -2467,6 +2468,7 @@ class Mixer {
   }
 
   stopUi() {
+    if (this.playing) window.StemUsage?.record('playback_stop');
     this.playAttempt += 1;
     this.startAbort?.abort();
     this.starting = false;

@@ -567,14 +567,14 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   expect(activityReads).toBe(1);
   await page.unroute('**/api/teacher/students');
   await page.locator('#student-retry').click();
-  await expect(page.locator('#student-summary')).toContainText('1 split attempt · 1 completed');
-  await expect(page.locator('#student-summary')).toContainText('Visits not recorded');
-  await expect(page.locator('#guest-activity')).toHaveText('1 completed split · 2 browser sessions · 0 splits saved to accounts');
+  await expect(page.locator('#student-summary')).toContainText('1 recorded split attempt · 1 completed');
+  await expect(page.locator('#student-summary')).toContainText('Visit and playback history begins Oct 29');
+  await expect(page.locator('#guest-activity')).toHaveText('2 split attempts · 1 completed · 2 sessions with splits');
   await expect(page.locator('#student-jobs')).toContainText('Student recording');
 
   // A slower recording response must not replace the next selected person's work.
   await page.locator('#access-member').selectOption(TEST_SUBJECTS.bob);
-  await expect(page.locator('#student-summary')).toContainText('0 split attempts · 0 completed');
+  await expect(page.locator('#student-summary')).toContainText('0 recorded split attempts · 0 completed');
   let releaseAlice, aliceStarted, aliceFinished;
   const heldAlice=new Promise(resolve=>{releaseAlice=resolve;});
   const startedAlice=new Promise(resolve=>{aliceStarted=resolve;});
@@ -622,6 +622,73 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
  }finally{await server.close();}
 });
 
+test('listening to a shared recording records student use without creating a split, and refreshes retain one visit',async({page,context})=>{
+ const issuer=await createTestIdentityIssuer(),alice=TEST_SUBJECTS.alice,admin=TEST_SUBJECTS.carol;
+ const token=subject=>issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject});
+ const [studentToken,adminToken]=await Promise.all([token(alice),token(admin)]);
+ const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:admin,TEST_BROWSER:'true',CAIL_CLASSROOM_ENABLED:'false'}}]});
+ const errors=[],batches=[];page.on('pageerror',error=>errors.push(error.message));
+ let reviewer;
+ try {
+  const {url}=await server.listen(),sql=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
+  sql.push(`INSERT INTO app_users(subject,created_at) VALUES('${alice}','2026-10-08 18:00:00')`,
+   `INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('remix-fixture','Shared listening example','uploads/fixture.wav','done','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+   `INSERT INTO public_split_links(job_id) VALUES('remix-fixture')`);
+  await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(sql)});
+  await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
+  await context.setExtraHTTPHeaders({'x-fixture-identity':studentToken});
+  let rejectFirst=true;
+  await page.route('**/api/usage-events',async route=>{
+   batches.push(route.request().postDataJSON());
+   if(rejectFirst){rejectFirst=false;return route.fulfill({status:503,json:{error:'Temporary fixture outage'}});}
+   return route.continue();
+  });
+  const activity=async()=>{
+   const response=await server.fetch('/api/teacher/students',{headers:{'x-fixture-identity':adminToken}});
+   expect(response.ok).toBe(true);return (await response.json()).students;
+  };
+  const student=async()=>(await activity()).find(row=>row.subject===alice);
+  await page.goto(new URL('/?job=remix-fixture',url).href);
+  await expect(page.locator('.channel')).toHaveCount(1);
+  await expect.poll(async()=>(await student()).recordedVisits).toBe(1);
+  await page.locator('.play-btn').click();
+  await expect.poll(async()=>(await student()).recordedPlays).toBe(1);
+  expect((await student()).runs).toBe(0);
+  await page.locator('.play-btn').click();
+  await page.reload();
+  await expect(page.locator('.channel')).toHaveCount(1);
+  await page.goto(new URL('/account.html',url).href);
+  await expect(page.locator('#account-role')).toBeVisible();
+  await expect.poll(()=>batches.filter(batch=>batch.events.some(event=>event.type==='page_view')).length).toBeGreaterThanOrEqual(3);
+  await expect.poll(async()=>(await student()).recordedVisits).toBe(1);
+  expect((await student()).recordedPlays).toBe(1);
+  const visitIds=batches.flatMap(batch=>batch.events.filter(event=>event.type==='session_start').map(event=>event.id));
+  expect(new Set(visitIds).size).toBe(1);
+  expect(JSON.stringify(batches)).not.toContain('Shared listening example');
+  expect(JSON.stringify(batches)).not.toContain('remix-fixture');
+  reviewer=await context.newPage();
+  reviewer.on('pageerror',error=>errors.push(error.message));
+  await reviewer.setExtraHTTPHeaders({'x-fixture-identity':adminToken});
+  await reviewer.goto(new URL('/account.html',url).href);
+  await reviewer.locator('#student-review > summary').click();
+  const row=reviewer.locator('#student-list > li').filter({hasText:'1 recorded visit · 1 recorded play'});
+  await expect(row).toContainText('0 recorded split attempts');
+  await expect(row).toContainText('1 recorded visit · 1 recorded play');
+  await expect(row).toContainText('First account access');
+  await expect(reviewer.locator('#student-list')).toContainText('(you)');
+  for(const width of [1280,390]){
+   await reviewer.setViewportSize({width,height:900});
+   expect(await reviewer.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+   if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await reviewer.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/recorded-listening-${width}.png`,fullPage:true});}
+  }
+  // A delayed observation from Alice must never be assigned to the next account.
+  const stale=await server.fetch('/api/usage-events',{method:'POST',headers:{'x-fixture-identity':adminToken,'Origin':new URL(url).origin,'X-Stem-Usage-Actor':alice,'Content-Type':'application/json'},body:JSON.stringify({events:[{id:'stale-playback-event-0001',type:'playback_start'}]})});
+  expect(stale.status).toBe(409);
+  expect((await activity()).find(row=>row.subject===admin).recordedPlays).toBe(0);
+  expect(errors).toEqual([]);
+ }finally{await reviewer?.close();await server.close();}
+});
+
 test('account pagination loads an older account beyond 200, reports completeness, and opens its activity',async({page,context})=>{
  const issuer=await createTestIdentityIssuer();
  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol}}]});
@@ -652,7 +719,7 @@ test('account pagination loads an older account beyond 200, reports completeness
   const options=await page.locator('#access-member option').evaluateAll(nodes=>nodes.map(node=>node.value).filter(Boolean));
   expect(options).toHaveLength(201);expect(new Set(options).size).toBe(201);
   await page.locator('#access-member').selectOption(oldest);
-  await expect(page.locator('#student-summary')).toContainText('41 split attempts');
+  await expect(page.locator('#student-summary')).toContainText('41 recorded split attempts');
   await expect(page.locator('#student-name')).toHaveText('Older eligible student');
   await expect(page.locator('#student-list-status')).toHaveText('All available accounts loaded.');
   await expect(page.locator('#student-list-more')).toBeHidden();

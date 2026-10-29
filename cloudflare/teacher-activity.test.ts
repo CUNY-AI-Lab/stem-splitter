@@ -33,7 +33,10 @@ test('student review uses names, counts visits and runs, and confines audio to t
  const students=(await list.json() as any).students;
  assert.equal(students.find((r:any)=>r.subject===alice).displayName,'Alice Rivera');
  const activity=students.find((r:any)=>r.subject===alice);
- assert.deepEqual({...activity,subject:undefined,lastActiveAt:undefined},{subject:undefined,displayName:'Alice Rivera',runs:2,completed:1,guideTurns:0,recordedVisits:2,lastActiveAt:undefined});
+ assert.deepEqual({...activity,subject:undefined,firstSeenAt:undefined,lastActiveAt:undefined},{subject:undefined,firstSeenAt:undefined,displayName:'Alice Rivera',runs:2,completed:1,guideTurns:0,recordedVisits:2,recordedPlays:0,lastActiveAt:undefined});
+ assert.equal(typeof activity.firstSeenAt,'string');
+ assert.ok(students.some((row:any)=>row.subject===teacher),'the viewing instructor is included');
+ assert.equal((await call(`/api/teacher/students/${teacher}/jobs`)).status,200);
  assert.ok(Date.now()-Date.parse(activity.lastActiveAt)<60000);
  assert.equal(students.some((r:any)=>r.subject===bob),false);
  const jobs=await call(`/api/teacher/students/${alice}/jobs`);assert.equal(jobs.status,200);assert.equal((await jobs.json() as any).jobs.length,2);
@@ -64,7 +67,7 @@ test('verified names from another current course fill historical accounts withou
  invalid=true;assert.equal((await namedUsers(env,actor)).users[0].displayName,'Name unavailable');
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM account_display_names').first<any>())!.n,0);
  invalid=false;assert.equal((await namedUsers(env,actor)).users[0].displayName,'Bob Morgan');
- assert.equal((await namedUsers(env,{subject:teacher,role:'instructor'} as AppPrincipal,true)).users.length,0);
+ assert.equal((await namedUsers(env,{subject:teacher,role:'instructor'} as AppPrincipal)).users.length,0);
 });
 
 test('claimed guest work contributes to account activity once while retaining its original quota owner',async()=>{
@@ -89,6 +92,26 @@ test('claimed guest work contributes to account activity once while retaining it
  assert.equal((await db.prepare("SELECT subject FROM app_operations WHERE id='guest-split'").first<any>()).subject,guest);
 });
 
+test('a student with zero split attempts still has recorded visits, playback and recent activity',async()=>{
+ const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ const {usageBySubject}=await import('../src/classroom/activity.ts');
+ const {parseClientUses}=await import('../src/reliability/observability.ts');
+ const principal={subject:alice,role:'student',quotaClass:'member'} as AppPrincipal;
+ const events=[{id:'observed-visit-only-001',type:'session_start' as const},
+  {id:'observed-page-only-0001',type:'page_view' as const},
+  {id:'observed-play-only-0001',type:'playback_start' as const}];
+ assert.deepEqual(parseClientUses({events}),events);
+ await recordClientUses(db,principal,events);
+ await recordClientUses(db,principal,[events[0]]);
+ const usage=(await usageBySubject({DB:db} as Env,[alice,bob])).get(alice)!;
+ assert.equal(usage.runs,0);assert.equal(usage.completed,0);
+ assert.equal(usage.recordedVisits,1);assert.equal(usage.recordedPlays,1);
+ assert.ok(Date.now()-Date.parse(usage.lastActiveAt!)<60000);
+ const serialized=JSON.stringify((await db.prepare('SELECT * FROM usage_events').all()).results);
+ assert.equal(serialized.includes(alice),false);
+ assert.equal((await usageBySubject({DB:db} as Env,[bob])).get(bob)!.recordedVisits,0);
+});
+
 test('account pages reach eligible members beyond 200 accounts, advance through empty pages, and reject malformed cursors',async()=>{
  const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  const people=Array.from({length:201},(_,i)=>'cail-'+i.toString(16).padStart(32,'0'));
@@ -101,7 +124,7 @@ test('account pages reach eligible members beyond 200 accounts, advance through 
  const actor={subject:teacher,role:'instructor'} as AppPrincipal;
  let cursor:string|undefined, pages=0;const seen:string[]=[];
  do {
-  const before=calls,page=await namedUsers(env,actor,true,cursor);pages++;
+  const before=calls,page=await namedUsers(env,actor,cursor);pages++;
   assert.ok(calls-before<=26,'at most 25 candidates plus the current instructor authority per page');
   seen.push(...page.users.map(user=>user.subject));
   if(pages===1){assert.equal(page.users.length,0);assert.equal(page.complete,false);assert.ok(page.nextCursor);assert.match(page.nextCursor!,/^[0-9]+$/);assert.doesNotMatch(page.nextCursor!,/cail-|Older Student|2026/);}
@@ -111,10 +134,10 @@ test('account pages reach eligible members beyond 200 accounts, advance through 
  assert.equal(pages,9);assert.deepEqual(seen,[target]);
  // Admin pagination must also expose every account exactly once when timestamps tie.
  cursor=undefined;const all:string[]=[];
- do {const page=await namedUsers(env,{subject:admin,role:'admin'} as AppPrincipal,false,cursor);all.push(...page.users.map(user=>user.subject));cursor=page.nextCursor??undefined;}while(cursor);
+ do {const page=await namedUsers(env,{subject:admin,role:'admin'} as AppPrincipal,cursor);all.push(...page.users.map(user=>user.subject));cursor=page.nextCursor??undefined;}while(cursor);
  assert.equal(all.length,201);assert.equal(new Set(all).size,201);assert.deepEqual([...all].sort(),people);
- const first=await namedUsers(env,actor,true);active=false;
- const next=await namedUsers(env,actor,true,first.nextCursor!);assert.equal(next.users.length,0);
+ const first=await namedUsers(env,actor);active=false;
+ const next=await namedUsers(env,actor,first.nextCursor!);assert.equal(next.users.length,0);
  for(const invalid of ['', 'invalid',btoa('{}'),btoa(JSON.stringify({createdAt:'bad',subject:target})),btoa(JSON.stringify({createdAt:'2026-10-01',subject:target,extra:true}))])
-  await assert.rejects(namedUsers(env,actor,true,invalid),(error:any)=>error.status===400&&error.code==='invalid_cursor');
+  await assert.rejects(namedUsers(env,actor,invalid),(error:any)=>error.status===400&&error.code==='invalid_cursor');
 });

@@ -168,6 +168,13 @@ el('access-form').addEventListener('submit', async (event) => {
 
 let studentSelection = '', studentCursor = null, studentRequest = 0;
 let studentRows = [], studentsLoading = null, studentsLoaded = false, studentsNextCursor = null;
+function studentSummary(student, detail = false) {
+  const visits = student.recordedVisits || student.recordedPlays
+    ? `${student.recordedVisits} recorded ${student.recordedVisits === 1 ? 'visit' : 'visits'} · ${student.recordedPlays ?? 0} recorded ${(student.recordedPlays ?? 0) === 1 ? 'play' : 'plays'}`
+    : 'Visit and playback history begins Oct 29';
+  const first = typeof student.firstSeenAt === 'string' ? Date.parse(student.firstSeenAt.replace(' ', 'T') + (student.firstSeenAt.endsWith('Z') ? '' : 'Z')) : NaN;
+  return `${student.runs} recorded split ${student.runs === 1 ? 'attempt' : 'attempts'} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide ${(student.guideTurns ?? 0) === 1 ? 'turn' : 'turns'} · ${visits}${Number.isFinite(first) ? ` · First account access ${new Date(first).toLocaleDateString()}` : ''}${detail && student.lastActiveAt ? ` · Last recorded activity ${new Date(student.lastActiveAt).toLocaleString()}` : ''}`;
+}
 function loadStudents(more = false) {
   if (studentsLoading) return studentsLoading;
   el('student-status').textContent = 'Loading students…';
@@ -182,16 +189,19 @@ function loadStudents(more = false) {
     el('student-list-more').hidden = !studentsNextCursor;
     el('student-list-status').textContent = studentsNextCursor ? 'More accounts may be available. Load the next page to continue.' : 'All available accounts loaded.';
     const guests=result.guestActivity;
-    el('guest-activity').textContent=guests && Number.isInteger(guests.completedSplits) && Number.isInteger(guests.browserSessions)
-      ? `${guests.completedSplits} completed ${guests.completedSplits === 1 ? "split" : "splits"} · ${guests.browserSessions} browser sessions · ${guests.splitsSavedToAccounts} splits saved to accounts`
+    el('guest-activity').textContent=guests && Number.isInteger(guests.completedSplits) && Number.isInteger(guests.sessionsWithSplits)
+      ? `${guests.splitAttempts} split ${guests.splitAttempts === 1 ? 'attempt' : 'attempts'} · ${guests.completedSplits} completed · ${guests.sessionsWithSplits} ${guests.sessionsWithSplits === 1 ? 'session' : 'sessions'} with splits`
       : 'Guest activity unavailable.';
+    el('guest-sessions').textContent = guests && Number.isInteger(guests.browserSessions) && Number.isInteger(guests.splitsSavedToAccounts)
+      ? `${guests.browserSessions} guest sessions created · ${guests.splitsSavedToAccounts} ${guests.splitsSavedToAccounts === 1 ? 'split' : 'splits'} saved to accounts · ${Math.max(0, guests.completedSplits - guests.splitsSavedToAccounts)} completed ${guests.completedSplits - guests.splitsSavedToAccounts === 1 ? 'split' : 'splits'} awaiting an account link`
+      : '';
     studentsLoaded = true;
     el('student-list').replaceChildren(...studentRows.map(student => {
       const row = document.createElement('li'), button = document.createElement('button'), count = document.createElement('span');
-      button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName;
+      button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName + (student.subject === subject ? ' (you)' : '');
       button.addEventListener('click', () => void loadStudentJobs(student));
       count.className = 'student-count';
-      count.textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits ? `${student.recordedVisits} recorded visits in 30 days` : "Visits not recorded"}`;
+      count.textContent = studentSummary(student);
       row.append(button, count); return row;
     }));
     el('student-status').textContent = studentRows.length ? '' : studentsNextCursor ? 'No eligible accounts on these pages yet.' : 'Students appear here after they use Stem Splitter.';
@@ -199,6 +209,7 @@ function loadStudents(more = false) {
   } catch (error) {
     el('student-status').textContent = error.message;
     el('guest-activity').textContent='Guest activity unavailable.';
+    el('guest-sessions').textContent='';
     el('student-retry').hidden = false;
     return false;
   } finally { studentsLoading = null; el('student-list-more').disabled = false; } })();
@@ -232,7 +243,7 @@ async function loadStudentJobs(student, more = false) {
   studentSelection = student.subject;
   el('student-detail').hidden = false;
   el('student-name').textContent = student.displayName;
-  el('student-summary').textContent = `${student.runs} split ${student.runs === 1 ? "attempt" : "attempts"} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide turns · ${student.recordedVisits ? `${student.recordedVisits} recorded visits in 30 days` : "Visits not recorded"}${student.lastActiveAt ? ` · Last activity ${new Date(student.lastActiveAt).toLocaleString()}` : ""}`;
+  el('student-summary').textContent = studentSummary(student, true);
   el('student-more').hidden = true;
   el('student-more').disabled = true;
   el('student-retry').hidden = true;

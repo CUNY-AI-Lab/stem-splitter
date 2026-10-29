@@ -60,10 +60,10 @@ function accountCursor(value?: string): number | null {
   if (!/^[1-9][0-9]{0,15}$/.test(value) || !Number.isSafeInteger(Number(value))) throw new CourseError(400, 'invalid_cursor');
   return Number(value);
 }
-export async function namedUsers(env:Env,actor:AppPrincipal,review=false,cursor?:string) {
+export async function namedUsers(env:Env,actor:AppPrincipal,cursor?:string) {
   const before=accountCursor(cursor);
   const classes=actor.role==='admin'?courseIds(env):await teachingCourses(env,actor);
-  const query = env.DB.prepare(`SELECT rowid AS account_cursor,subject,role,disabled,role_expires_at,revision FROM app_users
+  const query = env.DB.prepare(`SELECT rowid AS account_cursor,subject,role,disabled,role_expires_at,revision,created_at AS firstSeenAt FROM app_users
     ${before !== null ? 'WHERE rowid < ?' : ''}
     ORDER BY rowid DESC LIMIT ?`);
   const {results}=await (before !== null ? query.bind(before,ACCOUNT_PAGE_SIZE+1)
@@ -74,8 +74,7 @@ export async function namedUsers(env:Env,actor:AppPrincipal,review=false,cursor?
   await Promise.all(Array.from({length:Math.min(6,page.length)},async()=>{
     while(next<page.length){
       const {account_cursor,...user}=page[next++];
-      if(review&&user.subject===actor.subject)continue;
-      const details=await profile(env,user.subject,classes,actor.role!=='admin');
+      const details=await profile(env,user.subject,classes,actor.role!=='admin'&&user.subject!==actor.subject);
       if(details.allowed)out.push({...user,displayName:details.displayName});
     }
   }));
@@ -86,16 +85,16 @@ export async function namedUsers(env:Env,actor:AppPrincipal,review=false,cursor?
 export async function requireStudentReview(env:Env,actor:AppPrincipal,subject:string) {
   if(!/^cail-[0-9a-f]{32}$/.test(subject)||!await env.DB.prepare('SELECT 1 FROM app_users WHERE subject=?').bind(subject).first())throw new CourseError(404,'not_found');
   const classes=await teachingCourses(env,actor);
-  const person=await profile(env,subject,actor.role==='admin'?courseIds(env):classes,actor.role!=='admin');
+  const person=await profile(env,subject,actor.role==='admin'?courseIds(env):classes,actor.role!=='admin'&&subject!==actor.subject);
   if(!person.allowed)throw new CourseError(404,'not_found');
   return person;
 }
 export async function studentActivity(env:Env,actor:AppPrincipal,cursor?:string) {
   if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');
-  const page=await namedUsers(env,actor,true,cursor);
+  const page=await namedUsers(env,actor,cursor);
   const users=page.users;
   const usage=await usageBySubject(env,users.map(user=>user.subject));
-  return {students:users.map(user=>({subject:user.subject,displayName:user.displayName,...usage.get(user.subject)!})),nextCursor:page.nextCursor,complete:page.complete};
+  return {students:users.map(user=>({subject:user.subject,displayName:user.displayName,firstSeenAt:user.firstSeenAt,...usage.get(user.subject)!})),nextCursor:page.nextCursor,complete:page.complete};
 }
 
 export async function guestActivity(env:Env,actor:AppPrincipal) {
