@@ -165,6 +165,7 @@ test('multiple courses default to Personal while explicit choices remain usable 
   await page.route('**/api/classroom/courses',route=>route.fulfill({json:{courses:classes,nextCursor:null}}));
   await page.goto(f.url.href);
   await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  await expect(page.getByLabel('Share with')).toBeEnabled();
   expect(await page.evaluate(()=>creationCourse())).toBe('personal');
   await page.getByLabel('Share with').selectOption('second-fixture-course');
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
@@ -182,7 +183,11 @@ test('multiple courses default to Personal while explicit choices remain usable 
   await page.goto('about:blank');
   await page.setExtraHTTPHeaders({'x-fixture-identity':await f.issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.bob})});
   await page.goto(f.url.href);await expect(page.getByLabel('Share with')).toHaveValue('personal');
-  classes=[];await page.goto(f.url.href);await expect(page.locator('#course-context')).toBeHidden();
+  classes=[];await page.goto(f.url.href);
+  // The section starts hidden while membership loads. Wait for the actual
+  // access check to finish before asserting that creation is available.
+  await expect(page.getByLabel('Share with')).toBeEnabled();
+  await expect(page.locator('#course-context')).toBeHidden();
   expect(await page.evaluate(()=>creationCourse())).toBe('personal');
  } finally {await f.close();}
 });
