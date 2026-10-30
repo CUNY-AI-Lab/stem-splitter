@@ -102,6 +102,7 @@ import {
   validateTurns,
   type GuideRecord,
 } from './assistant';
+import { assistantDiagnosticCode, assistantRequestId, assistantRetrySeconds } from './assistant/diagnostics';
 import {
   buildSystemPromptPreview,
   hashSystemPromptFingerprint,
@@ -2359,8 +2360,15 @@ async function currentListeningUsage(c:Context<AppContext>) {
 async function failedListeningRequest(receipt:ReturnType<typeof assistantReceipt>,error:unknown) {
   const failure=await receipt.failure();
   if(error instanceof AssistantError) {
-    failure.message=`${error.studentMessage} This request did not use a successful turn.`;
-    Object.assign(failure.details,{providerCode:error.code,requestId:error.requestId,shouldRetry:error.shouldRetry});
+    // Keep the ledger's recovery instructions: an application SSE response
+    // alone cannot tell us whether the upstream accepted a model request.
+    failure.retryAfter=Math.max(failure.retryAfter,assistantRetrySeconds(error.retryAfterSeconds) ?? 0);
+    const recovery=failure.code==='listening_attempt_uncertain'
+      ? 'This request ended before its provider outcome could be verified. It did not use a successful turn. After the indicated wait, retry this request to recover or start a new attempt.'
+      : failure.message;
+    failure.message=`${error.studentMessage} ${recovery}`;
+    Object.assign(failure.details,{providerCode:assistantDiagnosticCode(error.code),requestId:assistantRequestId(error.requestId),
+      shouldRetry:typeof error.shouldRetry==='boolean'?error.shouldRetry:undefined});
   }
   return failure;
 }
@@ -2716,7 +2724,9 @@ function sseResponse(
       const message = err instanceof AssistantError ? err.studentMessage : err instanceof OperationError ? err.message : COACH_DOWN;
       if (!signal.aborted) await emit({ type: 'error', message, usage:await currentListeningUsage(c),
         ...(err instanceof OperationError ? {code:err.code,retryAfterSeconds:err.retryAfter,...err.details} : {}),
-        ...(err instanceof AssistantError ? { code: err.code, shouldRetry: err.shouldRetry, requestId: err.requestId } : {}) }).catch(() => {});
+        ...(err instanceof AssistantError ? { code: assistantDiagnosticCode(err.code),
+          shouldRetry: typeof err.shouldRetry==='boolean'?err.shouldRetry:undefined,
+          requestId: assistantRequestId(err.requestId), retryAfterSeconds:assistantRetrySeconds(err.retryAfterSeconds) } : {}) }).catch(() => {});
     } finally {
       await writer.close().catch(() => {});
     }

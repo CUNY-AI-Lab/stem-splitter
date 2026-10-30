@@ -86,7 +86,7 @@ export default {
         const requestId = '01900000-0000-7000-8000-000000000001';
         const error = { error: { code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'private fixture', cail: { request_id: requestId, should_retry: false } } };
         if (gatewayMode === 'quota') return Response.json(error, { status: 429, headers: { 'x-should-retry': 'false', 'x-request-id': requestId } });
-        const chunks = [{ choices: [{ delta: { content: gatewayMode==='empty'?'':'Listen for the bass against the drums.' }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        const chunks = [{ choices: [{ delta: { content: gatewayMode==='empty'?'':'Listen for the bass against the drums.' }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: gatewayMode==='incomplete'?'length':'stop' }] },
           gatewayMode === 'trailing-error' ? error : { choices: [], usage: { total_tokens: 20 } }];
         return new Response(chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream', 'x-request-id': requestId } });
       } } as Fetcher,

@@ -41,8 +41,9 @@ async function setup(browser, count = 2) {
   const contexts = [], pages = [], identities = [], errors = [], writes = [], reads = [];
   for (let index = 0; index < count; index++) {
     const identity = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: subjects[index] });
+    const gatewayIdentity = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: subjects[index] });
     identities.push(identity);
-    const context = await browser.newContext({ extraHTTPHeaders: { 'x-fixture-identity': identity } });
+    const context = await browser.newContext({ extraHTTPHeaders: { 'x-fixture-identity': identity, 'x-fixture-gateway-identity': gatewayIdentity } });
     contexts.push(context); const page = await context.newPage(); pages.push(page);
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => {
@@ -73,6 +74,51 @@ const state = page => page.evaluate(id => {
     revision: mixer.classSession.revision, blocked: mixer.classSession.audioBlocked };
 }, job);
 const convergence = async (pages, check) => expect.poll(async () => (await Promise.all(pages.map(state))).every(check), { timeout: 12000 }).toBe(true);
+
+for (const failureMode of ['empty', 'incomplete']) test(`Listening Guide and chat recover ${failureMode} output during shared playback without a successful turn`, async ({ browser }) => {
+  test.setTimeout(90000);
+  const f = await setup(browser), [host, student] = f.pages;
+  const gatewayCalls = async () => (await (await f.server.fetch('/__fixture/gateway-stats', { headers: { 'x-fixture': 'local-only' } })).json()).gatewayCalls;
+  const usage = async () => (await host.request.get(new URL(`/api/jobs/${job}/listening-usage`, f.url).href)).json();
+  try {
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
+    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await host.locator('.play-btn').click();
+    await expect.poll(async () => (await state(host)).playing).toBe(true);
+    await host.locator('.coach-toggle').click();
+    const before = await usage();
+    let guideRequests = 0;
+    await host.route(`**/api/jobs/${job}/guide`, route => {
+      guideRequests++;
+      return route.continue({ headers: { ...route.request().headers(), ...(guideRequests === 1 ? { 'x-fixture-gateway-mode': failureMode } : {}) } });
+    });
+    await host.locator('.coach-cue-btn').click();
+    await expect(host.locator('.coach-hint')).toContainText('The Listening Guide is unavailable right now');
+    await expect(host.locator('.coach-hint')).toContainText('It did not use a successful turn.');
+    await expect(host.locator('.coach-hint')).toContainText('You can send it again as a new attempt.');
+    await expect(host.locator('.coach-hint')).toContainText(`Reason: ${failureMode}_response.`);
+    await expect(host.locator('.coach-hint')).toContainText('Support ID: 01900000-0000-7000-8000-000000000001');
+    expect(await gatewayCalls()).toBe(1);
+    const { serverTime: beforeTime, ...beforeAllowance } = before;
+    const { serverTime: afterTime, ...afterAllowance } = await usage();
+    expect(afterAllowance).toEqual(beforeAllowance);
+    expect(Date.parse(afterTime)).toBeGreaterThanOrEqual(Date.parse(beforeTime));
+    await expect(host.locator('.coach-cue-btn')).toBeEnabled();
+    expect((await state(host)).leading).toBe(true);
+    expect((await state(student)).following).toBe(true);
+    await host.locator('.coach-cue-btn').click();
+    await expect(host.locator('.coach-guide-text')).toContainText('Listen for the bass against the drums.');
+    expect(await gatewayCalls()).toBe(2);
+    await host.locator('.coach-form input').fill('What should we hear in this shared passage?');
+    await host.locator('.coach-form input').press('Enter');
+    await expect(host.getByRole('log').locator('.coach-row.coach')).toContainText('Listen for the bass against the drums.');
+    await expect(host.locator('.coach-form input')).toBeEnabled();
+    expect(await gatewayCalls()).toBe(3);
+    expect((await state(host)).leading).toBe(true);
+    expect((await state(student)).following).toBe(true);
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});
 
 test('eight independent browsers opt into instructor playback, focus and section cues without sharing control', async ({ browser }) => {
   test.setTimeout(120000);

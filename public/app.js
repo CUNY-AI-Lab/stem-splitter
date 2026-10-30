@@ -369,6 +369,32 @@ async function readSongSearch(response, onResults) {
 // POST to a Listening Guide endpoint and consume its SSE stream, calling onEvent for
 // each `data:` JSON event. Setup failures are plain JSON with a real status;
 // mid-stream failures arrive as {type:'error'} events, which throw here.
+const listeningDiagnosticCodes = new Set([
+  'assistant_unavailable', 'empty_response', 'incomplete_response', 'invalid_tool_calls',
+  'upstream_timeout', 'upstream_unavailable', 'upstream_rate_limited', 'model_unavailable',
+  'model_cooldown', 'quota_exceeded', 'quota_unavailable', 'rate_limit_unknown',
+  'upstream_auth_error', 'upstream_payment_required', 'invalid_request', 'invalid_credential',
+  'authentication_required', 'admission_required', 'policy_denied', 'request_cancelled',
+]);
+function listeningRequestError(payload, status, retryHeader) {
+  const providerCode = payload.providerCode ?? payload.code;
+  const safeCode = listeningDiagnosticCodes.has(providerCode) ? providerCode : undefined;
+  const requestId = typeof payload.requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(payload.requestId) ? payload.requestId : undefined;
+  const delay = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 7 * 86400 ? Math.ceil(value) : 0;
+  const retryAfterSeconds = Math.max(delay(payload.retryAfterSeconds), delay(retryHeader && /^\d+(?:\.\d+)?$/.test(retryHeader) ? Number(retryHeader) : undefined));
+  const message = payload.message || payload.error?.message || (typeof payload.error === 'string' ? payload.error : '') || 'The Listening Guide could not complete this request. The mixer still works.';
+  const error = new Error(message + (safeCode ? ` Reason: ${safeCode}.` : '')
+    + (retryAfterSeconds ? ` Wait at least ${retryAfterSeconds} seconds before retrying.` : '')
+    + (requestId ? ` Support ID: ${requestId}` : ''));
+  error.status = status;
+  error.code = payload.code || payload.error?.code;
+  error.providerCode = safeCode;
+  error.requestId = requestId;
+  error.shouldRetry = payload.shouldRetry === true;
+  error.newAttemptAllowed = payload.newAttemptAllowed === true;
+  error.retryAfterSeconds = retryAfterSeconds;
+  return error;
+}
 async function streamApi(path, body, onEvent, signal) {
   await appReady;
   if (path.endsWith('/chat') && !body.messageId) body = { ...body, messageId: crypto.randomUUID() };
@@ -398,12 +424,7 @@ async function streamApi(path, body, onEvent, signal) {
   if (!res.ok || !res.body) {
     const err = await res.json().catch(() => ({}));
     acceptListeningUsage(err.usage);
-    const error = new Error(err.error?.message || err.error || `Request failed (${res.status})`);
-    error.status = res.status;
-    error.code = err.code || err.error?.code;
-    error.newAttemptAllowed = err.newAttemptAllowed === true;
-    error.retryAfterSeconds = Number(res.headers.get('retry-after')) || err.retryAfterSeconds;
-    throw error;
+    throw listeningRequestError(err, res.status, res.headers.get('retry-after'));
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -426,11 +447,7 @@ async function streamApi(path, body, onEvent, signal) {
         }
         if (event.type === 'error') {
           acceptListeningUsage(event.usage);
-          const support = typeof event.requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(event.requestId) ? ` Support ID: ${event.requestId}` : '';
-          const error = new Error((event.message || 'The Listening Guide could not complete this request. The mixer still works.') + support);
-          error.code = event.code;
-          error.newAttemptAllowed = event.newAttemptAllowed === true;
-          throw error;
+          throw listeningRequestError(event);
         }
         if (event.type === 'done') acceptListeningUsage(event.usage);
         onEvent(event);

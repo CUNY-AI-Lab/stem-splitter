@@ -8,12 +8,64 @@ import { readFileSync } from 'node:fs';
 import { SqliteD1 } from '../server/d1.ts';
 import { reserveAssistant } from '../src/reliability/assistant.ts';
 import { setCooldown } from '../src/reliability/retry.ts';
+import { assistantDiagnosticCode, assistantRequestId, assistantRetrySeconds, gatewayRetrySeconds } from '../src/assistant/diagnostics.ts';
 const id = '01900000-0000-7000-8000-000000000001';
 const request = () => new Request('https://split.test/api/jobs/job/chat', { headers: { 'x-request-id': id } });
 const env = { ASSISTANT_MODEL: 'glm-5.2' } as Env;
 const params = { messages: [{ role: 'user' as const, content: 'Synthetic listening question' }], maxTokens: 100, temperature: 0.5 };
 const sse = (events: unknown[]) => new Response(events.map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream', 'x-request-id': id } });
 const finished = { choices: [{ delta: {}, finish_reason: 'stop' }] };
+
+test('Gateway diagnostics distinguish failures without copying provider messages or changing accepted-call retries', async t => {
+  const logs: string[] = [];
+  t.mock.method(console, 'log', (value: string) => logs.push(value));
+  const upstreamId = '01900000-0000-7000-8000-000000000002';
+  for (const mode of ['empty', 'incomplete', 'stream-rejection', 'rejection', 'unknown', 'timeout']) {
+    logs.length = 0;
+    let calls = 0;
+    const controller = new AbortController();
+    const transport = gatewayForRequest({ fetch: async () => {
+      calls++;
+      if (mode === 'timeout') {
+        setTimeout(() => controller.abort(new DOMException('private timeout text', 'TimeoutError')), 5);
+        return new Response(new ReadableStream({ start() {} }), { headers: { 'Content-Type': 'text/event-stream', 'x-request-id': upstreamId } });
+      }
+      if (mode === 'empty' || mode === 'incomplete') return sse([{ choices: [{ delta: { content: mode === 'empty' ? '' : 'Partial fixture.' }, finish_reason: mode === 'empty' ? 'stop' : 'length' }] }]);
+      const code = mode === 'unknown' ? 'private_provider_secret' : 'upstream_unavailable';
+      const error = { error: { code, type: code, param: null, message: 'private provider body', cail: { request_id: upstreamId, should_retry: true, retry_after_seconds: 45 } } };
+      return mode === 'rejection' ? Response.json(error, { status: 503, headers: { 'Retry-After': '46', 'x-request-id': upstreamId } }) : sse([error]);
+    } } as unknown as Fetcher, 'private-gateway-leg', request(), 'test');
+    const code = mode === 'empty' ? 'empty_response' : mode === 'incomplete' ? 'incomplete_response' : mode === 'timeout' ? 'upstream_timeout' : mode === 'unknown' ? 'assistant_unavailable' : 'upstream_unavailable';
+    await assert.rejects(transport.stream({ ...env, ASSISTANT_ABORT_SIGNAL: controller.signal,
+      ...(mode === 'rejection' ? {} : { ASSISTANT_FALLBACK_MODELS: 'deepseek-v4-flash-0731' }) }, params, () => {}), error => {
+      assert.ok(error instanceof AssistantError); assert.equal(error.code, code);
+      if (['stream-rejection', 'unknown', 'rejection'].includes(mode)) assert.equal(error.retryAfterSeconds, mode === 'rejection' ? 46 : 45);
+      assert.ok(!error.message.includes('private')); return true;
+    });
+    assert.equal(calls, 1, 'an accepted response must not cause another model call');
+    assert.equal(logs.length, 1);
+    const event = JSON.parse(logs[0]), attributes = event.attributes;
+    assert.equal(event.event_name, 'stem-splitter.gateway.completed');
+    assert.equal(attributes['error.type'], code);
+    assert.equal(attributes['http.response.status_code'], mode === 'rejection' ? 503 : 200);
+    assert.equal(attributes['cail.request.id'], ['empty','incomplete'].includes(mode) ? id : upstreamId);
+    assert.ok(Number.isFinite(attributes['cail.operation.duration_ms']));
+    assert.equal(attributes['cail.retry.count'], 0);
+    assert.ok(!logs[0].includes('private'));
+  }
+});
+
+test('diagnostic codes, support IDs and retry delays are bounded allowlisted metadata', () => {
+  assert.equal(assistantDiagnosticCode('empty_response'), 'empty_response');
+  assert.equal(assistantDiagnosticCode('private_provider_secret'), 'assistant_unavailable');
+  assert.equal(assistantRequestId(id), id); assert.equal(assistantRequestId('private credential'), undefined);
+  for (const value of [-1, Infinity, NaN, 604801, '60', {}, null]) assert.equal(assistantRetrySeconds(value), undefined);
+  assert.equal(assistantRetrySeconds(1.2), 2);
+  assert.equal(gatewayRetrySeconds('12.5'), 13);
+  const now = Date.parse('2026-10-29T00:00:00Z');
+  assert.equal(gatewayRetrySeconds('Thu, 29 Oct 2026 00:01:00 GMT', now), 60);
+  for (const value of ['private text', '-5', 'Infinity', '604801', '999999999999999999999']) assert.equal(gatewayRetrySeconds(value), undefined);
+});
 
 test('the private client sends one Gateway credential and drains trailing usage or failure', async () => {
   let calls = 0, trailingError = false;
@@ -63,7 +115,9 @@ test('empty and truncated streams are failures, never successful attempts or aut
   }
 });
 
-test('a cooling primary skips directly to the configured backup without recording a fictitious attempt', async () => {
+test('a cooling primary skips directly to the configured backup without recording a fictitious attempt', async t => {
+  const logs: string[] = [];
+  t.mock.method(console, 'log', (value: string) => logs.push(value));
   const local = new SqliteD1(':memory:');
   local.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   const DB = local as unknown as D1Database, subject = `cail-${'f'.repeat(32)}`;
@@ -79,6 +133,8 @@ test('a cooling primary skips directly to the configured backup without recordin
     ASSISTANT_FALLBACK_MODELS: 'deepseek-v4-flash-0731' }, params, () => {});
   assert.equal(result.content, 'Listen for the bass.');
   assert.deepEqual(models, ['deepseek-v4-flash-0731']);
+  assert.equal(logs.length, 1);
+  assert.equal(JSON.parse(logs[0]).attributes['cail.retry.count'], 0, 'the first dispatched request is not a retry');
   assert.deepEqual((await DB.prepare('SELECT model,outcome FROM operation_attempts').all()).results?.map(row => ({ ...row })),
     [{ model: 'deepseek-v4-flash-0731', outcome: 'succeeded' }]);
   await setCooldown(DB, 'gateway:deepseek-v4-flash-0731', Date.now() + 30000);
@@ -86,6 +142,8 @@ test('a cooling primary skips directly to the configured backup without recordin
     ASSISTANT_FALLBACK_MODELS: 'deepseek-v4-flash-0731' }, params, () => {}),
     (error: unknown) => error instanceof AssistantError && error.code === 'model_cooldown');
   assert.equal(models.length, 1);
+  assert.equal(logs.length, 2);
+  assert.equal(JSON.parse(logs[1]).attributes['cail.retry.count'], 0, 'cooldown rejection dispatches no retry');
 });
 
 test('tools-only replies receive local narration without another model request', async () => {
@@ -117,12 +175,15 @@ test('unavailable aggregate quota stays unavailable and is never a local permiss
   await assert.rejects(transport.quota()); assert.equal(calls, 1);
 });
 
-test('ordered fallback uses only documented capacity rejections; policy/quota/auth/unknown do not fall back',async()=>{
+test('ordered fallback uses only documented capacity rejections; policy/quota/auth/unknown do not fall back',async t=>{
+ const logs: string[] = [];
+ t.mock.method(console, 'log', (value: string) => logs.push(value));
  for(const [code,status,shouldRetry,fallback] of [
   ['upstream_rate_limited',429,true,true],['upstream_unavailable',503,true,true],['model_unavailable',503,true,true],
   ['quota_exceeded',429,false,false],['rate_limit_unknown',429,false,false],['upstream_auth_error',401,false,false],
   ['upstream_payment_required',402,false,false],['upstream_timeout',504,false,false],['upstream_unavailable',503,false,false],
  ] as const) {
+  logs.length = 0;
   const models:string[]=[];
   const transport=gatewayForRequest({fetch:async(outbound:Request)=>{
    assert.equal(outbound.headers.get('x-cail-identity-jwt'),'same-verified-subject');
@@ -133,6 +194,7 @@ test('ordered fallback uses only documented capacity rejections; policy/quota/au
   const pending=transport.stream({...env,ASSISTANT_FALLBACK_MODELS:'deepseek-v4-flash-0731'},params,()=>{});
   if(fallback){assert.equal((await pending).model,'deepseek-v4-flash-0731');assert.deepEqual(models,['glm-5.2','deepseek-v4-flash-0731']);}
   else {await assert.rejects(pending,AssistantError);assert.deepEqual(models,['glm-5.2']);}
+  assert.deepEqual(logs.map(value=>JSON.parse(value).attributes['cail.retry.count']),fallback?[0,1]:[0]);
  }
 });
 test('both failures stop at two, stream/tool output forbids fallback, and mis-mapped backup fails closed',async()=>{

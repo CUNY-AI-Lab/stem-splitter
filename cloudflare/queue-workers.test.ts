@@ -25,18 +25,25 @@ test('two actual Workerd Workers sharing D1 admit fifteen simultaneous requests 
  try {
   await harness.listen();const workers=[harness.getWorker('queue-worker-one'),harness.getWorker('queue-worker-two')];
   const schema=schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
-  assert.equal((await workers[0].fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(schema)})).status,200);
+  const schemaResponse=await workers[0].fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(schema)});
+  await schemaResponse.arrayBuffer();assert.equal(schemaResponse.status,200);
   const call=(worker:number,who:number,path:string,init:RequestInit={})=>workers[worker].fetch(path,{...init,headers:{origin:'https://split.test','content-type':'application/json','x-fixture-identity':tokens[who],...init.headers}});
   const wav=await readFile(new URL('../tests/fixtures/audio/source.wav',import.meta.url));const keys:string[]=[];
   for(let i=0;i<2;i++){
    const grant=await(await call(i,i,'/api/uploads',{method:'POST',body:'{"filename":"fixture.wav"}'})).json();keys.push(grant.key);
    assert.equal((await call(i,i,new URL(grant.uploadUrl,'https://split.test').pathname,{method:'PUT',headers:{'content-length':String(wav.length)},body:wav})).status,204);
   }
-  const submit=(who:number,i:number)=>call(i%2,who,'/api/jobs',{method:'POST',headers:{'Idempotency-Key':`person-${who}-operation-${String(i).padStart(4,'0')}`,'X-Stem-Course':i%2?STEM_COURSE_ID:'second-fixture-course'},body:JSON.stringify({key:keys[who],filename:'fixture.wav',model:'htdemucs_ft',coursePolicy:'course-work-v1'})});
+  const submit=async(who:number,i:number)=>{
+   const response=await call(i%2,who,'/api/jobs',{method:'POST',headers:{'Idempotency-Key':`person-${who}-operation-${String(i).padStart(4,'0')}`,'X-Stem-Course':i%2?STEM_COURSE_ID:'second-fixture-course'},body:JSON.stringify({key:keys[who],filename:'fixture.wav',model:'htdemucs_ft',coursePolicy:'course-work-v1'})});
+   // Consume each Workerd response when it arrives; keep all submissions concurrent.
+   return {status:response.status,body:await response.json() as {id?:string}};
+  };
   const responses=await Promise.all(Array.from({length:30},(_,i)=>submit(0,i)));
   assert.equal(responses.filter(r=>r.status===202).length,15);assert.equal(responses.filter(r=>r.status===429).length,15);
-  await Promise.all(responses.map(r=>r.arrayBuffer()));
-  const bob=await Promise.all(Array.from({length:15},(_,i)=>submit(1,i)));assert.ok(bob.every(r=>r.status===202));await Promise.all(bob.map(r=>r.arrayBuffer()));
+  const bob=await Promise.all(Array.from({length:15},(_,i)=>submit(1,i)));assert.ok(bob.every(r=>r.status===202));
+  const accepted=[...responses,...bob].filter(r=>r.status===202);
+  assert.ok(accepted.every(r=>typeof r.body.id==='string'&&r.body.id.length>0));
+  assert.equal(new Set(accepted.map(r=>r.body.id)).size,30);
   for(let who=0;who<2;who++){
    const account=await(await call((who+1)%2,who,'/api/account')).json();assert.equal(account.splitAllowance.inProgress,15);assert.equal(account.splitAllowance.completed,0);assert.equal(account.splitAllowance.remaining,0);
   }
