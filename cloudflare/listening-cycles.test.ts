@@ -95,6 +95,37 @@ test('failures, partial streams and timeouts use no successful turn; uncertain r
  assert.equal(fresh.at(-1).usage.successfulTurns,1);assert.equal(f.calls(),4);
 });
 
+test('course cue/chat failure diagnostics preserve the uncertain-attempt retry floor and filter unsafe metadata', async () => {
+ const f=await setup();
+ const supportId='01900000-0000-7000-8000-000000000002';
+ let calls=0;
+ for(const [index,code] of ['empty_response','incomplete_response','upstream_timeout','upstream_unavailable','private_provider_secret'].entries()) {
+  for(const kind of ['guide','chat']) {
+   const id=`diagnostic-${index}-${kind}`;await f.job(id,true);
+   f.env.assistantTransport=async e=>{
+    calls++;
+    const operation=(await readOperation(f.db,e.ASSISTANT_OPERATION_ID!))!;
+    const attempt=await beginAttempt(f.db,operation,'fixture');await finishAttempt(f.db,attempt,'uncertain');
+    throw new AssistantError(503,'The Listening Guide is unavailable right now.',{code,requestId:code==='private_provider_secret'?'private credential':supportId,shouldRetry:true,retryAfterSeconds:code==='upstream_timeout'?300:45});
+   };
+   const body=kind==='guide'?{messageId:`diagnostic-key-${index}-${kind}`}:f.chat(id,`diagnostic-key-${index}-${kind}`,0);
+   const events=await f.events(await f.request(`/api/jobs/${id}/${kind}`,'POST',body)), error=events.at(-1);
+   assert.equal(error.type,'error');assert.equal(error.code,'listening_attempt_uncertain');
+   assert.equal(error.providerCode,code==='private_provider_secret'?'assistant_unavailable':code);
+   assert.equal(error.requestId,code==='private_provider_secret'?undefined:supportId);
+   assert.equal(error.newAttemptAllowed,false);assert.ok(error.retryAfterSeconds>=119);
+   if(code==='upstream_timeout')assert.equal(error.retryAfterSeconds,300);
+   assert.match(error.message,/provider outcome could be verified/);
+   assert.match(error.message,/retry this request to recover or start a new attempt/);
+   assert.ok(!error.message.includes('two minutes'));
+   assert.equal(error.usage.successfulTurns,0);assert.equal(error.usage.remainingTurns,50);
+   assert.ok(!JSON.stringify(events).includes('private'));
+   const before=calls;assert.equal((await f.request(`/api/jobs/${id}/${kind}`,'POST',body)).status,409);assert.equal(calls,before);
+  }
+ }
+ assert.equal(calls,10);
+});
+
 test('real Gateway adapter rejects empty and truncated cue/chat output without charging or caching; complete output counts once',async()=>{
  const f=await setup();await f.job('gateway-output');
  let calls=0,content='',finishReason='length';

@@ -19,7 +19,8 @@ async function fixture(browser) {
     'x-fixture-gateway-identity': await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice }),
   } });
   const page = await context.newPage();
-  await page.route('**/api/files/stems/listening-fixture/*', route => route.fulfill({ contentType: 'audio/mpeg', body: Buffer.alloc(0) }));
+  const audio = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
+  await page.route('**/api/files/stems/listening-fixture/*', route => route.fulfill({ contentType: 'audio/mpeg', body: audio }));
   let currentUsage = usage(50);
   await page.route('**/api/listening-usage', route => route.fulfill({ json: currentUsage }));
   return { page, setUsage: value => { currentUsage = value; }, open: async () => {
@@ -35,6 +36,68 @@ function usage(remainingTurns, seconds = 0) {
   return { ok: true, limit: 50, remainingTurns, inProgress: 0, serverTime: new Date(now).toISOString(), resetsAt:reset.toISOString(), cooldownUntil: seconds ? new Date(now + seconds * 1000).toISOString() : null };
 }
 const reply = (text, state) => `data: ${JSON.stringify({ type: 'done', text, model: 'fixture', usage: state })}\n\n`;
+
+for (const [transport, providerCode] of [
+  ['sse', 'empty_response'], ['sse', 'incomplete_response'],
+  ['sse', 'upstream_timeout'], ['json', 'upstream_unavailable'],
+]) test(`${transport} ${providerCode} retains recovery guidance and the same question without automatically retrying`, async ({ browser }) => {
+  const f = await fixture(browser);
+  try {
+    await f.page.clock.install();
+    const requests = [], requestId = '01900000-0000-7000-8000-000000000001';
+    const delay = transport === 'json' ? 180 : 120;
+    await f.page.route('**/api/jobs/listening-fixture/chat', route => {
+      requests.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
+      if (requests.length > 1) return route.fulfill({ contentType: 'text/event-stream', body: reply('The recovered reply.', usage(49)) });
+      const failure = { type: 'error', message: 'The provider outcome could not be verified. Retry this request to recover its result.',
+        code: 'listening_attempt_uncertain', providerCode, requestId, shouldRetry: true,
+        retryAfterSeconds: 120, newAttemptAllowed: false, usage: usage(50) };
+      return route.fulfill(transport === 'json'
+        ? { status: 503, headers: { 'retry-after': '180' }, json: failure }
+        : { contentType: 'text/event-stream', body: `data: ${JSON.stringify(failure)}\n\n` });
+    });
+    await f.open();
+    const input = f.page.getByRole('textbox', { name: 'Ask the Listening Guide' });
+    await input.fill('Keep this shared-listening question.');
+    await f.page.getByRole('button', { name: 'Send', exact: true }).click();
+    const error = f.page.locator('.coach-row.error').last();
+    await expect(error).toContainText('Retry this request to recover its result.');
+    await expect(error).toContainText(`Reason: ${providerCode}.`);
+    await expect(error).toContainText(`Wait at least ${delay} seconds before retrying.`);
+    await expect(error).toContainText(`Support ID: ${requestId}`);
+    await expect(input).toHaveValue('Keep this shared-listening question.');
+    await expect(input).toHaveAttribute('readonly', '');
+    await f.page.clock.fastForward((delay + 1) * 1000);
+    expect(requests).toHaveLength(1);
+    await expect(f.page.locator('.coach-usage-status')).toContainText('50 of 50');
+    await f.page.getByRole('button', { name: 'RETRY REPLY', exact: true }).click();
+    await expect(f.page.locator('.coach-row.coach')).toHaveText('The recovered reply.');
+    expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]);
+    await expect(f.page.locator('.coach-row.you')).toHaveCount(1);
+    await expect(input).toHaveValue('');
+  } finally { await f.close(); }
+});
+
+test('the browser retains only allowlisted diagnostic metadata and bounded retry timing', async ({ browser }) => {
+  const f = await fixture(browser);
+  try {
+    await f.open();
+    const result = await f.page.evaluate(() => {
+      const select = error => ({ message: error.message, providerCode: error.providerCode, requestId: error.requestId,
+        shouldRetry: error.shouldRetry, retryAfterSeconds: error.retryAfterSeconds, newAttemptAllowed: error.newAttemptAllowed });
+      return {
+        safe: select(listeningRequestError({ message: 'Safe failure.', providerCode: 'upstream_timeout',
+          requestId: '01900000-0000-7000-8000-000000000001', shouldRetry: true, retryAfterSeconds: 12.1, newAttemptAllowed: false })),
+        unsafe: select(listeningRequestError({ message: 'Safe failure.', providerCode: '<private-provider-text>',
+          requestId: 'private-token', shouldRetry: 'true', retryAfterSeconds: 604801, newAttemptAllowed: false }, 503, 'Infinity')),
+      };
+    });
+    expect(result.safe).toMatchObject({ providerCode: 'upstream_timeout', requestId: '01900000-0000-7000-8000-000000000001',
+      shouldRetry: true, retryAfterSeconds: 13, newAttemptAllowed: false });
+    expect(result.unsafe).toMatchObject({ message: 'Safe failure.', shouldRetry: false, retryAfterSeconds: 0, newAttemptAllowed: false });
+    expect(result.unsafe.providerCode).toBeUndefined(); expect(result.unsafe.requestId).toBeUndefined();
+  } finally { await f.close(); }
+});
 
 test('an open exhausted workspace resumes at the daily reset and retains its draft through a refresh outage',async({browser})=>{
  const f=await fixture(browser);

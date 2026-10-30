@@ -28,7 +28,8 @@ export class AssistantError extends Error {
   requestId?: string;
   code?: string;
   shouldRetry?: boolean;
-  constructor(httpStatus: 502 | 503, studentMessage: string, details: { requestId?: string; code?: string; shouldRetry?: boolean } = {}) {
+  retryAfterSeconds?: number;
+  constructor(httpStatus: 502 | 503, studentMessage: string, details: { requestId?: string; code?: string; shouldRetry?: boolean; retryAfterSeconds?: number } = {}) {
     super(studentMessage);
     this.httpStatus = httpStatus;
     this.studentMessage = studentMessage;

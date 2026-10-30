@@ -6,6 +6,7 @@ import type { Env } from '../src/env.ts';
 import { boundedText, cancel, deadline, withSignal } from './bounded.ts';
 import { beginAttempt, finishAttempt, readOperation } from '../src/reliability/ledger.ts';
 import { cooldown, retryAt, setCooldown } from '../src/reliability/retry.ts';
+import { assistantDiagnosticCode, assistantRequestId, gatewayRetrySeconds } from '../src/assistant/diagnostics.ts';
 
 export const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const canonicalModel = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(value);
@@ -17,18 +18,19 @@ export function eligibleGatewayFallback(error: unknown) {
       ['upstream_unavailable','model_unavailable'].includes(error.code) && error.status===503);
 }
 const catalog = defineEventCatalog({
-  'stem-splitter.gateway.completed': { source: 'tenant', severity: 'outcome', required: ['request_id', 'terminal'], optional: [] },
+  'stem-splitter.gateway.completed': { source: 'tenant', severity: 'outcome', required: ['request_id', 'terminal'], optional: ['error_type', 'status', 'duration_ms', 'retry_count'] },
 });
 
 function safeFailure(error: unknown, fallback: string): AssistantError {
-  if (error instanceof AssistantError) { error.requestId ??= fallback; return error; }
-  const code = error instanceof CailError && /^[a-z][a-z_]{1,63}$/.test(error.code) ? error.code : 'assistant_unavailable';
+  if (error instanceof AssistantError) { error.requestId = assistantRequestId(error.requestId) ?? fallback; return error; }
+  const code = assistantDiagnosticCode(error instanceof CailError ? error.code : undefined);
   const shouldRetry = error instanceof CailError && typeof error.extras.should_retry === 'boolean' ? error.extras.should_retry : false;
   const candidate = error instanceof CailError ? error.extras.request_id : null;
   const requestId = typeof candidate === 'string' && REQUEST_ID.test(candidate) ? candidate : fallback;
   const message = code === 'quota_exceeded' ? 'The CAIL model usage limit has been reached. The mixer still works.'
     : shouldRetry ? COACH_DOWN : 'The Listening Guide could not complete this request. The mixer still works.';
-  return new AssistantError(error instanceof CailError && error.status === 429 ? 503 : 502, message, { requestId, code, shouldRetry });
+  const retryAfterSeconds = error instanceof CailError ? gatewayRetrySeconds(error.extras.retry_after ?? error.extras.retry_after_seconds) : undefined;
+  return new AssistantError(error instanceof CailError && error.status === 429 ? 503 : 502, message, { requestId, code, shouldRetry, retryAfterSeconds });
 }
 
 export function gatewayForRequest(binding: Fetcher | undefined, token: string | null, request: Request, release: string, credentialKind: 'jwt' | 'key' = 'jwt') {
@@ -38,12 +40,13 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
   const correlation = correlationFromHeaders(headers);
   const log = createCailLogger({ service: 'stem-splitter', release, env: 'production', sourceClass: 'tenant', catalog,
     sink: event => console.log(JSON.stringify(event)) });
-  const client = createCailClient({ app: 'stem-splitter', fetchImpl: async (input, init) => {
+  const clientForStream = (onDispatch: () => void) => createCailClient({ app: 'stem-splitter', fetchImpl: async (input, init) => {
     if (!binding || !token) throw new AssistantError(503, COACH_UNCONFIGURED);
     const outbound = new Request(input, init);
     // Keep the caller's signal alive while a private binding is pending. A
     // Request's dependent signal can lose its propagation link after GC in Node.
     const signal = init?.signal ?? outbound.signal;
+    onDispatch();
     const pending = binding.fetch(outbound);
     let response;
     try { response = await withSignal(pending, signal); }
@@ -57,6 +60,8 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
       if (!binding || !token || !canonicalModel(env.ASSISTANT_MODEL) ||
         (env.ASSISTANT_FALLBACK_MODELS !== undefined && !gatewayModelsConfigured(env.ASSISTANT_MODEL, env.ASSISTANT_FALLBACK_MODELS))) throw new AssistantError(503,COACH_UNCONFIGURED);
       const models = env.ASSISTANT_FALLBACK_MODELS ? GATEWAY_MODELS : [env.ASSISTANT_MODEL];
+      let dispatchedAttempts = 0;
+      const client = clientForStream(() => { dispatchedAttempts++; });
       for (const [modelIndex, model] of models.entries()) {
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       let accepted = false, outputStarted = false, streamEnded = false, skipped = false;
@@ -64,6 +69,8 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
       const operation = env.ASSISTANT_OPERATION_ID ? await readOperation(env.DB,env.ASSISTANT_OPERATION_ID) : null;
       let requestId = correlation.request_id;
       let outcome: 'ok' | 'cancelled' | 'error' = 'error';
+      let errorCode: string | undefined, upstreamStatus: number | undefined;
+      const startedAt = Date.now();
       try {
         if (operation) {
           if (await cooldown(env.DB,`gateway:${model}`)>Date.now()) {
@@ -83,6 +90,7 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
           stream: true, stream_options: { include_usage: true }, max_tokens: params.maxTokens, temperature: params.temperature,
         }, { kind: credentialKind, token }, { signal, correlation });
         accepted = true;
+        upstreamStatus = response.status;
         const responseId = response.headers.get('x-request-id') ?? response.headers.get('x-cail-request-id');
         if (responseId && REQUEST_ID.test(responseId)) requestId = responseId;
         reader = response.body?.getReader();
@@ -142,23 +150,32 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
         if (attemptId) await finishAttempt(env.DB,attemptId,'succeeded',{usage});
         return { content: content.trim(), model, toolCalls: [...calls.entries()].sort(([a], [b]) => a - b).map(([, call]) => call), finishReason };
       } catch (error) {
+        const failure = signal.aborted && signal.reason?.name === 'TimeoutError'
+          ? new AssistantError(503, COACH_DOWN, { requestId, code: 'upstream_timeout', shouldRetry: true })
+          : safeFailure(error, requestId);
+        requestId = assistantRequestId(failure.requestId) ?? requestId;
+        errorCode = signal.aborted && signal.reason?.name !== 'TimeoutError' ? 'request_cancelled' : assistantDiagnosticCode(failure.code);
+        if (upstreamStatus === undefined && error instanceof CailError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599) upstreamStatus = error.status;
         if (attemptId) await finishAttempt(env.DB,attemptId,outputStarted?'partial':streamEnded?'failed':accepted||!(error instanceof CailError)?'uncertain':'rejected',{code:error instanceof CailError||error instanceof AssistantError?error.code:'gateway_failure',status:error instanceof CailError?error.status:undefined,usage});
         if (!signal.aborted && !accepted && !outputStarted && modelIndex===0 && models.length===2 && eligibleGatewayFallback(error)) {
           if (operation) await setCooldown(env.DB,`gateway:${model}`,retryAt(error instanceof CailError ? String(error.extras.retry_after ?? error.extras.retry_after_seconds ?? '30') : '30'));
           continue;
         }
         if (signal.aborted) {
-          if (signal.reason?.name === 'TimeoutError') throw new AssistantError(503, COACH_DOWN, { requestId, code: 'upstream_timeout', shouldRetry: true });
+          if (signal.reason?.name === 'TimeoutError') throw failure;
           outcome = 'cancelled'; throw signal.reason;
         }
-        throw safeFailure(error, requestId);
+        throw failure;
       } finally {
         try { void reader?.cancel().catch(() => {}); } catch { /* Best effort. */ }
         reader?.releaseLock();
-        const terminal = outcome === 'ok' ? { outcome: 'ok', reason: 'completed' } as const
-          : outcome === 'cancelled' ? { outcome: 'cancelled', reason: 'cancelled' } as const
-            : { outcome: 'error', reason: 'upstream_failure' } as const;
-        if (!skipped) log.emit('stem-splitter.gateway.completed', { request_id: requestId, terminal });
+        if (!skipped) {
+          const fields = { request_id: requestId, ...(upstreamStatus === undefined ? {} : { status: upstreamStatus }),
+            duration_ms: Math.max(0, Date.now() - startedAt), retry_count: Math.max(0, dispatchedAttempts - 1) };
+          if (outcome === 'ok') log.emit('stem-splitter.gateway.completed', { ...fields, terminal: { outcome: 'ok', reason: 'completed' } });
+          else log.emit('stem-splitter.gateway.completed', { ...fields, error_type: errorCode ?? 'assistant_unavailable',
+            terminal: outcome === 'cancelled' ? { outcome: 'cancelled', reason: 'cancelled' } : { outcome: 'error', reason: 'upstream_failure' } });
+        }
       }
       }
       throw new AssistantError(503,COACH_DOWN);

@@ -19,13 +19,13 @@ async function fixture(browser,vars={}) {
     `INSERT INTO job_courses(job_id,course_id,member_id,assigned_by,policy_version) VALUES('shared-course','${course}','${member}','${TEST_SUBJECTS.alice}','course-work-v1')`,
     `INSERT INTO course_folders(id,course_id,name,created_by,permission) VALUES('shared-folder','${course}','Class comments','${TEST_SUBJECTS.alice}','comment')`,
     `INSERT INTO course_folder_items(folder_id,job_id,filename,model) VALUES('shared-folder','shared-course','Class fixture','htdemucs_ft')`]);
-  const contexts=[];
+  const contexts=[],audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
   const pageFor = async (subject,owner=false) => {
     const token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject});
     const gateway=await issuer.mintIdentityJwt({audience:'cail:gateway',subject});
     const context=await browser.newContext({extraHTTPHeaders:{'x-fixture-identity':token,'x-fixture-gateway-identity':gateway,...(owner?{'x-fixture-course-role':'owner'}:{})}});contexts.push(context);
     const page=await context.newPage();
-    await page.route('**/api/files/stems/shared-course/*',route=>route.fulfill({contentType:'audio/mpeg',body:Buffer.alloc(0)}));
+    await page.route('**/api/files/stems/shared-course/*',route=>route.fulfill({contentType:'audio/mpeg',body:audio}));
     return page;
   };
   return {issuer,url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
