@@ -746,3 +746,38 @@ test('full recording and split names wrap while waveforms fit the available widt
   }
  } finally {await server.close();}
 });
+
+for (const owned of [true, false]) test(`${owned ? 'owned' : 'shared'} audio can recover from a failed load without replacing the mixer`, async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'drums'], { owned });
+  try {
+    const host = page.locator('.console');
+    if (owned) {
+      await host.locator('.coach-toggle').click();
+      await page.getByRole('textbox', { name: 'Ask the Listening Guide' }).fill('Keep my listening question.');
+    }
+    await page.getByRole('button', { name: 'Play at 0.75× speed', exact: true }).click();
+    await host.locator('.mute-btn').first().click();
+    let blocked = true;
+    await page.route(owned ? '**/api/files/stems/remix-fixture/*' : '**/api/shared-jobs/remix-fixture/stems/*', route =>
+      blocked ? route.fulfill({ status: 403, body: 'Audio access failed' }) : route.fallback());
+    await page.evaluate(() => mixers.get('remix-fixture').audios.forEach(audio => audio.load()));
+    await expect(host.locator('.channel.unavailable')).toHaveCount(2);
+    await expect(host.locator('.badge')).toHaveText('AUDIO ERROR');
+    await expect(page.getByRole('button', { name: 'Play all stems' })).toBeDisabled();
+    const retry = page.getByRole('button', { name: 'RETRY AUDIO', exact: true });
+    await retry.click();
+    await expect(retry).toBeEnabled();
+    await expect(host.locator('.transport-notice')).toContainText('Audio loading failed.');
+    blocked = false;
+    await retry.click();
+    await expect(host.locator('.channel.unavailable')).toHaveCount(0);
+    await expect(host.locator('.badge')).toHaveText(owned ? 'READY' : 'SHARED');
+    await expect(retry).toBeHidden();
+    await expect(host.locator('.mute-btn').first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(host.locator('.dl').first()).toHaveAttribute('href', /download$/);
+    if (owned) await expect(page.getByRole('textbox', { name: 'Ask the Listening Guide' })).toHaveValue('Keep my listening question.');
+    await page.getByRole('button', { name: 'Play all stems' }).click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(audio => audio.currentTime > 0.3 && audio.playbackRate === 0.75))).toBe(true);
+    await expect(host.locator('.transport-notice')).toBeHidden();
+  } finally { await server.close(); }
+});

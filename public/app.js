@@ -382,7 +382,7 @@ function listeningRequestError(payload, status, retryHeader) {
   const requestId = typeof payload.requestId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(payload.requestId) ? payload.requestId : undefined;
   const delay = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 7 * 86400 ? Math.ceil(value) : 0;
   const retryAfterSeconds = Math.max(delay(payload.retryAfterSeconds), delay(retryHeader && /^\d+(?:\.\d+)?$/.test(retryHeader) ? Number(retryHeader) : undefined));
-  const message = payload.message || payload.error?.message || (typeof payload.error === 'string' ? payload.error : '') || 'The Listening Guide could not complete this request. The mixer still works.';
+  const message = payload.message || payload.error?.message || (typeof payload.error === 'string' ? payload.error : '') || 'The Listening Guide could not complete this request. Please try again.';
   const error = new Error(message + (safeCode ? ` Reason: ${safeCode}.` : '')
     + (retryAfterSeconds ? ` Wait at least ${retryAfterSeconds} seconds before retrying.` : '')
     + (requestId ? ` Support ID: ${requestId}` : ''));
@@ -432,7 +432,7 @@ async function streamApi(path, body, onEvent, signal) {
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) throw new Error('The Listening Guide response ended before completion. The mixer still works.');
+      if (done) throw new Error('The Listening Guide response ended before completion. Retry to check for the same reply.');
       buf += decoder.decode(value, { stream: true });
       let nl;
       while ((nl = buf.indexOf('\n')) !== -1) {
@@ -512,7 +512,7 @@ async function refreshListeningUsage() {
 }
 function listeningFailure(error) {
   if (error.name === 'TimeoutError') return 'The reply timed out. Your question is kept. Retry to check for the same reply.';
-  if (error.name === 'AbortError') return 'Request cancelled. Your question is kept. The mixer still works.';
+  if (error.name === 'AbortError') return 'Request cancelled. Your question is kept.';
   return error.message || 'The Listening Guy is temporarily unavailable. Your question is kept. Please retry.';
 }
 
@@ -1852,6 +1852,7 @@ class Mixer {
         </div>
       </div>
       <p class="transport-notice" role="status" hidden></p>
+      <button type="button" class="head-btn audio-retry-btn" hidden>RETRY AUDIO</button>
       <div class="channels"></div>
       <div class="notes" hidden></div>
       <p class="console-keys mono" aria-hidden="true"></p>
@@ -1881,6 +1882,8 @@ class Mixer {
     bindRecordingTitle(li,this.job);
     li.querySelector('.rename-btn')?.addEventListener('click',()=>{this.setActionsOpen(false);editRecordingTitle(this.job,li.querySelector('.console-title'));});
     this.transportNotice = li.querySelector('.transport-notice');
+    this.audioRetryBtn = li.querySelector('.audio-retry-btn');
+    this.audioRetryBtn.addEventListener('click', () => this.retryAudio());
     this.readyBadge = li.querySelector('.badge');
     this.seek = li.querySelector('.seek');
     this.tcNow = li.querySelector('.tc-now');
@@ -2070,7 +2073,7 @@ class Mixer {
       );
       soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
       audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
-      audio.addEventListener('loadedmetadata', () => { this.loadWaveforms(); this.paint(); });
+      audio.addEventListener('loadedmetadata', () => { this.restoreAudio(stem.name); this.loadWaveforms(); this.paint(); });
       audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
 
       const nameEl = row.querySelector('.ch-name');
@@ -2415,8 +2418,9 @@ class Mixer {
 
   markAudioUnavailable(stemName) {
     const channel = this.channelsByName.get(stemName);
-    if (!channel || channel.row.classList.contains('unavailable')) return;
+    if (!channel) return;
 
+    clearTimeout(this.audioRetryTimer);
     this.pause();
     channel.row.classList.add('unavailable');
     channel.muteBtn.disabled = true;
@@ -2428,6 +2432,47 @@ class Mixer {
     this.readyBadge.classList.remove('ready');
     this.readyBadge.classList.add('failed');
     this.playBtn.disabled = true;
+    this.transportNotice.textContent = 'Audio loading failed. Retry audio to reconnect to the saved stems.';
+    this.transportNotice.hidden = false;
+    this.audioRetryBtn.hidden = false;
+    this.audioRetryBtn.disabled = false;
+  }
+
+  retryAudio() {
+    if (this.disposed || this.audioRetryBtn.disabled) return;
+    this.audioRetryBtn.disabled = true;
+    this.audioRetryPosition = this.audios[0]?.currentTime || 0;
+    this.transportNotice.textContent = 'RELOADING AUDIO…';
+    clearTimeout(this.audioRetryTimer);
+    this.audioRetryTimer = setTimeout(() => {
+      if (this.disposed || this.audioRetryBtn.hidden) return;
+      this.audioRetryBtn.disabled = false;
+      this.transportNotice.textContent = 'Audio loading is taking longer than expected. Retry audio to reconnect.';
+    }, 15000);
+    for (const channel of this.channelsByName.values()) {
+      if (channel.row.classList.contains('unavailable')) channel.audio.load();
+    }
+  }
+
+  restoreAudio(stemName) {
+    const channel = this.channelsByName.get(stemName);
+    if (!channel?.row.classList.contains('unavailable') || channel.audio.error) return;
+    channel.row.classList.remove('unavailable');
+    channel.audio.playbackRate = this.rate;
+    if (Number.isFinite(channel.audio.duration)) channel.audio.currentTime = Math.min(this.audioRetryPosition || 0, channel.audio.duration);
+    channel.muteBtn.disabled = false;
+    channel.muteBtn.textContent = 'MUTE';
+    channel.soloBtn.disabled = false;
+    channel.download.href = `${channel.audio.src}?download`;
+    channel.download.removeAttribute('aria-disabled');
+    if ([...this.channelsByName.values()].some(value => value.row.classList.contains('unavailable'))) return;
+    clearTimeout(this.audioRetryTimer);
+    this.readyBadge.textContent = this.job.readOnlyShared && !this.job.instructorReview ? 'SHARED' : 'READY';
+    this.readyBadge.classList.remove('failed');
+    this.readyBadge.classList.add('ready');
+    this.playBtn.disabled = false;
+    this.audioRetryBtn.hidden = true;
+    this.transportNotice.textContent = 'Audio reloaded. Press play to continue.';
   }
 
   async play() {
@@ -2640,6 +2685,7 @@ class Mixer {
 
   disposeWaveforms() {
     this.disposed = true;
+    clearTimeout(this.audioRetryTimer);
     this.endScrub(false);
     this.waveformAbort.abort();
     this.waveformObserver.disconnect();
@@ -5233,6 +5279,19 @@ async function initialize() {
       link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
+      if (guestSessionActive) {
+        const note = document.createElement('span');
+        note.className = 'account-session-note';
+        const label = document.createElement('strong');
+        label.id = 'guest-account-state';
+        label.textContent = 'Guest session';
+        const help = document.createElement('small');
+        help.id = 'guest-account-help';
+        help.textContent = 'Sign in to save work to your Lab account';
+        note.append(label, help);
+        link.setAttribute('aria-describedby', help.id);
+        account.append(note);
+      }
       account.append(link);
     } else if (!runtime.loginUrl) account.textContent = 'CUNY Login will be available here soon.';
     if (account.childNodes.length) (document.getElementById('workspace-nav') || document.querySelector('.masthead-meta')).append(account);

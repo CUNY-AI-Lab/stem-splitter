@@ -949,3 +949,28 @@ for (const signIn of [false,true]) test(`guest second reply survives a lost comp
   expect(f.errors).toEqual([]);
  } finally {await f.close();}
 });
+
+test('guest status is explicit and disappears for a signed-in member with personal work only', async ({ page }) => {
+  const f = await setup(page);
+  try {
+    await page.goto(f.origin);
+    await expect(page.locator('#guest-account-state')).toHaveText('Guest session');
+    await expect(page.locator('#guest-account-help')).toHaveText('Sign in to save work to your Lab account');
+    const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    await expect(login).toHaveAttribute('aria-describedby', 'guest-account-help');
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(login).toBeVisible();
+      await expect(page.locator('#guest-account-help')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await page.route('**/api/classroom/courses', route => route.fulfill({ json: { courses: [], nextCursor: null } }));
+    await page.setExtraHTTPHeaders({ 'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
+    await page.reload();
+    await expect.poll(async () => (await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
+    await expect(page.locator('#guest-account-state, #guest-account-help')).toHaveCount(0);
+    await expect(login).toHaveCount(0);
+    await expect(page.locator('#course-context')).toBeHidden();
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});

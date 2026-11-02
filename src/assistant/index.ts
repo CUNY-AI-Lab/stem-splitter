@@ -210,7 +210,7 @@ export async function streamGuide(
         { role: 'system', content: buildSystemPrompt(ctx) },
         { role: 'user', content: buildGuideInstruction() },
       ],
-      maxTokens: 500, // the opener is ~110 words; the rest is reasoning headroom
+      maxTokens: 2048, // Includes reasoning when a provider retains it; the prompt caps prose at ~110 words.
       temperature: 0.6,
       retry429: true,
     },
@@ -276,7 +276,7 @@ export async function streamChat(
     {
       messages,
       tools: buildMixerTools(stemNames),
-      maxTokens: 600, // reasoning models spend part of the budget before the reply
+      maxTokens: 2048, // Leaves room for provider reasoning and tool arguments before the short reply.
       temperature: 0.7,
     },
     onDelta
