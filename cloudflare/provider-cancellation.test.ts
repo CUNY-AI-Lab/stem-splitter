@@ -12,7 +12,7 @@ import { drainSplitQueue, operationWebhook, recoverCallback, reconcileSplit } fr
 import { MPEGDecoder } from 'mpg123-decoder';
 import { validateMp3Pcm } from '../src/reliability/media.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
-import { courseFixture } from './course-fixture.ts';
+import { courseFixture, membershipFixture } from './course-fixture.ts';
 import app, { runReliableJobs } from '../src/index.ts';
 
 const subject='cail-'+ 'e'.repeat(32);
@@ -23,7 +23,7 @@ async function setup(t:{after:(f:()=>void)=>void}) {
  const env={DB:db,AUDIO:new FsR2Bucket(join(directory,'audio')),AUTH_MODE:'cail',SEPARATION_BACKEND:'replicate',LOCAL_HOSTING:'true',
   PUBLIC_BASE_URL:'https://split.test',WEBHOOK_SECRET:'fixture-only',REPLICATE_API_TOKEN:'mock-only',REPLICATE_MODEL_VERSION:'separator-pin',REPLICATE_YT_MODEL_VERSION:'import-pin',
   validateStemAudio:(data:ArrayBuffer)=>validateMp3Pcm(data,()=>new MPEGDecoder()),
-  ADMISSION_RESOLVER:{resolveCourseAccessV2:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)}} as unknown as Env;
+  ADMISSION_RESOLVER:{resolveMembership:async()=>membershipFixture(),resolveCourseAccessV2:({subject,classId}:{subject:string;classId:string})=>courseFixture(subject,classId)}} as unknown as Env;
  async function split(key='test-operation-0001',phase:'fetch'|'split'='split') {
   const id=crypto.randomUUID();
   return (await reserveOperation(db,{subject,role:'student',courseId:null,kind:'split',key,fingerprint:key,phase,jobId:id,

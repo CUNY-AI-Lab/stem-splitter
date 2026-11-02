@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync,mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';
 import {SqliteD1} from '../server/d1.ts';import {FsR2Bucket} from '../server/r2.ts';import {fetchOpenAudio,searchOpenAudio,openRecordingLicense,parseOpenAudioSelection} from '../src/open-audio.ts';import {submitSplit,resumeOwnedSourceImport,drainSplitQueue} from '../src/reliability/splits.ts';import app from '../src/index.ts';
-import {claimNext} from '../src/reliability/queue.ts';import {courseFixture} from './course-fixture.ts';import type {Env} from '../src/env.ts';import type {AppPrincipal} from '../src/identity.ts';
+import {claimNext} from '../src/reliability/queue.ts';import {courseFixture,membershipFixture} from './course-fixture.ts';import type {Env} from '../src/env.ts';import type {AppPrincipal} from '../src/identity.ts';
 const selected={provider:'commons',itemId:'123',fileId:'original'} as const;
 const audio=new Uint8Array(417*80);for(let i=0;i<audio.length;i+=417)audio.set([255,251,144,100],i);
 const metadata=()=>({query:{pages:[{ns:6,pageid:123,title:'File:Music.mp3',imageinfo:[{mediatype:'AUDIO',mime:'audio/mpeg',size:audio.length,duration:80*1152/44100,url:'https://upload.wikimedia.org/wikipedia/commons/a/ab/Music.mp3',descriptionurl:'https://commons.wikimedia.org/wiki/File:Music.mp3',extmetadata:Object.fromEntries(Object.entries({LicenseUrl:'https://creativecommons.org/licenses/by/4.0/',License:'cc-by-4.0',Artist:'Fixture composer &amp; performer',Attribution:'Fixture recording credit',ObjectName:'Music'}).map(([k,value])=>[k,{value}]))}]}]}});
@@ -25,7 +25,7 @@ test('download rejects MIME, bytes, corrupt format and persistent rate limits be
 });
 test('application source reservation/import preserves provenance and original bytes without entering paid queue',async t=>{
  const {db,audio:bucket}=setup(t);const subject='cail-'+'e'.repeat(32);await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(subject).run();
- const env={DB:db,AUDIO:bucket,AUTH_MODE:'cail',SEPARATION_BACKEND:'replicate',ADMISSION_RESOLVER:{resolveCourseAccessV2:({subject,classId}:any)=>courseFixture(subject,classId)}} as unknown as Env;const principal={subject,role:'member',quotaClass:'member',course:null,courseId:null} as AppPrincipal;
+ const env={DB:db,AUDIO:bucket,AUTH_MODE:'cail',SEPARATION_BACKEND:'replicate',ADMISSION_RESOLVER:{resolveMembership:async()=>membershipFixture(),resolveCourseAccessV2:({subject,classId}:any)=>courseFixture(subject,classId)}} as unknown as Env;const principal={subject,role:'member',quotaClass:'member',course:null,courseId:null} as AppPrincipal;
  t.mock.method(globalThis,'fetch',async(url:any)=>String(url).includes('w/api.php')?Response.json(metadata()):new Response(audio,{headers:{'Content-Type':'audio/mpeg'}}));
  await assert.rejects(submitSplit(env,principal,{openAudio:selected,key:'uploads/fixture/file.mp3',model:'vocals_instrumental'},'duplicate'),(e:any)=>e.code==='invalid_input');
  await assert.rejects(submitSplit(env,principal,{openAudio:{provider:'ccmixter',itemId:'5847',fileId:'5176'},model:'vocals_instrumental'},'ccmixter-disabled-fixture'),(e:any)=>e.code==='source_unavailable');

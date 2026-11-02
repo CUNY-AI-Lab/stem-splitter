@@ -93,7 +93,7 @@ for (const failureMode of ['empty', 'incomplete']) test(`Listening Guide and cha
       return route.continue({ headers: { ...route.request().headers(), ...(guideRequests === 1 ? { 'x-fixture-gateway-mode': failureMode } : {}) } });
     });
     await host.locator('.coach-cue-btn').click();
-    await expect(host.locator('.coach-hint')).toContainText('The Listening Guide is unavailable right now');
+    await expect(host.locator('.coach-hint')).toContainText('The Listening Guide is temporarily unavailable; try again later.');
     await expect(host.locator('.coach-hint')).toContainText('It did not use a successful turn.');
     await expect(host.locator('.coach-hint')).toContainText('You can send it again as a new attempt.');
     await expect(host.locator('.coach-hint')).toContainText(`Reason: ${failureMode}_response.`);
@@ -106,6 +106,7 @@ for (const failureMode of ['empty', 'incomplete']) test(`Listening Guide and cha
     await expect(host.locator('.coach-cue-btn')).toBeEnabled();
     expect((await state(host)).leading).toBe(true);
     expect((await state(student)).following).toBe(true);
+    await convergence([host, student], current => current.playing && current.time > 1);
     await host.locator('.coach-cue-btn').click();
     await expect(host.locator('.coach-guide-text')).toContainText('Listen for the bass against the drums.');
     expect(await gatewayCalls()).toBe(2);
@@ -116,6 +117,7 @@ for (const failureMode of ['empty', 'incomplete']) test(`Listening Guide and cha
     expect(await gatewayCalls()).toBe(3);
     expect((await state(host)).leading).toBe(true);
     expect((await state(student)).following).toBe(true);
+    await convergence([host, student], current => current.playing);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });

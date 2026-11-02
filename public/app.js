@@ -5297,19 +5297,20 @@ async function initialize() {
       link.className = 'account-button';
       const linkedJob = new URLSearchParams(location.search).get('job');
       link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
-      link.textContent = 'CUNY Login';
+      link.textContent = guestSessionActive ? 'Sign in' : 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
       if (guestSessionActive) {
+        account.classList.add('is-guest');
+        link.setAttribute('aria-label', 'Sign in with CUNY Login');
         const note = document.createElement('span');
         note.className = 'account-session-note';
-        const label = document.createElement('strong');
+        const label = document.createElement('span');
         label.id = 'guest-account-state';
-        label.textContent = 'Guest session';
-        const help = document.createElement('small');
-        help.id = 'guest-account-help';
-        help.textContent = 'Sign in to save work to your Lab account';
-        note.append(label, help);
-        link.setAttribute('aria-describedby', help.id);
+        label.textContent = 'Guest';
+        const separator = document.createElement('span');
+        separator.textContent = '·';
+        separator.setAttribute('aria-hidden', 'true');
+        note.append(label, separator);
         account.append(note);
       }
       account.append(link);

@@ -184,7 +184,7 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
   const f = await setup(page, chatAvailable);
   try {
     await page.goto(f.origin);
-    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in with CUNY Login', exact: true })).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const first = await account(page);
     expect(first.guest.verificationRequired).toBe(true);
@@ -954,21 +954,27 @@ test('guest status is explicit and disappears for a signed-in member with person
   const f = await setup(page);
   try {
     await page.goto(f.origin);
-    await expect(page.locator('#guest-account-state')).toHaveText('Guest session');
-    await expect(page.locator('#guest-account-help')).toHaveText('Sign in to save work to your Lab account');
-    const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
-    await expect(login).toHaveAttribute('aria-describedby', 'guest-account-help');
+    await expect(page.locator('#guest-account-state')).toHaveText('Guest');
+    const login = page.getByRole('link', { name: 'Sign in with CUNY Login', exact: true });
+    await expect(login).toHaveText('Sign in');
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       await expect(login).toBeVisible();
-      await expect(page.locator('#guest-account-help')).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const nav = await page.locator('#workspace-nav').boundingBox();
+      const guest = await page.locator('.account-nav.is-guest').boundingBox();
+      if (process.env.STEM_SCREENSHOT_DIR) {
+        await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
+        await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/guest-navigation-${width}.png`, animations: 'disabled' });
+      }
+      expect(guest.height).toBeLessThanOrEqual(36);
+      expect(nav.height).toBeLessThanOrEqual(48);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     }
     await page.route('**/api/classroom/courses', route => route.fulfill({ json: { courses: [], nextCursor: null } }));
     await page.setExtraHTTPHeaders({ 'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
     await page.reload();
     await expect.poll(async () => (await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
-    await expect(page.locator('#guest-account-state, #guest-account-help')).toHaveCount(0);
+    await expect(page.locator('#guest-account-state')).toHaveCount(0);
     await expect(login).toHaveCount(0);
     await expect(page.locator('#course-context')).toBeHidden();
     expect(f.errors).toEqual([]);
@@ -1007,7 +1013,7 @@ for (const active of [false, true]) test(`a claimed guest session recovers ${act
     if (active) {
       await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav', import.meta.url)));
     } else await page.reload();
-    await expect(page.locator('#guest-account-state')).toHaveText('Guest session');
+    await expect(page.locator('#guest-account-state')).toHaveText('Guest');
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     await expect.poll(async () => (await account(page)).account?.subject).not.toBe(originalGuest);
     await expect(page.locator('.console')).toHaveCount(0);

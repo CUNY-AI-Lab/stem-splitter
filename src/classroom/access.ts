@@ -3,6 +3,7 @@ import type { AppPrincipal } from '../identity.ts';
 import { guestOwnsJob } from '../guest/access.ts';
 import { COURSE_APP, STEM_COURSE_ID, validAssignmentV2, validClassId, validFailure, type CourseAssignmentV2 } from './contract.ts';
 import { rememberCourseUsageAccount } from './usage-accounts.ts';
+import { currentMembership } from '../membership.ts';
 
 export class CourseError extends Error {
   status: 400 | 403 | 404 | 409 | 503;
@@ -30,13 +31,20 @@ export async function resolveCourse(env: Env, subject: string, classId: string):
   return value;
 }
 /** Used again by delayed operation workers; a remembered launch is not permission. */
-export async function authorizeStoredCourseWork(env: Env, subject: string, courseId: string | null): Promise<CourseAssignmentV2> {
+export async function authorizeStoredCourseWork(env: Env, subject: string, courseId: string | null): Promise<CourseAssignmentV2 | null> {
   if (courseId && env.CAIL_CLASSROOM_ENABLED === 'false') throw new CourseError(503, 'course_work_paused');
   const user = await env.DB.prepare('SELECT disabled FROM app_users WHERE subject=?').bind(subject).first<{ disabled: number }>();
   if (!user || user.disabled) throw new CourseError(403, 'workspace_disabled');
-  const access=await resolveCourse(env,subject,courseId??STEM_COURSE_ID);
-  if(!access.owner&&!access.guestInstructor&&access.classId!==STEM_COURSE_ID){const entry=await resolveCourse(env,subject,STEM_COURSE_ID);if(!entry.participant)throw new CourseError(403,'target_course_enrollment_required');}
-  return access;
+  // Personal and claimed guest work retain current Lab access independently
+  // of course enrollment, including when a course service is unavailable.
+  if (!env.ADMISSION_RESOLVER?.resolveMembership) throw new CourseError(503,'admission_unavailable');
+  let resolution: unknown;
+  try { resolution = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveMembership({subject})); }
+  catch { throw new CourseError(503,'admission_unavailable'); }
+  const membership = currentMembership(resolution);
+  if (membership === 'denied') throw new CourseError(403,'admission_required');
+  if (!membership) throw new CourseError(503,'admission_unavailable');
+  return courseId ? resolveCourse(env,subject,courseId) : null;
 }
 export interface JobCourse { course_id: string; member_id: string; policy_version: string }
 export async function jobCourse(env: Env, jobId: string): Promise<JobCourse | null> {

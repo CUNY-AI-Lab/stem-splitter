@@ -52,8 +52,8 @@ test('Lab membership grants personal access while course enrollment and ownershi
   const {request,job,revoked,env}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
   const outsiderAccount=await request('/api/account','outsider');assert.equal(outsiderAccount.status,200);
   assert.equal((await outsiderAccount.json() as any).account.role,'member');assert.equal((await(await request('/api/account','outsider')).json() as any).splitAllowance.limit,15);
-  assert.equal((await request('/api/uploads','outsider','POST',{filename:'x.wav'},{'x-stem-course':B})).status,403);
-  assert.equal((await request('/api/classroom/courses/'+B+'/folders','outsider')).status,403);
+  assert.equal((await request('/api/classroom/courses/'+B+'/folders','outsider')).status,200);
+  assert.equal((await request('/api/classroom/courses/'+A+'/folders','outsider')).status,403);
   assert.equal((await request('/api/jobs/b','alice')).status,200);
   assert.equal((await request('/api/jobs/a','ownerA')).status,200);
   for(const who of ['bob','ownerB','admin'] as Person[])assert.equal((await request('/api/jobs/a',who)).status,who==='bob'?404:403);
@@ -67,12 +67,30 @@ test('Lab membership grants personal access while course enrollment and ownershi
   assert.equal((await request('/api/account','ownerB')).status,200);
   assert.equal((await request('/api/jobs/%61','alice')).status,400);
   revoked.add(`${ids.alice}:${A}`);
-  for(const path of ['/api/jobs/a','/api/jobs/b','/api/jobs/a/chat','/api/files/stems/a/vocals.mp3'])assert.equal((await request(path,'alice',path.endsWith('chat')?'POST':'GET',path.endsWith('chat')?{}:undefined)).status,403);
+  for(const path of ['/api/jobs/a','/api/jobs/a/chat','/api/files/stems/a/vocals.mp3'])assert.equal((await request(path,'alice',path.endsWith('chat')?'POST':'GET',path.endsWith('chat')?{}:undefined)).status,403);
+  assert.equal((await request('/api/jobs/b','alice')).status,200,'the other current course remains independently available');
   const personalRuns=await request('/api/jobs');assert.equal(personalRuns.status,200);
   const personalAccount=await request('/api/account');assert.equal(personalAccount.status,200);assert.equal((await personalAccount.json() as any).splitAllowance.limit,15);
   env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>{throw new Error('private detail');};
   const courseOutageAccount=await request('/api/account');assert.equal(courseOutageAccount.status,200);assert.equal((await courseOutageAccount.json() as any).splitAllowance.limit,15);
   const anonymous=await app.fetch(new Request('https://split.test/api/account'),env);assert.equal(anonymous.status,401);
+});
+test('students and instructors use their configured course independently of the default STEM class',async()=>{
+  const {request,job,env,revoked}=await setup();
+  await job('other-course-guide','outsider',B);
+  const checked:string[]=[],resolve=env.ADMISSION_RESOLVER!.resolveCourseAccessV2!;
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async input=>{checked.push(input.classId);return resolve(input);};
+  const account=await request('/api/account','outsider','GET',undefined,{'x-stem-course':B});
+  assert.equal(account.status,200);assert.equal((await account.json() as any).account.role,'student');
+  const guide=await request('/api/jobs/other-course-guide/guide','outsider','POST',{messageId:'other-course-guide-0001'});
+  assert.equal(guide.status,200);assert.match(await guide.text(),/"type":"done"/);
+  assert.equal((await request(`/api/classroom/courses/${B}/roster`,'ownerB')).status,200);
+  assert.equal((await request(`/api/classroom/courses/${B}/jobs/other-course-guide/conversation`,'ownerB')).status,200);
+  assert.ok(checked.length>0);assert.deepEqual([...new Set(checked)],[B]);
+  assert.equal((await request('/api/classroom/courses/unconfigured-course/folders','outsider')).status,403);
+  revoked.add(`${ids.outsider}:${B}`);
+  assert.equal((await request('/api/jobs/other-course-guide','outsider')).status,403);
+  assert.equal((await request('/api/account','outsider')).status,200,'personal Lab membership continues after course revocation');
 });
 test('guest instructors get only their scoped class panel, roster and versioned guidance',async()=>{
   const {request}=await setup();

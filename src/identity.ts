@@ -4,6 +4,7 @@ import { STEM_COURSE_ID } from './classroom/contract.ts';
 import type { AdmissionCourseResolver, CourseAssignmentV2 } from './classroom/contract.ts';
 import type { Env } from './env.ts';
 import { authorizeGuestRequest } from './guest/access.ts';
+import { currentMembership } from './membership.ts';
 
 export const STEM_AUDIENCE = 'cail:stem-splitter';
 export type AppRole = 'student' | 'member' | 'instructor' | 'admin' | 'guest';
@@ -69,17 +70,9 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     ]);
   } catch { return authFailure('admission_unavailable', 503); }
   finally { if (timeout) clearTimeout(timeout); }
-  if (!resolution || typeof resolution !== 'object') return authFailure('admission_unavailable', 503);
-  const membership = resolution as Record<string, unknown>;
-  if (membership.ok === false && membership.code === 'not_admitted') return authFailure('admission_required', 403);
-  if (membership.ok !== true || !['member', 'admin'].includes(String(membership.accessRole)) ||
-      !['person', 'person-plus', 'admin'].includes(String(membership.budgetScope)) ||
-      (membership.accessRole === 'admin') !== (membership.budgetScope === 'admin') ||
-      !Number.isSafeInteger(membership.revision) || Number(membership.revision) < 0 ||
-      typeof membership.expiresAt !== 'string' || !Number.isFinite(Date.parse(membership.expiresAt))) {
-    return authFailure('admission_unavailable', 503);
-  }
-  if (Date.parse(membership.expiresAt) <= Date.now()) return authFailure('admission_required', 403);
+  const membership = currentMembership(resolution);
+  if (membership === 'denied') return authFailure('admission_required', 403);
+  if (!membership) return authFailure('admission_unavailable', 503);
   await env.DB.prepare('INSERT OR IGNORE INTO app_users (subject) VALUES (?)').bind(identity.subject).run();
   const user = await env.DB.prepare('SELECT role, disabled, role_expires_at FROM app_users WHERE subject = ?')
     .bind(identity.subject).first<{ role: string; disabled: number; role_expires_at: string | null }>();
@@ -100,14 +93,8 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     let course: CourseAssignmentV2 | null = null;
     if (selected) {
       course = await resolveCourse(env, identity.subject, selected);
-      // Classroom membership still gates explicit course work. The course
-      // participant/owner distinction also controls the personal split tier.
-      if (!course.owner && !course.guestInstructor && course.classId !== STEM_COURSE_ID) {
-        const entry = await resolveCourse(env,identity.subject,STEM_COURSE_ID);
-        if (!entry.participant) throw new CourseError(403,'target_course_enrollment_required');
-        if (role === 'member' && entry.participant && !entry.owner) role = 'student';
-      }
-      if (role === 'member' && course.classId === STEM_COURSE_ID && course.participant && !course.owner) role = 'student';
+      // The selected configured course supplies its own participant authority.
+      if (role === 'member' && course.participant && !course.owner) role = 'student';
     } else if (role === 'member') {
       // Course lookup is optional for personal workspace access: an unavailable
       // course authority cannot block a verified Lab member from signing in.

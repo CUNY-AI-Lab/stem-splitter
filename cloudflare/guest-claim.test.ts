@@ -283,7 +283,7 @@ test('additive claim schema is repeatable and leaves every preexisting row uncha
  assert.deepEqual((await db.prepare('PRAGMA foreign_key_check').all()).results,[]);
 });
 
-for (const lifecycle of ['logout','expiry','member-disabled','access-revoked'] as const) {
+for (const lifecycle of ['logout','expiry','member-disabled','membership-revoked','course-unenrolled'] as const) {
  test(`claimed pending import follows member authorization after ${lifecycle}`,async t=>{
   const {db,env,seed,post,flags}=await fixture(1000);const operation=await seed('pending-lifecycle',guest,false);let loads=0;
   env.AUDIO={put:async()=>{},delete:async()=>{}} as any;
@@ -293,11 +293,12 @@ for (const lifecycle of ['logout','expiry','member-disabled','access-revoked'] a
   if(lifecycle==='expiry'){const expiredNow=env.guestClaimSession!.expiresAt+1;t.mock.method(Date,'now',()=>expiredNow);}
   else await db.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(Date.now(),guest).run();
   if(lifecycle==='member-disabled')await db.prepare('UPDATE app_users SET disabled=1,updated_by=?,revision=revision+1 WHERE subject=?').bind(alice,alice).run();
-  if(lifecycle==='access-revoked')flags.course=false;
+  if(lifecycle==='membership-revoked')flags.membership=false;
+  if(lifecycle==='course-unenrolled')flags.course=false;
   await resumeOwnedSourceImport(env,member(bob),operation);assert.equal(loads,0);
   await resumeOwnedSourceImport(env,member(),operation);
   const current=(await readOperation(db,operation.id))!;
-  const denied=lifecycle==='member-disabled'||lifecycle==='access-revoked';
+  const denied=lifecycle==='member-disabled'||lifecycle==='membership-revoked';
   assert.equal(loads,denied?0:1);assert.equal(current.subject,guest);assert.equal(current.quota_class,'guest');
   if(denied){assert.equal(current.state,'failed');assert.equal(current.error_code,'access_unavailable');}
   else assert.equal(current.phase,'split');
