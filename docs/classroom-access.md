@@ -1,6 +1,17 @@
 # Classroom work and sharing
 
-## Current interface — October 29, 2026
+## Current interface — November 2, 2026
+
+Current Lab members can create personal splits and use Listening Guy with zero
+course enrollments. Queued personal work rechecks current Lab membership and
+local account status before provider dispatch. Guests keep their separate session
+and allowance; pending work claimed during sign-in follows its current member
+owner while retaining its original accounting.
+
+Each explicitly configured course admits its own current students and
+instructors. The selected course supplies the enrollment check for class work.
+Course revocation applies to that course, while personal Lab access and other
+current course relationships continue independently.
 
 The new-work selector is labeled **Share with**. Opening the Splitter directly
 starts at Personal. **Create a split** in a class workspace carries its selected
@@ -44,13 +55,14 @@ endpoint, roster import, new binding, or app-wide instructor promotion is added.
 
 ## Authority and disclosure
 
-The production default accepts only
+The production default course is
 `msh-245-the-american-musical-experience-fall-2026-01`. The trusted
-`CAIL_COURSE_IDS` configuration can explicitly allow additional courses; it does
-not replace the exact target-class student entry requirement. A student enrolled
-only in another configured course cannot enter the workspace. A current verified
-course owner can use their independent teaching relationship. The existing
-Admission/app suspension and separately granted app operational roles remain.
+`CAIL_COURSE_IDS` configuration explicitly allows additional courses. Each
+student's or instructor's current relationship to the selected configured course
+grants its class access. This November 2 behavior replaces the original
+candidate's additional enrollment requirement for the default STEM class.
+Existing Admission/app suspension and separately granted app operational roles
+remain in force.
 
 Every protected request checks current identity, Admission, local disablement,
 and exact course authority. Responses are private/no-store. An unavailable,

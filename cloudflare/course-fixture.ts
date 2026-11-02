@@ -1,5 +1,6 @@
 // Synthetic local authority only. Never imported by the production entrypoint.
 import { DEMO_COURSE_ID, STEM_COURSE_ID, type CourseAssignmentV2 } from '../src/classroom/contract.ts';
+export const membershipFixture = () => ({ok:true,accessRole:'member',budgetScope:'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()});
 export async function courseFixture(subject: string, classId=STEM_COURSE_ID, owner=false, guestInstructor=false): Promise<CourseAssignmentV2 & {ok:true}> {
   if(guestInstructor&&classId!==DEMO_COURSE_ID)throw new Error('Guest instructor fixtures are limited to the demo class.');
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`fixture:${classId}:${subject}`));

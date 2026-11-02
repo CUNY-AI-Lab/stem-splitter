@@ -84,10 +84,11 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
         const response = await client.chatCompletions({
           model, messages: params.messages.map(({ role, content }) => ({ role, content })),
           ...(params.tools?.length ? { tools: params.tools.map(tool => ({ type: tool.type, function: { ...tool.function, parameters: JSON.parse(JSON.stringify(tool.function.parameters)) } })), tool_choice: 'auto' } : {}),
-          // OpenRouter and native GLM routes use different reasoning controls.
-          // Send both supported forms so short turns reach their visible answer.
+          // Preserve the generic control for OpenRouter and explicitly disable
+          // GLM's native chat template, which can otherwise consume the whole
+          // output allowance before producing the short visible answer.
           reasoning: { enabled: false },
-          ...(model === 'glm-5.2' ? { reasoning_effort: 'none' } : {}),
+          ...(model === 'glm-5.2' ? { reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } } : {}),
           stream: true, stream_options: { include_usage: true }, max_tokens: params.maxTokens, temperature: params.temperature,
         }, { kind: credentialKind, token }, { signal, correlation });
         accepted = true;

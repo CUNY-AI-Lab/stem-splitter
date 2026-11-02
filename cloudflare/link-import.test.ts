@@ -10,7 +10,7 @@ import type { AppPrincipal } from '../src/identity.ts';
 import app from '../src/index.ts';
 import { drainSplitQueue, submitSplit } from '../src/reliability/splits.ts';
 import { readOperation } from '../src/reliability/ledger.ts';
-import { courseFixture } from './course-fixture.ts';
+import { courseFixture, membershipFixture } from './course-fixture.ts';
 import { flacDuration, handleLinkImportRequest, importLink, inspectAudio, resolveLink, shareDownloadUrl, wavDuration, youtubeSearchQuery } from '../src/link-import.ts';
 
 const keyPrefix = 'uploads/00000000-0000-4000-8000-000000000000/source-1';
@@ -299,7 +299,7 @@ async function splitter(t: { after: (f: () => void) => void }, options: { enable
   const env = { DB: db, AUDIO, AUTH_MODE: 'cail', SEPARATION_BACKEND: 'replicate', LOCAL_HOSTING: 'true', CLASS_CODE: 'link-fixture',
     PUBLIC_BASE_URL: 'https://split.test', WEBHOOK_SECRET: 'fixture-only', REPLICATE_API_TOKEN: 'fixture-replicate-token',
     REPLICATE_YT_MODEL: 'test/video-audio', REPLICATE_YT_MODEL_VERSION: importVersion, REPLICATE_MODEL_VERSION: splitVersion,
-    ADMISSION_RESOLVER: { resolveCourseAccessV2: ({ subject, classId }: { subject: string; classId: string }) => courseFixture(subject, classId) },
+    ADMISSION_RESOLVER: { resolveMembership:async()=>membershipFixture(), resolveCourseAccessV2: ({ subject, classId }: { subject: string; classId: string }) => courseFixture(subject, classId) },
     URL_IMPORT_ENABLED: 'true', ...(options.enabled === false ? {} : { LINK_IMPORT_ENABLED: 'true' }), LINK_IMPORT,
   } as unknown as Env;
   return { db, env, calls };

@@ -2829,8 +2829,9 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .workspace-nav a:hover { color: var(--hot); background: transparent; }
 .refined-ui .workspace-nav a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .workspace-nav .account-nav { display: flex; align-items: center; gap: .6rem; margin: 0 0 0 auto; }
-.account-session-note { display: grid; gap: .1rem; min-width: 0; max-width: 17rem; padding-block: .35rem; font-size: .75rem; line-height: 1.4; }
-.account-session-note small { color: var(--ink-dim); font-size: inherit; }
+.workspace-nav .account-nav.is-guest { gap: .35rem; padding-inline: .55rem; border: 1px solid var(--panel-edge); border-radius: 999px; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
+.account-session-note { display: inline-flex; align-items: center; gap: .35rem; }
+.refined-ui .workspace-nav .account-nav.is-guest .account-button { min-height: 32px; padding: .35rem 0; font: inherit; color: var(--hot); }
 .workspace-nav > a[href="/account.html"] { margin-left: 0; }
 .refined-ui #dropzone { border-radius: 8px; padding: .7rem; }
 .refined-ui #dropzone .deck-slot {
@@ -2891,6 +2892,9 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .workspace-nav .account-nav, .workspace-nav > a[href="/account.html"] { margin-left: 0; }
   .workspace-nav .account-nav { grid-column: 1 / -1; }
   .workspace-nav .account-nav .account-button { flex: 1; justify-content: flex-start; }
+  .workspace-nav:has(.account-nav.is-guest) { grid-template-columns: repeat(3, max-content) 1fr; gap: 0 .65rem; }
+  .workspace-nav .account-nav.is-guest { grid-column: auto; justify-self: end; padding-inline: .4rem; font-size: .68rem; }
+  .workspace-nav .account-nav.is-guest .account-button { flex: initial; }
   .refined-ui #course-context { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
   .refined-ui #course-context .course-choice { font-size: 1rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
@@ -2898,6 +2902,9 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .account-allowances section { padding: .85rem 1rem; }
   .account-allowances section + section { border-left: 0; border-top: 1px solid var(--panel-edge); }
   .refined-ui.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: .9rem; }
+}
+@media (max-width: 360px) {
+  .workspace-nav:has(.account-nav.is-guest) { gap: 0 .25rem; }
 }
 .refined-ui .coach-sign-in {
   display: inline-flex; align-items: center; min-height: 24px;

@@ -79,6 +79,7 @@ test('the private client sends one Gateway credential and drains trailing usage 
     assert.equal(body.model, 'glm-5.2'); assert.equal(body.provider, undefined);
     assert.deepEqual(body.reasoning, { enabled: false });
     assert.equal(body.reasoning_effort, 'none');
+    assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
     assert.equal(body.max_tokens, params.maxTokens);
     return sse([{ choices: [{ delta: { content: 'Listen for the bass.' }, finish_reason: null }] }, finished,
       trailingError ? { error: { code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'private provider text', cail: { request_id: id, should_retry: false } } } : { choices: [], usage: { total_tokens: 10 } }]);
@@ -161,9 +162,10 @@ test('a cooling primary skips directly to the configured backup without recordin
   await setCooldown(DB, 'gateway:glm-5.2', Date.now() + 30000);
   const models: string[] = [];
   const transport = gatewayForRequest({ fetch: async (outbound: Request) => {
-    const body = await outbound.json() as { model: string; reasoning_effort?: string };
+    const body = await outbound.json() as { model: string; reasoning_effort?: string; chat_template_kwargs?: unknown };
     models.push(body.model);
     assert.equal(body.reasoning_effort, undefined, 'GLM-specific effort stays off the backup request');
+    assert.equal(body.chat_template_kwargs, undefined, 'GLM-specific chat template stays off the backup request');
     return sse([{ choices: [{ delta: { content: 'Listen for the bass.' }, finish_reason: 'stop' }] }]);
   } } as unknown as Fetcher, 'gateway-leg', request(), 'test');
   const result = await transport.stream({ ...env, DB, ASSISTANT_OPERATION_ID: operation.id,

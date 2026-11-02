@@ -222,7 +222,7 @@ async function start(env: Env,op: Operation) {
       else if (!env.guestRuntimeReady || op.course_id !== null || !await activeGuest(env.DB,op.subject)) throw new Error('Guest access ended');
     } else await authorizeStoredCourseWork(env,op.subject,op.course_id);
   }
-  catch { await fail(env,op,'access_unavailable','Course access could not be confirmed. No allowance was used.');return; }
+  catch { await fail(env,op,'access_unavailable',`${op.course_id ? 'Course' : 'Account'} access could not be confirmed. No allowance was used.`);return; }
   if (op.cancel_requested) {await fail(env,op,'cancelled');return;}
   if(op.phase==='fetch'&&input.openAudio){
     try{await imported(env,op,input,await fetchOpenAudio(input.openAudio,{db:env.DB,maximumSeconds:op.quota_class==='guest'?300:900,deadline:op.deadline}));}
