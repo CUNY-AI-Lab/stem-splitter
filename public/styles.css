@@ -2903,6 +2903,9 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .account-allowances section + section { border-left: 0; border-top: 1px solid var(--panel-edge); }
   .refined-ui.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: .9rem; }
 }
+@media (max-width: 360px) {
+  .workspace-nav:has(.account-nav.is-guest) { gap: 0 .25rem; }
+}
 .refined-ui .coach-sign-in {
   display: inline-flex; align-items: center; min-height: 24px;
   margin: .25rem 0 0; padding: 0; border: 0; background: transparent;
