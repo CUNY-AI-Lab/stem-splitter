@@ -974,3 +974,50 @@ test('guest status is explicit and disappears for a signed-in member with person
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
+
+async function claimOutsidePage(f, page) {
+  const cookie = (await page.context().cookies(f.origin)).map(value => `${value.name}=${value.value}`).join('; ');
+  const response = await f.worker.fetch(new URL('/api/account/claim-guest', f.origin), {
+    method: 'POST', headers: { Origin: f.origin, 'Content-Type': 'application/json', Cookie: cookie,
+      'X-Stem-Claim-Actor': TEST_SUBJECTS.alice,
+      'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }),
+    }, body: '{}',
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+for (const active of [false, true]) test(`a claimed guest session recovers ${active ? 'during a new upload' : 'on page load'} and keeps saved account work private`, async ({ page }) => {
+  const f = await setup(page);
+  try {
+    await page.goto(f.origin);
+    await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
+    const originalGuest = (await account(page)).account.subject;
+    await startUpload(page); await completed(page, 1);
+    const jobId = await page.evaluate(() => getJobs()[0].id);
+    await page.locator('.coach-toggle').click();
+    await page.getByRole('textbox', { name: 'Ask the Listening Guide' }).fill('Keep the draft from my earlier session.');
+    await page.evaluate(() => { for (const mixer of mixers.values()) mixer.saveListeningProgress(); });
+    const cache = await page.evaluate(subject => ({
+      jobs: localStorage.getItem(`jobs:${subject}`),
+      progress: localStorage.getItem(`stem-listening:${subject}:${getJobs()[0].id}`),
+    }), originalGuest);
+    expect((await claimOutsidePage(f, page)).claimedJobIds).toEqual([jobId]);
+    const before = f.requests.filter(request => request.path === '/api/uploads').length;
+    if (active) {
+      await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav', import.meta.url)));
+    } else await page.reload();
+    await expect(page.locator('#guest-account-state')).toHaveText('Guest session');
+    await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
+    await expect.poll(async () => (await account(page)).account?.subject).not.toBe(originalGuest);
+    await expect(page.locator('.console')).toHaveCount(0);
+    expect(await page.evaluate(({ subject, id }) => ({
+      jobs: localStorage.getItem(`jobs:${subject}`), progress: localStorage.getItem(`stem-listening:${subject}:${id}`),
+    }), { subject: originalGuest, id: jobId })).toEqual(cache);
+    expect(await page.evaluate(async id => (await fetch(`/api/jobs/${id}`)).status, jobId)).toBe(404);
+    expect(f.requests.filter(request => request.path === '/api/uploads').length - before).toBe(active ? 1 : 0);
+    await startUpload(page); await completed(page, 1);
+    expect(f.counts().providerStarts).toBe(2);
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});

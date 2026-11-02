@@ -134,6 +134,38 @@ test('guest proof remains origin-bound and rejects modified or expired cookies',
  assert.equal(await readGuestSession(new Request('https://split.test/',{headers:{Cookie:cookie}}),env),null);
 });
 
+for (const verifying of [false,true]) test(`claimed guest ${verifying?'verification':'bootstrap'} starts new work while preserving member ownership`,async t=>{
+ const {db,env,seed,post}=await fixture();
+ Object.assign(env,{GUEST_ENABLED:'true',GUEST_COOKIE_SECRET:'x'.repeat(48),GUEST_TURNSTILE_SITE_KEY:'a'.repeat(30),GUEST_TURNSTILE_SECRET:'b'.repeat(40),REQUEST_LIMIT:{limit:async()=>({success:true})}});
+ const begin=(cookie='',body:unknown={})=>startGuestSession(new Request('https://split.test/auth/guest',{method:'POST',headers:{Origin:'https://split.test','Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(body)}),env);
+ const session=(cookie:string)=>readGuestSession(new Request('https://split.test/',{headers:{Cookie:cookie}}),env);
+ const originalResponse=await begin();assert.equal(originalResponse.status,200);
+ const originalCookie=originalResponse.headers.get('set-cookie')!.split(';')[0],original=(await session(originalCookie))!;
+ assert.equal((await begin(originalCookie)).headers.get('set-cookie')!.split(';')[0],originalCookie,'ordinary bootstrap retains identity and allowance');
+ await seed('claimed-browser-song',original.subject);env.guestClaimSession=original;
+ assert.equal((await post()).status,200);
+ const before={operations:await db.prepare('SELECT * FROM app_operations').all(),owners:await db.prepare('SELECT * FROM job_owners').all(),claims:await db.prepare('SELECT * FROM guest_account_claims').all()};
+ const claimed=await authorizeGuestRequest(new Request('https://split.test/api/account'),{...env,guestSession:original},()=>assert.fail('Retired identity stays closed'));
+ assert.equal(claimed?.status,403);assert.equal((await claimed!.json() as any).error.code,'guest_session_claimed');
+ let checks=0;
+ t.mock.method(globalThis,'fetch',async()=>{checks++;return Response.json({success:true,hostname:'split.test',action:'stem_guest',challenge_ts:new Date().toISOString()});});
+ const renewed=await begin(originalCookie,verifying?{token:'new-guest-verification'}:{});assert.equal(renewed.status,200);
+ assert.equal(checks,verifying?1:0);
+ const renewedCookie=renewed.headers.get('set-cookie')!.split(';')[0],fresh=(await session(renewedCookie))!;
+ assert.notEqual(fresh.subject,original.subject);assert.equal(fresh.verifiedDay,verifying?new Date().toISOString().slice(0,10):'1970-01-01');
+ assert.equal((await session(originalCookie))?.verifiedDay,original.verifiedDay,'verification leaves the retired identity unchanged');
+ assert.deepEqual({operations:await db.prepare('SELECT * FROM app_operations').all(),owners:await db.prepare('SELECT * FROM job_owners').all(),claims:await db.prepare('SELECT * FROM guest_account_claims').all()},before);
+ const freshEnv={...env,guestSession:fresh};
+ const account=await app.fetch(new Request('https://split.test/api/account'),freshEnv);assert.equal(account.status,200);
+ assert.equal((await account.json() as any).account.subject,fresh.subject);
+ for(const path of ['/api/jobs/claimed-browser-song','/api/files/stems/claimed-browser-song/attempt/display/vocals.mp3']) assert.equal((await app.fetch(new Request('https://split.test'+path),freshEnv)).status,404,path);
+ assert.equal(await authorizeGuestRequest(new Request('https://split.test/api/uploads',{method:'POST',headers:{Origin:'https://split.test'}}),freshEnv,()=>{}),null);
+ const operation=await reserveOperation(env.DB,{subject:fresh.subject,quotaClass:'guest',courseId:null,kind:'split',key:'renewed-guest-new-work',fingerprint:'new-work',phase:'fetch'});
+ assert.equal(operation.operation.subject,fresh.subject);
+ assert.equal((await begin(renewedCookie)).headers.get('set-cookie')!.split(';')[0],renewedCookie,'subsequent bootstrap keeps the new allowance');
+ assert.equal((await begin(originalCookie+'; __Host-stem-session=existing-member')).status,403,'member cookies keep precedence');
+});
+
 test('only the claiming member can cancel a pending guest split and the original allowance is refunded',async()=>{
  const {env,seed,post}=await fixture();await seed('pending-cancel',guest,false);assert.equal((await post()).status,200);
  const cancel=(subject:string)=>app.fetch(new Request('https://split.test/api/jobs/pending-cancel/cancel',{method:'POST',headers:{Origin:'https://split.test','x-cail-identity-jwt':subject}}),env);

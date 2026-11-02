@@ -7,6 +7,20 @@ let runtime = { authMode: 'class-code', remixer: false, loginUrl: null };
 let jobsStorageKey = 'jobs';
 let accountSubject = null;
 let guestSessionActive = false;
+let claimedGuestRecovery = null;
+async function recoverClaimedGuestSession() {
+  if (!claimedGuestRecovery) claimedGuestRecovery = (async () => {
+    for (const mixer of mixers.values()) mixer.saveListeningProgress();
+    // Recheck for a member session before refreshing the page. Existing writes
+    // stay with their original account; bootstrap can renew a retired guest.
+    if (window.StemSessionGuard) {
+      await window.StemSessionGuard.check();
+      window.StemSessionGuard.clear();
+    } else location.reload();
+  })();
+  await claimedGuestRecovery;
+  return new Error('Your session is refreshing. Please try again in a moment.');
+}
 let accountJobs = [];
 let rackCursor = null;
 let rackLoading = false;
@@ -310,6 +324,9 @@ async function api(path, options = {}) {
     return readSongSearch(res, onResults);
   }
   let body = await res.json().catch(() => ({}));
+  if (res.status === 403 && guestSessionActive && body.error?.code === 'guest_session_claimed') {
+    throw await recoverClaimedGuestSession();
+  }
   // Speculative reads must never open verification or sign-in prompts.
   if (background && !res.ok) throw new Error('Background search unavailable');
   if (res.status === 403 && body.error?.code === 'guest_verification_required' && guestSessionActive) {
@@ -408,6 +425,7 @@ async function streamApi(path, body, onEvent, signal) {
   let res = await send();
   if (res.status === 403 && guestSessionActive) {
     const denied = await res.clone().json().catch(() => ({}));
+    if (denied.error?.code === 'guest_session_claimed') throw await recoverClaimedGuestSession();
     if (denied.error?.code === 'guest_verification_required') {
       const jobId = /^\/api\/jobs\/([^/]+)/.exec(path)?.[1];
       await window.StemGuest.verify(runtime.guest, mixers.get(jobId)?.coachBody || document.getElementById('upload-status'));
@@ -5241,7 +5259,9 @@ async function initialize() {
     let accountNeedsHelp = false;
     try {
       let response = await fetch('/api/account');
-      if (response.status === 401 && runtime.guest?.canStart === true) {
+      const claimedGuest = response.status === 403
+        && (await response.clone().json().catch(() => ({}))).error?.code === 'guest_session_claimed';
+      if ((response.status === 401 || claimedGuest) && runtime.guest?.canStart === true) {
         await window.StemGuest.ensure(runtime.guest);
         response = await fetch('/api/account');
       }
