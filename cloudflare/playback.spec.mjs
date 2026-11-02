@@ -7,8 +7,8 @@ import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
 // Long, decodable, distinct tones exercise the actual media clocks past 0:43.
 // No provider calls, user audio, or committed binary fixtures.
-function tone(frequency) {
-  const rate = 8000, samples = rate * 70;
+function tone(frequency, duration = 70) {
+  const rate = 8000, samples = rate * duration;
   const wav = Buffer.alloc(44 + samples * 2);
   wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
@@ -19,7 +19,7 @@ function tone(frequency) {
   return wav;
 }
 
-async function fixture(page, names, { owned = false } = {}) {
+async function fixture(page, names, { owned = false, mediaRange, durations = {} } = {}) {
   const issuer = await createTestIdentityIssuer();
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
     vars: { TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true' } }] });
@@ -34,20 +34,24 @@ async function fixture(page, names, { owned = false } = {}) {
     await page.context().setExtraHTTPHeaders({ 'x-fixture-identity': await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
   }
   await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) });
-  await page.route(owned ? '**/api/files/stems/remix-fixture/*' : '**/api/shared-jobs/remix-fixture/stems/*', route => {
+  await page.route(owned ? '**/api/files/stems/remix-fixture/*' : '**/api/shared-jobs/remix-fixture/stems/*', async route => {
     const filename = new URL(route.request().url()).pathname.split('/').pop();
     const index = owned ? names.indexOf(filename.replace(/\.mp3$/, '')) : Number(filename);
-    const bytes = tone(180 + index * 100);
+    const bytes = tone(180 + index * 100, durations[names[index]] || 70);
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
     const start = range ? Number(range[1]) : 0;
-    const end = range?.[2] ? Math.min(Number(range[2]), bytes.length - 1) : bytes.length - 1;
+    let end = range?.[2] ? Math.min(Number(range[2]), bytes.length - 1) : bytes.length - 1;
+    if (mediaRange && route.request().resourceType() === 'media') {
+      end = await mediaRange({ name: names[index], start, end });
+    }
     return route.fulfill({ status: range ? 206 : 200, contentType: 'audio/wav',
       headers: { 'Accept-Ranges': 'bytes', ...(range ? { 'Content-Range': `bytes ${start}-${end}/${bytes.length}` } : {}) },
       body: bytes.subarray(start, end + 1) });
   });
   await page.goto(new URL('/?job=remix-fixture', url).href);
   await expect(page.locator('.channel')).toHaveCount(names.length);
-  await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a => a.duration > 69))).toBe(true);
+  await expect.poll(() => page.evaluate(expected => [...mixers.get('remix-fixture').channelsByName]
+    .every(([name, channel]) => Math.abs(channel.audio.duration - (expected[name] || 70)) < .1), durations)).toBe(true);
   return server;
 }
 
@@ -520,6 +524,110 @@ test('seek cancellation, missing release, keyboard and repeated seeks remain bou
     await expect(page.locator('.tc-now')).toHaveText('0:00');
     expect(await page.evaluate(() => mixers.get('remix-fixture').audios.every(a => a.paused))).toBe(true);
   } finally { await server.close(); }
+});
+
+async function delayedAudio(page, durations = {}) {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let delayed = 0;
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'], {
+    owned: true,
+    durations,
+    mediaRange: async ({ name, start, end }) => {
+      if (name !== 'other') return end;
+      // Supply metadata and the first 32 seconds; hold a real media range
+      // requested by a later seek. Waveform fetches remain available.
+      if (start < 512044) return Math.min(end, 512043);
+      delayed++;
+      await gate;
+      return end;
+    },
+  });
+  await page.evaluate(() => mixers.get('remix-fixture').seekTo(10));
+  await page.locator('.play-btn').click();
+  await clockAdvances(page);
+  await page.evaluate(() => mixers.get('remix-fixture').seekTo(43));
+  await expect.poll(() => delayed).toBeGreaterThan(0);
+  await expect(page.locator('.transport-notice')).toHaveText('Buffering audio…');
+  await expect.poll(() => page.evaluate(() => {
+    const m = mixers.get('remix-fixture');
+    return !!m.buffering && m.starting && !m.playing && m.audios.every(audio => audio.paused);
+  })).toBe(true);
+  return { release, close: async () => { release(); await page.unrouteAll({ behavior: 'wait' }); await server.close(); } };
+}
+
+test('a delayed stem resumes the whole mix at the latest seek after buffering', async ({ page }) => {
+  const f = await delayedAudio(page);
+  try {
+    // A delayed range used to hit the five-second frozen-clock watchdog and
+    // leave all six stems paused even after their media data arrived.
+    await page.waitForTimeout(5500);
+    await expect(page.locator('.transport-notice')).toHaveText('Buffering audio…');
+    await page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      m.setRate(.75); m.toggleMute('drums'); m.seekTo(55);
+    });
+    f.release();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').playing)).toBe(true);
+    await clockAdvances(page);
+    expect(await page.evaluate(() => {
+      const m = mixers.get('remix-fixture'), times = m.audios.map(audio => audio.currentTime);
+      return Math.min(...times) > 55 && Math.max(...times) - Math.min(...times) < .15
+        && m.audios.every(audio => !audio.paused && audio.playbackRate === .75)
+        && m.userMuted.get('drums') && !m.buffering;
+    })).toBe(true);
+    await expect(page.locator('.transport-notice')).toBeHidden();
+    await page.locator('.play-btn').click();
+  } finally { await f.close(); }
+});
+
+test('an ended shorter stem permits buffered playback to resume through the remaining stems', async ({ page }) => {
+  const f = await delayedAudio(page, { bass: 20 });
+  try {
+    f.release();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').playing)).toBe(true);
+    await clockAdvances(page);
+    expect(await page.evaluate(() => {
+      const m = mixers.get('remix-fixture'), bass = m.channelsByName.get('bass').audio;
+      return bass.ended && bass.paused && bass.currentTime === bass.duration
+        && [...m.channelsByName].filter(([name]) => name !== 'bass').every(([, channel]) => channel.audio.currentTime > 43 && !channel.audio.paused);
+    })).toBe(true);
+    await page.locator('.play-btn').click();
+  } finally { await f.close(); }
+});
+
+for (const action of ['pause', 'collapse', 'dispose']) test(`${action} cancels automatic playback after a delayed stem`, async ({ page }) => {
+  const f = await delayedAudio(page);
+  try {
+    if (action === 'pause') await page.locator('.play-btn').click();
+    else if (action === 'collapse') await page.locator('.collapse-btn').click();
+    else await page.evaluate(() => mixers.get('remix-fixture').disposeWaveforms());
+    f.release();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(audio => audio.readyState >= 3))).toBe(true);
+    expect(await page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      return !m.buffering && !m.playing && !m.starting && m.audios.every(audio => audio.paused);
+    })).toBe(true);
+  } finally { await f.close(); }
+});
+
+test('a delayed stem reaches a bounded retry state and stays paused when its data arrives late', async ({ page }) => {
+  await page.clock.install();
+  const f = await delayedAudio(page);
+  try {
+    await page.clock.fastForward(15001);
+    await expect(page.locator('.transport-notice')).toHaveText('Audio is taking longer to load. Press play to try again.');
+    f.release();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(audio => audio.readyState >= 3))).toBe(true);
+    expect(await page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      return !m.buffering && !m.playing && !m.starting && m.audios.every(audio => audio.paused);
+    })).toBe(true);
+    await page.clock.resume();
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await page.locator('.play-btn').click();
+  } finally { await f.close(); }
 });
 
 test('a frozen media clock parks every stem rather than leaving a half-playing mix', async ({ page }) => {

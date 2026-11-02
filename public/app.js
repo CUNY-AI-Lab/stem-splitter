@@ -594,9 +594,11 @@ const ytDisclosure = document.getElementById('yt-disclosure');
 const ytForm = document.getElementById('yt-form');
 const ytUrlInput = document.getElementById('yt-url');
 const ytFetchButton = ytForm.querySelector('button[type="submit"]');
+const ytFetchLabel = ytFetchButton.textContent;
 const sourceSongs = document.getElementById('source-songs');
 let songResults = new Map(), songSearchTimer, songSearchSequence = 0, songSearchAbort;
 let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
+let acceptedSongSample = null;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
 
 // Playlist candidates become suggestions only after the live Archive search
@@ -614,7 +616,7 @@ let sampleLoad = null;
 const verifiedSongSamples = [];
 const recentSongSearches = new Map();
 const audioSource = document.getElementById('audio-source');
-audioSource?.addEventListener('change',()=>{stopSongSample();songSearchAbort?.abort();clearSongSuggestions();songQuery='';if(ytUrlInput.value.trim())void searchSourceSongs(ytUrlInput.value.trim(),++songSearchSequence);});
+audioSource?.addEventListener('change',()=>{acceptedSongSample=null;stopSongSample();songSearchAbort?.abort();clearSongSuggestions();songQuery='';if(ytUrlInput.value.trim())void searchSourceSongs(ytUrlInput.value.trim(),++songSearchSequence);});
 const songSearchKey = term => (audioSource?.value||'archive')+':'+term.toLowerCase().replace(/\s+/g, ' ').trim();
 function rememberSongSearch(term, data) {
   if (!data?.results?.length) return;
@@ -820,6 +822,11 @@ function showSongSample() {
 }
 function acceptSongSample() {
   if (!sampleVisible() || sampleHint.hidden) return;
+  const track = sampleCache?.batches.find(batch => batch.results?.length)?.results[0];
+  if (!track) return;
+  // The displayed sample already identifies a verified recording. Retain that
+  // selection so the next Return or Fetch can import its exact audio file.
+  acceptedSongSample = { query: SAMPLE_SONG_QUERY, track };
   stopSongSample(false);
   sampleDismissed = true;
   ytUrlInput.value = SAMPLE_SONG_QUERY;
@@ -975,6 +982,7 @@ async function searchSourceSongs(term, sequence) {
   }
 }
 ytUrlInput.addEventListener('input', (event) => {
+  acceptedSongSample = null;
   stopSongSample();
   sampleDismissed = Boolean(ytUrlInput.value) || event.isComposing;
   if (!sampleDismissed) showSongSample();
@@ -1472,7 +1480,7 @@ ytForm.addEventListener('submit', async (e) => {
   const url = ytUrlInput.value.trim();
   if (youtubeFetchInProgress) return;
   if (!url) { acceptSongSample(); return; }
-  const song = songResults.get(url);
+  const song = songResults.get(url) || (acceptedSongSample?.query === url ? acceptedSongSample.track : null);
   if (!sourceIsLink(url) && !song) {
     clearTimeout(songSearchTimer);
     ytUrlInput.focus();
@@ -1489,6 +1497,7 @@ ytForm.addEventListener('submit', async (e) => {
   ytForm.setAttribute('aria-busy', 'true');
   ytUrlInput.disabled = true;
   ytFetchButton.disabled = true;
+  ytFetchButton.textContent = 'FETCHING…';
   uploadStatus.hidden = false;
   progressBar.style.width = '0%';
   showUploadMessage('IMPORTING AUDIO…');
@@ -1525,6 +1534,7 @@ ytForm.addEventListener('submit', async (e) => {
       }),
     });
     ytUrlInput.value = '';
+    acceptedSongSample = null;
     clearSongSuggestions();
     addJob(job);
     showUploadMessage(processingMessage(job));
@@ -1538,6 +1548,7 @@ ytForm.addEventListener('submit', async (e) => {
     ytForm.removeAttribute('aria-busy');
     ytUrlInput.disabled = false;
     ytFetchButton.disabled = false;
+    ytFetchButton.textContent = ytFetchLabel;
     if (followUpQuery) {
       ytUrlInput.value = followUpQuery;
       songSuggestionsDismissed = false;
@@ -2093,6 +2104,7 @@ class Mixer {
       audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
       audio.addEventListener('loadedmetadata', () => { this.restoreAudio(stem.name); this.loadWaveforms(); this.paint(); });
       audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
+      for (const event of ['canplay', 'seeked']) audio.addEventListener(event, () => this.resumeBufferedAudio());
 
       const nameEl = row.querySelector('.ch-name');
       nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
@@ -2495,6 +2507,7 @@ class Mixer {
 
   async play() {
     if (this.playing || this.starting || this.playBtn.disabled) return;
+    if (this.audios[0]?.ended) this.seekTo(0);
     const attempt = ++this.playAttempt;
     this.starting = true;
     this.transportNotice.hidden = true;
@@ -2510,7 +2523,7 @@ class Mixer {
       startAbort.signal.addEventListener('abort', () => reject(new Error('Playback cancelled')), { once: true });
     });
     try {
-      const starts = this.audios.map((a) => a.play());
+      const starts = this.audios.filter(a => !a.ended).map(a => a.play());
       // Resume an existing graph inside this user gesture too: a backgrounded
       // tab may have suspended it since the previous play.
       void this.wireGraph();
@@ -2560,6 +2573,9 @@ class Mixer {
     this.startAbort?.abort();
     this.starting = false;
     this.playing = false;
+    if (this.buffering) this.transportNotice.hidden = true;
+    clearTimeout(this.bufferingTimer);
+    this.buffering = null;
     this.playBtn.textContent = '▶';
     this.playBtn.classList.remove('playing');
     this.el.classList.remove('playing');
@@ -2577,12 +2593,19 @@ class Mixer {
 
   resync() {
     if (!this.playing) return;
+    const waiting = this.audios.find(audio => !audio.ended &&
+      (audio.seeking || audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA));
+    if (waiting) {
+      this.waitForBufferedAudio(waiting.currentTime);
+      return;
+    }
     const now = performance.now();
     // A stalled master must not leave the other instruments playing against a
     // frozen timer indefinitely. Watch real media progress, not mute/focus:
     // even inaudible stems must keep advancing to rejoin the mix correctly.
     if (!this.clockProgress) this.clockProgress = this.audios.map(a => ({ time: a.currentTime, advancedAt: now }));
     for (let i = 0; i < this.audios.length; i++) {
+      if (this.audios[i].ended) continue;
       const time = this.audios[i].currentTime;
       const progress = this.clockProgress[i];
       if (Math.abs(time - progress.time) > 0.001) {
@@ -2602,9 +2625,61 @@ class Mixer {
       // A stem that is mid-seek or has no decodable data ahead is still
       // fetching after a jump. Re-seeking it every tick restarts that fetch,
       // so it stays silent forever — leave it alone until it can play.
-      if (a.seeking || a.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) continue;
+      if (a.ended || a.seeking || a.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) continue;
       if (Math.abs(a.currentTime - t) > 0.08) a.currentTime = t;
     }
+  }
+
+  waitForBufferedAudio(position) {
+    if (this.disposed || this.buffering || !this.playing) return;
+    // A student's buffering is local to their device. Instructor buffering
+    // publishes the usual pause/resume so the class stays together.
+    if (this.classSession?.following) this.classSession.inside(() => this.pause());
+    else this.pause();
+    const recovery = { position };
+    this.buffering = recovery;
+    this.starting = true;
+    this.playBtn.textContent = '❚❚';
+    this.transportNotice.textContent = 'Buffering audio…';
+    this.transportNotice.hidden = false;
+    // Keep every stem at the same passage while the outstanding range loads.
+    // A pause or collapse cancels this intent through stopUi().
+    for (const audio of this.audios) {
+      if (Math.abs(audio.currentTime - position) > 0.08) audio.currentTime = Math.min(position, audio.duration);
+    }
+    this.bufferingTimer = setTimeout(() => {
+      if (this.buffering !== recovery) return;
+      this.pause();
+      this.transportNotice.textContent = 'Audio is taking longer to load. Press play to try again.';
+      this.transportNotice.hidden = false;
+    }, 15000);
+    this.paint();
+    this.resumeBufferedAudio();
+  }
+
+  resumeBufferedAudio() {
+    const recovery = this.buffering;
+    if (!recovery || this.disposed || this.audios.some(audio => audio.error || audio.seeking ||
+      (recovery.position < audio.duration && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA))) return;
+    let aligning = false;
+    for (const audio of this.audios) {
+      const position = Math.min(recovery.position, audio.duration);
+      if (Math.abs(audio.currentTime - position) > 0.08) {
+        audio.currentTime = position;
+        aligning = true;
+      }
+    }
+    if (aligning) return;
+    clearTimeout(this.bufferingTimer);
+    this.buffering = null;
+    this.starting = false;
+    if (this.classSession?.following) this.classSession.inside(() => {
+      const disabled = this.playBtn.disabled;
+      this.playBtn.disabled = false;
+      void this.play();
+      this.playBtn.disabled = disabled;
+    });
+    else void this.play();
   }
 
   // Route each stem through its own gain + analyser. Only taken once the
@@ -2704,6 +2779,9 @@ class Mixer {
   disposeWaveforms() {
     this.disposed = true;
     clearTimeout(this.audioRetryTimer);
+    clearTimeout(this.bufferingTimer);
+    if (this.buffering) this.starting = false;
+    this.buffering = null;
     this.endScrub(false);
     this.waveformAbort.abort();
     this.waveformObserver.disconnect();
@@ -2876,6 +2954,7 @@ class Mixer {
     if (!duration) return;
     this.clockProgress = null;
     t = Math.max(0, Math.min(t, duration));
+    if (this.buffering) this.buffering.position = t;
     for (const a of this.audios) {
       // Seeks can land while paused (Listening Guide tool calls do this a lot) — start
       // buffering the target region now so play() finds data ready instead of

@@ -182,6 +182,55 @@ test('missing provider configuration creates no attempt or paid start and releas
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<any>())?.n,0);assert.equal((await splitAllowance(db,subject)).remaining,15);
 });
 
+test('a poll immediately after provider acceptance cannot leave the recording queued',async t=>{
+ const {db,env,split}=await setup(t);const op=await split('accepted-poll-race-01');let raced=false,starts=0;
+ t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{
+  if(init?.method==='POST')starts++;
+  return Response.json({id:'accepted-prediction',status:'processing'});
+ });
+ const pollWhenReleased=async()=>{
+  const current=(await readOperation(db,op.id))!;
+  if(raced||current.state!=='processing'||current.lease_until!==0)return;
+  raced=true;
+  await reconcileSplit(env,current,async()=>{});
+ };
+ const prepare=db.prepare.bind(db),batch=db.batch.bind(db);
+ t.mock.method(db,'prepare',(sql:string)=>{
+  const wrap=(statement:D1PreparedStatement):D1PreparedStatement=>new Proxy(statement,{
+   get(target,key){
+    if(key==='bind')return (...values:unknown[])=>wrap(target.bind(...values));
+    if(key==='run')return async()=>{const result=await target.run();if(sql.startsWith('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE'))await pollWhenReleased();return result;};
+    const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+   },
+  });
+  return wrap(prepare(sql));
+ });
+ t.mock.method(db,'batch',async(statements:D1PreparedStatement[])=>{const result=await batch(statements);await pollWhenReleased();return result;});
+ await runReliableJobs(env);
+ assert.equal(raced,true,'another poll claims the released operation');
+ assert.equal(starts,1);
+ assert.equal((await db.prepare('SELECT status FROM jobs WHERE id=?').bind(op.id).first<{status:string}>())?.status,'processing');
+});
+
+test('reconciliation recovers accepted split output whose recording stayed queued',async t=>{
+ const {db,env,split}=await setup(t);const op=await split('accepted-queued-recovery-01');
+ await db.prepare("UPDATE app_operations SET state='processing',provider_id='accepted-prediction' WHERE id=?").bind(op.id).run();
+ let reads=0;
+ t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{
+  assert.notEqual(init?.method,'POST','recovery reads the existing prediction without starting another');reads++;
+  return Response.json({id:'accepted-prediction',status:'succeeded',output:{}});
+ });
+ const complete=async()=>{
+  await db.prepare("UPDATE jobs SET status='done' WHERE id=? AND status='processing'").bind(op.id).run();
+ };
+ await reconcileSplit(env,(await readOperation(db,op.id))!,complete);
+ assert.equal((await readOperation(db,op.id))?.state,'succeeded');
+ assert.equal((await db.prepare('SELECT status,external_id FROM jobs WHERE id=?').bind(op.id).first<{status:string;external_id:string}>())?.external_id,'accepted-prediction');
+ assert.equal((await splitAllowance(db,subject)).completed,1);
+ await reconcileSplit(env,(await readOperation(db,op.id))!,complete);
+ assert.equal(reads,1);
+});
+
 test('separation status429 shares the complete Retry-After floor across queue drains and callbacks',async t=>{
  const {db,env,split}=await setup(t),op=await split('poll-rate-limit-0001');
  await db.prepare("UPDATE app_operations SET state='processing',provider_id='prediction' WHERE id=?").bind(op.id).run();

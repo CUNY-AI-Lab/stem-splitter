@@ -242,3 +242,59 @@ test('open audio selector keeps provider search and submitted recording IDs toge
   expect(errors).toEqual([]);
  }finally{await f.harness.close();}
 });
+
+for (const submitAction of ['Enter','Fetch']) test(`Tab accepts the verified sample and ${submitAction} starts one split with immediate pending feedback`,async({page,context})=>{
+ const f=await fixture(),errors=[],requests=[];page.on('pageerror',error=>errors.push(error.message));
+ const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'verified-suggestion',archiveFile:'exact-recording.mp3'};
+ const query=`${track.artist} ${track.title}`;
+ let release;const pending=new Promise(resolve=>{release=resolve;});
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:true,revision:1,tracks:[track]}}));
+  await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...track,id:'verified-suggestion/exact-recording.mp3',durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/verified-suggestion'}]}}));
+  await page.route('**/api/jobs',async route=>{
+   if(route.request().method()!=='POST')return route.continue();
+   requests.push(route.request().postDataJSON());await pending;
+   return route.fulfill({status:503,json:{error:'Fixture import unavailable. Try again.'}});
+  });
+  await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
+  const input=page.locator('#yt-url'),button=page.locator('#yt-form .yt-go'),form=page.locator('#yt-form');
+  await expect(input).toHaveAttribute('placeholder',query);await input.focus();await input.press('Tab');
+  await expect(input).toHaveValue(query);await expect(input).toBeFocused();
+  if(submitAction==='Enter')await input.press('Enter');else await button.click();
+  await expect(button).toHaveText('FETCHING…',{timeout:1500});
+  await expect(button).toBeDisabled();await expect(input).toBeDisabled();await expect(form).toHaveAttribute('aria-busy','true');
+  await expect(page.locator('#upload-message')).toContainText('IMPORTING AUDIO');
+  await expect.poll(()=>requests.length).toBe(1);
+  expect(requests[0]).toMatchObject({archiveId:track.archiveId,archiveFile:track.archiveFile,archiveSearch:true,displayTitle:`${track.artist} — ${track.title}`});
+  // Exercise both real input paths and repeated submit events while acceptance waits.
+  await page.keyboard.press('Enter');await button.evaluate(node=>node.click());
+  await form.evaluate(node=>{node.requestSubmit();node.requestSubmit();});
+  await page.waitForTimeout(200);expect(requests).toHaveLength(1);
+  if(process.env.STEM_SCREENSHOT_DIR){await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});await page.locator('#yt-disclosure').screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/sample-${submitAction.toLowerCase()}-pending.png`});}
+  release();await expect(page.locator('#upload-message')).toHaveText('Fixture import unavailable. Try again.');
+  await expect(input).toBeEnabled();await expect(button).toBeEnabled();await expect(button).toHaveText('FETCH');await expect(form).not.toHaveAttribute('aria-busy','true');
+  // A subsequent deliberate retry remains available after an unsuccessful response.
+  await button.click();await expect.poll(()=>requests.length).toBe(2);
+  expect(requests[1]).toEqual(requests[0]);await expect(button).toBeEnabled();expect(errors).toEqual([]);
+ }finally{release();await f.harness.close();}
+});
+
+for(const changed of ['text','provider'])test(`editing the accepted sample ${changed} restores explicit recording selection`,async({page,context})=>{
+ const f=await fixture();let creates=0;
+ const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'verified-suggestion',archiveFile:'exact-recording.mp3'},query=`${track.artist} ${track.title}`;
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});await page.emulateMedia({reducedMotion:'reduce'});
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:true,revision:1,tracks:[track]}}));
+  await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...track,id:'verified-suggestion/exact-recording.mp3',durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/verified-suggestion'}]}}));
+  await page.route('**/api/jobs',route=>{if(route.request().method()!=='POST')return route.continue();creates++;return route.fulfill({status:503,json:{error:'Fixture import stopped.'}});});
+  await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
+  const input=page.locator('#yt-url'),button=page.locator('#yt-form .yt-go');
+  await expect(input).toHaveAttribute('placeholder',query);await input.focus();await input.press('Tab');await expect(input).toHaveValue(query);
+  if(changed==='text'){await input.fill('A different song');await input.fill(query);}
+  else{await page.getByLabel('Audio source',{exact:true}).selectOption('commons');await page.getByLabel('Audio source',{exact:true}).selectOption('archive');}
+  await button.click();await expect(page.locator('#source-songs [role="option"]')).toBeVisible();await expect(button).toBeEnabled();expect(creates).toBe(0);
+  await page.locator('#source-songs [role="option"]').click();await button.click();await expect.poll(()=>creates).toBe(1);await expect(button).toBeEnabled();
+ }finally{await f.harness.close();}
+});

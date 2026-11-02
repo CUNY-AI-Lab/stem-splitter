@@ -86,6 +86,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     const routeCourse = /^\/api\/classroom\/courses\/([^/]+)/.exec(path)?.[1];
     const requestedCourse = storedCourse?.course_id ?? routeCourse ?? request.headers.get('x-stem-course') ?? 'personal';
     const personal = requestedCourse === 'personal';
+    const personalAudioRead = personal && ['GET', 'HEAD'].includes(request.method) && path.startsWith('/api/files/stems/');
     const selected = personal ? null : requestedCourse;
     if (env.CAIL_CLASSROOM_ENABLED === 'false' && (routeCourse || path === '/api/classroom/courses' || (storedCourse && !['GET','HEAD'].includes(request.method)) || (!storedCourse && !personal && request.headers.has('x-stem-course') && !['GET','HEAD'].includes(request.method)))) throw new CourseError(503,'course_work_paused');
     // Lab membership grants the personal workspace. Course membership is
@@ -95,9 +96,11 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
       course = await resolveCourse(env, identity.subject, selected);
       // The selected configured course supplies its own participant authority.
       if (role === 'member' && course.participant && !course.owner) role = 'student';
-    } else if (role === 'member') {
+    } else if (role === 'member' && !personalAudioRead) {
       // Course lookup is optional for personal workspace access: an unavailable
       // course authority cannot block a verified Lab member from signing in.
+      // Personal audio needs current Lab membership and ownership, checked below.
+      // Looking up a course for each range can stall playback during an outage.
       try {
         const courseIdsForApp = courseIds(env);
         if (courseIdsForApp.includes(STEM_COURSE_ID)) {

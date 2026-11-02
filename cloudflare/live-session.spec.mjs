@@ -21,7 +21,7 @@ function tone(frequency) {
   for (let index = 0; index < count; index++) wav.writeInt16LE(Math.round(1200 * Math.sin(index * 2 * Math.PI * frequency / rate)), 44 + index * 2);
   return wav;
 }
-async function setup(browser, count = 2) {
+async function setup(browser, count = 2, { mediaRange } = {}) {
   const issuer = await createTestIdentityIssuer();
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
     vars: { TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true', TEST_COURSE_OWNER_SUBJECT: TEST_SUBJECTS.alice } }] });
@@ -53,10 +53,12 @@ async function setup(browser, count = 2) {
     });
     await page.route('**/api/song-samples', route => route.fulfill({ json: { enabled: false, tracks: [] } }));
     await page.route('**/api/music/search**', route => route.fulfill({ json: { results: [] } }));
-    await page.route(`**/api/files/stems/${job}/*`, route => {
+    await page.route(`**/api/files/stems/${job}/*`, async route => {
       const wav = tone(route.request().url().includes('vocals') ? 220 : 130);
       const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
-      const start = range ? Number(range[1]) : 0, end = range?.[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+      const start = range ? Number(range[1]) : 0;
+      let end = range?.[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+      if (mediaRange && route.request().resourceType() === 'media') end = await mediaRange({ actor: index, url: route.request().url(), start, end });
       return route.fulfill({ status: range ? 206 : 200, contentType: 'audio/wav',
         headers: { 'Accept-Ranges': 'bytes', ...(range ? { 'Content-Range': `bytes ${start}-${end}/${wav.length}` } : {}) }, body: wav.subarray(start, end + 1) });
     });
@@ -74,6 +76,64 @@ const state = page => page.evaluate(id => {
     revision: mixer.classSession.revision, blocked: mixer.classSession.audioBlocked };
 }, job);
 const convergence = async (pages, check) => expect.poll(async () => (await Promise.all(pages.map(state))).every(check), { timeout: 12000 }).toBe(true);
+
+test('a student resumes shared playback after a delayed stem while remaining joined', async ({ browser }) => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const f = await setup(browser, 2, { mediaRange: async ({ actor, url, start, end }) => {
+    if (actor !== 1 || !url.includes('bass')) return end;
+    if (start < 512044) return Math.min(end, 512043);
+    await gate;
+    return end;
+  } });
+  const [host, student] = f.pages;
+  try {
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
+    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await host.locator('.play-btn').click();
+    await convergence([student], current => current.playing && current.time > 1);
+    await host.evaluate(id => mixers.get(id).seekTo(43), job);
+    await expect(student.locator('.transport-notice')).toHaveText('Buffering audio…', { timeout: 12000 });
+    expect((await state(student)).blocked).toBe(false);
+    release();
+    await convergence([student], current => current.playing && current.time > 43 && current.following && !current.blocked);
+    await expect(student.locator('.transport-notice')).toBeHidden();
+    await expect.poll(async () => {
+      const [instructor, learner] = await Promise.all([state(host), state(student)]);
+      return Math.abs(instructor.time - learner.time);
+    }, { timeout: 12000 }).toBeLessThan(.9);
+    expect(f.errors).toEqual([]);
+  } finally { release(); await f.close(); }
+});
+
+test('instructor buffering pauses the shared session and resumes the class together', async ({ browser }) => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const f = await setup(browser, 2, { mediaRange: async ({ actor, url, start, end }) => {
+    if (actor !== 0 || !url.includes('bass')) return end;
+    if (start < 512044) return Math.min(end, 512043);
+    await gate;
+    return end;
+  } });
+  const [host, student] = f.pages;
+  try {
+    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
+    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await host.locator('.play-btn').click();
+    await convergence([student], current => current.playing && current.time > 1);
+    await host.evaluate(id => mixers.get(id).seekTo(43), job);
+    await expect(host.locator('.transport-notice')).toHaveText('Buffering audio…');
+    await convergence([student], current => !current.playing && current.time >= 43 && current.following && !current.blocked);
+    release();
+    await convergence([host, student], current => current.playing && current.time > 43);
+    await expect(host.locator('.transport-notice')).toBeHidden();
+    await expect.poll(async () => {
+      const [instructor, learner] = await Promise.all([state(host), state(student)]);
+      return Math.abs(instructor.time - learner.time);
+    }, { timeout: 12000 }).toBeLessThan(.9);
+    expect(f.errors).toEqual([]);
+  } finally { release(); await f.close(); }
+});
 
 for (const failureMode of ['empty', 'incomplete']) test(`Listening Guide and chat recover ${failureMode} output during shared playback without a successful turn`, async ({ browser }) => {
   test.setTimeout(90000);

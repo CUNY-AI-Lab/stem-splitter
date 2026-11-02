@@ -301,9 +301,14 @@ async function start(env: Env,op: Operation) {
       : (await getBackend(env).start({jobId:op.id,audioUrl:sourceUrl,webhookUrl:operationWebhook(env,op.id,op.phase as 'fetch'|'split'),model})).externalId;
     await finishAttempt(env.DB,attempt,'accepted',{externalId:providerId});
     if (await transition(env.DB,op,'processing',{providerId})) {
-      await env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE id=? AND fence=?').bind(op.id,op.fence).run();
-      await env.DB.prepare(`UPDATE jobs SET status=?,external_id=? WHERE id=? AND status NOT IN ('failed','done') AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state='processing')`)
-        .bind(op.phase==='fetch'?'importing':'processing',op.phase==='fetch'?null:providerId,op.job_id,op.id,op.fence).run();
+      // Publish the recording state before another poll can claim the operation
+      // and advance its fence. Releasing the lease first can strand the recording
+      // in queued while its accepted prediction occupies the only split slot.
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE jobs SET status=?,external_id=? WHERE id=? AND status NOT IN ('failed','done') AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state='processing')`)
+          .bind(op.phase==='fetch'?'importing':'processing',op.phase==='fetch'?null:providerId,op.job_id,op.id,op.fence),
+        env.DB.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE id=? AND fence=?').bind(op.id,op.fence),
+      ]);
     }
   } catch(error) {
     if (attempt) await finishAttempt(env.DB,attempt,error instanceof UpstreamError?error.outcome:'uncertain',{
@@ -355,6 +360,12 @@ export async function reconcileSplit(env: Env,op: Operation,complete: Complete) 
       const result=await getBackend(env).fetchStatus(claimed.provider_id!);
       const current=await readOperation(env.DB,claimed.id);
       if(current?.fence!==claimed.fence||current.lease_owner!==claimed.lease_owner)return;
+      // Recover an accepted start whose recording update was interrupted. The
+      // verified existing prediction and current lease remain authoritative;
+      // terminal recordings and active ingestion leases stay untouched.
+      await env.DB.prepare(`UPDATE jobs SET status='processing',external_id=? WHERE id=? AND status IN ('queued','reconciling')
+        AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner=? AND state IN ('processing','reconciling') AND phase='split')`)
+        .bind(claimed.provider_id,claimed.job_id,claimed.id,claimed.fence,claimed.lease_owner).run();
       if(result.status!=='processing') {
         if(current.cancel_requested)await fail(env,claimed,'cancelled','Split cancelled. No allowance was used.');
         else {stage='output_ingest';await complete(env,claimed.job_id!,result,claimed);}
