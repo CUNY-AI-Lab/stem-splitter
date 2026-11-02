@@ -228,3 +228,19 @@ test('cue retry keeps its original key and leaves remaining daily chat available
     await expect(f.page.locator('.coach-usage-status')).toContainText('49 of 50 chat turns left today.');
   } finally { await f.close(); }
 });
+
+test('an interrupted Guide response gives recovery guidance while audio has failed', async ({ browser }) => {
+  const f = await fixture(browser);
+  try {
+    await f.page.route('**/api/jobs/listening-fixture/guide', route => route.fulfill({
+      contentType: 'text/event-stream', body: 'data: {"type":"delta","text":"An interrupted reply"}\n\n',
+    }));
+    await f.open();
+    await f.page.route('**/api/files/stems/listening-fixture/*', route => route.fulfill({ status: 403, body: 'Audio access failed' }));
+    await f.page.evaluate(() => mixers.get('listening-fixture').audios.forEach(audio => audio.load()));
+    await expect(f.page.locator('.badge')).toHaveText('AUDIO ERROR');
+    await f.page.getByRole('button', { name: 'CUE THE LISTENING GUIDE', exact: true }).click();
+    await expect(f.page.locator('.coach-hint')).toHaveText('The Listening Guide response ended before completion. Retry to check for the same reply.');
+    await expect(f.page.getByRole('button', { name: 'RETRY AUDIO', exact: true })).toBeEnabled();
+  } finally { await f.close(); }
+});

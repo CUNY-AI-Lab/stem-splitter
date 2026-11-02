@@ -132,7 +132,8 @@ test('real Gateway adapter rejects empty and truncated cue/chat output without c
  const transport=gatewayForRequest({fetch:async(outbound:Request)=>{
   calls++;const body=await outbound.json() as any;
   assert.deepEqual(body.reasoning,{enabled:false});
-  assert.equal(body.max_tokens,body.tools?600:500);
+  assert.equal(body.max_tokens,2048);
+  assert.equal(body.reasoning_effort,'none');
   return new Response(`data: ${JSON.stringify({choices:[{delta:{content},finish_reason:finishReason}]})}\n\ndata: [DONE]\n\n`,
    {headers:{'Content-Type':'text/event-stream'}});
  }} as unknown as Fetcher,'synthetic-test-credential',new Request('https://split.test'),'test');
@@ -145,6 +146,7 @@ test('real Gateway adapter rejects empty and truncated cue/chat output without c
    const body=kind==='guide'?{messageId}:f.chat('gateway-output',messageId);
    const events=await f.events(await f.request(`/api/jobs/gateway-output/${kind}`,'POST',body));
    assert.equal(events.at(-1).type,'error');assert.equal(events.at(-1).usage.successfulTurns,0);
+   assert.equal(events.at(-1).providerCode,reason==='length'?'incomplete_response':'empty_response');
    assert.equal(events.at(-1).newAttemptAllowed,true);
    assert.equal((await f.request(`/api/jobs/gateway-output/${kind}`,'POST',body)).status,409);
   }

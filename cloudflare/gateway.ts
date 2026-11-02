@@ -27,8 +27,8 @@ function safeFailure(error: unknown, fallback: string): AssistantError {
   const shouldRetry = error instanceof CailError && typeof error.extras.should_retry === 'boolean' ? error.extras.should_retry : false;
   const candidate = error instanceof CailError ? error.extras.request_id : null;
   const requestId = typeof candidate === 'string' && REQUEST_ID.test(candidate) ? candidate : fallback;
-  const message = code === 'quota_exceeded' ? 'The CAIL model usage limit has been reached. The mixer still works.'
-    : shouldRetry ? COACH_DOWN : 'The Listening Guide could not complete this request. The mixer still works.';
+  const message = code === 'quota_exceeded' ? 'The CAIL model usage limit has been reached.'
+    : shouldRetry ? COACH_DOWN : 'The Listening Guide response ended before completion.';
   const retryAfterSeconds = error instanceof CailError ? gatewayRetrySeconds(error.extras.retry_after ?? error.extras.retry_after_seconds) : undefined;
   return new AssistantError(error instanceof CailError && error.status === 429 ? 503 : 502, message, { requestId, code, shouldRetry, retryAfterSeconds });
 }
@@ -84,9 +84,10 @@ export function gatewayForRequest(binding: Fetcher | undefined, token: string | 
         const response = await client.chatCompletions({
           model, messages: params.messages.map(({ role, content }) => ({ role, content })),
           ...(params.tools?.length ? { tools: params.tools.map(tool => ({ type: tool.type, function: { ...tool.function, parameters: JSON.parse(JSON.stringify(tool.function.parameters)) } })), tool_choice: 'auto' } : {}),
-          // These short listening turns need their existing output budget for
-          // the answer. Default reasoning can exhaust it before any prose.
+          // OpenRouter and native GLM routes use different reasoning controls.
+          // Send both supported forms so short turns reach their visible answer.
           reasoning: { enabled: false },
+          ...(model === 'glm-5.2' ? { reasoning_effort: 'none' } : {}),
           stream: true, stream_options: { include_usage: true }, max_tokens: params.maxTokens, temperature: params.temperature,
         }, { kind: credentialKind, token }, { signal, correlation });
         accepted = true;

@@ -89,7 +89,12 @@ export async function startGuestSession(request: Request,env: GuestAdapterEnv): 
     tokenHash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
   }
   const now=Date.now(), day=dailyWindow().day;
-  const previous=await readGuestSession(request,env);
+  const supplied=await readGuestSession(request,env);
+  // Once its work belongs to a member, the old guest identity is retired.
+  // A browser without a member cookie can still begin new guest work; preserve
+  // the claimed records and their original allowance.
+  const claimed=supplied && await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(supplied.subject).first();
+  const previous=claimed ? null : supplied;
   const id=previous?.subject.slice(6) ?? Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
   const subject=`guest-${id}`,expiresAt=previous?.expiresAt ?? now+GUEST_SESSION_MS;
   if (!GUEST_SUBJECT.test(subject)) throw new Error('Guest subject invalid');

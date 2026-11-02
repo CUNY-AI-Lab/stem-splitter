@@ -2829,6 +2829,8 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .workspace-nav a:hover { color: var(--hot); background: transparent; }
 .refined-ui .workspace-nav a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .workspace-nav .account-nav { display: flex; align-items: center; gap: .6rem; margin: 0 0 0 auto; }
+.account-session-note { display: grid; gap: .1rem; min-width: 0; max-width: 17rem; padding-block: .35rem; font-size: .75rem; line-height: 1.4; }
+.account-session-note small { color: var(--ink-dim); font-size: inherit; }
 .workspace-nav > a[href="/account.html"] { margin-left: 0; }
 .refined-ui #dropzone { border-radius: 8px; padding: .7rem; }
 .refined-ui #dropzone .deck-slot {

@@ -18,7 +18,7 @@ export const DEFAULT_ASSISTANT_FALLBACK_MODELS = [
 ] as const;
 
 export const COACH_DOWN =
-  'The Listening Guide is unavailable right now — the mixer still works. Try again later.';
+  'The Listening Guide is temporarily unavailable; try again later.';
 export const COACH_UNCONFIGURED = "The Listening Guide isn't set up yet — tell your instructor.";
 
 /** Errors whose studentMessage is safe to show verbatim (cf. YouTubeError). */

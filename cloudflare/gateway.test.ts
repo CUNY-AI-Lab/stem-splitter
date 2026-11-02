@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gatewayForRequest } from './gateway.ts';
 import { AssistantError } from '../src/assistant/openrouter.ts';
-import { streamChat } from '../src/assistant/index.ts';
+import { streamChat, streamGuide } from '../src/assistant/index.ts';
 import type { Env } from '../src/env.ts';
 import { readFileSync } from 'node:fs';
 import { SqliteD1 } from '../server/d1.ts';
@@ -78,6 +78,7 @@ test('the private client sends one Gateway credential and drains trailing usage 
     const body = await outbound.json() as Record<string, unknown>;
     assert.equal(body.model, 'glm-5.2'); assert.equal(body.provider, undefined);
     assert.deepEqual(body.reasoning, { enabled: false });
+    assert.equal(body.reasoning_effort, 'none');
     assert.equal(body.max_tokens, params.maxTokens);
     return sse([{ choices: [{ delta: { content: 'Listen for the bass.' }, finish_reason: null }] }, finished,
       trailingError ? { error: { code: 'quota_exceeded', type: 'quota_exceeded', param: null, message: 'private provider text', cail: { request_id: id, should_retry: false } } } : { choices: [], usage: { total_tokens: 10 } }]);
@@ -115,6 +116,40 @@ test('empty and truncated streams are failures, never successful attempts or aut
   }
 });
 
+test('a Guide can finish after provider reasoning and reuse only its completed visible answer', async () => {
+  const local = new SqliteD1(':memory:');
+  local.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+  const DB = local as unknown as D1Database;
+  const row = { id: 'reasoning-guide', filename: 'Synthetic folk recording', model: 'htdemucs_ft', stems: '[{"name":"vocals"}]', labels: null };
+  await DB.prepare('INSERT INTO jobs(id,filename,source_key,status) VALUES(?,?,?,?)')
+    .bind(row.id, row.filename, 'fixture.mp3', 'done').run();
+  let calls = 0;
+  const answer = 'Listen for the vocal harmony, then solo the vocals. What changes?';
+  const transport = gatewayForRequest({ fetch: async (outbound: Request) => {
+    calls++;
+    const body = await outbound.json() as { max_tokens: number; reasoning_effort?: string };
+    assert.equal(body.reasoning_effort, 'none');
+    // A provider can retain reasoning despite the disable request. Its tokens
+    // share the completion budget, while only content belongs in the Guide.
+    const exhausted = body.max_tokens < 800;
+    return sse([
+      { choices: [{ delta: { reasoning_content: 'Synthetic internal fixture.' }, finish_reason: null }] },
+      { choices: [{ delta: { content: exhausted ? '' : answer }, finish_reason: exhausted ? 'length' : 'stop' }] },
+      { choices: [], usage: { prompt_tokens: 1732, completion_tokens: exhausted ? body.max_tokens : 800 } },
+    ]);
+  } } as unknown as Fetcher, 'gateway-leg', request(), 'test');
+  const localEnv = { ...env, DB, assistantTransport: transport.stream } as Env;
+  const deltas: string[] = [];
+  const first = await streamGuide(localEnv, row, [], 120, text => { deltas.push(text); });
+  assert.equal(first.cached, false);
+  assert.equal(first.guide.text, answer);
+  assert.deepEqual(deltas, [answer]);
+  const second = await streamGuide(localEnv, row, [], 120, () => { throw new Error('cached Guide emitted a new delta'); });
+  assert.equal(second.cached, true);
+  assert.equal(second.guide.text, answer);
+  assert.equal(calls, 1);
+});
+
 test('a cooling primary skips directly to the configured backup without recording a fictitious attempt', async t => {
   const logs: string[] = [];
   t.mock.method(console, 'log', (value: string) => logs.push(value));
@@ -126,7 +161,9 @@ test('a cooling primary skips directly to the configured backup without recordin
   await setCooldown(DB, 'gateway:glm-5.2', Date.now() + 30000);
   const models: string[] = [];
   const transport = gatewayForRequest({ fetch: async (outbound: Request) => {
-    models.push((await outbound.json() as { model: string }).model);
+    const body = await outbound.json() as { model: string; reasoning_effort?: string };
+    models.push(body.model);
+    assert.equal(body.reasoning_effort, undefined, 'GLM-specific effort stays off the backup request');
     return sse([{ choices: [{ delta: { content: 'Listen for the bass.' }, finish_reason: 'stop' }] }]);
   } } as unknown as Fetcher, 'gateway-leg', request(), 'test');
   const result = await transport.stream({ ...env, DB, ASSISTANT_OPERATION_ID: operation.id,
