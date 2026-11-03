@@ -21,6 +21,7 @@ import type { Env } from './env';
 import { splitAllowance, operationAllowance, dailyWindow, GUEST_SPLITS_PER_DAY } from './daily-allowance.ts';
 import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport, hasAutoQualityFallback } from './reliability/splits.ts';
 import { AutoOutputQualityError } from './separation/quality.ts';
+import { InsufficientLayerEvidenceError } from './separation/prominent-layers.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation, expireSplitOperations } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt, replayAssistant } from './reliability/assistant.ts';
@@ -2541,7 +2542,7 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       if(stored.some(({key})=>referenced(snapshot).has(key)))return;
       const expired=operation!==undefined && operation.deadline<=Date.now();
       if(expired)await expireSplitOperations(env.DB,Date.now(),operation.id);
-      const invalidOutput=error instanceof InvalidStemAudioError||error instanceof AutoOutputQualityError;
+      const invalidOutput=error instanceof InvalidStemAudioError||error instanceof AutoOutputQualityError||error instanceof InsufficientLayerEvidenceError;
       const failure=invalidOutput?error.message:'The finished audio could not be saved. No allowance was used.';
       const terminal=expired||invalidOutput||(env.AUTH_MODE==='cail'&&!adaptiveMode);
       await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?

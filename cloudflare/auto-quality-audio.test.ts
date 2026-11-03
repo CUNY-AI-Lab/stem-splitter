@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { composeProminentLayers } from '../src/separation/compose-layers.ts';
 import { AutoOutputQualityError, concentratedSharedEnergy, type WindowedLayerEnergy } from '../src/separation/quality.ts';
-import { NAMED_LAYERS, type SourceLayer } from '../src/separation/prominent-layers.ts';
+import { InsufficientLayerEvidenceError, NAMED_LAYERS, type SourceLayer } from '../src/separation/prominent-layers.ts';
 import type { PcmDecoder } from '../src/reliability/media.ts';
 
 const names: SourceLayer[] = [...NAMED_LAYERS, 'other'];
@@ -35,7 +35,7 @@ test('Auto uses one shared 150ms energy window, retaining sustained, dispersed, 
   assert.throws(() => concentratedSharedEnergy(invalid), /Invalid measured energy windows/);
 });
 
-function composition(shared: boolean, requested: 4 | 'auto', scale = 1, invertRight = false) {
+function composition(shared: boolean, requested: 4 | 'auto', scale = 1, invertRight = false, levels?: readonly number[]) {
   const rate = 32000, count = rate * 10, chunk = 65536;
   let writes = 0, encoders = 0;
   const run = () => composeProminentLayers({
@@ -49,7 +49,7 @@ function composition(shared: boolean, requested: 4 | 'auto', scale = 1, invertRi
         const index = bytes[0], length = Math.min(chunk, count - offset), left = new Float32Array(length), right = new Float32Array(length);
         for (let i = 0; i < length; i++) {
           const time = (offset + i) / rate;
-          const level = index === 5 ? .2 : shared ? (time >= 8.001 && time < 8.041 ? .7 : .00001) : .06;
+          const level = levels?.[index] ?? (index === 5 ? .2 : shared ? (time >= 8.001 && time < 8.041 ? .7 : .00001) : .06);
           left[i] = Math.sin((offset + i) * .045) * level * scale; right[i] = left[i] * (invertRight ? -1 : 1);
         }
         offset += length;
@@ -62,14 +62,34 @@ function composition(shared: boolean, requested: 4 | 'auto', scale = 1, invertRi
   return { run, counts: () => ({ writes, encoders }) };
 }
 
-test('streamed stereo energy requests a genuine Auto fallback before any encoding or publication', async () => {
-  for (const [scale, invert] of [[1,false],[.0001,false],[1,true]] as const) {
+test('streamed stereo energy rejects concentrated Auto output before any encoding or publication', async () => {
+  for (const [scale, invert] of [[1,false],[.01,false],[1,true]] as const) {
     const fixture = composition(true, 'auto', scale, invert);
     await assert.rejects(fixture.run(), (error: unknown) => {
       assert.ok(error instanceof AutoOutputQualityError);
       assert.equal(error.reason, 'concentrated_shared_energy');
       assert.equal(error.details.qualifyingSources, 5);
       assert.ok(Object.values(error.details).every(value => Number.isFinite(value) && value >= 0 && value <= 900.1));
+      return true;
+    });
+    assert.deepEqual(fixture.counts(), { writes: 0, encoders: 0 });
+  }
+});
+
+test('insufficient measured source energy abstains before creating encoders or writing displayed audio', async () => {
+  for (const [levels, requested, eligible] of [
+    [[0,0,0,0,0,0], 'auto', 0],
+    [[.000001,.000001,.000001,.000001,.000001,.000001], 'auto', 0],
+    [[.0001,.0001,.0001,.0001,.0001,.2], 'auto', 0],
+    [[.0001,.2,.0001,.0001,.2,.2], 'auto', 2],
+    [[.0001,.2,.0001,.0001,.2,.2], 4, 2],
+    [[.2,.2,.2,.2,.0001,.2], 'auto', 4],
+  ] as const) {
+    const fixture = composition(false, requested, 1, false, levels);
+    await assert.rejects(fixture.run(), (error: unknown) => {
+      assert.ok(error instanceof InsufficientLayerEvidenceError);
+      assert.equal(error.retryable, false);
+      assert.equal(error.details.eligibleNamedSources, eligible);
       return true;
     });
     assert.deepEqual(fixture.counts(), { writes: 0, encoders: 0 });
