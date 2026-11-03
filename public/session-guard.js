@@ -1,7 +1,12 @@
 /* Private results belong to the active browser session. Revalidation keeps
  * the original page controls in place while private regions stay concealed. */
 (() => {
-  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel, #course-discovery, #course-context';
+  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel, #course-discovery, #course-context, .resplit-dialog';
+  // Conceal private regions independently of their application-owned visibility.
+  // Upload progress and membership results can change while a check is pending.
+  const concealment = document.createElement('style');
+  concealment.textContent = `html.stem-session-checking :is(${privateSelectors}) { display: none !important; }`;
+  document.head.appendChild(concealment);
   const originalFetch = window.fetch.bind(window);
   let subject = null, clearing = false, checking = null, suspended = false;
   let cleanup = () => {}, pause = () => {};
@@ -69,11 +74,12 @@
   function suspend() {
     if (!suspended) {
       suspended = true;
+      document.documentElement.classList.add('stem-session-checking');
       regions = [...document.querySelectorAll(privateSelectors)].map(element => ({
-        element, hidden: element.hidden, inert: element.inert, display: element.style.display,
+        element, inert: element.inert,
       }));
       for (const { element } of regions) {
-        element.hidden = true; element.inert = true; element.style.display = 'none';
+        element.inert = true;
       }
     }
     try { pause(); } catch { /* Concealment remains available if a player has ended. */ }
@@ -93,9 +99,10 @@
 
   function restore() {
     if (!suspended || clearing) return;
-    for (const { element, hidden, inert, display } of regions) {
-      element.hidden = hidden; element.inert = inert; element.style.display = display;
+    for (const { element, inert } of regions) {
+      element.inert = inert;
     }
+    document.documentElement.classList.remove('stem-session-checking');
     regions = []; suspended = false;
     if (recovery) {
       const { message, retry, text, hidden, retryHidden, retryDisabled } = recovery;
