@@ -12,6 +12,9 @@ import { hasAutoQualityFallback, operationWebhook, recoverCallback, reconcileSpl
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { runReliableJobs, resumeAdaptiveOutput } from '../src/index.ts';
 import { AutoOutputQualityError } from '../src/separation/quality.ts';
+import { composeProminentLayers } from '../src/separation/compose-layers.ts';
+import { InsufficientLayerEvidenceError } from '../src/separation/prominent-layers.ts';
+import type { PcmDecoder } from '../src/reliability/media.ts';
 import { membershipFixture, courseFixture } from './course-fixture.ts';
 import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 
@@ -201,3 +204,74 @@ test('failed quality check releases allowance and staged audio without another p
   assert.deepEqual((await f.env.AUDIO.list()).objects.map(object => object.key), [f.key]);
   assert.equal((await f.allowance()).completed, 0);
 });
+
+for (const scope of ['guest', 'personal-member', 'course-member'] as const) {
+  for (const requested of [4, 'auto'] as const) test(`insufficient layer evidence settles ${scope} ${requested} without publishing or restarting`, async t => {
+    const f = await setup(t, scope === 'guest', scope === 'course-member' ? STEM_COURSE_ID : null);
+    await f.db.prepare("UPDATE jobs SET status='processing',error=NULL,routing_request=? WHERE id=?")
+      .bind(`adaptive:${requested}`, f.id).run();
+    await f.db.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE id=?').bind(f.id).run();
+    let encoders = 0, displayWrites = 0, sourceDownloads = 0, polls = 0;
+    let evidence: InsufficientLayerEvidenceError | undefined;
+    f.env.composeStemAudio = async input => {
+      let decoders = 0;
+      try {
+        return await composeProminentLayers({ ...input,
+          // Deterministic PCM simulates two above-floor estimates. Actual
+          // composition still opens the staged streams and measures all six.
+          createDecoder: () => {
+            const name = input.sources[decoders++].name;
+            let decoded = false;
+            return { ready: Promise.resolve(), free() {}, decode() {
+              const length = decoded ? 0 : 32000;
+              decoded = true;
+              const samples = new Float32Array(length).fill(['drums','piano','other'].includes(name) ? .2 : .0001);
+              return { errors: [], channelData: [samples, samples], samplesDecoded: length, sampleRate: 32000 };
+            } } satisfies PcmDecoder;
+          },
+          createEncoder: () => { encoders++; assert.fail('An abstaining plan must not create an encoder'); },
+          write: async (name, bytes) => { displayWrites++; return input.write(name, bytes); },
+        });
+      } catch (error) {
+        assert.ok(error instanceof InsufficientLayerEvidenceError);
+        evidence = error;
+        throw error;
+      }
+    };
+    t.mock.method(globalThis, 'fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+      assert.notEqual(init?.method, 'POST', 'an existing prediction must never be restarted');
+      if (String(url).startsWith('https://api.replicate.com/')) {
+        polls++;
+        return Response.json({ id: 'six-prediction', status: 'succeeded', output: Object.fromEntries(
+          names.map(name => [name, `https://fixture.replicate.delivery/${name}.mp3`])) });
+      }
+      sourceDownloads++;
+      return new Response(f.bytes);
+    });
+    assert.equal(await resumeAdaptiveOutput(f.env, f.id), true);
+    const job = await f.db.prepare('SELECT status,model,stems,error FROM jobs WHERE id=?').bind(f.id).first<any>();
+    assert.equal(job.status, 'failed');
+    assert.equal(job.model, 'htdemucs_6s');
+    assert.equal(job.stems, null);
+    assert.equal(job.error, evidence!.message);
+    assert.equal(evidence!.details.eligibleNamedSources, 2);
+    assert.equal(evidence!.retryable, false);
+    const operation = (await readOperation(f.db, f.id))!;
+    assert.equal(operation.state, 'failed');
+    assert.equal(operation.provider_id, 'six-prediction');
+    assert.equal(operation.lease_owner, null);
+    assert.equal(operation.lease_until, 0);
+    assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<any>()).n, 1);
+    assert.deepEqual({ encoders, displayWrites, sourceDownloads, polls }, { encoders: 0, displayWrites: 0, sourceDownloads: 6, polls: 1 });
+    assert.deepEqual((await f.env.AUDIO.list()).objects.map(object => object.key), [f.key]);
+    assert.equal((await f.allowance()).completed, 0);
+    assert.equal((await f.allowance()).inProgress, 0);
+    assert.equal((await f.db.prepare("SELECT COUNT(*) AS n FROM operation_events WHERE operation_id=? AND quota_effect='charged'")
+      .bind(f.id).first<any>()).n, 0);
+    t.mock.method(globalThis, 'fetch', async () => assert.fail('Terminal replay must not contact a provider'));
+    assert.equal(await resumeAdaptiveOutput(f.env, f.id), true);
+    await runReliableJobs(f.env);
+    assert.equal((await readOperation(f.db, f.id))!.state, 'failed');
+    assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<any>()).n, 1);
+  });
+}

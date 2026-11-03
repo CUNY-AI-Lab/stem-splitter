@@ -18,10 +18,33 @@ export interface ProminentLayerPlan {
   model: string;
 }
 
+export interface InsufficientLayerEvidenceDetails {
+  requested: 4 | 'auto';
+  parts: 2 | 4 | 6;
+  requiredNamedSources: number;
+  eligibleNamedSources: number;
+  floorDb: number;
+}
+
+/** This failure is final for these separator estimates. Retrying composition
+ * cannot supply missing evidence and must never start another provider. */
+export class InsufficientLayerEvidenceError extends Error {
+  readonly reason = 'insufficient_named_source_energy';
+  readonly retryable = false;
+  readonly details: InsufficientLayerEvidenceDetails;
+  constructor(details: InsufficientLayerEvidenceDetails) {
+    super('The separator returned too few named estimates above the signal threshold for this split. Your split allowance is unchanged. Choose another split option.');
+    this.name = 'InsufficientLayerEvidenceError';
+    this.details = details;
+  }
+}
+
 /** Explicit four selects three named sources and a combined remainder. Auto
  * keeps six when more than three named sources carry substantial signal. A
  * source below -90 dBFS or 24 dB below the strongest source does not force an
- * extra displayed layer. Every source remains in exactly one output. */
+ * extra displayed layer. Abstain if the chosen partition needs more named
+ * estimates than meet that floor. Every accepted source remains in exactly
+ * one output; energy is not evidence of an instrument's identity. */
 export function prominentLayerPlan(energy: readonly LayerEnergy[], requested: 4 | 'auto'): ProminentLayerPlan {
   const names: SourceLayer[] = [...NAMED_LAYERS, 'other'];
   if (energy.length !== 6 || new Set(energy.map(e => e.name)).size !== 6 ||
@@ -35,10 +58,13 @@ export function prominentLayerPlan(energy: readonly LayerEnergy[], requested: 4 
   const ranked = NAMED_LAYERS.map(name => energy.find(e => e.name === name)!)
     .sort((a, b) => b.rmsDb - a.rmsDb || NAMED_LAYERS.indexOf(a.name as NamedLayer) - NAMED_LAYERS.indexOf(b.name as NamedLayer));
   const floor = Math.max(-90, Math.max(...energy.map(e => e.rmsDb)) - 24);
-  const substantial = ranked.filter(e => e.rmsDb >= floor).length;
-  const parts = requested === 4 ? 4 : substantial > 3 ? 6 : substantial <= 1 ? 2 : 4;
+  const eligible = ranked.filter(e => e.rmsDb >= floor);
+  const parts = requested === 4 ? 4 : eligible.length > 3 ? 6 : eligible.length <= 1 ? 2 : 4;
+  if (eligible.length < parts - 1) throw new InsufficientLayerEvidenceError({
+    requested, parts, requiredNamedSources: parts - 1, eligibleNamedSources: eligible.length, floorDb: floor,
+  });
   if (parts === 6) return { parts, selected: names, remainder: [], model: 'htdemucs_6s' };
-  const chosen = new Set(ranked.slice(0, parts - 1).map(e => e.name));
+  const chosen = new Set(eligible.slice(0, parts - 1).map(e => e.name));
   const selected = NAMED_LAYERS.filter(name => chosen.has(name));
   return { parts, selected, remainder: names.filter(name => !chosen.has(name)),
     model: `adaptive_${parts}__${selected.join('_')}` };
