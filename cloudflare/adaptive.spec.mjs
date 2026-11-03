@@ -96,3 +96,25 @@ test('new splitting sessions default to Auto, preserve explicit/saved choices an
   await explicit.check();await auto.check();await page.reload();await expect(auto).toBeChecked();
  }finally{await f.close();}
 });
+
+test('Auto explains its two-part choice while waiting for a slot and preparing the fallback',async({page,context})=>{
+ const f=await fixture(context,page),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const id='00000000-0000-4000-8000-000000000042';
+ let state={id,filename:'Auto choice fixture',status:'queued',model:'vocals_instrumental',adaptiveOutput:'auto',stems:[],expectedStems:['vocals','instrumental'],createdAt:new Date().toISOString(),operation:{phase:'split',stage:'queued',errorCode:'auto_quality_fallback'}};
+ try{
+  await page.route(`**/api/jobs/${id}`,route=>route.fulfill({json:state}));
+  const note=page.locator(`[data-job-id="${id}"] .job-note`);
+  for(const stage of ['queued','waiting_capacity']){
+   state={...state,operation:{phase:'split',stage,errorCode:'auto_quality_fallback'}};
+   await page.goto(new URL(`/?job=${id}`,f.url).href);
+   await expect(note).toHaveText('Auto chose 2 splits. Waiting for an available processing slot to prepare voice and accompaniment…');
+  }
+  state={...state,status:'processing',operation:{phase:'split',stage:'processing',errorCode:null}};
+  await page.reload();await expect(note).toHaveText('Auto chose 2 splits. Preparing voice and accompaniment…');
+  state={...state,model:'htdemucs_6s',expectedStems:names};
+  await page.reload();await expect(note).toHaveText('Finding the strongest musical layers…');
+  state={...state,status:'queued',operation:{phase:'fetch',stage:'retry_wait',errorCode:'browser_import_fallback'}};
+  await page.reload();await expect(note).toHaveText('A temporary browser import failed. Waiting to try the hosted importer…');
+  expect(f.starts()).toBe(0);expect(errors).toEqual([]);
+ }finally{await f.close();}
+});

@@ -4233,8 +4233,15 @@ function renderJobs() {
     const operation = state.operation;
     const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(operation?.stage);
     const importing = operation?.phase === 'fetch';
+    const autoTwoParts = (state.adaptiveOutput === 'auto' || job.adaptiveOutput === 'auto') && (state.model || job.model) === 'vocals_instrumental';
     const progressLabel = checking ? 'CHECKING STATUS' : queued ? 'QUEUED' : importing ? 'IMPORTING' : 'SEPARATING';
-    const progressNote = checking ? 'Checking the saved run’s current status…' : queued ? operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…' : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…' : importing ? 'Downloading and checking the source audio before separation…' : state.adaptiveOutput || job.adaptiveOutput ? 'Finding the strongest musical layers…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
+    const progressNote = checking ? 'Checking the saved run’s current status…'
+      : queued ? operation?.errorCode === 'auto_quality_fallback' ? 'Auto chose 2 splits. Waiting for an available processing slot to prepare voice and accompaniment…'
+        : operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…'
+        : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…'
+      : importing ? 'Downloading and checking the source audio before separation…'
+      : autoTwoParts ? 'Auto chose 2 splits. Preparing voice and accompaniment…'
+      : state.adaptiveOutput || job.adaptiveOutput ? 'Finding the strongest musical layers…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
     // A silent wait reads as a hung wait. The clock is the server's own start
     // time once polling has one, and the local one until then.
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();
