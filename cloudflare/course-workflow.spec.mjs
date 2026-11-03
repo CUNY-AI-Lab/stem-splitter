@@ -271,3 +271,43 @@ test('membership refresh fences old responses, blocks creation while checking an
   expect((await page.request.get(new URL('/api/jobs/personal-kept',f.url).href)).status()).toBe(200);
  } finally {await f.close();}
 });
+
+for (const classSplit of [false,true]) test(`a file selected during session refresh starts once in ${classSplit?'the acknowledged class':'Personal without course enrollment'}`,async({browser})=>{
+ const f=await fixture(browser);
+ try {
+  const page=await f.pageFor(TEST_SUBJECTS.alice);
+  const courses=classSplit?[{classId:course,className:'Music',term:'Fall',section:'01'}]:[];
+  let release,started,hold=false;
+  const waiting=new Promise(resolve=>release=resolve),ready=new Promise(resolve=>started=resolve);
+  await page.route('**/api/classroom/courses',async route=>{
+   if(hold){started();await waiting;}
+   await route.fulfill({json:{courses,nextCursor:null}});
+  });
+  await page.goto(new URL(classSplit?`/?course=${course}`:'/',f.url).href);
+  await expect(page.getByLabel('Share with')).toBeEnabled();
+  if(classSplit)await page.locator('#course-work-ack').check();
+  let uploads=0,starts=0,received;
+  await page.route('**/api/uploads',route=>{uploads++;return route.fulfill({json:{key:'uploads/picker.mp3',uploadUrl:new URL('/picker-audio',f.url).href}});});
+  await page.route('**/picker-audio',route=>route.fulfill({status:200,body:''}));
+  await page.route('**/api/jobs',route=>{
+   if(route.request().method()!=='POST')return route.continue();
+   starts++;received=route.request().headers();
+   return route.fulfill({status:503,json:{error:'Fixture provider unavailable. Retry this split.'}});
+  });
+  hold=true;
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));await ready;
+  const audio={name:'Tab Steps Out.mp3',mimeType:'audio/mpeg',buffer:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))};
+  await page.locator('#file-input').setInputFiles(audio);
+  await page.locator('#file-input').setInputFiles(audio);
+  expect(uploads).toBe(0);expect(starts).toBe(0);
+  release();
+  await expect.poll(()=>starts).toBe(1);
+  expect(uploads).toBe(1);
+  expect(received['x-stem-course']).toBe(classSplit?course:'personal');
+  await expect(page.locator('#upload-message')).toBeVisible();
+  await expect(page.locator('#upload-message')).toContainText('Fixture provider unavailable');
+  // A later focus check must retain the current feedback when it restores the page.
+  await page.evaluate(()=>dispatchEvent(new Event('focus')));
+  await expect(page.locator('#upload-message')).toBeVisible();
+ } finally {await f.close();}
+});

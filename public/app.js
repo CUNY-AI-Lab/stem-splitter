@@ -223,11 +223,18 @@ async function ensureClassCode() {
 let selectedCourse = 'personal';
 let courseAcknowledgment = null;
 let courseSelectionPending = false, courseSelectionSequence = 0;
+let courseSelectionReady = Promise.resolve();
 function creationCourse() {
   if (courseSelectionPending) throw new Error('Checking your class access. Try again shortly.');
   if (!selectedCourse) throw new Error('Choose a workspace for this split.');
   if (selectedCourse !== 'personal' && !courseAcknowledgment?.checked) throw new Error('Confirm the course-work disclosure before creating a class split.');
   return selectedCourse;
+}
+async function waitForCreationCourse() {
+  // Returning from a native file picker refreshes membership on window focus.
+  // Keep the selected file while that refresh confirms its destination.
+  while (courseSelectionPending) await courseSelectionReady;
+  return creationCourse();
 }
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
@@ -287,8 +294,8 @@ async function initializeCourseSelection() {
       if (sequence === courseSelectionSequence && accountSubject === subject) { courseSelectionPending = false; select.disabled = false; }
     }
   };
-  addEventListener('focus', () => void refresh());
-  await refresh();
+  addEventListener('focus', () => { courseSelectionReady = refresh(); });
+  await (courseSelectionReady = refresh());
 }
 
 async function splitRequestKey(body, course = 'personal') {
@@ -1458,9 +1465,12 @@ function formatList(values) {
   return `${values.slice(0, -1).join(', ')}, or ${values.at(-1)}`;
 }
 
-dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('click', () => { if (!fileUploadInProgress) fileInput.click(); });
 dropzone.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') fileInput.click();
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (!fileUploadInProgress) fileInput.click();
+  }
 });
 fileInput.addEventListener('change', () => {
   if (fileInput.files.length) handleFile(fileInput.files[0]);
@@ -1513,7 +1523,7 @@ ytForm.addEventListener('submit', async (e) => {
   let followUpQuery = '';
   try {
     await appReady;
-    const courseContext = creationCourse();
+    const courseContext = await waitForCreationCourse();
     const imports = song ? null : await api('/api/import-options');
     if (imports?.linkRouter) {
       // Only direct files and share links become jobs; YouTube links turn into
@@ -1583,23 +1593,29 @@ function linkGuidance(link) {
   return 'Paste a public HTTPS link to an audio file, or search for a song.';
 }
 
+let fileUploadInProgress = false;
 async function handleFile(file, settings = {}) {
-  if (file.size > 100 * 1024 * 1024) {
-    showUploadMessage('File too large (max 100 MB).', true);
-    return;
-  }
-  if (!(await fileIsReadable(file))) {
-    showUploadMessage(UNREADABLE_FILE_MESSAGE, true);
-    return;
-  }
-
-  uploadStatus.hidden = false;
-  progressBar.style.width = '0%';
-  showUploadMessage(`UPLOADING ${file.name}…`);
-
+  if (fileUploadInProgress) return;
+  fileUploadInProgress = true;
+  dropzone.setAttribute('aria-busy', 'true');
+  dropzone.setAttribute('aria-disabled', 'true');
+  showUploadMessage(`PREPARING ${file.name}…`);
   try {
+    if (file.size > 100 * 1024 * 1024) {
+      showUploadMessage('File too large (max 100 MB).', true);
+      return;
+    }
+    if (!(await fileIsReadable(file))) {
+      showUploadMessage(UNREADABLE_FILE_MESSAGE, true);
+      return;
+    }
+
+    uploadStatus.hidden = false;
+    progressBar.style.width = '0%';
+
     await appReady;
-    const courseContext = settings.courseContext || creationCourse();
+    const courseContext = settings.courseContext || await waitForCreationCourse();
+    showUploadMessage(`UPLOADING ${file.name}…`);
     let input = settings.retryState?.input;
     if (!input) {
       const chosen = settings.model || await requireSelectedModel();
@@ -1632,6 +1648,10 @@ async function handleFile(file, settings = {}) {
     return job;
   } catch (err) {
     showUploadMessage(err.message, true);
+  } finally {
+    fileUploadInProgress = false;
+    dropzone.removeAttribute('aria-busy');
+    dropzone.removeAttribute('aria-disabled');
   }
 }
 
@@ -1666,7 +1686,7 @@ async function chooseStemResplit(mixer, stem) {
     await appReady;
     await separationOptionsReady;
     if (!dialog.isConnected) return;
-    const courseContext = creationCourse();
+    const courseContext = await waitForCreationCourse();
     // Use exactly the choices the server made available on this page.
     for (const input of stemChoice.querySelectorAll('input[name="stem-model"]')) {
       const model = catalogueModels.find(model => model.id === input.value);

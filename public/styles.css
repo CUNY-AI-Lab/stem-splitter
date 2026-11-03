@@ -2851,6 +2851,7 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui #dropzone .deck-arrow { font-size: .65rem; animation: none; }
 .refined-ui #dropzone .deck-meta { margin-top: .6rem; color: var(--ink-dim); font-size: .62rem; letter-spacing: .035em; }
 .refined-ui #dropzone:hover, .refined-ui #dropzone:focus-visible { transform: none; }
+.refined-ui #dropzone[aria-busy="true"] { cursor: progress; opacity: .7; }
 .refined-ui #course-context { display: grid; grid-template-columns: auto minmax(0, max-content); justify-content: start; align-items: center; gap: .5rem .75rem; margin-bottom: .75rem; }
 .refined-ui #course-context > label { color: var(--ink-dim); font-size: .8rem; }
 .refined-ui #course-context .course-choice { display: inline-grid; justify-self: start; min-width: 0; max-width: 100%; font: .8rem var(--font-body); }
@@ -2901,8 +2902,8 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .workspace-nav:has(.account-nav.is-guest) { grid-template-columns: repeat(3, max-content) 1fr; gap: 0 .65rem; }
   .workspace-nav .account-nav.is-guest { grid-column: auto; justify-self: end; padding-inline: .4rem; font-size: .68rem; }
   .workspace-nav .account-nav.is-guest .account-button { flex: initial; }
-  .refined-ui #course-context { grid-template-columns: minmax(0, 1fr); gap: .35rem; }
-  .refined-ui #course-context .course-choice { font-size: 1rem; }
+  .refined-ui #course-context { grid-template-columns: auto minmax(0, 1fr); gap: .5rem; }
+  .refined-ui #course-context .course-choice { font-size: .875rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
   .account-allowances { grid-template-columns: 1fr; }
   .account-allowances section { padding: .85rem 1rem; }
