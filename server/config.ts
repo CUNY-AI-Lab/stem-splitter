@@ -13,6 +13,7 @@ export type OptionalServiceConfigurationStatus =
 type RuntimeConfig = Pick<
   Env,
   | 'REPLICATE_API_TOKEN'
+  | 'REPLICATE_FALLBACK_API_TOKEN'
   | 'REPLICATE_YT_MODEL'
   | 'REPLICATE_YT_MODEL_VERSION'
   | 'AUDIO_ANALYSIS_URL'
@@ -35,7 +36,7 @@ function enabled(value: string | undefined): boolean {
 export function youtubeImportStatus(env: RuntimeConfig): OptionalServiceConfigurationStatus {
   const model = env.REPLICATE_YT_MODEL ?? '';
   const version = env.REPLICATE_YT_MODEL_VERSION ?? '';
-  const token = env.REPLICATE_API_TOKEN ?? '';
+  const token = env.REPLICATE_API_TOKEN || env.REPLICATE_FALLBACK_API_TOKEN || '';
   const count = [model, version, token].filter(Boolean).length;
   if (count === 0) return 'unconfigured';
   if (count < 3) return 'incomplete';

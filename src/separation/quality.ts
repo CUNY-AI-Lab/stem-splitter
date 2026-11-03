@@ -15,20 +15,19 @@ export type AutoQualityDetails = {
   minimumEnergyFraction: number;
 };
 
-export class AutoQualityFallbackError extends Error {
+export class AutoOutputQualityError extends Error {
   readonly reason = 'concentrated_shared_energy';
   readonly details: AutoQualityDetails;
   constructor(details: AutoQualityDetails) {
-    super('Auto is trying a two-part separation.');
-    this.name = 'AutoQualityFallbackError';
+    super('The audio separation failed its quality check. Your split allowance is unchanged. Choose a split option and try again.');
+    this.name = 'AutoOutputQualityError';
     this.details = details;
   }
 }
 
-/** A single shared event carrying most of four named estimates provides weak
- * support for six useful parts. Prefer a fresh conventional two-part separation
- * for Auto. This is a conservative output choice, not proof of corrupt audio.
- * Stereo energy keeps the decision invariant to level and channel polarity. */
+/** Detect concentrated shared energy in an experimental adaptive result.
+ * A failed quality check ends the operation; it never changes the selected
+ * model or infers instrument presence. Stereo energy preserves polarity. */
 export function concentratedSharedEnergy(measured: readonly WindowedLayerEnergy[]): AutoQualityDetails | null {
   const duration = Math.min(...measured.map(({ energy }) => energy.samples / energy.sampleRate));
   for (const { energy, windows } of measured) {

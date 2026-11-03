@@ -1,6 +1,6 @@
 import type { PcmDecoder } from '../reliability/media.ts';
 import { prominentLayerPlan, type LayerEnergy, type SourceLayer, type ProminentLayerPlan } from './prominent-layers.ts';
-import { AutoQualityFallbackError, concentratedSharedEnergy, ENERGY_WINDOW_SECONDS, type WindowedLayerEnergy } from './quality.ts';
+import { AutoOutputQualityError, concentratedSharedEnergy, ENERGY_WINDOW_SECONDS, type WindowedLayerEnergy } from './quality.ts';
 
 export interface EncodedLayerSource {
   name: SourceLayer;
@@ -139,7 +139,7 @@ export async function composeProminentLayers(input: {
   const plan = prominentLayerPlan(energy, input.requested);
   if (input.requested === 'auto') {
     const quality = concentratedSharedEnergy(measured);
-    if (quality) throw new AutoQualityFallbackError(quality);
+    if (quality) throw new AutoOutputQualityError(quality);
   }
   if (plan.parts === 6) return { plan, energy, gain: 1, stored: [] };
   const group = (names: SourceLayer[]) => names.map(name => {

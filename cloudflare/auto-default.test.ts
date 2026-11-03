@@ -36,7 +36,10 @@ test('omitted new requests choose enabled Auto while explicit choices and queued
  assert.equal((await db.prepare('SELECT routing_request FROM jobs WHERE id=?').bind(automatic.operation.job_id).first<any>())!.routing_request,'adaptive:auto');
  assert.equal((await db.prepare('SELECT routing_request FROM jobs WHERE id=?').bind(explicit.operation.job_id).first<any>())!.routing_request,'adaptive:4');
  await assert.rejects(reserve('unsupported'),(error:any)=>error.code==='invalid_model');
- env.ADAPTIVE_FOUR_ENABLED='false';const fallback=await reserve();assert.equal(JSON.parse(fallback.operation.request_json).model,'htdemucs_ft');
+ env.ADAPTIVE_FOUR_ENABLED='false';
+ await assert.rejects(reserve('auto'),(error:any)=>error.code==='invalid_model');
+ await assert.rejects(reserve('adaptive_four'),(error:any)=>error.code==='invalid_model');
+ const fallback=await reserve();assert.equal(JSON.parse(fallback.operation.request_json).model,'htdemucs_ft');
  // The API and omitted request agree for existing authoritative, shadow and off routes.
  for(const mode of ['authoritative','shadow','off']){
   env.SERVER_AUTO_ENABLED=mode==='off'?'false':'true';env.SERVER_AUTO_MODE=mode;

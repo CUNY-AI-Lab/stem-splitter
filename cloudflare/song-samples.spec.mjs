@@ -6,8 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {setupServer} from 'msw/node';
 import {http,HttpResponse} from 'msw';
 import {schemaStatements} from '../tests/e2e/schema-statements.mjs';
-async function fixture(){
- const issuer=await createTestIdentityIssuer();const harness=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,TEST_BROWSER:'true'}}]});
+async function fixture(vars={}){
+ const issuer=await createTestIdentityIssuer();const harness=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,TEST_BROWSER:'true',...vars}}]});
  const {url}=await harness.listen();await harness.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')))});
  return {harness,url,admin:await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.carol}),student:await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice})};
 }
@@ -244,7 +244,7 @@ test('open audio selector keeps provider search and submitted recording IDs toge
 });
 
 for (const submitAction of ['Enter','Fetch']) test(`Tab accepts the verified sample and ${submitAction} starts one split with immediate pending feedback`,async({page,context})=>{
- const f=await fixture(),errors=[],requests=[];page.on('pageerror',error=>errors.push(error.message));
+ const f=await fixture({TEST_NO_COURSES:'true'}),errors=[],requests=[],keys=[];page.on('pageerror',error=>errors.push(error.message));
  const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'verified-suggestion',archiveFile:'exact-recording.mp3'};
  const query=`${track.artist} ${track.title}`;
  let release;const pending=new Promise(resolve=>{release=resolve;});
@@ -255,13 +255,16 @@ for (const submitAction of ['Enter','Fetch']) test(`Tab accepts the verified sam
   await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[{...track,id:'verified-suggestion/exact-recording.mp3',durationSec:30,bytes:100000,sourceUrl:'https://archive.org/details/verified-suggestion'}]}}));
   await page.route('**/api/jobs',async route=>{
    if(route.request().method()!=='POST')return route.continue();
-   requests.push(route.request().postDataJSON());await pending;
+   requests.push(route.request().postDataJSON());keys.push(route.request().headers()['idempotency-key']);await pending;
    return route.fulfill({status:503,json:{error:'Fixture import unavailable. Try again.'}});
   });
-  await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
+  await page.goto(f.url.href);
+  await expect(page.getByLabel('Share with')).toBeHidden();
   const input=page.locator('#yt-url'),button=page.locator('#yt-form .yt-go'),form=page.locator('#yt-form');
   await expect(input).toHaveAttribute('placeholder',query);await input.focus();await input.press('Tab');
   await expect(input).toHaveValue(query);await expect(input).toBeFocused();
+  await page.route('**/api/music/search?*',route=>route.abort());
+  // The accepted recording is sufficient even while a later search is unavailable.
   if(submitAction==='Enter')await input.press('Enter');else await button.click();
   await expect(button).toHaveText('FETCHING…',{timeout:1500});
   await expect(button).toBeDisabled();await expect(input).toBeDisabled();await expect(form).toHaveAttribute('aria-busy','true');
@@ -277,7 +280,7 @@ for (const submitAction of ['Enter','Fetch']) test(`Tab accepts the verified sam
   await expect(input).toBeEnabled();await expect(button).toBeEnabled();await expect(button).toHaveText('FETCH');await expect(form).not.toHaveAttribute('aria-busy','true');
   // A subsequent deliberate retry remains available after an unsuccessful response.
   await button.click();await expect.poll(()=>requests.length).toBe(2);
-  expect(requests[1]).toEqual(requests[0]);await expect(button).toBeEnabled();expect(errors).toEqual([]);
+  expect(requests[1]).toEqual(requests[0]);expect(keys[1]).toBe(keys[0]);await expect(button).toBeEnabled();expect(errors).toEqual([]);
  }finally{release();await f.harness.close();}
 });
 
@@ -296,5 +299,31 @@ for(const changed of ['text','provider'])test(`editing the accepted sample ${cha
   else{await page.getByLabel('Audio source',{exact:true}).selectOption('commons');await page.getByLabel('Audio source',{exact:true}).selectOption('archive');}
   await button.click();await expect(page.locator('#source-songs [role="option"]')).toBeVisible();await expect(button).toBeEnabled();expect(creates).toBe(0);
   await page.locator('#source-songs [role="option"]').click();await button.click();await expect.poll(()=>creates).toBe(1);await expect(button).toBeEnabled();
+ }finally{await f.harness.close();}
+});
+
+for(const saved of ['auto','adaptive_four','htdemucs_6s'])test(`manual-only catalog resolves saved ${saved} and submits the selected model`,async({page,context})=>{
+ const f=await fixture({TEST_NO_COURSES:'true'}),errors=[];let submitted;
+ page.on('pageerror',error=>errors.push(error.message));
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
+  await page.addInitScript(value=>localStorage.setItem('stem-split-choice-v1',value),saved);
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:0,tracks:[]}}));
+  await page.route('**/api/jobs',route=>{
+   if(route.request().method()!=='POST')return route.continue();
+   submitted=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Fixture stops before provider submission.'}});
+  });
+  await page.goto(f.url.href);
+  await expect(page.getByRole('radio')).toHaveCount(3);
+  await expect(page.locator('input[value="auto"]')).toHaveCount(0);
+  await expect(page.locator('input[value="adaptive_four"]')).toHaveCount(0);
+  const catalog=await(await f.harness.fetch('/api/separation-options')).json();
+  const selected=saved==='htdemucs_6s'?saved:catalog.defaultModel;
+  await expect(page.locator(`input[value="${selected}"]`)).toBeChecked();
+  await expect(page.getByLabel('Share with')).toBeHidden();
+  await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav',import.meta.url)));
+  await expect.poll(()=>submitted?.model).toBe(selected);
+  expect(submitted.routingRequest).toBeUndefined();expect(submitted.browserAnalysis).toBeUndefined();
+  expect(errors).toEqual([]);
  }finally{await f.harness.close();}
 });

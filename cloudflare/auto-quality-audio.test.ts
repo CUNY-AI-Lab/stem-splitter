@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { composeProminentLayers } from '../src/separation/compose-layers.ts';
-import { AutoQualityFallbackError, concentratedSharedEnergy, type WindowedLayerEnergy } from '../src/separation/quality.ts';
+import { AutoOutputQualityError, concentratedSharedEnergy, type WindowedLayerEnergy } from '../src/separation/quality.ts';
 import { NAMED_LAYERS, type SourceLayer } from '../src/separation/prominent-layers.ts';
 import type { PcmDecoder } from '../src/reliability/media.ts';
 
@@ -66,7 +66,7 @@ test('streamed stereo energy requests a genuine Auto fallback before any encodin
   for (const [scale, invert] of [[1,false],[.0001,false],[1,true]] as const) {
     const fixture = composition(true, 'auto', scale, invert);
     await assert.rejects(fixture.run(), (error: unknown) => {
-      assert.ok(error instanceof AutoQualityFallbackError);
+      assert.ok(error instanceof AutoOutputQualityError);
       assert.equal(error.reason, 'concentrated_shared_energy');
       assert.equal(error.details.qualifyingSources, 5);
       assert.ok(Object.values(error.details).every(value => Number.isFinite(value) && value >= 0 && value <= 900.1));

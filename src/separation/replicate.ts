@@ -1,3 +1,4 @@
+import { replicateRequest } from '../replicate-http.ts';
 import type { Env } from '../env';
 import { DEFAULT_DEMUCS_MODEL, getReplicateRunner, replicateVersion } from './options';
 import type { SeparationBackend, SeparationResult, SeparationStartRequest } from './types';
@@ -31,7 +32,7 @@ export async function cancelReplicatePrediction(env: Env, externalId: string): P
   const headers = { Authorization: `Bearer ${env.REPLICATE_API_TOKEN}` };
   const terminal = async () => {
     let response: Response;
-    try { response = await fetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
+    try { response = await replicateRequest(env, url, { headers, redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
     catch { throw new UpstreamError('provider_cancel_uncertain', 'uncertain'); }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
@@ -47,7 +48,7 @@ export async function cancelReplicatePrediction(env: Env, externalId: string): P
   // A completion that beat cancellation needs no cancel POST or output download.
   if (await terminal()) return true;
   let response: Response;
-  try { response = await fetch(`${url}/cancel`, { method: 'POST', headers,
+  try { response = await replicateRequest(env, `${url}/cancel`, { method: 'POST', headers,
     redirect: 'manual', signal: AbortSignal.timeout(10000) }); }
   catch { throw new UpstreamError('provider_cancel_uncertain', 'uncertain'); }
   await response.body?.cancel().catch(() => undefined);
@@ -88,7 +89,7 @@ export function replicateBackend(env: Env): SeparationBackend {
         throw new Error(`${runner.versionVar} is not configured`);
       }
       let res: Response;
-      try { res = await fetch(`${API}/predictions`, {
+      try { res = await replicateRequest(env, `${API}/predictions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -126,7 +127,7 @@ export function replicateBackend(env: Env): SeparationBackend {
 
     async fetchStatus(externalId: string): Promise<SeparationResult> {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(externalId)) throw new Error('Invalid prediction identifier');
-      const res = await fetch(`${API}/predictions/${externalId}`, { headers, redirect: 'manual', signal: AbortSignal.timeout(20000) });
+      const res = await replicateRequest(env, `${API}/predictions/${externalId}`, { headers, redirect: 'manual', signal: AbortSignal.timeout(20000) });
       if (!res.ok) {
         await res.body?.cancel().catch(() => undefined);
         throw new UpstreamError('provider_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0);
@@ -138,7 +139,7 @@ export function replicateBackend(env: Env): SeparationBackend {
 
     async confirmStart(externalId: string, webhookUrl: string, version: string): Promise<boolean> {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(externalId)) return false;
-      const res=await fetch(`${API}/predictions/${externalId}`,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});
+      const res=await replicateRequest(env, `${API}/predictions/${externalId}`,{headers,redirect:'manual',signal:AbortSignal.timeout(20000)});
       if (!res.ok) { await res.body?.cancel();if(res.status===429)throw new UpstreamError('provider_poll_unavailable','uncertain',429,retryAt(res.headers.get('retry-after'))); return false; }
       const prediction=await predictionJson(res);
       return prediction.id===externalId && prediction.webhook===webhookUrl && prediction.version===version;

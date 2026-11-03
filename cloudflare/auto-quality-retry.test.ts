@@ -8,14 +8,14 @@ import { FsR2Bucket } from '../server/r2.ts';
 import type { Env } from '../src/env.ts';
 import { beginAttempt, finishAttempt, readOperation, reserveOperation } from '../src/reliability/ledger.ts';
 import { cancelOperation, claimNext, recoverExpired, transition } from '../src/reliability/queue.ts';
-import { hasAutoQualityFallback, operationWebhook, queueAutoQualityFallback, recoverCallback, reconcileSplit } from '../src/reliability/splits.ts';
+import { hasAutoQualityFallback, operationWebhook, recoverCallback, reconcileSplit } from '../src/reliability/splits.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { runReliableJobs, resumeAdaptiveOutput } from '../src/index.ts';
-import { AutoQualityFallbackError } from '../src/separation/quality.ts';
+import { AutoOutputQualityError } from '../src/separation/quality.ts';
 import { membershipFixture, courseFixture } from './course-fixture.ts';
 import { STEM_COURSE_ID } from '../src/classroom/contract.ts';
 
-const quality = new AutoQualityFallbackError({ durationSeconds: 174, windowStartSeconds: 173.6,
+const quality = new AutoOutputQualityError({ durationSeconds: 174, windowStartSeconds: 173.6,
   windowSeconds: .15, qualifyingSources: 5, minimumEnergyFraction: .75 });
 const names = ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'];
 async function setup(t: { after(f: () => void): void }, guest = false, courseId: string | null = null) {
@@ -64,51 +64,21 @@ async function setup(t: { after(f: () => void): void }, guest = false, courseId:
     operation: (await readOperation(db, id))!, allowance: () => splitAllowance(db, subject, new Date(), guest ? 'guest' : 'member') };
 }
 
-for (const guest of [false, true]) test(`Auto queues one real alternate within the ${guest ? 'guest' : 'member'} reservation`, async t => {
-  const f = await setup(t, guest);
-  const outcomes = await Promise.all([queueAutoQualityFallback(f.env, f.operation, f.lease, quality), queueAutoQualityFallback(f.env, f.operation, f.lease, quality)]);
-  assert.deepEqual(outcomes.sort(), [false, true]);
-  const current = (await readOperation(f.db, f.id))!;
-  assert.equal(current.state, 'queued'); assert.equal(current.provider_id, null); assert.equal(current.fence, f.operation.fence + 1);
-  assert.equal(current.subject, f.operation.subject); assert.equal(current.quota_class, f.operation.quota_class);
-  assert.equal(current.course_id, f.operation.course_id); assert.equal(current.fingerprint, f.operation.fingerprint);
-  assert.equal(current.idempotency_key, f.operation.idempotency_key); assert.equal(current.deadline, f.operation.deadline);
-  assert.equal(hasAutoQualityFallback(current), true);
-  const job = await f.db.prepare('SELECT status,model,stems,source_key,source_hash,routing_request FROM jobs WHERE id=?').bind(f.id).first<any>();
-  assert.deepEqual({ ...job }, { status: 'queued', model: 'vocals_instrumental', stems: null, source_key: f.key, source_hash: 'a'.repeat(64), routing_request: 'adaptive:auto' });
-  const attempt = await f.db.prepare('SELECT outcome,external_id,usage_json FROM operation_attempts WHERE id=?').bind(f.attempt).first<any>();
-  assert.equal(attempt.outcome, 'quality_rejected'); assert.equal(attempt.external_id, 'six-prediction');
-  assert.equal(JSON.parse(attempt.usage_json).cost_usd, .25);
-  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM app_operations').first<any>()).n, 1);
-  assert.equal((await f.allowance()).completed, 0); assert.equal((await f.allowance()).inProgress, 1);
-  assert.equal(await queueAutoQualityFallback(f.env, current, f.lease, quality), false);
-});
-
-test('fallback batch rolls back all changes if a later statement fails', async t => {
-  const f = await setup(t), batch = f.db.batch.bind(f.db);
-  const broken = t.mock.method(f.db, 'batch', (statements: D1PreparedStatement[]) => batch([...statements,
-    f.db.prepare('UPDATE jobs SET source_hash=? WHERE id=?').bind('b'.repeat(64), f.id)]));
-  await assert.rejects(queueAutoQualityFallback(f.env, f.operation, f.lease, quality), /immutable/);
-  assert.equal((await readOperation(f.db, f.id))!.state, 'processing');
-  assert.equal((await f.db.prepare('SELECT outcome FROM operation_attempts WHERE id=?').bind(f.attempt).first<any>()).outcome, 'accepted');
-  assert.equal((await f.db.prepare('SELECT status FROM jobs WHERE id=?').bind(f.id).first<any>()).status, 'ingesting');
-  broken.mock.restore(); assert.equal(await queueAutoQualityFallback(f.env, f.operation, f.lease, quality), true);
-});
-
-for (const boundary of ['cancelled', 'expired', 'stale-fence', 'wrong-ingest-lease', 'manual-four', 'completed'] as const) test(`Auto handoff respects ${boundary}`, async t => {
-  const f = await setup(t);
-  if (boundary === 'cancelled') await cancelOperation(f.db, f.id, f.subject);
-  if (boundary === 'expired') await f.db.prepare('UPDATE app_operations SET deadline=? WHERE id=?').bind(Date.now() - 1, f.id).run();
-  if (boundary === 'stale-fence') await f.db.prepare('UPDATE app_operations SET fence=fence+1 WHERE id=?').bind(f.id).run();
-  if (boundary === 'manual-four') await f.db.prepare("UPDATE jobs SET routing_request='adaptive:4' WHERE id=?").bind(f.id).run();
-  if (boundary === 'completed') await f.db.prepare("UPDATE jobs SET status='done',stems='[]' WHERE id=?").bind(f.id).run();
-  assert.equal(await queueAutoQualityFallback(f.env, f.operation, boundary === 'wrong-ingest-lease' ? 'other-lease' : f.lease, quality), false);
-  assert.equal((await f.db.prepare('SELECT outcome FROM operation_attempts WHERE id=?').bind(f.attempt).first<any>()).outcome, 'accepted');
-  assert.equal(hasAutoQualityFallback((await readOperation(f.db, f.id))!), false);
-});
+// Reproduce an operation persisted by the retired release. Application code
+// can complete these existing attempts but can no longer create this transition.
+async function legacyAlternate(f: Awaited<ReturnType<typeof setup>>) {
+  const input = JSON.parse(f.operation.request_json);
+  const request = JSON.stringify({ ...input, model: 'vocals_instrumental', auto: false,
+    qualityFallback: { version: 1, reason: quality.reason, details: quality.details } });
+  await f.db.batch([
+    f.db.prepare("UPDATE app_operations SET request_json=?,state='queued',provider_id=NULL,fence=fence+1,lease_owner=NULL,lease_until=0 WHERE id=?").bind(request, f.id),
+    f.db.prepare("UPDATE operation_attempts SET outcome='quality_rejected' WHERE id=?").bind(f.attempt),
+    f.db.prepare("UPDATE jobs SET status='queued',model='vocals_instrumental',external_id=NULL,error=NULL WHERE id=?").bind(f.id),
+  ]);
+}
 
 test('a crash before the alternate POST requeues without adopting the retired prediction', async t => {
-  const f = await setup(t); await queueAutoQualityFallback(f.env, f.operation, f.lease, quality);
+  const f = await setup(t); await legacyAlternate(f);
   const claimed = (await claimNext(f.db, 'split'))!;
   await recoverExpired(f.db, claimed.lease_until + 1);
   const recovered = (await readOperation(f.db, f.id))!;
@@ -118,7 +88,7 @@ test('a crash before the alternate POST requeues without adopting the retired pr
 });
 
 test('an uncertain alternate POST is recovered once and cannot adopt an old same-version callback', async t => {
-  const f = await setup(t); await queueAutoQualityFallback(f.env, f.operation, f.lease, quality);
+  const f = await setup(t); await legacyAlternate(f);
   let posts = 0, reads = 0;
   t.mock.method(globalThis, 'fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'POST') {
@@ -149,7 +119,7 @@ test('an uncertain alternate POST is recovered once and cannot adopt an old same
 });
 
 test('cancelling the queued alternate releases the original reservation without another start', async t => {
-  const f = await setup(t); await queueAutoQualityFallback(f.env, f.operation, f.lease, quality);
+  const f = await setup(t); await legacyAlternate(f);
   await cancelOperation(f.db, f.id, f.subject);
   t.mock.method(globalThis, 'fetch', async () => assert.fail('Cancelled alternate must not start'));
   await runReliableJobs(f.env);
@@ -159,7 +129,7 @@ test('cancelling the queued alternate releases the original reservation without 
 
 for (const scope of ['guest', 'personal-member', 'course-member'] as const) test(`alternate paid start rechecks current ${scope} access`, async t => {
   const f = await setup(t, scope === 'guest', scope === 'course-member' ? STEM_COURSE_ID : null);
-  await queueAutoQualityFallback(f.env, f.operation, f.lease, quality);
+  await legacyAlternate(f);
   if (scope === 'guest') await f.db.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(Date.now(), f.subject).run();
   else if (scope === 'personal-member') t.mock.method(f.env.ADMISSION_RESOLVER!, 'resolveMembership', async () => ({ ok: false, code: 'not_admitted' }));
   else t.mock.method(f.env.ADMISSION_RESOLVER!, 'resolveCourseAccessV2', async () => ({ ok: false, code: 'revoked', retryable: false }));
@@ -173,7 +143,7 @@ for (const scope of ['guest', 'personal-member', 'course-member'] as const) test
 });
 
 test('cancellation after an accepted alternate verifies that prediction and skips publishing audio', async t => {
-  const f = await setup(t); await queueAutoQualityFallback(f.env, f.operation, f.lease, quality);
+  const f = await setup(t); await legacyAlternate(f);
   let posts = 0, downloads = 0;
   t.mock.method(globalThis, 'fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'POST') { posts++; return Response.json({ id: 'two-prediction', status: 'starting' }); }
@@ -202,7 +172,7 @@ test('delayed original callback and create acknowledgement cannot revive the ret
   await recoverCallback(f.env, unknown, 'six-prediction');
   await reconcileSplit(f.env, (await readOperation(f.db, f.id))!, async (_env, _id, _result, current) => {
     await f.db.prepare("UPDATE jobs SET status='ingesting',error=? WHERE id=?").bind(f.lease, f.id).run();
-    assert.equal(await queueAutoQualityFallback(f.env, current!, f.lease, quality), true);
+    await legacyAlternate(f);
   });
   const claimed = (await claimNext(f.db, 'split'))!;
   await transition(f.db, claimed, 'starting'); const second = await beginAttempt(f.db, claimed, 'replicate', 'same-provider-pin');
@@ -216,7 +186,7 @@ test('delayed original callback and create acknowledgement cannot revive the ret
   assert.equal((await f.db.prepare('SELECT outcome FROM operation_attempts WHERE id=?').bind(second).first<any>()).outcome, 'uncertain');
 });
 
-test('quality handoff deletes only staged six-part objects after its durable transition', async t => {
+test('failed quality check releases allowance and staged audio without another provider start', async t => {
   const f = await setup(t);
   await f.db.prepare("UPDATE jobs SET status='processing',error=NULL WHERE id=?").bind(f.id).run();
   await f.db.prepare('UPDATE app_operations SET lease_owner=NULL,lease_until=0 WHERE id=?').bind(f.id).run();
@@ -224,8 +194,10 @@ test('quality handoff deletes only staged six-part objects after its durable tra
   t.mock.method(globalThis, 'fetch', async (url: RequestInfo | URL) => String(url).startsWith('https://api.replicate.com/')
     ? Response.json({ id: 'six-prediction', status: 'succeeded', output: Object.fromEntries(names.map(name => [name, `https://fixture.replicate.delivery/${name}.mp3`])) })
     : new Response(f.bytes));
-  assert.equal(await resumeAdaptiveOutput(f.env, f.id), false);
-  assert.equal((await readOperation(f.db, f.id))!.state, 'queued');
+  assert.equal(await resumeAdaptiveOutput(f.env, f.id), true);
+  assert.equal((await readOperation(f.db, f.id))!.state, 'failed');
+  assert.equal((await f.db.prepare('SELECT model FROM jobs WHERE id=?').bind(f.id).first<any>()).model, 'htdemucs_6s');
+  assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM operation_attempts').first<any>()).n, 1);
   assert.deepEqual((await f.env.AUDIO.list()).objects.map(object => object.key), [f.key]);
   assert.equal((await f.allowance()).completed, 0);
 });

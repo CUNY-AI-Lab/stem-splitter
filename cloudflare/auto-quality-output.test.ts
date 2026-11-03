@@ -17,7 +17,7 @@ function encode(expression: string) {
   return result.stdout;
 }
 
-test('workerd: Auto publishes fresh two-part audio after rejecting a shared six-stem transient', { timeout: 90000 }, async () => {
+test('workerd: failed experimental Auto quality ends the operation without selecting another model', { timeout: 90000 }, async () => {
   const issuer = await createTestIdentityIssuer();
   const tokens = await Promise.all([TEST_SUBJECTS.alice, TEST_SUBJECTS.bob].map(subject =>
     issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject })));
@@ -30,7 +30,7 @@ test('workerd: Auto publishes fresh two-part audio after rejecting a shared six-
     http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
       const body = await request.json() as { input: { model: string; stem?: string } };
       starts.push(body.input);
-      assert.ok(starts.length <= 2, 'one Auto request permits one fallback');
+      assert.equal(starts.length, 1, 'a quality failure must never start another model');
       return HttpResponse.json({ id: `auto-quality-${starts.length}`, status: 'starting' });
     }),
     http.get('https://api.replicate.com/v1/predictions/:id', ({ params }) => {
@@ -74,23 +74,17 @@ test('workerd: Auto publishes fresh two-part audio after rejecting a shared six-
       if (job?.status === 'done' || job?.status === 'failed') break;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    assert.equal(job?.status, 'done', JSON.stringify(job));
-    assert.equal(job!.model, 'vocals_instrumental');
-    assert.equal(job!.adaptiveOutput, 'auto');
+    assert.equal(job?.status, 'failed', JSON.stringify(job));
+    assert.equal(job!.model, 'htdemucs_6s');
     assert.deepEqual(starts.map(input => ({ model: input.model, stem: input.stem })), [
-      { model: 'htdemucs_6s', stem: undefined }, { model: 'htdemucs_ft', stem: 'vocals' },
+      { model: 'htdemucs_6s', stem: undefined },
     ]);
-    assert.deepEqual(job!.stems.map(stem => stem.name), ['vocals', 'instrumental']);
-    for (const stem of job!.stems) {
-      const audio = await call(stem.url);
-      assert.equal(audio.status, 200);
-      assert.deepEqual(Buffer.from(await audio.arrayBuffer()), healthy[stem.name as keyof typeof healthy]);
-      assert.equal((await call(stem.url, 1)).status, 404);
-    }
+    assert.deepEqual(job!.stems, []);
+    assert.equal((await call(`/api/jobs/${created.id}`, 1)).status, 404);
     const operations = await (await worker.fetch('/__fixture/operations', { headers: fixture })).json() as Array<{ id: string; state: string }>;
     assert.equal(operations.length, 1);
     assert.equal(operations[0].id, created.id);
-    assert.equal(operations[0].state, 'succeeded');
+    assert.equal(operations[0].state, 'failed');
   } finally {
     await server.close();
     network.close();

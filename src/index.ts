@@ -18,8 +18,8 @@ import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { splitAllowance, operationAllowance, dailyWindow, GUEST_SPLITS_PER_DAY } from './daily-allowance.ts';
-import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport, hasAutoQualityFallback, queueAutoQualityFallback } from './reliability/splits.ts';
-import { AutoQualityFallbackError } from './separation/quality.ts';
+import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport, hasAutoQualityFallback } from './reliability/splits.ts';
+import { AutoOutputQualityError } from './separation/quality.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation, expireSplitOperations } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt, replayAssistant } from './reliability/assistant.ts';
@@ -2522,17 +2522,6 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       await Promise.allSettled(stored.filter(stem => !keep.has(stem.key)).map(stem => env.AUDIO.delete(stem.key)));
     }
   } catch (error) {
-    if (error instanceof AutoQualityFallbackError && adaptiveMode === 'auto' && operation) {
-      try {
-        if (await queueAutoQualityFallback(env, operation, lease, error)) {
-          // These are unpublished objects belonging only to the retired attempt.
-          // A new ingestion always receives a different attempt prefix.
-          const cleanup = await Promise.allSettled(stored.map(({key}) => env.AUDIO.delete(key)));
-          if (cleanup.some(result => result.status === 'rejected')) console.error(JSON.stringify({event:'partial_stem_cleanup_failed',jobId}));
-          return;
-        }
-      } catch (handoffError) { error = handoffError; }
-    }
     // A failed acknowledgement does not prove a failed commit. First fence the
     // old ingestion lease, then inspect durable references before any deletion.
     // If either database read/write is uncertain, leave objects for recovery.
@@ -2542,8 +2531,9 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       if(stored.some(({key})=>referenced(snapshot).has(key)))return;
       const expired=operation!==undefined && operation.deadline<=Date.now();
       if(expired)await expireSplitOperations(env.DB,Date.now(),operation.id);
-      const failure=error instanceof InvalidStemAudioError?error.message:'The finished audio could not be saved. No allowance was used.';
-      const terminal=expired||error instanceof InvalidStemAudioError||(env.AUTH_MODE==='cail'&&!adaptiveMode);
+      const invalidOutput=error instanceof InvalidStemAudioError||error instanceof AutoOutputQualityError;
+      const failure=invalidOutput?error.message:'The finished audio could not be saved. No allowance was used.';
+      const terminal=expired||invalidOutput||(env.AUTH_MODE==='cail'&&!adaptiveMode);
       await env.DB.prepare(`UPDATE jobs SET status=?,error=? WHERE id=? AND status='ingesting' AND error=?
         AND (? IS NULL OR EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND lease_owner IS ?))`)
         .bind(terminal?'failed':'processing',terminal?failure:null,jobId,lease,operation?.id??null,operation?.id??null,operation?.fence??null,operation?.lease_owner??null).run();

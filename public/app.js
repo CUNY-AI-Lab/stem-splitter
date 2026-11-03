@@ -1303,13 +1303,17 @@ async function loadSeparationOptions() {
     serverAutoMode = ['shadow', 'authoritative', 'adaptive'].includes(options.routing?.auto)
       ? options.routing.auto
       : 'off';
-    const validChoices = new Set([AUTO_MODEL, ...options.models.map(model => model.id)]);
+    // The server owns availability. An absent Auto capability must not expose
+    // the old browser classifier or revive a stale saved Auto selection.
+    const automaticAvailable = ['authoritative', 'adaptive'].includes(serverAutoMode);
+    const validChoices = new Set(options.models.map(model => model.id));
+    if (automaticAvailable) validChoices.add(AUTO_MODEL);
     let savedChoice = '';
     try { savedChoice = localStorage.getItem(SPLIT_CHOICE_STORAGE) || ''; } catch {}
     const initialChoice = [selectedModel(), savedChoice, options.defaultChoice, options.defaultModel, AUTO_MODEL]
       .find(choice => validChoices.has(choice));
     stemChoice.replaceChildren();
-    stemChoice.appendChild(buildAutoOption());
+    if (automaticAvailable) stemChoice.appendChild(buildAutoOption());
     for (const model of options.models) {
       splitMeta.set(model.id, model);
       stemChoice.appendChild(buildSplitOption(model, model.id === initialChoice));
@@ -1493,6 +1497,7 @@ ytForm.addEventListener('submit', async (e) => {
   closeSongSuggestions();
   clearTimeout(songSearchTimer);
   ++songSearchSequence;
+  songSearchAbort?.abort();
   youtubeFetchInProgress = true;
   ytForm.setAttribute('aria-busy', 'true');
   ytUrlInput.disabled = true;
@@ -4233,15 +4238,13 @@ function renderJobs() {
     const operation = state.operation;
     const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(operation?.stage);
     const importing = operation?.phase === 'fetch';
-    const autoTwoParts = (state.adaptiveOutput === 'auto' || job.adaptiveOutput === 'auto') && (state.model || job.model) === 'vocals_instrumental';
     const progressLabel = checking ? 'CHECKING STATUS' : queued ? 'QUEUED' : importing ? 'IMPORTING' : 'SEPARATING';
     const progressNote = checking ? 'Checking the saved run’s current status…'
-      : queued ? operation?.errorCode === 'auto_quality_fallback' ? 'Auto chose 2 splits. Waiting for an available processing slot to prepare voice and accompaniment…'
+      : queued ? operation?.errorCode === 'auto_quality_fallback' ? 'Waiting for an available processing slot…'
         : operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…'
         : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…'
       : importing ? 'Downloading and checking the source audio before separation…'
-      : autoTwoParts ? 'Auto chose 2 splits. Preparing voice and accompaniment…'
-      : state.adaptiveOutput || job.adaptiveOutput ? 'Finding the strongest musical layers…' : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
+      : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
     // A silent wait reads as a hung wait. The clock is the server's own start
     // time once polling has one, and the local one until then.
     const since = serverTime(state.createdAt) ?? job.startedAt ?? Date.now();

@@ -1,3 +1,4 @@
+import { hasReplicateCredentials } from '../replicate-http.ts';
 import {fetchOpenAudio,parseOpenAudioSelection,OpenAudioError,type OpenAudioSelection} from '../open-audio.ts';
 import { parseMediaUrl } from '../url-source.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from '../recording-title.ts';
@@ -32,7 +33,7 @@ interface SplitInput {
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: boolean;
   adaptive?: 4 | 'auto';
-  /** One server-selected alternate separation inside the original reservation. */
+  /** Read compatibility for alternate attempts accepted by an earlier release. */
   qualityFallback?: { version: 1; reason: string; details: Record<string, number> };
   /** Server-validated remote source; acquired as an app-owned upload snapshot. */
   remoteUrl?: string;
@@ -79,7 +80,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     if(source.sourceType==='youtube'&&!browserYouTube&&!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
     if(source.sourceType==='vimeo'||browserYouTube) {
       const runner=getReplicateRunner(input.model);
-      if(!runner||!env.REPLICATE_API_TOKEN||!replicateVersion(env,runner))throw new OperationError('provider_configuration',503,'Audio separation is temporarily unavailable.');
+      if(!runner||!hasReplicateCredentials(env)||!replicateVersion(env,runner))throw new OperationError('provider_configuration',503,'Audio separation is temporarily unavailable.');
     }
     input.sourceType=source.sourceType; input.filename=source.sourceType==='vimeo'?'Vimeo audio':'YouTube audio';
     // Keep existing YouTube operation fingerprints stable across this release.
@@ -131,6 +132,7 @@ async function fail(env: Env, op: Operation, code: string, message='This split c
   ]);
 }
 
+// Existing operations retain their accepted output contract through deployment.
 export function hasAutoQualityFallback(operation: Pick<Operation, 'request_json'>): boolean {
   try {
     const input = JSON.parse(operation.request_json) as SplitInput;
@@ -139,49 +141,6 @@ export function hasAutoQualityFallback(operation: Pick<Operation, 'request_json'
   } catch { return false; }
 }
 
-/** Retire a completed six-source attempt before queuing one genuine two-part
- * separation. The original operation, source, authority and allowance persist. */
-export async function queueAutoQualityFallback(env: Env, operation: Operation, ingestLease: string,
-  quality: { reason: string; details: Record<string, number> }): Promise<boolean> {
-  if (operation.phase !== 'split' || !operation.provider_id || !operation.job_id) return false;
-  const input = JSON.parse(operation.request_json) as SplitInput;
-  if (input.adaptive !== 'auto' || input.model !== 'htdemucs_6s' || input.qualityFallback) return false;
-  if (!/^[a-z][a-z0-9_]{0,63}$/.test(quality.reason)) return false;
-  const details = Object.fromEntries(Object.entries(quality.details).slice(0, 16)
-    .filter(([name, value]) => /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(name)
-      && typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e12));
-  const request = JSON.stringify({ ...input, model: 'vocals_instrumental', auto: false,
-    qualityFallback: { version: 1, reason: quality.reason, details } });
-  const attempt = await env.DB.prepare(`SELECT id FROM operation_attempts WHERE operation_id=? AND phase='split'
-    AND provider='replicate' AND external_id=? AND outcome='accepted' ORDER BY created_at DESC,id DESC LIMIT 1`)
-    .bind(operation.id, operation.provider_id).first<{ id: string }>();
-  if (!attempt) return false;
-  const now = Date.now();
-  const result = await env.DB.batch([
-    env.DB.prepare(`UPDATE app_operations SET request_json=?,state='queued',provider_id=NULL,
-      fence=fence+1,lease_owner=NULL,lease_until=0,error_code='auto_quality_fallback',
-      not_before=MAX(?,COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)),updated_at=?
-      WHERE id=? AND fence=? AND lease_owner IS ? AND provider_id=? AND request_json=?
-      AND phase='split' AND state IN ('processing','reconciling') AND cancel_requested=0 AND lease_until>? AND deadline>?
-      AND EXISTS(SELECT 1 FROM jobs WHERE id=? AND status='ingesting' AND error=?
-        AND model='htdemucs_6s' AND routing_request='adaptive:auto' AND stems IS NULL)
-      AND EXISTS(SELECT 1 FROM operation_attempts WHERE id=? AND operation_id=app_operations.id
-        AND external_id=app_operations.provider_id AND outcome='accepted')`)
-      .bind(request,now,now,operation.id,operation.fence,operation.lease_owner,operation.provider_id,
-        operation.request_json,now,now,operation.job_id,ingestLease,attempt.id),
-    // Keep the known prediction and reported spend. Recovery must never adopt
-    // this retired prediction when the alternate start has an unknown result.
-    env.DB.prepare(`UPDATE operation_attempts SET outcome='quality_rejected',code=?,updated_at=?
-      WHERE id=? AND changes()>0 AND EXISTS(SELECT 1 FROM app_operations
-        WHERE id=? AND fence=? AND state='queued' AND request_json=?)`)
-      .bind(quality.reason,now,attempt.id,operation.id,operation.fence+1,request),
-    env.DB.prepare(`UPDATE jobs SET status='queued',model='vocals_instrumental',external_id=NULL,error=NULL
-      WHERE id=? AND status='ingesting' AND error=? AND changes()>0
-      AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state='queued' AND request_json=?)`)
-      .bind(operation.job_id,ingestLease,operation.id,operation.fence+1,request),
-  ]);
-  return result[0].meta.changes > 0;
-}
 async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:string;attribution?:unknown;durationSec?:number}) {
   const maximum = op.quota_class === 'guest' ? 300 : 900;
   if (!durationIsAllowed(audio.durationSec,maximum)) throw new YouTubeError(`Audio exceeds your ${maximum/60}-minute import limit or has no valid duration.`, 'source_too_long');
@@ -346,7 +305,7 @@ async function start(env: Env,op: Operation) {
     }
     const runner=getReplicateRunner(model);
     const version=op.phase==='fetch'?env.REPLICATE_YT_MODEL_VERSION:runner?replicateVersion(env,runner):undefined;
-    if(!version||!env.REPLICATE_API_TOKEN) {await fail(env,op,'provider_configuration','Audio separation is temporarily unavailable. No allowance was used.');return;}
+    if(!version||!hasReplicateCredentials(env)) {await fail(env,op,'provider_configuration','Audio separation is temporarily unavailable. No allowance was used.');return;}
     // This write precedes every paid POST. A crash from here reconciles, never retries.
     if (!await transition(env.DB,op,'starting')) return;
     attempt=await beginAttempt(env.DB,op,'replicate',version);

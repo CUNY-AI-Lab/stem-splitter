@@ -53,7 +53,7 @@
     "SEPARATION_BACKEND": "replicate",
     "REPLICATE_YT_MODEL": "smorello87/yt-audio",
     "YOUTUBE_FETCH_ORDER": "replicate-first",
-    "ADAPTIVE_FOUR_ENABLED": "true",
+    "ADAPTIVE_FOUR_ENABLED": "false",
     "SERVER_AUTO_ENABLED": "false",
     "SERVER_AUTO_MODE": "off",
     "INSTRUMENT_DISCOVERY_ENABLED": "false",
@@ -66,6 +66,7 @@
   //   WEBHOOK_SECRET            — fresh random value for this Worker only
   //   CAIL_IDENTITY_JWKS        — public JWKS from tools.ailab.gc.cuny.edu/cail-sso/.well-known/jwks.json
   //   REPLICATE_API_TOKEN       — set by the operator; splits fail closed until present
+  //   REPLICATE_FALLBACK_API_TOKEN — optional alternate credential after a definite rejection
   //   REPLICATE_MODEL_VERSION   — set by the operator
   //   REPLICATE_YT_MODEL_VERSION — set by the operator
 }

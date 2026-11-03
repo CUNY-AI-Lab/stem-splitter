@@ -105,6 +105,8 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   REPLICATE_API_TOKEN: string;
+  /** Optional second credential for definitively rejected provider requests. */
+  REPLICATE_FALLBACK_API_TOKEN?: string;
   REPLICATE_MODEL_VERSION: string;
   AUDIO_SEPARATOR_TOKEN?: string;
   /** Bearer token shared only with the private audio-analysis service. */

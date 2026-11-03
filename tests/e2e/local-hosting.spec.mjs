@@ -628,10 +628,8 @@ test('renames Demucs no_vocals to instrumental for the two-track split', async (
   expect(browserErrors).toEqual([]);
 });
 
-// Classifier accuracy lives in tests/autosplit.test.mts. This covers the
-// browser wiring, worker boundary, and the invariant that the paid API never
-// receives the UI-only model id "auto".
-test('AUTO listens to a local upload and resolves to a real split', async ({ page, network }) => {
+// A manual-only server catalog controls both the picker and the paid request.
+test('a manual-only catalog uses its selected model for local uploads', async ({ page, network }) => {
   const predictionId = 'e2e-auto';
   let requestedInput = null;
 
@@ -678,22 +676,16 @@ test('AUTO listens to a local upload and resolves to a real split', async ({ pag
   }, CLASS_CODE);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  const auto = page.getByRole('radio', {
-    name: 'Auto: listen to a local file and choose 2, 4, or 6 splits',
-  });
-  await expect(auto).toBeVisible();
-  await auto.check();
-  await expect(page.locator('#split-legend')).toHaveText(
-    'Processes local audio, then splits into either 2, 4, or 6 splits'
-  );
+  await expect(page.locator('input[value="auto"]')).toHaveCount(0);
+  await page.getByRole('radio', { name: '4 splits: voice, percussion, low end, the rest', exact: true }).check();
 
   await page.locator('#file-input').setInputFiles(SOURCE_AUDIO_PATH);
   await expect(page.locator('.badge.ready')).toHaveText('READY');
 
   const [created] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
-  // The fixture is sustained and routes to two tracks. A metadata/decode
-  // failure would silently use the four-track catalogue default instead.
-  expect(created.model).toBe('vocals_instrumental');
+  expect(created.model).toBe('htdemucs_ft');
+  expect(requestedInput).toMatchObject({model:'htdemucs_ft'});
+  expect(requestedInput.stem).toBeUndefined();
   await expect(page.locator('.channel')).toHaveCount(created.expectedStems.length);
   expect(requestedInput).toBeTruthy();
   expect(browserErrors).toEqual([]);

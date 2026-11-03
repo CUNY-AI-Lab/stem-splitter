@@ -1,3 +1,4 @@
+import { replicateRequest } from './replicate-http.ts';
 import { parseMediaUrl } from './url-source.ts';
 import { parsePredictionJson } from './reliability/prediction-json.ts';
 import { parseVideoSource, parseYouTubeVideoId } from './video-source.ts';
@@ -74,7 +75,7 @@ export interface YouTubeAudio {
 export function replicateConfiguration(env: Env) {
   const modelName = env.REPLICATE_YT_MODEL ?? '';
   const modelVersion = env.REPLICATE_YT_MODEL_VERSION ?? '';
-  const apiToken = env.REPLICATE_API_TOKEN ?? '';
+  const apiToken = env.REPLICATE_API_TOKEN || env.REPLICATE_FALLBACK_API_TOKEN || '';
   if (
     modelName.length > 200 ||
     !MODEL_NAME_PATTERN.test(modelName) ||
@@ -89,7 +90,7 @@ export function replicateConfiguration(env: Env) {
 }
 
 export function youtubeImportConfiguration(env: Env) {
-  const values=[env.REPLICATE_YT_MODEL,env.REPLICATE_YT_MODEL_VERSION,env.REPLICATE_API_TOKEN];
+  const values=[env.REPLICATE_YT_MODEL,env.REPLICATE_YT_MODEL_VERSION,env.REPLICATE_API_TOKEN || env.REPLICATE_FALLBACK_API_TOKEN];
   if(values.every(v=>!v))return 'unconfigured';
   if(values.some(v=>!v))return 'incomplete';
   return replicateConfiguration(env)?'configured':'invalid';
@@ -420,17 +421,19 @@ interface YtPrediction {
 async function replicateFetch(
   url: string | URL,
   init: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
+  env?: Env
 ): Promise<Response> {
   const signal = AbortSignal.timeout(timeoutMs);
   try {
-    return await fetch(url, {
+    const request = {
       ...init,
       // Keep the bearer token on the exact provider origin selected here. A
       // redirect is an error; callers never reissue it with credentials.
       redirect: 'manual',
       signal,
-    });
+    } as RequestInit;
+    return env ? await replicateRequest(env, url, request) : await fetch(url, request);
   } catch {
     if (signal.aborted) throw youtubeTimedOut();
     throw providerUnavailable();
@@ -544,7 +547,7 @@ export async function fetchViaReplicate(url: string, env: Env, options: { genera
       version: modelVersion,
       input: { url: canonicalUrl, max_duration: options.maximumDurationSeconds ?? MAX_DURATION_SECONDS, ...(options.generalUrl ? { general_url: true } : {}) },
     }),
-  }, remainingTimeout(deadline, REPLICATE_START_TIMEOUT_MS));
+  }, remainingTimeout(deadline, REPLICATE_START_TIMEOUT_MS), env);
   if (!res.ok) {
     throw await replicateResponseError(res, 'prediction start');
   }
@@ -560,7 +563,7 @@ export async function fetchViaReplicate(url: string, env: Env, options: { genera
     const poll = await replicateFetch(
       `${REPLICATE_API}/predictions/${encodeURIComponent(prediction.id)}`,
       { headers },
-      remainingTimeout(deadline, REPLICATE_POLL_TIMEOUT_MS)
+      remainingTimeout(deadline, REPLICATE_POLL_TIMEOUT_MS), env
     );
     if (!poll.ok) throw await replicateResponseError(poll, 'prediction poll');
     prediction = await readPrediction(
@@ -581,7 +584,7 @@ export async function fetchViaReplicate(url: string, env: Env, options: { genera
   const data = await downloadPredictionFile(
     prediction.output.audio,
     apiToken,
-    deadline
+    deadline, MAX_AUDIO_BYTES, MAX_AUDIO_BYTES, env
   );
   return validateFetchedAudio({
     data,
@@ -595,7 +598,7 @@ async function downloadPredictionFile(
   audio: string,
   apiToken: string,
   deadline: number,
-  maximumBytes=MAX_AUDIO_BYTES,maximumInlineBytes=maximumBytes
+  maximumBytes=MAX_AUDIO_BYTES,maximumInlineBytes=maximumBytes, env?: Env
 ): Promise<ArrayBuffer> {
   remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS);
   if (audio.startsWith('data:')) {
@@ -648,7 +651,7 @@ async function downloadPredictionFile(
   const res = await replicateFetch(
     outputUrl,
     { headers: { Authorization: `Bearer ${apiToken}` } },
-    remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS)
+    remainingTimeout(deadline, AUDIO_DOWNLOAD_TIMEOUT_MS), env
   );
   if (!res.ok) throw await replicateResponseError(res, 'audio download');
 
@@ -802,14 +805,14 @@ function sourceDenied(): YouTubeError {
   return new YouTubeError('This source cannot be imported. Upload an original or licensed audio file, use a download provided by the video owner, or choose an openly licensed Archive track.','youtube_source_denied',false);
 }
 
-/** Durable coordinator API. Exactly one POST; no polling or client fallbacks
- * are hidden inside it. A lost response cannot be classified as a failed start.
+/** Durable coordinator API. A second credential follows only a definite rejection.
+ * A lost response remains uncertain and never starts a second prediction.
  */
 export async function startVideoImport(url: string, env: Env, webhook: string, options: { generalUrl?: boolean; maximumDurationSeconds?: 300 | 900 } = {}): Promise<string> {
   const config=replicateConfiguration(env), source=parseVideoSource(url);
   if (!config || (!source && !(options.generalUrl && parseMediaUrl(url)))) throw new UpstreamError('import_configuration','rejected');
   let res: Response;
-  try { res=await fetch(`${REPLICATE_API}/predictions`,{
+  try { res=await replicateRequest(env, `${REPLICATE_API}/predictions`,{
     method:'POST',headers:{Authorization:`Bearer ${config.apiToken}`,'Content-Type':'application/json','Cancel-After':'4m'},
     body:JSON.stringify({version:config.modelVersion,input:{url:source?.canonicalUrl ?? url,max_duration:options.maximumDurationSeconds ?? MAX_DURATION_SECONDS,...(options.generalUrl?{general_url:true}:{})},webhook,webhook_events_filter:['completed']}),
     redirect:'manual',signal:AbortSignal.timeout(20000),
@@ -833,7 +836,7 @@ export async function pollYouTubeImport(id: string, env: Env, operationDeadline 
   const deadline=Math.min(Date.now()+AUDIO_DOWNLOAD_TIMEOUT_MS,operationDeadline);
   let prediction: YtPrediction;
   try {
-    const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000);
+    const res=await replicateFetch(`${REPLICATE_API}/predictions/${id}`,{headers:{Authorization:`Bearer ${config.apiToken}`}},15000,env);
     if (!res.ok) { await res.body?.cancel(); throw new UpstreamError('import_poll_unavailable','uncertain',res.status,res.status===429?retryAt(res.headers.get('retry-after')):0); }
     prediction=await readPrediction(res,15000,id,CAIL_PREDICTION_BYTES,true);
   } catch(error) {throw error instanceof UpstreamError?error:new UpstreamError('import_poll_uncertain','uncertain');}
@@ -848,7 +851,7 @@ export async function pollYouTubeImport(id: string, env: Env, operationDeadline 
   if(Date.now()>=operationDeadline)throw youtubeTimedOut();
   let data: ArrayBuffer;
   try {
-    data=prediction.inlineAudio??await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES);
+    data=prediction.inlineAudio??await downloadPredictionFile(prediction.output.audio,config.apiToken,deadline,CAIL_IMPORT_BYTES,CAIL_INLINE_BYTES,env);
   } catch(error) {
     // Extraction already succeeded. Recover only transient delivery failures by
     // reading this same prediction again; invalid media and access refusals end it.
