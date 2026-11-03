@@ -9,6 +9,7 @@ import { importDurationLimit } from './import-policy.ts';
 import { retryAt } from './reliability/retry.ts';
 import { parseClientUses, recordClientUses, recordServerUse, usageSummary } from './reliability/observability.ts';
 import classroomRoutes from './classroom/routes.ts';
+import instrumentTargetRoutes from './isolation/routes.ts';
 import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
 import { coursePrompt } from './classroom/prompts.ts';
@@ -260,10 +261,13 @@ app.get('/api/runtime', (c) => c.json({
   authMode: c.env.AUTH_MODE === 'cail' ? 'cail' : 'class-code',
   loginUrl: c.env.CAIL_LOGIN_URL || null,
   remixer: c.env.REMIXER_ENABLED === 'true',
+  instrumentTargets: c.env.instrumentTargets?.enabled === true,
   runDeletion: runDeletionEnabled(c.env),
   guest: c.env.guestRuntimeReady ? {enabled:true,canStart:c.env.guestStartAllowed===true,siteKey:c.env.GUEST_TURNSTILE_SITE_KEY,
     splitLimit:GUEST_SPLITS_PER_DAY,chatAvailable:c.env.guestChatReady===true,chatLimit:c.env.guestChatReady===true?2:null,chatLimitScope:'session'} : null,
 }));
+
+app.route('/api/jobs/:id/instrument-targets', instrumentTargetRoutes);
 
 // Explicit sharing exposes only finished audio and its title, never account
 // identity, uploaded originals, notes, guide content, or conversation history.
@@ -2260,6 +2264,12 @@ app.post('/api/webhooks/separation', async (c) => {
   const token = c.req.query('token');
   const jobId = c.req.query('job');
   if (!(await equalSecret(token, c.env.WEBHOOK_SECRET))) return c.text('Forbidden', 403);
+  const isolationId = c.req.query('isolation');
+  if (isolationId) {
+    if (!c.env.instrumentTargets?.enabled || !/^[A-Za-z0-9_-]{1,128}$/.test(isolationId)) return c.text('Not found', 404);
+    try { await c.env.instrumentTargets.reconcile(isolationId); return c.json({ ok: true }); }
+    catch { return c.text('Extraction status could not be confirmed', 503); }
+  }
   if (!jobId) return c.text('Missing job', 400);
   if(c.env.AUTH_MODE==='cail') {
     let operation=await readOperation(c.env.DB,jobId);

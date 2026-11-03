@@ -74,7 +74,8 @@ checks; they do not attest to production.
 ## Release authority and October 17, 2026 receipt
 
 The canonical app is https://stem-splitter.ailab-452.workers.dev/. Release from
-`codex/cloudflare-migration`, not Railway's `main`. The current source baseline includes PR #41 for instructor-controlled Archive
+`dev`, not Railway's `main`. The working GitHub branch was renamed from
+`codex/cloudflare-migration` to `dev` in November 2026; its history is preserved. The current source baseline includes PR #41 for instructor-controlled Archive
 examples and consistent rotation. The runtime Worker remains named
 `cail-stem-splitter-preview`; the canonical alias uses the same D1/R2 data.
 

@@ -2238,6 +2238,10 @@ class Mixer {
         li.querySelector('.unshare-btn').hidden = true;
       }
     }
+    if (runtime.instrumentTargets && this.job.permissions?.owner && !this.job.readOnlyShared) {
+      import('/instrument-targets.js').then(({ mountInstrumentTargets }) =>
+        mountInstrumentTargets(li, { jobId: this.job.id, request: api })).catch(() => {});
+    }
     return li;
   }
 

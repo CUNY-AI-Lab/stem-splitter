@@ -2935,3 +2935,20 @@ main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; 
   flex: 0 1 auto; width: fit-content; min-width: 44px; max-width: 100%;
   min-height: 44px; padding: .4rem .55rem;
 }
+
+.instrument-targets { border-top: 1px solid var(--panel-edge); margin-top: 1rem; padding: 1rem; }
+.instrument-targets h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.instrument-targets p { font-size: .85rem; overflow-wrap: anywhere; }
+.instrument-targets form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.instrument-targets label { display: grid; flex: 1 1 12rem; min-width: 0; gap: .25rem; font-size: .85rem; }
+.instrument-targets input, .instrument-targets button {
+  min-height: 44px; max-width: 100%; padding: .5rem .7rem;
+  color: var(--ink); background: var(--bg-raise); border: 1px solid var(--panel-edge); border-radius: 6px; font: inherit;
+}
+.instrument-targets input { width: 100%; min-width: 0; }
+.instrument-targets button { cursor: pointer; }
+.instrument-targets button:disabled { cursor: default; opacity: .6; }
+.instrument-targets :is(input, button, audio, a):focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.instrument-targets > button { margin-top: .5rem; }
+.instrument-targets li { margin-block: .75rem; }
+.instrument-targets audio { display: block; width: 100%; max-width: 24rem; margin-block: .5rem; }
