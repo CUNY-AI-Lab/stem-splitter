@@ -127,8 +127,9 @@ test('compact controls never obscure the short full-track waveform and omit the 
   try {
     await expect(page).toHaveTitle('Stem Splitter');
     await expect(page.locator('#split-legend')).toBeHidden();
-    await page.getByRole('radio', { name: /^auto/i }).check();
-    await expect(page.locator('#split-legend')).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^auto/i })).toHaveCount(0);
+    await page.getByRole('radio', { name: /^6 splits/i }).check();
+    await expect(page.locator('#split-legend')).toBeHidden();
     await page.getByRole('radio', { name: /^4 splits/i }).check();
     await expect(page.locator('#split-legend')).toBeHidden();
     for (const width of [320, 360, 375, 390, 430, 540, 541, 600, 768, 834, 1024, 1280, 1440, 1920]) {
