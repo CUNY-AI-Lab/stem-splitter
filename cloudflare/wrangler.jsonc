@@ -49,7 +49,6 @@
     "CF_ACCOUNT_ID": "452c33847cf5cb1e46f391fca32fd1b5",
     "R2_BUCKET_NAME": "cail-stem-splitter-preview-audio",
     "SEPARATION_BACKEND": "replicate",
-    // Use conventional four-source separation while adaptive output quality is reviewed.
     "ADAPTIVE_FOUR_ENABLED": "false",
     "AUTO_SPLIT_ENABLED": "false",
     "SERVER_AUTO_ENABLED": "false",
