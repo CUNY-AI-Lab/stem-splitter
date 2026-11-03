@@ -24,6 +24,9 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   deferAdaptiveOutput?: (jobId: string) => Promise<void>;
   /** Trusted codec supplied by the Cloudflare adapter, never request JSON. */
   composeStemAudio?: (input: Omit<Parameters<typeof import('./separation/compose-layers.ts').composeProminentLayers>[0], 'createDecoder' | 'createEncoder'>) => ReturnType<typeof import('./separation/compose-layers.ts').composeProminentLayers>;
+  /** Trusted adapter only. No production adapter constructs this experimental
+   * service until provider provenance, spend policy and audio quality are reviewed. */
+  instrumentTargets?: import('./isolation/session.ts').InstrumentTargetSession;
   ASSISTANT_ABORT_SIGNAL?: AbortSignal;
   /** Trusted logical input, bound to authenticated subject/course by the route. */
   ASSISTANT_OPERATION_ID?: string;

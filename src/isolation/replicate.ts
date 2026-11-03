@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { readBoundedResponse } from '../http/bounded-response.ts';
 import { validateQueryIsolationRequest } from './contract.ts';
 import { audioSepReplicateIdentity } from './options.ts';
 import { validatedQueryIsolationOutputUrl } from './output.ts';
@@ -16,6 +17,12 @@ interface ReplicatePrediction {
 
 const API = 'https://api.replicate.com/v1';
 const EXTERNAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+async function predictionJson(response: Response): Promise<ReplicatePrediction> {
+  const error = () => new Error('Invalid bounded isolation provider response');
+  const bytes = await readBoundedResponse(response, { maximumBytes: 256 * 1024, timeoutMs: 15000,
+    errors: { tooLarge: error, timedOut: error, unreadable: error } });
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)) as ReplicatePrediction;
+}
 
 function failed(
   code: 'provider_failed' | 'provider_canceled' | 'invalid_provider_response',
@@ -63,11 +70,13 @@ export function audioSepReplicateProvider(
           webhook: request.webhookUrl,
           webhook_events_filter: ['completed'],
         }),
+        redirect: 'manual', signal: AbortSignal.timeout(30000),
       });
       if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
         throw new Error(`Replicate isolation start failed (${response.status})`);
       }
-      const prediction = (await response.json()) as ReplicatePrediction;
+      const prediction = await predictionJson(response);
       if (typeof prediction.id !== 'string' || !EXTERNAL_ID_PATTERN.test(prediction.id)) {
         throw new Error('Replicate isolation start returned an invalid prediction id');
       }
@@ -129,11 +138,15 @@ export function audioSepReplicateProvider(
       if (!EXTERNAL_ID_PATTERN.test(externalId)) {
         throw new Error('Invalid Replicate isolation prediction id');
       }
-      const response = await fetchImpl(`${API}/predictions/${externalId}`, { headers });
+      const response = await fetchImpl(`${API}/predictions/${externalId}`, { headers,
+        redirect: 'manual', signal: AbortSignal.timeout(20000) });
       if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
         throw new Error(`Replicate isolation status failed (${response.status})`);
       }
-      return provider.parseResult(await response.json());
+      const prediction = await predictionJson(response);
+      if (prediction.id !== externalId) throw new Error('Isolation provider prediction identity changed');
+      return provider.parseResult(prediction);
     },
   };
 

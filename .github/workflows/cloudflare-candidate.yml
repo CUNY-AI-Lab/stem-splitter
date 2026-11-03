@@ -56,12 +56,18 @@ jobs:
         if: steps.changes.outputs.required == 'true'
         working-directory: cloudflare
         run: bun run typecheck && bun run test
+      - name: Verify requested-instrument extraction and failure recovery
+        if: steps.changes.outputs.required == 'true'
+        run: node --import ./cloudflare/test-wasm-register.mjs --import ./node_modules/tsx/dist/loader.mjs --test tests/instrument-target-session.test.ts tests/isolation.test.mts tests/isolation-source.test.mts tests/isolation-output.test.mts tests/isolation-terminal.test.ts tests/query-isolation-bakeoff.test.mts
       - name: Install Chrome
         if: steps.changes.outputs.browsers == 'true'
         run: bash .github/scripts/install-media-tools.sh chrome
-      - name: Install Chromium for native browser zoom
-        if: steps.changes.outputs.browsers == 'true'
+      - name: Install Chromium for native browser zoom and extraction checks
+        if: steps.changes.outputs.required == 'true'
         run: ./node_modules/.bin/playwright install --with-deps --no-shell chromium
+      - name: Verify silent requested-instrument browser recovery
+        if: steps.changes.outputs.required == 'true'
+        run: node --test tests/instrument-target-ui.test.mjs
       - name: Exercise recording, account and Listening Guide browser paths
         if: steps.changes.outputs.browsers == 'true'
         working-directory: cloudflare
