@@ -292,18 +292,17 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   expect(download.suggestedFilename()).toBe('source-export.zip');
   const zipBytes = await readFile(await download.path());
   expect(zipBytes.subarray(0, 4).toString('latin1')).toBe('PK\x03\x04');
-  const zipText = zipBytes.toString('latin1');
   for (const entry of [
-    'stems/vocals.mp3',
-    'stems/drums.mp3',
-    'stems/bass.mp3',
-    'stems/other.mp3',
+    'stems/source — vocals.mp3',
+    'stems/source — drums.mp3',
+    'stems/source — bass.mp3',
+    'stems/source — other.mp3',
     'guide-chat-and-notes.md',
+    '# source.wav',
+    'listening session export',
   ]) {
-    expect(zipText).toContain(entry);
+    expect(zipBytes.includes(Buffer.from(entry, 'utf8')), `ZIP contains ${entry}`).toBe(true);
   }
-  expect(zipText).toContain('# source.wav');
-  expect(zipText).toContain('listening session export');
   // The handoff to the browser is confirmed on the button itself — a fast
   // export otherwise flashes PACKING… too briefly to read as anything.
   await expect(page.locator('.export-btn')).toHaveText('EXPORT');
