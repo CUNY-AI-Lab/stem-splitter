@@ -75,7 +75,10 @@ const state = page => page.evaluate(id => {
     focus: mixer.soloState, following: mixer.classSession.following, leading: mixer.classSession.leading,
     revision: mixer.classSession.revision, blocked: mixer.classSession.audioBlocked };
 }, job);
-const convergence = async (pages, check) => expect.poll(async () => (await Promise.all(pages.map(state))).every(check), { timeout: 12000 }).toBe(true);
+const convergence = async (pages, check) => expect.poll(async () =>
+  (await Promise.all(pages.map(state))).map(current => ({ passes: check(current), state: current })),
+  { timeout: 12000 }
+).toEqual(pages.map(() => expect.objectContaining({ passes: true })));
 
 test('a student resumes shared playback after a delayed stem while remaining joined', async ({ browser }) => {
   let release;
@@ -234,6 +237,15 @@ test('eight independent browsers opt into instructor playback, focus and section
     expect(f.errors).toEqual([]);
     await mkdir('/tmp/stem-classroom-screenshots', { recursive: true });
     await host.screenshot({ path: '/tmp/stem-classroom-screenshots/live-class-host.png', fullPage: false });
+  } catch (error) {
+    // Preserve each synthetic browser's state and published cues instead of
+    // reducing a convergence failure to an unexplained Boolean. No tokens.
+    const states = await Promise.all(f.pages.map(page => state(page).catch(() => null)));
+    await test.info().attach('shared-playback-state', {
+      body: JSON.stringify({ states, writes: f.writes, errors: f.errors }, null, 2),
+      contentType: 'application/json',
+    });
+    throw error;
   } finally { await f.close(); }
 });
 
