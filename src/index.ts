@@ -18,7 +18,8 @@ import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from './env';
 import { splitAllowance, operationAllowance, dailyWindow, GUEST_SPLITS_PER_DAY } from './daily-allowance.ts';
-import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport } from './reliability/splits.ts';
+import { submitSplit, drainSplitQueue, reconcileSplit, recoverCallback, resumeOwnedSourceImport, hasAutoQualityFallback, queueAutoQualityFallback } from './reliability/splits.ts';
+import { AutoQualityFallbackError } from './separation/quality.ts';
 import { type Operation, readOperation, OperationError, fingerprint } from './reliability/ledger.ts';
 import { cancelOperation, expireSplitOperations } from './reliability/queue.ts';
 import { reserveAssistant, assistantReceipt, replayAssistant } from './reliability/assistant.ts';
@@ -479,7 +480,6 @@ app.get('/api/auth-check', requireClassCode, (c) => c.json({ ok: true }));
 app.get('/api/separation-options', (c) => {
   const adaptive = adaptiveOutputEnabled(c.env);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND, adaptive);
-  if (c.env.AUTO_SPLIT_ENABLED === 'false') return c.json({ ...options, defaultChoice: options.defaultModel, autoAvailable: false });
   const auto = serverAutoCapability(c.env);
   const defaultChoice = defaultSplitChoice(options.defaultModel, adaptive || auto?.mode === 'authoritative');
   if (adaptive) return c.json({ ...options, defaultChoice, routing: { auto: 'adaptive' } });
@@ -1107,10 +1107,8 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   if (displayTitle === null) return c.json({ error: JOB_TITLE_ERROR, code: 'invalid_display_title' }, 400);
 
   if (c.get('principal')?.courseId && body?.coursePolicy !== 'course-work-v1') return c.json({ error: 'Confirm that your instructor can review new course work and Listening Guy conversations.' }, 400);
-  const autoAvailable = c.env.AUTO_SPLIT_ENABLED !== 'false';
-  if (!autoAvailable && (body.model === AUTO_ROUTING_REQUEST || body.routingRequest === AUTO_ROUTING_REQUEST)) return c.json({ error: 'Choose 2, 4, or 6 splits to continue.', code: 'auto_unavailable' }, 400);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
-  const autoCapability = autoAvailable ? serverAutoCapability(c.env) : null;
+  const autoCapability = serverAutoCapability(c.env);
   const submittedModel = body?.model ?? defaultSplitChoice(options.defaultModel, autoCapability?.mode === 'authoritative');
   const autoRequested = Boolean(
     autoCapability &&
@@ -2425,7 +2423,10 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
   const stored: { name: string; key: string }[] = [];
   let published = stored;
   let outputModel = job.model ?? DEFAULT_DEMUCS_MODEL;
-  const adaptiveMode = job.routing_request === 'adaptive:4' ? 4 : job.routing_request === 'adaptive:auto' ? 'auto' : null;
+  // Auto retains its original choice while an alternate provider attempt uses
+  // the genuine two-part output contract instead of composing the six sources.
+  const fallback = operation && hasAutoQualityFallback(operation) && job.model === 'vocals_instrumental';
+  const adaptiveMode = fallback ? null : job.routing_request === 'adaptive:4' ? 4 : job.routing_request === 'adaptive:auto' ? 'auto' : null;
   const checkpoint = async () => {
     if (!operation) return;
     const now = Date.now();
@@ -2521,6 +2522,17 @@ async function ingestResult(env: Env, jobId: string, result: SeparationResult, o
       await Promise.allSettled(stored.filter(stem => !keep.has(stem.key)).map(stem => env.AUDIO.delete(stem.key)));
     }
   } catch (error) {
+    if (error instanceof AutoQualityFallbackError && adaptiveMode === 'auto' && operation) {
+      try {
+        if (await queueAutoQualityFallback(env, operation, lease, error)) {
+          // These are unpublished objects belonging only to the retired attempt.
+          // A new ingestion always receives a different attempt prefix.
+          const cleanup = await Promise.allSettled(stored.map(({key}) => env.AUDIO.delete(key)));
+          if (cleanup.some(result => result.status === 'rejected')) console.error(JSON.stringify({event:'partial_stem_cleanup_failed',jobId}));
+          return;
+        }
+      } catch (handoffError) { error = handoffError; }
+    }
     // A failed acknowledgement does not prove a failed commit. First fence the
     // old ingestion lease, then inspect durable references before any deletion.
     // If either database read/write is uncertain, leave objects for recovery.

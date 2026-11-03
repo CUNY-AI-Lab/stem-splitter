@@ -126,7 +126,9 @@ export async function beginAttempt(db: D1Database, operation: Operation, provide
   return id;
 }
 export async function finishAttempt(db: D1Database, id: string, outcome: string, detail: { externalId?: string; status?: number; code?: string; usage?: unknown } = {}) {
-  await db.prepare('UPDATE operation_attempts SET outcome=?,external_id=COALESCE(?,external_id),http_status=?,code=?,usage_json=?,updated_at=? WHERE id=?')
+  // A late create response must not revive a prediction whose output Auto has
+  // already rejected and replaced with a distinct provider attempt.
+  await db.prepare("UPDATE operation_attempts SET outcome=?,external_id=COALESCE(?,external_id),http_status=?,code=?,usage_json=?,updated_at=? WHERE id=? AND outcome<>'quality_rejected'")
     .bind(outcome,detail.externalId ?? null,detail.status ?? null,safeEventCode(detail.code),numericUsage(detail.usage),Date.now(),id).run();
 }
 

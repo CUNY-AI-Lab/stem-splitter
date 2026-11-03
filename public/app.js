@@ -1300,17 +1300,16 @@ async function loadSeparationOptions() {
 
     catalogueModels = options.models;
     catalogueDefaultModel = options.defaultModel;
-    const autoAvailable = options.autoAvailable !== false;
-    serverAutoMode = autoAvailable && ['shadow', 'authoritative', 'adaptive'].includes(options.routing?.auto)
+    serverAutoMode = ['shadow', 'authoritative', 'adaptive'].includes(options.routing?.auto)
       ? options.routing.auto
       : 'off';
-    const validChoices = new Set([...(autoAvailable ? [AUTO_MODEL] : []), ...options.models.map(model => model.id)]);
+    const validChoices = new Set([AUTO_MODEL, ...options.models.map(model => model.id)]);
     let savedChoice = '';
     try { savedChoice = localStorage.getItem(SPLIT_CHOICE_STORAGE) || ''; } catch {}
     const initialChoice = [selectedModel(), savedChoice, options.defaultChoice, options.defaultModel, AUTO_MODEL]
       .find(choice => validChoices.has(choice));
     stemChoice.replaceChildren();
-    if (autoAvailable) stemChoice.appendChild(buildAutoOption());
+    stemChoice.appendChild(buildAutoOption());
     for (const model of options.models) {
       splitMeta.set(model.id, model);
       stemChoice.appendChild(buildSplitOption(model, model.id === initialChoice));

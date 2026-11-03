@@ -32,6 +32,8 @@ interface SplitInput {
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: boolean;
   adaptive?: 4 | 'auto';
+  /** One server-selected alternate separation inside the original reservation. */
+  qualityFallback?: { version: 1; reason: string; details: Record<string, number> };
   /** Server-validated remote source; acquired as an app-owned upload snapshot. */
   remoteUrl?: string;
 }
@@ -45,11 +47,9 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const value=body as Record<string,unknown>;
   const courseId=principal.courseId ?? null;
   if (courseId && value.coursePolicy!=='course-work-v1') throw new OperationError('course_policy_required',400,'Review the course sharing notice before submitting.');
-  const autoAvailable=env.AUTO_SPLIT_ENABLED!=='false';
-  if (!autoAvailable&&(value.model===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST)) throw new OperationError('auto_unavailable',400,'Choose 2, 4, or 6 splits to continue.');
   const adaptiveAvailable=adaptiveOutputEnabled(env);
-  const capability=autoAvailable?serverAutoCapability(env):null;
-  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? defaultSplitChoice(options.defaultModel,autoAvailable&&(adaptiveAvailable||capability?.mode==='authoritative'));
+  const capability=serverAutoCapability(env);
+  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? defaultSplitChoice(options.defaultModel,adaptiveAvailable||capability?.mode==='authoritative');
   const adaptive=adaptiveAvailable && (submitted===ADAPTIVE_FOUR_MODEL || submitted===AUTO_ROUTING_REQUEST)
     ? submitted===AUTO_ROUTING_REQUEST ? 'auto' as const : 4 as const : undefined;
   const auto=Boolean(!adaptive&&capability&&(submitted===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST));
@@ -129,6 +129,58 @@ async function fail(env: Env, op: Operation, code: string, message='This split c
     env.DB.prepare(`UPDATE app_operations SET error_code=? WHERE id=? AND fence=? AND state NOT IN (${TERMINAL})`).bind(code,op.id,op.fence),
     env.DB.prepare(`UPDATE jobs SET status='failed',error=? WHERE id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state NOT IN (${TERMINAL}))`).bind(message,op.job_id,op.id,op.fence),
   ]);
+}
+
+export function hasAutoQualityFallback(operation: Pick<Operation, 'request_json'>): boolean {
+  try {
+    const input = JSON.parse(operation.request_json) as SplitInput;
+    return input.adaptive === 'auto' && input.model === 'vocals_instrumental' && input.auto === false
+      && input.qualityFallback?.version === 1;
+  } catch { return false; }
+}
+
+/** Retire a completed six-source attempt before queuing one genuine two-part
+ * separation. The original operation, source, authority and allowance persist. */
+export async function queueAutoQualityFallback(env: Env, operation: Operation, ingestLease: string,
+  quality: { reason: string; details: Record<string, number> }): Promise<boolean> {
+  if (operation.phase !== 'split' || !operation.provider_id || !operation.job_id) return false;
+  const input = JSON.parse(operation.request_json) as SplitInput;
+  if (input.adaptive !== 'auto' || input.model !== 'htdemucs_6s' || input.qualityFallback) return false;
+  if (!/^[a-z][a-z0-9_]{0,63}$/.test(quality.reason)) return false;
+  const details = Object.fromEntries(Object.entries(quality.details).slice(0, 16)
+    .filter(([name, value]) => /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(name)
+      && typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e12));
+  const request = JSON.stringify({ ...input, model: 'vocals_instrumental', auto: false,
+    qualityFallback: { version: 1, reason: quality.reason, details } });
+  const attempt = await env.DB.prepare(`SELECT id FROM operation_attempts WHERE operation_id=? AND phase='split'
+    AND provider='replicate' AND external_id=? AND outcome='accepted' ORDER BY created_at DESC,id DESC LIMIT 1`)
+    .bind(operation.id, operation.provider_id).first<{ id: string }>();
+  if (!attempt) return false;
+  const now = Date.now();
+  const result = await env.DB.batch([
+    env.DB.prepare(`UPDATE app_operations SET request_json=?,state='queued',provider_id=NULL,
+      fence=fence+1,lease_owner=NULL,lease_until=0,error_code='auto_quality_fallback',
+      not_before=MAX(?,COALESCE((SELECT until_ms FROM provider_cooldowns WHERE provider='replicate'),0)),updated_at=?
+      WHERE id=? AND fence=? AND lease_owner IS ? AND provider_id=? AND request_json=?
+      AND phase='split' AND state IN ('processing','reconciling') AND cancel_requested=0 AND lease_until>? AND deadline>?
+      AND EXISTS(SELECT 1 FROM jobs WHERE id=? AND status='ingesting' AND error=?
+        AND model='htdemucs_6s' AND routing_request='adaptive:auto' AND stems IS NULL)
+      AND EXISTS(SELECT 1 FROM operation_attempts WHERE id=? AND operation_id=app_operations.id
+        AND external_id=app_operations.provider_id AND outcome='accepted')`)
+      .bind(request,now,now,operation.id,operation.fence,operation.lease_owner,operation.provider_id,
+        operation.request_json,now,now,operation.job_id,ingestLease,attempt.id),
+    // Keep the known prediction and reported spend. Recovery must never adopt
+    // this retired prediction when the alternate start has an unknown result.
+    env.DB.prepare(`UPDATE operation_attempts SET outcome='quality_rejected',code=?,updated_at=?
+      WHERE id=? AND changes()>0 AND EXISTS(SELECT 1 FROM app_operations
+        WHERE id=? AND fence=? AND state='queued' AND request_json=?)`)
+      .bind(quality.reason,now,attempt.id,operation.id,operation.fence+1,request),
+    env.DB.prepare(`UPDATE jobs SET status='queued',model='vocals_instrumental',external_id=NULL,error=NULL
+      WHERE id=? AND status='ingesting' AND error=? AND changes()>0
+      AND EXISTS(SELECT 1 FROM app_operations WHERE id=? AND fence=? AND state='queued' AND request_json=?)`)
+      .bind(operation.job_id,ingestLease,operation.id,operation.fence+1,request),
+  ]);
+  return result[0].meta.changes > 0;
 }
 async function imported(env: Env,op: Operation,input: SplitInput,audio: {data:ArrayBuffer;title:string;fileName?:string;contentType?:string;attribution?:unknown;durationSec?:number}) {
   const maximum = op.quota_class === 'guest' ? 300 : 900;
@@ -439,8 +491,9 @@ export async function drainSplitQueue(env: Env,complete: Complete) {
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {
   if(operation.provider_id||!['starting','reconciling'].includes(operation.state))return;
-  // A delayed callback from a retired fetch must not claim a later uncertain start.
-  if(await env.DB.prepare("SELECT 1 FROM operation_attempts WHERE operation_id=? AND phase=? AND external_id=? AND outcome='failed'")
+  // A delayed callback from a retired fetch or six-source output must not claim
+  // a later uncertain start, even when both use the same pinned provider version.
+  if(await env.DB.prepare("SELECT 1 FROM operation_attempts WHERE operation_id=? AND phase=? AND external_id=? AND outcome IN ('failed','quality_rejected')")
     .bind(operation.id,operation.phase,externalId).first())return;
   // A capability is unique to the operation AND phase. The accepted prediction
   // must also match the exact model version recorded before its paid POST.
@@ -451,9 +504,20 @@ export async function recoverCallback(env: Env,operation: Operation,externalId: 
   if(await cooldown(env.DB,'replicate')>Date.now())return;
   try {if(!await getBackend(env).confirmStart?.(externalId,operationWebhook(env,operation.id,operation.phase as 'fetch'|'split'),attempt.model))return;}
   catch(error) {if(error instanceof UpstreamError&&error.notBefore) {await setCooldown(env.DB,'replicate',error.notBefore);await env.DB.prepare('UPDATE app_operations SET not_before=MAX(not_before,?) WHERE id=?').bind(error.notBefore,operation.id).run();}return;}
-  await finishAttempt(env.DB,attempt.id,'accepted',{externalId});
-  const accepted=await env.DB.prepare(`UPDATE app_operations SET provider_id=?,state='processing',lease_until=0,lease_owner=NULL,updated_at=?
-    WHERE id=? AND fence=? AND phase=? AND provider_id IS NULL AND state IN ('starting','reconciling')`)
-    .bind(externalId,Date.now(),operation.id,operation.fence,operation.phase).run();
-  if(accepted.meta.changes&&operation.phase==='split')await env.DB.prepare("UPDATE jobs SET external_id=?,status='processing' WHERE id=? AND status NOT IN ('done','failed')").bind(externalId,operation.job_id).run();
+  // Confirmation can return after another callback has completed and retired
+  // this attempt. Acceptance and attempt evidence must share the same fence.
+  const now=Date.now();
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE app_operations SET provider_id=?,state='processing',lease_until=0,lease_owner=NULL,updated_at=?
+      WHERE id=? AND fence=? AND phase=? AND provider_id IS NULL AND state IN ('starting','reconciling')
+      AND EXISTS(SELECT 1 FROM operation_attempts WHERE id=? AND operation_id=app_operations.id
+        AND phase=app_operations.phase AND outcome IN ('starting','uncertain'))`)
+      .bind(externalId,now,operation.id,operation.fence,operation.phase,attempt.id),
+    env.DB.prepare(`UPDATE operation_attempts SET outcome='accepted',external_id=?,code=NULL,updated_at=?
+      WHERE id=? AND changes()>0 AND outcome IN ('starting','uncertain')`)
+      .bind(externalId,now,attempt.id),
+    env.DB.prepare(`UPDATE jobs SET external_id=?,status='processing' WHERE id=? AND status NOT IN ('done','failed')
+      AND ?='split' AND changes()>0`)
+      .bind(externalId,operation.job_id,operation.phase),
+  ]);
 }

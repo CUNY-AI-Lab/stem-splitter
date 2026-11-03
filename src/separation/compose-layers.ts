@@ -1,5 +1,6 @@
 import type { PcmDecoder } from '../reliability/media.ts';
 import { prominentLayerPlan, type LayerEnergy, type SourceLayer, type ProminentLayerPlan } from './prominent-layers.ts';
+import { AutoQualityFallbackError, concentratedSharedEnergy, ENERGY_WINDOW_SECONDS, type WindowedLayerEnergy } from './quality.ts';
 
 export interface EncodedLayerSource {
   name: SourceLayer;
@@ -75,20 +76,29 @@ async function open(source: EncodedLayerSource, create: () => PcmDecoder): Promi
   catch (error) { await reader.close(); throw error; }
 }
 
-async function measure(source: EncodedLayerSource, create: () => PcmDecoder): Promise<LayerEnergy> {
+async function measure(source: EncodedLayerSource, create: () => PcmDecoder): Promise<WindowedLayerEnergy> {
   const reader = await open(source, create);
   let sum = 0, peak = 0, samples = 0;
+  let windowEnergy = 0, windowSamples = 0;
+  const windows: number[] = [];
   try {
     for (;;) {
       const part = await reader.pull(); if (!part.length) break;
       samples += part.length;
+      const windowLength = Math.round(reader.sampleRate * ENERGY_WINDOW_SECONDS);
       for (let i = 0; i < part.length; i++) {
         const l = part.left[i], r = part.right[i];
-        sum += l * l + r * r; peak = Math.max(peak, Math.abs(l), Math.abs(r));
+        const energy = l * l + r * r;
+        sum += energy; peak = Math.max(peak, Math.abs(l), Math.abs(r));
+        windowEnergy += energy;
+        if (++windowSamples === windowLength) {
+          windows.push(windowEnergy); windowSamples = 0; windowEnergy = 0;
+        }
       }
     }
     if (samples < reader.sampleRate || !reader.sampleRate) throw new Error('Source audio is too short');
-    return { name: source.name, rmsDb: 10 * Math.log10(Math.max(1e-20, sum / (samples * 2))), peak, samples, sampleRate: reader.sampleRate };
+    if (windowSamples) windows.push(windowEnergy);
+    return { energy: { name: source.name, rmsDb: 10 * Math.log10(Math.max(1e-20, sum / (samples * 2))), peak, samples, sampleRate: reader.sampleRate }, windows };
   } finally { await reader.close(); }
 }
 
@@ -123,9 +133,14 @@ export async function composeProminentLayers(input: {
   write(name: SourceLayer, bytes: Uint8Array): Promise<string>;
   checkpoint?(): Promise<void>;
 }): Promise<{ plan: ProminentLayerPlan; energy: LayerEnergy[]; gain: number; stored: { name: SourceLayer; key: string }[] }> {
-  const energy: LayerEnergy[] = [];
-  for (const source of input.sources) { energy.push(await measure(source, input.createDecoder)); await input.checkpoint?.(); }
+  const measured: WindowedLayerEnergy[] = [];
+  for (const source of input.sources) { measured.push(await measure(source, input.createDecoder)); await input.checkpoint?.(); }
+  const energy = measured.map(result => result.energy);
   const plan = prominentLayerPlan(energy, input.requested);
+  if (input.requested === 'auto') {
+    const quality = concentratedSharedEnergy(measured);
+    if (quality) throw new AutoQualityFallbackError(quality);
+  }
   if (plan.parts === 6) return { plan, energy, gain: 1, stored: [] };
   const group = (names: SourceLayer[]) => names.map(name => {
     const source = input.sources.find(s => s.name === name); if (!source) throw new Error('Missing source'); return source;

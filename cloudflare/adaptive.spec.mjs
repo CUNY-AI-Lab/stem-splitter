@@ -9,7 +9,7 @@ import {http,HttpResponse} from 'msw';
 import {schemaStatements} from '../tests/e2e/schema-statements.mjs';
 const names=['vocals','drums','bass','other','guitar','piano'];
 function tone(i,dense){const levels=dense==='sparse'?[4,.0008,.0008,.0008,.0008,.0008]:dense?Array(6).fill(.8):[.8,.8,.0008,.8,4,.0008];const r=spawnSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i',`sine=frequency=${[500,1500,80,250,900,650][i]}:sample_rate=44100:duration=2`,'-af',`volume=${levels[i]}`,'-ac','2','-c:a','libmp3lame','-b:a','192k','-f','mp3','pipe:1']);if(r.status!==0)throw Error(String(r.stderr));return r.stdout;}
-async function fixture(context,page,dense=false,vars={}){
+async function fixture(context,page,dense=false){
  const issuer=await createTestIdentityIssuer(),jwt=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
  const audio=Object.fromEntries(names.map((name,i)=>[name,tone(i,dense)]));let starts=0;
  const network=setupServer(
@@ -20,7 +20,7 @@ async function fixture(context,page,dense=false,vars={}){
   http.get('https://archive.org/download/fixture-adaptive/fixture.mp3',()=>new HttpResponse(audio.vocals,{headers:{'content-type':'audio/mpeg','content-length':String(audio.vocals.length)}})),
  );
  network.listen({onUnhandledRequest(request,print){if(['127.0.0.1','localhost'].includes(new URL(request.url).hostname))return;print.error();}});
- const harness=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,TEST_BROWSER:'true',ADAPTIVE_FOUR_ENABLED:'true',...vars},secrets:{REPLICATE_API_TOKEN:'fixture-only',REPLICATE_MODEL_VERSION:'fixture-pin',WEBHOOK_SECRET:'fixture-webhook'}}]});
+ const harness=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_ADMIN:TEST_SUBJECTS.carol,TEST_BROWSER:'true',ADAPTIVE_FOUR_ENABLED:'true'},secrets:{REPLICATE_API_TOKEN:'fixture-only',REPLICATE_MODEL_VERSION:'fixture-pin',WEBHOOK_SECRET:'fixture-webhook'}}]});
  const {url}=await harness.listen();await harness.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')))});
  await context.setExtraHTTPHeaders({'x-fixture-identity':jwt});
  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:0,tracks:[]}}));
@@ -94,23 +94,5 @@ test('new splitting sessions default to Auto, preserve explicit/saved choices an
   await page.evaluate(()=>localStorage.setItem('stem-split-choice-v1','not-a-current-choice'));
   await page.reload();await expect(auto).toBeChecked();
   await explicit.check();await auto.check();await page.reload();await expect(auto).toBeChecked();
- }finally{await f.close();}
-});
-
-test('disabled Auto hides the choice, ignores saved Auto and submits the conventional four-part default',async({page,context})=>{
- const errors=[];page.on('pageerror',error=>errors.push(error.message));
- const f=await fixture(context,page,false,{AUTO_SPLIT_ENABLED:'false',ADAPTIVE_FOUR_ENABLED:'false',SERVER_AUTO_ENABLED:'false'});
- try{
-  await page.evaluate(()=>localStorage.setItem('stem-split-choice-v1','auto'));await page.reload();
-  await expect(page.locator('input[name="stem-model"][value="auto"]')).toHaveCount(0);
-  await expect(page.locator('input[name="stem-model"]')).toHaveCount(3);
-  const four=page.locator('input[name="stem-model"][value="htdemucs_ft"]');await expect(four).toBeChecked();
-  const options=await(await f.harness.fetch('/api/separation-options')).json();expect(options).toMatchObject({autoAvailable:false,defaultChoice:'htdemucs_ft',defaultModel:'htdemucs_ft'});
-  let submitted;
-  await page.route('**/api/jobs',route=>{if(route.request().method()!=='POST')return route.continue();submitted=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Fixture stops before inference.'}});});
-  await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav',import.meta.url)));
-  await expect.poll(()=>submitted?.model).toBe('htdemucs_ft');expect(submitted.routingRequest).toBeUndefined();expect(f.starts()).toBe(0);
-  const two=page.locator('input[name="stem-model"][value="vocals_instrumental"]');await two.check();await page.reload();await expect(two).toBeChecked();
-  await expect(page.locator('input[name="stem-model"][value="auto"]')).toHaveCount(0);expect(errors).toEqual([]);
  }finally{await f.close();}
 });
