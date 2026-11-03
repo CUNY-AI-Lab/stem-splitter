@@ -479,6 +479,7 @@ app.get('/api/auth-check', requireClassCode, (c) => c.json({ ok: true }));
 app.get('/api/separation-options', (c) => {
   const adaptive = adaptiveOutputEnabled(c.env);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND, adaptive);
+  if (c.env.AUTO_SPLIT_ENABLED === 'false') return c.json({ ...options, defaultChoice: options.defaultModel, autoAvailable: false });
   const auto = serverAutoCapability(c.env);
   const defaultChoice = defaultSplitChoice(options.defaultModel, adaptive || auto?.mode === 'authoritative');
   if (adaptive) return c.json({ ...options, defaultChoice, routing: { auto: 'adaptive' } });
@@ -1106,8 +1107,10 @@ app.post('/api/jobs', requireClassCode, async (c) => {
   if (displayTitle === null) return c.json({ error: JOB_TITLE_ERROR, code: 'invalid_display_title' }, 400);
 
   if (c.get('principal')?.courseId && body?.coursePolicy !== 'course-work-v1') return c.json({ error: 'Confirm that your instructor can review new course work and Listening Guy conversations.' }, 400);
+  const autoAvailable = c.env.AUTO_SPLIT_ENABLED !== 'false';
+  if (!autoAvailable && (body.model === AUTO_ROUTING_REQUEST || body.routingRequest === AUTO_ROUTING_REQUEST)) return c.json({ error: 'Choose 2, 4, or 6 splits to continue.', code: 'auto_unavailable' }, 400);
   const options = getSeparationOptions(c.env.SEPARATION_BACKEND);
-  const autoCapability = serverAutoCapability(c.env);
+  const autoCapability = autoAvailable ? serverAutoCapability(c.env) : null;
   const submittedModel = body?.model ?? defaultSplitChoice(options.defaultModel, autoCapability?.mode === 'authoritative');
   const autoRequested = Boolean(
     autoCapability &&

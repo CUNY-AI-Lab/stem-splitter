@@ -45,9 +45,11 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const value=body as Record<string,unknown>;
   const courseId=principal.courseId ?? null;
   if (courseId && value.coursePolicy!=='course-work-v1') throw new OperationError('course_policy_required',400,'Review the course sharing notice before submitting.');
+  const autoAvailable=env.AUTO_SPLIT_ENABLED!=='false';
+  if (!autoAvailable&&(value.model===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST)) throw new OperationError('auto_unavailable',400,'Choose 2, 4, or 6 splits to continue.');
   const adaptiveAvailable=adaptiveOutputEnabled(env);
-  const capability=serverAutoCapability(env);
-  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? defaultSplitChoice(options.defaultModel,adaptiveAvailable||capability?.mode==='authoritative');
+  const capability=autoAvailable?serverAutoCapability(env):null;
+  const options=getSeparationOptions(env.SEPARATION_BACKEND,adaptiveAvailable), submitted=value.model ?? defaultSplitChoice(options.defaultModel,autoAvailable&&(adaptiveAvailable||capability?.mode==='authoritative'));
   const adaptive=adaptiveAvailable && (submitted===ADAPTIVE_FOUR_MODEL || submitted===AUTO_ROUTING_REQUEST)
     ? submitted===AUTO_ROUTING_REQUEST ? 'auto' as const : 4 as const : undefined;
   const auto=Boolean(!adaptive&&capability&&(submitted===AUTO_ROUTING_REQUEST||value.routingRequest===AUTO_ROUTING_REQUEST));

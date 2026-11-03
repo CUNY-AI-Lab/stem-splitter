@@ -20,6 +20,8 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   /** Trusted platform-local PCM decoder; never supplied by a browser. */
   validateStemAudio?: (data: ArrayBuffer) => Promise<boolean>;
   ADAPTIVE_FOUR_ENABLED?: string;
+  /** Literal false hides Auto and rejects new Auto requests; queued work keeps its stored choice. */
+  AUTO_SPLIT_ENABLED?: string;
   /** Trusted durable handoff, omitted inside the queue consumer. */
   deferAdaptiveOutput?: (jobId: string) => Promise<void>;
   /** Trusted codec supplied by the Cloudflare adapter, never request JSON. */
