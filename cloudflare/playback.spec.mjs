@@ -883,7 +883,8 @@ for (const owned of [true, false]) test(`${owned ? 'owned' : 'shared'} audio can
     await expect(host.locator('.badge')).toHaveText(owned ? 'READY' : 'SHARED');
     await expect(retry).toBeHidden();
     await expect(host.locator('.mute-btn').first()).toHaveAttribute('aria-pressed', 'true');
-    await expect(host.locator('.dl').first()).toHaveAttribute('href', /download$/);
+    const download = new URL(await host.locator('.dl').first().getAttribute('href'));
+    expect(download.searchParams.get('download')).toBe('Playback review — vocals.mp3');
     if (owned) await expect(page.getByRole('textbox', { name: 'Ask the Listening Guide' })).toHaveValue('Keep my listening question.');
     await page.getByRole('button', { name: 'Play all stems' }).click();
     await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(audio => audio.currentTime > 0.3 && audio.playbackRate === 0.75))).toBe(true);

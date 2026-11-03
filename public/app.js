@@ -599,6 +599,7 @@ const fileInput = document.getElementById('file-input');
 const uploadStatus = document.getElementById('upload-status');
 const progressBar = document.getElementById('progress-bar');
 const uploadMessage = document.getElementById('upload-message');
+let uploadStatusJobId = null;
 
 const ytDisclosure = document.getElementById('yt-disclosure');
 const ytForm = document.getElementById('yt-form');
@@ -1555,7 +1556,7 @@ ytForm.addEventListener('submit', async (e) => {
     acceptedSongSample = null;
     clearSongSuggestions();
     addJob(job);
-    showUploadMessage(processingMessage(job));
+    showUploadMessage(processingMessage(job), false, job.id);
     renderJobs();
     pollSoon();
   } catch (err) {
@@ -1642,7 +1643,7 @@ async function handleFile(file, settings = {}) {
     });
 
     addJob(job);
-    showUploadMessage(processingMessage(job));
+    showUploadMessage(processingMessage(job), false, job.id);
     renderJobs();
     pollSoon();
     return job;
@@ -1822,7 +1823,8 @@ function readableAllowanceMessage(message) {
   return String(message || '').replaceAll('No successful-split allowance was used.', 'No allowance was used.').replaceAll('Your successful-split allowance has not been used.', 'No allowance was used.');
 }
 
-function showUploadMessage(message, isError = false) {
+function showUploadMessage(message, isError = false, jobId = null) {
+  uploadStatusJobId = jobId;
   uploadStatus.querySelectorAll('[data-local-import-fallback]').forEach(button => button.remove());
   uploadStatus.hidden = false;
   uploadMessage.textContent = readableAllowanceMessage(message);
@@ -4530,12 +4532,12 @@ async function pollActiveJobs() {
   await Promise.all(Array.from({length: Math.min(3, jobs.length)}, refresh));
 
   renderJobs();
-  const states = jobs.map((job) => jobStates.get(job.id));
-  if (
-    states.length > 0 &&
-    states.every((state) => state?.status === 'done' || state?.status === 'failed')
-  ) {
+  // Only the run associated with this progress message can dismiss it.
+  // Older runs may finish polling while a new upload or error is visible.
+  const uploadState = uploadStatusJobId && jobStates.get(uploadStatusJobId);
+  if (uploadState?.status === 'done' || uploadState?.status === 'failed') {
     uploadStatus.hidden = true;
+    uploadStatusJobId = null;
   }
   if (anyActive) pollSoon();
 }

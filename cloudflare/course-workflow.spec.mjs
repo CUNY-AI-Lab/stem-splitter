@@ -306,6 +306,9 @@ for (const classSplit of [false,true]) test(`a file selected during session refr
   expect(received['x-stem-course']).toBe(classSplit?course:'personal');
   await expect(page.locator('#upload-message')).toBeVisible();
   await expect(page.locator('#upload-message')).toContainText('Fixture provider unavailable');
+  // Finishing a poll for older runs must preserve this new attempt's feedback.
+  await page.evaluate(()=>pollActiveJobs());
+  await expect(page.locator('#upload-message')).toBeVisible();
   // A later focus check must retain the current feedback when it restores the page.
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
   await expect(page.locator('#upload-message')).toBeVisible();
