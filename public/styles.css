@@ -849,7 +849,9 @@ footer a:hover { color: var(--hot); }
   text-transform: uppercase;
 }
 
-.class-code-form input {
+.class-code-form input, .class-code-form select {
+  box-sizing: border-box;
+  min-width: 0;
   width: 100%;
   padding: 12px;
   color: var(--ink);
@@ -859,7 +861,7 @@ footer a:hover { color: var(--hot); }
   font: 1rem var(--font-mono);
 }
 
-.class-code-form input:focus {
+.class-code-form input:focus, .class-code-form select:focus {
   border-color: var(--hot);
   outline: 2px solid rgb(239 169 58 / 24%);
   outline-offset: 2px;
@@ -1557,7 +1559,7 @@ footer a:hover { color: var(--hot); }
   height: 1.625rem;
   padding: .2rem .45rem;
 }
-.channel .dl {
+.channel .dl, .channel .resplit-btn {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -1566,6 +1568,10 @@ footer a:hover { color: var(--hot); }
   height: 1.625rem;
   padding: .3rem;
 }
+.resplit-btn { border: 1px solid var(--panel-edge); border-radius: 6px; background: transparent; color: var(--ink-dim); cursor: pointer; }
+.resplit-btn:hover:not(:disabled) { color: var(--hot); background: var(--hot-soft); }
+.resplit-btn:disabled { opacity: .4; cursor: default; }
+.resplit-filename { overflow-wrap: anywhere; }
 @media (max-width: 540px) {
   .channel { grid-template-columns: 6.4rem minmax(0, 1fr); gap: .2rem .5rem; }
   .channel .ch-id { gap: .45rem; }
@@ -1575,7 +1581,7 @@ footer a:hover { color: var(--hot); }
      floor) with the same small type, and the play button stops dominating. */
   .channel .solo-btn,
   .channel .mute-btn { flex-basis: 3rem; width: 3rem; height: 1.5rem; padding: 0 .3rem; font-size: .6rem; letter-spacing: .06em; }
-  .channel .dl {
+  .channel .dl, .channel .resplit-btn {
     width: 1.5rem; height: 1.5rem; padding: 0;
     border: 1px solid var(--panel-edge); border-radius: 6px;
     color: var(--ink-dim); font-size: .7rem; line-height: 1;

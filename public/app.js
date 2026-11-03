@@ -340,6 +340,9 @@ async function api(path, options = {}) {
     void ensureClassCode();
     throw new Error('Invalid class code — enter it and retry.');
   }
+  if (pending && res.ok && (typeof body.id !== 'string' || !body.id)) {
+    throw Object.assign(new Error('The split response was interrupted. Retry to check the same request.'), { status: 503, retryable: true });
+  }
   if (pending && (res.ok || res.status < 500 && res.status !== 429 && body.error?.code !== 'guest_verification_required')) {
     try { sessionStorage.removeItem(pending.slot); } catch {}
   }
@@ -1580,7 +1583,7 @@ function linkGuidance(link) {
   return 'Paste a public HTTPS link to an audio file, or search for a song.';
 }
 
-async function handleFile(file) {
+async function handleFile(file, settings = {}) {
   if (file.size > 100 * 1024 * 1024) {
     showUploadMessage('File too large (max 100 MB).', true);
     return;
@@ -1596,41 +1599,116 @@ async function handleFile(file) {
 
   try {
     await appReady;
-    const courseContext = creationCourse();
-    const chosen = await requireSelectedModel();
-    const resolved = await resolveModel(chosen, file);
-    const { model, note } = resolved;
-    if (note) showUploadMessage(note);
-    const { key, uploadUrl } = await api('/api/uploads', {
-      method: 'POST',
-      courseContext,
-      body: JSON.stringify({ filename: file.name }),
-    });
-
-    await putWithProgress(uploadUrl, file, (pct) => {
-      progressBar.style.width = `${pct}%`;
-    });
+    const courseContext = settings.courseContext || creationCourse();
+    let input = settings.retryState?.input;
+    if (!input) {
+      const chosen = settings.model || await requireSelectedModel();
+      const resolved = await resolveModel(chosen, file);
+      const { model, note } = resolved;
+      if (note) showUploadMessage(note);
+      const { key, uploadUrl } = await api('/api/uploads', {
+        method: 'POST', courseContext, body: JSON.stringify({ filename: file.name }),
+      });
+      await putWithProgress(uploadUrl, file, (pct) => { progressBar.style.width = `${pct}%`; });
+      input = { key, filename: file.name, model,
+        ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
+        ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}) };
+      // Retain the accepted upload and exact job body across uncertain retries.
+      // api() then reuses its existing idempotency key for the same request.
+      if (settings.retryState) settings.retryState.input = input;
+    }
 
     showUploadMessage('STARTING SEPARATION…');
     const job = await api('/api/jobs', {
       method: 'POST',
       courseContext,
-      body: JSON.stringify({
-        key,
-        filename: file.name,
-        model,
-        ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
-        ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
-      }),
+      body: JSON.stringify(input),
     });
 
     addJob(job);
     showUploadMessage(processingMessage(job));
     renderJobs();
     pollSoon();
+    return job;
   } catch (err) {
     showUploadMessage(err.message, true);
   }
+}
+
+let resplitDialog = null;
+let resplitAbort = null;
+const resplitRequests = new Map();
+async function chooseStemResplit(mixer, stem) {
+  if (resplitDialog) { resplitDialog.focus(); return; }
+  const dialog = document.createElement('dialog');
+  resplitDialog = dialog;
+  dialog.className = 'class-code-dialog resplit-dialog';
+  dialog.setAttribute('aria-labelledby', 'resplit-title');
+  const filename = stemFilename(mixer.job.filename, mixer.label(stem.name));
+  dialog.innerHTML = `<form class="class-code-form">
+    <h2 id="resplit-title">Split again</h2>
+    <p class="resplit-filename">${esc(filename)}</p>
+    <label for="resplit-model">Split into</label><select id="resplit-model" required></select>
+    <p class="resplit-status" role="status">Loading split choices…</p>
+    <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Split again</button></div>
+  </form>`;
+  document.body.appendChild(dialog);
+  let busy = false;
+  const submit = dialog.querySelector('[type="submit"]');
+  const cancel = dialog.querySelector('.dialog-cancel');
+  const select = dialog.querySelector('select');
+  const status = dialog.querySelector('[role="status"]');
+  dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+  dialog.addEventListener('close', () => { resplitAbort?.abort(); dialog.remove(); resplitDialog = null; mixer.channelsByName.get(stem.name)?.resplit.focus(); });
+  cancel.addEventListener('click', () => dialog.close());
+  dialog.showModal();
+  try {
+    await appReady;
+    await separationOptionsReady;
+    if (!dialog.isConnected) return;
+    const courseContext = creationCourse();
+    // Use exactly the choices the server made available on this page.
+    for (const input of stemChoice.querySelectorAll('input[name="stem-model"]')) {
+      const model = catalogueModels.find(model => model.id === input.value);
+      const option = new Option(model ? `${model.stems.length} splits` : input.getAttribute('aria-label') || input.value, input.value, false, input.checked);
+      option.title = input.getAttribute('aria-label') || option.text;
+      select.add(option);
+    }
+    if (!select.options.length) throw new Error('Split choices are unavailable. Reload the page and try again.');
+    const workspace = document.getElementById('new-split-course')?.selectedOptions[0]?.textContent || 'Personal';
+    status.textContent = `Creates a new run in ${workspace} and uses one split from your allowance.`;
+    submit.disabled = false;
+    select.focus();
+    dialog.querySelector('form').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (busy) return;
+      busy = true;
+      submit.disabled = true; cancel.disabled = true; select.disabled = true;
+      submit.textContent = 'Preparing…';
+      status.textContent = 'Preparing the selected audio…';
+      resplitAbort = new AbortController();
+      const requestKey = JSON.stringify([accountSubject, courseContext, mixer.job.id, stem.name, filename, select.value]);
+      const retryState = resplitRequests.get(requestKey) || {};
+      resplitRequests.set(requestKey, retryState);
+      try {
+        const response = await fetch(stem.url, { signal: AbortSignal.any([resplitAbort.signal, AbortSignal.timeout(60_000)]) });
+        if (!response.ok) throw new Error(`Could not load this split (${response.status}).`);
+        if (Number(response.headers.get('content-length')) > 100 * 1024 * 1024) throw new Error('File too large (max 100 MB).');
+        const audio = await response.blob();
+        if (!dialog.isConnected || resplitAbort.signal.aborted) return;
+        status.textContent = 'Starting a new split…';
+        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext, retryState });
+        if (job) { resplitRequests.delete(requestKey); dialog.close(); return; }
+        status.textContent = uploadMessage.textContent || 'The split could not start. Please try again.';
+      } catch (error) {
+        status.textContent = error.message || 'The split could not start. Please try again.';
+      } finally {
+        resplitAbort = null;
+        busy = false; submit.disabled = false; cancel.disabled = false; select.disabled = false;
+        submit.textContent = 'Split again';
+      }
+    });
+  } catch (error) { status.textContent = error.message; }
 }
 
 // A file picked from a cloud-synced folder (iCloud "Optimize Mac Storage",
@@ -2083,17 +2161,20 @@ class Mixer {
           <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
           <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
           <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
+          <button type="button" class="resplit-btn" title="Split ${esc(this.label(stem.name))} again" aria-label="Split ${esc(this.label(stem.name))} again">↩</button>
         </span>
       `;
       const muteBtn = row.querySelector('.mute-btn');
       const soloBtn = row.querySelector('.solo-btn');
       const download = row.querySelector('.dl');
+      const resplit = row.querySelector('.resplit-btn');
       this.channelsByName.set(stem.name, {
         audio,
         row,
         muteBtn,
         soloBtn,
         download,
+        resplit,
         bars: [...row.querySelectorAll('.meter i')],
         levels: new Float32Array(METER_BANDS.length),
         waveform: row.querySelector('.waveform'),
@@ -2102,6 +2183,7 @@ class Mixer {
         mixGain: 1,
       });
       this.userMuted.set(stem.name, false);
+      resplit.addEventListener('click', () => chooseStemResplit(this, stem));
       muteBtn.addEventListener('click', () =>
         this.toggleMute(stem.name)
       );
@@ -2467,6 +2549,7 @@ class Mixer {
     channel.muteBtn.textContent = 'NO AUDIO';
     channel.soloBtn.disabled = true;
     channel.download.removeAttribute('href');
+    channel.resplit.disabled = true;
     channel.download.setAttribute('aria-disabled', 'true');
     this.readyBadge.textContent = 'AUDIO ERROR';
     this.readyBadge.classList.remove('ready');
@@ -2505,6 +2588,7 @@ class Mixer {
     channel.soloBtn.disabled = false;
     channel.download.href = stemDownloadUrl(channel.audio.src, this.job.filename, this.label(stemName));
     channel.download.removeAttribute('aria-disabled');
+    channel.resplit.disabled = false;
     if ([...this.channelsByName.values()].some(value => value.row.classList.contains('unavailable'))) return;
     clearTimeout(this.audioRetryTimer);
     this.readyBadge.textContent = this.job.readOnlyShared && !this.job.instructorReview ? 'SHARED' : 'READY';
@@ -3206,6 +3290,8 @@ class Mixer {
       channel.muteBtn.setAttribute('aria-label', `Mute ${this.label(name)}`);
       channel.download.title = `Download ${this.label(name)}`;
       channel.download.setAttribute('aria-label', `Download ${this.label(name)}`);
+      channel.resplit.title = `Split ${this.label(name)} again`;
+      channel.resplit.setAttribute('aria-label', `Split ${this.label(name)} again`);
       if (channel.download.hasAttribute('href')) channel.download.href = stemDownloadUrl(channel.audio.src, this.job.filename, this.label(name));
     }
   }
@@ -5403,6 +5489,7 @@ async function initialize() {
       accountSubject = principal.subject;
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
+        resplitAbort?.abort(); resplitDialog?.close(); resplitRequests.clear();
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null; listeningUsage = null; guestListeningUsages.clear();
