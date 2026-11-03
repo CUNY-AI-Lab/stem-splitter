@@ -2082,7 +2082,7 @@ class Mixer {
         <span class="ch-actions">
           <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
           <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
-          <a class="dl" href="${stem.url}?download" title="Download ${esc(stem.name)}">↓</a>
+          <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
         </span>
       `;
       const muteBtn = row.querySelector('.mute-btn');
@@ -2419,10 +2419,11 @@ class Mixer {
       for (const stem of this.job.stems) {
         const res = await fetch(stem.url);
         if (!res.ok) throw new Error(`Could not fetch the ${this.label(stem.name)} track (${res.status}).`);
-        let base = fileSafe(this.label(stem.name)) || fileSafe(stem.name) || 'stem';
-        if (used.has(base)) base = `${base}-${used.size + 1}`;
-        used.add(base);
-        entries.push({ name: `stems/${base}.mp3`, data: new Uint8Array(await res.arrayBuffer()) });
+        const filename = stemFilename(this.job.filename, this.label(stem.name));
+        let unique = filename;
+        for (let suffix = 2; used.has(unique.toLowerCase()); suffix++) unique = filename.replace(/\.mp3$/, ` (${suffix}).mp3`);
+        used.add(unique.toLowerCase());
+        entries.push({ name: `stems/${unique}`, data: new Uint8Array(await res.arrayBuffer()) });
       }
       if(this.job.attribution && ['commons','ccmixter'].includes(this.job.attribution.provider)) entries.push({name:'source-attribution.json',data:new TextEncoder().encode(JSON.stringify(this.job.attribution,null,2))});
       entries.push({
@@ -2502,7 +2503,7 @@ class Mixer {
     channel.muteBtn.disabled = false;
     channel.muteBtn.textContent = 'MUTE';
     channel.soloBtn.disabled = false;
-    channel.download.href = `${channel.audio.src}?download`;
+    channel.download.href = stemDownloadUrl(channel.audio.src, this.job.filename, this.label(stemName));
     channel.download.removeAttribute('aria-disabled');
     if ([...this.channelsByName.values()].some(value => value.row.classList.contains('unavailable'))) return;
     clearTimeout(this.audioRetryTimer);
@@ -3203,6 +3204,9 @@ class Mixer {
       if (!nameEl) continue; // a rename is open in this strip — leave it alone
       nameEl.textContent = this.label(name);
       channel.muteBtn.setAttribute('aria-label', `Mute ${this.label(name)}`);
+      channel.download.title = `Download ${this.label(name)}`;
+      channel.download.setAttribute('aria-label', `Download ${this.label(name)}`);
+      if (channel.download.hasAttribute('href')) channel.download.href = stemDownloadUrl(channel.audio.src, this.job.filename, this.label(name));
     }
   }
 
@@ -4146,7 +4150,7 @@ function recordingTitleMarkup(job){
 function bindRecordingTitle(el,job){el.querySelector('.console-title-editable')?.addEventListener('click',()=>editRecordingTitle(job,el.querySelector('.console-title')));}
 function rememberRecordingTitle(id,filename){
   const state=jobStates.get(id);if(state)state.filename=filename;
-  const mixer=mixers.get(id);if(mixer)mixer.job.filename=filename;
+  const mixer=mixers.get(id);if(mixer){mixer.job.filename=filename;mixer.renderChannelNames();}
   saveJobs(getJobs().map(job=>job.id===id?{...job,filename}:job));
   const title=[...jobList.children].find(el=>el.dataset.jobId===id)?.querySelector('.console-title');
   if(title){title.textContent=filename;if(title.matches('button'))title.setAttribute('aria-label','Rename recording: '+filename);}
@@ -5239,6 +5243,30 @@ function cssName(s) {
 function idx(arr, v) {
   const i = arr.indexOf(String(v).toLowerCase());
   return i === -1 ? 99 : i;
+}
+
+// Keep this display-name rule aligned with src/stem-filename.ts.
+function stemFilename(title, label) {
+  const part = (value, fallback) => {
+    const clean = new TextDecoder().decode(new TextEncoder().encode(String(value)))
+    .normalize('NFC')
+    .replace(/\.(?:mp3|wav|flac|m4a|ogg|aiff?|aac|opus|webm)$/i, '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069/\\:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ').trim().replace(/^[. ]+|[. ]+$/g, '') || fallback;
+    let result = '';
+    for (const char of clean) {
+      if (new TextEncoder().encode(result + char).length > 100) break;
+      result += char;
+    }
+    return result.trimEnd();
+  };
+  return `${part(title, 'Recording')} — ${part(label, 'Split')}.mp3`;
+}
+
+function stemDownloadUrl(source, title, label) {
+  const url = new URL(source, location.href);
+  url.searchParams.set('download', stemFilename(title, label));
+  return url.href;
 }
 
 function fileSafe(s) {

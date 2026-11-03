@@ -7,7 +7,7 @@ import { buildSystemPromptFingerprintMaterial, SYSTEM_PROMPT_VERSION } from '../
 test('Listening Guy keeps its original Splitter tools and prompt modes', () => {
   assert.deepEqual(buildMixerTools(['vocals', 'drums']).map(t => t.function.name), ['solo', 'set_mute', 'seek', 'add_note']);
   const bundle = JSON.parse(buildSystemPromptFingerprintMaterial());
-  assert.equal(SYSTEM_PROMPT_VERSION, '2026-09-07.1');
+  assert.equal(SYSTEM_PROMPT_VERSION, '2026-11-03.1');
   assert.equal(bundle.variants.length, 3);
   assert.doesNotMatch(JSON.stringify(bundle), /devil|weakest choice|ACTING ON THE DECK|defend the choice/i);
 });

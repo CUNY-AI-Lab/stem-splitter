@@ -44,6 +44,12 @@ test('audio delivery streams exact ranges, downloads and HEAD without losing ret
     const stale = await get('bytes=0-0', { 'If-Range': '"old"' });
     assert.equal(stale.status, 200);
     assert.equal(await stale.text(), '0123456789');
+    const named = await serveStemAudio(env, key, new Request(`https://test/audio?download=${encodeURIComponent('Tab Steps Out — Trumpet.mp3')}`));
+    assert.equal(named.headers.get('content-disposition'), 'attachment; filename="Tab Steps Out _ Trumpet.mp3"; filename*=UTF-8\'\'Tab%20Steps%20Out%20%E2%80%94%20Trumpet.mp3');
+    assert.equal(await named.text(), '0123456789');
+    const hostile = await serveStemAudio(env, key, new Request(`https://test/audio?download=${encodeURIComponent('../song"\r\nX-Injected: yes.mp3')}`));
+    assert.equal(hostile.headers.get('x-injected'), null);
+    assert.doesNotMatch(hostile.headers.get('content-disposition')!, /\r|\n|\.\.\//);
     const head = await serveStemAudio(env, key, new Request('https://test/audio', { method: 'HEAD', headers: { Range: 'bytes=0-0' } }));
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('content-length'), '10');

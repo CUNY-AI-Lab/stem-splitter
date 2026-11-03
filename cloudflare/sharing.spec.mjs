@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
-test('shared split opens signed out, plays, and keeps private tools and data inaccessible', async ({ page, context }) => {
+test('shared split opens signed out, plays, and keeps private tools and data inaccessible', async ({ page, context }, testInfo) => {
   const issuer = await createTestIdentityIssuer();
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
     vars: { TEST_JWKS: issuer.jwksJson, TEST_ADMIN: TEST_SUBJECTS.carol, TEST_BROWSER: 'true' } }] });
@@ -62,8 +62,28 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await page.getByRole('textbox', { name: 'Split name', exact: true }).press('Enter');
     await expect(page.locator('.ch-name')).toHaveText('Lead voice');
     await expect(page.locator('.mute-btn')).toHaveAttribute('aria-label', 'Mute Lead voice');
+    const download = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Download Lead voice', exact: true }).click();
+    expect((await download).suggestedFilename()).toBe('Shared audio — Lead voice.mp3');
+    const renamedZip = page.waitForEvent('download');
+    await page.locator('.export-btn').click({ force: true });
+    const renamedStream = await (await renamedZip).createReadStream();
+    const renamedChunks = [];
+    for await (const chunk of renamedStream) renamedChunks.push(chunk);
+    expect(Buffer.concat(renamedChunks).includes(Buffer.from('stems/Shared audio — Lead voice.mp3'))).toBe(true);
     await page.reload();
     await expect(page.locator('.ch-name')).toHaveText('Lead voice');
+    expect(new URL(await page.locator('.dl').getAttribute('href')).searchParams.get('download')).toBe('Shared audio — Lead voice.mp3');
+    await page.getByRole('button', { name: 'Rename recording: Shared audio', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('Renamed recording');
+    await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
+    await expect(page.locator('.console-title')).toHaveText('Renamed recording');
+    expect(new URL(await page.locator('.dl').getAttribute('href')).searchParams.get('download')).toBe('Renamed recording — Lead voice.mp3');
+    await page.locator('.console').screenshot({ path: testInfo.outputPath('stem-download-naming.png'), animations: 'disabled' });
+    await page.getByRole('button', { name: 'Rename recording: Renamed recording', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('Shared audio');
+    await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
+    await expect(page.locator('.console-title')).toHaveText('Shared audio');
     // A rejected write must not leave an unsaved label looking saved.
     await page.route('**/api/jobs/remix-fixture/labels', route => route.fulfill({ status: 503, json: { error: 'Could not save the split name. Try again.' } }));
     await page.locator('.ch-name').click();

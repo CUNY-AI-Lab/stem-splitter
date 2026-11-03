@@ -1,6 +1,7 @@
 import { AwsClient } from 'aws4fetch';
 import type { Env } from './env';
 import { audioAnalysisSourceScopeForKey } from './analysis/source-scope.ts';
+import { downloadDisposition } from './stem-filename.ts';
 
 // Presigned URLs let the browser upload straight to R2 (and let the
 // separation backend download the source) without the audio bytes ever
@@ -211,9 +212,12 @@ export async function serveStemAudio(env: Env, key: string, request: Request): P
   headers.set('Accept-Ranges', 'bytes');
   if (metadata.httpEtag) headers.set('ETag', metadata.httpEtag);
   headers.set('Last-Modified', metadata.uploaded.toUTCString());
-  if (new URL(request.url).searchParams.has('download')) {
+  const requestedName = new URL(request.url).searchParams.get('download');
+  if (requestedName !== null) {
     const filename = (key.split('/').pop() || 'split.mp3').replace(/[^\w. -]/g, '_');
-    headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+    headers.set('Content-Disposition', requestedName && requestedName !== '1'
+      ? downloadDisposition(requestedName)
+      : `attachment; filename="${filename}"`);
   }
   headers.set('Content-Length', String(metadata.size));
   // Range applies only to GET, not HEAD.
