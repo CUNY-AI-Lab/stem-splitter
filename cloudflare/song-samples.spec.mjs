@@ -222,24 +222,65 @@ test('mobile streams inside the search field with no hint or extra box',async({p
  }finally{releaseSamples();await f.harness.close();}
 });
 
-test('open audio selector keeps provider search and submitted recording IDs together',async({page,context})=>{
- const f=await fixture();const errors=[];page.on('pageerror',e=>errors.push(e.message));let request;
+test('unified search keeps one audio import flow and no separate metadata controls through retries',async({page,context})=>{
+ const f=await fixture();const errors=[];page.on('pageerror',e=>errors.push(e.message));let request;const searches=[];
+ const mbid='12345678-1234-1234-1234-123456789012';
+ const commons={id:'commons:123:original',title:'Synthetic music',artist:'Fixture creator',durationSec:10,sourceUrl:'https://commons.wikimedia.org/wiki/File:Fixture.mp3',providerName:'Wikimedia Commons',licenseName:'CC BY 4.0',openAudio:{provider:'commons',itemId:'123',fileId:'original'}};
+ const archive={id:'fixture/song.mp3',title:'Synthetic music live',artist:'Fixture creator',durationSec:10,sourceUrl:'https://archive.org/details/fixture',providerName:'Internet Archive',archiveId:'fixture',archiveFile:'song.mp3'};
  try{
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
   await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:0,tracks:[]}}));
-  await page.route('**/api/music/search?*',route=>{const provider=new URL(route.request().url()).searchParams.get('provider');return route.fulfill({json:{results:[{id:provider+':123',title:'Synthetic music',artist:'Fixture creator',durationSec:10,sourceUrl:'https://commons.wikimedia.org/wiki/File:Fixture.mp3',providerName:provider==='commons'?'Wikimedia Commons':'ccMixter',licenseName:'CC BY 4.0',openAudio:{provider,itemId:'123',fileId:provider==='commons'?'original':'456'}}]}});});
+  await page.route('**/api/music/search?*',route=>{const url=new URL(route.request().url());searches.push(url);return route.fulfill({json:url.searchParams.get('q')==='Different music'
+    ?{results:[commons],references:[],providers:{archive:'unavailable',commons:'ready',musicbrainz:'unavailable'}}
+    :{results:[archive,commons],references:[{id:mbid,title:'Synthetic music',artist:'Fixture creator',disambiguation:'studio recording',kind:'metadata',sourceUrl:'https://musicbrainz.org/recording/'+mbid}],providers:{archive:'ready',commons:'ready',musicbrainz:'ready'}}});});
+  await page.route('**/api/music/recordings/*',route=>route.fulfill({json:{relations:[{label:'free download · archive.org',url:'https://archive.org/details/fixture'}]}}));
   await page.route('**/api/jobs',async route=>{if(route.request().method()!=='POST')return route.continue();request=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Synthetic import stopped before processing.'}});});
   await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
-  await expect(page.getByLabel('Audio source',{exact:true})).toHaveValue('archive');
-  await expect(page.locator('#audio-source option[value=ccmixter]')).toHaveCount(0);
-  for(const provider of ['commons']){
-   await page.getByLabel('Audio source',{exact:true}).selectOption(provider);await expect(page.locator('#source-sample-hint')).toBeHidden();
-   await page.locator('#yt-url').fill('Synthetic music');await expect(page.locator('#source-songs')).toContainText('CC BY 4.0');
-   await page.locator('#source-songs [role="option"]').first().click();await page.locator('#yt-form').evaluate(form=>form.requestSubmit());
-   await expect.poll(()=>request?.openAudio?.provider).toBe(provider);expect(request.openAudio).toEqual({provider,itemId:'123',fileId:provider==='commons'?'original':'456'});expect(request.archiveId).toBeUndefined();
-   await expect(page.locator('#yt-url')).toBeEnabled();request=undefined;
-  }
+  await expect(page.getByLabel('Audio source',{exact:true})).toHaveCount(0);
+  const beforeSearch=await page.locator('#stem-choice').boundingBox();
+  await page.locator('#yt-url').fill('Synthetic music');await expect(page.locator('#source-songs')).toContainText('CC BY 4.0');
+  await expect(page.locator('#source-songs')).toContainText('Internet Archive');
+  await expect(page.locator('#source-songs [role="option"]')).toHaveCount(2);
+  expect(await page.locator('#stem-choice').boundingBox()).toEqual(beforeSearch);
+  await expect(page.locator('#recording-references')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Related pages',exact:true})).toHaveCount(0);
+  await page.locator('#source-songs [role="option"]').nth(1).click();
+  expect(request).toBeUndefined();
+  await page.locator('#yt-form').evaluate(form=>form.requestSubmit());
+  await expect.poll(()=>request?.openAudio?.provider).toBe('commons');expect(request.openAudio).toEqual(commons.openAudio);expect(request.archiveId).toBeUndefined();
+  await expect(page.locator('#yt-url')).toBeEnabled();request=undefined;
+  await page.locator('#yt-url').fill('Different music');await expect(page.locator('#source-songs [role="option"]')).toHaveCount(1);
+  await expect(page.locator('#source-songs')).toContainText('temporarily unavailable');
+  await expect(page.locator('#recording-references')).toHaveCount(0);
+  await page.locator('#yt-url').press('Escape');await expect(page.locator('#source-songs')).toBeHidden();expect(request).toBeUndefined();
+  await page.locator('#yt-url').fill('Synthetic music');await expect(page.locator('#source-songs [role="option"]')).toHaveCount(2);
+  await page.locator('#source-songs [role="option"]').first().click();await page.locator('#yt-form').evaluate(form=>form.requestSubmit());
+  await expect.poll(()=>request?.archiveId).toBe('fixture');expect(request.archiveFile).toBe('song.mp3');expect(request.openAudio).toBeUndefined();
+  expect(searches.every(url=>!url.searchParams.has('provider'))).toBe(true);
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  if(process.env.STEM_SCREENSHOT_DIR)await page.screenshot({path:process.env.STEM_SCREENSHOT_DIR+'/unified-music-mobile.png',fullPage:true,animations:'disabled'});
   expect(errors).toEqual([]);
+ }finally{await f.harness.close();}
+});
+
+test('manually searching a preloaded hint stays unified and accepting the hint keeps its exact file',async({page,context})=>{
+ const f=await fixture({TEST_NO_COURSES:'true'}),requests=[];
+ const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'hint-exact',archiveFile:'exact.mp3'},query=`${track.artist} ${track.title}`;
+ const exact={...track,id:'hint-exact/exact.mp3',durationSec:30,sourceUrl:'https://archive.org/details/hint-exact'};
+ const commons={id:'commons:123:original',title:'Related rendition',artist:'Fixture creator',durationSec:30,providerName:'Wikimedia Commons',openAudio:{provider:'commons',itemId:'123',fileId:'original'}};
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});await page.emulateMedia({reducedMotion:'reduce'});
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:true,revision:1,tracks:[track]}}));
+  await page.route('**/api/music/search?*',route=>{const url=new URL(route.request().url());requests.push(url);return route.fulfill({json:{results:url.searchParams.has('sampleItem')?[exact]:[exact,commons]}});});
+  await page.goto(f.url.href);const input=page.locator('#yt-url'),options=page.locator('#source-songs [role="option"]');
+  await expect(input).toHaveAttribute('placeholder',query);
+  await input.fill(query);await expect(options).toHaveCount(2);await expect(page.locator('#source-songs')).toContainText('Wikimedia Commons');
+  expect(requests.filter(url=>!url.searchParams.has('sampleItem'))).toHaveLength(1);
+  await input.fill('');await expect(input).toHaveAttribute('placeholder',query);await input.press('Tab');
+  await expect(input).toHaveValue(query);await expect(options).toHaveCount(1);
+  await expect(options).toContainText('Verified suggestion');
+  await input.fill('changed');await input.fill(query);await expect(options).toHaveCount(2);
+  expect(requests.filter(url=>!url.searchParams.has('sampleItem'))).toHaveLength(1);
  }finally{await f.harness.close();}
 });
 
@@ -284,7 +325,7 @@ for (const submitAction of ['Enter','Fetch']) test(`Tab accepts the verified sam
  }finally{release();await f.harness.close();}
 });
 
-for(const changed of ['text','provider'])test(`editing the accepted sample ${changed} restores explicit recording selection`,async({page,context})=>{
+for(const changed of ['replacement','clearing'])test(`editing the accepted sample by ${changed} restores explicit recording selection`,async({page,context})=>{
  const f=await fixture();let creates=0;
  const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'verified-suggestion',archiveFile:'exact-recording.mp3'},query=`${track.artist} ${track.title}`;
  try{
@@ -295,8 +336,7 @@ for(const changed of ['text','provider'])test(`editing the accepted sample ${cha
   await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
   const input=page.locator('#yt-url'),button=page.locator('#yt-form .yt-go');
   await expect(input).toHaveAttribute('placeholder',query);await input.focus();await input.press('Tab');await expect(input).toHaveValue(query);
-  if(changed==='text'){await input.fill('A different song');await input.fill(query);}
-  else{await page.getByLabel('Audio source',{exact:true}).selectOption('commons');await page.getByLabel('Audio source',{exact:true}).selectOption('archive');}
+  await input.fill(changed==='replacement'?'A different song':'');await input.fill(query);
   await button.click();await expect(page.locator('#source-songs [role="option"]')).toBeVisible();await expect(button).toBeEnabled();expect(creates).toBe(0);
   await page.locator('#source-songs [role="option"]').click();await button.click();await expect.poll(()=>creates).toBe(1);await expect(button).toBeEnabled();
  }finally{await f.harness.close();}

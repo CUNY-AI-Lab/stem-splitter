@@ -15,6 +15,10 @@ async function setup(page, chatAvailable = false) {
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
   const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble',mediatype:'audio',subject:['Music','Rock']};
   const network = setupServer(
+    http.get('https://commons.wikimedia.org/w/api.php',()=>HttpResponse.json({query:{pages:[]}})),
+    http.get('https://api.openverse.org/v1/audio/',()=>HttpResponse.json({results:[]})),
+    http.get('https://www.loc.gov/collections/national-jukebox/',()=>HttpResponse.json({results:[]})),
+    http.get('https://data.labs.loc.gov/jukebox/manifest.json',()=>HttpResponse.json({cols:['filename','item_id','md5','size','object_key'],rows:[]})),
     http.get('https://archive.org/advancedsearch.php',()=>HttpResponse.json({response:{docs:[music]}})),
     http.get('https://archive.org/metadata/song-fixture',()=>HttpResponse.json({metadata:music,files:[{name:'song.mp3',title:'Song fixture',size:String(mp3.length),length:String(mp3FrameInfo(new Uint8Array(mp3).buffer).seconds)}]})),
     http.get('https://archive.org/download/song-fixture/song.mp3',({request})=>request.headers.has('range')
@@ -108,7 +112,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
     await expect(input).toHaveAttribute('placeholder', 'Search songs');
-    await expect(page.locator('#yt-disclosure summary')).toHaveText('Search for songs via Internet Archive or Wikimedia Commons');
+    await expect(page.locator('#song-search-label, #split-picker-label')).toHaveCount(0);
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
     await input.fill('https://vimeo.com/76979871');
@@ -222,9 +226,8 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
     const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
     await page.route('**/api/account', async route => { await heldCheck; await route.fulfill({ status: 503, json: { error: 'Fixture authority unavailable' } }); });
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(page.locator('#job-list')).toBeHidden();
+    await expect(page.locator('#job-list')).toBeVisible();
     await expect(page.locator('.masthead')).toBeVisible();
-    expect(await page.evaluate(() => [...mixers.values()][0].audios.every(audio => audio.paused))).toBe(true);
     releaseCheck();
     await expect(page.locator('#rack-status')).toContainText('Please retry the connection');
     await expect(page.locator('#job-list')).toBeHidden();
@@ -362,7 +365,7 @@ test('song search shows empty and failed searches and ignores stale responses',a
       return route.fulfill(query==='Empty'?{json:{results:[]}}:{status:502,json:{error:'Provider unavailable'}});
     });
     const input=page.getByRole('combobox',{name:'Song or link',exact:true}),list=page.getByRole('listbox',{name:'Songs'});
-    await input.fill('Empty');await expect(list).toContainText('Try another song or artist.');
+    await input.fill('Empty');await expect(list).toContainText('No downloadable audio found. Try another recording or upload an audio file.');
     await input.fill('Failure');await expect(list).toContainText('Search is temporarily unavailable. Try again.');
     await input.fill('Slow');await expect.poll(()=>Boolean(slow)).toBe(true);
     await input.fill('Latest');await expect.poll(()=>Boolean(latest)).toBe(true);

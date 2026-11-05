@@ -4,6 +4,7 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
+import { openSplitActions } from './split-actions.mjs';
 
 // Long, decodable, distinct tones exercise the actual media clocks past 0:43.
 // No provider calls, user audio, or committed binary fixtures.
@@ -54,6 +55,92 @@ async function fixture(page, names, { owned = false, mediaRange, durations = {} 
     .every(([name, channel]) => Math.abs(channel.audio.duration - (expected[name] || 70)) < .1), durations)).toBe(true);
   return server;
 }
+
+test('recording actions stay in one menu on desktop and phone with keyboard dismissal', async ({ page }, testInfo) => {
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'other'], { owned: true });
+  try {
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const toggle = page.getByRole('button', { name: 'Split actions', exact: true });
+      await expect(toggle).toBeVisible();
+      await expect(page.locator('.export-btn, .delete-btn, .share-btn:not(.to-remix-btn)')).toHaveCount(3);
+      await expect(page.locator('.console-actions')).toBeHidden();
+      await expect(page.locator('.play-btn')).toBeVisible();
+      await expect(page.locator('#yt-disclosure summary')).toHaveCount(0);
+      await expect(page.getByText('Audio source', { exact: true })).toHaveCount(0);
+      await expect(page.locator('#song-search-label, #split-picker-label')).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath(`split-${width}-closed.png`), animations: 'disabled' });
+      await toggle.focus(); await page.keyboard.press('Enter');
+      await expect(page.locator('.export-btn')).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Recording', exact: true })).toBeVisible();
+      await expect(page.getByRole('group', { name: 'Sharing', exact: true })).toBeVisible();
+      const box = await page.locator('.console-actions').boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width);
+      await page.screenshot({ path: testInfo.outputPath(`split-${width}-menu.png`), animations: 'disabled' });
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.console-actions')).toBeHidden(); await expect(toggle).toBeFocused();
+      await openSplitActions(page); await page.locator('#yt-url').click();
+      await expect(page.locator('.console-actions')).toBeHidden();
+    }
+  } finally { await server.close(); }
+});
+
+test('choosing another recording stops playback and cancels an earlier pending start', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'bass'], { owned: true });
+  try {
+    await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify([
+      `INSERT INTO jobs(id,filename,source_key,status,model,stems) SELECT 'second-recording','Second recording',source_key,status,model,stems FROM jobs WHERE id='remix-fixture'`,
+      `INSERT INTO job_owners(job_id,subject) VALUES('second-recording','${TEST_SUBJECTS.alice}')`,
+    ]) });
+    await page.reload(); await expect(page.locator('.console .play-btn')).toHaveCount(2);
+    await expect.poll(() => page.evaluate(() => [...mixers.values()].every(m => m.audios.every(a => a.duration > 69)))).toBe(true);
+    const first = page.locator('.console').filter({ hasText: 'Playback review' });
+    const second = page.locator('.console').filter({ hasText: 'Second recording' });
+    await first.locator('.play-btn').click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').playing)).toBe(true);
+    await second.locator('.play-btn').click();
+    await expect.poll(() => page.evaluate(() => ({ first: mixers.get('remix-fixture').audios.every(a => a.paused), second: mixers.get('second-recording').playing }))).toEqual({ first: true, second: true });
+    await second.locator('.play-btn').click();
+    await page.evaluate(() => {
+      const audio = mixers.get('remix-fixture').audios[0];
+      const original = audio.play;
+      audio.play = () => new Promise(resolve => { window.finishOldStart = () => { audio.play = original; resolve(); }; });
+    });
+    await first.locator('.play-btn').click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').starting)).toBe(true);
+    await second.locator('.play-btn').click();
+    await page.evaluate(() => window.finishOldStart());
+    await expect.poll(() => page.evaluate(() => ({ oldPlaying: mixers.get('remix-fixture').playing, oldStarting: mixers.get('remix-fixture').starting, oldPaused: mixers.get('remix-fixture').audios.every(a => a.paused), currentPlaying: mixers.get('second-recording').playing }))).toEqual({ oldPlaying: false, oldStarting: false, oldPaused: true, currentPlaying: true });
+  } finally { await server.close(); }
+});
+
+test('ordinary focus checks preserve playback and menus while failed checks still conceal private work', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'bass'], { owned: true });
+  let release;
+  try {
+    await page.locator('.play-btn').click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').playing)).toBe(true);
+    await openSplitActions(page);
+    const held = new Promise(resolve => { release = resolve; });
+    let requested = false;
+    await page.route('**/api/account', async route => { requested = true; await held; await route.continue(); });
+    let navigations = 0; page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await expect.poll(() => requested).toBe(true);
+    await expect(page.locator('#job-list')).toBeVisible();
+    await expect(page.locator('.console-actions')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios[0].currentTime)).toBeGreaterThan(1);
+    release(); await page.unroute('**/api/account');
+    await page.evaluate(() => window.StemSessionGuard.check({ conceal: false }));
+    expect(navigations).toBe(0);
+    await page.route('**/api/account', route => route.fulfill({ status: 503, json: { error: 'Fixture unavailable' } }));
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await expect(page.locator('#job-list')).toBeHidden();
+    await expect(page.locator('#rack-status')).toContainText('Please retry');
+    expect(await page.evaluate(() => mixers.get('remix-fixture').audios.every(a => a.paused))).toBe(true);
+    expect(navigations).toBe(0);
+  } finally { release?.(); await server.close(); }
+});
 
 test('note entry clears the speed controls and stays usable on narrow and zoomed layouts', async ({ page }) => {
   const errors = [];
@@ -113,11 +200,24 @@ test('note entry clears the speed controls and stays usable on narrow and zoomed
 
 async function clockAdvances(page) {
   const start = await page.evaluate(() => mixers.get('remix-fixture').audios[0].currentTime);
-  await expect.poll(() => page.evaluate(() => {
-    const m = mixers.get('remix-fixture');
-    return m.audios[0].currentTime > 0 && m.tcNow.textContent === fmt(m.audios[0].currentTime)
-      && !m.scrubbing ? m.audios[0].currentTime : -1;
-  }), { intervals: [80, 120, 160] }).toBeGreaterThan(start + 1);
+  try {
+    await expect.poll(() => page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      return m.audios[0].currentTime > 0 && m.tcNow.textContent === fmt(m.audios[0].currentTime)
+        && !m.scrubbing ? m.audios[0].currentTime : -1;
+    }), { intervals: [80, 120, 160] }).toBeGreaterThan(start + 1);
+  } catch (error) {
+    const state = await page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      return { playing: m.playing, starting: m.starting, buffering: m.buffering, context: m.ctx?.state,
+        notice: m.transportNotice.textContent, audios: m.audios.map(a => ({ currentTime: a.currentTime,
+          paused: a.paused, ended: a.ended, seeking: a.seeking, readyState: a.readyState,
+          networkState: a.networkState, error: a.error?.code,
+          buffered: Array.from({ length: a.buffered.length }, (_, i) => [a.buffered.start(i), a.buffered.end(i)]) })) };
+    });
+    await test.info().attach('stalled-media-state', { body: JSON.stringify(state, null, 2), contentType: 'application/json' });
+    throw error;
+  }
 }
 
 test('compact controls never obscure the short full-track waveform and omit the duplicate instrument list', async ({ page }) => {
@@ -648,6 +748,37 @@ test('a frozen media clock parks every stem rather than leaving a half-playing m
     expect(await page.evaluate(() => mixers.get('remix-fixture').audios.every(a => a.paused))).toBe(true);
     await page.locator('.play-btn').click();
     await clockAdvances(page);
+    await expect(page.locator('.transport-notice')).toBeHidden();
+    await page.locator('.play-btn').click();
+  } finally { await server.close(); }
+});
+
+test('a decoder underrun in fully buffered audio is re-primed once and all stems resume together', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']);
+  try {
+    await page.locator('.play-btn').click();
+    await clockAdvances(page);
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(a =>
+      a.buffered.length > 0 && a.buffered.end(a.buffered.length - 1) >= a.duration))).toBe(true);
+    await page.evaluate(() => {
+      const m = mixers.get('remix-fixture'); m.decoderRecoverySeeks = 0;
+      for (const a of m.audios) {
+        // Reproduce the captured browser state: data is fully downloaded, but
+        // the decoder has fallen back to HAVE_CURRENT_DATA after rapid seeks.
+        Object.defineProperty(a, 'readyState', { configurable: true, value: HTMLMediaElement.HAVE_CURRENT_DATA });
+        Object.defineProperty(a, 'networkState', { configurable: true, value: HTMLMediaElement.NETWORK_IDLE });
+        a.addEventListener('seeking', () => {
+          m.decoderRecoverySeeks++;
+          delete a.readyState; delete a.networkState;
+        }, { once: true });
+      }
+      m.resync();
+    });
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').decoderRecoverySeeks)).toBe(6);
+    await clockAdvances(page);
+    await expect.poll(() => page.evaluate(() => { const m = mixers.get('remix-fixture');
+      return m.audios.every(a => !a.paused && Math.abs(a.currentTime - m.audios[0].currentTime) < .2);
+    })).toBe(true);
     await expect(page.locator('.transport-notice')).toBeHidden();
     await page.locator('.play-btn').click();
   } finally { await server.close(); }

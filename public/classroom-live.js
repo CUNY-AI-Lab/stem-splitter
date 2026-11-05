@@ -24,7 +24,7 @@
       this.generation = 0;
       this.ready = false;
       this.pending = false;
-      this.message = 'Playback is independent unless you choose to follow an instructor.';
+      this.message = '';
       this.disabled = new Map();
       this.original = {};
       this.lastFocus = JSON.stringify(mixer.soloState);
@@ -50,7 +50,7 @@
           if (this.leading) {
             this.publishFinalPause();
             this.leading = false;
-            this.message = 'Session leadership paused while this page is hidden. Resume shared session when you return.';
+            this.message = 'Sharing paused while this tab was hidden. Resume sharing playback to continue.';
           }
           this.render();
         } else { void this.read(); }
@@ -64,27 +64,30 @@
     makeControls() {
       const bar = document.createElement('div');
       bar.className = 'class-live';
-      bar.setAttribute('aria-label', 'Shared session');
-      bar.style.cssText = 'margin:.75rem 0;padding:.65rem;border:1px solid var(--line,#777)';
+      bar.setAttribute('aria-label', 'Shared playback');
       const status = document.createElement('p');
       status.className = 'class-live-status';
       status.setAttribute('role', 'status');
-      status.style.cssText = 'flex-basis:100%;margin:0;font-size:.9rem';
       bar.append(status);
       const button = (name, action, className) => {
         const node = document.createElement('button');
         node.type = 'button'; node.className = `head-btn ${className}`; node.textContent = name;
-        node.style.cssText = 'margin:.4rem .5rem 0 0;white-space:normal;text-align:left';
-        node.addEventListener('click', action); bar.append(node); return node;
+        node.addEventListener('click', () => {
+          this.presentedAudioJoin = false;
+          this.mixer.setActionsOpen(false);
+          action();
+        });
+        bar.append(node); return node;
       };
-      this.startButton = button('Start shared session', () => void this.start(), 'class-live-start');
-      this.endButton = button('End shared session', () => void this.end(), 'class-live-end');
+      this.startButton = button('Start sharing playback', () => void this.start(), 'class-live-start');
+      this.endButton = button('Stop sharing playback', () => void this.end(), 'class-live-end');
       this.followButton = button('Follow instructor', () => void this.follow(), 'class-live-follow');
-      this.leaveButton = button('Leave shared session', () => this.leave(), 'class-live-leave');
+      this.leaveButton = button('Stop following', () => this.leave(), 'class-live-leave');
       this.joinButton = button('Join shared audio', () => void this.joinAudio(), 'class-live-join');
       this.retryButton = button('Retry session connection', () => void this.read(), 'class-live-retry');
       this.bar = bar; this.status = status;
-      this.mixer.el.querySelector('.transport').before(bar);
+      this.actionGroup = this.mixer.el.querySelector('.split-class-actions');
+      this.actionGroup.append(bar);
       this.render();
     }
 
@@ -171,8 +174,9 @@
       if (this.disposed) return;
       const active = this.active();
       this.status.textContent = this.message;
+      this.status.hidden = !this.message;
       this.startButton.hidden = !this.ready || !this.canControl || (active && !this.isHost) || this.leading;
-      this.startButton.textContent = active && this.isHost ? 'Resume shared session' : 'Start shared session';
+      this.startButton.textContent = active && this.isHost ? 'Resume sharing playback' : 'Start sharing playback';
       this.endButton.hidden = !active || !this.isHost;
       this.followButton.hidden = !active || this.following || this.isHost;
       this.leaveButton.hidden = !this.following;
@@ -181,6 +185,12 @@
       for (const button of [this.startButton, this.endButton, this.followButton, this.retryButton]) button.disabled = this.busy === true;
       this.bar.dataset.following = String(this.following);
       this.bar.dataset.leading = String(this.leading);
+      // An automatic start can be rejected after the menu action has closed.
+      // Show its explicit join control once, without reopening a dismissed
+      // menu on every poll or leaving an idle explanation above the player.
+      const needsAudioJoin = this.following && this.audioBlocked && this.session?.playing;
+      if (needsAudioJoin && !this.presentedAudioJoin && this.actionGroup.contains(this.bar)) this.mixer.setActionsOpen(true);
+      this.presentedAudioJoin = needsAudioJoin;
       this.lockControls();
     }
 
@@ -232,15 +242,16 @@
       if (this.concealed) {
         for (const [node, hidden] of this.concealed) if (node.isConnected) node.hidden = hidden;
         this.concealed = null;
+        this.actionGroup.append(this.bar);
       }
       if (this.leading && !this.isHost) this.leading = false;
       if (!this.active()) {
-        if (this.following) this.leave('The instructor ended this shared session. Playback is independent again.');
+        if (this.following) this.leave('Shared playback ended.');
         if (this.leading) this.leading = false;
-        this.message = 'Playback is independent unless you choose to follow an instructor.';
-      } else if (this.leading) this.message = 'You are leading shared playback, focus and selected sections.';
-      else if (this.following && !this.audioBlocked) this.message = 'Following instructor playback. Your mute switches stay on this device; course notes remain shared.';
-      else if (!this.following) this.message = this.isHost ? 'Your shared session is available. Resume to lead from this device.' : 'An instructor is leading this split. Choose Follow instructor to join.';
+        this.message = '';
+      } else if (this.leading) this.message = 'You are sharing playback.';
+      else if (this.following && !this.audioBlocked) this.message = 'Following instructor playback.';
+      else if (!this.following) this.message = this.isHost ? 'Resume sharing playback from this device.' : 'Shared playback is available.';
       this.render();
     }
 
@@ -273,6 +284,9 @@
       this.failed = true; this.ready = false; this.session = null;
       this.retryDelay = error?.status === 429 ? 60000 : 10000;
       if (!this.concealed) {
+        // Keep a failed authority check visible while concealing the entire
+        // recording, including its action menu. Restore the bar on recovery.
+        this.mixer.el.querySelector('.transport').before(this.bar);
         this.concealed = [...this.mixer.el.children].filter(node => node !== this.bar).map(node => [node, node.hidden]);
         for (const [node] of this.concealed) node.hidden = true;
       }
@@ -358,11 +372,11 @@
       this.priorFocus = this.mixer.soloState ? { ...this.mixer.soloState } : null;
       this.priorLoop = this.mixer.loop ? { ...this.mixer.loop } : null;
       this.priorRate = this.mixer.rate;
-      this.message = 'Following instructor playback. Your mute switches stay on this device; course notes remain shared.';
+      this.message = 'Following instructor playback.';
       this.render(); await this.apply(true);
     }
 
-    leave(message = 'You left the shared session. Playback is independent again.') {
+    leave(message = 'You stopped following.') {
       const wasFollowing = this.following;
       this.following = false; this.audioBlocked = false;
       this.pauseLocally();

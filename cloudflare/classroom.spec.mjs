@@ -69,7 +69,8 @@ test('existing mixer opens shared course work using its original controls and en
     await expect(page.locator('.console')).toBeVisible();
     await expect(page.locator('.note-text')).toContainText('First student note');
     await expect(page.locator('.seek')).toHaveCount(1);
-    await expect(page.locator('.refresh-btn')).toBeVisible();
+    await expect(page.locator('.refresh-btn')).toHaveCount(0);
+    await expect(page.getByRole('button', {name:'Split actions', exact:true})).toBeVisible();
     await expect(page.locator('.waveform-seek')).toHaveCount(0);
     await page.locator('.play-btn').click();
     await expect.poll(() => page.evaluate(() => mixers.get('course-song').audios[0].currentTime)).toBeGreaterThan(.1);

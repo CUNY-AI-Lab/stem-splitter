@@ -22,10 +22,11 @@ for (const remixer of [false, true]) test(`No Crate and no adversarial panel; Re
     await expect(page).toHaveTitle('Stem Splitter');
     await expect(page.locator('#split-summary')).toBeHidden();
     await expect(page.getByRole('combobox', { name: 'Song or link', exact: true })).toBeVisible();
-    await page.locator('#yt-disclosure summary').click();
-    await expect(page.locator('#yt-url')).toBeHidden();
-    await page.locator('#yt-disclosure summary').click();
+    await expect(page.locator('#yt-disclosure summary, #song-provider, #audio-source')).toHaveCount(0);
+    await expect(page.locator('#song-search-label, #split-picker-label')).toHaveCount(0);
     await expect(page.locator('#yt-url')).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Number of splits', exact: true })).toBeVisible();
+    await expect(page.getByText('Split into', { exact: true })).toHaveCount(0);
     if (process.env.STEM_SCREENSHOT_DIR && !remixer) {
       await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
       await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-desktop.png` });

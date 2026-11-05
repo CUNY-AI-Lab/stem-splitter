@@ -53,6 +53,8 @@ const test = base.extend({
   network: [
     async ({}, use) => {
       const network = setupServer(
+        http.get('https://commons.wikimedia.org/w/api.php', () => HttpResponse.json({ query: { pages: [] } })),
+        http.get('https://musicbrainz.org/ws/2/recording/', () => HttpResponse.json({ recordings: [] })),
         http.get('https://archive.org/advancedsearch.php', ({ request }) => {
           const query = new URL(request.url).searchParams.get('q') || '';
           // The landing page speculates only this sample; dedicated Archive

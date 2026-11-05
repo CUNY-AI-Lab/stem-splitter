@@ -1,3 +1,4 @@
+import { openSplitActions } from './split-actions.mjs';
 import { test, expect } from '@playwright/test';
 import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
@@ -34,8 +35,8 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await page.locator('.recording-credit summary').click();
     await expect(page.locator('.recording-credit')).toContainText('Fixture creator');
     await page.locator('.session-actions-toggle').count().then(async n=>{if(n)await page.locator('.session-actions-toggle').click();});
-    const zipDownload=page.waitForEvent('download');await page.locator('.export-btn').click({force:true});const zip=await zipDownload;const stream=await zip.createReadStream();const chunks=[];for await(const chunk of stream)chunks.push(chunk);const zipBytes=Buffer.concat(chunks);expect(zipBytes.includes(Buffer.from('source-attribution.json'))).toBe(true);expect(zipBytes.includes(Buffer.from('Fixture creator'))).toBe(true);
-    await page.locator('.share-btn:not(.to-remix-btn)').click();
+    const zipDownload=page.waitForEvent('download');await openSplitActions(page); await page.locator('.export-btn').click({force:true});const zip=await zipDownload;const stream=await zip.createReadStream();const chunks=[];for await(const chunk of stream)chunks.push(chunk);const zipBytes=Buffer.concat(chunks);expect(zipBytes.includes(Buffer.from('source-attribution.json'))).toBe(true);expect(zipBytes.includes(Buffer.from('Fixture creator'))).toBe(true);
+    await openSplitActions(page); await page.locator('.share-btn:not(.to-remix-btn)').click();
     await expect.poll(async () => (await server.fetch('/api/shared-jobs/remix-fixture')).status).toBe(200);
     const sharedCredit=await(await server.fetch('/api/shared-jobs/remix-fixture')).json();expect(sharedCredit.attribution.creator).toBe('Fixture creator');expect(JSON.stringify(sharedCredit)).not.toContain('DO NOT SHARE');
     const fixture = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
@@ -66,7 +67,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await page.getByRole('link', { name: 'Download Lead voice', exact: true }).click();
     expect((await download).suggestedFilename()).toBe('Shared audio — Lead voice.mp3');
     const renamedZip = page.waitForEvent('download');
-    await page.locator('.export-btn').click({ force: true });
+    await openSplitActions(page); await page.locator('.export-btn').click({ force: true });
     const renamedStream = await (await renamedZip).createReadStream();
     const renamedChunks = [];
     for await (const chunk of renamedStream) renamedChunks.push(chunk);
@@ -136,9 +137,9 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await expect(page.locator('.ch-name')).toHaveText('Lead voice');
     await expect(page.locator('#upload-message')).toContainText('Could not save');
     await page.unroute('**/api/jobs/remix-fixture/labels');
-    await page.locator('.unshare-btn').click();
+    await openSplitActions(page); await page.locator('.unshare-btn').click();
     await expect.poll(async () => (await server.fetch('/api/shared-jobs/remix-fixture')).status).toBe(404);
-    await page.locator('.share-btn:not(.to-remix-btn)').click();
+    await openSplitActions(page); await page.locator('.share-btn:not(.to-remix-btn)').click();
     await expect.poll(async () => (await server.fetch('/api/shared-jobs/remix-fixture')).status).toBe(200);
     await context.setExtraHTTPHeaders({});
     await page.goto(new URL('/?job=remix-fixture', url).href);

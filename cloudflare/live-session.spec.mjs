@@ -1,3 +1,4 @@
+import { openSplitActions, clickLiveAction } from './split-actions.mjs';
 import { test, expect } from '@playwright/test';
 import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
@@ -91,8 +92,8 @@ test('a student resumes shared playback after a delayed stem while remaining joi
   } });
   const [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
-    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
+    await clickLiveAction(student, 'Follow instructor');
     await host.locator('.play-btn').click();
     await convergence([student], current => current.playing && current.time > 1);
     await host.evaluate(id => mixers.get(id).seekTo(43), job);
@@ -120,8 +121,8 @@ test('instructor buffering pauses the shared session and resumes the class toget
   } });
   const [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
-    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
+    await clickLiveAction(student, 'Follow instructor');
     await host.locator('.play-btn').click();
     await convergence([student], current => current.playing && current.time > 1);
     await host.evaluate(id => mixers.get(id).seekTo(43), job);
@@ -144,8 +145,8 @@ for (const failureMode of ['empty', 'incomplete']) test(`Listening Guide and cha
   const gatewayCalls = async () => (await (await f.server.fetch('/__fixture/gateway-stats', { headers: { 'x-fixture': 'local-only' } })).json()).gatewayCalls;
   const usage = async () => (await host.request.get(new URL(`/api/jobs/${job}/listening-usage`, f.url).href)).json();
   try {
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
-    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
+    await clickLiveAction(student, 'Follow instructor');
     await host.locator('.play-btn').click();
     await expect.poll(async () => (await state(host)).playing).toBe(true);
     await host.locator('.coach-toggle').click();
@@ -189,16 +190,20 @@ test('eight independent browsers opt into instructor playback, focus and section
   test.setTimeout(120000);
   const f = await setup(browser, 8), [host, ...students] = f.pages;
   try {
-    await expect(host.getByRole('button', { name: 'Start shared session', exact: true })).toBeVisible();
+    await openSplitActions(host);
+    await expect(host.getByRole('button', { name: 'Start sharing playback', exact: true })).toBeVisible();
     await students[0].locator('.seek').fill('400');
     await students[0].locator('.seek').dispatchEvent('change');
     expect((await state(host)).time).toBeLessThan(1);
     expect(f.writes).toEqual([]);
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
     await expect.poll(async () => (await state(host)).leading).toBe(true);
+    await expect(host.locator('.console-actions')).toBeHidden();
     for (const page of students) {
+      await openSplitActions(page);
       await expect(page.getByRole('button', { name: 'Follow instructor', exact: true })).toBeVisible();
-      await page.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+      await clickLiveAction(page, 'Follow instructor');
+      await expect(page.locator('.console-actions')).toBeHidden();
       await expect(page.locator('.seek')).toBeDisabled();
       await expect(page.locator('.note-btn')).toBeEnabled();
       await expect(page.locator('.mute-btn').first()).toBeEnabled();
@@ -211,7 +216,7 @@ test('eight independent browsers opt into instructor playback, focus and section
     await host.locator('.play-btn').click();
     for (const page of students) {
       await expect.poll(async () => { const current = await state(page); return current.playing || current.blocked; }, { timeout: 10000 }).toBe(true);
-      if ((await state(page)).blocked) await page.getByRole('button', { name: 'Join shared audio', exact: true }).click();
+      if ((await state(page)).blocked) await clickLiveAction(page, 'Join shared audio');
     }
     await convergence(f.pages, current => current.playing);
     await expect.poll(async () => {
@@ -224,14 +229,14 @@ test('eight independent browsers opt into instructor playback, focus and section
     await convergence(f.pages, current => !current.playing);
     const denied = await students[0].request.put(new URL(path, f.url).href, { data: { action: 'end', expectedRevision: (await state(students[0])).revision } });
     expect(denied.status()).toBe(403);
-    await students[0].getByRole('button', { name: 'Leave shared session', exact: true }).click();
+    await clickLiveAction(students[0], 'Stop following');
     await expect(students[0].locator('.seek')).toBeEnabled();
     const independent = (await state(students[0])).time;
     await host.locator('.loop-clear').click();
     await host.locator('.seek').fill('500'); await host.locator('.seek').dispatchEvent('change');
     await convergence(students.slice(1), current => Math.abs(current.time - 35) < .4 && current.loop === null);
     expect(Math.abs((await state(students[0])).time - independent)).toBeLessThan(.1);
-    await host.getByRole('button', { name: 'End shared session', exact: true }).click();
+    await clickLiveAction(host, 'Stop sharing playback');
     await convergence(students.slice(1), current => !current.following);
     expect(f.writes.filter(write => write.actor !== 0)).toEqual([]); // request.put is intentionally outside browser UI
     expect(f.errors).toEqual([]);
@@ -252,8 +257,8 @@ test('eight independent browsers opt into instructor playback, focus and section
 test('a failed class authority read pauses and conceals the course split', async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
-    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
+    await clickLiveAction(student, 'Follow instructor');
     await f.contexts[1].setExtraHTTPHeaders({ 'x-fixture-identity': f.identities[1], 'x-fixture-course-state': 'revoked' });
     await expect(student.locator('.class-live-status')).toContainText('no longer available', { timeout: 10000 });
     expect((await state(student)).playing).toBe(false);
@@ -267,22 +272,28 @@ test('a failed class authority read pauses and conceals the course split', async
 test('autoplay rejection offers an explicit audio join and temporary outage requires a fresh opt-in', async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
     await host.locator('.play-btn').click();
     await student.evaluate(() => {
       const original = HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play = function () { return window.fixtureAllowAudio ? original.call(this) : Promise.reject(new DOMException('Fixture autoplay policy', 'NotAllowedError')); };
     });
-    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await clickLiveAction(student, 'Follow instructor');
+    await expect(student.locator('.console-actions')).toBeVisible();
+    await expect(student.getByRole('button', { name: 'Join shared audio', exact: true })).toBeVisible();
+    await clickLiveAction(student, 'Join shared audio');
+    await expect(student.locator('.console-actions')).toBeVisible();
     await expect(student.getByRole('button', { name: 'Join shared audio', exact: true })).toBeVisible();
     await student.evaluate(() => { window.fixtureAllowAudio = true; });
-    await student.getByRole('button', { name: 'Join shared audio', exact: true }).click();
+    await clickLiveAction(student, 'Join shared audio');
     await expect.poll(async () => (await state(student)).playing).toBe(true);
+    await expect(student.locator('.console-actions')).toBeHidden();
     await student.route(`**${path}`, route => route.fulfill({ status: 503, json: { error: 'fixture outage' } }));
     await expect(student.locator('.class-live-status')).toContainText('connection was lost', { timeout: 10000 });
     expect((await state(student)).playing).toBe(false);
     await student.unroute(`**${path}`);
     await student.getByRole('button', { name: 'Retry session connection', exact: true }).click();
+    await openSplitActions(student);
     await expect(student.getByRole('button', { name: 'Follow instructor', exact: true })).toBeVisible();
     expect((await state(student)).following).toBe(false);
     expect((await state(student)).playing).toBe(false);
@@ -293,9 +304,9 @@ test('autoplay rejection offers an explicit audio join and temporary outage requ
 test('page visibility lifecycle pauses leadership once and stops hidden polling', async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
   try {
-    await host.getByRole('button', { name: 'Start shared session', exact: true }).click();
+    await clickLiveAction(host, 'Start sharing playback');
     await host.locator('.play-btn').click();
-    await student.getByRole('button', { name: 'Follow instructor', exact: true }).click();
+    await clickLiveAction(student, 'Follow instructor');
     await expect.poll(async () => (await state(student)).playing).toBe(true);
     await host.evaluate(() => {
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
@@ -308,7 +319,8 @@ test('page visibility lifecycle pauses leadership once and stops hidden polling'
     expect((await state(student)).playing).toBe(false);
     expect((await state(host)).leading).toBe(false);
     await host.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
-    await expect(host.getByRole('button', { name: 'Resume shared session', exact: true })).toBeVisible();
+    await openSplitActions(host);
+    await expect(host.getByRole('button', { name: 'Resume sharing playback', exact: true })).toBeVisible();
     expect((await state(host)).leading).toBe(false);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
