@@ -34,5 +34,8 @@
   },
   "devDependencies": {
     "wrangler": "4.129.0"
+  },
+  "overrides": {
+    "zod": "4.6.6"
   }
 }

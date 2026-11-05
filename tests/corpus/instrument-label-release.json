@@ -1,0 +1,27 @@
+{
+  "schema": "stem-splitter.instrument-label-release-plan.v1",
+  "stemCounts": [2, 4, 6],
+  "flows": ["initial", "resplit"],
+  "sources": [
+    {
+      "id": "orchestral",
+      "genre": "orchestral-chamber",
+      "path": "tests/corpus/audio/orchestral-mozart-jupiter.mp3",
+      "sha256": "89e73db8d34c9a1b876427f5f8a38bc7311b3c5b18e1b86a878f2fbd1e0f07f2"
+    },
+    {
+      "id": "jazz-sax",
+      "genre": "jazz",
+      "path": "tests/corpus/audio/jazz-sax-quartet.mp3",
+      "sha256": "9d3b219fc9ef34b50cfd1310dcb1733bf4d7068b84dad7b4186f9a471f0cbff4"
+    },
+    {
+      "id": "bluegrass",
+      "genre": "folk-traditional",
+      "path": "tests/corpus/audio/bluegrass-high-on-mountain.mp3",
+      "sha256": "0095913c8e485d6bb110068b061fddf20025ba015aa5b19d30680d1f40dd15cc"
+    }
+  ],
+  "instrumentGroundTruth": "pending-exact-audio-review",
+  "documentaryEvidence": "docs/audits/2026-11-03-instrument-label-evidence.md"
+}

@@ -1,3 +1,4 @@
+import { openSplitActions } from './split-actions.mjs';
 import { test, expect } from '@playwright/test';
 import { createTestHarness } from 'wrangler';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
@@ -44,7 +45,7 @@ test('Listening Guide preserves the mixer and syncs private CUNY history across 
       await secondPage.goto(url.href);
       await expect(secondPage.locator('.badge.ready')).toBeVisible();
       const downloaded = secondPage.waitForEvent('download');
-      await secondPage.locator('.export-btn').click();
+      await openSplitActions(secondPage); await secondPage.locator('.export-btn').click();
       const archive = await downloaded;
       expect((await readFile(await archive.path())).includes(Buffer.from('What should I listen for next?'))).toBe(true);
       await secondPage.locator('.coach-toggle').click();

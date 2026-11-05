@@ -154,10 +154,10 @@
     return sameOrigin && !reportRequest ? observe(response) : response;
   };
 
-  async function check() {
+  async function check({ conceal = true } = {}) {
     if (!subject || clearing) return;
+    if (conceal) suspend();
     if (checking) return checking;
-    suspend();
     checking = (async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
@@ -173,7 +173,7 @@
         restore();
         observeUsage(subject);
       } catch {
-        if (!clearing) showRecovery();
+        if (!clearing) { suspend(); showRecovery(); }
       } finally { clearTimeout(timer); checking = null; }
     })();
     return checking;
@@ -191,7 +191,11 @@
     if (!suspended) return;
     event.preventDefault(); event.stopImmediatePropagation(); void check();
   }, true);
-  window.addEventListener('focus', () => void check());
+  // Browser chrome, native pickers and window focus changes can fire this
+  // while the document remains visible. Revalidate without tearing down a
+  // known session on every click. A failure still conceals and pauses it;
+  // actual tab returns and restored pages use the strict check below.
+  window.addEventListener('focus', () => void check({ conceal: document.hidden }));
   window.addEventListener('pageshow', event => { if (event.persisted) void check(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void check(); });
 })();

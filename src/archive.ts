@@ -225,6 +225,7 @@ async function fetchArchiveOnce(
 
   const deadline = Date.now() + timeoutMs;
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+    signal?.throwIfAborted();
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) throw new DOMException('Archive fetch timed out', 'TimeoutError');
     const response = await fetch(url, {
@@ -347,12 +348,14 @@ async function remainingArchiveBodyBudget(
   throw timedOut();
 }
 
-async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIMEOUT_MS, attemptTimeoutMs = timeoutMs): Promise<unknown> {
+async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIMEOUT_MS, attemptTimeoutMs = timeoutMs, signal?: AbortSignal): Promise<unknown> {
   const { response: res, deadline } = await fetchWithBusyRetry(
     url,
     label,
     timeoutMs,
-    attemptTimeoutMs
+    attemptTimeoutMs,
+    {},
+    signal
   );
   if (!res.ok) {
     archiveFailure(label, 'http_error', res.status, responseMediaType(res));
@@ -380,6 +383,7 @@ async function fetchJson(url: string, label: string, timeoutMs = JSON_FETCH_TIME
     archiveFailure(label, error instanceof ArchiveError && error.retryable ? 'body_timeout' : 'unreadable_body', res.status, responseMediaType(res));
     throw error;
   });
+  signal?.throwIfAborted();
   try {
     return JSON.parse(
       new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)
@@ -481,33 +485,35 @@ function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, l
 }
 
 /** Check public file delivery before exposing a choice; imports still read the complete file. */
-async function downloadableSong(song: ArchiveSong, locations: string[] = []): Promise<boolean> {
+async function downloadableSong(song: ArchiveSong, locations: string[] = [], signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   const canonical = async (signal?: AbortSignal) => {
     const {response} = await fetchWithBusyRetry(
       `${DOWNLOAD_BASE}/${encodeURIComponent(song.archiveId)}/${encodeURIComponent(song.archiveFile)}`,
       'audio', 12000, 5000, { Range: 'bytes=0-65535' }, signal
     );
-    return verifiedSongResponse(song, response);
+    return verifiedSongResponse(song, response, signal);
   };
   // Prefer metadata's direct nodes. Hedge via the canonical resolver after
   // 600ms (or immediately if both fail), so stale locations cannot add their
   // full timeout before resolution begins. Cancel every loser and its retries.
   if (locations.length) {
     const cancel = new AbortController();
+    const probeSignal = signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal;
     let startFallback!: () => void;
     const fallbackReady = new Promise<void>(resolve => { startFallback = resolve; });
     const timer = setTimeout(startFallback, 600);
     try {
       const mirrors = Promise.any(locations.map(async base => {
         const res = await fetchArchiveOnce(`${base}/${encodeURIComponent(song.archiveFile)}`, 2500,
-          { Range: 'bytes=0-65535' }, cancel.signal);
-        if (!await verifiedSongResponse(song, res)) throw new Error('Archive mirror unavailable');
+          { Range: 'bytes=0-65535' }, probeSignal);
+        if (!await verifiedSongResponse(song, res, probeSignal)) throw new Error('Archive mirror unavailable');
         return true;
       }));
       // Attach failure handling immediately; a failed mirror is not a result.
       void mirrors.catch(() => { clearTimeout(timer); startFallback(); });
       return await Promise.any([mirrors, fallbackReady.then(async () => {
-        if (!await canonical(cancel.signal)) throw new ArchiveError('This recording is unavailable.', 'archive_audio_unavailable');
+        if (!await canonical(probeSignal)) throw new ArchiveError('This recording is unavailable.', 'archive_audio_unavailable');
         return true;
       })]);
     } catch (error) {
@@ -520,10 +526,10 @@ async function downloadableSong(song: ArchiveSong, locations: string[] = []): Pr
       throw error;
     } finally { clearTimeout(timer); cancel.abort(); startFallback(); }
   }
-  return canonical();
+  return canonical(signal);
 }
 
-async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<boolean> {
+async function verifiedSongResponse(song: ArchiveSong, res: Response, signal?: AbortSignal): Promise<boolean> {
   const mediaType = responseMediaType(res);
   const range = /^bytes 0-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') || '');
   const fullSize = res.status === 206 && range ? Number(range[2]) : Number(res.headers.get('content-length'));
@@ -535,15 +541,19 @@ async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<b
     return false;
   }
   const reader = res.body.getReader(), prefix = new Uint8Array(Math.min(65536, song.bytes));
+  const abort = () => { void reader.cancel().catch(() => undefined); };
+  signal?.addEventListener('abort', abort, { once: true });
   let read = 0;
   try {
+    signal?.throwIfAborted();
     while (read < prefix.length) {
       const part = await reader.read();
+      signal?.throwIfAborted();
       if (part.done) break;
       const take = Math.min(part.value.length, prefix.length - read);
       prefix.set(part.value.subarray(0, take), read); read += take;
     }
-  } finally { await reader.cancel().catch(() => undefined); }
+  } finally { signal?.removeEventListener('abort', abort); await reader.cancel().catch(() => undefined); }
   if (read !== prefix.length) {
     archiveFailure('audio', 'probe_incomplete', res.status, mediaType);
     throw new ArchiveError('Internet Archive returned an incomplete availability check. Try again.', 'archive_busy', true);
@@ -560,12 +570,12 @@ async function verifiedSongResponse(song: ArchiveSong, res: Response): Promise<b
 }
 
 /** Verify a playlist candidate directly; catalog ranking cannot establish absence. */
-export async function verifyArchiveSample(query: string, identifier: string, file: string, maximumSeconds: number | 'availability' = PUBLIC_AUDIO_MAX_SECONDS): Promise<SongResults> {
+export async function verifyArchiveSample(query: string, identifier: string, file: string, maximumSeconds: number | 'availability' = PUBLIC_AUDIO_MAX_SECONDS, signal?: AbortSignal): Promise<SongResults> {
   const tokens = archiveSongSearchKey(query).split(' ').filter(Boolean).slice(0, 8);
   if (!tokens.length || file.length > MAX_FILE_NAME_LENGTH) return { results: [] };
-  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: typeof maximumSeconds === 'number' ? archiveDurationLimit(maximumSeconds) : undefined, suggestionAvailability: maximumSeconds === 'availability', timeoutMs: 9000 });
+  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: typeof maximumSeconds === 'number' ? archiveDurationLimit(maximumSeconds) : undefined, suggestionAvailability: maximumSeconds === 'availability', timeoutMs: 9000, signal });
   const song = matchingSongs(item, tokens).find(track => track.archiveFile === file);
-  if (!song || !await downloadableSong(song, songDeliveryLocations.get(item))) return { results: [] };
+  if (!song || !await downloadableSong(song, songDeliveryLocations.get(item), signal)) return { results: [] };
   const { score: _score, ...result } = song;
   return { results: [result] };
 }
@@ -578,6 +588,21 @@ export async function verifyArchiveSampleFile(identifier: string, file: string, 
   if (!track) return { results: [] };
   const song = archiveSongMetadata(item, track);
   return { results: await downloadableSong(song, songDeliveryLocations.get(item)) ? [song] : [] };
+}
+
+/** Resolve a catalog reference through the same file matching and import gates. */
+export async function searchReferencedArchiveItem(identifier: string, query: string, maximumSeconds = PUBLIC_AUDIO_MAX_SECONDS, signal?: AbortSignal): Promise<SongResults> {
+  const tokens = archiveSongSearchKey(query).split(' ').filter(Boolean).slice(0, 8);
+  if (!tokens.length) return { results: [] };
+  const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: archiveDurationLimit(maximumSeconds), timeoutMs: 9000, signal });
+  const results: ArchiveSong[] = [];
+  for (const song of matchingSongs(item, tokens).sort((a, b) => b.score - a.score).slice(0, 2)) {
+    signal?.throwIfAborted();
+    if (await downloadableSong(song, songDeliveryLocations.get(item), signal)) {
+      const { score: _score, ...track } = song; results.push(track);
+    }
+  }
+  return { results };
 }
 
 /** The main field searches public downloads. */
@@ -880,14 +905,14 @@ function archiveFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean } = {}): Promise<ArchiveItem> {
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean; signal?: AbortSignal } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
 
   const payload = await fetchJson(
     `${METADATA_API}/${encodeURIComponent(identifier)}`,
-    'metadata', options.timeoutMs
+    'metadata', options.timeoutMs, options.timeoutMs, options.signal
   );
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ArchiveError('That Internet Archive item returned unreadable metadata.');

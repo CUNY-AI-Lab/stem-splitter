@@ -306,8 +306,8 @@ for (const width of [1280,390]) test(`owned recording names persist in the rack 
     const openReadyActions=async()=>{
       // Cached titles render before the saved split has loaded its controls.
       await expect(card.locator('.badge.ready')).toHaveText('READY');
-      if(width<=540){
-        const toggle=card.getByRole('button',{name:'Session actions',exact:true});
+      {
+        const toggle=card.getByRole('button',{name:'Split actions',exact:true});
         await expect(toggle).toBeVisible();await toggle.click();
         await expect(toggle).toHaveAttribute('aria-expanded','true');
       }

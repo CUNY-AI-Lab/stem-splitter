@@ -1,0 +1,242 @@
+{
+  "schemaVersion": "stem-splitter.audiosep-research-summary.v1",
+  "generatedAt": "2026-11-05T02:02:41.148677+00:00",
+  "decision": "Not accepted for application source selection or instrument labeling",
+  "sourceCommit": "944583f18b84589dc965de3ad77525c945334252",
+  "checkpointSha256": "f8cda01bfd0ebd141eef45d41db7a3ada23a56568465840d3cff04b8010ce82c",
+  "checkpointLoad": "strict, all separator and query-encoder state keys",
+  "device": "cpu",
+  "paidProviderCalls": 0,
+  "objectiveControlManifest": "tests/corpus/query-isolation-bakeoff.json",
+  "reports": [
+    {
+      "promptPolicy": "bare instrument name",
+      "sourceReportSha256": "1add15c08bbbb6bd0b9eb71c6893cd2299b39a530100fd13ac8608fa0b7c311a",
+      "runnerSha256": "e81436783d1af0d071ffd3ef5fbf73cfcbe70d6aa6449052d1e1d504b646f84e",
+      "cases": [
+        {
+          "id": "an1-flute",
+          "query": "flute",
+          "inputSha256": "c2e79df2aca5f63c5acf5e63c46e226dcfd73994ba0bbaf17ed858c0023a79db",
+          "referenceSha256": "044115f68ad2aa6d9f65c4c9c91401703ccbd699c65c1197d20d3461c02c16a1",
+          "outputSha256": "3269b72651cae42cc4c7d642d6b7db4da9de62a6b7c29e42ff582b72408121a1",
+          "baselineSiSdrDb": -5.726988834370513,
+          "outputSiSdrDb": -4.224954170690934,
+          "siSdrImprovementDb": 1.502034663679579,
+          "absentToPresentEnergyDb": -0.9281019439221473,
+          "peak": 0.18275603652000427,
+          "seconds": 5.378018042072654
+        },
+        {
+          "id": "an1-trumpet",
+          "query": "trumpet",
+          "inputSha256": "a9d717935e4f92713123af3b5922b3b28347fc2680dd39e9e5e4573353c70396",
+          "referenceSha256": "f11be145bad8f2993cd80910a71b4b6937f52359c4c0af6c8e06eb74028f2261",
+          "outputSha256": "0b6be9a92fe831dd4ccae39adbf4062e28031b27c26418f51a5237fbb3c0108c",
+          "baselineSiSdrDb": -8.845444874929477,
+          "outputSiSdrDb": -8.439297293885224,
+          "siSdrImprovementDb": 0.4061475810442534,
+          "absentToPresentEnergyDb": -1.8337606827867645,
+          "peak": 0.18274465203285217,
+          "seconds": 4.6568665420636535
+        },
+        {
+          "id": "an1-tuba",
+          "query": "tuba",
+          "inputSha256": "2db1e71de0c89294c1ed0fa7930e8f6f128682c55f076de728d521a1660940f7",
+          "referenceSha256": "ea481765f8707e9696a0e94cc5827856f3602dfddee7392283066e185d57b81f",
+          "outputSha256": "72b3eafa1b459ef7ebcb18e8c75fbdff70a4d76ca8b2cf90b5fd84926a9a9e42",
+          "baselineSiSdrDb": -3.9367611037932058,
+          "outputSiSdrDb": -1.4843378276257824,
+          "siSdrImprovementDb": 2.4524232761674236,
+          "absentToPresentEnergyDb": -5.141781760570996,
+          "peak": 0.18228517472743988,
+          "seconds": 3.966835332917981
+        },
+        {
+          "id": "ba1-oboe",
+          "query": "oboe",
+          "inputSha256": "6f43a7c8e2465368c470e5907d5d35b0e5fb8a11c77f8e9db45310699a5153cd",
+          "referenceSha256": "5faa8b379afb53adc35bfb38428b500ef03d507944332f7101a58726353d53eb",
+          "outputSha256": "0acda3d9335e02dbe385f6d37067cfaf06157d0c905b61bb180955b4275ded1c",
+          "baselineSiSdrDb": -4.42806640718825,
+          "outputSiSdrDb": -6.948285351554805,
+          "siSdrImprovementDb": -2.5202189443665555,
+          "absentToPresentEnergyDb": -1.264946678202672,
+          "peak": 0.17031653225421906,
+          "seconds": 3.81092229206115
+        },
+        {
+          "id": "ba1-trombone",
+          "query": "trombone",
+          "inputSha256": "2069627f79ece13f6ac4047b9163aa2f217e9d11d7d809eef71a3a2a08f8bcc8",
+          "referenceSha256": "b082d1ef34f78e7198255cc61e5778e6be670709b270bc7c4eba430c8813c28f",
+          "outputSha256": "9130418fd25a3ffcc496da1bedab00a40f9afcdce63d989acaaf5a7a0111f8be",
+          "baselineSiSdrDb": -1.9986817908318337,
+          "outputSiSdrDb": -2.2057802890316407,
+          "siSdrImprovementDb": -0.20709849819980697,
+          "absentToPresentEnergyDb": -2.9465553638319104,
+          "peak": 0.17075683176517487,
+          "seconds": 3.7841917920159176
+        },
+        {
+          "id": "cr1-clarinet",
+          "query": "clarinet",
+          "inputSha256": "17b8d580acdfeedcd3b99ec4e53130b9e5f25173f7ab5ddb47f421bcc4cd2b4e",
+          "referenceSha256": "ef80269f6a405d66c8c9a379195fdd132ea6d5a1ede3dfb33b6af844ae116660",
+          "outputSha256": "64bf1e9d97b5912cb88acc0b0745771629e18d4e2b971257ed37038c6847bd1a",
+          "baselineSiSdrDb": -5.44622310372429,
+          "outputSiSdrDb": -5.389321760582035,
+          "siSdrImprovementDb": 0.05690134314225492,
+          "absentToPresentEnergyDb": -1.053560891404338,
+          "peak": 0.15953963994979858,
+          "seconds": 4.123295957921073
+        },
+        {
+          "id": "cr1-horn",
+          "query": "horn",
+          "inputSha256": "ce45fea69c9ab5071d7bfc134be8b44e611dcb2f054d2c91536afb3099aff981",
+          "referenceSha256": "8ddde0205e0a91a81c1466c0fbb35bbd21f262fff1b0f6a2e1835a0d2aa66899",
+          "outputSha256": "c5b1f56c46e6ed2b5998678c9eac3fa8ee8a24a86a143d183a2a7ceb5af6fa88",
+          "baselineSiSdrDb": -6.722685791204204,
+          "outputSiSdrDb": -8.360152009980565,
+          "siSdrImprovementDb": -1.6374662187763613,
+          "absentToPresentEnergyDb": -0.7322349674290957,
+          "peak": 0.15166954696178436,
+          "seconds": 4.217310790903866
+        },
+        {
+          "id": "cr1-saxophone",
+          "query": "saxophone",
+          "inputSha256": "a01275115bd8bc0cb6657b5a4cd27487d4b95943b7d5975e66362e5d31fc27e3",
+          "referenceSha256": "4842820cf4895b5c6ffb30847747f84aeed3efc75d97f1dc247dfac109d0ae30",
+          "outputSha256": "ee612d43e5bfaed8736317d9388b1f406fb820325d10388df2ccea13bc2913bb",
+          "baselineSiSdrDb": -6.377020085952999,
+          "outputSiSdrDb": -6.358406441219465,
+          "siSdrImprovementDb": 0.01861364473353433,
+          "absentToPresentEnergyDb": -1.4770179403951287,
+          "peak": 0.15954753756523132,
+          "seconds": 4.357361666974612
+        }
+      ]
+    },
+    {
+      "promptPolicy": "The sound of a {instrument} playing.",
+      "sourceReportSha256": "67fe5cb580ae502548ddd5bb8d3e246a118fa4dc4d51703249c7b25b3cf5fa5b",
+      "runnerSha256": "9c800bc974b9a977f8770f5e89732afb5de341177f287204d9ef7221a19ab9d0",
+      "cases": [
+        {
+          "id": "an1-flute",
+          "query": "The sound of a flute playing.",
+          "inputSha256": "c2e79df2aca5f63c5acf5e63c46e226dcfd73994ba0bbaf17ed858c0023a79db",
+          "referenceSha256": "044115f68ad2aa6d9f65c4c9c91401703ccbd699c65c1197d20d3461c02c16a1",
+          "outputSha256": "bd330102f64a5e53a94de1c10808d14a765d4f201d0d3ed9f7acd995de1ba066",
+          "baselineSiSdrDb": -5.726988834370513,
+          "outputSiSdrDb": -0.24539066199391613,
+          "siSdrImprovementDb": 5.4815981723765965,
+          "absentToPresentEnergyDb": -2.0500631441232526,
+          "peak": 0.1506437510251999,
+          "seconds": 5.298352958983742
+        },
+        {
+          "id": "an1-trumpet",
+          "query": "The sound of a trumpet playing.",
+          "inputSha256": "a9d717935e4f92713123af3b5922b3b28347fc2680dd39e9e5e4573353c70396",
+          "referenceSha256": "f11be145bad8f2993cd80910a71b4b6937f52359c4c0af6c8e06eb74028f2261",
+          "outputSha256": "a1dafccfb761c5cded2a1e3c7ba1eee2c0abee2ff0b1b42ee0c3ed05084f5915",
+          "baselineSiSdrDb": -8.845444874929477,
+          "outputSiSdrDb": -8.563669615852719,
+          "siSdrImprovementDb": 0.28177525907675793,
+          "absentToPresentEnergyDb": -2.434194600776408,
+          "peak": 0.18234197795391083,
+          "seconds": 5.467389500001445
+        },
+        {
+          "id": "an1-tuba",
+          "query": "The sound of a tuba playing.",
+          "inputSha256": "2db1e71de0c89294c1ed0fa7930e8f6f128682c55f076de728d521a1660940f7",
+          "referenceSha256": "ea481765f8707e9696a0e94cc5827856f3602dfddee7392283066e185d57b81f",
+          "outputSha256": "cae0c31d458e8358266f876ed9ac61a95ba04ee4d665fe61ffb867992c648dea",
+          "baselineSiSdrDb": -3.9367611037932058,
+          "outputSiSdrDb": -3.943620454221586,
+          "siSdrImprovementDb": -0.00685935042838004,
+          "absentToPresentEnergyDb": -2.5018782252539244,
+          "peak": 0.18215665221214294,
+          "seconds": 4.045164042036049
+        },
+        {
+          "id": "ba1-oboe",
+          "query": "The sound of a oboe playing.",
+          "inputSha256": "6f43a7c8e2465368c470e5907d5d35b0e5fb8a11c77f8e9db45310699a5153cd",
+          "referenceSha256": "5faa8b379afb53adc35bfb38428b500ef03d507944332f7101a58726353d53eb",
+          "outputSha256": "47e94d77920a949018f87609fdfdac4b323c167816ce54976d22f34629eb125a",
+          "baselineSiSdrDb": -4.42806640718825,
+          "outputSiSdrDb": -6.303624185744737,
+          "siSdrImprovementDb": -1.8755577785564874,
+          "absentToPresentEnergyDb": -0.61012052170375,
+          "peak": 0.12455543875694275,
+          "seconds": 4.38816345797386
+        },
+        {
+          "id": "ba1-trombone",
+          "query": "The sound of a trombone playing.",
+          "inputSha256": "2069627f79ece13f6ac4047b9163aa2f217e9d11d7d809eef71a3a2a08f8bcc8",
+          "referenceSha256": "b082d1ef34f78e7198255cc61e5778e6be670709b270bc7c4eba430c8813c28f",
+          "outputSha256": "9f381f1ed744ff359f04f22be377bcde80e6616f74ef057d3a409f5c20be521b",
+          "baselineSiSdrDb": -1.9986817908318337,
+          "outputSiSdrDb": -2.0066100668772484,
+          "siSdrImprovementDb": -0.007928276045414684,
+          "absentToPresentEnergyDb": -2.740789923080263,
+          "peak": 0.17030781507492065,
+          "seconds": 4.262182457954623
+        },
+        {
+          "id": "cr1-clarinet",
+          "query": "The sound of a clarinet playing.",
+          "inputSha256": "17b8d580acdfeedcd3b99ec4e53130b9e5f25173f7ab5ddb47f421bcc4cd2b4e",
+          "referenceSha256": "ef80269f6a405d66c8c9a379195fdd132ea6d5a1ede3dfb33b6af844ae116660",
+          "outputSha256": "6fd367b0c8d1a7fa5603b0b49f95d4ce0cca46d8f4748714a38c5d7365e23396",
+          "baselineSiSdrDb": -5.44622310372429,
+          "outputSiSdrDb": -5.282462262785769,
+          "siSdrImprovementDb": 0.1637608409385214,
+          "absentToPresentEnergyDb": -1.2086727626456932,
+          "peak": 0.15923340618610382,
+          "seconds": 4.21511620900128
+        },
+        {
+          "id": "cr1-horn",
+          "query": "The sound of a horn playing.",
+          "inputSha256": "ce45fea69c9ab5071d7bfc134be8b44e611dcb2f054d2c91536afb3099aff981",
+          "referenceSha256": "8ddde0205e0a91a81c1466c0fbb35bbd21f262fff1b0f6a2e1835a0d2aa66899",
+          "outputSha256": "22acd45ec6298cc52d2afbe29056b2bc1b77375cfdb5b6ae57f27d2aa5f6699d",
+          "baselineSiSdrDb": -6.722685791204204,
+          "outputSiSdrDb": -6.666651322293408,
+          "siSdrImprovementDb": 0.05603446891079589,
+          "absentToPresentEnergyDb": -1.053276923833087,
+          "peak": 0.1594240814447403,
+          "seconds": 4.032321083010174
+        },
+        {
+          "id": "cr1-saxophone",
+          "query": "The sound of a saxophone playing.",
+          "inputSha256": "a01275115bd8bc0cb6657b5a4cd27487d4b95943b7d5975e66362e5d31fc27e3",
+          "referenceSha256": "4842820cf4895b5c6ffb30847747f84aeed3efc75d97f1dc247dfac109d0ae30",
+          "outputSha256": "3911eaa762ef58139b3f9fadc7156fe072b2959048eed9757fd00675dd57a716",
+          "baselineSiSdrDb": -6.377020085952999,
+          "outputSiSdrDb": -6.378509185340183,
+          "siSdrImprovementDb": -0.0014890993871841118,
+          "absentToPresentEnergyDb": -1.4385389684736662,
+          "peak": 0.15925291180610657,
+          "seconds": 3.8853112909710035
+        }
+      ]
+    }
+  ],
+  "applicationMatrix": {
+    "total": 18,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 18,
+    "reason": "No validated audio-derived source-selection and separation implementation; no independently reviewed per-output instrument judgments"
+  }
+}

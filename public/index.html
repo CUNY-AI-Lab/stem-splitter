@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20261103-picker" />
+  <link rel="stylesheet" href="/styles.css?v=20261105-compact" />
   <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 </head>
 <body>
@@ -50,9 +50,7 @@
         <input type="file" id="file-input" accept=".mp3,.wav,.flac,.m4a,.ogg,.aiff,.aif,audio/*" hidden />
       </section>
 
-      <details id="yt-disclosure" class="yt-disclosure" open>
-        <summary class="yt-summary mono">Search for songs via Internet Archive or Wikimedia Commons</summary>
-        <div class="audio-source-picker"><label for="audio-source">Audio source</label><select id="audio-source"><option value="archive">Internet Archive</option><option value="commons">Wikimedia Commons</option></select></div>
+      <section id="yt-disclosure" class="yt-disclosure" aria-label="Song search">
         <form id="yt-form" class="yt-form">
           <div class="source-field">
             <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
@@ -61,11 +59,10 @@
           </div>
           <button type="submit" class="yt-go">FETCH</button>
         </form>
-      </details>
+      </section>
 
       <section class="split-picker">
-        <p id="split-picker-label" class="split-picker-label mono">Split into</p>
-        <div id="stem-choice" class="split-options" role="radiogroup" aria-labelledby="split-picker-label">
+        <div id="stem-choice" class="split-options" role="radiogroup" aria-label="Number of splits">
           <span class="stem-choice-status mono">Loading split options…</span>
         </div>
         <ul id="split-legend" class="split-legend mono" hidden></ul>
@@ -165,11 +162,11 @@
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
-  <script src="/session-guard.js?v=20261103-picker"></script>
+  <script src="/session-guard.js?v=20261104-split-actions"></script>
 <script src="/guest.js?v=20261023-two-reply-demo"></script>
   <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-  <script src="/classroom-live.js?v=20261020"></script>
-  <script src="/app.js?v=20261103-feedback"></script>
+  <script src="/classroom-live.js?v=20261104-split-actions"></script>
+  <script src="/app.js?v=20261105-playback"></script>
   <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </body>
 </html>

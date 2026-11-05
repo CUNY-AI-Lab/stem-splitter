@@ -243,7 +243,7 @@ async function initializeCourseSelection() {
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
-  region.innerHTML = '<label for="new-split-course">Share with </label><span class="course-choice"><span class="course-choice-label" aria-hidden="true">Personal</span><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></span><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
+  region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
   const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
   courseAcknowledgment = region.querySelector('input');
@@ -252,7 +252,6 @@ async function initializeCourseSelection() {
     if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
     selectedCourse = value; select.value = value;
     courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
-    region.querySelector('.course-choice-label').textContent = select.selectedOptions[0]?.textContent || 'Choose a workspace';
   };
   select.addEventListener('change', () => {
     choose(select.value); initialized = true; status.textContent = '';
@@ -384,7 +383,7 @@ async function readSongSearch(response, onResults) {
         const data = JSON.parse(pending.slice(0, newline));
         pending = pending.slice(newline + 1);
         if (data.error) throw new Error(data.error);
-        if (data.results?.length) onResults(data);
+        if (data.results?.length || data.references || data.providers) onResults(data);
         if (data.done) final = data;
       }
     }
@@ -626,9 +625,10 @@ let sampleCache = null;
 let sampleLoad = null;
 const verifiedSongSamples = [];
 const recentSongSearches = new Map();
-const audioSource = document.getElementById('audio-source');
-audioSource?.addEventListener('change',()=>{acceptedSongSample=null;stopSongSample();songSearchAbort?.abort();clearSongSuggestions();songQuery='';if(ytUrlInput.value.trim())void searchSourceSongs(ytUrlInput.value.trim(),++songSearchSequence);});
-const songSearchKey = term => (audioSource?.value||'archive')+':'+term.toLowerCase().replace(/\s+/g, ' ').trim();
+const songSearchKey = term => 'unified:'+term.toLowerCase().replace(/\s+/g, ' ').trim();
+const musicSearchStatus = document.createElement('li');
+musicSearchStatus.className = 'music-search-status';
+musicSearchStatus.setAttribute('role', 'status');
 function rememberSongSearch(term, data) {
   if (!data?.results?.length) return;
   const key = songSearchKey(term);
@@ -637,8 +637,8 @@ function rememberSongSearch(term, data) {
   recentSongSearches.set(key, { data, expires: Date.now() + 60000 });
 }
 function sampleVisible() {
-  return (!audioSource||audioSource.value==='archive') && !ytUrlInput.value && !ytUrlInput.disabled && !sampleDismissed &&
-    !document.hidden && ytDisclosure.open && ytUrlInput.getClientRects().length > 0;
+  return !ytUrlInput.value && !ytUrlInput.disabled && !sampleDismissed &&
+    !document.hidden && ytUrlInput.getClientRects().length > 0;
 }
 function stopSongSample(cancelPreload = true) {
   clearTimeout(sampleTimer);clearTimeout(sampleFirstTimer);sampleFirstTimer=0;
@@ -890,7 +890,9 @@ function clearSongSuggestions() {
   songSearchStatus = 'idle';
   sourceSongs.replaceChildren();
   sourceSongs.removeAttribute('aria-busy');
+  musicSearchStatus.textContent = '';
 }
+
 function showSongSearchStatus(message) {
   sourceSongs.replaceChildren();
   const item = document.createElement('li'), status = document.createElement('span');
@@ -900,6 +902,7 @@ function showSongSearchStatus(message) {
   status.textContent = message;
   item.appendChild(status);
   sourceSongs.appendChild(item);
+  if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
   openSongSuggestions();
 }
 function selectSong(value) {
@@ -925,10 +928,15 @@ async function searchSourceSongs(term, sequence) {
   const seen = new Set();
   const render = data => {
     if (!current()) return;
+    if (data.providers) {
+      musicSearchStatus.textContent = Object.values(data.providers).includes('unavailable')
+        ? 'Some audio sources are temporarily unavailable. Other results remain usable.' : '';
+
+    }
     if (!songResults.size && data.results?.length) sourceSongs.replaceChildren();
     for (const track of data.results || []) {
       // Keep existing choices in place while more verified matches arrive.
-      if (seen.has(track.id) || songResults.size >= 8) continue;
+      if (seen.has(track.id) || songResults.size >= 16) continue;
       seen.add(track.id);
       const credit = track.artist ? `File artist: ${track.artist}`
         : track.fileCreator ? `File creator: ${track.fileCreator}`
@@ -946,20 +954,23 @@ async function searchSourceSongs(term, sequence) {
       option.dataset.value = value;
       option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
       sourceSongs.appendChild(option);
     }
+    if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
+    else musicSearchStatus.remove();
     if (songResults.size) openSongSuggestions();
   };
   try {
-    const previous = recentSongSearches.get(songSearchKey(term));
+    const acceptedSample = acceptedSongSample?.query === term;
+    const previous = !acceptedSample && recentSongSearches.get(songSearchKey(term));
     if (previous && previous.expires > Date.now()) {
       render(previous.data);
       songSearchStatus = 'ready';
       return;
     }
-    const cached = (!audioSource||audioSource.value==='archive') && term === SAMPLE_SONG_QUERY && sampleCache &&
+    const cached = acceptedSample && term === SAMPLE_SONG_QUERY && sampleCache &&
       Date.now() - sampleCache.createdAt < 600000 ? sampleCache : null;
     let data;
     if (cached) {
@@ -976,14 +987,14 @@ async function searchSourceSongs(term, sequence) {
       if (!current()) return;
       data = outcome.data;
     }
-    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}${audioSource?.value&&audioSource.value!=='archive'?'&provider='+encodeURIComponent(audioSource.value):''}`, {
+    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
       signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
     });
     if (!current()) return;
     render(data);
-    rememberSongSearch(term, data);
+    if (!cached) rememberSongSearch(term, data);
     songSearchStatus = 'ready';
-    if (!songResults.size) showSongSearchStatus('Try another song or artist.');
+    if (!songResults.size) showSongSearchStatus('No downloadable audio found. Try another recording or upload an audio file.');
   } catch {
     if (!current()) return;
     songSearchStatus = songResults.size ? 'ready' : 'error';
@@ -1054,12 +1065,6 @@ window.addEventListener('scroll', positionSongSuggestions, { passive: true });
 window.visualViewport?.addEventListener('resize', positionSongSuggestions);
 window.visualViewport?.addEventListener('scroll', positionSongSuggestions);
 
-// Opening the disclosure is a statement of intent — land the caret in the field
-// so the next thing you do is paste.
-ytDisclosure.addEventListener('toggle', () => {
-  if (ytDisclosure.open) ytUrlInput.focus();
-  else stopSongSample();
-});
 const stemChoice = document.getElementById('stem-choice');
 const splitLegend = document.getElementById('split-legend');
 const splitSummary = document.getElementById('split-summary');
@@ -1669,7 +1674,7 @@ async function chooseStemResplit(mixer, stem) {
   dialog.innerHTML = `<form class="class-code-form">
     <h2 id="resplit-title">Split again</h2>
     <p class="resplit-filename">${esc(filename)}</p>
-    <label for="resplit-model">Split into</label><select id="resplit-model" required></select>
+    <select id="resplit-model" aria-label="Number of splits" required></select>
     <p class="resplit-status" role="status">Loading split choices…</p>
     <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Split again</button></div>
   </form>`;
@@ -1947,22 +1952,30 @@ class Mixer {
       <div class="console-head">
         ${recordingTitleMarkup(this.job)}
         <div class="console-actions-wrap">
-          <button type="button" class="head-btn actions-toggle" aria-expanded="false" aria-controls="${actionsId}" aria-label="Session actions" title="Show session actions"><span aria-hidden="true">▾</span></button>
-          <div class="console-actions" id="${actionsId}">
-            <span class="badge ready">READY</span>
+          <span class="badge ready">READY</span>
+          <button type="button" class="head-btn actions-toggle" aria-expanded="false" aria-controls="${actionsId}" aria-label="Split actions" title="Split actions"><span aria-hidden="true">•••</span></button>
+          <div class="console-actions" id="${actionsId}" role="group" aria-label="Split actions">
+            <div class="split-action-group" role="group" aria-label="Recording">
+            <span class="split-action-heading">Recording</span>
             ${canRenameRun(this.job) ? '<button type="button" class="head-btn rename-btn">RENAME</button>' : ''}
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
-            <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
             <button class="head-btn folder-btn" title="Add this split to a class folder">+ FOLDER</button>
+            </div>
+            <div class="split-action-group split-sharing-actions" role="group" aria-label="Sharing">
+            <span class="split-action-heading">Sharing</span>
+            <button class="share-btn to-remix-btn" title="Stack this split's layers on the Remixer deck">SEND TO REMIXER ⤳</button>
+            <button class="share-btn" title="Anyone with this link can listen. Notes and conversations stay private.">COPY LINK</button>
+            <button class="head-btn unshare-btn" ${this.job.publicSharing ? '' : 'hidden'}>STOP SHARING</button>
+            </div>
+            <div class="split-action-group split-remove-actions">
             <button class="head-btn delete-btn" title="${canDeleteRun(this.job) ? 'Delete this run from your account' : runtime.authMode === 'cail' ? 'Hide until your next visit. This run belongs to another account.' : 'Remove this split from your rack'}">${canDeleteRun(this.job) || runtime.authMode !== 'cail' ? 'DELETE' : 'HIDE'}</button>
-            <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
+            </div>
           </div>
+          <button class="head-btn collapse-btn" aria-expanded="true" aria-label="Collapse this session" title="Collapse this session"><span class="collapse-label">COLLAPSE</span><span class="collapse-glyph" aria-hidden="true">▾</span></button>
         </div>
       </div>
       <div class="console-sub mono">
         <span class="split-meta"></span>
-        <button class="share-btn to-remix-btn" title="Stack this split's layers on the Remixer deck">SEND TO REMIXER ⤳</button>
-        <button class="share-btn" title="Anyone with this link can listen. Notes and conversations stay private.">COPY LINK</button>
       </div>
       <div class="transport">
         <button class="play-btn" aria-label="Play all stems">▶</button>
@@ -2326,13 +2339,14 @@ class Mixer {
       this.keysHint.textContent = 'SPACE play · ←→ 5s · 1–9 mute · ⇧1–9 solo';
     }
     if (this.job.courseId && !this.job.readOnlyShared) {
-      const refresh = document.createElement('button');
-      refresh.type = 'button'; refresh.className = 'head-btn refresh-btn'; refresh.textContent = 'REFRESH CLASS NOTES';
-      refresh.addEventListener('click', () => this.refresh());
-      li.querySelector('.console-sub').append(refresh);
-      const workspace = document.createElement('a'); workspace.className = 'share-btn';
+      const classActions = document.createElement('div');
+      classActions.className = 'split-action-group split-class-actions';
+      classActions.setAttribute('role', 'group'); classActions.setAttribute('aria-label', 'Class');
+      const heading = document.createElement('span'); heading.className = 'split-action-heading'; heading.textContent = 'Class';
+      const workspace = document.createElement('a'); workspace.className = 'class-workspace-link';
       workspace.href = `/classroom.html?course=${encodeURIComponent(this.job.courseId)}`;
-      workspace.textContent = 'CLASS WORKSPACE'; li.querySelector('.console-sub').append(workspace);
+      workspace.textContent = 'Open class workspace'; classActions.append(heading, workspace);
+      li.querySelector('.split-remove-actions').before(classActions);
       li.querySelector('.folder-btn').hidden = true;
       if (!this.job.permissions?.comment) li.querySelector('.note-btn').hidden = true;
       if (!this.job.permissions?.owner) {
@@ -2342,6 +2356,8 @@ class Mixer {
         li.querySelector('.unshare-btn').hidden = true;
       }
     }
+    const sharing = li.querySelector('.split-sharing-actions');
+    sharing.hidden = ![...sharing.querySelectorAll('button')].some(button => !button.hidden);
     if (runtime.instrumentTargets && this.job.permissions?.owner && !this.job.readOnlyShared) {
       import('/instrument-targets.js').then(({ mountInstrumentTargets }) =>
         mountInstrumentTargets(li, { jobId: this.job.id, request: api })).catch(() => {});
@@ -2455,9 +2471,10 @@ class Mixer {
   }
 
   setActionsOpen(open) {
+    if (open) for (const mixer of mixers.values()) if (mixer !== this && mixer.el.classList.contains('actions-open')) mixer.setActionsOpen(false);
     this.el.classList.toggle('actions-open', open);
     this.actionsToggle.setAttribute('aria-expanded', String(open));
-    const label = open ? 'Hide session actions' : 'Show session actions';
+    const label = open ? 'Close split actions' : 'Split actions';
     this.actionsToggle.title = label;
   }
 
@@ -2487,7 +2504,7 @@ class Mixer {
     if (this.job.model) lines.push(`- Model: ${this.job.model}`);
     lines.push(`- Tracks: ${this.job.stems.map((s) => this.label(s.name)).join(', ')}`, '');
 
-    if (this.job.attribution && ['commons','ccmixter'].includes(this.job.attribution.provider)) lines.push('## Source and recording license', '', this.job.attribution.attributionText || '', '');
+    if (this.job.attribution && ['commons','ccmixter','freesound','loc'].includes(this.job.attribution.provider)) lines.push('## Source and recording license', '', this.job.attribution.attributionText || '', '');
     if (this.job.guide && this.job.guide.text) {
       lines.push('## Listening guide', '', this.job.guide.text, '');
     }
@@ -2529,7 +2546,7 @@ class Mixer {
         used.add(unique.toLowerCase());
         entries.push({ name: `stems/${unique}`, data: new Uint8Array(await res.arrayBuffer()) });
       }
-      if(this.job.attribution && ['commons','ccmixter'].includes(this.job.attribution.provider)) entries.push({name:'source-attribution.json',data:new TextEncoder().encode(JSON.stringify(this.job.attribution,null,2))});
+      if(this.job.attribution && ['commons','ccmixter','freesound','loc'].includes(this.job.attribution.provider)) entries.push({name:'source-attribution.json',data:new TextEncoder().encode(JSON.stringify(this.job.attribution,null,2))});
       entries.push({
         name: 'guide-chat-and-notes.md',
         data: new TextEncoder().encode(this.exportMarkdown()),
@@ -2623,6 +2640,13 @@ class Mixer {
 
   async play() {
     if (this.playing || this.starting || this.playBtn.disabled) return;
+    // A recording owns the transport until another recording is chosen. Pause
+    // pending starts too, so late media promises cannot restart the old song.
+    for (const mixer of mixers.values()) {
+      if (mixer === this) continue;
+      if (mixer.classSession?.following) mixer.classSession.leave();
+      else mixer.pause();
+    }
     if (this.audios[0]?.ended) this.seekTo(0);
     const attempt = ++this.playAttempt;
     this.starting = true;
@@ -2761,7 +2785,17 @@ class Mixer {
     // Keep every stem at the same passage while the outstanding range loads.
     // A pause or collapse cancels this intent through stopUi().
     for (const audio of this.audios) {
-      if (Math.abs(audio.currentTime - position) > 0.08) audio.currentTime = Math.min(position, audio.duration);
+      const target = Math.min(position, audio.duration);
+      // Rapid end/home seeks can leave an idle decoder at HAVE_CURRENT_DATA
+      // even though the entire passage is downloaded. A single seek re-primes
+      // it; waiting for canplay alone leaves that recording silent forever.
+      // Never repeat this on sync ticks or restart an outstanding range fetch.
+      const bufferedAhead = Array.from({ length: audio.buffered.length }, (_, i) =>
+        audio.buffered.start(i) <= target && audio.buffered.end(i) >= Math.min(audio.duration, target + 0.5)
+      ).some(Boolean);
+      const decoderStalled = !audio.seeking && target < audio.duration && bufferedAhead &&
+        audio.networkState === HTMLMediaElement.NETWORK_IDLE && audio.readyState === HTMLMediaElement.HAVE_CURRENT_DATA;
+      if (Math.abs(audio.currentTime - target) > 0.08 || decoderStalled) audio.currentTime = target;
     }
     this.bufferingTimer = setTimeout(() => {
       if (this.buffering !== recovery) return;
@@ -4252,7 +4286,7 @@ const titleEdits=new Set();
 function recordingTitleMarkup(job){
   const title=canRenameRun(job)?`<button type="button" class="console-title console-title-editable" aria-label="${esc('Rename recording: '+job.filename)}" title="Rename recording">${esc(job.filename)}</button>`:`<span class="console-title">${esc(job.filename)}</span>`;
   const a=job.attribution;
-  if(!a||!['commons','ccmixter'].includes(a.provider))return title;
+  if(!a||!['commons','ccmixter','freesound','loc'].includes(a.provider))return title;
   return title+`<details class="recording-credit"><summary>Source and recording license</summary><p>${esc(a.attributionText||'')}</p><a download="source-attribution.json" href="data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(a,null,2))}">Download attribution</a></details>`;
 }
 function bindRecordingTitle(el,job){el.querySelector('.console-title-editable')?.addEventListener('click',()=>editRecordingTitle(job,el.querySelector('.console-title')));}

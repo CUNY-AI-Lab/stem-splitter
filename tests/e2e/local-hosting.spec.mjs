@@ -7,6 +7,7 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { createTestHarness } from 'wrangler';
 import { schemaStatements } from './schema-statements.mjs';
+import { openSplitActions } from '../../cloudflare/split-actions.mjs';
 
 const CLASS_CODE = 'e2e-class-code';
 const E2E_YOUTUBE_VERSION = 'b'.repeat(64);
@@ -53,6 +54,8 @@ const test = base.extend({
   network: [
     async ({}, use) => {
       const network = setupServer(
+        http.get('https://commons.wikimedia.org/w/api.php', () => HttpResponse.json({ query: { pages: [] } })),
+        http.get('https://musicbrainz.org/ws/2/recording/', () => HttpResponse.json({ recordings: [] })),
         http.get('https://archive.org/advancedsearch.php', ({ request }) => {
           const query = new URL(request.url).searchParams.get('q') || '';
           // The landing page speculates only this sample; dedicated Archive
@@ -216,19 +219,20 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.locator('.console-title')).toHaveText('source.wav');
   await expect(page.locator('.channel')).toHaveCount(4);
 
-  // On phones the song name owns the header. Status and destructive/export
-  // controls stay behind the downward caret instead of squeezing the title
-  // down to a one-letter ellipsis.
+  // Recording actions use the same menu on phones and desktop. The title
+  // wraps in the available space, and status remains visible beside it.
   await page.setViewportSize({ width: 390, height: 844 });
   await expectAlignedBrand();
   expect((await labLink.boundingBox()).height).toBeGreaterThanOrEqual(44);
-  const mobileTitleWidth = await page.locator('.console-title').evaluate((element) =>
-    element.getBoundingClientRect().width
-  );
-  expect(mobileTitleWidth).toBeGreaterThan(200);
-  const actionsToggle = page.getByRole('button', { name: 'Session actions' });
+  const titleBox = await page.locator('.console-title').boundingBox();
+  const headBox = await page.locator('.console-head').boundingBox();
+  const actionsBox = await page.locator('.console-actions-wrap').boundingBox();
+  expect(titleBox.width).toBeGreaterThan(headBox.width * .45);
+  expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(actionsBox.x);
+  expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(390);
+  const actionsToggle = page.getByRole('button', { name: 'Split actions', exact: true });
   await expect(actionsToggle).toBeVisible();
-  await expect(page.locator('.badge.ready')).toBeHidden();
+  await expect(page.locator('.badge.ready')).toBeVisible();
   await expect(page.locator('.export-btn')).toBeHidden();
   await expect(page.locator('.delete-btn')).toBeHidden();
 
@@ -251,10 +255,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
 
   await page.setViewportSize({ width: 1280, height: 720 });
-  await expect(actionsToggle).toBeHidden();
+  await expect(actionsToggle).toBeVisible();
   await expect(page.locator('.badge.ready')).toBeVisible();
-  await expect(page.locator('.export-btn')).toBeVisible();
-  await expect(page.locator('.delete-btn')).toBeVisible();
+  await expect(page.locator('.export-btn')).toBeHidden();
+  await expect(page.locator('.delete-btn')).toBeHidden();
   await page.waitForFunction(
     () =>
       window.__e2eAudioElements.length === 4 &&
@@ -282,6 +286,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(page.getByRole('button', { name: 'Mute vocals' })).toHaveAttribute('aria-pressed', 'true');
 
   const downloadPromise = page.waitForEvent('download');
+  await openSplitActions(page);
   await page.locator('.export-btn').click();
   // Observe transient UI feedback alongside the browser handoff, before ZIP
   // filesystem inspection can outlast the two-second confirmation window.
@@ -307,11 +312,13 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // export otherwise flashes PACKING… too briefly to read as anything.
   await expect(page.locator('.export-btn')).toHaveText('EXPORT');
 
+  await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.console')).toHaveClass(/collapsed/);
   await expect(page.locator('.transport')).toBeHidden();
   const [{ collapsed }] = await page.evaluate(() => JSON.parse(localStorage.getItem('jobs') || '[]'));
   expect(collapsed).toBe(true);
+  await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.transport')).toBeVisible();
 
@@ -322,8 +329,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     instructor = { username: 'e2e', displayName: 'E2E' };
     document.body.classList.add('instructor');
   });
+  await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.console')).toHaveClass(/collapsed/);
+  await openSplitActions(page);
   await page.locator('.folder-btn').click();
   await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
   await expect(page.locator('.folder-menu')).toBeVisible();
@@ -335,9 +344,11 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // Collapsing owns the whole session state: an open folder chooser must be
   // removed, not merely hidden inside the collapsed console. Otherwise the
   // first + FOLDER press after reopening only closes that stale menu.
+  await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.console')).toHaveClass(/collapsed/);
   await expect(page.locator('.folder-menu')).toHaveCount(0);
+  await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.folder-menu')).toHaveCount(0);
 
@@ -492,6 +503,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // Deleting a split is local and two-step: the rack entry and its stored chat
   // go, while the server copy stays fetchable for the rest of the class.
   const deleteBtn = page.locator('.console .delete-btn');
+  await openSplitActions(page);
   await deleteBtn.click();
   await expect(deleteBtn).toHaveText('SURE?');
   await deleteBtn.click();

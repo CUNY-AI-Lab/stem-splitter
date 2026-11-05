@@ -20,7 +20,10 @@ const archiveAudio = await readFile(new URL('../fixtures/audio/vocals.mp3', impo
 const test = base.extend({
   network: [
     async ({}, use) => {
-      const network = setupServer();
+      const network = setupServer(
+        http.get('https://commons.wikimedia.org/w/api.php', () => HttpResponse.json({ query: { pages: [] } })),
+        http.get('https://musicbrainz.org/ws/2/recording/', () => HttpResponse.json({ recordings: [] })),
+      );
       network.listen({ onUnhandledRequest: 'error' });
       await use(network);
       network.close();

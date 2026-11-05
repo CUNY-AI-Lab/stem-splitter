@@ -1,13 +1,16 @@
 import { inspectAudio } from './link-import.ts';
 import { retryAt, setCooldown } from './reliability/retry.ts';
 
-export type OpenAudioProvider = 'commons' | 'ccmixter';
+export type OpenAudioProvider = 'commons' | 'ccmixter' | 'freesound' | 'loc';
 export type OpenAudioSelection = { provider: OpenAudioProvider; itemId: string; fileId: string };
 export const OPEN_AUDIO_MAX_BYTES = 12 * 1024 * 1024;
 const AGENT = 'StemSplitter/0.1 (https://github.com/CUNY-AI-Lab/stem-splitter)';
 const COMMONS_API = 'https://commons.wikimedia.org/w/api.php';
 const CCMIXTER_API = 'https://ccmixter.org/api/query';
-const PROVIDER_NAMES = { commons: 'Wikimedia Commons', ccmixter: 'ccMixter' } as const;
+const PROVIDER_NAMES = { commons: 'Wikimedia Commons', ccmixter: 'ccMixter', freesound: 'Freesound', loc: 'Library of Congress' } as const;
+const OPENVERSE_API = 'https://api.openverse.org/v1/audio/';
+const LOC_MANIFEST = 'https://data.labs.loc.gov/jukebox/manifest.json';
+const LOC_RIGHTS = 'https://data.labs.loc.gov/jukebox/README.html#rights-statement';
 const REDIRECTS = new Set([301,302,303,307,308]);
 const MIME = { mp3: ['audio/mpeg','audio/mp3'], wav: ['audio/wav','audio/x-wav','audio/wave'], flac: ['audio/flac','audio/x-flac'] } as const;
 type Format = keyof typeof MIME;
@@ -20,11 +23,11 @@ export class OpenAudioError extends Error {
     this.name = 'OpenAudioError';
   }
 }
-interface Context { db: D1Database; maximumSeconds: number; signal?: AbortSignal; deadline?: number }
+interface Context { db: D1Database; maximumSeconds: number; signal?: AbortSignal; deadline?: number; cache?: { origin: string; storage: Pick<Cache, 'match' | 'put'> } }
 export interface OpenAudioTrack {
   id: string; openAudio: OpenAudioSelection; title: string; artist: string;
   durationSec: number; bytes: number; sourceUrl: string; providerName: string;
-  licenseName: string; licenseUrl: string;
+  licenseName: string; licenseUrl: string; fileDescription?: string;
 }
 interface Recording extends OpenAudioTrack {
   downloadUrl: string; fileName: string; format: Format; recordingCredit: string;
@@ -49,8 +52,13 @@ function credit(value: unknown) {
 export function parseOpenAudioSelection(value: unknown): OpenAudioSelection | null {
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='fileId,itemId,provider')return null;
   const {provider,itemId,fileId}=value as Record<string,unknown>;
-  if(typeof provider!=='string'||!['commons','ccmixter'].includes(provider)||typeof itemId!=='string'||!/^[1-9][0-9]{0,11}$/.test(itemId)||typeof fileId!=='string')return null;
-  if(provider==='commons'?fileId!=='original':!/^[1-9][0-9]{0,11}$/.test(fileId))return null;
+  if(typeof provider!=='string'||!['commons','ccmixter','freesound','loc'].includes(provider)||typeof itemId!=='string'||typeof fileId!=='string')return null;
+  if(provider==='freesound') {
+    if(!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(itemId)||!/^[1-9][0-9]{0,11}$/.test(fileId))return null;
+  } else {
+    if(!/^[1-9][0-9]{0,11}$/.test(itemId))return null;
+    if(provider==='commons'?fileId!=='original':provider==='loc'?fileId!=='1':!/^[1-9][0-9]{0,11}$/.test(fileId))return null;
+  }
   return {provider:provider as OpenAudioProvider,itemId,fileId};
 }
 export function openRecordingLicense(value: unknown): {url:string;name:string;code:string}|null {
@@ -70,6 +78,10 @@ function downloadUrl(value: unknown,provider:OpenAudioProvider):string|null {
     if(url.hostname!=='upload.wikimedia.org'||!/^\/wikipedia\/commons\/[0-9a-f]\/[0-9a-f]{2}\/[^/]+$/.test(url.pathname))return null;
     if([...url.searchParams.keys()].some(key=>!['utm_source','utm_campaign','utm_content'].includes(key)))return null;
     url.search='';
+  }else if(provider==='freesound') {
+    if(url.hostname!=='cdn.freesound.org'||!/^\/previews\/[0-9]+\/[1-9][0-9]*_[1-9][0-9]*-hq\.mp3$/.test(url.pathname)||url.search)return null;
+  }else if(provider==='loc') {
+    if(url.hostname!=='data.labs.loc.gov'||!/^\/jukebox\/audio\/jukebox-[1-9][0-9]*_1\.mp3$/.test(url.pathname)||url.search)return null;
   }else if(url.hostname!=='ccmixter.org'||!/^\/content\/[a-z0-9_.-]+\/[^/]+$/i.test(url.pathname)||url.search)return null;
   try{if(decodeURIComponent(url.pathname).split('/').some(part=>part==='.'||part==='..'||part.includes('\\')))return null;}catch{return null;}
   return url.href;
@@ -89,12 +101,12 @@ async function pause(ms:number,signal?:AbortSignal) {
   });
 }
 /** Shared D1 gate: at most one provider request/second across isolates. */
-async function slot(provider:OpenAudioProvider,context:Context) {
+async function slot(provider:string,context:Context,spacing=1000) {
   const key='open-audio:'+provider;
   for(let attempt=0;attempt<3;attempt++){
     const now=Date.now();
     const row=await context.db.prepare(`INSERT INTO provider_cooldowns(provider,until_ms) VALUES(?,?)
-      ON CONFLICT(provider) DO UPDATE SET until_ms=excluded.until_ms WHERE until_ms<=? RETURNING until_ms`).bind(key,now+1000,now).first();
+      ON CONFLICT(provider) DO UPDATE SET until_ms=excluded.until_ms WHERE until_ms<=? RETURNING until_ms`).bind(key,now+spacing,now).first();
     if(row)return;
     const pending=await context.db.prepare('SELECT until_ms FROM provider_cooldowns WHERE provider=?').bind(key).first<{until_ms:number}>();
     const wait=Math.max(1,(pending?.until_ms??now+1000)-now);
@@ -102,6 +114,22 @@ async function slot(provider:OpenAudioProvider,context:Context) {
     await pause(wait+5,context.signal);
   }
   throw new OpenAudioError('source_rate_limited',true,1);
+}
+async function openverseLease(context: Context): Promise<number> {
+  const until = Math.min(context.deadline ?? Infinity, Date.now() + 5000);
+  while (Date.now() < until) {
+    if (context.signal?.aborted) throw new OpenAudioError('source_cancelled');
+    const now = Date.now(), lease = now + 90000;
+    const row = await context.db.prepare(`INSERT INTO provider_cooldowns(provider,until_ms) VALUES(?,?)
+      ON CONFLICT(provider) DO UPDATE SET until_ms=excluded.until_ms WHERE until_ms<=? RETURNING until_ms`)
+      .bind('open-audio:openverse', lease, now).first();
+    if (row) return lease;
+    const pending = await context.db.prepare('SELECT until_ms FROM provider_cooldowns WHERE provider=?').bind('open-audio:openverse').first<{until_ms:number}>();
+    const remaining = Math.max(1, (pending?.until_ms ?? now + 3100) - Date.now());
+    if (remaining > 90000) throw new OpenAudioError('source_rate_limited', true, Math.ceil(remaining / 1000));
+    await pause(Math.min(250, remaining), context.signal);
+  }
+  throw new OpenAudioError('source_rate_limited', true, 5);
 }
 async function read(response:Response,maximum:number,deadline:number):Promise<ArrayBuffer> {
   const length=response.headers.get('content-length');
@@ -113,7 +141,7 @@ async function read(response:Response,maximum:number,deadline:number):Promise<Ar
   finally{if(timer!==undefined)clearTimeout(timer);void reader.cancel().catch(()=>{});reader.releaseLock();}
   const out=new Uint8Array(size);let at=0;for(const chunk of chunks){out.set(chunk,at);at+=chunk.byteLength;}return out.buffer;
 }
-async function request(provider:OpenAudioProvider,url:string,context:Context,maximum:number,audio=false):Promise<{data:ArrayBuffer;mime:string}> {
+async function request(provider:OpenAudioProvider,url:string,context:Context,maximum:number,audio=false,html=false):Promise<{data:ArrayBuffer;mime:string}> {
   const deadline=Math.min(context.deadline??Infinity,Date.now()+(audio?60000:15000));
   const controller=new AbortController(),abort=()=>controller.abort();context.signal?.addEventListener('abort',abort,{once:true});
   if(context.signal?.aborted)controller.abort();
@@ -121,8 +149,13 @@ async function request(provider:OpenAudioProvider,url:string,context:Context,max
   try{
     for(let hop=0,retries=0;;){
       if(controller.signal.aborted||Date.now()>=deadline)throw new OpenAudioError('source_timeout',true);
-      await slot(provider,{...context,signal:controller.signal,deadline});
-      const response=await fetch(target,{redirect:'manual',headers:{'User-Agent':AGENT,Accept:audio?'audio/mpeg,audio/wav,audio/flac':'application/json'},signal:controller.signal});
+      const gate = new URL(url).hostname === 'api.openverse.org' ? 'openverse' : provider;
+      const lease = gate==='openverse' ? await openverseLease({...context,signal:controller.signal,deadline}) : 0;
+      if(!lease)await slot(gate,{...context,signal:controller.signal,deadline});
+      let notBefore = 0;
+      try {
+      if(controller.signal.aborted)throw new OpenAudioError('source_cancelled');
+      const response=await fetch(target,{redirect:'manual',headers:{'User-Agent':AGENT,Accept:audio?'audio/mpeg,audio/wav,audio/flac':html?'text/html':'application/json'},signal:controller.signal});
       if(REDIRECTS.has(response.status)){
         const location=response.headers.get('location');cancel(response);
         let next:string|null=null;try{next=downloadUrl(new URL(location??'',target).href,provider);}catch{}
@@ -131,14 +164,23 @@ async function request(provider:OpenAudioProvider,url:string,context:Context,max
         target=next;continue;
       }
       if(response.status===429||response.status===503){
-        const until=retryAt(response.headers.get('retry-after'));cancel(response);await setCooldown(context.db,'open-audio:'+provider,until);
+        const until=retryAt(response.headers.get('retry-after'));cancel(response);notBefore=until;
+        if(!lease)await setCooldown(context.db,'open-audio:'+gate,until);
         if(retries++<1&&until-Date.now()<=5000&&until<deadline){await pause(Math.max(0,until-Date.now()),controller.signal);continue;}
         throw new OpenAudioError('source_rate_limited',true,Math.max(1,Math.ceil((until-Date.now())/1000)));
       }
       if(!response.ok){cancel(response);throw new OpenAudioError(response.status===403?'source_access_refused':'source_unavailable',response.status>=500);}
-      const mime=mediaType(response);
-      if(audio?!Object.values(MIME).some(values=>(values as readonly string[]).includes(mime)):!['application/json','text/plain'].includes(mime)) {cancel(response);throw new OpenAudioError(audio?'unsupported_audio':'metadata_invalid');}
+      let mime=mediaType(response);
+      // LC Labs publishes both its JSON manifest and MP3s as binary/octet-stream.
+      // Only these pinned dataset URLs get this exception; audio is still inspected below.
+      const datasetBinary=provider==='loc'&&(url===LOC_MANIFEST||Boolean(downloadUrl(url,'loc')))&&['application/octet-stream','binary/octet-stream'].includes(mime);
+      if(!datasetBinary&&(audio?!Object.values(MIME).some(values=>(values as readonly string[]).includes(mime)):html?mime!=='text/html':!['application/json','text/plain'].includes(mime))) {cancel(response);throw new OpenAudioError(audio?'unsupported_audio':'metadata_invalid');}
+      if(datasetBinary&&audio)mime='audio/mpeg';
       return {data:await read(response,maximum,deadline),mime};
+      } finally {
+        if(lease)await context.db.prepare('UPDATE provider_cooldowns SET until_ms=? WHERE provider=? AND until_ms=?')
+          .bind(Math.max(Date.now()+3100,notBefore),'open-audio:openverse',lease).run();
+      }
     }
   }catch(error){if(error instanceof OpenAudioError)throw error;throw new OpenAudioError(controller.signal.aborted?'source_timeout':'source_unavailable',true);}
   finally{clearTimeout(timer);context.signal?.removeEventListener('abort',abort);}
@@ -190,14 +232,24 @@ async function records(provider:OpenAudioProvider,parameters:Record<string,strin
 }
 export async function searchOpenAudio(provider:OpenAudioProvider,query:string,context:Context):Promise<{results:OpenAudioTrack[]}> {
   const term=query.trim();if(term.length<2||term.length>120)throw new OpenAudioError('invalid_query');
-  const matches=await records(provider,provider==='commons'?{...COMMONS_PROPS,generator:'search',gsrnamespace:'6',gsrsearch:`${term} filetype:audio intitle:mp3`,gsrlimit:'6'}:{f:'json',lic:'by',reqtags:'original',search:term,search_type:'all',limit:'6'},context);
+  const matches=provider==='freesound'?await searchFreesound(term,context):provider==='loc'?await searchLoc(term,context):await records(provider,provider==='commons'?{...COMMONS_PROPS,generator:'search',gsrnamespace:'6',gsrsearch:`${term} filetype:audio intitle:mp3`,gsrlimit:'6'}:{f:'json',lic:'by',reqtags:'original',search:term,search_type:'all',limit:'6'},context);
   return {results:matches.slice(0,8).map(({downloadUrl,fileName,format,recordingCredit,attributionText,rightsEvidence,...track})=>track)};
+}
+/** A catalog URL is only a lookup hint; Commons must verify the actual file. */
+export async function resolveCommonsRecordingPage(sourceUrl:string,context:Context):Promise<{results:OpenAudioTrack[]}> {
+  let url:URL;try{url=new URL(sourceUrl);}catch{return {results:[]};}
+  if(url.origin!=='https://commons.wikimedia.org'||url.username||url.password||url.search||url.hash||!url.pathname.startsWith('/wiki/File:'))return {results:[]};
+  let title:string;try{title=decodeURIComponent(url.pathname.slice('/wiki/'.length));}catch{return {results:[]};}
+  if(title.length>300||/[|\x00-\x1f\x7f]/.test(title))return {results:[]};
+  const matches=await records('commons',{...COMMONS_PROPS,titles:title},context);
+  return {results:matches.filter(track=>{try{return decodeURIComponent(new URL(track.sourceUrl).pathname).replaceAll('_',' ')===decodeURIComponent(url.pathname).replaceAll('_',' ');}catch{return false;}})
+    .map(({downloadUrl,fileName,format,recordingCredit,attributionText,rightsEvidence,...track})=>track)};
 }
 export async function fetchOpenAudio(selection:OpenAudioSelection,context:Context) {
   if(!parseOpenAudioSelection(selection))throw new OpenAudioError('invalid_selection');
   context={...context,deadline:Math.min(context.deadline??Infinity,Date.now()+90000)};
-  const items=await records(selection.provider,selection.provider==='commons'?{...COMMONS_PROPS,pageids:selection.itemId}:{f:'json',ids:selection.itemId,limit:'1'},context);
-  const track=items.find(item=>item.openAudio.itemId===selection.itemId&&item.openAudio.fileId===selection.fileId);
+  const items=selection.provider==='freesound'?[await freshFreesound(selection,context)]:selection.provider==='loc'?[await locRecording(selection.itemId,await locManifest(context,true),context)]:await records(selection.provider,selection.provider==='commons'?{...COMMONS_PROPS,pageids:selection.itemId}:{f:'json',ids:selection.itemId,limit:'1'},context);
+  const track=items.find(item=>item&&item.openAudio.itemId===selection.itemId&&item.openAudio.fileId===selection.fileId);
   if(!track)throw new OpenAudioError('license_unverified');
   const {data,mime}=await request(selection.provider,track.downloadUrl,context,OPEN_AUDIO_MAX_BYTES,true);
   if(data.byteLength!==track.bytes)throw new OpenAudioError('source_changed');
@@ -205,5 +257,130 @@ export async function fetchOpenAudio(selection:OpenAudioSelection,context:Contex
   if(inspected.format!==track.format||!(MIME[track.format] as readonly string[]).includes(mime)||inspected.durationSec>limited(context.maximumSeconds)||Math.abs(inspected.durationSec-track.durationSec)>Math.max(2,track.durationSec*.02))throw new OpenAudioError('unsupported_audio');
   return {data,title:track.title,fileName:track.fileName,contentType:MIME[track.format][0],durationSec:inspected.durationSec,
     attribution:{provider:selection.provider,providerName:track.providerName,itemId:selection.itemId,fileId:selection.fileId,title:track.title,creator:track.artist,sourceUrl:track.sourceUrl,licenseUrl:track.licenseUrl,licenseName:track.licenseName,fileName:track.fileName,
-      recordingCredit:track.recordingCredit,attributionText:track.attributionText,rightsEvidence:track.rightsEvidence,verifiedAt:new Date().toISOString()}};
+      recordingCredit:track.recordingCredit,attributionText:track.attributionText,rightsEvidence:track.rightsEvidence,...(track.fileDescription?{fileDescription:track.fileDescription}:{}),verifiedAt:new Date().toISOString()}};
+}
+
+async function catalogJson(provider: OpenAudioProvider, url: string, context: Context, maximum = 1024 * 1024): Promise<any> {
+  const { data } = await request(provider, url, context, maximum);
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(data)); }
+  catch { throw new OpenAudioError('metadata_invalid'); }
+}
+
+/** Openverse is an index. Only Freesound's exact, licensed MP3 rendition is eligible. */
+function freesound(row: any, context: Context): Recording | null {
+  const source = typeof row?.foreign_landing_url === 'string' ? row.foreign_landing_url : '';
+  const page = /^https:\/\/freesound\.org\/people\/([a-z0-9_.-]+)\/sounds\/([1-9][0-9]*)\/?$/i.exec(source);
+  const license = openRecordingLicense(row?.license_url);
+  const selection = parseOpenAudioSelection({ provider: 'freesound', itemId: row?.id, fileId: page?.[2] });
+  const audio = typeof row?.url === 'string' && /^https:\/\/cdn\.freesound\.org\/previews\/([0-9]+)\/([1-9][0-9]*)_([1-9][0-9]*)-hq\.mp3$/.exec(row.url);
+  if (!page || !selection || !audio || audio[2] !== page[2] || Number(audio[1]) !== Math.floor(Number(page[2]) / 1000)
+    || row.source !== 'freesound' || row.provider !== 'freesound' || row.filetype !== 'mp3' || !license
+    || row.creator !== page[1] || !['by', 'cc0', 'pdm'].includes(row.license)
+    || (row.license === 'by' ? license.code !== `cc-by-${row.license_version}` : license.code !== (row.license === 'cc0' ? 'cc0' : 'pd'))) return null;
+  const creator = text(row.creator), title = text(row.title);
+  const track = record('freesound', selection, title, creator, source.replace(/\/?$/, '/'), `${page[2]}-hq.mp3`, row.url,
+    'audio/mpeg', row.filesize, Number(row.duration) / 1000, license, `${creator}; Freesound MP3 preview`,
+    { licenseUrl: license.url, creator, recordingPage: source, catalogUrl: OPENVERSE_API + selection.itemId + '/', rendition: 'MP3 preview' }, context);
+  if (track) track.fileDescription = 'MP3 preview';
+  return track;
+}
+
+async function searchFreesound(query: string, context: Context): Promise<Recording[]> {
+  const url = new URL(OPENVERSE_API);
+  for (const [key, value] of Object.entries({ q: query, source: 'freesound', license: 'by,cc0,pdm', extension: 'mp3', page_size: '8' })) url.searchParams.set(key, value);
+  const data = await catalogJson('freesound', url.href, context);
+  if (!Array.isArray(data?.results)) throw new OpenAudioError('metadata_invalid');
+  return data.results.slice(0, 8).flatMap((row: any) => { const track = freesound(row, context); return track ? [track] : []; });
+}
+
+function attribute(tag: string, name: string): string {
+  const match = new RegExp(`(?:^|\\s)${name}=["']([^"']*)["']`, 'i').exec(tag);
+  return match ? text(match[1], 8192) : '';
+}
+
+async function freshFreesound(selection: OpenAudioSelection, context: Context): Promise<Recording | null> {
+  const row = await catalogJson('freesound', OPENVERSE_API + selection.itemId + '/', context);
+  const track = freesound(row, context);
+  if (!track || track.openAudio.itemId !== selection.itemId || track.openAudio.fileId !== selection.fileId) return null;
+  // Recheck the original source, not just potentially stale index metadata. Never
+  // use the authenticated original-download endpoint or substitute another file.
+  const { data } = await request('freesound', track.sourceUrl, context, 1024 * 1024, false, true);
+  const html = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(data);
+  const meta = new Map([...html.matchAll(/<meta\b[^>]*>/gi)].map(match => [attribute(match[0], 'property'), attribute(match[0], 'content')]));
+  const licenses = [...html.matchAll(/<a\b[^>]*>/gi)].filter(match => attribute(match[0], 'title') === 'Go to the full license text')
+    .map(match => openRecordingLicense(attribute(match[0], 'href')));
+  const sharedFiles = [...html.matchAll(/<div\b[^>]*>/gi)].filter(match => attribute(match[0], 'id') === 'share-link')
+    .map(match => attribute(match[0], 'data-static-file-url'));
+  if (meta.get('og:url') !== track.sourceUrl || meta.get('og:audio:artist') !== track.artist || meta.get('og:audio:title') !== track.title
+    || licenses.length !== 1 || licenses[0]?.url !== track.licenseUrl || sharedFiles.length !== 1 || sharedFiles[0] !== track.downloadUrl) return null;
+  track.rightsEvidence.sourceLicenseUrl = licenses[0].url;
+  track.rightsEvidence.sourceRenditionUrl = sharedFiles[0];
+  return track;
+}
+
+type LocFile = { id: string; filename: string; bytes: number; url: string; md5: string };
+async function locManifest(context: Context, fresh = false): Promise<Map<string, LocFile>> {
+  const storage = context.cache?.storage ?? (typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined);
+  const key = new Request(LOC_MANIFEST);
+  let data: any;
+  if (storage && !fresh) { try { const hit = await storage.match(key); if (hit?.ok) data = await hit.json(); } catch {} }
+  if (!data) {
+    data = await catalogJson('loc', LOC_MANIFEST, context, 1536 * 1024);
+    if (storage && !context.signal?.aborted) { try { await storage.put(key, Response.json(data, { headers: { 'Cache-Control': 'public, max-age=3600' } })); } catch {} }
+  }
+  if (data?.cols?.join(',') !== 'filename,item_id,md5,size,object_key' || !Array.isArray(data.rows) || data.rows.length > 10000) throw new OpenAudioError('metadata_invalid');
+  const files = new Map<string, LocFile>();
+  for (const row of data.rows) {
+    if (!Array.isArray(row) || row.length !== 5) continue;
+    const id = /^https?:\/\/www\.loc\.gov\/item\/jukebox-([1-9][0-9]*)\/$/.exec(row[1])?.[1];
+    if (!id || row[0] !== `jukebox-${id}_1.mp3` || row[4] !== `data.labs.loc.gov/jukebox/audio/${row[0]}`
+      || !/^[a-f0-9]{32}$/.test(row[2]) || !Number.isSafeInteger(row[3]) || row[3] < 1024 || row[3] > OPEN_AUDIO_MAX_BYTES) continue;
+    files.set(id, { id, filename: row[0], bytes: row[3], url: 'https://' + row[4], md5: row[2] });
+  }
+  return files;
+}
+
+async function locRecording(id: string, manifest: Map<string, LocFile>, context: Context): Promise<Recording | null> {
+  const file = manifest.get(id); if (!file) return null;
+  const source = `https://www.loc.gov/item/jukebox-${id}/`;
+  const data = await catalogJson('loc', source + '?fo=json&at=item,resources', context);
+  const item = data?.item, year = typeof item?.date === 'string' && /^(19[01][0-9]|192[0-2])(?:-[0-9]{2}){0,2}$/.test(item.date);
+  const rights = Array.isArray(item?.rights) ? item.rights.map((value: unknown) => text(value, 16384)).join(' ') : '';
+  if (!year || item?.access_restricted !== false || item?.profile !== 'jukebox'
+    || ![source, source.replace('https:', 'http:')].includes(item?.id)
+    || !String(item?.item?.recording_repository ?? '').includes('Recorded Sound Section, Library of Congress')
+    || !item?.location?.includes('united states') || !/recordings published prior to 1923.*public domain/i.test(rights)) return null;
+  const media = (data.resources ?? []).flatMap((resource: any) => Array.isArray(resource.files) ? resource.files.flat() : [])
+    .find((entry: any) => entry?.mediaType === 'A' && entry?.canDownload === true && Number.isFinite(entry.duration));
+  if (!media) return null;
+  const credits: string[] = (Array.isArray(item.contributor_names) ? item.contributor_names : []).map((value: unknown) => text(value)).filter(Boolean);
+  const names = [...new Set(credits.map(value => value.split(' -- ')[0]))];
+  const primary: string[] = Array.isArray(item.contributor_primary) ? item.contributor_primary.map((value: unknown) => text(value).toLowerCase()) : [];
+  const performers = names.filter(name => primary.includes(name.toLowerCase()));
+  const creator = (performers.length ? performers : names).join(' · ');
+  // Dataset membership, not composition age or a generic collection flag, is the
+  // rights evidence. LC Labs explicitly publishes this pre-1923 subset as public domain.
+  return record('loc', { provider: 'loc', itemId: id, fileId: '1' }, text(item.title), creator, source, file.filename, file.url,
+    'audio/mpeg', file.bytes, media.duration, { url: LOC_RIGHTS, name: 'Public domain (United States)', code: 'loc-pd-us' },
+    `${credits.join(' · ')}. Library of Congress, National Jukebox.`,
+    { recordingPage: source, recordingDate: item.date, dataset: 'https://data.labs.loc.gov/jukebox/', manifest: LOC_MANIFEST,
+      manifestMd5: file.md5, rightsStatement: LOC_RIGHTS, rightsScope: 'United States; pre-1923 recording in the published LC Labs dataset' }, context);
+}
+
+async function searchLoc(query: string, context: Context): Promise<Recording[]> {
+  context = { ...context, deadline: Math.min(context.deadline ?? Infinity, Date.now() + 25000) };
+  const url = new URL('https://www.loc.gov/collections/national-jukebox/');
+  for (const [key, value] of Object.entries({ fo: 'json', q: query, c: '6', at: 'results', dates: '1900/1922',
+    fa: 'partof_repository:recorded sound section, library of congress|location:united states' })) url.searchParams.set(key, value);
+  const [data, manifest] = await Promise.all([catalogJson('loc', url.href, context), locManifest(context)]);
+  if (!Array.isArray(data?.results)) throw new OpenAudioError('metadata_invalid');
+  const ids = [...new Set<string>(data.results.map((row: any) => /^https?:\/\/www\.loc\.gov\/item\/jukebox-([1-9][0-9]*)\/$/.exec(row?.id)?.[1])
+    .filter((id: string | undefined) => id && manifest.has(id)))].slice(0, 4);
+  const results: Recording[] = [];
+  for (const id of ids) {
+    if (context.signal?.aborted) throw new OpenAudioError('source_cancelled');
+    try { const track = await locRecording(id, manifest, context); if (track) results.push(track); }
+    catch (error) { if (!results.length) throw error; break; }
+  }
+  return results;
 }
