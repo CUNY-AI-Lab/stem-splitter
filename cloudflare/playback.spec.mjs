@@ -53,6 +53,10 @@ async function fixture(page, names, { owned = false, mediaRange, durations = {} 
   await expect(page.locator('.channel')).toHaveCount(names.length);
   await expect.poll(() => page.evaluate(expected => [...mixers.get('remix-fixture').channelsByName]
     .every(([name, channel]) => Math.abs(channel.audio.duration - (expected[name] || 70)) < .1), durations)).toBe(true);
+  // Owned navigation loads the rack before adopting the linked recording.
+  // Wait for that second phase: its banner and scroll can otherwise move a
+  // control between Firefox's pointer-down and pointer-up during the test.
+  if (owned) await expect(page.locator('#upload-message')).toHaveText('Opened your saved split.');
   return server;
 }
 
