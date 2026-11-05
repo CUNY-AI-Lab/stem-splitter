@@ -85,6 +85,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     const resplitDialog = page.getByRole('dialog', { name: 'Split again', exact: true });
     await expect(resplitDialog).toBeVisible();
     await expect(resplitDialog).toContainText('Renamed recording — Lead voice.mp3');
+    await expect(resplitDialog.getByRole('combobox', { name: 'Number of splits', exact: true })).toBeVisible();
     await expect(resplitDialog.locator('option')).toHaveCount(await page.locator('input[name="stem-model"]').count());
     await resplitDialog.screenshot({ path: testInfo.outputPath('split-again-dialog.png'), animations: 'disabled' });
     await resplitDialog.getByRole('button', { name: 'Cancel', exact: true }).click();

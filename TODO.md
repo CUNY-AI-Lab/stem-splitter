@@ -1,5 +1,20 @@
 # Stem Splitter — next changes in three PRs
 
+## Current user corrections — November 5, 2026
+
+- [x] Keep one search field directly below upload; remove the repository selector, search heading, and accordion.
+- [x] Remove “Split into” from the upload controls and the resplit dialog; retain accessible names for the count controls.
+- [x] Save the per-recording action menu, exclusive playback, reload, and stalled-playback fixes in the recovered local candidate.
+- [ ] Replace fixed-category separation for both initial splits and resplits with a validated audio-derived source path.
+- [ ] Pass all 18 real-audio cases: three genres × 2/4/6 outputs × initial/resplit, with correct instrument labels and useful isolation.
+- [ ] Complete authorized release verification and publication. Local checks do not establish a production release.
+
+The last two model evaluations have not established reliable isolation. The
+November 5 [source-separation record](docs/evaluation/2026-11-05-source-separation-status.md)
+contains the measured results and exact remaining access/data gaps. YouTube and
+mixer changes remain outside this release. The dated historical plan below is
+preserved; newer user instructions take precedence.
+
 Updated October 6, 2026. This is an implementation plan, not a release authorization or a claim that unchecked work is complete.
 
 **Execution update — October 6, 2026, 20:06 UTC:** the user has separately authorized implementing these three PR groups, publishing at most three actual draft PRs, and merging after an independent Astra High audit of the final commits. Implementation workers were started with explicit Astra Max settings, and a separate auditor with explicit Astra High settings; creation requests were accepted, but actual backend model/effort metadata is not independently exposed. Production deployment, database cutover, paid inference/provider jobs, credential changes and permission expansion remain outside that authorization. Portal `main` automatically releases changed Workers; separate deployment approval is pending. Stem's inspected GitHub target workflows check and dry-build; external auto-deployment remains unverified because the configured Cloudflare MCP sessions do not authorize the target account. No merges, deployments or remote database changes have run. The table records the dated implementation evidence. Full acceptance boxes remain open where live access, release authorization or unverified scenarios are still required; the linked PRs hold the current exact-head review and CI results.

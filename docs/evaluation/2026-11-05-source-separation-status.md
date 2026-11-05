@@ -56,6 +56,95 @@ research-only scope are in `2026-11-05-audiosep-research.json`. The full local
 research runners and WAV outputs are under the task's
 `evidence/audiosep-local-20261105/` directory.
 
+## Continued local evaluation: SoloAudio and real multitracks
+
+The earlier stop after the UI checkpoint was premature. This continuation
+verified the clean recovered checkout and absence of another Stem writer, then
+ran another separator rather than treating the UI tests as audio acceptance.
+
+Docker's daemon remains unavailable. PyTorch 2.8 can use the Mac GPU outside the
+restricted process sandbox, so Docker does not block local inference. The first
+new run stopped before inference because iCloud had offloaded `_soundfile.py`.
+Its readable package-cache copy was verified against the wheel's RECORD hash
+and restored into the temporary evaluation path; the original was preserved.
+The pip launcher had also been offloaded. Five minimal, pinned Python wheels
+were therefore verified and extracted only into the temporary runtime. No
+global Python, application dependency, account, or service was changed.
+
+The official [SoloAudio source](https://github.com/WangHelin1997/SoloAudio) was
+pinned to `975a7949f1514a8f2a33105d37cd83c89f03d3e5`; its official
+[model snapshot](https://huggingface.co/westbrook/SoloAudio) was pinned to
+`1311326c8532cfa95b03d3ce13078b3607f0a0e7`. The separator, VAE, and
+required CLAP general checkpoint were hash-verified and loaded strictly in
+weights-only mode. Model weights are CC BY-NC-SA 4.0; this was local
+noncommercial research, not approval for an institutional production service.
+
+The public [MedleyDB sample](https://zenodo.org/records/1438309) matched its
+published MD5 and recorded SHA-256. Its two recordings provide dataset-authored
+references for folk and singer/songwriter material under the
+[dataset's research terms](https://medleydb.weebly.com/downloads.html).
+The sample has too few distinct sources to establish the requested six-source
+release cases, and the folk references have documented microphone bleed.
+Neither the recordings nor model weights are committed or published.
+
+Six active target-reference cases completed silently on the Mac GPU using
+50 diffusion steps. Five of six output SI-SDR values were below 0 dB. The
+singer/songwriter acoustic guitar improved from 3.62 to 7.23 dB; this single
+result is not a release pass. Flute and voice did not improve, violin remained
+below 0 dB, and the active electric-guitar trial failed badly. A CPU flute
+cross-check also retained more interference than target signal. An earlier
+electric-guitar trial used a nearly silent reference excerpt and is explicitly
+excluded; its replacement excerpt was chosen by reference energy before
+running the model. There were eight actual inference calls: six active primary
+cases, one inactive diagnostic, and one CPU cross-check.
+
+A separate CLAP general diagnostic ranked the documented instrument first on
+four of five active isolated references. The folk acoustic-guitar reference
+ranked mandolin first. Mixture rankings still confused related instruments,
+and silence produced large raw cosine similarities. These are uncalibrated
+rankings, not presence probabilities or permission to force the top 2/4/6
+labels into outputs. The full small, non-audio evidence record is
+`2026-11-05-soloaudio-research.json`. Experiment code and local WAVs remain in
+`/tmp/stem-source-research-20261105`.
+
+## Exact remaining steps and access
+
+No accepted detector/separator pair exists, so the app's audio-derived source
+path is still not implemented or enabled. This is a model-quality and
+validation blocker, not merely a missing UI switch. Both initial splits and
+resplits must analyze the exact input bytes; a resplit uses the selected saved
+stem, not its original parent recording or a copied instrument inventory.
+
+The next bounded separator trial is the existing pinned SAM Audio candidate
+(`geopti/sam-audio-large`, version
+`d8a8a4fcdcbf0bdc863f6d98cd2117ec0bc02224b576c7b98b2a009a8a1f83fa`).
+Use at most three ten-second reference excerpts, one prediction per excerpt,
+no automatic resubmissions, and a provider `Cancel-After: 120s` deadline. At
+the published L40S rate of $0.000975/second, three full deadlines represent
+$0.351 of nominal compute, within the previously approved $0.50 test budget.
+Recheck the pinned version/schema and current hardware/rate before starting;
+do not interpret a typical per-run estimate as a spending cap. Record any
+uncertain start and reconcile it before another call. This is separator
+evaluation only; it would not validate automatic discovery or the 18 app cases.
+
+No Replicate credential is available in this task's environment or its expected
+local configuration files. The smallest next input is access to the existing
+`REPLICATE_API_TOKEN` in the local task environment, without creating a new
+credential or posting it in chat. Firefox's CUNY session does not provide this
+provider credential. No paid call has run. Local SAM weights additionally need
+gated model access; that access was not requested or bypassed.
+
+The three-genre release matrix also needs exact reviewed instrument inventories
+and suitable recordings with enough genuine sources, including a parent output
+that remains meaningfully separable for each resplit case. Existing orchestral,
+jazz, and bluegrass audio is available, but documentary instrumentation alone
+does not satisfy that ground truth. The two MedleyDB samples improve reference
+evidence without closing the full matrix. Do not manufacture silent outputs or
+label an already isolated instrument as six new instruments.
+
+Publication remains held: the previous push/PR denial was not retried, and no
+new merge, deploy, sign-in, paid call, or restricted Library access occurred.
+
 ## Checkout recovery and UI verification
 
 The original iCloud-backed checkout has offloaded Git metadata that reports its
@@ -90,3 +179,10 @@ desktop/phone layout and synthetic import flows passed 16/16 Chromium checks,
 and the final layout/menu checks passed 3/3 in isolated muted Firefox. The final
 Cloudflare dry build also passed. The earlier 207-case run predates this final
 HTML/CSS-only cleanup and is not presented as a fresh run of that cleanup.
+
+The continuation found one remaining visible “Split into” label in the resplit
+dialog and removed it too. The count selector retains `aria-label="Number of
+splits"`. The existing sharing/resplit test passed 1/1 in Chromium and 1/1 in
+isolated muted Firefox, including cancel/retry and preservation of uploaded
+stem bytes. A fresh Cloudflare dry build passed. These synthetic identity and
+provider checks do not establish real provider behavior or a deployment.

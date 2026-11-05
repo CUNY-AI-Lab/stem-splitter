@@ -1674,7 +1674,7 @@ async function chooseStemResplit(mixer, stem) {
   dialog.innerHTML = `<form class="class-code-form">
     <h2 id="resplit-title">Split again</h2>
     <p class="resplit-filename">${esc(filename)}</p>
-    <label for="resplit-model">Split into</label><select id="resplit-model" required></select>
+    <select id="resplit-model" aria-label="Number of splits" required></select>
     <p class="resplit-status" role="status">Loading split choices…</p>
     <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Split again</button></div>
   </form>`;

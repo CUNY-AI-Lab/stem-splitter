@@ -1,0 +1,2442 @@
+{
+  "schema": "stem-splitter.source-evaluation-checkpoint.v1",
+  "generatedAt": "2026-11-05T02:39:10.866834+00:00",
+  "candidateBase": "3d7711d9fde37d47ce9caff1644c800c414e4081",
+  "applicationAcceptance": {
+    "accepted": 0,
+    "required": 18,
+    "blocked": 18
+  },
+  "sourceCommit": "975a7949f1514a8f2a33105d37cd83c89f03d3e5",
+  "weights": [
+    {
+      "file": "models/audio-vae.pt",
+      "url": "https://huggingface.co/westbrook/SoloAudio/resolve/1311326c8532cfa95b03d3ce13078b3607f0a0e7/audio-vae.pt",
+      "bytes": 549068173,
+      "sha256": "d4e13ac8bae019d7170bb5fe51e27d9b428bedd5c4c27586eff9f7462961dcbf",
+      "revision": "1311326c8532cfa95b03d3ce13078b3607f0a0e7"
+    },
+    {
+      "file": "models/soloaudio_v2.pt",
+      "url": "https://huggingface.co/westbrook/SoloAudio/resolve/1311326c8532cfa95b03d3ce13078b3607f0a0e7/soloaudio_v2.pt",
+      "bytes": 591736757,
+      "sha256": "8e068c8d211b4efe0a31b74ea94243b435e480a451c2062c752b7ed7e7239ca1",
+      "revision": "1311326c8532cfa95b03d3ce13078b3607f0a0e7"
+    },
+    {
+      "file": "clap-general/config.json",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/config.json",
+      "bytes": 643,
+      "sha256": "6268f76a067e3104bf9001e97d7dcc0fcfb16f3086cfb478ee72d95900d7fc1d",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/merges.txt",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/merges.txt",
+      "bytes": 456318,
+      "sha256": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/preprocessor_config.json",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/preprocessor_config.json",
+      "bytes": 541,
+      "sha256": "9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/pytorch_model.bin",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/pytorch_model.bin",
+      "bytes": 776444665,
+      "sha256": "314eb00cce6ad68d25237b8446b659ccdb136ed4672c1bca470f142f72455026",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/special_tokens_map.json",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/special_tokens_map.json",
+      "bytes": 280,
+      "sha256": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/tokenizer.json",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/tokenizer.json",
+      "bytes": 2108774,
+      "sha256": "dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/tokenizer_config.json",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/tokenizer_config.json",
+      "bytes": 1362,
+      "sha256": "e2eb445cfdbf4711de620cbdf10478b0423950799e85652d9f28da47066ab86d",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    },
+    {
+      "file": "clap-general/vocab.json",
+      "url": "https://huggingface.co/laion/larger_clap_general/resolve/ada0c23a36c4e8582805bb38fec3905903f18b41/vocab.json",
+      "bytes": 798293,
+      "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e",
+      "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41"
+    }
+  ],
+  "runtime": [
+    {
+      "package": "diffusers",
+      "version": "0.30.0",
+      "url": "https://files.pythonhosted.org/packages/74/2b/69bb842f7567cd92a540f8a9a63a20e09304ad8ff84530f26762e7e19626/diffusers-0.30.0-py3-none-any.whl",
+      "sha256": "114194eb61498aff06243ade750fca6fbc179ca9df68923bb175b70030bed495",
+      "bytes": 2630173
+    },
+    {
+      "package": "alias-free-torch",
+      "version": "0.0.6",
+      "url": "https://files.pythonhosted.org/packages/b8/8e/8dd4d6de0fbba9d8f10d7b655be0578d5bda6e4db425210c265b0ea6c804/alias_free_torch-0.0.6-py3-none-any.whl",
+      "sha256": "3a77e81147caf00f0b05483498e672ad3623b05800b82ace163d7adecac8b033",
+      "bytes": 9659
+    },
+    {
+      "package": "vector-quantize-pytorch",
+      "version": "1.9.14",
+      "url": "https://files.pythonhosted.org/packages/02/9c/7dcce24e978bc14a18e2a3f7e2d6f4d2001533dc0cffab143bb3f8ec13d6/vector_quantize_pytorch-1.9.14-py3-none-any.whl",
+      "sha256": "104677906d6b3b03d5bd30d5afb7dce1f28053b1dd0167442b2887ef3ea652ec",
+      "bytes": 17980
+    },
+    {
+      "package": "einops",
+      "version": "0.7.0",
+      "url": "https://files.pythonhosted.org/packages/29/0b/2d1c0ebfd092e25935b86509a9a817159212d82aa43d7fb07eca4eeff2c2/einops-0.7.0-py3-none-any.whl",
+      "sha256": "0f3096f26b914f465f6ff3c66f5478f9a5e380bb367ffc6493a68143fbbf1fd1",
+      "bytes": 44599
+    },
+    {
+      "package": "einops-exts",
+      "version": "0.0.4",
+      "url": "https://files.pythonhosted.org/packages/78/01/8da8dd078b354a89602a875d310a0d725dad92b5b4d61069576e0a0e02e4/einops_exts-0.0.4-py3-none-any.whl",
+      "sha256": "6d310a4c858e459ebff8288580f90255d354cfa3bde22a53b59baae64b48cb95",
+      "bytes": 3925
+    }
+  ],
+  "runtimeRecovery": {
+    "file": "_soundfile.py",
+    "bytes": 5783,
+    "sha256": "31490aab77c158db180b7a6084256a1d9c6e36c2ff9ea98779494df1161f7474",
+    "verifiedAgainst": "/Users/milwright/Documents/Codex/2026-11-04/task/evidence/audiosep-local-20261105/uv-cache/archive-v0/iBPQXHVUp0xStqZKkW9kM/soundfile-0.13.1.dist-info/RECORD",
+    "reason": "Original evaluation-runtime file offloaded by iCloud; copied readable cache file without altering original."
+  },
+  "sourceCompatibilityPatches": [
+    {
+      "path": "vae_modules/stable_vae/models/nn/__init__.py",
+      "beforeSha256": "9c3815860820bc1ef0e10c71140c90634b9eeef2bbf2a00445763ed4552c149a",
+      "afterSha256": "c5a45275b11ee864d2d11eef531fb43b91f1c3bfe3ead8ad99820fa430cd740e",
+      "change": "Do not eagerly import unused training loss module (which requires audiotools); no inference layer changed."
+    }
+  ],
+  "dataset": {
+    "record": "https://zenodo.org/records/1438309",
+    "url": "https://zenodo.org/api/records/1438309/files/MedleyDB_Sample.tar.gz/content",
+    "bytes": 415502011,
+    "md5": "dbb5b4ff5122233915d04cab4486ead1",
+    "sha256": "603fa6cc6fc8d6dd0f5ffcc5bd97b8b2c74820e2498b1e44a285308e772d7910",
+    "license": "CC BY-NC-SA 4.0",
+    "scope": "Noncommercial local evaluation only; no redistribution"
+  },
+  "sourceAndReferenceFiles": [
+    {
+      "archivePath": "MedleyDB_sample/Audio/Phoenix_ScotchMorris/Phoenix_ScotchMorris_METADATA.yaml",
+      "file": "Phoenix_ScotchMorris_METADATA.yaml",
+      "bytes": 1273,
+      "sha256": "6a12c1d7ff592e9464f518ba2fe5dd98f3a8501747f5131e9530840ecb1911a6"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/Phoenix_ScotchMorris/Phoenix_ScotchMorris_MIX.wav",
+      "file": "Phoenix_ScotchMorris_MIX.wav",
+      "bytes": 31247748,
+      "sha256": "0abff2045127295b46849d7cb14614ec5d6cc2e7737c47bfd59577c103b3f41c"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/Phoenix_ScotchMorris/Phoenix_ScotchMorris_STEMS/Phoenix_ScotchMorris_STEM_01.wav",
+      "file": "Phoenix_ScotchMorris_STEM_01.wav",
+      "bytes": 31247748,
+      "sha256": "c841a680aba2b3ab34c32ee2c6b26b77d5fcbee9303b9d76a665aa4d13c8aacd"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/Phoenix_ScotchMorris/Phoenix_ScotchMorris_STEMS/Phoenix_ScotchMorris_STEM_02.wav",
+      "file": "Phoenix_ScotchMorris_STEM_02.wav",
+      "bytes": 31247748,
+      "sha256": "de4be4e5c350fd29141449fd41500fd7513f491348b2a02f04d204994701954d"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/Phoenix_ScotchMorris/Phoenix_ScotchMorris_STEMS/Phoenix_ScotchMorris_STEM_03.wav",
+      "file": "Phoenix_ScotchMorris_STEM_03.wav",
+      "bytes": 31247748,
+      "sha256": "ff9cfa6cec6237a34b07ef915f6a627bcfa3b4e76f1ca828670d82073b5dbb9a"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/Phoenix_ScotchMorris/Phoenix_ScotchMorris_STEMS/Phoenix_ScotchMorris_STEM_04.wav",
+      "file": "Phoenix_ScotchMorris_STEM_04.wav",
+      "bytes": 31247748,
+      "sha256": "0aec28aad09e895c9a585ef1d673ca171651ff90006f55e3e348663ab5fd9c7f"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_METADATA.yaml",
+      "file": "LizNelson_Rainfall_METADATA.yaml",
+      "bytes": 1382,
+      "sha256": "ea5d97db36aedcb00c1863932bc2da7270c419607502d9ac0ef609210d78cf9c"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_MIX.wav",
+      "file": "LizNelson_Rainfall_MIX.wav",
+      "bytes": 50259076,
+      "sha256": "0e4418c19070ca828c7ebbb94d0cf1df8379a49448e7a43387f8231d1ef6ebcf"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_STEMS/LizNelson_Rainfall_STEM_01.wav",
+      "file": "LizNelson_Rainfall_STEM_01.wav",
+      "bytes": 50259076,
+      "sha256": "9bd7c8cf27e9b191ce1aa036d7dc1787f662cccc7817d6675b8cbd938a77041b"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_STEMS/LizNelson_Rainfall_STEM_02.wav",
+      "file": "LizNelson_Rainfall_STEM_02.wav",
+      "bytes": 50259076,
+      "sha256": "ae86f0e41d1e1d57b2c0daeb250ac1fe7536c6df743eda7d140bffd6ce8ac92d"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_STEMS/LizNelson_Rainfall_STEM_03.wav",
+      "file": "LizNelson_Rainfall_STEM_03.wav",
+      "bytes": 50259076,
+      "sha256": "6e9be1254c4e513b0f3ae3709a7de35f39b56a84fa6c42b7b3bb46a32dfefde5"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_STEMS/LizNelson_Rainfall_STEM_04.wav",
+      "file": "LizNelson_Rainfall_STEM_04.wav",
+      "bytes": 50259076,
+      "sha256": "a7be6dab2d1e61cd144cf335ffae400940005b352cea286c490c345ae9c9752c"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Audio/LizNelson_Rainfall/LizNelson_Rainfall_STEMS/LizNelson_Rainfall_STEM_05.wav",
+      "file": "LizNelson_Rainfall_STEM_05.wav",
+      "bytes": 50259076,
+      "sha256": "c3b8d0e47c2a050699f4f3a0bc5c47d11d6a8d539801060c12cc8cbf1dfb8684"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Annotations/Pitch_Annotations/LizNelson_Rainfall_STEM_01.csv",
+      "file": "LizNelson_Rainfall_STEM_01.csv",
+      "bytes": 596676,
+      "sha256": "ebd540cc10a5f9e6507b0af558d7c89f128991b1724f744c8452f07687ea8218"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Annotations/Pitch_Annotations/Phoenix_ScotchMorris_STEM_02.csv",
+      "file": "Phoenix_ScotchMorris_STEM_02.csv",
+      "bytes": 300062,
+      "sha256": "ef8c61557558bc552d7d9c863668623e13da78b67c14287622962ee108f63510"
+    },
+    {
+      "archivePath": "MedleyDB_sample/Annotations/Pitch_Annotations/Phoenix_ScotchMorris_STEM_03.csv",
+      "file": "Phoenix_ScotchMorris_STEM_03.csv",
+      "bytes": 416132,
+      "sha256": "c029dcb4283d2dc417c2fc09969fd2da648d2e2e8368ade0910ab646f74b3aaf"
+    }
+  ],
+  "measurements": [
+    {
+      "id": "folk-flute",
+      "query": "flute",
+      "sourceSha256": "0abff2045127295b46849d7cb14614ec5d6cc2e7737c47bfd59577c103b3f41c",
+      "referenceSha256": [
+        "de4be4e5c350fd29141449fd41500fd7513f491348b2a02f04d204994701954d"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "inputSha256": "33786a3bc8aaf595bdf88f2211ded1d6fb809caee639779a5b135a86d6a82847",
+      "targetSha256": "249bae6ee0921c9ccc3b4828580b10e432d077c9b7ea8df363a6462281377e8a",
+      "outputSha256": "896129b55b0e1614aa9d5330cfc3f267011a873bfe761755c7ea058ac0978fb4",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-mps-50steps/folk-flute-output.wav",
+      "baselineSiSdrDb": -2.458916352808705,
+      "outputSiSdrDb": -2.505953130501184,
+      "siSdrImprovementDb": -0.04703677769247916,
+      "alignedOutputSiSdrDb": -2.505953130501184,
+      "alignedSiSdrImprovementDb": -0.04703677769247916,
+      "alignmentSamples": 0,
+      "outputPeak": 0.1698361486196518,
+      "seconds": 4.869088458013721,
+      "device": "mps",
+      "runnerSha256": "6122797d20e9e8d41d1a21d75f829896b0f9203e498503ef6d9f9bc9649fb8e6",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "songwriter-acoustic-guitar",
+      "query": "acoustic guitar",
+      "sourceSha256": "0e4418c19070ca828c7ebbb94d0cf1df8379a49448e7a43387f8231d1ef6ebcf",
+      "referenceSha256": [
+        "a7be6dab2d1e61cd144cf335ffae400940005b352cea286c490c345ae9c9752c"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "inputSha256": "d4cb1afd40ca5cbc59340914d6301f2e26aedb5fcfe162684bbe8140571de006",
+      "targetSha256": "d38cb6aedb68634337802052ae37ddb7d3cff3b3af6fc3f8667ecc09664b657c",
+      "outputSha256": "bcbe5ae36d993f42d8c7df3e34efcb4d8de0fecf2e86136fc1b222d7e29d85e2",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-mps-50steps/songwriter-acoustic-guitar-output.wav",
+      "baselineSiSdrDb": 3.6225379939094533,
+      "outputSiSdrDb": 7.227443790934761,
+      "siSdrImprovementDb": 3.604905797025308,
+      "alignedOutputSiSdrDb": 7.227443790934761,
+      "alignedSiSdrImprovementDb": 3.604905797025308,
+      "alignmentSamples": 0,
+      "outputPeak": 0.1837218850851059,
+      "seconds": 1.3083820829633623,
+      "device": "mps",
+      "runnerSha256": "6122797d20e9e8d41d1a21d75f829896b0f9203e498503ef6d9f9bc9649fb8e6",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "folk-violin",
+      "query": "violin",
+      "sourceSha256": "0abff2045127295b46849d7cb14614ec5d6cc2e7737c47bfd59577c103b3f41c",
+      "referenceSha256": [
+        "ff9cfa6cec6237a34b07ef915f6a627bcfa3b4e76f1ca828670d82073b5dbb9a"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "inputSha256": "5bd67986eb0177467769f395aeb7ea266ad92cdb9bbfbaf85329f14a0ed71efc",
+      "targetSha256": "82f3e9da01720a1969b224088d27210f9ef66c0b6e44a620a35b00c71b66ea84",
+      "outputSha256": "48e987a4a1cd8126bab475122f3bf92cff1dfc216f47dea4c0bca6bbeb66eed8",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-other-four/folk-violin-output.wav",
+      "baselineSiSdrDb": -0.916896688400093,
+      "outputSiSdrDb": -0.34634871843760173,
+      "siSdrImprovementDb": 0.5705479699624912,
+      "alignedOutputSiSdrDb": -0.34634871843760173,
+      "alignedSiSdrImprovementDb": 0.5705479699624912,
+      "alignmentSamples": 0,
+      "outputPeak": 0.18338607251644135,
+      "seconds": 1.4882632909575477,
+      "device": "mps",
+      "runnerSha256": "6122797d20e9e8d41d1a21d75f829896b0f9203e498503ef6d9f9bc9649fb8e6",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "folk-acoustic-guitar",
+      "query": "acoustic guitar",
+      "sourceSha256": "0abff2045127295b46849d7cb14614ec5d6cc2e7737c47bfd59577c103b3f41c",
+      "referenceSha256": [
+        "c841a680aba2b3ab34c32ee2c6b26b77d5fcbee9303b9d76a665aa4d13c8aacd"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "inputSha256": "e48f4030663798b433969ffbe575ad84e767d7d29ee2676eba204b4de2356da4",
+      "targetSha256": "eba395ee2458aace379c7239e751937b13bda275a4cfc82fe8778f12d085e066",
+      "outputSha256": "a7d6434fda5071d3e1619a3abbb2897b69cf0dfd9c098c2e5be54bc4ee66c4d4",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-other-four/folk-acoustic-guitar-output.wav",
+      "baselineSiSdrDb": -8.272060689251546,
+      "outputSiSdrDb": -1.0944080366339888,
+      "siSdrImprovementDb": 7.1776526526175575,
+      "alignedOutputSiSdrDb": -1.0944080366339888,
+      "alignedSiSdrImprovementDb": 7.1776526526175575,
+      "alignmentSamples": 0,
+      "outputPeak": 0.13713569939136505,
+      "seconds": 1.2856758330017328,
+      "device": "mps",
+      "runnerSha256": "6122797d20e9e8d41d1a21d75f829896b0f9203e498503ef6d9f9bc9649fb8e6",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "songwriter-voice",
+      "query": "female singing voice",
+      "sourceSha256": "0e4418c19070ca828c7ebbb94d0cf1df8379a49448e7a43387f8231d1ef6ebcf",
+      "referenceSha256": [
+        "9bd7c8cf27e9b191ce1aa036d7dc1787f662cccc7817d6675b8cbd938a77041b",
+        "ae86f0e41d1e1d57b2c0daeb250ac1fe7536c6df743eda7d140bffd6ce8ac92d",
+        "6e9be1254c4e513b0f3ae3709a7de35f39b56a84fa6c42b7b3bb46a32dfefde5"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "inputSha256": "971fea95e6d0a9ebb98a0464dc8ea697994a3e7b184fbdc85ce74bd5ad8cacf9",
+      "targetSha256": "ef51224dd08803dc7f6fd7fa30cf7519068a9c65d02a95d90c8eddfa4aa74fb0",
+      "outputSha256": "fdeaa541a00cefdd8f2c2ee53ef1aea4244812479c3968ffbc9e8a43c5005bc5",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-other-four/songwriter-voice-output.wav",
+      "baselineSiSdrDb": -3.4951959920893216,
+      "outputSiSdrDb": -3.5989153671338308,
+      "siSdrImprovementDb": -0.10371937504450912,
+      "alignedOutputSiSdrDb": -3.5989153671338308,
+      "alignedSiSdrImprovementDb": -0.10371937504450912,
+      "alignmentSamples": 0,
+      "outputPeak": 0.1443086564540863,
+      "seconds": 1.3801627079956234,
+      "device": "mps",
+      "runnerSha256": "6122797d20e9e8d41d1a21d75f829896b0f9203e498503ef6d9f9bc9649fb8e6",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "songwriter-electric-guitar",
+      "query": "electric guitar",
+      "sourceSha256": "0e4418c19070ca828c7ebbb94d0cf1df8379a49448e7a43387f8231d1ef6ebcf",
+      "referenceSha256": [
+        "c3b8d0e47c2a050699f4f3a0bc5c47d11d6a8d539801060c12cc8cbf1dfb8684"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "inputSha256": "c188de530fb6a8a41d0c6e70969a519e0c7c70059ee6c4684a7cc8fcc927e3e2",
+      "targetSha256": "54f38fbc20211343c83364a50e9273e5d4849ba4715e010e0bab6921804afe51",
+      "outputSha256": "8ff00383e2717b987e57451bf075a00b60ab23ed8a44eca40905e1de974bc36c",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-other-four/songwriter-electric-guitar-output.wav",
+      "baselineSiSdrDb": -67.01933820073955,
+      "outputSiSdrDb": -53.02588969448919,
+      "siSdrImprovementDb": 13.993448506250367,
+      "alignedOutputSiSdrDb": -39.89015880894407,
+      "alignedSiSdrImprovementDb": 27.129179391795482,
+      "alignmentSamples": -726,
+      "outputPeak": 0.1840919852256775,
+      "seconds": 1.3004634999670088,
+      "device": "mps",
+      "runnerSha256": "6122797d20e9e8d41d1a21d75f829896b0f9203e498503ef6d9f9bc9649fb8e6",
+      "validity": "invalid-inactive-reference",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "songwriter-electric-guitar",
+      "query": "electric guitar",
+      "sourceSha256": "0e4418c19070ca828c7ebbb94d0cf1df8379a49448e7a43387f8231d1ef6ebcf",
+      "referenceSha256": [
+        "c3b8d0e47c2a050699f4f3a0bc5c47d11d6a8d539801060c12cc8cbf1dfb8684"
+      ],
+      "excerpt": {
+        "startSeconds": 250,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "targetRmsDbfs": -32.86497224118765,
+      "inputPcmSha256": "541bbefb7852b340a61e3c7ae7a16607b92a39690193ed15380fd02b51ac7424",
+      "targetPcmSha256": "184458b50919eaa525f9fd83747e8605e43c118978a2f33a23ec9107d5fcca0a",
+      "inputSha256": "7dc246260055cce396abc67e5a65f59f3f4989104f0b022c08599bbd4ba20264",
+      "targetSha256": "08989cab1ac1199ea48da4454eda410b23c2507ec675bf72b79f57f0c184b2d9",
+      "outputSha256": "203c3ff3cbb139175a55a41dcbb26f21b81f44debe40382c2351aa59b8ae77b0",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-electric-active/songwriter-electric-guitar-output.wav",
+      "baselineSiSdrDb": -9.827050244921683,
+      "outputSiSdrDb": -66.75477269012809,
+      "siSdrImprovementDb": -56.92772244520641,
+      "alignedOutputSiSdrDb": -49.77645815473818,
+      "alignedSiSdrImprovementDb": -39.9494079098165,
+      "alignmentSamples": -1570,
+      "outputPeak": 0.1918386071920395,
+      "seconds": 1.4948667080607265,
+      "device": "mps",
+      "runnerSha256": "fa4d86224f47deed3226aba75ad349f9b95ac326ef8134cebe7bf52fd99de654",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    },
+    {
+      "id": "folk-flute",
+      "query": "flute",
+      "sourceSha256": "0abff2045127295b46849d7cb14614ec5d6cc2e7737c47bfd59577c103b3f41c",
+      "referenceSha256": [
+        "de4be4e5c350fd29141449fd41500fd7513f491348b2a02f04d204994701954d"
+      ],
+      "excerpt": {
+        "startSeconds": 15,
+        "seconds": 10,
+        "sampleRate": 24000,
+        "channelPolicy": "mono arithmetic mean"
+      },
+      "targetRmsDbfs": -29.34962380836955,
+      "inputPcmSha256": "8c1e85e73a12a6b5a803bcfd218d38fb3d61c89f1fbfcd6ab66e8b0064fff827",
+      "targetPcmSha256": "66ae51f0c70357984e12cb94d123e7752b705ac5e849b52871d1f367b2bebca7",
+      "inputSha256": "71be2eb49922cc68426ac2248182f7c2a0ebe0d485306fec699f8dea58bedf14",
+      "targetSha256": "05cedfe86d3e55d6f79e2d1243d55bca71d6059e569266689110dfe9361b3901",
+      "outputSha256": "9455d24067f4ac942dcb3c2fccf805aad8cd82012e4dacf3ee487e45eb187b41",
+      "outputPath": "/private/tmp/stem-source-research-20261105/trial-flute-cpu/folk-flute-output.wav",
+      "baselineSiSdrDb": -2.458916352808705,
+      "outputSiSdrDb": -1.9348246296806337,
+      "siSdrImprovementDb": 0.5240917231280711,
+      "alignedOutputSiSdrDb": -1.9348246296806337,
+      "alignedSiSdrImprovementDb": 0.5240917231280711,
+      "alignmentSamples": 0,
+      "outputPeak": 0.18998870253562927,
+      "seconds": 10.035400999942794,
+      "device": "cpu",
+      "runnerSha256": "fa4d86224f47deed3226aba75ad349f9b95ac326ef8134cebe7bf52fd99de654",
+      "validity": "valid-research-measurement",
+      "scope": "Not an application or release acceptance case"
+    }
+  ],
+  "discoveryDiagnostic": {
+    "scope": "Research ranking diagnostic, not calibrated detection or application validation",
+    "modelRevision": "ada0c23a36c4e8582805bb38fec3905903f18b41",
+    "runnerSha256": "a2fb062cc9d936b4fe55f7db362590e8db7674f7caa570ea419332e8f9c83cf6",
+    "vocabularySha256": "72b7ab09cc188bf5cb8b47acf55145c45703cd4368e94c372cce8130f96ba140",
+    "device": "mps",
+    "promptPolicy": "The sound of {term}.; maximum cosine per label; no softmax or presence threshold",
+    "cases": [
+      {
+        "id": "folk-flute-reference",
+        "sourceSha256": [
+          "de4be4e5c350fd29141449fd41500fd7513f491348b2a02f04d204994701954d"
+        ],
+        "expectedReferenceInstrument": "flute",
+        "ranked": [
+          {
+            "id": "flute",
+            "cosine": 0.4257014989852905
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.37504643201828003
+          },
+          {
+            "id": "violin",
+            "cosine": 0.37431755661964417
+          },
+          {
+            "id": "viola",
+            "cosine": 0.3480316996574402
+          },
+          {
+            "id": "strings",
+            "cosine": 0.33237800002098083
+          },
+          {
+            "id": "oud",
+            "cosine": 0.3140074610710144
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.3105230927467346
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.30514129996299744
+          },
+          {
+            "id": "cello",
+            "cosine": 0.2836916744709015
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.2833207845687866
+          },
+          {
+            "id": "brass",
+            "cosine": 0.2732328176498413
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.27030718326568604
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.2598313093185425
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.2553562521934509
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.24697867035865784
+          },
+          {
+            "id": "koto",
+            "cosine": 0.23823127150535583
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.23497243225574493
+          },
+          {
+            "id": "harp",
+            "cosine": 0.23319295048713684
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.22767885029315948
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.22721856832504272
+          },
+          {
+            "id": "horn",
+            "cosine": 0.22450131177902222
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.21309708058834076
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.21133854985237122
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.2085706740617752
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.2054090052843094
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.19936633110046387
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.19862788915634155
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.19794878363609314
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.19368836283683777
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.18879544734954834
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.18304374814033508
+          },
+          {
+            "id": "organ",
+            "cosine": 0.17690631747245789
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.1762864589691162
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.17310267686843872
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.16485804319381714
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.16183999180793762
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.15990173816680908
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.14758417010307312
+          },
+          {
+            "id": "voice",
+            "cosine": 0.14490142464637756
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.13051451742649078
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.11816353350877762
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.11786699295043945
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.11573797464370728
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.11508616805076599
+          },
+          {
+            "id": "pad",
+            "cosine": 0.10981932282447815
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.09810543060302734
+          },
+          {
+            "id": "bell",
+            "cosine": 0.09344872087240219
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.09194832295179367
+          },
+          {
+            "id": "piano",
+            "cosine": 0.08904406428337097
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.049387235194444656
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.038123905658721924
+          }
+        ]
+      },
+      {
+        "id": "songwriter-acoustic-guitar-reference",
+        "sourceSha256": [
+          "a7be6dab2d1e61cd144cf335ffae400940005b352cea286c490c345ae9c9752c"
+        ],
+        "expectedReferenceInstrument": "acoustic guitar",
+        "ranked": [
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.3893169164657593
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.3720616102218628
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.29616421461105347
+          },
+          {
+            "id": "oud",
+            "cosine": 0.254467248916626
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.24574077129364014
+          },
+          {
+            "id": "cello",
+            "cosine": 0.23430432379245758
+          },
+          {
+            "id": "piano",
+            "cosine": 0.2288750559091568
+          },
+          {
+            "id": "harp",
+            "cosine": 0.22090508043766022
+          },
+          {
+            "id": "strings",
+            "cosine": 0.20521105825901031
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.19713571667671204
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.19434316456317902
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.19380220770835876
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.1905132532119751
+          },
+          {
+            "id": "koto",
+            "cosine": 0.18746024370193481
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.1865963637828827
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.18411801755428314
+          },
+          {
+            "id": "viola",
+            "cosine": 0.18294093012809753
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.1827825903892517
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.18020157516002655
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.17500746250152588
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.1731279194355011
+          },
+          {
+            "id": "violin",
+            "cosine": 0.1700148582458496
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.16903507709503174
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.15389704704284668
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.15350478887557983
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.15033593773841858
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.14445845782756805
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.13571418821811676
+          },
+          {
+            "id": "voice",
+            "cosine": 0.1333802044391632
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.131371408700943
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.13095317780971527
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.1302093118429184
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.12513209879398346
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.11987641453742981
+          },
+          {
+            "id": "flute",
+            "cosine": 0.11800739914178848
+          },
+          {
+            "id": "horn",
+            "cosine": 0.1143682450056076
+          },
+          {
+            "id": "organ",
+            "cosine": 0.11322285234928131
+          },
+          {
+            "id": "bell",
+            "cosine": 0.11079376190900803
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.1049167811870575
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.10043193399906158
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.093626469373703
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.09059233218431473
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.08407025039196014
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.07969719171524048
+          },
+          {
+            "id": "brass",
+            "cosine": 0.07677112519741058
+          },
+          {
+            "id": "pad",
+            "cosine": 0.07622946798801422
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.0738932192325592
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.07135150581598282
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.07087818533182144
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.060975246131420135
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.05084363371133804
+          }
+        ]
+      },
+      {
+        "id": "folk-violin-reference",
+        "sourceSha256": [
+          "ff9cfa6cec6237a34b07ef915f6a627bcfa3b4e76f1ca828670d82073b5dbb9a"
+        ],
+        "expectedReferenceInstrument": "violin",
+        "ranked": [
+          {
+            "id": "violin",
+            "cosine": 0.46515095233917236
+          },
+          {
+            "id": "viola",
+            "cosine": 0.44569939374923706
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.4155721068382263
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.33464115858078003
+          },
+          {
+            "id": "strings",
+            "cosine": 0.3101259768009186
+          },
+          {
+            "id": "cello",
+            "cosine": 0.30392420291900635
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.25109392404556274
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.24041247367858887
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.23551014065742493
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.22507767379283905
+          },
+          {
+            "id": "brass",
+            "cosine": 0.2249046266078949
+          },
+          {
+            "id": "oud",
+            "cosine": 0.22384151816368103
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.2220870554447174
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.22041749954223633
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.22021131217479706
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.21183541417121887
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.20919468998908997
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.19838827848434448
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.1934943050146103
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.19182512164115906
+          },
+          {
+            "id": "flute",
+            "cosine": 0.19028916954994202
+          },
+          {
+            "id": "koto",
+            "cosine": 0.1887807846069336
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.1877000331878662
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.18645548820495605
+          },
+          {
+            "id": "harp",
+            "cosine": 0.1801956743001938
+          },
+          {
+            "id": "horn",
+            "cosine": 0.17881184816360474
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.17808067798614502
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.16753286123275757
+          },
+          {
+            "id": "voice",
+            "cosine": 0.16481617093086243
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.15960565209388733
+          },
+          {
+            "id": "organ",
+            "cosine": 0.15549741685390472
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.15226057171821594
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.1520799994468689
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.14617204666137695
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.14359940588474274
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.14274808764457703
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.14262419939041138
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.13879026472568512
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.11572074145078659
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.11264467239379883
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.10712416470050812
+          },
+          {
+            "id": "piano",
+            "cosine": 0.10415826737880707
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.09940565377473831
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.09587695449590683
+          },
+          {
+            "id": "pad",
+            "cosine": 0.08497274667024612
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.0687110424041748
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.06550970673561096
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.06517399847507477
+          },
+          {
+            "id": "bell",
+            "cosine": 0.06116838380694389
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.056454986333847046
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.041315577924251556
+          }
+        ]
+      },
+      {
+        "id": "folk-acoustic-guitar-reference",
+        "sourceSha256": [
+          "c841a680aba2b3ab34c32ee2c6b26b77d5fcbee9303b9d76a665aa4d13c8aacd"
+        ],
+        "expectedReferenceInstrument": "acoustic guitar",
+        "ranked": [
+          {
+            "id": "mandolin",
+            "cosine": 0.4034935534000397
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.3822484612464905
+          },
+          {
+            "id": "viola",
+            "cosine": 0.36214345693588257
+          },
+          {
+            "id": "violin",
+            "cosine": 0.3582848906517029
+          },
+          {
+            "id": "oud",
+            "cosine": 0.3463136553764343
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.3360806703567505
+          },
+          {
+            "id": "cello",
+            "cosine": 0.33035165071487427
+          },
+          {
+            "id": "strings",
+            "cosine": 0.32314735651016235
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.32207730412483215
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.3021315932273865
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.29883527755737305
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.2969967722892761
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.29482924938201904
+          },
+          {
+            "id": "koto",
+            "cosine": 0.2940205931663513
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.28480345010757446
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.25941169261932373
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.25869712233543396
+          },
+          {
+            "id": "flute",
+            "cosine": 0.257805198431015
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.2562573552131653
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.2559245526790619
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.25102803111076355
+          },
+          {
+            "id": "harp",
+            "cosine": 0.2508043646812439
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.23917335271835327
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.23554319143295288
+          },
+          {
+            "id": "brass",
+            "cosine": 0.2288891077041626
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.22511205077171326
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.22089633345603943
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.22006508708000183
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.2174939662218094
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.2088720202445984
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.20350682735443115
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.19831261038780212
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.19071146845817566
+          },
+          {
+            "id": "horn",
+            "cosine": 0.18714937567710876
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.18700064718723297
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.1834278106689453
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.18045978248119354
+          },
+          {
+            "id": "organ",
+            "cosine": 0.1770002692937851
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.1585562825202942
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.15134704113006592
+          },
+          {
+            "id": "voice",
+            "cosine": 0.1480102241039276
+          },
+          {
+            "id": "piano",
+            "cosine": 0.1447688639163971
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.13962844014167786
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.13940420746803284
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.13923662900924683
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.13626796007156372
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.11985985934734344
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.11083024740219116
+          },
+          {
+            "id": "pad",
+            "cosine": 0.0981304794549942
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.09342899918556213
+          },
+          {
+            "id": "bell",
+            "cosine": 0.08127045631408691
+          }
+        ]
+      },
+      {
+        "id": "songwriter-voice-reference",
+        "sourceSha256": [
+          "9bd7c8cf27e9b191ce1aa036d7dc1787f662cccc7817d6675b8cbd938a77041b",
+          "ae86f0e41d1e1d57b2c0daeb250ac1fe7536c6df743eda7d140bffd6ce8ac92d",
+          "6e9be1254c4e513b0f3ae3709a7de35f39b56a84fa6c42b7b3bb46a32dfefde5"
+        ],
+        "expectedReferenceInstrument": "female singing voice",
+        "ranked": [
+          {
+            "id": "voice",
+            "cosine": 0.3964700996875763
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.19358374178409576
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.19279742240905762
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.18692231178283691
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.1813618540763855
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.17144663631916046
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.15434950590133667
+          },
+          {
+            "id": "oud",
+            "cosine": 0.1523095965385437
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.15001118183135986
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.1430061161518097
+          },
+          {
+            "id": "cello",
+            "cosine": 0.1414877325296402
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.1410648226737976
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.14046749472618103
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.13842462003231049
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.13334189355373383
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.13067486882209778
+          },
+          {
+            "id": "viola",
+            "cosine": 0.12748178839683533
+          },
+          {
+            "id": "organ",
+            "cosine": 0.1270877718925476
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.12661083042621613
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.12642145156860352
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.12467214465141296
+          },
+          {
+            "id": "violin",
+            "cosine": 0.12257416546344757
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.12183915078639984
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.11460202932357788
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.1115335002541542
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.11129628866910934
+          },
+          {
+            "id": "bell",
+            "cosine": 0.10931812226772308
+          },
+          {
+            "id": "brass",
+            "cosine": 0.10812720656394958
+          },
+          {
+            "id": "pad",
+            "cosine": 0.10495638847351074
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.10434481501579285
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.10298721492290497
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.10080394148826599
+          },
+          {
+            "id": "horn",
+            "cosine": 0.08906513452529907
+          },
+          {
+            "id": "piano",
+            "cosine": 0.08792448043823242
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.08645722270011902
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.08386967331171036
+          },
+          {
+            "id": "strings",
+            "cosine": 0.08212704956531525
+          },
+          {
+            "id": "harp",
+            "cosine": 0.08022850006818771
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.0768873542547226
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.07508404552936554
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.07139697670936584
+          },
+          {
+            "id": "flute",
+            "cosine": 0.06948575377464294
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.05476024001836777
+          },
+          {
+            "id": "koto",
+            "cosine": 0.051884546875953674
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.05135495215654373
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.04958513379096985
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.04457835853099823
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.043509140610694885
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.03490903601050377
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.026365574449300766
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.025661002844572067
+          }
+        ]
+      },
+      {
+        "id": "songwriter-electric-guitar-reference",
+        "sourceSha256": [
+          "c3b8d0e47c2a050699f4f3a0bc5c47d11d6a8d539801060c12cc8cbf1dfb8684"
+        ],
+        "expectedReferenceInstrument": "electric guitar",
+        "ranked": [
+          {
+            "id": "electric-piano",
+            "cosine": 0.36095482110977173
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.3508053421974182
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.33002424240112305
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.3264482021331787
+          },
+          {
+            "id": "violin",
+            "cosine": 0.31997281312942505
+          },
+          {
+            "id": "bell",
+            "cosine": 0.3106805682182312
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.30949079990386963
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.30926764011383057
+          },
+          {
+            "id": "horn",
+            "cosine": 0.3019658327102661
+          },
+          {
+            "id": "viola",
+            "cosine": 0.2884041368961334
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.2879611849784851
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.287829726934433
+          },
+          {
+            "id": "flute",
+            "cosine": 0.2845345735549927
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.27920377254486084
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.2787681221961975
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.2761038839817047
+          },
+          {
+            "id": "piano",
+            "cosine": 0.27331340312957764
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.27257630228996277
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.2679102420806885
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.2673974335193634
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.26717403531074524
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.2647020220756531
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.26450425386428833
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.2635381817817688
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.2631739377975464
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.26237472891807556
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.2605825662612915
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.2602211534976959
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.26017996668815613
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.2549024522304535
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.25400596857070923
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.25362855195999146
+          },
+          {
+            "id": "organ",
+            "cosine": 0.2532227635383606
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.24879217147827148
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.24363058805465698
+          },
+          {
+            "id": "brass",
+            "cosine": 0.2398137003183365
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.23858454823493958
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.23850955069065094
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.23811066150665283
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.23718196153640747
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.23715810477733612
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.23521697521209717
+          },
+          {
+            "id": "voice",
+            "cosine": 0.2331548035144806
+          },
+          {
+            "id": "strings",
+            "cosine": 0.22935009002685547
+          },
+          {
+            "id": "pad",
+            "cosine": 0.2254435122013092
+          },
+          {
+            "id": "cello",
+            "cosine": 0.21656103432178497
+          },
+          {
+            "id": "koto",
+            "cosine": 0.2148989737033844
+          },
+          {
+            "id": "oud",
+            "cosine": 0.20978757739067078
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.19580841064453125
+          },
+          {
+            "id": "harp",
+            "cosine": 0.16903212666511536
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.11659765243530273
+          }
+        ]
+      },
+      {
+        "id": "LizNelson_Rainfall-mix",
+        "sourceSha256": [
+          "0e4418c19070ca828c7ebbb94d0cf1df8379a49448e7a43387f8231d1ef6ebcf"
+        ],
+        "expectedReferenceInstrument": null,
+        "ranked": [
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.320870041847229
+          },
+          {
+            "id": "voice",
+            "cosine": 0.25153836607933044
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.2378953993320465
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.22623847424983978
+          },
+          {
+            "id": "cello",
+            "cosine": 0.19055716693401337
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.184971421957016
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.18012824654579163
+          },
+          {
+            "id": "harp",
+            "cosine": 0.17523059248924255
+          },
+          {
+            "id": "oud",
+            "cosine": 0.17191360890865326
+          },
+          {
+            "id": "piano",
+            "cosine": 0.1665341556072235
+          },
+          {
+            "id": "strings",
+            "cosine": 0.15995913743972778
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.1568770855665207
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.15274909138679504
+          },
+          {
+            "id": "viola",
+            "cosine": 0.14985263347625732
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.14573614299297333
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.1428314745426178
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.14227557182312012
+          },
+          {
+            "id": "organ",
+            "cosine": 0.14198783040046692
+          },
+          {
+            "id": "koto",
+            "cosine": 0.14052733778953552
+          },
+          {
+            "id": "violin",
+            "cosine": 0.13939769566059113
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.13547863066196442
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.13145670294761658
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.1309717744588852
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.12800583243370056
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.12563863396644592
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.12361505627632141
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.11930161714553833
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.11677053570747375
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.11572709679603577
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.1110796183347702
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.10527995973825455
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.10457219183444977
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.1039324700832367
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.10311343520879745
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.09927419573068619
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.09492163360118866
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.09451818466186523
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.08797131478786469
+          },
+          {
+            "id": "brass",
+            "cosine": 0.08571617305278778
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.08389800786972046
+          },
+          {
+            "id": "bell",
+            "cosine": 0.0830518826842308
+          },
+          {
+            "id": "horn",
+            "cosine": 0.08054530620574951
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.07250308990478516
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.07025349140167236
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.0639234259724617
+          },
+          {
+            "id": "pad",
+            "cosine": 0.05209045857191086
+          },
+          {
+            "id": "flute",
+            "cosine": 0.04491502791643143
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.04429711028933525
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.01685161329805851
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.006108440458774567
+          },
+          {
+            "id": "drum-machine",
+            "cosine": -0.017583608627319336
+          }
+        ]
+      },
+      {
+        "id": "Phoenix_ScotchMorris-mix",
+        "sourceSha256": [
+          "0abff2045127295b46849d7cb14614ec5d6cc2e7737c47bfd59577c103b3f41c"
+        ],
+        "expectedReferenceInstrument": null,
+        "ranked": [
+          {
+            "id": "violin",
+            "cosine": 0.4088281989097595
+          },
+          {
+            "id": "viola",
+            "cosine": 0.3896249830722809
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.38002872467041016
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.36415794491767883
+          },
+          {
+            "id": "strings",
+            "cosine": 0.322540283203125
+          },
+          {
+            "id": "oud",
+            "cosine": 0.298931360244751
+          },
+          {
+            "id": "cello",
+            "cosine": 0.2930454611778259
+          },
+          {
+            "id": "flute",
+            "cosine": 0.2867831885814667
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.27175062894821167
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.2670334279537201
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.25709420442581177
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.24440431594848633
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.24209000170230865
+          },
+          {
+            "id": "brass",
+            "cosine": 0.24052071571350098
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.23748773336410522
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.2310204803943634
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.22908248007297516
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.2259186953306198
+          },
+          {
+            "id": "harp",
+            "cosine": 0.22359761595726013
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.22095388174057007
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.2161949872970581
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.21466894447803497
+          },
+          {
+            "id": "koto",
+            "cosine": 0.21155524253845215
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.20730069279670715
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.2006174772977829
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.2005828619003296
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.1990625262260437
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.19286105036735535
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.18517223000526428
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.1805800497531891
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.17731225490570068
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.17686569690704346
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.17606961727142334
+          },
+          {
+            "id": "horn",
+            "cosine": 0.17591553926467896
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.15787571668624878
+          },
+          {
+            "id": "organ",
+            "cosine": 0.1457478255033493
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.14042803645133972
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.13493585586547852
+          },
+          {
+            "id": "voice",
+            "cosine": 0.13219833374023438
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.12887071073055267
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.11964638531208038
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.1122395247220993
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.10522696375846863
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.10503524541854858
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.10248225927352905
+          },
+          {
+            "id": "pad",
+            "cosine": 0.10202709585428238
+          },
+          {
+            "id": "piano",
+            "cosine": 0.09927789121866226
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.06703878939151764
+          },
+          {
+            "id": "electric-piano",
+            "cosine": 0.06366788595914841
+          },
+          {
+            "id": "bell",
+            "cosine": 0.059507112950086594
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.03330400586128235
+          }
+        ]
+      },
+      {
+        "id": "silence-control",
+        "sourceSha256": [],
+        "expectedReferenceInstrument": null,
+        "ranked": [
+          {
+            "id": "electric-piano",
+            "cosine": 0.35793858766555786
+          },
+          {
+            "id": "bongos",
+            "cosine": 0.3577996492385864
+          },
+          {
+            "id": "drum-kit",
+            "cosine": 0.35268503427505493
+          },
+          {
+            "id": "steelpan",
+            "cosine": 0.34731316566467285
+          },
+          {
+            "id": "bass-guitar",
+            "cosine": 0.34598642587661743
+          },
+          {
+            "id": "mandolin",
+            "cosine": 0.3368566632270813
+          },
+          {
+            "id": "shamisen",
+            "cosine": 0.33607345819473267
+          },
+          {
+            "id": "percussion",
+            "cosine": 0.3325637876987457
+          },
+          {
+            "id": "piano",
+            "cosine": 0.33249592781066895
+          },
+          {
+            "id": "timpani",
+            "cosine": 0.3244014382362366
+          },
+          {
+            "id": "acoustic-guitar",
+            "cosine": 0.32129138708114624
+          },
+          {
+            "id": "mallet-percussion",
+            "cosine": 0.3185359239578247
+          },
+          {
+            "id": "gamelan",
+            "cosine": 0.3136257231235504
+          },
+          {
+            "id": "harpsichord",
+            "cosine": 0.31002703309059143
+          },
+          {
+            "id": "saxophone",
+            "cosine": 0.30708831548690796
+          },
+          {
+            "id": "synthesizer",
+            "cosine": 0.3053104281425476
+          },
+          {
+            "id": "horn",
+            "cosine": 0.3042543828487396
+          },
+          {
+            "id": "banjo",
+            "cosine": 0.30173879861831665
+          },
+          {
+            "id": "viola",
+            "cosine": 0.29678836464881897
+          },
+          {
+            "id": "electric-guitar",
+            "cosine": 0.2940821647644043
+          },
+          {
+            "id": "ukulele",
+            "cosine": 0.2935503125190735
+          },
+          {
+            "id": "violin",
+            "cosine": 0.2856154441833496
+          },
+          {
+            "id": "trumpet",
+            "cosine": 0.2856077253818512
+          },
+          {
+            "id": "sitar",
+            "cosine": 0.2851109504699707
+          },
+          {
+            "id": "sampler",
+            "cosine": 0.28455376625061035
+          },
+          {
+            "id": "tabla",
+            "cosine": 0.28165820240974426
+          },
+          {
+            "id": "marimba",
+            "cosine": 0.280492901802063
+          },
+          {
+            "id": "bell",
+            "cosine": 0.2782796323299408
+          },
+          {
+            "id": "trombone",
+            "cosine": 0.2771069407463074
+          },
+          {
+            "id": "tuba",
+            "cosine": 0.2755378782749176
+          },
+          {
+            "id": "bassoon",
+            "cosine": 0.27528536319732666
+          },
+          {
+            "id": "vibraphone",
+            "cosine": 0.2732691466808319
+          },
+          {
+            "id": "voice",
+            "cosine": 0.27175724506378174
+          },
+          {
+            "id": "pad",
+            "cosine": 0.27099478244781494
+          },
+          {
+            "id": "koto",
+            "cosine": 0.2700016498565674
+          },
+          {
+            "id": "oud",
+            "cosine": 0.2687202990055084
+          },
+          {
+            "id": "accordion",
+            "cosine": 0.25863412022590637
+          },
+          {
+            "id": "brass",
+            "cosine": 0.2564641237258911
+          },
+          {
+            "id": "pipe-organ",
+            "cosine": 0.2528565526008606
+          },
+          {
+            "id": "drum-machine",
+            "cosine": 0.24897000193595886
+          },
+          {
+            "id": "organ",
+            "cosine": 0.24697910249233246
+          },
+          {
+            "id": "cello",
+            "cosine": 0.24670585989952087
+          },
+          {
+            "id": "flute",
+            "cosine": 0.24644538760185242
+          },
+          {
+            "id": "harp",
+            "cosine": 0.23627367615699768
+          },
+          {
+            "id": "erhu",
+            "cosine": 0.22558225691318512
+          },
+          {
+            "id": "strings",
+            "cosine": 0.22499270737171173
+          },
+          {
+            "id": "harmonica",
+            "cosine": 0.21532295644283295
+          },
+          {
+            "id": "oboe",
+            "cosine": 0.20571717619895935
+          },
+          {
+            "id": "classical-guitar",
+            "cosine": 0.20522823929786682
+          },
+          {
+            "id": "clarinet",
+            "cosine": 0.15850099921226501
+          },
+          {
+            "id": "double-bass",
+            "cosine": 0.14912505447864532
+          }
+        ]
+      }
+    ]
+  },
+  "assessment": {
+    "distinctActiveTargetCases": 6,
+    "primaryDevice": "mps",
+    "nonPositiveOutputSiSdrCases": 5,
+    "inactiveTrialExcluded": 1,
+    "cpuCrossChecks": 1,
+    "discoveryReferenceTopOne": {
+      "matched": 4,
+      "activeCases": 5,
+      "scope": "Dataset-authored isolated reference excerpts only; not mixed-song accuracy"
+    },
+    "sourceSeparationAccepted": false,
+    "automaticLabelingAccepted": false,
+    "productionEnabled": false,
+    "paidCalls": 0,
+    "audiblePlayback": false,
+    "limitations": [
+      "Two sample genres only; insufficient distinct sources for the requested 2/4/6 release matrix.",
+      "Folk reference stems contain documented microphone bleed.",
+      "No blinded perceptual review or actual application pipeline runs.",
+      "Prompted extraction used known reference labels, not automatically discovered sources."
+    ]
+  }
+}
