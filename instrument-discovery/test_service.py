@@ -478,12 +478,13 @@ class InferenceWatchdogTest(unittest.TestCase):
         app.warm_now()
         payload = array("f", [0.0]).tobytes()
         first = threading.Thread(target=app.classify, args=(payload, (1,)), daemon=True)
-        first.start()
-        self.assertTrue(backend.first_entered.wait(timeout=1))
-
-        second_result = app.classify(payload, (1,))
-        self.assertEqual(second_result["windowsAnalyzed"], 1)
+        # Capture before arming the timer: a busy runner can emit the fatal
+        # log while the second inference is finishing, before wait() begins.
         with self.assertLogs("instrument-discovery", level="ERROR"):
+            first.start()
+            self.assertTrue(backend.first_entered.wait(timeout=1))
+            second_result = app.classify(payload, (1,))
+            self.assertEqual(second_result["windowsAnalyzed"], 1)
             self.assertTrue(exit_requested.wait(timeout=1))
         self.assertEqual(exit_codes, [70])
         self.assertFalse(app.ready)
