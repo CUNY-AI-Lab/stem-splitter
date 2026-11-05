@@ -1080,6 +1080,18 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
     await page.reload(); await completed(page, 2);
     await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
     await expect(child).toBeVisible();
+    // Keyboard controls and note drafts belong to the selected recording,
+    // even though its card is nested within the original.
+    await child.locator('.ch-name').first().press('1');
+    expect(await page.evaluate(ids => ids.map(id => Boolean(mixers.get(id).userMuted.get('vocals'))), [originalId, nestedId]))
+      .toEqual([false, true]);
+    await child.locator('.ch-name').first().press('1');
+    await child.locator('.note-btn').first().click();
+    await original.locator('.note-btn').first().click();
+    await expect(original.locator(':scope > .note-form')).toBeVisible();
+    await expect(child.locator(':scope > .note-form')).toBeVisible();
+    await child.locator(':scope > .note-form input').press('Escape');
+    await original.locator(':scope > .note-form input').press('Escape');
     await child.locator('.console-title-editable').first().click();
     await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('My nested resplit');
     await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
@@ -1101,6 +1113,8 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
     }, [originalId, nestedId]);
     expect(await page.evaluate(id => ({ originalPlaying: mixers.get(id).playing, active: [...mixers.values()].filter(m => m.playing || m.starting).length }), originalId))
       .toEqual({ originalPlaying: false, active: 1 });
+    await page.evaluate(id => { mixers.get(id).setCollapsed(true); }, originalId);
+    expect(await page.evaluate(() => [...mixers.values()].filter(m => m.playing || m.starting).length)).toBe(0);
     await page.evaluate(() => { for (const mixer of mixers.values()) mixer.pause(); });
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 1000 });

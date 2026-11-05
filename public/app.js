@@ -2127,7 +2127,7 @@ class Mixer {
       toggleFolderMenu(this);
       this.setActionsOpen(false);
       if (actionsWereOpen) {
-        const folderTarget = this.el.querySelector('.folder-menu input, .folder-menu button');
+        const folderTarget = this.el.querySelector(':scope > .folder-menu input, :scope > .folder-menu button');
         (folderTarget || this.actionsToggle).focus();
       }
     });
@@ -2419,6 +2419,7 @@ class Mixer {
     li.addEventListener('keydown', (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target;
+      if (t.closest('.console') !== li) return;
       if (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
 
       const digit = /^Digit([1-9])$/.exec(e.code);
@@ -2530,7 +2531,10 @@ class Mixer {
     // A folder chooser belongs to the expanded session. Leaving it mounted
     // while the console is collapsed makes the next + FOLDER press close an
     // invisible stale menu instead of opening a fresh one.
-    if (collapsed) this.el.querySelector('.folder-menu')?.remove();
+    if (collapsed) {
+      this.el.querySelector(':scope > .folder-menu')?.remove();
+      for (const mixer of mixers.values()) if (mixer !== this && this.el.contains(mixer.el)) mixer.pause();
+    }
     if (this.el.classList.contains('collapsed') === collapsed) return;
     if (collapsed && (this.playing || this.starting)) this.pause();
     this.setActionsOpen(false);
@@ -3304,7 +3308,7 @@ class Mixer {
 
   addNote() {
     if (this.job.readOnlyShared || this.job.permissions?.comment === false) return;
-    if (this.el.querySelector('.note-form')) return;
+    if (this.el.querySelector(':scope > .note-form')) return;
     const t = this.audios[0].currentTime;
     const form = document.createElement('form');
     form.className = 'note-form';
@@ -4168,7 +4172,7 @@ async function loadWholeFolder(folder, button) {
 // The "+ FOLDER" popover on a finished console: pick an existing folder or
 // name a new one; either way it organizes a split that is already saved.
 function toggleFolderMenu(mixer) {
-  const existing = mixer.el.querySelector('.folder-menu');
+  const existing = mixer.el.querySelector(':scope > .folder-menu');
   if (existing) {
     existing.remove();
     return;
