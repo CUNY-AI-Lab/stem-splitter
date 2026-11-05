@@ -1,3 +1,7 @@
+> **November 5 release update:** Direct local Cloudflare deployment with batched
+> GitHub pushes is now supported. See [the local release runbook](../docs/local-cloudflare-releases.md).
+> Its local-commit procedure supersedes older GitHub/CI prerequisites below.
+
 # Cloudflare deployment
 
 ## Current production check — October 26, 2026
