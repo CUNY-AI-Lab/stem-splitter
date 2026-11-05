@@ -46,7 +46,7 @@ success remains distinct from authenticated acceptance.
 
 ## Prerequisites and coverage
 
-Use Node 22.23.1+ and Bun 1.4.0, plus Chrome for the existing browser tests.
+Use Node 22.23.1+ and Bun 1.4.0, plus the pinned Playwright Chromium (installed by the command).
 Use the existing authorized Wrangler login, or an appropriately scoped
 `CLOUDFLARE_API_TOKEN` supplied through the environment. Never copy credentials
 into receipts, Git or command arguments. The script supplies the fixed CUNY account.

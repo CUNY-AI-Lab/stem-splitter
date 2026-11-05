@@ -33,6 +33,14 @@
         "install",
         "--frozen-lockfile"
       ]
+    },
+    {
+      "cwd": "cloudflare",
+      "command": [
+        "../node_modules/.bin/playwright",
+        "install",
+        "chromium"
+      ]
     }
   ],
   "checks": [
@@ -66,8 +74,12 @@
         "../node_modules/.bin/playwright",
         "test",
         "--config",
-        "playwright.config.mjs"
-      ]
+        "playwright.config.mjs",
+        "--max-failures=1"
+      ],
+      "env": {
+        "STEM_BROWSER": "chromium"
+      }
     }
   ]
 }
