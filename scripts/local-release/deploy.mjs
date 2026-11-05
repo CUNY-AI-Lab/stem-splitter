@@ -127,6 +127,8 @@ export async function release(root, args) {
     receipt.status = 'failed'; save();
     throw error;
   } finally {
+    // Retain the immutable archive and bundle, not another dependency tree per release.
+    if (['checked', 'verified'].includes(receipt.status)) rmSync(snapshot, { recursive: true, force: true });
     rmSync(lock, { recursive: true });
     console.log(`Release record: ${join(dir, 'receipt.json')}`);
   }

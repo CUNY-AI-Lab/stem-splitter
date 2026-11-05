@@ -59,7 +59,7 @@ Records live under repository-root `.local-releases/<timestamp>-<target>-<sha>/`
 `source.tar` (exact committed source), its hash and Git tree in `receipt.json`,
 check outcomes, structured deployment output, version and prior deployment history.
 A `refs/local-releases/...` Git ref keeps the local source commit reachable.
-These records are ignored by Git. Back them up securely with the repository;
+Successful runs remove their temporary dependency/source directory; failed runs keep it for diagnosis. The source archive and bundle are retained. These records are ignored by Git. Back them up securely with the repository;
 unpushed work exists only on this machine until a checkpoint push/backup.
 A failed/interrupted release is never recorded as verified. Inspect the receipt
 and live Cloudflare state before retrying an interrupted upload. A stale

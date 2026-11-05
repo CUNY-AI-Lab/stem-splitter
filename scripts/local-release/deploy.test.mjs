@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -64,6 +64,8 @@ test('check runs against committed archive without ignored files or a deployment
   const id = readdirSync(join(root, '.local-releases')).find(p => !p.endsWith('.lock'));
   const r = JSON.parse(readFileSync(join(root, '.local-releases', id, 'receipt.json')));
   assert.equal(r.status, 'checked'); assert.equal(r.version, undefined); assert.equal(r.checks.length, 1);
+  assert.equal(existsSync(join(root, '.local-releases', id, 'source')), false);
+  assert.equal(existsSync(join(root, '.local-releases', id, 'source.tar')), true);
 });
 test('dirty/untracked changes are rejected before any release work', async t => {
   const root = fixture(t); writeFileSync(join(root, 'uncommitted.txt'), 'new');
