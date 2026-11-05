@@ -11,7 +11,68 @@
   let subject = null, clearing = false, checking = null, suspended = false;
   let cleanup = () => {}, pause = () => {};
   let regions = [], recovery = null;
+  const navigation = document.querySelector('.workspace-nav');
+  const signIn = document.getElementById('header-signin')?.closest('.account-nav');
+  const instructorLink = navigation?.querySelector('[data-instructor-nav]');
+  let navigationRequest = null, navigationGeneration = 0;
   let usageActor = null, usageSession = null, usageQueue = [], usageTimer = null, usageSending = false, usageFailures = 0;
+
+  function signedIn() { return !clearing && /^cail-[0-9a-f]{32}$/.test(subject || ''); }
+
+  function renderNavigation() {
+    if (navigation) navigation.hidden = !signedIn() || suspended;
+    if (signIn) signIn.hidden = signedIn();
+  }
+
+  function cancelNavigation() {
+    navigationGeneration++;
+    navigationRequest?.abort(); navigationRequest = null;
+    if (instructorLink) instructorLink.hidden = true;
+  }
+
+  async function refreshNavigation() {
+    cancelNavigation(); renderNavigation();
+    if (!instructorLink || !signedIn() || suspended) return;
+    const generation = navigationGeneration, actor = subject;
+    const controller = new AbortController(); navigationRequest = controller;
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const current = () => generation === navigationGeneration && actor === subject && signedIn() && !suspended;
+    const read = async path => {
+      const response = await originalFetch(path, { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+      if (!current()) throw new Error('Navigation changed');
+      observe(response);
+      if (!response.ok) throw new Error('Instructor access unavailable');
+      return response.json();
+    };
+    try {
+      // The same authority used by the console, including course instructors
+      // whose application role is only "member". Never infer this from a name.
+      const { teacher } = await read('/api/teacher/me');
+      let destination = teacher ? '/teacher.html' : null;
+      let cursor = null;
+      const seen = new Set();
+      const requested = new URLSearchParams(location.search).get('course');
+      let prior = null;
+      try { prior = localStorage.getItem(`stem-workspace-choice:v1:${actor}`); } catch {}
+      for (let page = 0; !destination && page < 10; page++) {
+        const result = await read(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+        const available = Array.isArray(result.courses) ? result.courses.filter(course => course.capabilities?.instructorPanel === true) : [];
+        const course = available.find(course => course.classId === requested) || available.find(course => course.classId === prior) || available[0];
+        if (course) destination = `/teacher.html?course=${encodeURIComponent(course.classId)}`;
+        cursor = result.nextCursor;
+        if (!cursor || seen.has(cursor)) break;
+        seen.add(cursor);
+      }
+      if (current() && destination) {
+        instructorLink.href = destination;
+        instructorLink.hidden = false;
+      }
+    } catch { /* Unverified capabilities never expose an instructor entry. */ }
+    finally {
+      clearTimeout(timer);
+      if (navigationRequest === controller) navigationRequest = null;
+    }
+  }
 
   function scheduleUsage(delay = 250) {
     if (!usageTimer && !usageSending && usageQueue.length && usageFailures < 3) {
@@ -72,6 +133,7 @@
   window.addEventListener('pagehide', () => void flushUsage());
 
   function suspend() {
+    cancelNavigation();
     if (!suspended) {
       suspended = true;
       document.documentElement.classList.add('stem-session-checking');
@@ -82,6 +144,7 @@
         element.inert = true;
       }
     }
+    renderNavigation();
     try { pause(); } catch { /* Concealment remains available if a player has ended. */ }
     for (const audio of document.querySelectorAll('audio')) audio.pause();
   }
@@ -171,6 +234,7 @@
         if (!account || typeof account.subject !== 'string') throw new Error('Invalid account');
         if (account.subject !== subject) { clear(); return; }
         restore();
+        void refreshNavigation();
         observeUsage(subject);
       } catch {
         if (!clearing) { suspend(); showRecovery(); }
@@ -183,6 +247,7 @@
     start(value, onClear, onPause) {
       const firstView = subject !== value;
       subject = value; cleanup = onClear || cleanup; pause = onPause || pause;
+      void refreshNavigation();
       observeUsage(value, firstView);
     },
     observe, check, clear,

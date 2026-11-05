@@ -487,8 +487,8 @@ export async function setAmendment(
     // regenerated after the winner committed.
     env.DB.prepare(
       `DELETE FROM guides
-       WHERE changes() = 1`
-    ),
+       WHERE changes() = 1 AND ? = 0`
+    ).bind(env.AUTH_MODE === 'cail' ? 1 : 0),
   ]);
 
   if ((results[0]?.meta?.changes ?? 0) === 0) {

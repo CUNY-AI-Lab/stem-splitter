@@ -143,7 +143,6 @@ el('access-form').addEventListener('submit', async (event) => {
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student', member: 'CUNY AI Lab member' }[account.role] || 'CUNY AI Lab member'} access`;
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
-    el('account-guidance').hidden = !['admin', 'instructor'].includes(account.role);
     el('account-admin').hidden = account.role !== 'admin';
     el('student-review').hidden = !['admin', 'instructor'].includes(account.role);
     if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&

@@ -15,13 +15,22 @@ async function fixture(context){
  return {harness,url,tokens};
 }
 async function savePrompt(page,text,note){await page.locator('#amendment').fill(text);await page.locator('#change-note').fill(note);await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Saved.');}
-for(const mode of ['course','global'])test(`${mode} instruction customization saves, reloads, previews and resets without model calls`,async({page,context})=>{
+for(const mode of ['course','global'])test(mode==='global' ? 'global console keeps app controls and directs teaching instructions to classes' : 'course instruction customization saves, reloads, previews and resets without model calls',async({page,context})=>{
  const f=await fixture(context),errors=[],modelCalls=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(/\/(guide|chat)$/.test(new URL(r.url()).pathname))modelCalls.push(r.url());});
  try{
   if(mode==='global')await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.carol});
   await page.goto(new URL('/teacher.html'+(mode==='course'?`?course=${course}`:''),f.url).href);
   await expect(page).toHaveTitle('Stem Splitter · Instructor Console');await expect(page.getByRole('heading',{name:'Instructor Console',exact:true})).toBeVisible();
   await expect(page.locator('#console-panel')).toBeVisible();
+  if(mode==='global'){
+   await expect(page.locator('.teacher-amendment-section')).toBeHidden();
+   await expect(page.locator('.teacher-more-tools')).toBeHidden();
+   await expect(page.locator('#class-instructions-help')).toContainText('Guest and Personal sessions use the default instructions.');
+   await expect(page.locator('#class-instructions-help a')).toHaveAttribute('href','/classroom.html');
+   await expect(page.locator('.sample-editor')).toBeVisible();
+   await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Instructor Console');
+   expect(errors).toEqual([]);expect(modelCalls).toEqual([]);return;
+  }
   if(mode==='course'){await expect(page.locator('.sample-editor')).toBeHidden();await expect(page.locator('#teacher-classroom')).toHaveAttribute('href',`/classroom.html?course=${course}`);await expect(page.locator('#course-roster')).toContainText('Fixture Student');}
   else {
    await expect(page.locator('.sample-editor')).toBeVisible();await expect(page.locator('#sample-settings-form')).toBeHidden();
@@ -47,7 +56,7 @@ for(const mode of ['course','global'])test(`${mode} instruction customization sa
   if(mode==='course'){await page.getByRole('button',{name:'Restore revision 1 as a new version',exact:true}).click();await expect(page.locator('#amendment')).toHaveValue('Fixture teaching instructions');await expect(page.locator('#change-note')).toHaveValue('Restored revision 1');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Saved.');await expect(page.locator('#prompt-history')).toContainText('Revision 3');}
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await expect(page.getByRole('textbox',{name:'Teaching instructions',exact:true})).toBeVisible();
-  await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Settings');
+  await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Instructor Console');
   const instructionCount=await page.locator('#amendment-count').boundingBox(),noteLabel=await page.locator('label[for="change-note"]').boundingBox();
   expect(instructionCount.y+instructionCount.height).toBeLessThan(noteLabel.y);
   await expect(page.locator('#amendment')).toHaveAttribute('aria-describedby','amendment-count');

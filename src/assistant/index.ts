@@ -110,6 +110,13 @@ export async function getGuide(env: Env, jobId: string): Promise<GuideRecord | n
       .bind(jobId, scope, SYSTEM_PROMPT_VERSION, state.revision).first<GuideRecord & { fingerprint: string }>();
     return row && row.fingerprint === await hashSystemPromptFingerprint(state.amendment) ? { text: row.text, model: row.model, createdAt: row.createdAt } : null;
   }
+  if (env.AUTH_MODE === 'cail') {
+    const row = await env.DB.prepare('SELECT text,model,created_at AS createdAt,prompt_hash FROM guides WHERE job_id=? AND prompt_version=? AND prompt_revision=0')
+      .bind(jobId, SYSTEM_PROMPT_VERSION).first<GuideRecord & { prompt_hash: string }>();
+    // Old personal/guest guides generated with teaching instructions are not
+    // reusable, even if their old revision happens to be zero.
+    return row && row.prompt_hash === await hashSystemPromptFingerprint() ? { text: row.text, model: row.model, createdAt: row.createdAt } : null;
+  }
   const row = await env.DB.prepare(
     `SELECT guides.text, guides.model, guides.created_at, guides.prompt_hash,
             assistant_settings.amendment
@@ -154,6 +161,14 @@ export async function cacheGuideIfPromptCurrent(
       SELECT ?,?,?,?,?,?,?,? WHERE (?='' OR COALESCE((SELECT revision FROM course_settings WHERE course_id=?),0)=?)
       ON CONFLICT(job_id,course_id) DO UPDATE SET text=excluded.text,model=excluded.model,created_at=excluded.created_at,base_version=excluded.base_version,revision=excluded.revision,fingerprint=excluded.fingerprint`)
       .bind(guide.jobId,scope,guide.text,guide.model,guide.createdAt,SYSTEM_PROMPT_VERSION,expectedRevision,expectedPromptHash,scope,scope,expectedRevision).run();
+    return (result.meta.changes ?? 0)>0;
+  }
+  if (env.AUTH_MODE === 'cail') {
+    if (expectedRevision !== 0 || expectedPromptHash !== await hashSystemPromptFingerprint()) return false;
+    const result = await env.DB.prepare(`INSERT INTO guides(job_id,text,model,created_at,prompt_version,prompt_revision,prompt_hash)
+      VALUES(?,?,?,?,?,0,?) ON CONFLICT(job_id) DO UPDATE SET text=excluded.text,model=excluded.model,created_at=excluded.created_at,
+      prompt_version=excluded.prompt_version,prompt_revision=0,prompt_hash=excluded.prompt_hash`)
+      .bind(guide.jobId,guide.text,guide.model,guide.createdAt,SYSTEM_PROMPT_VERSION,expectedPromptHash).run();
     return (result.meta.changes ?? 0)>0;
   }
   const result = await env.DB.prepare(

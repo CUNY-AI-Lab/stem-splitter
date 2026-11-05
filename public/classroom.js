@@ -400,6 +400,6 @@
       let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
       const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
       if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
-    } catch (error) { clearCourse(); status.textContent = error.message; el('login').hidden = false; }
+    } catch (error) { clearCourse(); status.textContent = error.message; el('login').hidden = Boolean(choiceKey); }
   })();
 })();

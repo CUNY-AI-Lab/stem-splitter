@@ -131,6 +131,11 @@ h1 span {
 .page-title { font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; margin: 0 0 1.5rem; }
 .masthead-title .lab-brand { flex: 0 1 auto; min-width: 0; margin: 0; }
 .masthead-title .lab-logo { height: calc(var(--title-size) * .92); max-width: 100%; object-fit: contain; }
+.lab-account { display: flex; flex-direction: column; align-items: flex-end; max-width: 50%; gap: .25rem; }
+.lab-account .account-nav { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
+.lab-account .account-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--hot); font: inherit; text-decoration: none; }
+.lab-account .account-button:hover { text-decoration: underline; }
+.lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 
 .masthead-meta {
   display: flex;
@@ -1481,14 +1486,20 @@ footer a:hover { color: var(--hot); }
 /* A compact control line above a full-width, unobscured source waveform. */
 .channel {
   display: grid;
-  /* Keep waveforms aligned while long custom names wrap in their column. */
+  /* Keep waveforms aligned without breaking instrument labels across lines. */
   grid-template-columns: 7.25rem minmax(0, 1fr);
   gap: .2rem .75rem;
   padding: .35rem .1rem;
 }
 .channel .ch-id { grid-column: 1; grid-row: 2; min-width: 0; align-self: center; }
-.channel .ch-name { font-size: .72rem; letter-spacing: .08em; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.channel .ch-name { font-size: .72rem; letter-spacing: .08em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
+.resplit-placement { display: grid; gap: .6rem; margin: .4rem 0; padding: .8rem; border: 1px solid var(--panel-edge); }
+.resplit-placement legend { padding-inline: .3rem; }
+.resplit-placement label { display: flex; align-items: center; gap: .5rem; min-height: 32px; }
+.resplit-placement input { width: auto; margin: 0; }
+.resplit-results { list-style: none; padding: .5rem; margin: .5rem; border-top: 1px solid var(--panel-edge); }
+.resplit-results > .console { margin-top: .5rem; }
 .channel .meter {
   grid-column: 2;
   grid-row: 2;
@@ -2800,11 +2811,7 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .workspace-nav [aria-current="page"] { color: var(--ink); border-bottom-color: var(--hot); }
 .refined-ui .workspace-nav a:hover { color: var(--hot); background: transparent; }
 .refined-ui .workspace-nav a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
-.workspace-nav .account-nav { display: flex; align-items: center; gap: .6rem; margin: 0 0 0 auto; }
-.workspace-nav .account-nav.is-guest { gap: .35rem; padding-inline: .55rem; border: 1px solid var(--panel-edge); border-radius: 999px; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
 .account-session-note { display: inline-flex; align-items: center; gap: .35rem; }
-.refined-ui .workspace-nav .account-nav.is-guest .account-button { min-height: 32px; padding: .35rem 0; font: inherit; color: var(--hot); }
-.workspace-nav > a[href="/account.html"] { margin-left: 0; }
 .refined-ui #dropzone { border-radius: 8px; padding: .7rem; }
 .refined-ui #dropzone .deck-slot {
   position: relative; border-radius: 4px; border-style: solid;
@@ -2831,7 +2838,6 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui footer > p { grid-column: 1; }
 .refined-ui .footer-feedback-slot { grid-column: 2; grid-row: 1 / span 3; align-self: center; justify-self: end; min-width: 44px; }
 .refined-ui .footer-feedback-slot .bug-report { padding-top: 0; }
-.refined-ui footer:has(.footer-teacher-link) .footer-feedback-slot { grid-row: 3; }
 .refined-ui footer p { margin: 0 0 .6rem; }
 .refined-ui footer .project-credit { padding-bottom: 0; border-bottom: 0; }
 .refined-ui .footer-sig { font-size: .65rem; letter-spacing: .05em; color: var(--ink-dim); }
@@ -2858,20 +2864,13 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .refined-ui .masthead-title { --title-size: clamp(1.8rem, 6.5vw, 2.5rem); }
   .workspace-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .75rem; margin-top: .9rem; }
   .refined-ui .workspace-nav > a, .refined-ui .workspace-nav .account-button { font-size: .68rem; }
-  .workspace-nav .account-nav, .workspace-nav > a[href="/account.html"] { margin-left: 0; }
-  .workspace-nav .account-nav { grid-column: 1 / -1; }
-  .workspace-nav .account-nav .account-button { flex: 1; justify-content: flex-start; }
-  .workspace-nav:has(.account-nav.is-guest) { grid-template-columns: repeat(3, max-content) 1fr; gap: 0 .65rem; }
-  .workspace-nav .account-nav.is-guest { grid-column: auto; justify-self: end; padding-inline: .4rem; font-size: .68rem; }
-  .workspace-nav .account-nav.is-guest .account-button { flex: initial; }
+  .workspace-nav [data-instructor-nav] { grid-column: 1 / -1; }
+  .lab-account .account-nav { font-size: .68rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
   .account-allowances { grid-template-columns: 1fr; }
   .account-allowances section { padding: .85rem 1rem; }
   .account-allowances section + section { border-left: 0; border-top: 1px solid var(--panel-edge); }
   .refined-ui.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: .9rem; }
-}
-@media (max-width: 360px) {
-  .workspace-nav:has(.account-nav.is-guest) { gap: 0 .25rem; }
 }
 .refined-ui .coach-sign-in {
   display: inline-flex; align-items: center; min-height: 24px;

@@ -1678,16 +1678,18 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#class-code-dialog')).toBeVisible();
   await page.getByRole('button', { name: 'NOT NOW' }).click();
-  const instructorLink = page.getByRole('link', { name: 'INSTRUCTOR' });
-  await expect(instructorLink).toBeVisible();
-  await instructorLink.click();
+  await expect(page.locator('.workspace-nav')).toBeHidden();
+  // Signed-out navigation is hidden. The legacy instructor login still works
+  // when the retained console URL is opened directly.
+  await page.goto('/teacher.html');
   await expect(page).toHaveURL(/\/teacher(?:\.html)?$/);
   await expect(page.locator('.masthead').getByRole('link', { name: 'CUNY AI Lab' })).toBeVisible();
   await expect(page.locator('#signin-panel')).toBeVisible();
   await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('.tagline')).toHaveCount(0);
   expect(await page.locator('link[rel="stylesheet"][href^="/styles.css"]').getAttribute('href')).toMatch(/\?v=/);
-  await expect(page.locator('.workspace-nav').getByRole('link', { name: 'Splitter', exact: true })).toHaveAttribute('href', '/');
+  await expect(page.locator('.workspace-nav')).toBeHidden();
+  await expect(page.locator('.workspace-nav').getByRole('link', { name: 'Splitter', exact: true, includeHidden: true })).toHaveAttribute('href', '/');
   expect(await page.locator('script[src^="\/teacher.js"]').getAttribute('src')).toMatch(/\?v=/);
   const signInButton = page.getByRole('button', { name: 'Sign in' });
   const signInButtonBox = await signInButton.boundingBox();

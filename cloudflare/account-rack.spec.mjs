@@ -346,7 +346,7 @@ for (const width of [1280,390]) test(`owned recording names persist in the rack 
   }finally{await server.close();}
 });
 
-for (const width of [1280, 390]) test(`account access failures keep one Settings destination at ${width}px`, async ({ page }) => {
+for (const width of [1280, 390]) test('account access failures hide navigation at ' + width + 'px', async ({ page }) => {
   const issuer = await createTestIdentityIssuer();
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)),
     vars: { TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true' } }] });
@@ -360,19 +360,13 @@ for (const width of [1280, 390]) test(`account access failures keep one Settings
     for (const status of [403, 503, 0, 401]) {
       accountStatus = status;
       await page.goto(url.href);
-      if (status === 401) await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
-      else await expect(page.locator('#rack-status')).toContainText(status === 403 ? 'Open Settings for details.' : 'Reload to try again.');
-      const settings = page.getByRole('link', { name: 'Settings', exact: true });
-      await expect(settings).toHaveCount(1);
-      await expect(settings).toHaveAttribute('href', '/account.html');
-      await expect(page.locator('#workspace-nav > a')).toHaveText(['Splitter', 'Workspace', 'Settings']);
-      await expect(page.locator('footer .footer-teacher-link')).toHaveText('Instructor Console');
+      await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
+      if (status !== 401) await expect(page.locator('#rack-status')).toContainText(status === 403 ? 'Sign in again to check your access.' : 'Reload to try again.');
+      await expect(page.locator('#workspace-nav')).toBeHidden();
+      await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      if (status !== 401) await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toHaveCount(0);
     }
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    await expect(page).toHaveURL(new URL('/account', url).href);
-    await expect(page).toHaveTitle('Stem Splitter · Settings');
   } finally { await server.close(); }
 });
 

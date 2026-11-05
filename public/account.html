@@ -5,26 +5,28 @@
 <meta name="robots" content="noindex">
 <title>Stem Splitter · Settings</title>
 <link rel="preload" href="/fonts/bricolage-grotesque-800.ttf" as="font" type="font/ttf" crossorigin>
-<link rel="stylesheet" href="/styles.css?v=20261105-compact">
+<link rel="stylesheet" href="/styles.css?v=20261105-auth-nav">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 <main class="teacher-main account-main refined-ui">
   <header class="masthead">
     <div class="masthead-title">
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
-      <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
+      <div class="lab-account">
+        <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
+        <p id="account-login" class="account-nav"><span class="account-session-note"><span>Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
+      </div>
     </div>
-    <nav class="workspace-nav" aria-label="Stem Splitter">
+    <nav class="workspace-nav" aria-label="Stem Splitter" hidden>
       <a href="/">Splitter</a>
       <a href="/classroom.html">Workspace</a>
       <a href="/account.html" aria-current="page">Settings</a>
+      <a data-instructor-nav href="/teacher.html" hidden>Instructor Console</a>
     </nav>
   </header>
   <h2 class="page-title">Settings</h2>
   <p id="account-status" role="status">Loading…</p>
-  <p id="account-login" hidden><a class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
   <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
-    <p class="account-links"><a id="account-guidance" class="account-button" href="/teacher.html" hidden>Instructor Console</a></p>
     <div class="account-allowances">
       <section aria-labelledby="account-splits-label">
         <h3 id="account-splits-label">Splits</h3>
@@ -103,8 +105,8 @@
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
   </footer>
 </main>
-<script src="/session-guard.js?v=20261104-split-actions"></script>
+<script src="/session-guard.js?v=20261105-auth-nav"></script>
 <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-<script src="/account.js?v=20261029-activity-20261023-two-reply-demo"></script>
+<script src="/account.js?v=20261105-stateful-resplits"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </html>

@@ -3,9 +3,9 @@ import { buildSystemPromptPreview, hashSystemPromptFingerprint, SYSTEM_PROMPT_VE
 
 export async function coursePrompt(env: Env, courseId: string | null) {
   if (!courseId) {
-    const global = await env.DB.prepare('SELECT amendment,revision,updated_at AS updatedAt,updated_by AS updatedBy FROM assistant_settings WHERE id=1')
-      .first<{ amendment: string; revision: number; updatedAt: string; updatedBy: string | null }>();
-    return global ?? { amendment: '', revision: 0, updatedAt: null, updatedBy: null };
+    // Guest and Personal work have no teaching context. A saved instructor
+    // amendment must never become their default just because no class is set.
+    return { amendment: '', revision: 0, updatedAt: null, updatedBy: null };
   }
   const row = await env.DB.prepare('SELECT amendment,revision,updated_at AS updatedAt,updated_by AS updatedBy FROM course_settings WHERE course_id=?')
     .bind(courseId).first<{ amendment: string; revision: number; updatedAt: string; updatedBy: string }>();
