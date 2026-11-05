@@ -19,6 +19,9 @@
       },
     },
   },
+  "overrides": {
+    "zod": "4.6.6",
+  },
   "packages": {
     "@breezystack/lamejs": ["@breezystack/lamejs@1.2.7", "", {}, "sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA=="],
 
@@ -42,11 +45,11 @@
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 
-    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "https://registry.npmjs.org/@cuny-ai-lab/cail-client/-/cail-client-6.2.2.tgz", { "dependencies": { "zod": "4.4.3" } }, "sha512-4aBjULb7Bd7O8kBT7lrM5OGC7sTHkTp9Lc/5mMpK9f+QRSCkEK+eUCJjl/+ZPRdXoOk+XpyUdLZB8OtUvE5+xQ=="],
+    "@cuny-ai-lab/cail-client": ["@cuny-ai-lab/cail-client@6.2.2", "", { "dependencies": { "zod": "4.4.3" } }, "sha512-4aBjULb7Bd7O8kBT7lrM5OGC7sTHkTp9Lc/5mMpK9f+QRSCkEK+eUCJjl/+ZPRdXoOk+XpyUdLZB8OtUvE5+xQ=="],
 
-    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "https://registry.npmjs.org/@cuny-ai-lab/cail-identity/-/cail-identity-5.2.6.tgz", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-j4Klru5ivG6ZWoGQBvIIiI2v7EDwDPiDIOvzsOV73n7LrUj3deCXM4tzFTfhZntaYdonFh4lJ9xs933YwNRnNA=="],
+    "@cuny-ai-lab/cail-identity": ["@cuny-ai-lab/cail-identity@5.2.6", "", { "dependencies": { "jose": "6.2.3", "zod": "4.4.3" } }, "sha512-j4Klru5ivG6ZWoGQBvIIiI2v7EDwDPiDIOvzsOV73n7LrUj3deCXM4tzFTfhZntaYdonFh4lJ9xs933YwNRnNA=="],
 
-    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "https://registry.npmjs.org/@cuny-ai-lab/cail-log/-/cail-log-0.6.4.tgz", { "dependencies": { "zod": "4.4.3" } }, "sha512-j/YEmBC1hi/64rYTmHp8sawk5xJCQMCBU0F2ZllFIMbXMEG3mq0yF5SYo9sgqjn0MHy+ZQLdE2Svbz/oUbOTRA=="],
+    "@cuny-ai-lab/cail-log": ["@cuny-ai-lab/cail-log@0.6.4", "", { "dependencies": { "zod": "4.4.3" } }, "sha512-j/YEmBC1hi/64rYTmHp8sawk5xJCQMCBU0F2ZllFIMbXMEG3mq0yF5SYo9sgqjn0MHy+ZQLdE2Svbz/oUbOTRA=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 
@@ -380,6 +383,6 @@
 
     "youch-core": ["youch-core@0.3.3", "", { "dependencies": { "@poppinss/exception": "^1.2.2", "error-stack-parser-es": "^1.0.5" } }, "sha512-ho7XuGjLaJ2hWHoK8yFnsUGy2Y5uDpqSTq1FkHLK4/oqKtyUU1AFbOOxY4IpC9f0fTLjwYbslUz0Po5BpD1wrA=="],
 
-    "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+    "zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
   }
 }
