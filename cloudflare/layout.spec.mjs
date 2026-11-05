@@ -29,13 +29,13 @@ for (const remixer of [false, true]) test(`No Crate and no adversarial panel; Re
     await expect(page.getByText('Split into', { exact: true })).toHaveCount(0);
     if (process.env.STEM_SCREENSHOT_DIR && !remixer) {
       await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
-      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-desktop.png` });
+      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-desktop.png`, animations: 'disabled' });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.locator('#yt-url').scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-mobile.png` });
+      await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/video-link-expanded-mobile.png`, animations: 'disabled' });
       await page.setViewportSize({ width: 1280, height: 900 });
     }
-    // Preserve compact Dev controls alongside production's open-audio picker.
+    // Keep the unified search action compact at desktop and phone widths.
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const search = page.locator('.yt-form > .yt-go');

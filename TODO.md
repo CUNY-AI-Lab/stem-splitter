@@ -3,6 +3,9 @@
 ## Current user corrections — November 5, 2026
 
 - [x] Keep one search field directly below upload; remove the repository selector, search heading, and accordion.
+- [x] Restore the complete interface's 780px desktop container, including workspace and settings; refresh stylesheet versions.
+- [x] Research per-output instrument labeling and prominence; record the model comparison and integration plan in [output labeling research](docs/evaluation/2026-11-05-output-instrument-labeling.md).
+- [ ] Compare supervised instrument taggers on the actual output audio, calibrate silence/leakage rejection, and validate prominence independently of identity confidence.
 - [x] Remove “Split into” from the upload controls and the resplit dialog; retain accessible names for the count controls.
 - [x] Save the per-recording action menu, exclusive playback, reload, and stalled-playback fixes in the recovered local candidate.
 - [ ] Replace fixed-category separation for both initial splits and resplits with a validated audio-derived source path.

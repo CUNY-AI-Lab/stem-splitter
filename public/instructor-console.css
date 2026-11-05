@@ -1,6 +1,6 @@
 /* Shared console components. Keep these rules out of the student mixer. */
 .instructor-console {
-  max-width: 960px;
+  max-width: 780px;
   padding: 2.5rem 1.25rem 4rem;
   font-size: .875rem;
   line-height: 1.55;

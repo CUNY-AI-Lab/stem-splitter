@@ -2779,7 +2779,7 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 #course-context input[type="checkbox"] { width: auto; margin-right: .35rem; }
 
 /* Shared workspace geometry keeps the original console palette and lettering. */
-main.refined-ui { max-width: 960px; padding-top: 1.75rem; padding-bottom: 2rem; }
+main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; }
 .refined-ui .masthead { margin-bottom: 1.35rem; }
 .refined-ui .masthead-title { --title-size: clamp(2rem, 5vw, 2.75rem); }
 .refined-ui .masthead-meta { margin-top: .9rem; }
