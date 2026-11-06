@@ -9,7 +9,7 @@ import app, { runReliableJobs, resumeAdaptiveOutput } from '../src/index.ts';
 import type { Env } from '../src/env.ts';
 import { verifyCailIdentity } from './verify.ts';
 import { gatewayForRequest, canonicalModel, gatewayModelsConfigured } from './gateway.ts';
-import { authenticatedRequest, handleAuth, sanitizedRequest, publicApi, type WorkerIdentity } from './sso.ts';
+import { authenticatedRequest, handleAuth, sanitizedRequest, publicApi, type WorkerIdentity, type ReportProfile } from './sso.ts';
 import { guestConfigured, guestChatConfigured, hasMemberCookie, readGuestSession, revokeGuestSession, startGuestSession, clearGuestCookie, GUEST_COOKIE } from './guest.ts';
 import { guestFailure } from '../src/guest/access.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
@@ -135,14 +135,15 @@ export default {
             service: env.BUG_REPORT_MODE === 'redmine-fallback' ? reportDelivery(env.DB, env.REDMINE_API_KEY, env.BUG_REPORTS) : redmineReports(env.DB, env.REDMINE_API_KEY!), limiter: env.REQUEST_LIMIT })
           : Response.json({ ok: false, code: 'unavailable' }, { status: 503 });
       } else if ((env.REDMINE_API_KEY || env.BUG_REPORT_MODE === 'redmine-fallback') && ['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
-        const internal = await authenticatedRequest(request, env);
+        let profile: ReportProfile | undefined;
+        const internal = await authenticatedRequest(request, env, env.REDMINE_API_KEY ? value => { profile = value; } : undefined);
         if (internal instanceof Response) response = internal;
         else {
           let principal: AppPrincipal | undefined;
           const denied = await authorizeCailRequest(internal, { ...env, verifyCailIdentity }, value => { principal = value; });
           response = denied ?? (principal
             ? await handleDevBugReport(internal, { origin: env.PUBLIC_BASE_URL, subject: principal.subject,
-              preferredName: principal.preferredName, sessionEmail: principal.reportEmail, acceptsReplyEmail: Boolean(env.REDMINE_API_KEY), release: env.RELEASE,
+              preferredName: principal.preferredName || profile?.name, sessionEmail: profile?.email || principal.reportEmail, acceptsReplyEmail: Boolean(env.REDMINE_API_KEY), release: env.RELEASE,
               service: env.BUG_REPORT_MODE === 'redmine-fallback' ? reportDelivery(env.DB, env.REDMINE_API_KEY, env.BUG_REPORTS) : redmineReports(env.DB, env.REDMINE_API_KEY!), limiter: env.REQUEST_LIMIT })
             : Response.json({ ok: false, code: 'unavailable' }, { status: 503 }));
         }
