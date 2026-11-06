@@ -189,7 +189,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
       if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
         done = true; locked = true; submitButton.textContent = 'Sent';
-        const update = result.emailUpdates === 'confirm' ? ' Check your email to confirm updates.' : result.emailUpdates === 'subscribed' ? ' Email updates are on.' : '';
+        const update = result.emailUpdates === 'confirm' ? ' Keep this reference to confirm updates with your emailed code.' : result.emailUpdates === 'subscribed' ? ' Email updates are on.' : '';
         show(result.delivery === 'email' ? 'Report recorded. Email accepted for delivery.' : `Saved to CAIL Ticketing. Reference: ${report.reportId}.${update}`, 'success');
       } else if (code === 'account_changed' || response.status === 401 || code === 'not_admitted' || code === 'admission_required') {
         actor = null; preferredName = ''; session = 'signed-out'; show('Sign in again to send this draft.', 'attention');
