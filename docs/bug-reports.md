@@ -25,8 +25,14 @@ contact fields are excluded from that table and the fallback email; user-entered
 report text can itself contain personal information. Redmine receives the report
 and, for the guest path, the explicitly provided contact details.
 
-The form says **Sent. Thank you.** for a saved Redmine report, or **Report recorded.
-Email accepted for delivery.** for accepted fallback mail. Email acceptance does
+The form shows the report reference for a saved Redmine issue and reports
+enrollment when CAIL Ticketing acknowledges it. Public staff notes and status
+changes go to the original reporter. A signed CUNY Login address is enrolled
+automatically. Guests and students whose login lacks an email confirm their typed
+`.edu` address with the emailed code and the receipt shown after submitting.
+Staff-only notes stay private.
+
+The form says **Report recorded. Email accepted for delivery.** for accepted fallback mail. Email acceptance does
 not establish mailbox arrival. Pending or unknown deliveries remain visible for
 readback instead of being declared successful. Existing validation, request and
 rate limits continue to apply. The delivery ledger permits ten reports per owner

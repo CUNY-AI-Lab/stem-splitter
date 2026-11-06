@@ -12,7 +12,7 @@ const unavailable = (): BugReportResult => ({ ok: false, code: 'unavailable', re
 export function reportDelivery(db: D1Database, key?: string, email?: EmailService): BugReportService {
   async function submit(report: Input): Promise<BugReportResult> {
     const owner = await bugReportActor(report.contact ? `guest-report-email:v1\n${report.contact.email}` : report.subject);
-    const fingerprint = await bugReportActor(JSON.stringify([report.reportId, report.path, report.description, report.contact ?? null]));
+    const fingerprint = await bugReportActor(JSON.stringify([report.reportId, report.path, report.description, report.contact ?? null, ...(report.replyEmail ? [report.replyEmail] : [])]));
     const at = new Date().toISOString(), since = new Date(Date.now() - 86400000).toISOString();
     const rate = report.rateKey ?? owner;
     try {
@@ -34,7 +34,7 @@ export function reportDelivery(db: D1Database, key?: string, email?: EmailServic
         .bind(owner, report.reportId).first<Receipt>();
       if (!receipt) return { ok: false, code: 'rate_limited', retryable: true, retryAfterSeconds: 3600 };
       if (receipt.fingerprint !== fingerprint) return { ok: false, code: 'idempotency_conflict', retryable: false };
-      const saved = (): BugReportResult => ({ ok: true, status: 'saved', reportId: report.reportId, createdAt: receipt!.created_at, delivery: receipt!.delivery });
+      const saved = (emailUpdates?: 'subscribed' | 'confirm'): BugReportResult => ({ ok: true, status: 'saved', reportId: report.reportId, createdAt: receipt!.created_at, delivery: receipt!.delivery, ...(emailUpdates ? { emailUpdates } : {}) });
       if (receipt.state === 'accepted') return saved();
       if (receipt.delivery === 'redmine' && legacy?.state === 'saved') {
         await db.prepare("UPDATE bug_report_deliveries SET state='accepted' WHERE owner=? AND report_id=? AND delivery='redmine'").bind(owner, report.reportId).run();
@@ -46,7 +46,7 @@ export function reportDelivery(db: D1Database, key?: string, email?: EmailServic
         const result = report.contact ? await adapter.submitGuest!({ ...report, contact: report.contact, rateKey: rate }) : await adapter.submitAuthenticated(report);
         if (result.ok) {
           await db.prepare("UPDATE bug_report_deliveries SET state='accepted' WHERE owner=? AND report_id=? AND delivery='redmine'").bind(owner, report.reportId).run();
-          return saved();
+          return saved(result.emailUpdates);
         }
         if (result.code === 'idempotency_conflict') return result;
         // Only a definite upstream rejection permits a different transport. An

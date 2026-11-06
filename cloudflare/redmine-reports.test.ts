@@ -12,6 +12,7 @@ const report = { reportId: '77000000-0000-4000-8000-000000000001', subject: 'cai
   description: 'Synthetic playback report.', origin: 'https://fixture.test', path: '/', release: 'fixture' };
 
 test('Workerd Redmine transport saves once, refuses redirects without reading bodies, and only looks up uncertain deliveries', { timeout: 60000 }, async () => {
+  let receivedReporter: unknown;
   let mode = 'saved', status = 302, destination = 'https://redirect.invalid/collect', posts = 0, gets = 0, redirects = 0, savedSubject = '';
   const bundle = await build({ entryPoints: [fileURLToPath(new URL('./test-redmine-worker.ts', import.meta.url))], bundle: true,
     format: 'esm', write: false, platform: 'browser', target: 'es2022' });
@@ -28,7 +29,8 @@ test('Workerd Redmine transport saves once, refuses redirects without reading bo
         return Response.json({ total_count: mode === 'found' ? 1 : 0, issues: mode === 'found' ? [{ id: 42, subject: savedSubject }] : [] });
       }
       posts++;
-      savedSubject = ((await request.json()) as any).issue.subject;
+      const payload = await request.json() as any;
+      savedSubject = payload.issue.subject; receivedReporter = payload.cail_reporter;
       if (mode === 'redirect' || mode === 'oversize-redirect' || mode === 'stalled-redirect') {
         const body = mode === 'oversize-redirect' ? 'x'.repeat(2*1024*1024+1)
           : mode === 'stalled-redirect' ? new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('pending')); } }) : '';
@@ -38,7 +40,7 @@ test('Workerd Redmine transport saves once, refuses redirects without reading bo
       if (mode === 'rate') return new Response('', { status: 429 });
       if (mode === 'malformed') return new Response('invalid JSON synthetic-private-upstream', { status: 201 });
       if (mode === 'oversize') return new Response('x'.repeat(2*1024*1024+1), { status: 201 });
-      return Response.json({ issue: { id: 42 } }, { status: 201 });
+      return Response.json({ issue: { id: 42 } }, { status: 201, headers: payload.cail_reporter ? {'X-CAIL-Report-Updates': payload.cail_reporter.source === 'cuny_login' ? 'subscribed' : 'confirm'} : {} });
     },
   }));
   const fetch = (path: string, init?: RequestInit) => server.dispatchFetch('http://fixture.test'+path, init);
@@ -48,8 +50,9 @@ test('Workerd Redmine transport saves once, refuses redirects without reading bo
     const fresh = () => ({ ...report, subject: 'cail-'+sequence.toString(16).padStart(32,'0'), reportId: `77000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}` });
     const submit = async (value: any) => await (await fetch('/submit', { method: 'POST', body: JSON.stringify(value) })).json() as any;
     const receipt = async () => (await (await fetch('/receipts')).json() as any[]).at(-1);
-    const first = fresh();
-    assert.equal((await submit(first)).ok,true); assert.equal(posts,1);
+    const first = {...fresh(),sessionEmail:'student@college.edu'};
+    assert.equal((await submit(first)).emailUpdates,'subscribed');
+    assert.deepEqual(receivedReporter,{source:'cuny_login',email:'student@college.edu'}); assert.equal(posts,1);
     assert.equal((await submit(first)).ok,true); assert.equal(posts,1);
     assert.equal((await submit({...first,description:'Changed synthetic report'})).code,'idempotency_conflict'); assert.equal(posts,1);
     for (status of [301,302,303,307,308]) for (destination of ['https://redirect.invalid/collect','https://tools.ailab.gc.cuny.edu/redirect-target']) {
