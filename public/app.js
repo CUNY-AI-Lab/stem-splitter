@@ -4719,7 +4719,7 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'Splitter',
-    tagline: 'Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.',
+    tagline: 'Split audio tracks into musical layers for deep listening, one stem at a time.\nTake notes on shared splits, then cue Listening Guy to learn more.',
   },
   remixer: {
     word: 'Remixer',
@@ -4760,7 +4760,11 @@ function switchStation(name) {
     stationTabs[key].setAttribute('aria-selected', String(active));
     stationTabs[key].tabIndex = active ? 0 : -1;
   }
-  stationTagline.textContent = STATIONS[name].tagline;
+  stationTagline.replaceChildren(...STATIONS[name].tagline.split('\n').map(text => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = text;
+    return paragraph;
+  }));
   splitSummary.textContent = name === 'splitter' ? splitterKicker : STATIONS.remixer.kicker;
   splitSummary.hidden = !splitSummary.textContent;
   try {

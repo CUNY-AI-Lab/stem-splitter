@@ -21,6 +21,8 @@
 
 ## Stateful application audit — November 6, 2026
 
+- [x] Use the revised two-paragraph intro, a subtle divider and desktop wrapping before the page midpoint; verify downstream spacing and the phone layout.
+- [x] Reconcile the existing local Cloudflare release tooling from the previously deployed dev source. Follow the user's direct dev-then-production release direction; additional GitHub pushes, merges and Actions are not required.
 - [x] Trace guest, SSO-authenticated CAIL individual, enrolled student, course instructor and application instructor/admin authority across application surfaces.
 - [x] Reproduce and fix first-page-only Instructor Console class discovery.
 - [x] Reproduce and fix stale Workspace capabilities after the same person's class role changes.

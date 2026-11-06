@@ -100,6 +100,27 @@ preference, set through Playwright's isolated
 [launch options](https://playwright.dev/docs/api/class-browsertype#browser-type-launch).
 No production records, roles or credentials are modified by these tests.
 
+### Local release and intro follow-up
+
+After the initial audit commit, the user directed deployment to the existing
+dev Worker and then production, using local validation rather than additional
+GitHub Actions. PR #95 remains an earlier checkpoint; its remaining workflow
+was cancelled at the user's direction. The saved local release tooling from
+the previous dev source `a0fc4c6` was reconciled without changing either Worker
+configuration, dependency lock, or schema. Its eight unit checks passed.
+
+The intro now uses the user's exact two paragraphs with a subtle divider.
+The final stylesheet constrains the text before the desktop midpoint and
+restores the available width at 600px and below. The width change passed
+62/62 affected Chromium and 62/62 Firefox checks. After the final copy and
+paragraph rendering change, the affected suites passed again: Chromium
+25/25, Firefox 15/15 and legacy browser 19/19. These focused reruns are
+additional evidence, not new unique cases added to the earlier 1,278 total.
+Measured layouts at 320, 390, 600, 601, 780, 1024 and 1280px had no horizontal
+overflow or overlap between the intro, navigation, upload, search and split
+controls. The full container remains at most 780px. Source and deployment
+receipts distinguish the initial audit from this final local follow-up.
+
 Search/layout/menu/resplit-controls work was released in PRs #93/#94. The
 remaining instrument recognition and audio-derived separation work is not
 validated: the saved local diagnostic has classification errors and requires

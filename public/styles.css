@@ -2800,6 +2800,8 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
   font-size: .9rem;
   line-height: 1.55;
 }
+.refined-ui .masthead-meta .tagline > p { margin: 0; }
+.refined-ui .masthead-meta .tagline > p + p { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--panel-edge); }
 .refined-ui .page-title { margin-bottom: .65rem; font-size: clamp(1.45rem, 3vw, 1.75rem); }
 .workspace-nav {
   display: flex; flex-wrap: wrap; align-items: center;

@@ -205,7 +205,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
   })).toBe(true);
   await expectAlignedBrand();
-  await expect(page.locator('.tagline')).toHaveText('Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.');
+  await expect(page.locator('#station-tagline > p')).toHaveText(['Split audio tracks into musical layers for deep listening, one stem at a time.', 'Take notes on shared splits, then cue Listening Guy to learn more.']);
   await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
