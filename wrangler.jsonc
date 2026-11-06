@@ -41,7 +41,7 @@
     "YOUTUBE_FETCH_ORDER": "replicate-first",
     // Gateway model for the Listening Guy; swap to any supported
     // tool-calling model without code changes. Unset disables the assistant.
-    "ASSISTANT_MODEL": "glm-5.2"
+    "ASSISTANT_MODEL": "glm-5.3"
   }
 
   // Secrets (set with `wrangler secret put <NAME>`):
