@@ -7,6 +7,15 @@ so a text change in any current conditional prompt arm remains traceable even
 if a version bump is accidentally omitted. The readable instructor preview is
 deliberately separate from that audit material.
 
+## 2026-11-06.1
+
+- Names the selected amendment Additional Listening Instructions so a member's
+  personal instructions are not represented as an instructor's class notes.
+- Existing server-selected personal/class scope and the fixed-policy precedence
+  remain unchanged. Guests still receive no personal or class amendment.
+- Advances the policy version and fingerprint so cached guides cannot reuse the
+  former misleading attribution. Historical prompt revisions remain immutable.
+
 ## 2026-09-07.1
 
 - Restores the original Listening Guy guide/chat prompt and mixer tools. Removes

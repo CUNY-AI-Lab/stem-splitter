@@ -39,7 +39,10 @@ test('members save own instructions with notes, previews and immutable history',
   assert.equal((await f.call('/api/account/prompt',alice,'PUT',{amendment:'A personal goal',expectedRevision:0})).status,400);
   const saved=await f.call('/api/account/prompt',alice,'PUT',edit('A personal goal'));assert.equal(saved.status,200);
   const data=await saved.json() as any;assert.equal(data.revision,1);assert.equal(data.history.length,1);assert.equal(data.history[0].updatedBy,'You');
-  assert.ok(!(JSON.stringify(data).includes(alice)));assert.match((await(await f.call('/api/account/prompt/preview')).json() as any).prompt,/A personal goal/);
+  assert.ok(!(JSON.stringify(data).includes(alice)));
+  const preview=(await(await f.call('/api/account/prompt/preview')).json() as any).prompt;
+  assert.match(preview,/A personal goal/);assert.match(preview,/ADDITIONAL LISTENING INSTRUCTIONS/);
+  assert.doesNotMatch(preview,/YOUR INSTRUCTOR'S NOTES FOR THIS CLASS/);
   const audit=await f.db.prepare('SELECT subject,actor FROM personal_prompt_revisions').first<any>();assert.equal(audit.actor,alice);assert.equal(audit.subject,alice);
   await assert.rejects(f.db.prepare('DELETE FROM personal_prompt_revisions').run(),/immutable/);
   await assert.rejects(f.db.prepare("UPDATE personal_prompt_revisions SET amendment='altered'").run(),/immutable/);
@@ -107,6 +110,7 @@ test('actual local guide and chat routes use only the active personal or class p
   for(const [subject,id,text,excluded] of [[alice,'alice-personal','ALICE_PRIVATE_POLICY','BOB_PRIVATE_POLICY'],[bob,'bob-personal','BOB_PRIVATE_POLICY','ALICE_PRIVATE_POLICY'],[alice,'alice-class','CLASS_POLICY','ALICE_PRIVATE_POLICY']]) {
     const r=await f.call('/api/jobs/'+id+'/guide',subject,'POST',{messageId:'guide-fixture-'+id});assert.equal(r.status,200);assert.match(await r.text(),/"type":"done"/);
     const system=f.systems.at(-1)!;assert.ok(system.includes(text));assert.ok(!system.includes(excluded));assert.ok(!system.includes('LEGACY_GLOBAL_POLICY'));
+    assert.match(system,/ADDITIONAL LISTENING INSTRUCTIONS/);assert.doesNotMatch(system,/YOUR INSTRUCTOR'S NOTES FOR THIS CLASS/);
   }
   const chat=await f.call('/api/jobs/alice-personal/chat',alice,'POST',{messages:[{role:'user',content:'Describe the texture.'}],messageId:'personal-chat-fixture-0001'});
   assert.equal(chat.status,200);assert.match(await chat.text(),/"type":"done"/);assert.match(f.systems.at(-1)!,/ALICE_PRIVATE_POLICY/);assert.doesNotMatch(f.systems.at(-1)!,/CLASS_POLICY|BOB_PRIVATE_POLICY|LEGACY_GLOBAL_POLICY/);

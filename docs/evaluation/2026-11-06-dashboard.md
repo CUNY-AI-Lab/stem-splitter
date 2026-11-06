@@ -60,3 +60,22 @@ attempted and the user's prior tab was restored.
 No paid model call, audio upload, provider change, GitHub publication or shared
 service deployment is part of these checks. Instrument validation remains a
 separate open requirement; the detector and isolation flags remain off.
+
+## Signed-in Dev acceptance follow-up
+
+Candidate 4210dac passed 252/252 frozen-source Chromium checks and deployed to
+Dev version 45cad628-2a9c-47a4-82cb-aca7e0637f6c. Public revision/asset/access
+checks passed 15/15 and anonymous desktop/phone browser checks passed 6/6.
+After explicit authorization, the existing Firefox CUNY Login flow succeeded.
+The new Dashboard loaded the existing account and three completed recordings.
+Muted saved-audio playback advanced the clock. Recorded activity separated four
+runs, three completions, one reply and one opening cue. Personal instructions
+saved, reloaded, previewed and appeared in immutable revision history. An unsaved
+draft survived leaving and returning to the tab. Original empty instructions
+were restored with a second documented revision; no model request was made.
+
+This real acceptance caught a scope-label defect: the shared prompt heading
+called the member's own amendment an instructor's class notes. The follow-up
+uses Additional Listening Instructions, advances the governed prompt version,
+and checks both the preview and actual guide/chat route prompts. The new source
+must pass the release gates and Dev verification before production promotion.

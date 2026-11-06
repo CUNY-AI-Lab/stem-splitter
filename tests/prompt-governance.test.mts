@@ -70,7 +70,8 @@ test('base and amended policy bundles are distinct and apply the amendment to ev
   );
   assert.equal(effective.variants.length, 3);
   for (const variant of effective.variants) {
-    assert.match(variant.prompt, /YOUR INSTRUCTOR'S NOTES FOR THIS CLASS/);
+    assert.match(variant.prompt, /ADDITIONAL LISTENING INSTRUCTIONS/);
+    assert.doesNotMatch(variant.prompt, /YOUR INSTRUCTOR'S NOTES FOR THIS CLASS/);
     assert.match(variant.prompt, /Use call-and-response examples\./);
     assert.doesNotMatch(variant.prompt, /  Use call-and-response examples\.  /);
   }
