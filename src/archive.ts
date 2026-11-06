@@ -412,8 +412,14 @@ export interface ArchiveSong {
   itemTitle: string;
 }
 
+/** File-derived titles can arrive URL-encoded or with their folder path. */
+function readableTitle(track: ArchiveTrack): string {
+  let title = track.title;
+  if (/%[0-9a-f]{2}/i.test(title)) { try { title = decodeURIComponent(title); } catch { /* Keep the source text. */ } }
+  return track.name.startsWith(title) && title.includes('/') ? title.split('/').filter(Boolean).at(-1) || title : title;
+}
 function songTitle(item: ArchiveItem, track: ArchiveTrack): string {
-  return item.tracks.length === 1 && /^(?:file|track|audio)[\s._-]*\d*$/i.test(track.title) ? item.title : track.title;
+  return item.tracks.length === 1 && /^(?:file|track|audio)[\s._-]*\d*$/i.test(track.title) ? item.title : readableTitle(track);
 }
 function recordingCredit(value: string | undefined): string {
   return value && !/^(artist|unknown|unknown artist|various artists)$/i.test(value) ? value : '';
@@ -438,8 +444,16 @@ export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, pub
   };
 }
 
-const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export type SongResults = { results: ArchiveSong[] };
+const withoutArticle = (text: string) => text.replace(/^the /, '');
+/** True when the query names this credit, or one artist in a shared credit such as "Michael Kamen, Queen". */
+export function creditMatchesQuery(credit: string | undefined, query: string): boolean {
+  const target = withoutArticle(searchableText(query));
+  if (!credit || !target) return false;
+  return [credit, ...credit.split(/\s*(?:[,;&/+]|\b(?:and|feat|ft|with)\b\.?)\s*/i)]
+    .some(part => withoutArticle(searchableText(part)) === target);
+}
 export const archiveSongSearchKey = (query: string) => searchableText(displayText(query, '', MAX_TERM_LENGTH));
 type SearchListener = (results: SongResults) => void;
 const searchCache = new Map<string, { expires: number; songs: Promise<SongResults>; latest: SongResults; listeners: Set<SearchListener> }>();
@@ -655,19 +669,22 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
     const title = songTitle(item, track);
     const artist = recordingCredit(track.artist), fileCreator = recordingCredit(track.creator);
     if (!artist && !fileCreator && !recordingCredit(item.creator)) continue;
+    // File credits outrank the item credit, so a compilation cannot credit every track to its album artist.
+    const namedArtist = (artist || fileCreator ? [artist, fileCreator] : [recordingCredit(item.creator)]).some(credit => creditMatchesQuery(credit, tokens.join(' ')));
     // Item creator remains useful for finding a song, but never becomes its artist tag.
     const text = searchableText(`${title} ${artist} ${fileCreator} ${item.creator}`);
-    // Matching only the album description would return unrelated tracks.
-    if (!tokens.every(token => text.includes(token))) continue;
     const titleText = searchableText(title), artistText = searchableText(`${artist} ${fileCreator} ${item.creator}`);
-    const artistTokens = tokens.filter(token => !titleText.includes(token));
-    if (artistTokens.length && (artist || fileCreator) &&
-        ![artist, fileCreator].some(credit => artistTokens.every(token => searchableText(credit).includes(token)))) continue;
-    // A partial creator-name match alone is not a match for the requested song.
-    // An exact artist query still returns that artist's available tracks.
-    if (!tokens.some(token => titleText.includes(token)) &&
-        ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
-    const score = tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
+    if (!namedArtist) {
+      // Matching only the album description would return unrelated tracks.
+      if (!tokens.every(token => text.includes(token))) continue;
+      const artistTokens = tokens.filter(token => !titleText.includes(token));
+      if (artistTokens.length && (artist || fileCreator) &&
+          ![artist, fileCreator].some(credit => artistTokens.every(token => searchableText(credit).includes(token)))) continue;
+      // A partial creator-name match alone is not a match for the requested song.
+      if (!tokens.some(token => titleText.includes(token)) &&
+          ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
+    }
+    const score = (namedArtist ? 12 : 0) + tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
       + (titleText === tokens.join(' ') ? 6 : 0)
       + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
       - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
@@ -684,6 +701,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     // well as a filename containing every word. Prefer useful source credits.
     return tokens.filter(token => title.includes(token)).length * 4
       + tokens.filter(token => !title.includes(token) && artist.includes(token)).length * 4
+      + (creditMatchesQuery(displayText(doc.creator), tokens.join(' ')) ? 10 : 0)
       + (recordingCredit(displayText(doc.creator)) ? 6 : 0) + (doc.musicQuery ? 4 : 0) - (title + artist).length / 200;
   };
   const discoveryOrder = <T extends { title?: unknown; creator?: unknown; musicQuery?: boolean }>(docs: T[]): T[] => {
@@ -759,14 +777,18 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   };
   // Reserve discovery work for each catalog. A fast broad catalog must not
   // consume every early slot and delay music matches until the slowest catalog
-  // finishes. Inspect all sixteen music hits plus four from each other catalog;
-  // the final relevance pass still considers its full sixteen (forty items max).
+  // finishes. Inspect all sixteen music hits, eight named-artist hits and four
+  // from each other catalog; the final relevance pass adds eight (forty items max).
   const earlyIds = new Set<string>();
-  const base = 'mediatype:audio AND NOT access-restricted-item:true';
+  // Spoken-word items can never be imported, yet they lead by downloads: "queen"
+  // otherwise fills the catalog page with books about queens before reaching the band.
+  const base = 'mediatype:audio AND NOT access-restricted-item:true AND NOT collection:(librivoxaudio OR audio_bookspoetry)';
   const queries = [
     `${base} AND creator:[* TO *] AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')}) AND subject:(music OR rock OR pop OR jazz OR blues OR classical OR folk OR soul OR electronic OR hiphop)`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
+    // The whole name as one credit. Word-by-word matching cannot tell the band from the word.
+    `${base} AND creator:"${tokens.join(' ')}"`,
   ];
   const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
@@ -781,7 +803,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
     const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1}));
     const deadline = Date.now()+18000;
-    for (const doc of discoveryOrder(found).slice(0,index === 1 ? 16 : 4)) {
+    for (const doc of discoveryOrder(found).slice(0,index === 1 ? 16 : index === 3 ? 8 : 4)) {
       const id = doc.identifier;
       if (typeof id !== 'string' || !IDENTIFIER_PATTERN.test(id) || earlyIds.has(id)) continue;
       earlyIds.add(id);
@@ -795,7 +817,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   }
   const docs = searches.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   docs.sort((a,b) => docScore(b) - docScore(a));
-  const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
+  const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 8);
   const metadataDeadline = Date.now() + 18000;
   const selected = new Set(ids);
   const orderedIds = [...new Set(discoveryOrder(docs.filter(doc => selected.has(String(doc.identifier)))).map(doc => String(doc.identifier)))];

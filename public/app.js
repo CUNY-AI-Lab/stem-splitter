@@ -937,13 +937,16 @@ async function searchSourceSongs(term, sequence) {
   songSearchStatus = 'loading';
   sourceSongs.setAttribute('aria-busy', 'true');
   showSongSearchStatus('Searching…');
-  const seen = new Set();
+  const slowSearch = setTimeout(() => {
+    if (current() && !songResults.size) showSongSearchStatus('Still searching. Some sources are slow to respond.');
+  }, 6000);
+  const seen = new Set(), optionById = new Map();
   const render = data => {
     if (!current()) return;
     if (data.providers) {
-      musicSearchStatus.textContent = Object.values(data.providers).includes('unavailable')
-        ? 'Some audio sources are temporarily unavailable. Other results remain usable.' : '';
-
+      // The Archive holds most songs. A smaller catalog failing is not worth a warning beside usable results.
+      musicSearchStatus.textContent = Object.values(data.providers).includes('pending') ? 'Searching more sources…'
+        : data.providers.archive === 'unavailable' ? 'Some audio sources are temporarily unavailable. Other results remain usable.' : '';
     }
     if (!songResults.size && data.results?.length) sourceSongs.replaceChildren();
     for (const track of data.results || []) {
@@ -968,6 +971,7 @@ async function searchSourceSongs(term, sequence) {
       option.appendChild(document.createTextNode(value));
       duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
+      optionById.set(track.id, option);
       sourceSongs.appendChild(option);
     }
     if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
@@ -1004,14 +1008,27 @@ async function searchSourceSongs(term, sequence) {
     });
     if (!current()) return;
     render(data);
-    if (!cached) rememberSongSearch(term, data);
+    // Choices hold still while results stream in, then settle into relevance order,
+    // unless someone is already moving through the list.
+    if (activeSongIndex < 0 && songResults.size) {
+      const ranked = (data.results || []).map(track => optionById.get(track.id)).filter(Boolean);
+      for (const option of new Set([...ranked, ...optionById.values()])) sourceSongs.appendChild(option);
+      if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
+    }
+    const archiveFailed = data.providers?.archive === 'unavailable';
+    if (!cached && !archiveFailed) rememberSongSearch(term, data);
     songSearchStatus = 'ready';
-    if (!songResults.size) showSongSearchStatus('No downloadable audio found. Try another recording or upload an audio file.');
+    if (!songResults.size) {
+      musicSearchStatus.textContent = '';
+      showSongSearchStatus(archiveFailed ? 'Internet Archive is busy right now. Try again in a moment.'
+        : 'No downloadable audio found. Try another recording or upload an audio file.');
+    }
   } catch {
     if (!current()) return;
     songSearchStatus = songResults.size ? 'ready' : 'error';
     if (!songResults.size) showSongSearchStatus('Search is temporarily unavailable. Try again.');
   } finally {
+    clearTimeout(slowSearch);
     if (current()) sourceSongs.removeAttribute('aria-busy');
   }
 }

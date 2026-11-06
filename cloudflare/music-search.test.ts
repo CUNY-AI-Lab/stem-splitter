@@ -203,9 +203,9 @@ test('rolling Archive rankings reserve space for every late audio catalog', asyn
   });
   const result: any = await (await musicSearchResponse('Capacity melody', false, context)).json();
   assert.ok(probes.size > 8, 'fixture must produce replacement Archive rankings');
-  assert.equal(result.results.filter((track: any) => track.providerName === 'Internet Archive').length, 4);
+  assert.equal(result.results.filter((track: any) => track.providerName === 'Internet Archive').length, 8);
   assert.equal(result.results.filter((track: any) => track.providerName === 'Wikimedia Commons').length, 1);
-  assert.equal(result.results.length, 5);
+  assert.equal(result.results.length, 9);
 });
 
 test('cancelled streams stop independent metadata calls and a new search can finish', async t => {
@@ -224,4 +224,41 @@ test('cancelled streams stop independent metadata calls and a new search can fin
   t.mock.method(globalThis, 'fetch', async (input: any) => new URL(String(input)).hostname === 'musicbrainz.org'
     ? Response.json({ recordings: [recording()] }) : Response.json({ response: { docs: [] }, query: { pages: [] } }));
   const retried: any = await (await musicSearchResponse('retry sources', false, context)).json(); assert.deepEqual(retried.references, []); assert.equal(retried.providers.commons, 'ready');
+});
+
+const freesoundRow = (id: string, sound: number, title: string, seconds: number) => ({ id, title, creator: 'Artist',
+  foreign_landing_url: `https://freesound.org/people/Artist/sounds/${sound}/`, url: `https://cdn.freesound.org/previews/${Math.floor(sound / 1000)}/${sound}_9-hq.mp3`,
+  license: 'by', license_version: '4.0', license_url: 'https://creativecommons.org/licenses/by/4.0/', filetype: 'mp3', filesize: audio.length,
+  duration: seconds * 1000, source: 'freesound', provider: 'freesound' });
+
+test('Freesound effects are removed and a named artist ranks above faster, looser matches', async t => {
+  const context = setup(t);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [
+      freesoundRow('11111111-1111-4111-8111-111111111111', 1001, 'Duchess speech', 3),
+      freesoundRow('22222222-2222-4222-8222-222222222222', 1002, 'Unrelated tagged drone', 200),
+      freesoundRow('33333333-3333-4333-8333-333333333333', 1003, 'Duchess cover on drums', 120),
+    ] });
+    if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: [{ identifier: 'duchess-band', title: 'Hits', creator: 'Duchess' }] } });
+    if (url.pathname.startsWith('/metadata/')) return Response.json({ metadata: { title: 'Hits', creator: 'Duchess', mediatype: 'audio', subject: 'Music' }, files: [{ name: 'song.mp3', title: 'Radio Song', length: String(80 * 1152 / 44100), size: String(audio.length), format: 'VBR MP3', source: 'original' }] });
+    return new Response(audio, { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const result: any = await (await musicSearchResponse('duchess', false, context)).json();
+  assert.deepEqual(result.results.map((track: any) => track.title), ['Radio Song', 'Duchess cover on drums']);
+});
+
+test('a short clip still appears when a search would otherwise find nothing', async t => {
+  const context = setup(t);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [freesoundRow('44444444-4444-4444-8444-444444444444', 1004, 'Marimba hit', 4)] });
+    return Response.json({ response: { docs: [] } });
+  });
+  const result: any = await (await musicSearchResponse('marimba hit', false, context)).json();
+  assert.deepEqual(result.results.map((track: any) => track.title), ['Marimba hit']);
 });

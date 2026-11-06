@@ -1,11 +1,35 @@
 import { archiveSongSearchResponse } from './archive-search-response.ts';
 import { searchOpenAudio, type OpenAudioTrack } from './open-audio.ts';
 import type { PublicSearchCache } from './musicbrainz.ts';
-import type { ArchiveSong } from './archive.ts';
+import { archiveSongSearchKey, creditMatchesQuery, searchableText, type ArchiveSong } from './archive.ts';
 type Provider = 'archive' | 'commons' | 'freesound' | 'loc';
 type AudioTrack = (ArchiveSong | OpenAudioTrack) & { providerName: string };
 type SearchResult = { results: AudioTrack[]; references: never[]; providers: Record<Provider, 'pending' | 'ready' | 'unavailable'> };
 type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache };
+
+// The Archive holds nearly all full-length songs, so it gets more of the list.
+const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesound: 4, loc: 4 };
+// Freesound is mostly short effects whose tags loosely match. Tracks must carry the
+// search words, and short clips appear only when a search would otherwise find nothing.
+const MIN_FREESOUND_SECONDS = 30;
+const credits = (track: ArchiveSong | OpenAudioTrack) => {
+  const { artist, fileCreator, itemCreator } = track as { artist?: string; fileCreator?: string; itemCreator?: string };
+  return [artist, fileCreator, itemCreator];
+};
+function relevantTrack(provider: Provider, track: ArchiveSong | OpenAudioTrack, query: string): boolean {
+  if (provider !== 'freesound') return true;
+  const text = searchableText(`${track.title} ${credits(track).join(' ')}`);
+  return archiveSongSearchKey(query).split(' ').every(token => text.includes(token));
+}
+/** Named artists and exact titles first, then whole-word matches, with full-length sources breaking ties. */
+function relevance(provider: Provider, track: ArchiveSong | OpenAudioTrack, query: string): number {
+  const phrase = archiveSongSearchKey(query), title = searchableText(track.title);
+  const words = new Set(searchableText(`${track.title} ${credits(track).join(' ')}`).split(' '));
+  return (credits(track).some(credit => creditMatchesQuery(credit, phrase)) ? 100 : 0)
+    + (title === phrase ? 80 : ` ${title} `.includes(` ${phrase} `) ? 60 : 0)
+    + (phrase.split(' ').every(token => words.has(token)) ? 20 : 0)
+    + (provider === 'archive' ? 5 : provider === 'freesound' ? 0 : 2);
+}
 
 /** Federate discovery only. Every import still passes its existing provider's rights/byte checks. */
 export async function musicSearchResponse(query: string, streaming: boolean, context: Context): Promise<Response> {
@@ -17,12 +41,23 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
     const tracks = new Map<string, AudioTrack>();
     const counts = { archive: 0, commons: 0, freesound: 0, loc: 0 };
     const result: SearchResult = { results: [], references: [], providers: { archive: 'pending', commons: 'pending', freesound: 'pending', loc: 'pending' } };
-    const publish = () => { result.results = [...tracks.values()]; if (!signal.aborted) emit(result); };
-    const add = (provider: Provider, items: (ArchiveSong | OpenAudioTrack)[]) => {
-      for (const track of items.slice(0, 4)) {
+    const publish = () => {
+      result.results = [...tracks.entries()]
+        .map(([key, track]) => ({ track, score: relevance(key.split(':')[0] as Provider, track, query) }))
+        .sort((a, b) => b.score - a.score).map(entry => entry.track);
+      if (!signal.aborted) emit(result);
+    };
+    const shortClips: OpenAudioTrack[] = [];
+    const add = (provider: Provider, candidates: (ArchiveSong | OpenAudioTrack)[]) => {
+      let items = candidates.filter(track => relevantTrack(provider, track, query));
+      if (provider === 'freesound') {
+        shortClips.push(...items.filter(track => track.durationSec < MIN_FREESOUND_SECONDS) as OpenAudioTrack[]);
+        items = items.filter(track => track.durationSec >= MIN_FREESOUND_SECONDS);
+      }
+      for (const track of items.slice(0, RESULT_SLOTS[provider])) {
         const key = `${provider}:${track.id}`;
         if (!tracks.has(key)) {
-          if (counts[provider] >= 4) continue;
+          if (counts[provider] >= RESULT_SLOTS[provider]) continue;
           counts[provider]++;
         }
         tracks.set(key, { ...track, providerName: provider === 'archive' ? 'Internet Archive' : (track as OpenAudioTrack).providerName });
@@ -69,6 +104,10 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
         add(name, value.results);
       })),
     ]);
+    if (!tracks.size && shortClips.length) {
+      for (const track of shortClips.slice(0, RESULT_SLOTS.freesound)) tracks.set(`freesound:${track.id}`, track as AudioTrack);
+      publish();
+    }
     return result;
   };
   if (!streaming) return Response.json(await run(() => {}), { headers });

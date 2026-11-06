@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ArchiveError, fetchArchiveAudio, fetchArchiveItem, searchArchiveSongs, validateArchiveSongFrames } from '../src/archive.ts';
+import { ArchiveError, creditMatchesQuery, fetchArchiveAudio, fetchArchiveItem, searchArchiveSongs, validateArchiveSongFrames } from '../src/archive.ts';
 import { mp3FrameInfo } from '../src/reliability/media.ts';
 const audio=new Uint8Array(readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url)));
 const duration=mp3FrameInfo(audio.buffer)!.seconds;
@@ -104,7 +104,7 @@ test('failed searches log only response diagnostics and preserve upstream retrya
   t.mock.method(console,'warn',(...values:unknown[])=>events.push(values));
   t.mock.method(globalThis,'fetch',async()=>new Response('upstream body must stay private',{status:503,headers:{'content-type':'text/html'}}));
   await assert.rejects(()=>searchArchiveSongs('private search retry fixture'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
-  assert.equal(events.length,3);
+  assert.equal(events.length,4);
   for(const [name,details] of events){assert.equal(name,'archive_fetch_diagnostic');assert.deepEqual(details,{stage:'search',reason:'upstream_busy',status:503,contentType:'text/html'});}
   assert.doesNotMatch(JSON.stringify(events),/private|fixture|upstream body|https:/);
   events.length=0;
@@ -151,7 +151,7 @@ test('a catalog request that exhausts its first attempt still has time for a bou
   });
   const result=await searchArchiveSongs('timed catalog recovery');
   assert.equal(result.results[0]?.archiveId,'slow-catalog');
-  assert.deepEqual([...attempts.values()],[2,2,2]);
+  assert.deepEqual([...attempts.values()],[2,2,2,2]);
 });
 
 test('song index requires affirmative music metadata and per-file duration of at most five minutes',async t=>{
@@ -294,7 +294,7 @@ test('artist-qualified discovery retains credited songs among many filenames con
     return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
   });
   assert.deepEqual((await searchArchiveSongs('Signal Orchestra Midnight Motion')).results.map(song=>song.archiveId),['credited']);
-  assert.equal(catalogs,3);assert.ok(inspected<=40);
+  assert.equal(catalogs,4);assert.ok(inspected<=40);
 });
 
 test('temporary delivery failures retry with the same byte range and never cache a false empty result',async t=>{
@@ -311,7 +311,7 @@ test('temporary delivery failures retry with the same byte range and never cache
   await assert.rejects(()=>searchArchiveSongs('Delivery recovery melody'),(error:unknown)=>error instanceof ArchiveError&&error.retryable);
   assert.equal(probes,3);available=true;
   const recovered=await searchArchiveSongs('Delivery recovery melody');
-  assert.equal(recovered.results[0]?.archiveId,'delivery-recovery');assert.equal(probes,5);assert.equal(searches,6);
+  assert.equal(recovered.results[0]?.archiveId,'delivery-recovery');assert.equal(probes,5);assert.equal(searches,8);
 });
 
 test('verified duration limits partition search caches and apply at metadata and audio boundaries',async t=>{
@@ -337,4 +337,67 @@ test('verified duration limits partition search caches and apply at metadata and
     if(delta)assert.throws(()=>validateArchiveSongFrames(bytes.buffer,maximumSeconds,maximumSeconds),e=>e instanceof ArchiveError&&e.code==='track_too_long');
     else assert.doesNotThrow(()=>validateArchiveSongFrames(bytes.buffer,maximumSeconds,maximumSeconds));
   }
+});
+
+const partialAudio=()=>new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
+
+test('a bare artist name finds the band instead of books that share the word',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;queries.push(q);
+      return Response.json({response:{docs:q.includes('creator:"regina"')
+        ?[{identifier:'band',title:'Greatest Hits',creator:'Regina'},{identifier:'shared',title:'Film score',creator:'Michael Kamen, Regina'},{identifier:'other',title:'Songs',creator:'Regina Spektor'}]
+        :[{identifier:'book',title:'Regina of Scots',creator:'Jacob Abbott'}]}});
+    }
+    if(url.pathname==='/metadata/band')return metadata({title:'Greatest Hits',creator:'Regina'},[file({title:'Radio Song'})]);
+    if(url.pathname==='/metadata/shared')return metadata({title:'Film score',creator:'Michael Kamen, Regina'},[file({title:'Princes'})]);
+    if(url.pathname==='/metadata/other')return metadata({title:'Songs',creator:'Regina Spektor'},[file({title:'Samson'})]);
+    if(url.pathname==='/metadata/book')return metadata({title:'Regina of Scots',creator:'Jacob Abbott',subject:'Librivox'},[file({title:'Regina of Scots part one'})]);
+    return partialAudio();
+  });
+  const found=await searchArchiveSongs('regina');
+  assert.deepEqual(found.results.map(song=>song.archiveId).sort(),['band','shared']);
+  assert.equal(queries.length,4);
+  assert.ok(queries.every(q=>q.includes('NOT collection:(librivoxaudio OR audio_bookspoetry)')),'spoken-word collections stay out of every query');
+  assert.ok(queries.includes(queries.find(q=>q.endsWith('creator:"regina"'))!),'the whole name is searched as one credit');
+});
+
+test('a named artist outranks a title that merely contains the word, and file credits still win',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'mirror-word',title:'Mirrors song',creator:'Solo Player'},{identifier:'mirror-artist',title:'Album',creator:'The Mirrors'},{identifier:'mirror-compilation',title:'Sampler',creator:'Mirrors'}]}});
+    if(url.pathname==='/metadata/mirror-word')return metadata({title:'Mirrors song',creator:'Solo Player'},[file({title:'Mirrors song'})]);
+    if(url.pathname==='/metadata/mirror-artist')return metadata({title:'Album',creator:'The Mirrors'},[file({title:'First Light'})]);
+    if(url.pathname==='/metadata/mirror-compilation')return metadata({title:'Sampler',creator:'Mirrors'},[file({title:'Guest Track',artist:'Someone Else'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('mirrors')).results.map(song=>song.archiveId),['mirror-artist','mirror-word']);
+});
+
+test('credit matching handles articles and shared credits without partial names',()=>{
+  assert.ok(creditMatchesQuery('The Beatles','beatles'));
+  assert.ok(creditMatchesQuery('Beatles','the beatles'));
+  assert.ok(creditMatchesQuery('Michael Kamen, Queen','queen'));
+  assert.ok(creditMatchesQuery('Simon and Garfunkel','simon and garfunkel'));
+  assert.ok(creditMatchesQuery('Bob Dylan feat. The Band','the band'));
+  assert.ok(!creditMatchesQuery('Ellery Queen','queen'));
+  assert.ok(!creditMatchesQuery('Queen Latifah','queen'));
+  assert.ok(!creditMatchesQuery('','queen'));
+});
+
+test('search titles are readable when files carry encoded names or folder paths',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'paths',title:'Loose',creator:'Tidy Band'}]}});
+    if(url.pathname==='/metadata/paths')return metadata({title:'Loose',creator:'Tidy Band'},[
+      file({name:'Loose/Disc 1/04 Downer.mp3',title:'Loose/Disc 1/04 Downer'}),
+      file({name:'Tidy%20Song.mp3',title:'Tidy%20Song'}),
+      file({name:'other.mp3',title:'AC/DC Tribute'}),
+    ]);
+    return partialAudio();
+  });
+  const titles=(await searchArchiveSongs('tidy band')).results.map(song=>song.title).sort();
+  assert.deepEqual(titles,['04 Downer','AC/DC Tribute','Tidy Song']);
 });

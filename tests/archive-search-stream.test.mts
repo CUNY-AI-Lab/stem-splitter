@@ -49,9 +49,9 @@ test('verified songs stream before a slow catalog finishes, while concurrent sea
     let final;
     for (;;) {const value=await reader.read();if(value.done)break;const part=packet(value.value);if(part.done)final=part;}
     assert.equal(final.results.length,1); assert.equal((await joined).results.length,1);
-    assert.equal(calls,5,'three catalogs, one metadata request and one audio probe are shared');
+    assert.equal(calls,6,'four catalogs, one metadata request and one audio probe are shared');
     const cached=await archiveSongSearchResponse('rapid melody',false);
-    assert.equal(cached.status,200); assert.equal((await cached.json()).results.length,1); assert.equal(calls,5);
+    assert.equal(cached.status,200); assert.equal((await cached.json()).results.length,1); assert.equal(calls,6);
   } finally {catalog.resolve(); download.resolve(); await reader.cancel();}
 });
 
@@ -66,7 +66,7 @@ test('canceling one streaming reader leaves another subscriber able to complete'
   const abandoned=await archiveSongSearchResponse('Cancel melody',true);
   const active=archiveSongSearchResponse('Cancel melody',false);
   await abandoned.body!.cancel();gate.resolve();
-  const response=await active;assert.equal(response.status,200);assert.equal((await response.json()).results.length,1);assert.equal(calls,5);
+  const response=await active;assert.equal(response.status,200);assert.equal((await response.json()).results.length,1);assert.equal(calls,6);
 });
 
 test('stream failures are explicit and failed searches can be retried through JSON',async t=>{
