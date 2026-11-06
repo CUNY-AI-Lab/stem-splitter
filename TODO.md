@@ -7,7 +7,7 @@
 - [x] Make Resplit explanations and remaining limits reflect the actual guest/member session; use “guest turns.”
 - [x] Keep instrument labels on one line with the full name available.
 - [x] Exclude teaching instructions from guest and Personal Listening Guy calls and reject old teaching-influenced guide caches.
-- [ ] Finish final aggregate checks and production verification for this stateful-controls follow-up; see [release scope](docs/evaluation/2026-11-05-stateful-navigation-resplits.md).
+- [x] Finish final aggregate checks and production verification for the stateful-controls follow-up: PR #94, production `4c11548`, 1,204 local checks and exact served assets verified November 6. See [release scope](docs/evaluation/2026-11-05-stateful-navigation-resplits.md).
 
 - [x] Keep one search field directly below upload; remove the repository selector, search heading, and accordion.
 - [x] Restore the complete interface's 780px desktop container, including workspace and settings; refresh stylesheet versions.
@@ -17,7 +17,25 @@
 - [x] Save the per-recording action menu, exclusive playback, reload, and stalled-playback fixes in the recovered local candidate.
 - [ ] Replace fixed-category separation for both initial splits and resplits with a validated audio-derived source path.
 - [ ] Pass all 18 real-audio cases: three genres × 2/4/6 outputs × initial/resplit, with correct instrument labels and useful isolation.
-- [ ] Complete authorized release verification and publication. Local checks do not establish a production release.
+- [x] Complete the authorized Search/UI/resplit-controls release verification and publication (PRs #93 and #94). This does not complete the separate instrument-model acceptance gate.
+
+## Stateful application audit — November 6, 2026
+
+- [x] Trace guest, SSO-authenticated CAIL individual, enrolled student, course instructor and application instructor/admin authority across application surfaces.
+- [x] Reproduce and fix first-page-only Instructor Console class discovery.
+- [x] Reproduce and fix stale Workspace capabilities after the same person's class role changes.
+- [x] Reproduce and fix application instructor folders remaining visible after that role is revoked; preserve drafts across a temporary read outage.
+- [x] Bound repeated/empty class pagination on Splitter, Workspace and Instructor Console; retain Personal access when optional class discovery fails.
+- [x] Fence late class discovery after session loss, keeping a retained report and avoiding duplicate cleanup exceptions.
+- [x] Complete final local audit verification: 1,278/1,278 checks, three typechecks and the production dry build. See the [audit record](docs/evaluation/2026-11-06-statefulness-audit.md); exact publication and served-production identity belong in the separate release receipt.
+
+The instrument/source-selection items above remain blocked on demonstrated
+model quality, a licensed calibration/evaluation set, and the existing
+conditional paid-trial gates. The saved EfficientAT diagnostic did not
+establish reliable output labels. The proposed SAM trial still requires an
+enforceable all-in $0.50 maximum and permission to transmit its specific
+excerpts; neither is established. No paid call or upload is authorized by this
+audit. These checks cannot be marked complete by UI tests.
 
 The last two model evaluations have not established reliable isolation. The
 November 5 [source-separation record](docs/evaluation/2026-11-05-source-separation-status.md)

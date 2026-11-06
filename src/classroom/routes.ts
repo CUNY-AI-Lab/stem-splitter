@@ -41,6 +41,14 @@ routes.get('/courses', async c => {
   const allowed = courseIds(c.env);
   return c.json({ courses:(result.assignments as CourseAssignmentV2[]).filter(row=>allowed.includes(row.classId)), nextCursor:value.nextCursor });
 });
+// The middleware resolves this exact class for the current identity on every
+// request. Clients must not keep using capabilities from an old discovery page.
+routes.get('/courses/:courseId', c => {
+  const course = c.get('principal')!.course;
+  if (!course || course.classId !== c.req.param('courseId')) throw new CourseError(403, 'course_not_available');
+  c.header('Cache-Control', 'private, no-store');
+  return c.json({ course });
+});
 routes.get('/courses/:courseId/roster',async c=>{
   const p=c.get('principal')!; const courseId=c.req.param('courseId'); capability(p,'rosterRead',courseId);
   if (!c.env.ADMISSION_RESOLVER?.listCourseRosterV2) throw new CourseError(503,'course_authority_unavailable');

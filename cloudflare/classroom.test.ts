@@ -48,6 +48,29 @@ async function setup(){
   }
   return {db,env,request,job,revoked,calls:()=>calls,principal:async(who:Person='alice',courseId=A)=>({subject:ids[who],role:'student',displayName:'Alice',course:await courseFixture(ids[who],courseId),courseId} as AppPrincipal)};
 }
+test('current class access snapshots are private, scoped and refreshed for the same person',async()=>{
+  const {request,env}=await setup();
+  assert.equal((await request(`/api/classroom/courses/${A}`,'outsider')).status,403);
+  assert.equal((await request('/api/classroom/courses/unconfigured-course')).status,403);
+  let owner=false;
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async({subject,classId})=>courseFixture(subject,classId,owner);
+  for(const nextOwner of [false,true,false]) {
+    owner=nextOwner;
+    const response=await request(`/api/classroom/courses/${A}`);
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('cache-control') || '', /private.*no-store/);
+    const {course}=await response.json() as any;
+    assert.equal(course.classId,A);
+    assert.equal(course.capabilities.instructorPanel,owner);
+    assert.equal(course.participant,!owner);
+  }
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>({ok:false,code:'revoked',retryable:false});
+  assert.equal((await request(`/api/classroom/courses/${A}`)).status,403);
+  assert.equal((await request('/api/account')).status,200);
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>{throw new Error('fixture authority outage');};
+  assert.equal((await request(`/api/classroom/courses/${A}`)).status,503);
+  assert.equal((await request('/api/account')).status,200);
+});
 test('Lab membership grants personal access while course enrollment and ownership protect course APIs',async()=>{
   const {request,job,revoked,env}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
   const outsiderAccount=await request('/api/account','outsider');assert.equal(outsiderAccount.status,200);

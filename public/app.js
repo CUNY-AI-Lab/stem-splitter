@@ -267,12 +267,14 @@ async function initializeCourseSelection() {
     const sequence = ++courseSelectionSequence;
     courseSelectionPending = true; select.disabled = true;
     try {
-      const courses = []; let cursor = null;
+      const courses = []; let cursor = null; const seen = new Set();
       do {
         const response = await fetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
         if (!response.ok) throw new Error('Class access is temporarily unavailable. Choose Personal or reload to retry.');
         const data = await response.json(); courses.push(...(data.courses || [])); cursor = data.nextCursor;
-      } while (cursor && courses.length < 1000);
+        if (cursor && (seen.has(cursor) || seen.size >= 9)) throw new Error('Class access could not be fully checked. Choose Personal or reload to retry.');
+        if (cursor) seen.add(cursor);
+      } while (cursor);
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
       const valid = new Set(['personal',...courses.map(course=>course.classId)]);
       const previous = initialized ? selectedCourse : requestedCourse;
@@ -3975,41 +3977,79 @@ function armThenRun(button, armedLabel, action) {
 // their delete/reset controls work without any sign-in.
 
 let instructor = null; // { username, displayName } once /api/teacher/me says so
+let instructorGeneration = 0, instructorCheck = null, instructorVerified = false, foldersLoaded = false;
 let folders = []; // [{ id, name, itemCount, ... }]
 const folderList = document.getElementById('folder-list');
 const foldersSection = document.getElementById('folders');
 const foldersEmpty = document.getElementById('folders-empty');
 
+function showInstructorTools(verified) {
+  instructorVerified = verified;
+  document.body.classList.toggle('instructor', verified);
+  foldersSection.hidden = !verified;
+  for (const menu of document.querySelectorAll('.folder-menu')) menu.hidden = !verified;
+}
+
+function clearInstructorAccess() {
+  instructorGeneration++;
+  instructorCheck?.abort(); instructorCheck = null;
+  showInstructorTools(false);
+  instructor = null; folders = []; foldersLoaded = false;
+  folderList.replaceChildren();
+  for (const menu of document.querySelectorAll('.folder-menu')) menu.remove();
+}
+
 async function detectInstructor() {
+  const generation = ++instructorGeneration, actor = accountSubject;
+  instructorCheck?.abort();
+  const controller = new AbortController(); instructorCheck = controller;
+  const timer = setTimeout(() => controller.abort(), 5000);
+  showInstructorTools(false);
   try {
-    const res = await fetch('/api/teacher/me');
-    if (!res.ok) return;
+    const res = await fetch('/api/teacher/me', { cache: 'no-store', signal: controller.signal });
+    if (generation !== instructorGeneration || actor !== accountSubject) return;
+    if (!res.ok) {
+      if ([401, 403].includes(res.status)) clearInstructorAccess();
+      return;
+    }
     const { teacher } = await res.json();
-    if (!teacher) return; // a student — the folder UI stays hidden
+    if (generation !== instructorGeneration || actor !== accountSubject) return;
+    if (!teacher) { clearInstructorAccess(); return; }
+    if (instructor?.username !== teacher.username) {
+      folders = []; foldersLoaded = false; folderList.replaceChildren();
+      for (const menu of document.querySelectorAll('.folder-menu')) menu.remove();
+    }
     instructor = teacher;
-    document.body.classList.add('instructor');
-    foldersSection.hidden = false;
-    await refreshFolders();
+    showInstructorTools(true);
+    // Revalidating an unchanged instructor must not discard a folder draft.
+    if (!foldersLoaded) await refreshFolders();
   } catch {
-    // Network blip at load: stay in student mode rather than half-reveal UI.
+    if (generation === instructorGeneration) showInstructorTools(false);
+  } finally {
+    clearTimeout(timer);
+    if (instructorCheck === controller) instructorCheck = null;
   }
 }
 
-// Signing in happens on /teacher.html, usually in another tab. Re-probe when
-// this page regains focus so the instructor controls appear without a manual
-// reload.
-window.addEventListener('focus', () => {
-  if (!instructor) void detectInstructor();
-});
+// Grants can be added, expire or be revoked while this document is open.
+window.addEventListener('focus', () => void detectInstructor());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void detectInstructor(); });
 
 async function refreshFolders() {
+  const generation = instructorGeneration, actor = accountSubject;
   try {
-    const res = await fetch('/api/teacher/folders');
-    if (!res.ok) return;
-    folders = (await res.json()).folders || [];
+    const res = await fetch('/api/teacher/folders', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    const body = await res.json();
+    if (generation !== instructorGeneration || actor !== accountSubject || !instructorVerified) return;
+    if (!res.ok) {
+      if ([401, 403].includes(res.status)) clearInstructorAccess();
+      else showInstructorTools(false);
+      return;
+    }
+    folders = body.folders || []; foldersLoaded = true;
     renderFolders();
   } catch {
-    // Keep the last known list on a network blip.
+    if (generation === instructorGeneration) showInstructorTools(false);
   }
 }
 
@@ -4183,7 +4223,7 @@ function toggleFolderMenu(mixer) {
     mixer.setCollapsed(false);
     setJobCollapsed(mixer.job.id, false);
   }
-  if (!instructor) {
+  if (!instructorVerified) {
     // The button is CSS-hidden for students, so landing here usually means an
     // expired teacher session or a stale cached stylesheet. Say so instead of
     // doing nothing.
@@ -4191,7 +4231,7 @@ function toggleFolderMenu(mixer) {
     hint.className = 'folder-menu';
     hint.innerHTML = `
       <p class="folder-menu-title mono">INSTRUCTOR TOOL</p>
-      <p class="folder-menu-none">Folders need an instructor sign-in. Open the INSTRUCTOR link in the footer, sign in, then come back to this tab.</p>
+      <p class="folder-menu-none">Instructor folder access could not be verified. Return to this tab to check your current access.</p>
     `;
     mixer.el.querySelector('.console-head').after(hint);
     setTimeout(() => hint.remove(), 8000);
@@ -5629,6 +5669,7 @@ async function initialize() {
       accountSubject = principal.subject;
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
+        clearInstructorAccess();
         resplitAbort?.abort(); resplitDialog?.close(); resplitRequests.clear();
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
