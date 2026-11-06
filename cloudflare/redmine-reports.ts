@@ -17,7 +17,7 @@ async function redmine(key: string, resource: string, signal: AbortSignal, init:
   // A definite rejection needs no body; upstream streams may stall or be huge.
   if (REDIRECTS.has(response.status)) {
     void response.body?.cancel().catch(() => {});
-    return { status: response.status, ok: false, data: null };
+    return { status: response.status, ok: false, data: null, emailUpdates: undefined };
   }
   const reader = response.body?.getReader();
   let length = 0, text = '';
@@ -34,7 +34,9 @@ async function redmine(key: string, resource: string, signal: AbortSignal, init:
   } finally { void reader?.cancel().catch(() => {}); }
   let data: any = null;
   try { data = JSON.parse(text); } catch { /* Unreadable replies keep the receipt pending. */ }
-  return { status: response.status, ok: response.ok, data };
+  const updates = response.headers.get('X-CAIL-Report-Updates');
+  const emailUpdates: 'subscribed' | 'confirm' | undefined = updates === 'subscribed' || updates === 'confirm' ? updates : undefined;
+  return { status: response.status, ok: response.ok, data, emailUpdates };
 }
 
 async function findIssue(key: string, owner: string, id: string, at: string, signal: AbortSignal): Promise<number | null> {
@@ -57,7 +59,7 @@ export function redmineReports(db: D1Database, key: string): BugReportService {
   async function deliver(report: Parameters<BugReportService['submitAuthenticated']>[0] & { contact?: GuestContact; rateKey?: string }): Promise<BugReportResult> {
     const owner = await bugReportActor(report.contact ? `guest-report-email:v1\n${report.contact.email}` : report.subject), id = report.reportId;
     const table = report.contact ? 'bug_report_guest_receipts' : 'bug_report_receipts';
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${id}\n${report.path}\n${report.description}${report.contact ? `\n${JSON.stringify(report.contact)}` : ''}`));
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${id}\n${report.path}\n${report.description}${report.contact ? `\n${JSON.stringify(report.contact)}` : ''}${report.replyEmail ? `\nreply:${report.replyEmail}` : ''}`));
     const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
     const createdAt = new Date().toISOString();
     try {
@@ -78,10 +80,10 @@ export function redmineReports(db: D1Database, key: string): BugReportService {
         .bind(owner, id).first<Receipt>();
       if (!receipt) return failure('rate_limited', true, 3600);
       if (receipt.fingerprint !== fingerprint) return failure('idempotency_conflict');
-      const saved = (): BugReportResult => ({ ok: true, status: 'saved', reportId: id, createdAt: receipt.created_at });
-      const save = async (issueId: number) => {
+      const saved = (emailUpdates?: 'subscribed' | 'confirm'): BugReportResult => ({ ok: true, status: 'saved', reportId: id, createdAt: receipt.created_at, ...(emailUpdates ? { emailUpdates } : {}) });
+      const save = async (issueId: number, emailUpdates?: 'subscribed' | 'confirm') => {
         await db.prepare(`UPDATE ${table} SET state='saved',issue_id=? WHERE owner=? AND report_id=?`).bind(issueId, owner, id).run();
-        return saved();
+        return saved(emailUpdates);
       };
       if (receipt.state === 'saved') return saved();
       if (receipt.state === 'rejected') return failure('redmine_rejected');
@@ -97,14 +99,16 @@ export function redmineReports(db: D1Database, key: string): BugReportService {
         return found === null ? failure('unavailable', true, 60) : save(found);
       }
       const page = ({ '/': 'Workspace', '/teacher.html': 'Instructor', '/account.html': 'Account', '/classroom.html': 'Classroom' } as Record<string,string>)[report.path];
+      const address = report.contact?.email || report.sessionEmail || report.replyEmail;
+      const reporter = address ? { email: address, source: report.sessionEmail && !report.contact ? 'cuny_login' : 'contact' } : undefined;
       const result = await redmine(key, 'issues.json', signal, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(owner, id), is_private: true,
+        body: JSON.stringify({ cail_reporter: reporter, issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(owner, id), is_private: true,
           description: [...(report.contact ? [`Reporter (self-reported): ${report.contact.firstName} ${report.contact.lastName}`, `Contact email (unverified): ${report.contact.email}`]
-            : [`CAIL account reference: ${owner.slice(0,16)}`, ...(report.preferredName ? [`SSO preferred name: ${report.preferredName}`] : [])]), `Page: ${page}`, `Stem Splitter release: ${report.release}`,
+            : [`CAIL account reference: ${owner.slice(0,16)}`, ...(report.preferredName ? [`SSO preferred name: ${report.preferredName}`] : []), ...(report.sessionEmail ? [`SSO email: ${report.sessionEmail}`] : [])]), `Page: ${page}`, `Stem Splitter release: ${report.release}`,
             `Reported at: ${receipt.created_at}`, `Report reference: ${id}`, '', report.description].join('\n'),
         } }),
       });
-      if (result.ok && Number.isSafeInteger(result.data?.issue?.id) && result.data.issue.id > 0) return save(result.data.issue.id);
+      if (result.ok && Number.isSafeInteger(result.data?.issue?.id) && result.data.issue.id > 0) return save(result.data.issue.id, result.emailUpdates);
       if (result.status === 429) {
         await db.prepare(`UPDATE ${table} SET state='retryable' WHERE owner=? AND report_id=?`).bind(owner, id).run();
         return failure('rate_limited', true, 60);

@@ -9,7 +9,7 @@ const saved = (id: string) => ({ ok: true as const, status: 'saved' as const, re
 
 test('preserved dev reporting uses verified account names and requires the same actor', async () => {
   const calls: unknown[] = [];
-  const options = { origin, subject: 'cail-' + 'a'.repeat(32), preferredName: 'Fixture Teacher', release: 'dev-test', limiter: { limit: async () => ({ success: true }) }, service: { submitAuthenticated: async (data: any) => { calls.push(data); return saved(data.reportId); } } };
+  const options = { origin, subject: 'cail-' + 'a'.repeat(32), preferredName: 'Fixture Teacher', sessionEmail:'verified@college.edu', release: 'dev-test', limiter: { limit: async () => ({ success: true }) }, service: { submitAuthenticated: async (data: any) => { calls.push(data); return saved(data.reportId); } } };
   const actor = await bugReportActor(options.subject);
   const session = await handleBugReport(new Request(origin + '/api/bug-reports/session', { headers: { 'cf-connecting-ip': '192.0.2.5' } }), options);
   assert.equal(session.status, 200);
@@ -18,6 +18,16 @@ test('preserved dev reporting uses verified account names and requires the same 
   assert.equal(calls.length, 0);
   assert.equal((await handleBugReport(request('/api/bug-reports', { ...report, expectedActor: actor }), options)).status, 200);
   assert.equal((calls[0] as any).preferredName, 'Fixture Teacher');
+  assert.equal((calls[0] as any).sessionEmail, 'verified@college.edu');
+  const forged = {...report, expectedActor:actor, replyEmail:'other@college.edu'};
+  assert.equal((await handleBugReport(request('/api/bug-reports', forged), options)).status, 400);
+  const typed = {...options, sessionEmail:null, acceptsReplyEmail:true};
+  const reply = await handleBugReport(new Request(origin+'/api/bug-reports/session',{headers:{'cf-connecting-ip':'192.0.2.5'}}),typed);
+  assert.equal((await reply.json() as any).needsReplyEmail,true);
+  assert.equal((await handleBugReport(request('/api/bug-reports',{...forged,replyEmail:'bad@example.com'}),typed)).status,400);
+  assert.equal((await handleBugReport(request('/api/bug-reports',forged),typed)).status,200);
+  assert.equal((calls[1] as any).sessionEmail,undefined);
+  assert.equal((calls[1] as any).replyEmail,'other@college.edu');
 });
 
 test('dev guest reports validate contact and origin before delivery', async () => {

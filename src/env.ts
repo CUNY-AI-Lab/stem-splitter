@@ -13,7 +13,7 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   RUN_DELETION_ENABLED?: string;
   CAIL_IDENTITY_JWKS?: string;
   /** Set by the Worker adapter, never by browser input or environment JSON. */
-  verifyCailIdentity?: (token: string, jwks: string | undefined) => Promise<{ subject: string; name?: string } | null | 'unavailable'>;
+  verifyCailIdentity?: (token: string, jwks: string | undefined) => Promise<{ subject: string; name?: string; email?: string } | null | 'unavailable'>;
   /** Private adapter dependencies; never accepted from a request body. */
   assistantTransport?: typeof import('./assistant/openrouter.ts').openRouterChatStream;
   assistantQuota?: () => Promise<unknown>;

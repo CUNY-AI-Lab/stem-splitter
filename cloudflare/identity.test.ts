@@ -155,11 +155,12 @@ test('a null instructor end date is distinct from expired, empty or malformed da
   }
 });
 
-test('the report principal preserves the verified student preferred name', async () => {
+test('the report principal uses the student name and email from the signed identity', async () => {
   const { env } = setup();
-  const jwt = await issuer.mintIdentityJwt({ audience: STEM_AUDIENCE, subject: TEST_SUBJECTS.alice, name: 'Sam Student' });
+  const jwt = await issuer.mintIdentityJwt({ audience: STEM_AUDIENCE, subject: TEST_SUBJECTS.alice, name: 'Sam Student', email: 'verified@example.edu' });
   const principals: AppPrincipal[] = [];
   assert.equal(await authorizeCailRequest(req('/api/bug-reports/session', jwt), env, value => principals.push(value)), null);
   assert.equal(principals[0].preferredName, 'Sam Student');
+  assert.equal(principals[0].reportEmail, 'verified@example.edu');
   assert.notEqual(principals[0].role, 'admin');
 });

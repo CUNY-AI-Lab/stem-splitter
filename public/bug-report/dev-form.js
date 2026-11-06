@@ -1,4 +1,4 @@
-import { parseGuestContact } from './contact.js';
+import { parseGuestContact, reportEmail } from './contact.js';
 
 /** Shared CAIL report footer: verified SSO or .edu contact, memory-only drafts. */
 export function mountBugReport(container, { loginUrl = '/auth/start', loginClassName = '', path = () => location.pathname,
@@ -27,6 +27,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
             </div>
             <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="you@college.edu" required><span class="bug-report__error" data-error="email" hidden></span></label>
           </fieldset>
+          <label class="bug-report__reply-email" hidden>Email for updates<input name="replyEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@college.edu" disabled><span class="bug-report__error" data-error="replyEmail" hidden></span></label>
         </div>
         <div class="bug-report__field">
           <div class="bug-report__label"><label>What went wrong?<textarea name="description" required minlength="10" maxlength="4000" rows="4" placeholder="Explain in detail."></textarea></label><span class="bug-report__count" aria-hidden="true">0 / 4,000</span></div>
@@ -49,13 +50,15 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
   const identity = form.querySelector('.bug-report__identity'), identityStatus = form.querySelector('.bug-report__identity-status');
   const contactFields = form.querySelector('.bug-report__contact');
   contactFields.id = `${instanceId}-contact`; guestToggle.setAttribute('aria-controls', contactFields.id);
-  for (const field of ['firstName', 'lastName', 'email', 'description']) {
+  for (const field of ['firstName', 'lastName', 'email', 'replyEmail', 'description']) {
     const error = form.querySelector(`[data-error="${field}"]`); error.id = `${instanceId}-${field}-error`;
     form.elements.namedItem(field).setAttribute('aria-describedby', error.id);
   }
   signIn.href = loginUrl;
   for (const name of loginClassName.split(/\s+/).filter(Boolean)) signIn.classList.add(name);
   let actor = null, preferredName = '', session = 'loading', guestOpen = false, draftActor = null;
+  let needsReplyEmail = false;
+  const replyField = form.elements.namedItem('replyEmail');
   let report = null, reportMode = null, snapshot = '', busy = false, checking = null, lastCheck = 0;
   let locked = false, done = false, terminal = false, disposed = false, cooldown = null;
   let isOpen = false, layoutFrame = null;
@@ -63,7 +66,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
   const show = (message, tone = 'info') => { status.textContent = message; panel.dataset.tone = tone; schedulePosition(); };
   const guestMode = () => locked ? reportMode === 'guest' : guestOpen && session !== 'signed-in' && !draftActor;
   const accountChanged = () => Boolean(draftActor && (session !== 'signed-in' || actor !== draftActor));
-  const hasDraft = () => !done && (description.value.length > 0 || report !== null || ['firstName', 'lastName', 'email'].some(key => form.elements.namedItem(key).value.length > 0));
+  const hasDraft = () => !done && (description.value.length > 0 || report !== null || ['firstName', 'lastName', 'email', 'replyEmail'].some(key => form.elements.namedItem(key).value.length > 0));
   const draftChanged = () => {
     const pending = hasDraft();
     badge.hidden = !pending && !done; badge.textContent = done ? 'Sent' : 'Draft';
@@ -87,6 +90,9 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
     guestToggle.disabled = busy || locked || Boolean(draftActor) || terminal;
     guestToggle.setAttribute('aria-expanded', String(guest));
     contactFields.hidden = !guest; contactFields.disabled = !guest || busy || locked || done || terminal;
+    const askEmail = session === 'signed-in' && needsReplyEmail && !guest && !changed && !done;
+    replyField.parentElement.hidden = !askEmail;
+    replyField.disabled = !askEmail || busy || locked || terminal;
     form.setAttribute('aria-busy', String(busy || Boolean(checking)));
     panel.dataset.state = done ? 'saved' : busy ? 'sending' : 'idle';
     draftChanged(); schedulePosition();
@@ -106,6 +112,10 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
         const message = parsed.ok ? '' : parsed.errors[field] || '';
         fieldError(field, message); if (message && !first) first = field;
       }
+    }
+    if (!replyField.disabled && !reportEmail(replyField.value)) {
+      fieldError('replyEmail', 'Use a valid .edu email address.');
+      first ||= 'replyEmail';
     }
     const message = description.value.trim().length < 10 || description.value.length > 4000 ? 'Use 10–4,000 characters.' : '';
     fieldError('description', message); if (message && !first) first = 'description';
@@ -137,7 +147,9 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
         const { response, result } = await fetchJson(sessionEndpoint, {}, 8000);
         if (disposed) return;
         if (response.ok && result?.ok === true && /^[0-9a-f]{64}$/.test(result.expectedActor)) {
+          if (actor !== result.expectedActor) replyField.value = '';
           actor = result.expectedActor; session = 'signed-in';
+          needsReplyEmail = result.needsReplyEmail === true;
           preferredName = typeof result.preferredName === 'string' ? result.preferredName.slice(0, 160) : '';
           if (!locked) guestOpen = false;
         } else {
@@ -161,7 +173,10 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
       const data = { description: description.value.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').trim(), path: path() };
       reportMode = guestMode() ? 'guest' : 'account';
       if (reportMode === 'guest') Object.assign(data, parseGuestContact(contactValue()).contact);
-      else { data.expectedActor = actor; draftActor = actor; }
+      else {
+        data.expectedActor = actor; draftActor = actor;
+        if (needsReplyEmail) data.replyEmail = reportEmail(replyField.value);
+      }
       const next = JSON.stringify(data);
       if (snapshot !== next) { snapshot = next; report = { reportId: crypto.randomUUID(), ...data }; }
     }
@@ -173,7 +188,9 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
       const code = codeOf(result);
       if (response.ok && result?.ok === true && result.status === 'saved' && result.reportId === report.reportId
         && typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt))) {
-        done = true; locked = true; submitButton.textContent = 'Sent'; show(result.delivery === 'email' ? 'Report recorded. Email accepted for delivery.' : 'Sent. Thank you.', 'success');
+        done = true; locked = true; submitButton.textContent = 'Sent';
+        const update = result.emailUpdates === 'confirm' ? ' Keep this reference to confirm updates with your emailed code.' : result.emailUpdates === 'subscribed' ? ' Email updates are on.' : '';
+        show(result.delivery === 'email' ? 'Report recorded. Email accepted for delivery.' : `Saved to CAIL Ticketing. Reference: ${report.reportId}.${update}`, 'success');
       } else if (code === 'account_changed' || response.status === 401 || code === 'not_admitted' || code === 'admission_required') {
         actor = null; preferredName = ''; session = 'signed-out'; show('Sign in again to send this draft.', 'attention');
       } else if (code === 'invalid_contact' && !locked) {
@@ -246,13 +263,14 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
   };
   const inputChanged = event => {
     const field = event.target.name;
-    if (!['firstName', 'lastName', 'email', 'description'].includes(field)) return;
+    if (!['firstName', 'lastName', 'email', 'replyEmail', 'description'].includes(field)) return;
     if (field === 'description' && !locked) {
       if (!description.value.trim()) draftActor = null;
       else if (!draftActor && session === 'signed-in') draftActor = actor;
     }
     if (event.target.getAttribute('aria-invalid') === 'true') {
       if (field === 'description') fieldError(field, description.value.trim().length < 10 ? 'Use 10–4,000 characters.' : '');
+      else if (field === 'replyEmail') fieldError(field, reportEmail(replyField.value) ? '' : 'Use a valid .edu email address.');
       else { const parsed = parseGuestContact(contactValue()); fieldError(field, parsed.ok ? '' : parsed.errors[field] || ''); }
     }
     render();

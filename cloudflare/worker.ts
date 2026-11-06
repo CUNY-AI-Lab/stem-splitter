@@ -142,7 +142,7 @@ export default {
           const denied = await authorizeCailRequest(internal, { ...env, verifyCailIdentity }, value => { principal = value; });
           response = denied ?? (principal
             ? await handleDevBugReport(internal, { origin: env.PUBLIC_BASE_URL, subject: principal.subject,
-              preferredName: principal.preferredName, release: env.RELEASE,
+              preferredName: principal.preferredName, sessionEmail: principal.reportEmail, acceptsReplyEmail: Boolean(env.REDMINE_API_KEY), release: env.RELEASE,
               service: env.BUG_REPORT_MODE === 'redmine-fallback' ? reportDelivery(env.DB, env.REDMINE_API_KEY, env.BUG_REPORTS) : redmineReports(env.DB, env.REDMINE_API_KEY!), limiter: env.REQUEST_LIMIT })
             : Response.json({ ok: false, code: 'unavailable' }, { status: 503 }));
         }

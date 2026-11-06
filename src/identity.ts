@@ -4,11 +4,12 @@ import { STEM_COURSE_ID } from './classroom/contract.ts';
 import type { AdmissionCourseResolver, CourseAssignmentV2 } from './classroom/contract.ts';
 import type { Env } from './env.ts';
 import { authorizeGuestRequest } from './guest/access.ts';
+import { reportEmail } from '../public/bug-report/contact.js';
 import { currentMembership } from './membership.ts';
 
 export const STEM_AUDIENCE = 'cail:stem-splitter';
 export type AppRole = 'student' | 'member' | 'instructor' | 'admin' | 'guest';
-export interface AppPrincipal { subject: string; role: AppRole; quotaClass?: 'member' | 'guest'; displayName: string; preferredName?: string | null; course: CourseAssignmentV2 | null; courseId: string | null; }
+export interface AppPrincipal { subject: string; role: AppRole; quotaClass?: 'member' | 'guest'; displayName: string; preferredName?: string | null; reportEmail?: string | null; course: CourseAssignmentV2 | null; courseId: string | null; }
 export interface AdmissionResolver extends AdmissionCourseResolver {
   resolveMembership(input: { subject: string }): Promise<unknown>;
 }
@@ -114,6 +115,7 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
     }
     const principal: AppPrincipal = { subject: identity.subject, role, quotaClass:'member',
       displayName: cleanDisplayName(identity.name), preferredName: typeof identity.name === 'string' && identity.name.trim() ? cleanDisplayName(identity.name) : null, course,
+      ...(path.startsWith('/api/bug-reports') ? { reportEmail: reportEmail(identity.email, false) } : {}),
       courseId: !personal && request.headers.has('x-stem-course') && course ? course.classId : null };
     if (course?.displayNameSource === 'verified_profile') principal.displayName = cleanDisplayName(course.displayName);
     try { await rememberDisplayName(env, identity.subject, principal.displayName); } catch { /* Profile availability is independent of sign-in authority. */ }

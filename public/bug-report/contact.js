@@ -8,12 +8,20 @@ export function parseGuestContact(value) {
   for (const [key, label] of [['firstName', 'first name'], ['lastName', 'last name']]) {
     if (!/^[\p{L}\p{M}][\p{L}\p{M} .'’\-]{0,79}$/u.test(contact[key])) errors[key] = `Enter your ${label} (up to 80 characters).`;
   }
-  const [local, domain, extra] = contact.email.split('@');
-  if (contact.email.length > 254 || !local || local.length > 64 || extra !== undefined
-    || !/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local) || /^\.|\.$|\.\./.test(local)
-    || !domain || !/^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+edu$/i.test(domain)) {
-    errors.email = 'Use a valid .edu email address.';
-  }
-  contact.email = contact.email.toLowerCase();
+  const email = reportEmail(contact.email);
+  if (!email) errors.email = 'Use a valid .edu email address.';
+  else contact.email = email;
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, contact };
+}
+
+/** Only server-verified CUNY Login claims may use a non-.edu address. */
+export function reportEmail(value, eduOnly = true) {
+  if (typeof value !== 'string') return null;
+  const email = value.trim().toLowerCase();
+  const [local, domain, extra] = email.split('@');
+  if (email.length > 254 || !local || local.length > 64 || extra !== undefined
+    || !/^[A-Za-z0-9.!#$%&'*+/=?^_\x60{|}~-]+$/.test(local) || /^\.|\.$|\.\./.test(local)
+    || !domain || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)
+    || (eduOnly && !domain.endsWith('.edu'))) return null;
+  return email;
 }
