@@ -17,7 +17,7 @@
   const button = (text, action) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'page-btn'; node.textContent = text; node.addEventListener('click', action); return node; };
   const row = text => { const node = document.createElement('li'); node.className = 'teacher-history-item'; if (text) node.textContent = text; return node; };
   function clearCourse() {
-    renameFolder = null; el('rename-form').hidden = true; el('rename-toggle').hidden = true;
+    renameFolder = null;
     generation++; studentGeneration++; conversationGeneration++; folderGeneration++; annotationGeneration++;
     clearTimeout(refreshTimer); refreshing = false;
     for (const controller of controllers) controller.abort(); controllers.clear();
@@ -25,6 +25,9 @@
     panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null; annotationJob = null;
     rosterPages = jobsPages = conversationPages = 1;
     rosterCursor = jobsCursor = conversationCursor = conversationRevision = null;
+    // The session guard may already have removed these private descendants.
+    if (!el('rename-form')) return;
+    el('rename-form').hidden = true; el('rename-toggle').hidden = true;
     for (const id of ['roster', 'jobs', 'messages', 'folders', 'folder-items', 'notes']) el(id).replaceChildren();
     if (el('demo')) { el('demo').hidden = true; el('demo').open = false; el('demo-roster').replaceChildren(); }
     if (el('copy-status')) el('copy-status').textContent = '';
@@ -229,8 +232,17 @@
     } catch (error) { if (current === generation && view === folderGeneration) { el('folder-detail').hidden = true; el('folder-items').replaceChildren(); report('folders-status', error); } }
   }
   async function selectCourse(id) {
-    clearCourse(); const course = courses.find(course => course.classId === id); if (!course) return;
+    clearCourse(); if (!courses.some(course => course.classId === id)) return;
     el('retry').hidden = true;
+    let course;
+    try {
+      ({ course } = await request(`/api/classroom/courses/${encodeURIComponent(id)}`));
+      if (course?.classId !== id || !course.capabilities) throw new Error('Class access could not be confirmed.');
+    } catch (error) {
+      if (error.name !== 'AbortError') { status.textContent = error.message; el('retry').hidden = false; }
+      return;
+    }
+    courses = courses.map(row => row.classId === id ? course : row);
     selected = course; status.textContent = course.className; panel.hidden = false;
     try { if (choiceKey) localStorage.setItem(choiceKey,id); } catch {}
     const url = new URL(location.href); url.searchParams.set('course',id);
@@ -253,7 +265,7 @@
     clearTimeout(refreshTimer);
     if (!selected || document.visibilityState !== 'visible') return;
     // Keep loaded pagination while remaining below the 30-read/minute budget.
-    const reads = 1 + (selected.capabilities.rosterRead ? rosterPages : 0) + (student ? jobsPages : 0)
+    const reads = 2 + (selected.capabilities.rosterRead ? rosterPages : 0) + (student ? jobsPages : 0)
       + (currentFolder ? 1 : 0) + (annotationJob ? 1 : 0) + (conversationJob ? conversationPages : 0);
     refreshTimer = setTimeout(() => void refreshCourse(true), Math.max(15000, reads * 2500));
   }
@@ -269,6 +281,19 @@
     pendingRequests++; panel.dataset.checking = 'true';
     if (background) panel.dataset.backgroundRefresh = 'true';
     try {
+      const { course } = await request(coursePath(''));
+      if (current !== generation) return;
+      if (course?.classId !== selected.classId || !course.capabilities) throw new Error('Class access could not be confirmed.');
+      const authority = value => JSON.stringify([value.memberId, value.owner, value.participant,
+        value.capabilities.instructorPanel, value.capabilities.rosterRead, value.capabilities.promptRead, value.capabilities.promptWrite]);
+      if (authority(course) !== authority(selected)) {
+        // Clear the old role's roster, conversations and pending edits before
+        // loading the same person's newly authorized view. Keep the document.
+        await selectCourse(course.classId);
+        return;
+      }
+      selected = course;
+      status.textContent = course.className;
       await loadFolders();
       if (current !== generation) return;
       if (selected.capabilities.rosterRead) {
@@ -298,6 +323,11 @@
         for (let i = 1; current === generation && i < pageCounts.conversation && conversationCursor; i++) await loadConversation(conversation, true);
       }
       if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Updates automatically while this page is open.`;
+    } catch (error) {
+      if (current === generation) {
+        clearCourse(); status.textContent = 'Class access could not be confirmed. Retry to load your class work.';
+        el('retry').hidden = false;
+      }
     } finally {
       if (current === generation) { refreshing = false; panel.inert = false;
         if (focusedControl?.isConnected && document.activeElement === document.body) focusedControl.focus({preventScroll:true});
@@ -385,13 +415,19 @@
     catch { el('folder-link').focus(); el('folder-link').select(); el('copy-status').textContent = 'Select and copy this link'; }
   });
   (async () => {
+    const initialGeneration = generation;
     try {
       const { account } = await request('/api/account');
       if (account.quotaClass === 'guest') { status.textContent = 'Sign in with your CUNY account to open your classes.'; el('login').hidden = false; return; }
       window.StemSessionGuard?.start(account.subject, clearCourse);
       choiceKey = `stem-workspace-choice:v1:${account.subject}`;
-      let cursor = null;
-      do { const data = await request(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`); courses.push(...data.courses); cursor = data.nextCursor; } while (cursor && courses.length < 1000);
+      let cursor = null; const seen = new Set();
+      do {
+        const data = await request(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+        courses.push(...data.courses); cursor = data.nextCursor;
+        if (cursor && (seen.has(cursor) || seen.size >= 9)) throw new Error('Class access could not be fully checked. Reload to try again.');
+        if (cursor) seen.add(cursor);
+      } while (cursor);
       courses.sort((a,b) => Number(a.classId === 'cail-teaching-tools-demo') - Number(b.classId === 'cail-teaching-tools-demo') || a.className.localeCompare(b.className));
       el('course').append(...courses.map(course => new Option(`${course.className} · ${course.term} · ${course.section}`, course.classId)));
       document.getElementById('course-discovery').hidden = !courses.length;
@@ -400,6 +436,9 @@
       let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
       const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
       if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
-    } catch (error) { clearCourse(); status.textContent = error.message; el('login').hidden = Boolean(choiceKey); }
+    } catch (error) {
+      if (initialGeneration !== generation) return;
+      clearCourse(); status.textContent = error.message; el('login').hidden = Boolean(choiceKey);
+    }
   })();
 })();

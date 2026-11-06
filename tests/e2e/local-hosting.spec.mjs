@@ -325,10 +325,9 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // Opening the + FOLDER popover on a collapsed console must expand it first:
   // a collapsed console hides every child below its head, so without the
   // expand the menu would render invisibly and the click would look dead.
-  await page.evaluate(() => {
-    instructor = { username: 'e2e', displayName: 'E2E' };
-    document.body.classList.add('instructor');
-  });
+  await page.route('**/api/teacher/me', route => route.fulfill({ json: { teacher: { username: 'e2e', displayName: 'E2E' } } }));
+  await page.route('**/api/teacher/folders', route => route.fulfill({ json: { folders: [] } }));
+  await page.evaluate(() => detectInstructor());
   await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.console')).toHaveClass(/collapsed/);
@@ -385,10 +384,9 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await folderOpen.click();
   await expect(folderOpen).toHaveAttribute('aria-expanded', 'false');
   await expect(folderItems).toBeHidden();
-  await page.evaluate(() => {
-    instructor = null;
-    document.body.classList.remove('instructor');
-  });
+  await page.unroute('**/api/teacher/me');
+  await page.unroute('**/api/teacher/folders');
+  await page.evaluate(() => detectInstructor());
 
   expect(signedSourceUrl).toMatch(/^http:\/\/stem-splitter\.test\/api\/local-sources\//);
   const signedSourceResponse = await server.fetch(signedSourceUrl);

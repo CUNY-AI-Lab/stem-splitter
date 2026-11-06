@@ -24,6 +24,19 @@ function teacherLoginNext(courseId) {
   return `${path.pathname}${path.search}`;
 }
 
+async function instructorCourses() {
+  const courses = new Map(), seen = new Set();
+  let cursor = null;
+  do {
+    const page = await api(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+    for (const course of page.courses || []) if (course.capabilities?.instructorPanel) courses.set(course.classId, course);
+    cursor = page.nextCursor;
+    if (cursor && (seen.has(cursor) || seen.size >= 9)) throw new Error('Instructor classes could not be fully checked. Reload to try again.');
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return [...courses.values()];
+}
+
 const promptForm = document.getElementById('prompt-form');
 const amendment = document.getElementById('amendment');
 const amendmentCount = document.getElementById('amendment-count');
@@ -599,8 +612,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
       window.StemSessionGuard?.start(account.account.subject, () => denyTeacherAccess('Your account changed. Reload to check Instructor Console access.'));
       try { await window.StemGuestClaim.run(account.account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
       if (requestedCourse) {
-        const response = await api('/api/classroom/courses');
-        const course = response.courses.find(row => row.classId === requestedCourse && row.capabilities?.instructorPanel);
+        const course = (await instructorCourses()).find(row => row.classId === requestedCourse);
         if (!course) throw new Error('Instructor access is not available for this class.');
         courseModeId = course.classId;
         try { localStorage.setItem(`stem-workspace-choice:v1:${teacherAccountSubject}`,courseModeId); } catch {}
@@ -620,15 +632,14 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
     if (!teacher) {
       showPanel(false);
       if (cail) {
-        const { courses } = await api('/api/classroom/courses');
-        const instructorCourses = courses.filter(row => row.capabilities?.instructorPanel);
+        const courses = await instructorCourses();
         let prior = null; try { prior = localStorage.getItem(`stem-workspace-choice:v1:${teacherAccountSubject}`); } catch {}
-        const choice = instructorCourses.find(course=>course.classId===prior) || (instructorCourses.length===1 ? instructorCourses[0] : null);
+        const choice = courses.find(course=>course.classId===prior) || (courses.length===1 ? courses[0] : null);
         if (choice) { location.replace(`/teacher.html?course=${encodeURIComponent(choice.classId)}`); return; }
         signinPanel.hidden = true;
         courseDiscovery.hidden = false;
         courseList.replaceChildren();
-        for (const course of instructorCourses) {
+        for (const course of courses) {
           const item = document.createElement('li');
           item.className = 'teacher-history-item';
           const link = document.createElement('a');
@@ -637,7 +648,7 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
           item.appendChild(link);
           courseList.appendChild(item);
         }
-        courseDiscoveryStatus.textContent = instructorCourses.length ? 'Choose a class to review its roster and guidance.' : 'No instructor classes are available to this account.';
+        courseDiscoveryStatus.textContent = courses.length ? 'Choose a class to review its roster and guidance.' : 'No instructor classes are available to this account.';
       }
       return;
     }

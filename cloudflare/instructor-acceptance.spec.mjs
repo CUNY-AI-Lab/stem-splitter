@@ -195,7 +195,11 @@ test('automatic class refresh pauses in a hidden tab and rechecks on return', as
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await expect(page.locator('#classroom-refresh-status')).toContainText('Updated');
-    expect(reads.length).toBe(before + 2);
+    expect(reads.slice(before).map(value => new URL(value).pathname)).toEqual([
+      `/api/classroom/courses/${course}`,
+      `/api/classroom/courses/${course}/folders`,
+      `/api/classroom/courses/${course}/roster`,
+    ]);
     await expect(page.locator('#console-panel')).toBeVisible();
   } finally { await f.harness.close(); }
 });
@@ -316,7 +320,8 @@ test('routine class refresh keeps loaded content, scroll and sharing selections 
   const samples=await page.evaluate(()=>{clearInterval(window.refreshSampleTimer);return window.refreshSamples;});
   expect(reads-before).toBeGreaterThanOrEqual(2);
   expect(samples.every(s=>s.visible==='visible'&&s.text.includes('Class fixture recording'))).toBe(true);
-  expect(await page.evaluate(()=>scrollY)).toBe(scroll);
+  // Firefox can quantize an integer scroll request to a fractional CSS pixel.
+  expect(Math.abs(await page.evaluate(()=>scrollY) - scroll)).toBeLessThanOrEqual(1);
   await expect(page.getByLabel('New private folder')).toHaveValue('Unsaved folder name');
   await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
   let release;const waiting=new Promise(resolve=>release=resolve);
