@@ -148,3 +148,11 @@
 .instructor-console .sample-editor > summary h2 { display: inline; }
 .instructor-console .sample-editor > summary .teacher-help { margin-bottom: 0; }
 .instructor-console .sample-editor[open] > summary { margin-bottom: 1rem; }
+
+/* Account sub-navigation and scope selector use the shared control spec from styles.css. */
+.instructor-console .dashboard-nav a { color: var(--ink-dim); }
+.instructor-console .dashboard-nav a[aria-current="page"] { color: var(--ink); }
+.instructor-console .intake-selector > label { font: 400 .8rem/1.5 var(--font-body); color: var(--ink-dim); }
+@media (min-width: 541px) {
+  .instructor-console .intake-selector select { padding: .6rem .9rem; border: 1px solid var(--panel-edge); border-radius: 6px; background-color: var(--bg-raise); font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em; }
+}

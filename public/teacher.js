@@ -124,7 +124,7 @@ async function api(path, options = {}) {
     const body = await res.json().catch(error => { if (!res.ok) return {}; throw error; });
     if (generation !== teacherGeneration) throw new DOMException('Instructor access changed', 'AbortError');
     if (!res.ok) {
-      if ([401, 403].includes(res.status) && !optionalAccess) denyTeacherAccess('Access is no longer available. Return to Dashboard to check your current access.');
+      if ([401, 403].includes(res.status) && !optionalAccess) denyTeacherAccess('Access is no longer available. Return to Account to check your current access.');
       throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`), { status: res.status });
     }
     if (scoped && courseAccessCheck && failureVersion === courseFailureVersion) courseAuthorityUncertain = false;

@@ -29,8 +29,8 @@ for(const persona of ['individual','student','instructor'])test(`${persona} save
  try {
   await page.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.bob,...(persona==='instructor'?{'x-fixture-course-role':'owner'}:{})});
   await page.goto(new URL('/account.html',f.url).href);
-  await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter','Workspace','Dashboard']);
-  await page.getByRole('link',{name:'Listening Guy',exact:true}).click();
+  await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter','Workspace','Account']);
+  await page.getByRole('link',{name:'Dashboard',exact:true}).click();
   await expect(page.locator('#amendment-label')).toHaveText('Personal instructions');
   await expect(page.locator('#instruction-scope')).toHaveValue('personal');
   await expect(page.locator('#instruction-scope option')).toHaveCount(persona==='instructor'?2:1);

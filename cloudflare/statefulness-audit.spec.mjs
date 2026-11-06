@@ -91,7 +91,7 @@ for (const persona of ['individual', 'student', 'course instructor']) test(`${pe
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('.workspace-nav')).toBeVisible();
       await expect(page.locator('#header-signin')).toBeHidden();
-      await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter', 'Workspace', 'Dashboard']);
+      await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter', 'Workspace', 'Account']);
       if (path === '/account.html') {
         await expect(page.locator('#account-role')).toHaveText(persona === 'student' ? 'Student access' : 'CUNY AI Lab member access');
         await expect(page.locator('#account-admin')).toBeHidden();

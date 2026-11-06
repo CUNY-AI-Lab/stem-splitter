@@ -4726,7 +4726,7 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'Splitter',
-    tagline: 'Split audio tracks into musical layers for deep listening, one stem at a time.\nTake notes on shared splits, then cue Listening Guy to learn more.',
+    tagline: 'Split audio tracks into musical layers for deep listening, one stem at a time.',
   },
   remixer: {
     word: 'Remixer',

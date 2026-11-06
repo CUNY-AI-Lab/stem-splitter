@@ -44,7 +44,7 @@ test('public footer omits workspace while account entry points retain course aut
         await expect(page.locator('footer a[href="/teacher.html"]')).toHaveCount(0);
       }
       await expect(page.locator('.workspace-nav').getByRole('link', { name: 'Workspace', exact: true })).toBeVisible();
-      await expect(page.locator('.workspace-nav').getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+      await expect(page.locator('.workspace-nav').getByRole('link', { name: 'Account', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toHaveCount(0);
     }
     expect(requests.every(request => request.method === 'GET')).toBe(true);

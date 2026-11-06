@@ -1690,9 +1690,9 @@ footer a:hover { color: var(--hot); }
   border-radius: 6px;
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: .75rem;
   min-height: 2.75rem;
-  padding: 0.6rem 0.7rem;
+  padding: .6rem .9rem;
 }
 .teacher-field input:focus,
 .teacher-field select:focus,
@@ -1724,7 +1724,7 @@ footer a:hover { color: var(--hot); }
   margin-bottom: 0.6rem;
 }
 .teacher-actions { display: flex; gap: 0.6rem; align-items: center; }
-.teacher-actions .yt-go { padding: 0.5rem 1rem; }
+.teacher-actions .yt-go { padding: .6rem .9rem; }
 
 .teacher-prompt-section {
   background: color-mix(in srgb, var(--panel) 72%, transparent);
@@ -2772,7 +2772,7 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .sample-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .sample-name-editor { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap: .75rem; }
 .sample-card:has(.sample-name-editor:not([hidden])) { cursor: default; }
-.sample-editor .page-btn { min-height: 44px; padding: .6rem .8rem; border-radius: 6px; font: 500 .8125rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
+.sample-editor .page-btn { min-height: 44px; padding: .6rem .9rem; border-radius: 6px; font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em; text-transform: none; }
 .sample-editor .teacher-actions { flex-wrap: wrap; gap: .5rem; }
 @media(max-width:600px) {
   .sample-name-editor { grid-template-columns: 1fr; }
@@ -2797,8 +2797,8 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .masthead-meta .tagline {
   flex: 0 1 calc(50% - .75rem);
   max-width: calc(50% - .75rem);
-  font-size: .9rem;
-  line-height: 1.55;
+  font-size: .8rem;
+  line-height: 1.5;
 }
 .refined-ui .masthead-meta .tagline > p { margin: 0; text-wrap: balance; }
 .refined-ui .masthead-meta .tagline > p + p { margin-top: .35rem; }
@@ -2862,7 +2862,7 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui.instructor-console { padding-top: 1.75rem; padding-bottom: 2rem; }
 .refined-ui.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: 1rem 1.15rem; margin-top: 1rem; border-radius: 8px; }
 .refined-ui.instructor-console h2:not(.page-title) { font-size: 1.05rem; margin-bottom: .65rem; }
-.refined-ui.instructor-console :is(.page-btn, .account-button, .yt-go, .teacher-caret-control) { font-family: var(--font-mono); font-size: .72rem; }
+.refined-ui.instructor-console :is(.page-btn, .account-button, .yt-go, .teacher-caret-control) { font-family: var(--font-mono); font-size: .75rem; }
 .refined-ui.instructor-console .teacher-tool > summary { min-height: 44px; padding-block: .65rem; }
 .refined-ui.instructor-console .teacher-tool-body { padding: .75rem 0 1rem; }
 .refined-ui.instructor-console .teacher-more-tools { margin-top: 1.25rem; }
@@ -2903,7 +2903,11 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 
 .intake-selector { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .85rem; max-width: 30.5rem; font-size: .8rem; }
 .intake-selector > label { color: var(--ink-dim); }
-.intake-selector select, .refined-ui #course-context select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; margin: 0; padding: .65rem .8rem; color: var(--ink); background-color: var(--bg-raise); border: 1px solid var(--panel-edge); border-radius: 6px; font: inherit; color-scheme: dark; }
+.intake-selector select, .refined-ui #course-context select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; margin: 0; padding: .6rem .9rem; color: var(--ink); background-color: var(--bg-raise); border: 1px solid var(--panel-edge); border-radius: 6px; font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em; color-scheme: dark; }
+@media (min-width: 541px) {
+  .intake-selector { grid-template-columns: auto minmax(0, max-content); justify-content: start; }
+  .intake-selector select, .refined-ui #course-context select { width: auto; min-width: 14rem; }
+}
 .intake-selector select:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 .dashboard-nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin: 0 0 1.25rem; font-size: .85rem; }
 .dashboard-nav[hidden] { display: none; }

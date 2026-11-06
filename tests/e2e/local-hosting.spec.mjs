@@ -205,7 +205,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
   })).toBe(true);
   await expectAlignedBrand();
-  await expect(page.locator('#station-tagline > p')).toHaveText(['Split audio tracks into musical layers for deep listening, one stem at a time.', 'Take notes on shared splits, then cue Listening Guy to learn more.']);
+  await expect(page.locator('#station-tagline > p')).toHaveText(['Split audio tracks into musical layers for deep listening, one stem at a time.']);
   await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -1717,7 +1717,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
   await expect(page.locator('#teacher-access-status')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible();
   await expect(page.getByText('Prompt reference', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
