@@ -939,7 +939,7 @@ async function searchSourceSongs(term, sequence) {
   showSongSearchStatus('Searching…');
   const slowSearch = setTimeout(() => {
     if (current() && !songResults.size) showSongSearchStatus('Still searching. Some sources are slow to respond.');
-  }, 6000);
+  }, 4000);
   const seen = new Set(), optionById = new Map();
   const render = data => {
     if (!current()) return;

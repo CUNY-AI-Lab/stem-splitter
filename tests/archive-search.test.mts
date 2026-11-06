@@ -282,9 +282,9 @@ test('artist-qualified discovery retains credited songs among many filenames con
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
     const url=new URL(String(input));
     if(url.pathname==='/advancedsearch.php'){
-      catalogs++;assert.equal(url.searchParams.get('rows'),'16');
+      catalogs++;assert.equal(url.searchParams.get('rows'),url.searchParams.get('q')?.includes(' OR creator:')?'32':'16');
       assert.equal(url.searchParams.get('sort[]'),'downloads desc');
-      const docs=url.searchParams.get('q')?.includes('creator:[* TO *]')
+      const docs=url.searchParams.get('q')?.includes(' OR creator:')
         ? [{identifier:'credited',title:'Midnight Motion',creator:'Signal Orchestra'}] : uncredited;
       return Response.json({response:{docs}});
     }
@@ -462,4 +462,66 @@ test('a song title containing a genre word adds no genre catalog request',async 
   await searchArchiveSongs('we will rock you');
   assert.equal(queries.length,4);
   assert.ok(queries.every(q=>!q.includes('subject:("rock")')));
+});
+
+test('the word query avoids the slow creator range and still prefers credited items',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){queries.push(url.searchParams.get('q')!);return Response.json({response:{docs:[]}});}
+    return partialAudio();
+  });
+  await searchArchiveSongs('range speed check');
+  assert.ok(queries.length>0&&queries.every(q=>!q.includes('[* TO *]')),'a fresh creator range costs seconds on the Archive');
+});
+
+test('a stalled source cannot hold a search past its budget once enough results are verified',async t=>{
+  const release:(()=>void)[]=[];
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      if(url.searchParams.get('q')!.includes(' OR creator:'))await new Promise<void>(done=>release.push(done));
+      return Response.json({response:{docs:[{identifier:'budget-song-a',title:'Budget melody',creator:'Budget Band'},{identifier:'budget-song-b',title:'Budget melody two',creator:'Budget Band'}]}});
+    }
+    if(url.pathname.startsWith('/metadata/budget-song'))return metadata({title:'Budget melody',creator:'Budget Band'},[file({name:'one.mp3',title:'Budget melody one'}),file({name:'two.mp3',title:'Budget melody two'})]);
+    return partialAudio();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('budget melody');
+  assert.equal(found.results.length,4);
+  assert.ok(Date.now()-started<6500,`took ${Date.now()-started}ms`);
+});
+
+test('a thin result list waits for the second limit, and abandoned work leaves the shared queue',async t=>{
+  const release:(()=>void)[]=[];let probesAfterExpiry=0,expired=false;
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      if(url.searchParams.get('q')!.includes(' OR creator:'))await new Promise<void>(done=>release.push(done));
+      return Response.json({response:{docs:[{identifier:'thin-song',title:'Thin melody',creator:'Thin Band'}]}});
+    }
+    if(url.pathname==='/metadata/thin-song')return metadata({title:'Thin melody',creator:'Thin Band'},[file({title:'Thin melody'})]);
+    if(expired)probesAfterExpiry++;
+    return partialAudio();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('thin melody');
+  expired=true;
+  const elapsed=Date.now()-started;
+  assert.equal(found.results.length,1);
+  assert.ok(elapsed>=7500&&elapsed<9000,`took ${elapsed}ms`);
+  release.forEach(done=>done());
+  await new Promise(done=>setTimeout(done,50));
+  assert.equal(probesAfterExpiry,0);
+});
+
+test('a search with nothing verified gives up and reports the source as busy',async t=>{
+  const release:(()=>void)[]=[];
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async()=>{await new Promise<void>(done=>release.push(done));return Response.json({response:{docs:[]}});});
+  const started=Date.now();
+  await assert.rejects(()=>searchArchiveSongs('stalled completely'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
+  assert.ok(Date.now()-started<9500,`took ${Date.now()-started}ms`);
 });

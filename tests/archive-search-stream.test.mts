@@ -25,7 +25,7 @@ test('verified songs stream before a slow catalog finishes, while concurrent sea
     calls++;
     const url = new URL(String(input));
     if (url.pathname === '/advancedsearch.php') {
-      if (url.searchParams.get('q')!.includes('creator:[* TO *]')) await catalog.promise;
+      if (url.searchParams.get('q')!.includes(' OR creator:')) await catalog.promise;
       return Response.json({response:{docs:[{identifier:'rapid-melody',title:'Rapid melody',creator:'Fixture Musician'}]}});
     }
     if (url.pathname.startsWith('/metadata/')) return metadata('Rapid melody');
@@ -170,7 +170,7 @@ test('a full fast broad catalog cannot starve the music catalog behind a stalled
     const url=new URL(String(input));
     if(url.pathname==='/advancedsearch.php'){
       const q=url.searchParams.get('q')!;
-      if(q.includes('creator:[* TO *]')){await credited.promise;return Response.json({response:{docs:[]}});}
+      if(q.includes(' OR creator:')){await credited.promise;return Response.json({response:{docs:[]}});}
       if(q.includes('subject:')){await broadInspected.promise;return Response.json({response:{docs:Array.from({length:16},(_,i)=>({identifier:`cold-music-${i}`}))}});}
       return Response.json({response:{docs:Array.from({length:16},(_,i)=>({identifier:`cold-broad-${i}`}))}});
     }

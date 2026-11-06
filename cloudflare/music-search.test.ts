@@ -262,3 +262,20 @@ test('a short clip still appears when a search would otherwise find nothing', as
   const result: any = await (await musicSearchResponse('marimba hit', false, context)).json();
   assert.deepEqual(result.results.map((track: any) => track.title), ['Marimba hit']);
 });
+
+test('one stalled catalog cannot hold a search open past the hard limit', async t => {
+  const context = setup(t), stalled = deferred();
+  t.after(stalled.resolve);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.openverse.org') { await stalled.promise; return Response.json({ results: [] }); }
+    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
+    return Response.json({ response: { docs: [] } });
+  });
+  const started = Date.now();
+  const result: any = await (await musicSearchResponse('stalled source', false, context)).json();
+  assert.ok(Date.now() - started < 10000, `took ${Date.now() - started}ms`);
+  assert.equal(result.providers.freesound, 'unavailable');
+  assert.equal(result.results.length, 1);
+});

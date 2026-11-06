@@ -12,6 +12,8 @@ const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesou
 // Freesound is mostly short effects whose tags loosely match. Tracks must carry the
 // search words, and short clips appear only when a search would otherwise find nothing.
 const MIN_FREESOUND_SECONDS = 30;
+// Just past the Archive's own limit. No slow source can hold a search open longer.
+const SEARCH_HARD_LIMIT_MS = 9000;
 const credits = (track: ArchiveSong | OpenAudioTrack) => {
   const { artist, fileCreator, itemCreator } = track as { artist?: string; fileCreator?: string; itemCreator?: string };
   return [artist, fileCreator, itemCreator];
@@ -75,7 +77,7 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
       catch { result.providers[name] = 'unavailable'; }
       publish();
     };
-    await Promise.all([
+    const everySource = Promise.all([
       provider('archive', async () => {
         // Reuse the existing shared Archive search/cache and unsubscribe on cancellation.
         const response = await archiveSongSearchResponse(query, true, context.cache, context.maximumSeconds);
@@ -110,6 +112,16 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
         add(name, value.results);
       })),
     ]);
+    let endLimit = () => {};
+    const timedOut = await Promise.race([everySource.then(() => false), new Promise<boolean>(resolve => {
+      const limit = setTimeout(() => resolve(true), SEARCH_HARD_LIMIT_MS);
+      endLimit = () => clearTimeout(limit);
+    })]);
+    endLimit();
+    if (timedOut) {
+      for (const name of Object.keys(result.providers) as Provider[]) if (result.providers[name] === 'pending') result.providers[name] = 'unavailable';
+      abort.abort();
+    }
     if (!tracks.size && shortClips.length) {
       for (const track of shortClips.slice(0, RESULT_SLOTS.freesound)) tracks.set(`freesound:${track.id}`, track as AudioTrack);
       publish();

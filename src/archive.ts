@@ -729,7 +729,28 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
   return candidates;
 }
 
+// A search should settle in seconds. Past the first limit it returns a useful verified
+// list. With fewer results it waits for the second limit, then returns what it has,
+// or reports the source as busy when it has nothing.
+const SEARCH_SETTLE_MS = 5000, SEARCH_GIVE_UP_MS = 8000, SEARCH_ENOUGH_RESULTS = 4;
 async function findArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number): Promise<SongResults> {
+  let latest: SongResults = { results: [] };
+  const budget = { expired: false };
+  const finished = discoverArchiveSongs(tokens, results => { latest = results; onResults(results); }, maximumSeconds, budget);
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const after = (ms: number) => new Promise<true>(resolve => { timers.push(setTimeout(() => resolve(true), ms)); });
+  try {
+    const running = finished.then(() => false as const);
+    if (!await Promise.race([running, after(SEARCH_SETTLE_MS)])) return await finished;
+    if (latest.results.length < SEARCH_ENOUGH_RESULTS && !await Promise.race([running, after(SEARCH_GIVE_UP_MS - SEARCH_SETTLE_MS)])) return await finished;
+    budget.expired = true;
+    finished.catch(() => {});
+    if (!latest.results.length) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
+    return latest;
+  } finally { timers.forEach(clearTimeout); }
+}
+
+async function discoverArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number, budget: { expired: boolean }): Promise<SongResults> {
   const docScore = (doc: { title?: unknown; creator?: unknown; musicQuery?: boolean }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
     // A title plus its credited performer covers an artist-qualified query as
@@ -767,10 +788,11 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     let pending = metadata.get(id);
     if (!pending) {
       pending = (async () => {
-        if (Date.now() >= deadline) { metadataFailures++; return null; }
+        if (budget.expired || Date.now() >= deadline) { metadataFailures++; return null; }
         try { return await reuseDiscovery(songMetadataCache, `${maximumSeconds}:${id}`, 80,
           () => songMetadataPool(() => {
-            if (Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
+            // The pools are shared. Work abandoned at a time limit must leave the queue, not starve the next search.
+            if (budget.expired || Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
             return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()) });
           }),
           item => item.tracks.length <= 256); }
@@ -786,7 +808,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
       pending = (async () => {
         try {
           const available = await reuseDiscovery(songDeliveryCache, JSON.stringify([song.id, song.bytes, song.durationSec]), 160,
-            () => songDeliveryPool(() => downloadableSong(song, locations.get(song.archiveId))), available => available);
+            () => songDeliveryPool(() => budget.expired ? Promise.resolve(false) : downloadableSong(song, locations.get(song.archiveId))), available => available);
           if (available) { verified.add(song.id); onResults(results()); }
           return available;
         } catch (error) {
@@ -803,9 +825,12 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     if (!item) return null;
     locations.set(id, songDeliveryLocations.get(item) || []);
     const checks: Promise<boolean>[] = [];
+    let itemProbes = 0;
     for (const song of matchingSongs(item, tokens).sort((a,b) => b.score-a.score)) {
       candidates.set(song.id,song);
-      if (earlyProbes < 8 && !probes.has(song.id)) { earlyProbes++; checks.push(check(song)); }
+      // Sample across items. A single concert must not use every early check, and
+      // items that refuse downloads should fail fast so others still get a turn.
+      if (earlyProbes < 24 && itemProbes < 2 && !probes.has(song.id)) { earlyProbes++; itemProbes++; checks.push(check(song)); }
     }
     await Promise.all(checks);
     return item;
@@ -822,7 +847,8 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   // otherwise fills the catalog page with books about queens before reaching the band.
   const base = 'mediatype:audio AND NOT access-restricted-item:true AND NOT collection:(librivoxaudio OR audio_bookspoetry)';
   const queries = [
-    `${base} AND creator:[* TO *] AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
+    // A creator:[* TO *] filter here costs 4-8 seconds on a fresh query, so credits are checked below instead.
+    `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')}) AND subject:(music OR rock OR pop OR jazz OR blues OR classical OR folk OR soul OR electronic OR hiphop)`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
     // The whole name as one credit. Word-by-word matching cannot tell the band from the word.
@@ -833,14 +859,16 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     const url = new URL(SEARCH_API);
     url.searchParams.set('q', q);
     for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
-    // Retrieve credited items separately so uncredited filenames cannot fill
-    // the limited catalog page before artist/title matching can inspect them.
+    // Keep the credited items from a longer page of the word query, so uncredited
+    // filenames cannot fill the page before artist/title matching can inspect them.
     // Title-only searches still discover file-level credits in other items.
     url.searchParams.append('sort[]', 'downloads desc');
-    url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
+    url.searchParams.set('rows', index === 0 ? '32' : '16'); url.searchParams.set('output', 'json');
     const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
-    const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1 || index === 4}));
+    const page = data.response.docs.map(doc => ({...doc, musicQuery: index === 1 || index === 4}));
+    const credited = index === 0 ? page.filter(doc => recordingCredit(displayText(doc.creator))).slice(0, 16) : [];
+    const found = credited.length ? credited : page.slice(0, 16);
     const deadline = Date.now()+18000;
     for (const doc of discoveryOrder(found).slice(0,earlySlots[index])) {
       const id = doc.identifier;
@@ -862,10 +890,10 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   const orderedIds = [...new Set(discoveryOrder(docs.filter(doc => selected.has(String(doc.identifier)))).map(doc => String(doc.identifier)))];
   const items = await Promise.all(orderedIds.map(id => inspectMatches(id, metadataDeadline)));
   await Promise.all(earlyChecks);
-  // Reuse early probes and retain the complete relevance pass. At most eight
+  // Reuse early probes and retain the complete relevance pass. At most twenty-four
   // speculative probes plus twenty-four final candidates can reach the source.
   const ranked = [...candidates.values()].sort((a,b) => b.score-a.score).slice(0,24);
-  for (let offset=0; offset<ranked.length; offset+=6) {
+  for (let offset=0; offset<ranked.length && !budget.expired; offset+=6) {
     const batch = ranked.slice(offset,offset+6);
     await Promise.all(batch.map(check));
     if (ranked.slice(0,offset+6).filter(song => verified.has(song.id)).length >= 8) break;

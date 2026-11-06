@@ -450,7 +450,7 @@ test('streamed song choices are usable before discovery finishes and stay in pla
   const catalog=new Promise(resolve=>{release=resolve;});
   const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble'};
   f.network.use(http.get('https://archive.org/advancedsearch.php',async({request})=>{
-    if(new URL(request.url).searchParams.get('q').includes('creator:[* TO *]'))await catalog;
+    if(new URL(request.url).searchParams.get('q').includes(' OR creator:'))await catalog;
     return HttpResponse.json({response:{docs:[music]}});
   }));
   try {
