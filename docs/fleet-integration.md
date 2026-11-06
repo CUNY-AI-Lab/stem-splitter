@@ -19,7 +19,7 @@ Configure `CAIL_IDENTITY_JWKS`, canonical `CAIL_IDENTITY_ISSUER`,
 `CAIL_READINESS_TOKEN`. `GET /api/fleet/readyz` requires the latter bearer token;
 it fails closed when verifier, endpoint, model or source configuration is absent.
 The endpoint confirms local configuration, not Gateway health or live acceptance.
-The Gateway URL is an origin, with no `/v1` suffix; cail-client appends the API path. `ASSISTANT_MODEL` uses a current prefix-free catalog ID (for example `glm-5.2`), never a provider-prefixed route. Loopback HTTP Gateway origins are allowed only with `LOCAL_DEV=1` for synthetic tests.
+The Gateway URL is an origin, with no `/v1` suffix; cail-client appends the API path. `ASSISTANT_MODEL` uses a current prefix-free catalog ID (for example `glm-5.3`), never a provider-prefixed route. Loopback HTTP Gateway origins are allowed only with `LOCAL_DEV=1` for synthetic tests.
 No provider key is used for Listening Guy. Quota, retries and provider selection
 belong to Gateway; one chat request makes one model call. Tools-only replies use
 local narration. SSE drains trailing usage/errors, preserves safe request IDs,
