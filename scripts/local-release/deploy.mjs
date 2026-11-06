@@ -118,7 +118,11 @@ export async function release(root, args) {
     receipt.status = 'uploaded'; save();
     receipt.after = JSON.parse(run(cf('deployments', 'list', '--json'), configDir, env, true));
     activeVersion(receipt.after, receipt.version);
-    await verify(policy, target.origin, source);
+    // A new version can take a few seconds to reach every edge.
+    for (let attempt = 1; ; attempt++) {
+      try { await verify(policy, target.origin, source); break; }
+      catch (error) { if (attempt >= 6) throw error; await new Promise(done => setTimeout(done, 5000)); }
+    }
     receipt.status = 'verified';
     receipt.completedAt = new Date().toISOString(); save();
   } catch (error) {
