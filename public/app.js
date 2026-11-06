@@ -969,7 +969,7 @@ async function searchSourceSongs(term, sequence) {
       option.dataset.value = value;
       option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')}${track.genre ? ` · ${track.genre}` : ''} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
       optionById.set(track.id, option);
       sourceSongs.appendChild(option);

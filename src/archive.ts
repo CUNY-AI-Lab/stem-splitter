@@ -92,6 +92,7 @@ export interface ArchiveTrack {
   bytes: number;
   artist?: string;
   creator?: string;
+  genre?: string;
   /** False when the track breaks the duration or size cap; UI greys these out. */
   importable: boolean;
 }
@@ -105,6 +106,8 @@ export interface ArchiveItem {
   license: string;
   licenseUrl: string;
   detailsUrl: string;
+  /** Subject and genre tags in searchableText form. */
+  genreTags?: string;
   tracks: ArchiveTrack[];
 }
 
@@ -416,7 +419,7 @@ export interface ArchiveSong {
 function readableTitle(track: ArchiveTrack): string {
   let title = track.title;
   if (/%[0-9a-f]{2}/i.test(title)) { try { title = decodeURIComponent(title); } catch { /* Keep the source text. */ } }
-  return track.name.startsWith(title) && title.includes('/') ? title.split('/').filter(Boolean).at(-1) || title : title;
+  return track.name.includes(title) && title.includes('/') ? title.split('/').filter(Boolean).at(-1) || title : title;
 }
 function songTitle(item: ArchiveItem, track: ArchiveTrack): string {
   return item.tracks.length === 1 && /^(?:file|track|audio)[\s._-]*\d*$/i.test(track.title) ? item.title : readableTitle(track);
@@ -454,6 +457,33 @@ export function creditMatchesQuery(credit: string | undefined, query: string): b
   return [credit, ...credit.split(/\s*(?:[,;&/+]|\b(?:and|feat|ft|with)\b\.?)\s*/i)]
     .some(part => withoutArticle(searchableText(part)) === target);
 }
+// Names people search by, in searchableText form. Subject tags vary, so each genre lists its usual spellings.
+const GENRES: Record<string, string[]> = {
+  Rock: ['rock'], Pop: ['pop'], Jazz: ['jazz'], Blues: ['blues'], Classical: ['classical'], Folk: ['folk'],
+  Soul: ['soul'], Funk: ['funk'], Country: ['country'], 'Hip hop': ['hip hop', 'hiphop', 'rap'],
+  Electronic: ['electronic', 'electronica', 'edm'], Techno: ['techno'], House: ['house'], Ambient: ['ambient'],
+  Reggae: ['reggae'], Metal: ['heavy metal', 'metal'], Punk: ['punk'], 'R&B': ['rhythm and blues', 'rnb', 'r b'],
+  Gospel: ['gospel'], Disco: ['disco'], Opera: ['opera'], Bluegrass: ['bluegrass'],
+};
+const GENRE_FILLER = new Set(['the', 'music', 'song', 'songs', 'track', 'tracks']);
+export type GenreQuery = { label: string; names: string[]; rest: string[] };
+/** A genre counts at either end of a query, so "queen rock" is a genre search and "we will rock you" stays a title. */
+export function genreQuery(tokens: string[]): GenreQuery | null {
+  const text = tokens.join(' ');
+  // Longest names first, so "rhythm and blues" is not read as blues.
+  const candidates = Object.entries(GENRES).flatMap(([label, names]) => names.map(name => ({ label, names, name })))
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const { label, names, name } of candidates) {
+    const remainder = text === name ? '' : text.startsWith(`${name} `) ? text.slice(name.length + 1)
+      : text.endsWith(` ${name}`) ? text.slice(0, -name.length - 1) : null;
+    if (remainder === null) continue;
+    const rest = remainder.split(' ').filter(token => token && !GENRE_FILLER.has(token));
+    if (rest.length <= 3) return { label, names, rest };
+  }
+  return null;
+}
+const hasGenre = (tags: string, genre: GenreQuery) => genre.names.some(name => ` ${tags} `.includes(` ${name} `));
+const genreCatalogQuery = (genre: GenreQuery) => genre.names.map(name => `"${name === 'r b' ? 'r&b' : name}"`).join(' OR ');
 export const archiveSongSearchKey = (query: string) => searchableText(displayText(query, '', MAX_TERM_LENGTH));
 type SearchListener = (results: SongResults) => void;
 const searchCache = new Map<string, { expires: number; songs: Promise<SongResults>; latest: SongResults; listeners: Set<SearchListener> }>();
@@ -663,6 +693,7 @@ function archiveSongMetadata(item: ArchiveItem, track: ArchiveTrack): ArchiveSon
 
 function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { score: number })[] {
   const candidates: (ArchiveSong & { score: number })[] = [];
+  const genre = genreQuery(tokens);
   for (const track of item.tracks) {
     if (!track.importable) continue;
     const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
@@ -674,7 +705,11 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
     // Item creator remains useful for finding a song, but never becomes its artist tag.
     const text = searchableText(`${title} ${artist} ${fileCreator} ${item.creator}`);
     const titleText = searchableText(title), artistText = searchableText(`${artist} ${fileCreator} ${item.creator}`);
-    if (!namedArtist) {
+    const genreMatch = genre !== null && hasGenre(searchableText(`${item.genreTags || ''} ${track.genre || ''}`), genre);
+    const restPhrase = genre?.rest.join(' ') || '';
+    const restArtist = genreMatch && restPhrase !== '' && (artist || fileCreator ? [artist, fileCreator] : [recordingCredit(item.creator)]).some(credit => creditMatchesQuery(credit, restPhrase));
+    const genreAccepted = genreMatch && (restArtist || !genre.rest.length || genre.rest.every(token => text.includes(token)));
+    if (!namedArtist && !genreAccepted) {
       // Matching only the album description would return unrelated tracks.
       if (!tokens.every(token => text.includes(token))) continue;
       const artistTokens = tokens.filter(token => !titleText.includes(token));
@@ -684,12 +719,12 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
       if (!tokens.some(token => titleText.includes(token)) &&
           ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
     }
-    const score = (namedArtist ? 12 : 0) + tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
+    const score = (namedArtist || restArtist ? 12 : 0) + (genreMatch ? 8 : 0) + tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
       + (titleText === tokens.join(' ') ? 6 : 0)
       + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
       - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
       - Math.abs(text.split(' ').length - tokens.length) * 0.2;
-    candidates.push({ ...archiveSongMetadata(item, track), score });
+    candidates.push({ ...archiveSongMetadata(item, track), ...(genreMatch ? { genre: genre.label } : {}), score });
   }
   return candidates;
 }
@@ -779,7 +814,10 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   // consume every early slot and delay music matches until the slowest catalog
   // finishes. Inspect all sixteen music hits, eight named-artist hits and four
   // from each other catalog; the final relevance pass adds eight (forty items max).
+  // A genre search moves those slots to items carrying the genre's tags.
   const earlyIds = new Set<string>();
+  const genre = genreQuery(tokens);
+  const earlySlots = genre ? [4, 8, 4, 4, 12] : [4, 16, 4, 8];
   // Spoken-word items can never be imported, yet they lead by downloads: "queen"
   // otherwise fills the catalog page with books about queens before reaching the band.
   const base = 'mediatype:audio AND NOT access-restricted-item:true AND NOT collection:(librivoxaudio OR audio_bookspoetry)';
@@ -789,6 +827,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
     // The whole name as one credit. Word-by-word matching cannot tell the band from the word.
     `${base} AND creator:"${tokens.join(' ')}"`,
+    ...(genre ? [`${base} AND subject:(${genreCatalogQuery(genre)})${genre.rest.map(token => ` AND (title:"${token}" OR creator:"${token}")`).join('')}`] : []),
   ];
   const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
@@ -801,9 +840,9 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
     const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
-    const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1}));
+    const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1 || index === 4}));
     const deadline = Date.now()+18000;
-    for (const doc of discoveryOrder(found).slice(0,index === 1 ? 16 : index === 3 ? 8 : 4)) {
+    for (const doc of discoveryOrder(found).slice(0,earlySlots[index])) {
       const id = doc.identifier;
       if (typeof id !== 'string' || !IDENTIFIER_PATTERN.test(id) || earlyIds.has(id)) continue;
       earlyIds.add(id);
@@ -1006,6 +1045,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
       title: displayText(file.title, base.replace(/^\d+[\s._-]*/, '') || base),
       artist: displayText(file.artist),
       creator: displayText(file.creator),
+      genre: displayText(file.genre),
       durationSec,
       bytes,
       importable:
@@ -1040,6 +1080,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
   const item: ArchiveItem = {
     identifier,
     title: displayText(metadata.title, identifier),
+    genreTags: searchableText(`${metadataText(metadata.subject)} ${metadataText(metadata.genre)}`),
     creator: displayText(metadata.creator),
     description: itemDescription(metadata.description),
     year: toYear(metadata.year ?? metadata.date),

@@ -27,6 +27,7 @@ function relevance(provider: Provider, track: ArchiveSong | OpenAudioTrack, quer
   const words = new Set(searchableText(`${track.title} ${credits(track).join(' ')}`).split(' '));
   return (credits(track).some(credit => creditMatchesQuery(credit, phrase)) ? 100 : 0)
     + (title === phrase ? 80 : ` ${title} `.includes(` ${phrase} `) ? 60 : 0)
+    + ((track as { genre?: string }).genre ? 80 : 0)
     + (phrase.split(' ').every(token => words.has(token)) ? 20 : 0)
     + (provider === 'archive' ? 5 : provider === 'freesound' ? 0 : 2);
 }
@@ -50,6 +51,11 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
     const shortClips: OpenAudioTrack[] = [];
     const add = (provider: Provider, candidates: (ArchiveSong | OpenAudioTrack)[]) => {
       let items = candidates.filter(track => relevantTrack(provider, track, query));
+      // Archive batches are rolling rankings, so each one replaces the last and a better late match can win.
+      if (provider === 'archive') {
+        for (const key of [...tracks.keys()]) if (key.startsWith('archive:')) tracks.delete(key);
+        counts.archive = 0;
+      }
       if (provider === 'freesound') {
         shortClips.push(...items.filter(track => track.durationSec < MIN_FREESOUND_SECONDS) as OpenAudioTrack[]);
         items = items.filter(track => track.durationSec >= MIN_FREESOUND_SECONDS);

@@ -7,7 +7,7 @@ export async function archiveSongSearchResponse(query: string, streaming: boolea
   const message = (error: unknown) => error instanceof ArchiveError ? error.message : 'Song search is temporarily unavailable.';
   // Bump this path when result eligibility changes; imports always revalidate.
   const durationLimit = maximumSeconds === 900 ? 900 : 300;
-  const key = cache && new Request(new URL(`/__stem-search-cache/v2?seconds=${durationLimit}&q=` + encodeURIComponent(archiveSongSearchKey(query)), cache.origin));
+  const key = cache && new Request(new URL(`/__stem-search-cache/v3?seconds=${durationLimit}&q=` + encodeURIComponent(archiveSongSearchKey(query)), cache.origin));
   let cached: SongResults | undefined;
   if (cache && key) {
     try {

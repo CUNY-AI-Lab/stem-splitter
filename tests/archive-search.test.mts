@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ArchiveError, creditMatchesQuery, fetchArchiveAudio, fetchArchiveItem, searchArchiveSongs, validateArchiveSongFrames } from '../src/archive.ts';
+import { ArchiveError, creditMatchesQuery, genreQuery, fetchArchiveAudio, fetchArchiveItem, searchArchiveSongs, validateArchiveSongFrames } from '../src/archive.ts';
 import { mp3FrameInfo } from '../src/reliability/media.ts';
 const audio=new Uint8Array(readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url)));
 const duration=mp3FrameInfo(audio.buffer)!.seconds;
@@ -393,11 +393,73 @@ test('search titles are readable when files carry encoded names or folder paths'
     if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'paths',title:'Loose',creator:'Tidy Band'}]}});
     if(url.pathname==='/metadata/paths')return metadata({title:'Loose',creator:'Tidy Band'},[
       file({name:'Loose/Disc 1/04 Downer.mp3',title:'Loose/Disc 1/04 Downer'}),
+      file({name:'1976-03-31 Show/Disc.1/02-Sweet Lady.mp3',title:'03-31 Show/Disc.1/02-Sweet Lady'}),
       file({name:'Tidy%20Song.mp3',title:'Tidy%20Song'}),
       file({name:'other.mp3',title:'AC/DC Tribute'}),
     ]);
     return partialAudio();
   });
   const titles=(await searchArchiveSongs('tidy band')).results.map(song=>song.title).sort();
-  assert.deepEqual(titles,['04 Downer','AC/DC Tribute','Tidy Song']);
+  assert.deepEqual(titles,['02-Sweet Lady','04 Downer','AC/DC Tribute','Tidy Song']);
+});
+
+test('genres count at either end of a search and never inside a song title',()=>{
+  const parse=(query:string)=>{const genre=genreQuery(query.split(' '));return genre&&[genre.label,genre.rest.join(' ')];};
+  assert.deepEqual(parse('jazz'),['Jazz','']);
+  assert.deepEqual(parse('the blues'),['Blues','']);
+  assert.deepEqual(parse('jazz music'),['Jazz','']);
+  assert.deepEqual(parse('hip hop'),['Hip hop','']);
+  assert.deepEqual(parse('queen rock'),['Rock','queen']);
+  assert.deepEqual(parse('rock queen'),['Rock','queen']);
+  assert.deepEqual(parse('rhythm and blues'),['R&B','']);
+  assert.equal(parse('we will rock you'),null);
+  assert.equal(parse('queen'),null);
+  assert.equal(parse('rocket man'),null);
+});
+
+test('a genre search finds tagged music with no genre word in its title or credit',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;queries.push(q);
+      return Response.json({response:{docs:q.includes('subject:("bluegrass")')?[{identifier:'genre-tagged',title:'Mountain Hours',creator:'Fiddle Trio'},{identifier:'genre-untagged',title:'Valley Hours',creator:'Other Trio'}]:[]}});
+    }
+    if(url.pathname==='/metadata/genre-tagged')return metadata({title:'Mountain Hours',creator:'Fiddle Trio',subject:['Music','Bluegrass; acoustic']},[file({title:'Sunrise Reel'})]);
+    if(url.pathname==='/metadata/genre-untagged')return metadata({title:'Valley Hours',creator:'Other Trio',subject:'Music'},[file({title:'Evening Reel'})]);
+    return partialAudio();
+  });
+  const found=await searchArchiveSongs('bluegrass');
+  assert.deepEqual(found.results.map(song=>song.archiveId),['genre-tagged']);
+  assert.equal(found.results[0].genre,'Bluegrass');
+  assert.equal(queries.length,5);
+});
+
+test('an artist with a genre keeps the artist and uses the genre to choose among their work',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;queries.push(q);
+      return Response.json({response:{docs:[{identifier:'pair-match',title:'Studio',creator:'Lantern'},{identifier:'pair-other',title:'Studio Two',creator:'Lantern'},{identifier:'pair-stranger',title:'Elsewhere',creator:'Someone'}]}});
+    }
+    if(url.pathname==='/metadata/pair-match')return metadata({title:'Studio',creator:'Lantern',subject:'Music; disco'},[file({title:'Night Lights'})]);
+    if(url.pathname==='/metadata/pair-other')return metadata({title:'Studio Two',creator:'Lantern',subject:'Music; folk'},[file({title:'Day Lights'})]);
+    if(url.pathname==='/metadata/pair-stranger')return metadata({title:'Elsewhere',creator:'Someone',subject:'Music; disco'},[file({title:'Far Away'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('lantern disco')).results.map(song=>song.archiveId),['pair-match']);
+  assert.ok(queries.some(q=>q.includes('subject:("disco") AND (title:"lantern" OR creator:"lantern")')));
+});
+
+test('a song title containing a genre word adds no genre catalog request',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){queries.push(url.searchParams.get('q')!);return Response.json({response:{docs:[]}});}
+    return partialAudio();
+  });
+  await searchArchiveSongs('we will rock you');
+  assert.equal(queries.length,4);
+  assert.ok(queries.every(q=>!q.includes('subject:("rock")')));
 });
