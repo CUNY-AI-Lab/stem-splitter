@@ -133,6 +133,8 @@ h1 span {
 .masthead-title .lab-logo { height: calc(var(--title-size) * .92); max-width: 100%; object-fit: contain; }
 .lab-account { display: flex; flex-direction: column; align-items: flex-end; max-width: 50%; gap: .25rem; }
 .lab-account .account-nav { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
+.lab-account .header-logout { display: flex; margin: 0; font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
+.lab-account .header-logout[hidden] { display: none; }
 .lab-account .account-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--hot); font: inherit; text-decoration: none; }
 .lab-account .account-button:hover { text-decoration: underline; }
 .lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
@@ -2873,7 +2875,7 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
   .workspace-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .75rem; margin-top: .9rem; }
   .refined-ui .workspace-nav > a, .refined-ui .workspace-nav .account-button { font-size: .68rem; }
   .workspace-nav [data-instructor-nav] { grid-column: 1 / -1; }
-  .lab-account .account-nav { font-size: .68rem; }
+  .lab-account :is(.account-nav, .header-logout) { font-size: .68rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
   .account-allowances { grid-template-columns: 1fr; }
   .account-allowances section { padding: .85rem 1rem; }

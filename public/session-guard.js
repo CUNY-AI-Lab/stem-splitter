@@ -13,6 +13,15 @@
   let regions = [], recovery = null;
   const navigation = document.querySelector('.workspace-nav');
   const signIn = document.getElementById('header-signin')?.closest('.account-nav');
+  // The signed-in counterpart of CUNY Login. Logout is a POST so the server can check its origin.
+  const logOut = (() => {
+    if (!signIn?.parentElement) return null;
+    const form = document.createElement('form'), button = document.createElement('button');
+    form.className = 'header-logout'; form.action = '/auth/logout'; form.method = 'post'; form.hidden = true;
+    button.type = 'submit'; button.className = 'account-button'; button.textContent = 'Log out';
+    form.appendChild(button); signIn.parentElement.appendChild(form);
+    return form;
+  })();
   const instructorLink = navigation?.querySelector('[data-instructor-nav]');
   let navigationRequest = null, navigationGeneration = 0;
   let usageActor = null, usageSession = null, usageQueue = [], usageTimer = null, usageSending = false, usageFailures = 0;
@@ -26,6 +35,7 @@
       navigation.style.visibility = suspended ? 'hidden' : '';
     }
     if (signIn) signIn.hidden = signedIn();
+    if (logOut) { logOut.hidden = !signedIn(); logOut.style.visibility = suspended ? 'hidden' : ''; }
   }
 
   function cancelNavigation() {

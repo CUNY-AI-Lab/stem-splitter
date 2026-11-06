@@ -161,7 +161,7 @@ test('Verified sessions return to Splitter directly; unavailable verification of
   } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
-test('Sign out submits a trusted origin, clears cookies and returns to Splitter', async ({ page, context }) => {
+for (const control of ['Sign out', 'Log out']) test(`${control} submits a trusted origin, clears cookies and returns to Splitter`, async ({ page, context }) => {
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)) }] });
   let revoked = false, submittedOrigin, frontend;
   const errors = [];
@@ -178,17 +178,17 @@ test('Sign out submits a trusted origin, clears cookies and returns to Splitter'
       }
       if (pathname === '/api/account') return revoked
         ? Response.json({ error: { code: 'authentication_required', message: 'Sign in required' } }, { status: 401 })
-        : Response.json({ account: { subject: 'fixture', role: 'student' } });
+        : Response.json({ account: { subject: 'cail-' + 'a'.repeat(32), role: 'student' } });
       if (pathname === '/api/model-quota') return Response.json({ quota: null });
       return fixtureFetch(server, request);
     });
     const origin = frontend.origin;
     await context.addCookies([SESSION_COOKIE, LOGIN_COOKIE].map(name => ({ name, value: name === SESSION_COOKIE ? '00000000-0000-4000-8000-000000000001.' + 'a'.repeat(43) : 'pending', url: origin, secure: true, httpOnly: true, sameSite: 'Lax' })));
     await page.goto(origin + '/account.html');
-    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: control, exact: true })).toBeVisible();
     const [logout] = await Promise.all([
       page.waitForResponse(response => response.url() === origin + '/auth/logout'),
-      page.getByRole('button', { name: 'Sign out', exact: true }).click(),
+      page.getByRole('button', { name: control, exact: true }).click(),
     ]);
     expect(submittedOrigin).toBe(origin);
     expect(logout.request().method()).toBe('POST'); expect(logout.status()).toBe(303); expect(logout.headers().location).toBe('/');

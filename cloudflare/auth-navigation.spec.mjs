@@ -29,6 +29,7 @@ async function header(page, signedIn, instructor = false) {
   if (!signedIn) {
     await expect(nav).toBeHidden();
     await expect(page.locator('#header-signin')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Log out', exact: true })).toHaveCount(0);
     await expect(page.locator('.lab-account .account-nav')).toHaveText(/Guest\s*\|\s*CUNY Login/);
     const logo = await page.locator('.lab-brand').boundingBox();
     const login = await page.locator('#header-signin').boundingBox();
@@ -37,6 +38,7 @@ async function header(page, signedIn, instructor = false) {
   }
   await expect(nav).toBeVisible();
   await expect(page.locator('#header-signin')).toBeHidden();
+  await expect(page.locator('.lab-account').getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
   await expect(nav.locator('a:visible')).toHaveText(['Splitter', 'Workspace', 'Account']);
 }
 for (const path of paths) test('signed-out ' + path + ' hides the whole menu with login below the logo', async ({ page }) => {
