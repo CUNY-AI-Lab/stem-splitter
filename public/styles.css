@@ -2794,7 +2794,12 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .masthead { margin-bottom: 1.35rem; }
 .refined-ui .masthead-title { --title-size: clamp(2rem, 5vw, 2.75rem); }
 .refined-ui .masthead-meta { margin-top: .9rem; }
-.refined-ui .masthead-meta .tagline { font-size: .9rem; line-height: 1.55; }
+.refined-ui .masthead-meta .tagline {
+  flex: 0 1 calc(50% - .75rem);
+  max-width: calc(50% - .75rem);
+  font-size: .9rem;
+  line-height: 1.55;
+}
 .refined-ui .page-title { margin-bottom: .65rem; font-size: clamp(1.45rem, 3vw, 1.75rem); }
 .workspace-nav {
   display: flex; flex-wrap: wrap; align-items: center;
@@ -2862,6 +2867,7 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 @media (max-width: 600px) {
   main.refined-ui, .refined-ui.instructor-console { padding: 1.25rem 1rem 1.5rem; }
   .refined-ui .masthead-title { --title-size: clamp(1.8rem, 6.5vw, 2.5rem); }
+  .refined-ui .masthead-meta .tagline { flex-basis: 100%; max-width: 100%; }
   .workspace-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .75rem; margin-top: .9rem; }
   .refined-ui .workspace-nav > a, .refined-ui .workspace-nav .account-button { font-size: .68rem; }
   .workspace-nav [data-instructor-nav] { grid-column: 1 / -1; }
