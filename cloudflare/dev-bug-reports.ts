@@ -1,15 +1,15 @@
 /** The Worker supplies a verified principal; the delivery adapter owns receipts. */
-import { parseGuestContact, type GuestContact } from '../public/bug-report/contact.js';
+import { parseGuestContact, reportEmail, type GuestContact } from '../public/bug-report/contact.js';
 export type BugReport = { reportId: string; description: string; path: string; expectedActor: string };
 type FailureCode = 'invalid' | 'forbidden' | 'not_admitted' | 'idempotency_conflict' | 'rate_limited' | 'unavailable' | 'delivery_unknown' | 'redmine_rejected';
-export type BugReportResult = { ok: true; status: 'saved'; delivery?: 'redmine' | 'email'; reportId: string; createdAt: string } |
+export type BugReportResult = { ok: true; status: 'saved'; delivery?: 'redmine' | 'email'; emailUpdates?: 'subscribed' | 'confirm'; reportId: string; createdAt: string } |
   { ok: false; code: FailureCode; retryable: boolean; retryAfterSeconds?: number };
 export type BugReportService = {
-  submitAuthenticated(report: { reportId: string; subject: string; preferredName?: string | null; description: string; origin: string; path: string; release: string }): Promise<BugReportResult>;
+  submitAuthenticated(report: { reportId: string; subject: string; preferredName?: string | null; sessionEmail?: string | null; replyEmail?: string | null; description: string; origin: string; path: string; release: string }): Promise<BugReportResult>;
   submitGuest?(report: { reportId: string; contact: GuestContact; rateKey: string; description: string; origin: string; path: string; release: string }): Promise<BugReportResult>;
 };
 type Options = {
-  origin: string; subject: string; preferredName?: string | null; release?: string;
+  origin: string; subject: string; preferredName?: string | null; sessionEmail?: string | null; acceptsReplyEmail?: boolean; release?: string;
   service?: BugReportService; limiter?: { limit(input: { key: string }): Promise<{ success: boolean }> };
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -35,7 +35,7 @@ export async function bugReportActor(subject: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`cail-bug-report-actor:v1\n${subject}`));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
-async function readReport(request: Request, guest = false): Promise<(Omit<BugReport, 'expectedActor'> & { expectedActor?: string; firstName?: unknown; lastName?: unknown; email?: unknown }) | null> {
+async function readReport(request: Request, guest = false): Promise<(Omit<BugReport, 'expectedActor'> & { expectedActor?: string; firstName?: unknown; lastName?: unknown; email?: unknown; replyEmail?: unknown }) | null> {
   if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json' || !request.body) return null;
   const claimed = request.headers.get('content-length');
   if (claimed && (!/^\d+$/.test(claimed) || Number(claimed) > 16384)) return null;
@@ -51,7 +51,7 @@ async function readReport(request: Request, guest = false): Promise<(Omit<BugRep
       return text + decoder.decode();
     })(), 5000);
     const data = JSON.parse(text);
-    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).sort().join(',') !== (guest ? 'description,email,firstName,lastName,path,reportId' : 'description,expectedActor,path,reportId')) return null;
+    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).filter(k => guest || k !== 'replyEmail').sort().join(',') !== (guest ? 'description,email,firstName,lastName,path,reportId' : 'description,expectedActor,path,reportId')) return null;
     if (!['reportId', 'description', 'path'].every(key => typeof data[key] === 'string') || !UUID.test(data.reportId)) return null;
     if (!PATHS.has(data.path) || (!guest && (typeof data.expectedActor !== 'string' || !/^[0-9a-f]{64}$/.test(data.expectedActor))) || data.description.length > 4000) return null;
     const description = data.description.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').trim();
@@ -80,12 +80,17 @@ export async function handleBugReport(request: Request, options: Options): Promi
     if (!limit.success) return failure('rate_limited', true, 60);
   } catch { return failure('unavailable', true, 60); }
   const expectedActor = await bugReportActor(options.subject);
-  if (session) return response({ ok: true, expectedActor, preferredName: options.preferredName ?? null });
+  const loginEmail = reportEmail(options.sessionEmail, false);
+  if (session) return response({ ok: true, expectedActor, preferredName: options.preferredName ?? null,
+    ...(options.acceptsReplyEmail && !loginEmail ? { needsReplyEmail: true } : {}) });
   if (!options.service || !options.release || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(options.release)) return failure('unavailable', true, 60);
   const report = await readReport(request);
   if (!report) return failure('invalid');
   if (report.expectedActor !== expectedActor) return failure('account_changed');
+  const replyEmail = reportEmail(report.replyEmail);
+  if ('replyEmail' in report && (!options.acceptsReplyEmail || !replyEmail || loginEmail)) return failure('invalid');
   return deliveryResponse(options.service.submitAuthenticated({ reportId: report.reportId, subject: options.subject, preferredName: options.preferredName,
+    ...(loginEmail ? { sessionEmail: loginEmail } : {}), ...(replyEmail ? { replyEmail } : {}),
     description: report.description, origin: options.origin, path: report.path, release: options.release }), report.reportId);
 }
 
@@ -112,7 +117,8 @@ async function deliveryResponse(delivery: Promise<BugReportResult>, reportId: st
     const result = await within(delivery, 20000);
     if (result?.ok === true && result.status === 'saved' && result.reportId === reportId &&
         typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt)) && new Date(result.createdAt).toISOString() === result.createdAt) {
-      return response({ ok: true, status: 'saved', reportId, createdAt: result.createdAt, ...(result.delivery === 'email' || result.delivery === 'redmine' ? { delivery: result.delivery } : {}) });
+      return response({ ok: true, status: 'saved', reportId, createdAt: result.createdAt,
+        ...(result.emailUpdates ? { emailUpdates: result.emailUpdates } : {}), ...(result.delivery === 'email' || result.delivery === 'redmine' ? { delivery: result.delivery } : {}) });
     }
     if (result?.ok === false && CODES.has(result.code) && typeof result.retryable === 'boolean') {
       const retryAfterSeconds = Number.isSafeInteger(result.retryAfterSeconds) && result.retryAfterSeconds! > 0 && result.retryAfterSeconds! <= 86400 ? result.retryAfterSeconds : undefined;
