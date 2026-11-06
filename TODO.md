@@ -1,5 +1,18 @@
 # Stem Splitter — next changes in three PRs
 
+## Dashboard and activity corrections — November 6, 2026
+
+- [x] Replace Settings and Instructor Console in primary navigation with Dashboard; keep Account and Listening Guy views inside it.
+- [x] Allow each signed-in CAIL user to save Personal Listening Guy instructions, previews, resets and immutable revisions. Keep class permissions and prompts separate; guests retain the base prompt.
+- [x] Remove the subtitle divider, balance the user's two sentences, preserve the 780px outer container and wrapping before its midpoint.
+- [x] Style Share with consistently and rename Create a split to Run splitter.
+- [x] Preserve layout, search text, selections and drafts during focus rechecks; update same-account role changes without reloading.
+- [x] Audit production activity read-only. Separate opening cues from replies; distinguish account creation, browser reports, processing and background requests. Remove the incorrect October 29 history-start claim.
+- [ ] Complete frozen-source browser gates, additive Dev migration and direct Dev release; verify the signed-in Dashboard before production promotion.
+- [ ] Complete the separate 18-case instrument-label/isolation acceptance gate; metadata credits and mocked tests do not satisfy it.
+
+See [implementation and verification notes](docs/evaluation/2026-11-06-dashboard.md). No GitHub push or Actions run is part of this release.
+
 ## Current user corrections — November 5, 2026
 
 - [x] Make navigation reflect verified sign-in and instructor capabilities; move “Guest | CUNY Login” below the CAIL logo.
@@ -21,7 +34,7 @@
 
 ## Stateful application audit — November 6, 2026
 
-- [x] Use the revised two-paragraph intro, a subtle divider and desktop wrapping before the page midpoint; verify downstream spacing and the phone layout.
+- [x] Use the revised two-paragraph intro and desktop wrapping before the page midpoint (divider removed in the later Dashboard correction); verify downstream spacing and the phone layout.
 - [x] Reconcile the existing local Cloudflare release tooling from the previously deployed dev source. Follow the user's direct dev-then-production release direction; additional GitHub pushes, merges and Actions are not required.
 - [x] Trace guest, SSO-authenticated CAIL individual, enrolled student, course instructor and application instructor/admin authority across application surfaces.
 - [x] Reproduce and fix first-page-only Instructor Console class discovery.

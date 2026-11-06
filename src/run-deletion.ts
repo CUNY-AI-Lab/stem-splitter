@@ -59,6 +59,7 @@ export async function purgeDeletedRuns(env:Env) {
   await env.DB.batch([
    env.DB.prepare('DELETE FROM annotations WHERE job_id=?').bind(job.id),
    env.DB.prepare('DELETE FROM guides WHERE job_id=?').bind(job.id),
+   env.DB.prepare('DELETE FROM personal_guides WHERE job_id=?').bind(job.id),
    env.DB.prepare('DELETE FROM folder_items WHERE job_id=?').bind(job.id),
    env.DB.prepare('DELETE FROM course_folder_items WHERE job_id=?').bind(job.id),
    env.DB.prepare("UPDATE app_operations SET request_json='{}',result_json=NULL WHERE job_id=? AND state IN ('succeeded','partial','failed','cancelled')").bind(job.id),

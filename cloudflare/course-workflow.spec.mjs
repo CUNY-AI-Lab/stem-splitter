@@ -67,7 +67,7 @@ test('instructors retain roster and class controls when supplemental usage stora
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-roster')).toContainText('App usage temporarily unavailable');
   await expect(page.locator('#classroom-roster-status')).toHaveText('');
-  await expect(page.getByRole('link',{name:'Create a split',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Run splitter',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Course record',exact:true})).toBeVisible();
   await expect(page.locator('#classroom-folders')).toContainText('Class comments');
  } finally {await f.close();}
@@ -110,7 +110,7 @@ test('owner Listening Guy cue recovers visibly after a failed stream and can be 
 });
 
 
-for (const owner of [false,true]) for (const width of [1280,390]) test(`workspace Create a split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
+for (const owner of [false,true]) for (const width of [1280,390]) test(`workspace Run splitter retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
  const f=await fixture(browser);
  try {
   const page=await f.pageFor(TEST_SUBJECTS.alice,owner),errors=[];
@@ -118,7 +118,7 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`workspac
   await page.setViewportSize({width,height:900});
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-course')).toHaveValue(course);
-  await page.getByRole('link',{name:'Create a split',exact:true}).click();
+  await page.getByRole('link',{name:'Run splitter',exact:true}).click();
   await expect(page).toHaveURL(new URL(`/?course=${course}`,f.url).href);
   await expect(page).toHaveTitle(/Stem Splitter/);
   const select=page.getByLabel('Share with');

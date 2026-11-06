@@ -39,6 +39,8 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   CAIL_CLASSROOM_ENABLED?: string;
   /** Trusted request scope set only after stored-job authorization. */
   ASSISTANT_COURSE_ID?: string | null;
+  /** Request-authenticated subject for private Personal instructions/caches. */
+  ASSISTANT_PERSONAL_SUBJECT?: string | null;
   CAIL_LOGIN_URL?: string;
   ADMISSION_RESOLVER?: import('./identity.ts').AdmissionResolver;
   REMIXER_ENABLED?: string;

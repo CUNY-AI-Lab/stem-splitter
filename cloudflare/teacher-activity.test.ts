@@ -37,7 +37,7 @@ test('student review uses names, counts visits and runs, and confines audio to t
  const students=(await list.json() as any).students;
  assert.equal(students.find((r:any)=>r.subject===alice).displayName,'Alice Rivera');
  const activity=students.find((r:any)=>r.subject===alice);
- assert.deepEqual({...activity,subject:undefined,firstSeenAt:undefined,lastActiveAt:undefined},{subject:undefined,firstSeenAt:undefined,displayName:'Alice Rivera',runs:2,completed:1,guideTurns:0,recordedVisits:2,recordedPlays:0,lastActiveAt:undefined});
+ assert.deepEqual({...activity,subject:undefined,firstSeenAt:undefined,accountCreatedAt:undefined,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined},{subject:undefined,firstSeenAt:undefined,accountCreatedAt:undefined,displayName:'Alice Rivera',runs:2,completed:1,guideTurns:0,chatReplies:0,guideCues:0,recordedVisits:2,recordedPlays:0,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined});
  assert.equal(typeof activity.firstSeenAt,'string');
  assert.ok(students.some((row:any)=>row.subject===teacher),'the viewing instructor is included');
  assert.equal((await call(`/api/teacher/students/${teacher}/jobs`)).status,200);
@@ -88,7 +88,7 @@ test('claimed guest work contributes to account activity once while retaining it
  const {usageBySubject}=await import('../src/classroom/activity.ts');
  const usage=(await usageBySubject({DB:db} as Env,[alice],now)).get(alice)!;
  assert.equal(usage.runs,1);assert.equal(usage.completed,1);assert.equal(usage.guideTurns,1);
- assert.equal(usage.lastActiveAt,new Date(now-1000).toISOString());
+ assert.equal(usage.lastActiveAt,new Date(now).toISOString());
  const guests=await guestActivity({DB:db} as Env,{subject:admin,role:'admin'} as AppPrincipal);
  assert.deepEqual(guests,{days:30,browserSessions:1,splitAttempts:1,completedSplits:1,sessionsWithSplits:1,splitsSavedToAccounts:1});
  assert.doesNotMatch(JSON.stringify(guests),/Private guest|guest-[a-f0-9]{64}|cail-/);
@@ -114,6 +114,33 @@ test('a student with zero split attempts still has recorded visits, playback and
  const serialized=JSON.stringify((await db.prepare('SELECT * FROM usage_events').all()).results);
  assert.equal(serialized.includes(alice),false);
  assert.equal((await usageBySubject({DB:db} as Env,[bob])).get(bob)!.recordedVisits,0);
+});
+
+test('activity separates opening cues, replies, processing, and background requests from browser evidence',async()=>{
+ const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ const {usageBySubject}=await import('../src/classroom/activity.ts');
+ const {recordServerUse}=await import('../src/reliability/observability.ts');
+ const now=Date.now(),env={DB:db,AUTH_MODE:'cail'} as Env;
+ await db.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(alice).run();
+ for(const [id,kind,state] of [['reply','chat','succeeded'],['cue','guide','succeeded'],['failed','chat','failed']] as const) {
+  await db.prepare(`INSERT INTO app_operations(id,subject,quota_class,kind,idempotency_key,fingerprint,day,state,phase,deadline,created_at,updated_at)
+   VALUES(?,?,'member',?,?,?,'2026-11-06',?,?,?, ?,?)`)
+   .bind(id,alice,kind,`activity-${id}`,'a'.repeat(64),state,kind,now+60000,now-60000,now-(state==='failed'?15000:30000)).run();
+ }
+ await recordServerUse(env,new Request('https://split.test/api/account'),Response.json({}),{subject:alice,role:'member',quotaClass:'member'} as AppPrincipal,now);
+ const before=(await usageBySubject(env,[alice],now)).get(alice)!;
+ assert.equal(before.chatReplies,1);assert.equal(before.guideCues,1);assert.equal(before.guideTurns,2);
+ assert.equal(before.recordedVisits,0);assert.equal(before.recordedPlays,0);assert.equal(before.lastClientActivityAt,null);
+ assert.equal(before.lastServerAccessAt,new Date(now).toISOString());
+ assert.equal(before.lastOperationAt,new Date(now-15000).toISOString(),'failed processing updates do not count as delivered replies');
+ await recordClientUses(db,{subject:alice,role:'member',quotaClass:'member'} as AppPrincipal,[{id:'activity-play-report-0001',type:'playback_start'}]);
+ const after=(await usageBySubject(env,[alice])).get(alice)!;
+ assert.equal(after.recordedVisits,0);assert.equal(after.recordedPlays,1);assert.ok(after.lastClientActivityAt);
+ assert.equal(after.lastServerAccessAt,before.lastServerAccessAt);
+ // Client evidence expires independently of the account/operation history.
+ const later=(await usageBySubject(env,[alice],now+31*86400000)).get(alice)!;
+ assert.equal(later.recordedPlays,0);assert.equal(later.lastClientActivityAt,null);assert.equal(later.lastServerAccessAt,null);
+ assert.equal(later.chatReplies,1);assert.equal(later.lastOperationAt,before.lastOperationAt);
 });
 
 test('account pages reach eligible members beyond 200 accounts, advance through empty pages, and reject malformed cursors',async()=>{

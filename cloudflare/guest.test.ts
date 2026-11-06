@@ -112,7 +112,7 @@ for(const chatAvailable of [true,false])test(`workerd guests: five daily splits,
     const memberCookie='__Host-stem-session=invalid';
     assert.equal((await call('/api/account',cookieA+'; '+memberCookie)).status,401,'invalid member cannot become guest');
     assert.equal((await begin('member-downgrade',cookieA+'; '+memberCookie)).status,403);
-    for(const path of ['/api/classroom/courses','/api/teacher/prompt','/api/teacher/folders','/api/admin/users','/api/model-quota'])assert.equal((await call(path,cookieA)).status,403,path);
+    for(const path of ['/api/account/prompt','/api/account/prompt/history?before=1','/api/account/prompt/preview','/api/classroom/courses','/api/teacher/prompt','/api/teacher/folders','/api/admin/users','/api/model-quota'])assert.equal((await call(path,cookieA)).status,403,path);
     assert.equal((await call('/api/account',cookieA,{headers:{'x-stem-course':'msh-245-the-american-musical-experience-fall-2026-01'}})).status,403);
     assert.deepEqual(await(await call('/api/teacher/me',cookieA)).json(),{teacher:null});
 

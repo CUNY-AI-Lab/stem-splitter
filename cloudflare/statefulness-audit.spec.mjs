@@ -38,9 +38,9 @@ for (const direct of [false, true]) test(`Instructor Console discovers authorize
     });
     await page.goto(new URL('/teacher.html' + (direct ? '?course=' + courseId : ''), f.url).href);
     await expect(page.locator('#console-panel')).toBeVisible();
-    await expect(page.locator('#prompt-scope-note')).toContainText('Applies to');
+    await expect(page.locator('#prompt-scope-note')).toContainText(direct?'Applies to':'Applies only to your Personal work');
     await expect(page.locator('#prompt-form')).toBeVisible();
-    await expect(page.locator('[data-instructor-nav]')).toBeVisible();
+    await expect(page.locator('#instruction-scope option[value="'+courseId+'"]')).toHaveCount(1);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
@@ -91,8 +91,7 @@ for (const persona of ['individual', 'student', 'course instructor']) test(`${pe
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('.workspace-nav')).toBeVisible();
       await expect(page.locator('#header-signin')).toBeHidden();
-      await expect(page.locator('.workspace-nav a:visible')).toHaveText(teaches
-        ? ['Splitter', 'Workspace', 'Settings', 'Instructor Console'] : ['Splitter', 'Workspace', 'Settings']);
+      await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter', 'Workspace', 'Dashboard']);
       if (path === '/account.html') {
         await expect(page.locator('#account-role')).toHaveText(persona === 'student' ? 'Student access' : 'CUNY AI Lab member access');
         await expect(page.locator('#account-admin')).toBeHidden();
@@ -108,8 +107,9 @@ for (const persona of ['individual', 'student', 'course instructor']) test(`${pe
           await expect(page.locator('#classroom-roster-section')).toBeVisible({ visible: teaches });
         }
       } else if (path === '/teacher.html') {
-        await expect(page.locator('#console-panel')).toBeVisible({ visible: teaches });
-        if (!teaches) await expect(page.locator('#course-discovery-status')).toContainText('No instructor classes');
+        await expect(page.locator('#console-panel')).toBeVisible();
+        await expect(page.locator('#amendment-label')).toHaveText('Personal instructions');
+        await expect(page.locator('#instruction-scope option[value="'+courseId+'"]')).toHaveCount(teaches?1:0);
       } else {
         await expect(page.locator('#new-split-course')).toHaveValue('personal');
         await expect(page.locator('#course-context')).toBeVisible({ visible: persona !== 'individual' });
@@ -138,15 +138,15 @@ for (const path of ['/', '/classroom.html', '/teacher.html']) test(`repeated emp
       return route.fulfill({ status: reads > 10 ? 503 : 200, json: { courses: [], nextCursor: 'repeated-page' } });
     });
     await page.goto(new URL(path, f.url).href);
-    const status = path === '/' ? '.course-load-status' : path === '/classroom.html' ? '#account-status' : '#teacher-access-status';
-    await expect(page.locator(status)).toContainText('could not be fully checked');
+    const status = path === '/' ? '.course-load-status' : path === '/classroom.html' ? '#account-status' : '#instruction-scope-status';
+    await expect(page.locator(status)).toContainText(path==='/teacher.html'?'Class choices are temporarily unavailable':'could not be fully checked');
     expect(reads).toBeLessThanOrEqual(4);
     await expect(page.locator('.workspace-nav')).toBeVisible();
     await expect(page.locator('[data-instructor-nav]')).toBeHidden();
     if (path === '/') {
       await expect(page.locator('#new-split-course')).toBeEnabled();
       await expect(page.locator('#new-split-course')).toHaveValue('personal');
-    } else await expect(page.locator('#console-panel')).toBeHidden();
+    } else await expect(page.locator('#console-panel')).toBeVisible({visible:path==='/teacher.html'});
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });

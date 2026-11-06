@@ -167,7 +167,7 @@ test('current roster reports older personal app use without exposing recordings 
   const result=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(result.status,200);
   const page=await result.json() as any,alice=page.participants[0];
   assert.equal(alice.splitCount,1);assert.equal(alice.completedCount,1);
-  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined},{runs:2,completed:2,guideTurns:1,recordedVisits:1,recordedPlays:0,lastActiveAt:undefined});
+  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined},{runs:2,completed:2,guideTurns:1,chatReplies:1,guideCues:0,recordedVisits:1,recordedPlays:0,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined});
   assert.ok(Date.now()-Date.parse(alice.appUsage.lastActiveAt)<60000);
   assert.equal(page.participants[1].appUsage,null);
   assert.equal(page.activityScope.recordedVisitsDays,30);
@@ -306,7 +306,7 @@ test('Personal prompts and cached guides exclude teaching instructions regardles
   const saved=await request('/api/teacher/prompt','alice','PUT',edit);assert.equal(saved.status,200);
   assert.equal((await saved.json() as any).guidesCleared,0);
   assert.equal((await request('/api/teacher/prompt','alice','PUT',edit)).status,409,'stale global write retains revision checks');
-  assert.ok(await getGuide(env,'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
+  assert.ok(await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.alice},'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
   assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,0,empty),true,'base-only personal guides are independent of class edits');
   await db.prepare('UPDATE guides SET prompt_hash=? WHERE job_id=?').bind(await hashSystemPromptFingerprint(globalText),'personal').run();
   assert.equal(await getGuide(env,'personal'),null,'old teaching-influenced guides cannot be reused');
@@ -324,9 +324,9 @@ test('Personal prompts and cached guides exclude teaching instructions regardles
   assert.equal(systems.length,3);
   for(const system of systems.slice(0,2)){assert.doesNotMatch(system,new RegExp(globalText));assert.doesNotMatch(system,new RegExp(courseText));}
   assert.match(systems[2],new RegExp(courseText));assert.doesNotMatch(systems[2],new RegExp(globalText));
-  assert.equal((await getGuide(env,'personal'))?.text,'A useful reply.');
+  assert.equal((await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.alice},'personal'))?.text,'A useful reply.');
   assert.equal((await request('/api/teacher/prompt','admin','PUT',{amendment:'New global instructions',expectedRevision:1,changeNote:'Global update'})).status,200);
-  assert.ok(await getGuide(env,'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
+  assert.ok(await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.alice},'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
   assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,1,await hashSystemPromptFingerprint(globalText)),false);
   await db.prepare("UPDATE app_users SET role_expires_at=datetime('now','-1 day'),revision=revision+1,updated_by=? WHERE subject=?").bind(ids.admin,ids.alice).run();
   assert.equal((await request('/api/teacher/prompt')).status,403,'expired instructor role cannot edit global policy');
@@ -351,7 +351,7 @@ test('CUNY individual access without course enrollment uses only the default Lis
   assert.equal(chat.status,200);await chat.text();
   assert.equal(systems.length,2);
   for(const system of systems)assert.ok(!system.includes(teaching));
-  assert.equal((await getGuide(env,'individual'))?.text,'An independent listening reply.');
+  assert.equal((await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.outsider},'individual'))?.text,'An independent listening reply.');
 });
 test('course folders enforce same-course items, grants and author-only notes on every route',async()=>{
   const {request,job,db}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
@@ -393,6 +393,7 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const usageAccounts=readFileSync(new URL('../migrations/0030-course-usage-accounts.sql',import.meta.url),'utf8');db.applySchema(usageAccounts);db.applySchema(usageAccounts);
   const reports=readFileSync(new URL('../migrations/0031-bug-report-receipts.sql',import.meta.url),'utf8');db.applySchema(reports);db.applySchema(reports);
   const deliveries=readFileSync(new URL('../migrations/0032-bug-report-deliveries.sql',import.meta.url),'utf8');db.applySchema(deliveries);db.applySchema(deliveries);
+  const personal=readFileSync(new URL('../migrations/0033-personal-listening-instructions.sql',import.meta.url),'utf8');db.applySchema(personal);db.applySchema(personal);
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);

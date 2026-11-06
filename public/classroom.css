@@ -18,6 +18,13 @@
   font: 500 .75rem/1.35 var(--font-mono); letter-spacing: 0;
 }
 .instructor-console #classroom-refresh { margin-left: auto; }
+.refined-ui.instructor-console #classroom-create {
+  width: auto; min-height: 44px; padding: .65rem .95rem; border: 1px solid var(--hot);
+  border-radius: 6px; background: var(--hot-soft); color: var(--ink); text-decoration: none;
+  font: 500 .8rem/1.2 var(--font-body); letter-spacing: 0; text-transform: none;
+}
+.refined-ui.instructor-console #classroom-create:hover { background: var(--hot); color: var(--bg); }
+.refined-ui.instructor-console #classroom-create:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .instructor-console #classroom-refresh-status { color: var(--ink-dim); font-size: .75rem; }
 .instructor-console #classroom-usage { padding-bottom: .75rem; border-bottom: 1px solid var(--panel-edge); }
 .instructor-console #classroom-student-name { font-size: 1.05rem; }

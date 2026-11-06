@@ -279,8 +279,9 @@ async function initializeCourseSelection() {
       const valid = new Set(['personal',...courses.map(course=>course.classId)]);
       const previous = initialized ? selectedCourse : requestedCourse;
       const choice = valid.has(previous) ? previous : '';
-      select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
-        ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
+      const options=[new Option('Choose a workspace',''),new Option('Personal','personal'),
+        ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId))];
+      if(options.length!==select.options.length||options.some((option,index)=>option.value!==select.options[index]?.value||option.text!==select.options[index]?.text))select.replaceChildren(...options);
       select.options[0].disabled = true;
       choose(choice); initialized = true;
       status.textContent = previous && !valid.has(previous) ? 'Class access changed. Choose a workspace for this split.' : '';
@@ -3987,7 +3988,9 @@ function showInstructorTools(verified) {
   instructorVerified = verified;
   document.body.classList.toggle('instructor', verified);
   foldersSection.hidden = !verified;
-  for (const menu of document.querySelectorAll('.folder-menu')) menu.hidden = !verified;
+  foldersSection.style.visibility = '';
+  foldersSection.inert = false;
+  for (const menu of document.querySelectorAll('.folder-menu')) { menu.hidden = !verified; menu.inert = false; menu.style.visibility = ''; }
 }
 
 function clearInstructorAccess() {
@@ -4004,7 +4007,11 @@ async function detectInstructor() {
   instructorCheck?.abort();
   const controller = new AbortController(); instructorCheck = controller;
   const timer = setTimeout(() => controller.abort(), 5000);
-  showInstructorTools(false);
+  // Keep layout geometry while concealing and disabling pending authority.
+  instructorVerified = false;
+  foldersSection.inert = true;
+  foldersSection.style.visibility = 'hidden';
+  for (const menu of document.querySelectorAll('.folder-menu')) { menu.inert = true; menu.style.visibility = 'hidden'; }
   try {
     const res = await fetch('/api/teacher/me', { cache: 'no-store', signal: controller.signal });
     if (generation !== instructorGeneration || actor !== accountSubject) return;
@@ -5634,7 +5641,7 @@ async function preserveProgressBeforeSignIn(event, url) {
 window.addEventListener('pagehide', () => { for (const mixer of mixers.values()) mixer.saveListeningProgress(); });
 
 // --- init -------------------------------------------------------------
-window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail') location.reload(); });
+window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail' && !window.StemSessionGuard) location.reload(); });
 
 async function initialize() {
   try {

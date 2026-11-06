@@ -1,3 +1,4 @@
+import personalPromptRoutes from './personal-prompts.ts';
 import {searchOpenAudio,OpenAudioError} from './open-audio.ts';
 import { musicSearchResponse } from './music-search.ts';
 import { getRecordingReference, MusicBrainzError } from './musicbrainz.ts';
@@ -14,7 +15,6 @@ import classroomRoutes from './classroom/routes.ts';
 import instrumentTargetRoutes from './isolation/routes.ts';
 import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
-import { coursePrompt } from './classroom/prompts.ts';
 import { storedResplit } from './resplits.ts';
 import { Hono } from 'hono';
 import { archiveSongSearchResponse } from './archive-search-response.ts';
@@ -103,6 +103,7 @@ import {
   COACH_DOWN,
   COACH_UNCONFIGURED,
   getGuide,
+  loadAmendmentState,
   streamGuide,
   streamChat,
   validateTurns,
@@ -204,6 +205,10 @@ async function sha256Text(value: string): Promise<string> {
 
 type AppContext = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const app = new Hono<AppContext>();
+function assistantEnv(c: Context<AppContext>): Env {
+  const p = c.get('principal');
+  return { ...c.env, ASSISTANT_PERSONAL_SUBJECT: p && !guestPrincipal(p) ? p.subject : null };
+}
 
 // The shared footer also runs on the legacy host, which has no report receiver.
 app.get('/api/bug-reports/availability', (c) => {
@@ -238,6 +243,7 @@ app.use('/api/*', async(c,next)=>{
 });
 
 app.route('/api/classroom', classroomRoutes);
+app.route('/api/account', personalPromptRoutes);
 
 app.post('/api/usage-events',async c=>{
   const principal=c.get('principal');
@@ -1572,7 +1578,7 @@ app.get('/api/jobs/:id', async (c) => {
     .all<AnnotationRow>();
   // The cached listening guide only exists for finished jobs; skip the extra
   // SELECT on the frequent still-processing polls.
-  const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
+  const guide = row.status === 'done' ? await getGuide(assistantEnv(c), id) : null;
   const attribution = await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id = ?').bind(id).first<{ attribution: string }>();
   const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
   const principal = c.get('principal');
@@ -2070,10 +2076,10 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     .all<AnnotationRow>();
 
   const principal=c.get('principal');
-  const cachedGuide=await getGuide(c.env,id);
+  const cachedGuide=await getGuide(assistantEnv(c),id);
   if(cachedGuide)return sseResponse(c,async emit=>{await emit({type:'done',text:cachedGuide.text,model:cachedGuide.model,createdAt:cachedGuide.createdAt,cached:true,finishReason:'stop',usage:await currentListeningUsage(c)});});
   const scope=await jobCourse(c.env,id);
-  const prompt=await coursePrompt(c.env,scope?.course_id ?? null);
+  const prompt=await loadAmendmentState({ ...assistantEnv(c), ASSISTANT_COURSE_ID: scope?.course_id ?? null });
   const guideInput=[id,scope?.course_id ?? null,prompt.revision,await hashSystemPromptFingerprint(prompt.amendment),parseDuration(body?.durationSec)];
   const guideKey=typeof body?.messageId==='string'?body.messageId:c.req.header('Idempotency-Key') ?? await fingerprint([...guideInput,Math.floor(Date.now()/300000)]);
   const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,guideInput,principal.quotaClass ?? 'member'):null;
@@ -2082,7 +2088,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   return sseResponse(c, async (emit, signal) => {
     try {
       const { guide, cached } = await streamGuide(
-        { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id,assistantEffectIntent:()=>receipt?.effect() ?? Promise.resolve() }, row, results ?? [], parseDuration(body?.durationSec),
+        { ...assistantEnv(c), ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id,assistantEffectIntent:()=>receipt?.effect() ?? Promise.resolve() }, row, results ?? [], parseDuration(body?.durationSec),
         async text => {await receipt?.delta(text);await emit({type:'delta',text});}
       );
       if(cached)await receipt?.cached();else await receipt?.complete(guide.text);
@@ -2253,7 +2259,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     try {
       if(durable?.replay) {await receipt?.failed();throw new AssistantError(503,'This input was already accepted. Reload the conversation before continuing.');}
       const result = await streamChat(
-        { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
+        { ...assistantEnv(c), ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
         async text => {
           if(durable && !await c.env.DB.prepare(`SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`)
             .bind(id,principal!.subject,durable.claimId).first()) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');

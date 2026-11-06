@@ -1,5 +1,5 @@
 const el = (id) => document.getElementById(id);
-window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
+window.addEventListener('pageshow', event => { if (event.persisted && !window.StemSessionGuard) location.reload(); });
 let users = [];
 let subject = '';
 let membersLoaded = false;
@@ -14,6 +14,20 @@ let studentRows = [], studentsLoading = null, studentsLoaded = false, studentsNe
 const currentAccount = generation => !sessionEnded && generation === accountGeneration;
 const canManageAccounts = () => Boolean(subject) && !sessionEnded && accountRole === 'admin';
 const canReviewStudents = () => Boolean(subject) && !sessionEnded && ['admin', 'instructor'].includes(accountRole);
+function applyAccountCapabilities(account) {
+  if (accountRole && accountRole !== account.role) {
+    accountGeneration++; studentRequest++;
+    users=[];membersLoaded=false;membersLoading=false;membersNextCursor=null;saving=false;
+    studentRows=[];studentsLoaded=false;studentsLoading=null;studentsNextCursor=null;studentSelection='';studentCursor=null;
+    el('access-form').reset();el('access-form').hidden=true;el('access-member').replaceChildren();el('access-editor').disabled=true;
+    el('student-list').replaceChildren();el('student-jobs').replaceChildren();el('student-detail').hidden=true;
+    el('student-status').textContent='';el('access-status').textContent='';
+  }
+  accountRole=account.role;
+  el('account-role').textContent=`${{admin:'Administrator',instructor:'Instructor',student:'Student',member:'CUNY AI Lab member'}[accountRole]||'CUNY AI Lab member'} access`;
+  el('account-admin').hidden=!canManageAccounts();
+  el('student-review').hidden=!canReviewStudents();
+}
 function clearAccountState() {
   sessionEnded = true;
   accountGeneration++;
@@ -35,9 +49,9 @@ window.addEventListener('focus', async () => {
     } else if (response.ok) {
       const { account } = await response.json();
       if (!currentAccount(generation)) return;
-      if (account?.subject !== subject || account?.role !== accountRole) {
+      if (account?.subject !== subject) {
         window.StemSessionGuard ? window.StemSessionGuard.clear() : location.reload();
-      }
+      } else applyAccountCapabilities(account);
     }
   } catch { /* A network outage is not a sign-out. */ }
   finally { checkingAccount = false; }
@@ -165,17 +179,15 @@ el('access-form').addEventListener('submit', async (event) => {
     if (!currentAccount(generation)) return;
     if (account.quotaClass === 'guest') { location.replace('/'); return; }
     subject = account.subject;
-    accountRole = account.role;
+    applyAccountCapabilities(account);
     window.StemSessionGuard?.start(subject, clearAccountState);
     el('account-status').textContent = '';
     try { await window.StemGuestClaim.run(account); }
     catch (error) { if (currentAccount(generation)) el('account-status').textContent = error.message; }
     if (!currentAccount(generation)) return;
-    el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student', member: 'CUNY AI Lab member' }[account.role] || 'CUNY AI Lab member'} access`;
     el('account-details').hidden = false;
+    document.querySelector('.dashboard-nav').hidden = false;
     el('account-footer').hidden = false;
-    el('account-admin').hidden = account.role !== 'admin';
-    el('student-review').hidden = !['admin', 'instructor'].includes(account.role);
     if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {
@@ -198,18 +210,39 @@ el('access-form').addEventListener('submit', async (event) => {
   }
 })();
 
+function activityNumber(value) {
+  return Number.isInteger(value)&&value>=0 ? (value===0?'None recorded':String(value)) : 'Unavailable';
+}
+function activityDate(value) {
+  if(typeof value!=='string')return 'Not recorded';
+  const date=new Date(/(?:Z|[+-]\d\d:?\d\d)$/.test(value)?value:value.replace(' ','T')+'Z');
+  return Number.isFinite(date.valueOf())?date.toLocaleString():'Not recorded';
+}
 function studentSummary(student) {
-  const visits = student.recordedVisits || student.recordedPlays
-    ? `${student.recordedVisits} recorded ${student.recordedVisits === 1 ? 'visit' : 'visits'} · ${student.recordedPlays ?? 0} recorded ${(student.recordedPlays ?? 0) === 1 ? 'play' : 'plays'}`
-    : 'Visit and playback history begins Oct 29';
-  const first = typeof student.firstSeenAt === 'string' ? Date.parse(student.firstSeenAt.replace(' ', 'T') + (student.firstSeenAt.endsWith('Z') ? '' : 'Z')) : NaN;
-  return `${student.runs} recorded split ${student.runs === 1 ? 'attempt' : 'attempts'} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide ${(student.guideTurns ?? 0) === 1 ? 'turn' : 'turns'} · ${visits}${Number.isFinite(first) ? ` · First account access ${new Date(first).toLocaleDateString()}` : ''}${student.lastActiveAt ? ` · Last recorded activity ${new Date(student.lastActiveAt).toLocaleString()}` : ''}`;
+  return `Runs: ${activityNumber(student.runs)} · Completed: ${activityNumber(student.completed)} · Replies: ${activityNumber(student.chatReplies)} · Opening cues: ${activityNumber(student.guideCues)}. Browser reports in the past 30 days — visits: ${activityNumber(student.recordedVisits)}; plays: ${activityNumber(student.recordedPlays)}.`;
+}
+function renderActivity(student) {
+  const row=document.createElement('li');row.className='activity-card';
+  const button=document.createElement('button');button.type='button';button.className='student-select';
+  button.textContent=student.displayName+(student.subject===subject?' (you)':'');
+  button.addEventListener('click',()=>void loadStudentJobs(student));
+  const metrics=document.createElement('dl');metrics.className='activity-metrics';
+  for(const [label,key] of [['Runs','runs'],['Completed','completed'],['Replies','chatReplies'],['Opening cues','guideCues'],['Visit reports','recordedVisits'],['Play reports','recordedPlays']]) {
+    const group=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');
+    dt.textContent=label;dd.textContent=activityNumber(student[key]);dd.dataset.empty=String(!student[key]);group.append(dt,dd);metrics.append(group);
+  }
+  const dates=document.createElement('details');dates.className='activity-dates';
+  const summary=document.createElement('summary');summary.textContent='Recorded dates';const list=document.createElement('dl');
+  for(const [label,value] of [['Account added',student.accountCreatedAt??student.firstSeenAt],['Last browser activity',student.lastClientActivityAt],['Last operation record',student.lastOperationAt],['Last authenticated request',student.lastServerAccessAt]]) {
+    const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=activityDate(value);list.append(dt,dd);
+  }
+  dates.append(summary,list);row.append(button,metrics,dates);return row;
 }
 function loadStudents(more = false) {
   if (!canReviewStudents()) return Promise.resolve(false);
   if (studentsLoading) return studentsLoading;
   const generation = accountGeneration;
-  el('student-status').textContent = 'Loading students…';
+  el('student-status').textContent = 'Loading account activity…';
   el('student-list-more').disabled = true;
   el('guest-activity').textContent='Loading guest activity…';
   el('student-retry').hidden = true;
@@ -229,14 +262,7 @@ function loadStudents(more = false) {
       ? `${guests.browserSessions} guest sessions created · ${guests.splitsSavedToAccounts} ${guests.splitsSavedToAccounts === 1 ? 'split' : 'splits'} saved to accounts · ${Math.max(0, guests.completedSplits - guests.splitsSavedToAccounts)} completed ${guests.completedSplits - guests.splitsSavedToAccounts === 1 ? 'split' : 'splits'} awaiting an account link`
       : '';
     studentsLoaded = true;
-    el('student-list').replaceChildren(...studentRows.map(student => {
-      const row = document.createElement('li'), button = document.createElement('button'), count = document.createElement('span');
-      button.type = 'button'; button.className = 'student-select'; button.textContent = student.displayName + (student.subject === subject ? ' (you)' : '');
-      button.addEventListener('click', () => void loadStudentJobs(student));
-      count.className = 'student-count';
-      count.textContent = studentSummary(student);
-      row.append(button, count); return row;
-    }));
+    el('student-list').replaceChildren(...studentRows.map(renderActivity));
     el('student-status').textContent = studentRows.length ? '' : studentsNextCursor ? 'No eligible accounts on these pages yet.' : 'Students appear here after they use Stem Splitter.';
     return true;
   } catch (error) {

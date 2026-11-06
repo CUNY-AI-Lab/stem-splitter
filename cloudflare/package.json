@@ -24,7 +24,9 @@
     "deploy:production": "node ../scripts/local-release/deploy.mjs production",
     "deploy:plan": "node ../scripts/local-release/deploy.mjs dev --plan",
     "deploy:check": "node ../scripts/local-release/deploy.mjs dev --check",
-    "test:local-release": "node --test ../scripts/local-release/deploy.test.mjs"
+    "test:local-release": "node --test ../scripts/local-release/deploy.test.mjs",
+    "db:migrate:33": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0033-personal-listening-instructions.sql",
+    "db:migrate:33:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0033-personal-listening-instructions.sql"
   },
   "dependencies": {
     "@breezystack/lamejs": "1.2.7",
