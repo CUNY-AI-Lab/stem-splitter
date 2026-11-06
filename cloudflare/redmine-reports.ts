@@ -104,7 +104,7 @@ export function redmineReports(db: D1Database, key: string): BugReportService {
       const result = await redmine(key, 'issues.json', signal, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cail_reporter: reporter, issue: { project_id: PROJECT, tracker_id: TRACKER, subject: subject(owner, id), is_private: true,
           description: [...(report.contact ? [`Reporter (self-reported): ${report.contact.firstName} ${report.contact.lastName}`, `Contact email (unverified): ${report.contact.email}`]
-            : [`CAIL account reference: ${owner.slice(0,16)}`, ...(report.preferredName ? [`SSO preferred name: ${report.preferredName}`] : [])]), `Page: ${page}`, `Stem Splitter release: ${report.release}`,
+            : [`CAIL account reference: ${owner.slice(0,16)}`, ...(report.preferredName ? [`SSO preferred name: ${report.preferredName}`] : []), ...(report.sessionEmail ? [`SSO email: ${report.sessionEmail}`] : [])]), `Page: ${page}`, `Stem Splitter release: ${report.release}`,
             `Reported at: ${receipt.created_at}`, `Report reference: ${id}`, '', report.description].join('\n'),
         } }),
       });

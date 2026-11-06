@@ -12,7 +12,7 @@ const report = { reportId: '77000000-0000-4000-8000-000000000001', subject: 'cai
   description: 'Synthetic playback report.', origin: 'https://fixture.test', path: '/', release: 'fixture' };
 
 test('Workerd Redmine transport saves once, refuses redirects without reading bodies, and only looks up uncertain deliveries', { timeout: 60000 }, async () => {
-  let receivedReporter: unknown;
+  let receivedReporter: unknown, receivedDescription = '';
   let mode = 'saved', status = 302, destination = 'https://redirect.invalid/collect', posts = 0, gets = 0, redirects = 0, savedSubject = '';
   const bundle = await build({ entryPoints: [fileURLToPath(new URL('./test-redmine-worker.ts', import.meta.url))], bundle: true,
     format: 'esm', write: false, platform: 'browser', target: 'es2022' });
@@ -30,7 +30,7 @@ test('Workerd Redmine transport saves once, refuses redirects without reading bo
       }
       posts++;
       const payload = await request.json() as any;
-      savedSubject = payload.issue.subject; receivedReporter = payload.cail_reporter;
+      savedSubject = payload.issue.subject; receivedReporter = payload.cail_reporter; receivedDescription = payload.issue.description;
       if (mode === 'redirect' || mode === 'oversize-redirect' || mode === 'stalled-redirect') {
         const body = mode === 'oversize-redirect' ? 'x'.repeat(2*1024*1024+1)
           : mode === 'stalled-redirect' ? new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('pending')); } }) : '';
@@ -50,9 +50,9 @@ test('Workerd Redmine transport saves once, refuses redirects without reading bo
     const fresh = () => ({ ...report, subject: 'cail-'+sequence.toString(16).padStart(32,'0'), reportId: `77000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}` });
     const submit = async (value: any) => await (await fetch('/submit', { method: 'POST', body: JSON.stringify(value) })).json() as any;
     const receipt = async () => (await (await fetch('/receipts')).json() as any[]).at(-1);
-    const first = {...fresh(),sessionEmail:'student@college.edu'};
+    const first = {...fresh(),sessionEmail:'student@college.edu',preferredName:'Sam Student'};
     assert.equal((await submit(first)).emailUpdates,'subscribed');
-    assert.deepEqual(receivedReporter,{source:'cuny_login',email:'student@college.edu'}); assert.equal(posts,1);
+    assert.deepEqual(receivedReporter,{source:'cuny_login',email:'student@college.edu'}); assert.match(receivedDescription, /SSO preferred name: Sam Student/); assert.match(receivedDescription, /SSO email: student@college.edu/); assert.equal(posts,1);
     assert.equal((await submit(first)).ok,true); assert.equal(posts,1);
     assert.equal((await submit({...first,description:'Changed synthetic report'})).code,'idempotency_conflict'); assert.equal(posts,1);
     for (status of [301,302,303,307,308]) for (destination of ['https://redirect.invalid/collect','https://tools.ailab.gc.cuny.edu/redirect-target']) {
