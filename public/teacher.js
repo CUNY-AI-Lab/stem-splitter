@@ -133,7 +133,7 @@ async function api(path, options = {}) {
     if (scoped && generation === teacherGeneration && ![400, 409].includes(error.status)) {
       courseAuthorityUncertain = true;
       courseFailureVersion++;
-      accessStatus.textContent = 'Access could not be verified. Return to this tab to recheck. Your draft is retained; reload saved instructions before retrying an uncertain save.';
+      accessStatus.textContent = 'Access could not be verified. Return to this tab to recheck. Your draft is retained; use Reload before retrying an uncertain save.';
     }
     throw error;
   } finally {
@@ -525,7 +525,7 @@ promptForm.addEventListener('submit', async (event) => {
   const nextAmendment = amendment.value.trim();
   const changed = nextAmendment !== loadedAmendment;
   if (changed && !changeNote.value.trim()) {
-    showStatus('Add a change note before saving.', true);
+    showStatus('Say what changed before saving.', true);
     changeNote.focus();
     return;
   }

@@ -1922,7 +1922,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.locator('#prompt-status')).toContainText('Add a change note');
+  await expect(page.locator('#prompt-status')).toContainText('Say what changed');
 
   const changeNote = 'Add bilingual vocabulary guidance for the survey course';
   await page.locator('#change-note').fill(changeNote);
@@ -1955,7 +1955,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'Preview saved prompt', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
 
