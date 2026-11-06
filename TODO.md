@@ -50,6 +50,12 @@ No UI test, fixed Demucs category or relabeling of its output closes these items
 The optional SAM trial has not run and is not a prerequisite for the completed
 application audit. Its earlier conditional approval remains unchanged.
 
+### Settings follow-up — November 6, 2026
+
+- [x] Invalidate pending Settings requests and cached selections when the session ends; retain an unsent report without stale callbacks touching removed controls.
+- [x] Stop automatic student activity lookups on repeated cursors or after ten additional pages; keep manual pagination and retry available.
+- [ ] Release this additional Settings correction through Dev and production after exact-source verification. It is separate from the already deployed `b953107` audit; the prior command-line production health read returned 403 and has not been retried or bypassed. See [follow-up evidence](docs/evaluation/2026-11-06-settings-follow-up.md).
+
 The last two model evaluations have not established reliable isolation. The
 November 5 [source-separation record](docs/evaluation/2026-11-05-source-separation-status.md)
 contains the measured results and exact remaining access/data gaps. YouTube and

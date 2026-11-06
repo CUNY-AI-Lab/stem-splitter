@@ -8,21 +8,34 @@ let membersNextCursor = null;
 let saving = false;
 let accountRole = '';
 let checkingAccount = false;
+let accountGeneration = 0, sessionEnded = false;
+let studentSelection = '', studentCursor = null, studentRequest = 0;
+let studentRows = [], studentsLoading = null, studentsLoaded = false, studentsNextCursor = null;
+const currentAccount = generation => !sessionEnded && generation === accountGeneration;
+const canManageAccounts = () => Boolean(subject) && !sessionEnded && accountRole === 'admin';
+const canReviewStudents = () => Boolean(subject) && !sessionEnded && ['admin', 'instructor'].includes(accountRole);
+function clearAccountState() {
+  sessionEnded = true;
+  accountGeneration++;
+  studentRequest++;
+  users = []; subject = ''; accountRole = '';
+  membersLoaded = false; membersLoading = false; membersNextCursor = null; saving = false;
+  studentSelection = ''; studentCursor = null;
+  studentRows = []; studentsLoading = null; studentsLoaded = false; studentsNextCursor = null;
+}
 window.addEventListener('focus', async () => {
   if (!subject || checkingAccount) return;
+  const generation = accountGeneration;
   checkingAccount = true;
   try {
     const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
+    if (!currentAccount(generation)) return;
     if (response.status === 401 || response.status === 403) {
-      for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
-      users = [];
-      el('access-member').replaceChildren();
-      subject = '';
       window.StemSessionGuard ? window.StemSessionGuard.clear() : location.reload();
     } else if (response.ok) {
       const { account } = await response.json();
+      if (!currentAccount(generation)) return;
       if (account?.subject !== subject || account?.role !== accountRole) {
-        for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) el(id).hidden = true;
         window.StemSessionGuard ? window.StemSessionGuard.clear() : location.reload();
       }
     }
@@ -36,6 +49,7 @@ async function request(path, options = {}) {
   return body;
 }
 function selectMember(event) {
+  if (!canManageAccounts()) return;
   const user = users.find((user) => user.subject === el('access-member').value);
   el('access-editor').hidden = !user;
   el('access-editor').disabled = !user || saving;
@@ -49,6 +63,7 @@ function selectMember(event) {
   if (event?.type === 'change') void openAccountActivity(user);
 }
 function showExpiry() {
+  if (!canManageAccounts()) return;
   const instructor = el('access-role').value === 'instructor';
   el('access-permanent-field').hidden = !instructor;
   el('access-permanent').disabled = !instructor;
@@ -58,13 +73,15 @@ function showExpiry() {
   el('access-expiry').required = needsDate;
 }
 async function loadMembers(more = false) {
-  if (membersLoading) return;
+  if (!canManageAccounts() || membersLoading) return false;
+  const generation = accountGeneration;
   membersLoading = true;
   el('access-more').disabled = true;
   el('access-retry').hidden = true;
   const previous = el('access-member').value;
   try {
     const result = await request('/api/admin/users' + (more && membersNextCursor ? `?cursor=${encodeURIComponent(membersNextCursor)}` : ''));
+    if (!currentAccount(generation)) return false;
     if (more && result.nextCursor && result.nextCursor === membersNextCursor) throw new Error('Account page did not advance. Try again.');
     const rows = result.users.filter((user) => user.subject !== subject);
     users = more ? [...new Map([...users, ...rows].map(user => [user.subject, user])).values()] : rows;
@@ -82,6 +99,7 @@ async function loadMembers(more = false) {
     membersLoaded = true;
     return true;
   } catch (error) {
+    if (!currentAccount(generation)) return false;
     // An administration outage must not hide a valid sign-in or enable stale edits.
     el('access-form').hidden = true;
     el('access-empty').hidden = true;
@@ -89,27 +107,34 @@ async function loadMembers(more = false) {
     el('access-retry').hidden = false;
     membersLoaded = false;
     return false;
-  } finally { membersLoading = false; el('access-more').disabled = false; }
+  } finally {
+    if (currentAccount(generation)) { membersLoading = false; el('access-more').disabled = false; }
+  }
 }
 el('access-more').addEventListener('click', () => void loadMembers(true));
 el('access-member').addEventListener('change', selectMember);
 el('access-role').addEventListener('change', () => {
+  if (!canManageAccounts()) return;
   // Selecting a new role never silently selects a permanent grant.
   el('access-permanent').checked = false;
   showExpiry();
 });
 el('access-permanent').addEventListener('change', showExpiry);
 el('account-admin').addEventListener('toggle', async () => {
-  if (el('account-admin').open && !membersLoaded && !membersLoading) {
+  if (canManageAccounts() && el('account-admin').open && !membersLoaded && !membersLoading) {
+    const generation = accountGeneration;
     el('access-status').textContent = 'Loading accounts…';
-    if (await loadMembers()) el('access-status').textContent = '';
+    if (await loadMembers() && currentAccount(generation)) el('access-status').textContent = '';
   }
 });
 el('access-retry').addEventListener('click', async () => {
-  if (await loadMembers()) el('access-status').textContent = '';
+  const generation = accountGeneration;
+  if (await loadMembers() && currentAccount(generation)) el('access-status').textContent = '';
 });
 el('access-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (!canManageAccounts()) return;
+  const generation = accountGeneration;
   const user = users.find((user) => user.subject === el('access-member').value);
   if (!user || saving || membersLoading || !membersLoaded) return;
   saving = true;
@@ -121,25 +146,31 @@ el('access-form').addEventListener('submit', async (event) => {
       body: JSON.stringify({ role: el('access-role').value, disabled: !el('access-enabled').checked,
         expiresAt: el('access-role').value === 'instructor' && !el('access-permanent').checked ? new Date(el('access-expiry').value).toISOString() : null, revision: user.revision }),
     });
+    if (!currentAccount(generation)) return;
     el('access-status').textContent = 'Access updated.';
     await loadMembers();
-  } catch (error) { el('access-status').textContent = error.message; }
+  } catch (error) { if (currentAccount(generation)) el('access-status').textContent = error.message; }
   finally {
-    saving = false;
-    el('access-member').disabled = false;
-    selectMember();
+    if (currentAccount(generation)) {
+      saving = false;
+      el('access-member').disabled = false;
+      selectMember();
+    }
   }
 });
 (async () => {
+  const generation = accountGeneration;
   try {
     const { account, splitAllowance, listeningUsage } = await request('/api/account');
+    if (!currentAccount(generation)) return;
     if (account.quotaClass === 'guest') { location.replace('/'); return; }
     subject = account.subject;
-    window.StemSessionGuard?.start(subject, () => { users = []; subject = ""; });
     accountRole = account.role;
+    window.StemSessionGuard?.start(subject, clearAccountState);
     el('account-status').textContent = '';
     try { await window.StemGuestClaim.run(account); }
-    catch (error) { el('account-status').textContent = error.message; }
+    catch (error) { if (currentAccount(generation)) el('account-status').textContent = error.message; }
+    if (!currentAccount(generation)) return;
     el('account-role').textContent = `${{ admin: 'Administrator', instructor: 'Instructor', student: 'Student', member: 'CUNY AI Lab member' }[account.role] || 'CUNY AI Lab member'} access`;
     el('account-details').hidden = false;
     el('account-footer').hidden = false;
@@ -156,17 +187,17 @@ el('access-form').addEventListener('submit', async (event) => {
     }
     try {
       const { quota } = await request('/api/model-quota');
+      if (!currentAccount(generation)) return;
       if (quota && typeof quota.remaining_percent === 'number') el('account-quota').textContent = `CUNY AI Lab model allowance: ${quota.remaining_percent}% remaining (estimated).`;
     } catch { /* Informational only. Gateway authorizes each model request. */ }
   } catch (error) {
+    if (!currentAccount(generation)) return;
     el('account-status').textContent = error.message;
     el('account-login').hidden = false;
     el('account-back').hidden = false;
   }
 })();
 
-let studentSelection = '', studentCursor = null, studentRequest = 0;
-let studentRows = [], studentsLoading = null, studentsLoaded = false, studentsNextCursor = null;
 function studentSummary(student) {
   const visits = student.recordedVisits || student.recordedPlays
     ? `${student.recordedVisits} recorded ${student.recordedVisits === 1 ? 'visit' : 'visits'} · ${student.recordedPlays ?? 0} recorded ${(student.recordedPlays ?? 0) === 1 ? 'play' : 'plays'}`
@@ -175,13 +206,16 @@ function studentSummary(student) {
   return `${student.runs} recorded split ${student.runs === 1 ? 'attempt' : 'attempts'} · ${student.completed} completed · ${student.guideTurns ?? 0} Guide ${(student.guideTurns ?? 0) === 1 ? 'turn' : 'turns'} · ${visits}${Number.isFinite(first) ? ` · First account access ${new Date(first).toLocaleDateString()}` : ''}${student.lastActiveAt ? ` · Last recorded activity ${new Date(student.lastActiveAt).toLocaleString()}` : ''}`;
 }
 function loadStudents(more = false) {
+  if (!canReviewStudents()) return Promise.resolve(false);
   if (studentsLoading) return studentsLoading;
+  const generation = accountGeneration;
   el('student-status').textContent = 'Loading students…';
   el('student-list-more').disabled = true;
   el('guest-activity').textContent='Loading guest activity…';
   el('student-retry').hidden = true;
   studentsLoading = (async () => { try {
     const result = await request('/api/teacher/students' + (more && studentsNextCursor ? `?cursor=${encodeURIComponent(studentsNextCursor)}` : ''));
+    if (!currentAccount(generation)) return false;
     if (more && result.nextCursor && result.nextCursor === studentsNextCursor) throw new Error('Account page did not advance. Try again.');
     studentRows = more ? [...new Map([...studentRows, ...result.students].map(user => [user.subject, user])).values()] : result.students;
     studentsNextCursor = result.nextCursor || null;
@@ -206,15 +240,41 @@ function loadStudents(more = false) {
     el('student-status').textContent = studentRows.length ? '' : studentsNextCursor ? 'No eligible accounts on these pages yet.' : 'Students appear here after they use Stem Splitter.';
     return true;
   } catch (error) {
+    if (!currentAccount(generation)) return false;
     el('student-status').textContent = error.message;
     el('guest-activity').textContent='Guest activity unavailable.';
     el('guest-sessions').textContent='';
     el('student-retry').hidden = false;
     return false;
-  } finally { studentsLoading = null; el('student-list-more').disabled = false; } })();
+  } finally {
+    if (currentAccount(generation)) { studentsLoading = null; el('student-list-more').disabled = false; }
+  } })();
   return studentsLoading;
 }
+async function findStudentActivity(selection, requestId, generation, refresh = false) {
+  const active = () => currentAccount(generation) && requestId === studentRequest;
+  if ((refresh || !studentsLoaded) && !await loadStudents()) return null;
+  if (!active() || !selection) return null;
+  const seen = new Set();
+  let pages = 0;
+  while (!studentRows.some(row => row.subject === selection) && studentsNextCursor) {
+    // Automatic lookup must stop even if a provider alternates cursors or keeps
+    // returning empty pages. Manual pagination remains available to the user.
+    if (seen.has(studentsNextCursor) || pages >= 10) {
+      el('student-status').textContent = 'Activity lookup stopped. Load more accounts or try again.';
+      el('student-retry').hidden = false;
+      return null;
+    }
+    seen.add(studentsNextCursor); pages++;
+    if (!await loadStudents(true) || !active()) return null;
+  }
+  const student = studentRows.find(row => row.subject === selection);
+  if (!student) el('student-status').textContent = 'Activity is unavailable for this account.';
+  return student || null;
+}
 async function openAccountActivity(user) {
+  if (!canReviewStudents()) return;
+  const generation = accountGeneration;
   const requestId = ++studentRequest;
   studentSelection = user.subject;
   studentCursor = null;
@@ -226,18 +286,14 @@ async function openAccountActivity(user) {
   el('student-more').hidden = true;
   el('student-status').textContent = 'Loading activity…';
   requestAnimationFrame(() => {
-    if (studentSelection === user.subject) el('student-review').scrollIntoView({ block: 'start', behavior: 'instant' });
+    if (currentAccount(generation) && requestId === studentRequest) el('student-review').scrollIntoView({ block: 'start', behavior: 'instant' });
   });
-  if (!studentsLoaded && !await loadStudents()) return;
-  if (requestId !== studentRequest) return;
-  while (!studentRows.some(row => row.subject === user.subject) && studentsNextCursor) {
-    if (!await loadStudents(true) || requestId !== studentRequest) return;
-  }
-  const student = studentRows.find(row => row.subject === user.subject);
-  if (!student) { el('student-status').textContent = 'Activity is unavailable for this account.'; return; }
-  await loadStudentJobs(student);
+  const student = await findStudentActivity(user.subject, requestId, generation);
+  if (student && currentAccount(generation) && requestId === studentRequest) await loadStudentJobs(student);
 }
 async function loadStudentJobs(student, more = false) {
+  if (!canReviewStudents()) return;
+  const generation = accountGeneration;
   const requestId = ++studentRequest;
   studentSelection = student.subject;
   el('student-detail').hidden = false;
@@ -249,13 +305,13 @@ async function loadStudentJobs(student, more = false) {
   if (!more) {
     el('student-jobs').replaceChildren();
     requestAnimationFrame(() => {
-      if (requestId === studentRequest) el('student-review').scrollIntoView({ block: 'start', behavior: 'instant' });
+      if (currentAccount(generation) && requestId === studentRequest) el('student-review').scrollIntoView({ block: 'start', behavior: 'instant' });
     });
   }
   el('student-status').textContent = 'Loading splits…';
   try {
     const result = await request(`/api/teacher/students/${encodeURIComponent(student.subject)}/jobs${more && studentCursor ? '?cursor=' + encodeURIComponent(studentCursor) : ''}`);
-    if (requestId !== studentRequest) return;
+    if (!currentAccount(generation) || requestId !== studentRequest) return;
     for (const job of result.jobs) {
       const row = document.createElement('li'), text = document.createElement('div'), title = document.createElement('span'), detail = document.createElement('small');
       title.textContent = job.filename;
@@ -272,25 +328,23 @@ async function loadStudentJobs(student, more = false) {
     el('student-more').hidden = !studentCursor;
     el('student-status').textContent = el('student-jobs').children.length ? '' : 'No saved splits in the past 90 days.';
   } catch (error) {
-    if (requestId === studentRequest) {
+    if (currentAccount(generation) && requestId === studentRequest) {
       el('student-status').textContent = error.message;
       el('student-retry').hidden = false;
     }
   }
-  finally { if (requestId === studentRequest) el('student-more').disabled = false; }
+  finally { if (currentAccount(generation) && requestId === studentRequest) el('student-more').disabled = false; }
 }
 el('student-list-more').addEventListener('click', () => void loadStudents(true));
 el('student-review').addEventListener('toggle', () => {
-  if (el('student-review').open && !studentsLoaded && !studentsLoading) void loadStudents();
+  if (canReviewStudents() && el('student-review').open && !studentsLoaded && !studentsLoading) void loadStudents();
 });
 el('student-retry').addEventListener('click', async () => {
+  if (!canReviewStudents()) return;
+  const generation = accountGeneration, requestId = ++studentRequest;
   const selection = studentSelection;
-  if (!await loadStudents() || selection !== studentSelection) return;
-  while (!studentRows.some(row => row.subject === selection) && studentsNextCursor) {
-    if (!await loadStudents(true) || selection !== studentSelection) return;
-  }
-  const student = studentRows.find(row => row.subject === selection);
-  if (student) await loadStudentJobs(student);
+  const student = await findStudentActivity(selection, requestId, generation, true);
+  if (student && currentAccount(generation) && requestId === studentRequest) await loadStudentJobs(student);
 });
 el('student-more').addEventListener('click', () => {
   const student = studentRows.find(row => row.subject === studentSelection);

@@ -224,3 +224,79 @@ test('session loss during class discovery preserves the report without reopening
     expect(f.errors).toEqual([]);
   } finally { release(); await f.close(); }
 });
+
+for (const resource of ['members', 'students', 'jobs', 'save', 'quota']) test(`Settings ignores a late ${resource} response after session loss while retaining a report`, async ({ page }) => {
+  const f = await fixture(page, { TEST_ADMIN: TEST_SUBJECTS.bob });
+  let release, started;
+  const pending = new Promise(resolve => { release = resolve; });
+  const received = new Promise(resolve => { started = resolve; });
+  const path = {
+    members: '/api/admin/users', students: '/api/teacher/students',
+    jobs: `/api/teacher/students/${TEST_SUBJECTS.alice}/jobs`,
+    save: `/api/admin/users/${TEST_SUBJECTS.alice}`, quota: '/api/model-quota',
+  }[resource];
+  try {
+    await f.seed([`INSERT INTO app_users(subject,role) VALUES('${TEST_SUBJECTS.alice}','student')`]);
+    await page.route(`**${path}`, async route => {
+      const response = resource === 'quota' ? null : await route.fetch(); started(); await pending;
+      await route.fulfill(response ? { response } : { json: { quota: { remaining_percent: 75 } } }).catch(() => {});
+    });
+    await page.goto(new URL('/account.html', f.url).href);
+    await expect(page.locator('#account-role')).toHaveText('Administrator access');
+    if (resource !== 'quota') await page.locator(resource === 'students' ? '#student-review summary' : '#account-admin summary').click();
+    if (['jobs', 'save'].includes(resource)) await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
+    if (resource === 'save') await page.locator('#access-form button[type=submit]').click();
+    await received;
+    await page.evaluate(() => {
+      window.auditAdminElement = document.getElementById('account-admin');
+      window.auditStudentElement = document.getElementById('student-review');
+      window.StemReportDraft = { hasDraft: () => true, sessionChanged() { window.auditReportRetained = true; } };
+      window.StemSessionGuard.clear();
+    });
+    const delivered = page.waitForResponse(response => new URL(response.url()).pathname === path);
+    release();
+    await delivered;
+    await page.evaluate(() => {
+      // Queued disclosure events must also become harmless after cleanup.
+      window.auditAdminElement.dispatchEvent(new Event('toggle'));
+      window.auditStudentElement.dispatchEvent(new Event('toggle'));
+    });
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
+    await expect(page.locator('.workspace-nav')).toBeHidden();
+    for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) await expect(page.locator('#' + id)).toBeEmpty();
+    await expect(page.locator('#account-status')).toContainText('Your session changed');
+    expect(await page.evaluate(() => window.auditReportRetained)).toBe(true);
+    expect(f.errors).toEqual([]);
+  } finally { release(); await f.close(); }
+});
+
+for (const cycle of [true, false]) test(`Settings bounds automatic activity lookup with ${cycle ? 'cycling' : 'empty advancing'} pages`, async ({ page }) => {
+  const f = await fixture(page, { TEST_ADMIN: TEST_SUBJECTS.bob });
+  let pages = 0, recovered = false;
+  const account = { subject: TEST_SUBJECTS.alice, displayName: 'Fixture account', role: 'student', disabled: false, role_expires_at: null, revision: 1 };
+  try {
+    await page.route('**/api/admin/users', route => route.fulfill({ json: {
+      users: [account], nextCursor: null,
+    } }));
+    await page.route(/\/api\/teacher\/students(?:\?.*)?$/, route => {
+      pages++;
+      if (recovered) return route.fulfill({ json: { students: [{ ...account, runs: 0, completed: 0 }], nextCursor: null } });
+      if (pages > 15) return route.fulfill({ status: 503, json: { error: 'Fixture safety stop' } });
+      return route.fulfill({ json: { students: [], nextCursor: cycle ? (pages % 2 ? 'page-a' : 'page-b') : `page-${pages}` } });
+    });
+    await page.goto(new URL('/account.html', f.url).href);
+    await page.locator('#account-admin summary').click();
+    await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
+    await expect(page.locator('#student-status')).toHaveText('Activity lookup stopped. Load more accounts or try again.');
+    expect(pages).toBeLessThanOrEqual(cycle ? 3 : 11);
+    await expect(page.locator('#student-list-more')).toBeVisible();
+    await expect(page.locator('#student-list-more')).toBeEnabled();
+    await expect(page.locator('#student-retry')).toBeVisible();
+    const stoppedAt = pages;
+    recovered = true;
+    await page.locator('#student-list-more').click();
+    await expect(page.locator('#student-list .student-select')).toHaveText('Fixture account');
+    expect(pages).toBe(stoppedAt + 1);
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});

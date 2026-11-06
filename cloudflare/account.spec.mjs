@@ -482,7 +482,7 @@ test('students can reach sign-in help during an outage and retry their intended 
   }finally {await server.close();}
 });
 
-test('a simulated external CUNY dead end leaves the student recovery tab available',async({page,context})=>{
+for (const width of [1280,390]) test(`a simulated external CUNY dead end leaves the student recovery tab available at ${width}px`,async({page,context})=>{
  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url))}]});
  let starts=0,app,provider;
  try {
@@ -504,7 +504,8 @@ test('a simulated external CUNY dead end leaves the student recovery tab availab
    const headers=new Headers(response.headers);headers.set('location',provider.origin+'/error');
    return new Response(null,{status:response.status,headers});
   });
-  for(const width of [1280,390]){
+  // Each viewport gets a fresh browser context. Firefox can stall resizing the
+  // original window after a noopener sign-in popup has closed.
    await page.setViewportSize({width,height:900});await page.goto(app.origin+'/auth/help?next=/classroom.html');
    const [signin]=await Promise.all([context.waitForEvent('page'),page.getByRole('link',{name:'Try CUNY Login again'}).click()]);
    await signin.setViewportSize({width,height:900});
@@ -518,8 +519,7 @@ test('a simulated external CUNY dead end leaves the student recovery tab availab
    }
    await signin.close();await page.getByRole('link',{name:'Back to Stem Splitter'}).click();await expect(page).toHaveURL(app.origin+'/');
    await expect(page.locator('h1')).toContainText('Splitter');
-  }
-  expect(starts).toBe(2);expect(app.errors).toEqual([]);expect(provider.errors).toEqual([]);
+  expect(starts).toBe(1);expect(app.errors).toEqual([]);expect(provider.errors).toEqual([]);
  }finally{await page.close();await app?.close();await provider?.close();await server.close();}
 });
 
