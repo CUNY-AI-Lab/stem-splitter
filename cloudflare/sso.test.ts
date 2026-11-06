@@ -367,3 +367,21 @@ test('background sign-in logging counts attempts, new sessions and failures with
     f.request('/auth/login'), start, Date.now());
   assert.equal(start.status, 303);
 });
+
+test('report profile stays in the private report handler', async () => {
+  const {env,client,request} = fixture();
+  const profile = {name:'Fixture Student',email:'fixture@college.edu'};
+  const purposes: unknown[] = [];
+  client.identities = async (_token,purpose) => {
+    purposes.push(purpose);
+    return {ok:true,appJwt:'fixture-app-jwt',gatewayJwt:'fixture-gateway-jwt',workspaceJwt:null,reporter:profile};
+  };
+  const init = {headers:{cookie:SESSION_COOKIE+'='+token}};
+  let selected;
+  const internal = await authenticatedRequest(request('/api/bug-reports/session',init),env,value=>{selected=value});
+  assert.ok(internal instanceof Request);
+  assert.deepEqual(selected,profile);
+  assert.doesNotMatch(JSON.stringify([...internal.headers]),/fixture@college.edu/);
+  await authenticatedRequest(request('/api/account',init),env);
+  assert.deepEqual(purposes,['private_report',undefined]);
+});
