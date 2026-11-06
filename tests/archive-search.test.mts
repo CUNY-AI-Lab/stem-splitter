@@ -525,3 +525,38 @@ test('a search with nothing verified gives up and reports the source as busy',as
   await assert.rejects(()=>searchArchiveSongs('stalled completely'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
   assert.ok(Date.now()-started<9500,`took ${Date.now()-started}ms`);
 });
+
+test('at the time limit, matches still being checked are listed instead of an empty result',async t=>{
+  const release:(()=>void)[]=[];
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'slow-check-song',title:'Slowcheck melody',creator:'Slowcheck Band'}]}});
+    if(url.pathname==='/metadata/slow-check-song')return metadata({title:'Slowcheck melody',creator:'Slowcheck Band'},[file({title:'Slowcheck melody'})]);
+    await new Promise<void>(done=>release.push(done));
+    return partialAudio();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('slowcheck melody');
+  assert.deepEqual(found.results.map(song=>song.archiveId),['slow-check-song']);
+  assert.ok(Date.now()-started<9000,`took ${Date.now()-started}ms`);
+});
+
+test('work orphaned by an ended request does not block a later search',async t=>{
+  let now=Date.now();
+  t.mock.method(Date,'now',()=>now);
+  let orphan=true;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'orphan-song',title:'Orphan melody',creator:'Orphan Band'}]}});
+    if(url.pathname==='/metadata/orphan-song'){
+      if(orphan){orphan=false;return new Promise<Response>(()=>{});}
+      return metadata({title:'Orphan melody',creator:'Orphan Band'},[file({title:'Orphan melody'})]);
+    }
+    return partialAudio();
+  });
+  await assert.rejects(()=>searchArchiveSongs('orphan melody'));
+  now+=13000;
+  const found=await searchArchiveSongs('orphan melody');
+  assert.deepEqual(found.results.map(song=>song.archiveId),['orphan-song']);
+});

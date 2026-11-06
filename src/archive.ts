@@ -507,7 +507,8 @@ const songMetadataCache = new Map<string, DiscoveryEntry<ArchiveItem>>();
 // Provider locations stay server-side and expire with their metadata object.
 const songDeliveryLocations = new WeakMap<ArchiveItem, string[]>();
 const songDeliveryCache = new Map<string, DiscoveryEntry<boolean>>();
-const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
+// In-flight work can die with the request that started it, so a pending entry must expire.
+const IN_FLIGHT_MS = 12000;
 function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
   work: () => Promise<T>, reusable: (value: T) => boolean): Promise<T> {
   const now = Date.now();
@@ -515,7 +516,7 @@ function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, l
   const hit = cache.get(key);
   if (hit) return hit.promise;
   if (cache.size >= limit) cache.delete(cache.keys().next().value!);
-  const entry: DiscoveryEntry<T> = { expires: Infinity, promise: Promise.resolve().then(work) };
+  const entry: DiscoveryEntry<T> = { expires: now + IN_FLIGHT_MS, promise: Promise.resolve().then(work) };
   cache.set(key, entry);
   entry.promise = entry.promise.then(value => {
     if (reusable(value)) entry.expires = Date.now() + 60000;
@@ -660,7 +661,7 @@ export async function searchArchiveSongs(query: string, onResults?: SearchListen
   for (const [key, value] of searchCache) if (value.expires <= now) searchCache.delete(key);
   let entry = searchCache.get(cacheKey);
   if (!entry) {
-    entry = { expires: Infinity, songs: Promise.resolve({ results: [] }), latest: { results: [] }, listeners: new Set() };
+    entry = { expires: now + IN_FLIGHT_MS, songs: Promise.resolve({ results: [] }), latest: { results: [] }, listeners: new Set() };
     const current = entry;
     if (searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
     searchCache.set(cacheKey, current);
@@ -735,22 +736,26 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { sc
 const SEARCH_SETTLE_MS = 5000, SEARCH_GIVE_UP_MS = 8000, SEARCH_ENOUGH_RESULTS = 4;
 async function findArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number): Promise<SongResults> {
   let latest: SongResults = { results: [] };
-  const budget = { expired: false };
+  const budget: SearchBudget = { expired: false, bestEffort: () => latest };
   const finished = discoverArchiveSongs(tokens, results => { latest = results; onResults(results); }, maximumSeconds, budget);
   const timers: ReturnType<typeof setTimeout>[] = [];
   const after = (ms: number) => new Promise<true>(resolve => { timers.push(setTimeout(() => resolve(true), ms)); });
   try {
     const running = finished.then(() => false as const);
     if (!await Promise.race([running, after(SEARCH_SETTLE_MS)])) return await finished;
-    if (latest.results.length < SEARCH_ENOUGH_RESULTS && !await Promise.race([running, after(SEARCH_GIVE_UP_MS - SEARCH_SETTLE_MS)])) return await finished;
+    if (budget.bestEffort().results.length < SEARCH_ENOUGH_RESULTS && !await Promise.race([running, after(SEARCH_GIVE_UP_MS - SEARCH_SETTLE_MS)])) return await finished;
     budget.expired = true;
     finished.catch(() => {});
-    if (!latest.results.length) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
-    return latest;
+    const best = budget.bestEffort();
+    if (!best.results.length) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
+    return best;
   } finally { timers.forEach(clearTimeout); }
 }
 
-async function discoverArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number, budget: { expired: boolean }): Promise<SongResults> {
+type SearchBudget = { expired: boolean; bestEffort: () => SongResults };
+async function discoverArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number, budget: SearchBudget): Promise<SongResults> {
+  // Per search, because a request ended at its time limit may never release a shared slot.
+  const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
   const docScore = (doc: { title?: unknown; creator?: unknown; musicQuery?: boolean }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
     // A title plus its credited performer covers an artist-qualified query as
@@ -783,6 +788,11 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
   let metadataFailures = 0, metadataRejected = 0, deliveryFailures = 0, earlyProbes = 0;
   const results = (): SongResults => ({ results: [...candidates.values()]
     .filter(song => verified.has(song.id)).sort((a,b) => b.score-a.score).slice(0,8)
+    .map(({score: _score, ...song}) => song) });
+  // At a time limit, list matches whose download check has not finished, verified ones first.
+  // Importing re-checks the file and its bytes, so a slow check never needs to mean an empty list.
+  budget.bestEffort = () => ({ results: [...candidates.values()]
+    .sort((a,b) => Number(verified.has(b.id)) - Number(verified.has(a.id)) || b.score-a.score).slice(0,8)
     .map(({score: _score, ...song}) => song) });
   const inspect = (id: string, deadline: number): Promise<ArchiveItem | null> => {
     let pending = metadata.get(id);
