@@ -169,9 +169,8 @@ test('CAIL student, instructor and admin surfaces; no Crate and attribution-bear
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
     if (receipts) await page.screenshot({ path: `${receipts}/04-admin-access-fixture.png`, fullPage: true, animations: 'disabled' });
-    await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice });
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': alice, 'x-fixture-course-role':'owner' });
-    await page.goto(new URL('/teacher.html', url).href);
+    await page.goto(new URL('/teacher.html?course=msh-245-the-american-musical-experience-fall-2026-01', url).href);
     await expect(page.locator('#console-panel')).toBeVisible();
     await page.locator('#amendment').fill('Ask students to compare two layers.');
     await page.locator('#change-note').fill('Listening exercise');

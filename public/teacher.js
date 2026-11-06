@@ -589,13 +589,10 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
       message.textContent = 'Sign in with your CUNY account to open Instructor Console.';
       signinPanel.append(message);
       if (runtime.loginUrl) {
-        const link = document.createElement('a');
-        link.className = 'account-button';
+        const link = document.getElementById('header-signin');
         const separator = runtime.loginUrl.includes('?') ? '&' : '?';
         const next = new URLSearchParams({ next: teacherLoginNext(requestedCourse) });
         link.href = `${runtime.loginUrl}${separator}${next}`;
-        link.textContent = 'CUNY Login';
-        signinPanel.append(link);
       }
       const account = await api('/api/account');
       teacherAccountSubject = account.account.subject;
@@ -645,9 +642,13 @@ document.getElementById('course-roster-more').addEventListener('click', () => vo
       return;
     }
     if (cail) {
-      // Session state was established before the course picker above.
+      // Global app administration does not supply teaching instructions to
+      // guests or individual members working outside a class.
+      document.querySelector('.teacher-amendment-section').hidden = true;
+      document.querySelector('.teacher-more-tools').hidden = true;
+      document.getElementById('class-instructions-help').hidden = false;
     }
-    await loadPrompt();
+    if (!cail) await loadPrompt();
     const generation = teacherGeneration;
     await loadSongSampleEditor();
     if (generation !== teacherGeneration) return;

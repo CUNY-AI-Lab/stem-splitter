@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Stem Splitter · Instructor Console</title>
-<link rel="stylesheet" href="/styles.css?v=20261105-compact" />
+<link rel="stylesheet" href="/styles.css?v=20261105-auth-nav" />
 <link rel="stylesheet" href="/instructor-console.css?v=20261105-compact" />
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso" />
 
@@ -12,12 +12,16 @@
   <header class="masthead">
     <div class="masthead-title">
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
-      <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
+      <div class="lab-account">
+        <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
+        <p class="account-nav"><span class="account-session-note"><span>Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login?next=/teacher.html">CUNY Login</a></p>
+      </div>
     </div>
-    <nav class="workspace-nav" aria-label="Stem Splitter">
+    <nav class="workspace-nav" aria-label="Stem Splitter" hidden>
       <a href="/">Splitter</a>
       <a id="teacher-classroom" href="/classroom.html">Workspace</a>
-      <a href="/account.html" aria-current="page">Settings</a>
+      <a href="/account.html">Settings</a>
+      <a data-instructor-nav href="/teacher.html" aria-current="page" hidden>Instructor Console</a>
     </nav>
   </header>
   <h2 class="page-title" id="class-guidance-title">Instructor Console</h2>
@@ -47,6 +51,7 @@
   </section>
 
   <div id="teacher-protected-region">
+    <p id="class-instructions-help" class="account-help" hidden>Open a class in <a href="/classroom.html">Workspace</a> to edit its Listening Guy instructions. Guest and Personal sessions use the default instructions.</p>
   <section id="console-panel" class="teacher-panel" hidden>
     <div class="teacher-bar">
       <span id="teacher-who" class="mono"></span>
@@ -183,7 +188,7 @@
   </footer>
 </main>
 
-<script src="/session-guard.js?v=20261104-split-actions"></script>
+<script src="/session-guard.js?v=20261105-auth-nav"></script>
 <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-<script src="/teacher.js?v=20261023-two-reply-demo"></script>
+<script src="/teacher.js?v=20261105-stateful-resplits"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>

@@ -2,6 +2,13 @@
 
 ## Current user corrections — November 5, 2026
 
+- [x] Make navigation reflect verified sign-in and instructor capabilities; move “Guest | CUNY Login” below the CAIL logo.
+- [x] Offer Resplit results within the original split or as a separate split, with durable placement and preserved originals.
+- [x] Make Resplit explanations and remaining limits reflect the actual guest/member session; use “guest turns.”
+- [x] Keep instrument labels on one line with the full name available.
+- [x] Exclude teaching instructions from guest and Personal Listening Guy calls and reject old teaching-influenced guide caches.
+- [ ] Finish final aggregate checks and production verification for this stateful-controls follow-up; see [release scope](docs/evaluation/2026-11-05-stateful-navigation-resplits.md).
+
 - [x] Keep one search field directly below upload; remove the repository selector, search heading, and accordion.
 - [x] Restore the complete interface's 780px desktop container, including workspace and settings; refresh stylesheet versions.
 - [x] Research per-output instrument labeling and prominence; record the model comparison and integration plan in [output labeling research](docs/evaluation/2026-11-05-output-instrument-labeling.md).

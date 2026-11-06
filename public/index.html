@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20261105-compact" />
+  <link rel="stylesheet" href="/styles.css?v=20261105-auth-nav" />
   <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 </head>
 <body>
@@ -25,17 +25,21 @@
       <p id="split-summary" class="kicker" hidden></p>
       <div class="masthead-title">
         <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span id="station-word">Splitter</span></a></h1>
+        <div class="lab-account">
         <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab">
           <img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" />
         </a>
+        <p class="account-nav"><span class="account-session-note"><span id="guest-account-state">Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login">CUNY Login</a></p>
+        </div>
       </div>
       <div class="masthead-meta">
         <p id="station-tagline" class="tagline">Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.</p>
       </div>
-      <nav id="workspace-nav" class="workspace-nav" aria-label="Stem Splitter">
+      <nav id="workspace-nav" class="workspace-nav" aria-label="Stem Splitter" hidden>
         <a href="/" aria-current="page">Splitter</a>
         <a href="/classroom.html">Workspace</a>
         <a href="/account.html">Settings</a>
+        <a data-instructor-nav href="/teacher.html" hidden>Instructor Console</a>
       </nav>
     </header>
 
@@ -140,7 +144,6 @@
         Uploaded files are deleted after 90 days.
         Only upload music you&rsquo;re entitled to use for class.
       </p>
-      <p><a class="mono footer-teacher-link" href="/teacher.html">Instructor Console</a></p>
       <p id="engine-summary" class="mono footer-sig">SEPARATION MODELS: LOADING…</p>
 
     </footer>
@@ -162,11 +165,11 @@
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
-  <script src="/session-guard.js?v=20261104-split-actions"></script>
+  <script src="/session-guard.js?v=20261105-auth-nav"></script>
 <script src="/guest.js?v=20261023-two-reply-demo"></script>
   <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
   <script src="/classroom-live.js?v=20261104-split-actions"></script>
-  <script src="/app.js?v=20261105-playback"></script>
+  <script src="/app.js?v=20261105-stateful-resplits"></script>
   <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </body>
 </html>

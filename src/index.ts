@@ -15,6 +15,7 @@ import instrumentTargetRoutes from './isolation/routes.ts';
 import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
 import { coursePrompt } from './classroom/prompts.ts';
+import { storedResplit } from './resplits.ts';
 import { Hono } from 'hono';
 import { archiveSongSearchResponse } from './archive-search-response.ts';
 import type { Context } from 'hono';
@@ -1107,7 +1108,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     await resumeOwnedSourceImport(c.env,c.get('principal')!,result.operation);
     try { c.executionCtx.waitUntil(runReliableJobs(c.env)); } catch { await runReliableJobs(c.env); }
     const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(result.operation.job_id).first<JobRow>();
-    return c.json({...jobResponse(row!), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
+    return c.json({...jobResponse(row!), resplit:storedResplit(result.operation.request_json), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
   }
   const body = parsed.value as
     | {
@@ -1463,8 +1464,9 @@ app.get('/api/jobs', async (c) => {
     } catch { return c.json({ error: 'Invalid page. Reload your splits.' }, 400); }
   }
   const { results } = await c.env.DB.prepare(`
-    SELECT j.id, j.filename, j.model, j.created_at
+    SELECT j.id, j.filename, j.model, j.created_at, op.request_json
     FROM ${ownershipTable(principal,'job')} o JOIN jobs j ON j.id = o.job_id
+    LEFT JOIN app_operations op ON op.id=j.id AND op.kind='split'
     WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
       AND NOT EXISTS (SELECT 1 FROM folder_items i JOIN folders f ON f.id = i.folder_id
         WHERE i.job_id = j.id AND f.created_by = o.subject)
@@ -1473,11 +1475,11 @@ app.get('/api/jobs', async (c) => {
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41
   `).bind(principal.subject, before?.createdAt ?? null, before?.createdAt ?? null,
     before?.createdAt ?? null, before?.id ?? null)
-    .all<Pick<JobRow, 'id' | 'filename' | 'model' | 'created_at'>>();
+    .all<Pick<JobRow, 'id' | 'filename' | 'model' | 'created_at'> & { request_json: string | null }>();
   const rows = results.slice(0, 40);
   const last = rows.at(-1);
   return c.json({ jobs: rows.map(row => ({ id: row.id, filename: row.filename,
-    model: row.model ?? DEFAULT_DEMUCS_MODEL, createdAt: row.created_at })),
+    model: row.model ?? DEFAULT_DEMUCS_MODEL, createdAt: row.created_at, resplit:storedResplit(row.request_json) })),
     nextCursor: results.length > 40 && last ? btoa(JSON.stringify({ createdAt: last.created_at, id: last.id })) : null });
 });
 
@@ -1579,7 +1581,7 @@ app.get('/api/jobs/:id', async (c) => {
   const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
   return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
-    courseId:permission?.courseId??null, permissions:permission, publicSharing, attribution: attribution ? JSON.parse(attribution.attribution) : null });
+    courseId:permission?.courseId??null, permissions:permission, publicSharing, resplit:permission?.owner?storedResplit(operation?.request_json):null, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
 
 app.get('/api/teacher/jobs/:id/analysis', requireTeacher, async (c) => {

@@ -83,3 +83,26 @@ test('guest reset fences live output; a request finishing during claim writes on
   await f.db.prepare("DELETE FROM jobs WHERE id='recording'").run();
   assert.equal((await f.db.prepare('SELECT COUNT(*) AS n FROM listening_reply_receipts').first<any>()).n,0);
 });
+
+test('guest chat and guide never receive saved teaching instructions or reuse an old teaching-influenced guide', async () => {
+  const f=await fixture();
+  const { hashSystemPromptFingerprint, SYSTEM_PROMPT_VERSION }=await import('../src/assistant/prompt.ts');
+  const { getGuide }=await import('../src/assistant/index.ts');
+  const amendment='PRIVATE CLASS INSTRUCTION: discuss only the assigned seminar.';
+  await f.db.prepare('UPDATE assistant_settings SET amendment=?,revision=7 WHERE id=1').bind(amendment).run();
+  await f.db.prepare('INSERT INTO guides(job_id,text,model,prompt_version,prompt_revision,prompt_hash) VALUES(?,?,?,?,?,?)')
+    .bind('recording','Old teaching-influenced guide','fixture',SYSTEM_PROMPT_VERSION,0,await hashSystemPromptFingerprint(amendment)).run();
+  assert.equal(await getGuide(f.env,'recording'),null);
+  const systems:string[]=[];
+  f.env.assistantTransport=async(_env,input,delta)=>{
+    systems.push(input.messages[0].content);await delta('Independent listening reply.');
+    return {content:'Independent listening reply.',model:'fixture',toolCalls:[],finishReason:'stop'};
+  };
+  const guide=await f.request('/api/jobs/recording/guide','POST',{messageId:'guest-isolated-guide-0001'});
+  assert.equal(guide.status,200);await guide.text();
+  const chat=await f.request('/api/jobs/recording/chat','POST',f.body('guest-isolated-chat-0001'));
+  assert.equal(chat.status,200);await chat.text();
+  assert.equal(systems.length,2);
+  for(const system of systems)assert.ok(!system.includes(amendment));
+  assert.equal((await getGuide(f.env,'recording'))?.text,'Independent listening reply.');
+});

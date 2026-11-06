@@ -873,6 +873,12 @@ test('main seeking handles cancellation, stale releases, missing metadata and di
     expect(await page.evaluate(() => mixers.get('remix-fixture').scrubbing)).toBe(true);
     await page.locator('body').dispatchEvent('pointerup', { pointerId: 42 });
     await expect(page.locator('.tc-now')).toHaveText('0:49');
+    // The clock previews the drag before the queued release commits. Wait for
+    // the actual multi-stem seek before replacing metadata for the next case.
+    await expect.poll(() => page.evaluate(() => {
+      const m = mixers.get('remix-fixture');
+      return !m.scrubbing && m.audios.every(a => Math.abs(a.currentTime - 49) < .1);
+    })).toBe(true);
     for (const duration of [0, NaN, Infinity]) {
       await page.evaluate(duration => { const m = mixers.get('remix-fixture'); Object.defineProperty(m.audios[1], 'duration', { configurable: true, value: duration }); m.paint(); m.seekTo(5); }, duration);
       await expect(first).toBeDisabled();
@@ -961,7 +967,7 @@ test('main seek control and time display follow media events while paused and pl
 });
 
 
-test('full recording and split names wrap while waveforms fit the available width', async ({page}) => {
+test('full recording names wrap and instrument labels stay on one line while waveforms fit', async ({page}) => {
  const server = await fixture(page, ['vocals','instrumental'], {owned:true});
  const title = 'A complete recording title with a long movement name and performance description for listening';
  const stemName = 'A very long custom instrumental split';
@@ -976,10 +982,12 @@ test('full recording and split names wrap while waveforms fit the available widt
   await expect(page.locator('.ch-name').last()).toHaveText(stemName);
   for (const width of [320,390,768,1280]) {
    await page.setViewportSize({width,height:1000});
-   for (const name of [page.locator('.console-title'),page.locator('.ch-name').last()]) {
+   for (const name of [page.locator('.console-title')]) {
     expect(await name.evaluate(el=>getComputedStyle(el).whiteSpace)).toBe('normal');
     expect(await name.evaluate(el=>el.scrollWidth<=el.clientWidth+1&&el.scrollHeight<=el.clientHeight+1)).toBe(true);
    }
+   await expect(page.locator('.ch-name').last()).toHaveCSS('white-space','nowrap');
+   await expect(page.locator('.ch-name').last()).toHaveAttribute('title',stemName+' — click to rename');
    const row=await page.locator('.channel').last().boundingBox();
    const wave=await page.locator('.channel .meter').last().boundingBox();
    const name=await page.locator('.ch-name').last().boundingBox();
@@ -1024,5 +1032,29 @@ for (const owned of [true, false]) test(`${owned ? 'owned' : 'shared'} audio can
     await page.getByRole('button', { name: 'Play all stems' }).click();
     await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios.every(audio => audio.currentTime > 0.3 && audio.playbackRate === 0.75))).toBe(true);
     await expect(host.locator('.transport-notice')).toBeHidden();
+  } finally { await server.close(); }
+});
+
+test('long instrument labels remain on one line and expose the full name at desktop and phone widths', async ({ page }, testInfo) => {
+  const server = await fixture(page, ['vocals'], { owned: true });
+  const label = 'Trumpet/Instrumentals';
+  try {
+    await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' },
+      body: JSON.stringify(["UPDATE jobs SET labels='{\"vocals\":\"Trumpet/Instrumentals\"}' WHERE id='remix-fixture'"]) });
+    await page.reload();
+    const name = page.locator('.ch-name');
+    await expect(name).toHaveText(label);
+    await expect(name).toHaveAttribute('title', label + ' — click to rename');
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(name).toHaveCSS('white-space', 'nowrap');
+      await expect(name).toHaveCSS('text-overflow', 'ellipsis');
+      expect(await name.evaluate(el => {
+        const range = document.createRange(); range.selectNodeContents(el);
+        return new Set([...range.getClientRects()].map(rect => rect.y)).size;
+      })).toBe(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.console').screenshot({ path: testInfo.outputPath('single-line-instrument-' + width + '.png'), animations: 'disabled' });
+    }
   } finally { await server.close(); }
 });

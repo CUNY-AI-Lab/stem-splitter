@@ -188,7 +188,7 @@ for (const chatAvailable of [true, false]) test(`guest starts silently, plays an
   const f = await setup(page, chatAvailable);
   try {
     await page.goto(f.origin);
-    await expect(page.getByRole('link', { name: 'Sign in with CUNY Login', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const first = await account(page);
     expect(first.guest.verificationRequired).toBe(true);
@@ -839,7 +839,7 @@ test('guest Guide stops at two successful replies and sign-in restores its draft
   await expect(ask).toBeDisabled();
   await expect(page.locator('.coach-sign-in')).toBeVisible();
   await expect(page.locator('.coach-sign-in')).toHaveAttribute('href',/^\/auth\/login\?next=/);
-  await expect(page.locator('.coach-usage-status')).toHaveText('Two demo replies used.');
+  await expect(page.locator('.coach-usage-status')).toHaveText('2 of 2 guest turns used.');
   await input.fill('Continue with this draft after sign-in');
   const saved=await page.evaluate(async()=>{
    const mixer=[...mixers.values()][0];await mixer.conversationSaveQueue;
@@ -903,7 +903,7 @@ for (const signIn of [false,true]) test(`guest second reply survives a lost comp
   });
   await expect(ask).toBeEnabled();await input.fill('Recover the second question');await ask.click();
   await expect(page.locator('.coach-row.error')).toContainText('ended before completion');
-  await expect(page.locator('.coach-usage-status')).toHaveText('Two demo replies used.');
+  await expect(page.locator('.coach-usage-status')).toHaveText('2 of 2 guest turns used.');
   const retry=page.getByRole('button',{name:'RETRY REPLY',exact:true});
   await expect(retry).toBeEnabled();
   await page.unroute('**/api/jobs/*/chat');
@@ -958,27 +958,28 @@ test('guest status is explicit and disappears for a signed-in member with person
   try {
     await page.goto(f.origin);
     await expect(page.locator('#guest-account-state')).toHaveText('Guest');
-    const login = page.getByRole('link', { name: 'Sign in with CUNY Login', exact: true });
-    await expect(login).toHaveText('Sign in');
+    const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
+    await expect(login).toHaveText('CUNY Login');
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       await expect(login).toBeVisible();
-      const nav = await page.locator('#workspace-nav').boundingBox();
+      await expect(page.locator('#workspace-nav')).toBeHidden();
+      const logo = await page.locator('.lab-brand').boundingBox();
       const guest = await page.locator('.account-nav.is-guest').boundingBox();
       if (process.env.STEM_SCREENSHOT_DIR) {
         await mkdir(process.env.STEM_SCREENSHOT_DIR, { recursive: true });
         await page.screenshot({ path: `${process.env.STEM_SCREENSHOT_DIR}/guest-navigation-${width}.png`, animations: 'disabled' });
       }
-      expect(guest.height).toBeLessThanOrEqual(36);
-      expect(nav.height).toBeLessThanOrEqual(48);
+      expect(guest.height).toBeLessThanOrEqual(48);
+      expect(guest.y).toBeGreaterThanOrEqual(logo.y + logo.height);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     }
     await page.route('**/api/classroom/courses', route => route.fulfill({ json: { courses: [], nextCursor: null } }));
     await page.setExtraHTTPHeaders({ 'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
     await page.reload();
     await expect.poll(async () => (await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
-    await expect(page.locator('#guest-account-state')).toHaveCount(0);
-    await expect(login).toHaveCount(0);
+    await expect(page.locator('#guest-account-state')).toBeHidden();
+    await expect(login).toBeHidden();
     await expect(page.locator('#course-context')).toBeHidden();
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
@@ -1027,6 +1028,109 @@ for (const active of [false, true]) test(`a claimed guest session recovers ${act
     expect(f.requests.filter(request => request.path === '/api/uploads').length - before).toBe(active ? 1 : 0);
     await startUpload(page); await completed(page, 1);
     expect(f.counts().providerStarts).toBe(2);
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});
+
+test('guest Resplit explains browser access and the actual guest allowance without claiming Personal storage', async ({ page }) => {
+  const f = await setup(page);
+  try {
+    await page.goto(f.origin);
+    await startUpload(page); await completed(page, 1);
+    const before = await account(page);
+    await page.locator('.resplit-btn').first().click();
+    const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.resplit-status')).toHaveText('Creates a new guest run, available in this browser. ' +
+      before.splitAllowance.remaining + ' of ' + before.splitAllowance.limit + ' guest splits left today.');
+    await expect(dialog).not.toContainText('Personal');
+    await expect(dialog.getByRole('button', { name: 'Resplit', exact: true })).toBeEnabled();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(f.counts().providerStarts).toBe(1);
+    expect(f.errors).toEqual([]);
+  } finally { await f.close(); }
+});
+
+for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' can keep a resplit with its original or separate it, retaining both through reload', async ({ page }, testInfo) => {
+  const f = await setup(page);
+  try {
+    if (signedIn) {
+      await page.setExtraHTTPHeaders({ 'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
+      await page.route('**/api/classroom/courses', route => route.fulfill({ json: { courses: [], nextCursor: null } }));
+    }
+    await page.goto(f.origin);
+    await startUpload(page); await completed(page, 1);
+    const originalId = await page.evaluate(() => getJobs()[0].id);
+    const original = page.locator('.console[data-job-id="' + originalId + '"]');
+    await original.locator('.resplit-btn').first().click();
+    const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
+    await dialog.getByRole('radio', { name: 'With original split', exact: true }).check();
+    await expect(dialog.locator('.resplit-status')).toContainText('Original stems stay available.');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(f.counts().providerStarts).toBe(1);
+    await original.locator('.resplit-btn').first().click();
+    await dialog.getByRole('radio', { name: 'With original split', exact: true }).check();
+    await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await completed(page, 2);
+    const nestedId = await page.evaluate(() => getJobs()[0].id);
+    const child = page.locator('.console[data-job-id="' + nestedId + '"]');
+    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
+    await expect(page.locator('#job-list > .console')).toHaveCount(1);
+    await page.reload(); await completed(page, 2);
+    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
+    await expect(child).toBeVisible();
+    // Keyboard controls and note drafts belong to the selected recording,
+    // even though its card is nested within the original.
+    await child.locator('.ch-name').first().press('1');
+    expect(await page.evaluate(ids => ids.map(id => Boolean(mixers.get(id).userMuted.get('vocals'))), [originalId, nestedId]))
+      .toEqual([false, true]);
+    await child.locator('.ch-name').first().press('1');
+    await child.locator('.note-btn').first().click();
+    await original.locator('.note-btn').first().click();
+    await expect(original.locator(':scope > .note-form')).toBeVisible();
+    await expect(child.locator(':scope > .note-form')).toBeVisible();
+    await child.locator(':scope > .note-form input').press('Escape');
+    await original.locator(':scope > .note-form input').press('Escape');
+    await child.locator('.console-title-editable').first().click();
+    await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('My nested resplit');
+    await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
+    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await original.locator('.resplit-btn').first().click();
+    await expect(dialog.getByRole('radio', { name: 'Separate split', exact: true })).toBeChecked();
+    await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
+    await completed(page, 3);
+    await expect(page.locator('#job-list > .console')).toHaveCount(2);
+    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
+    await page.reload(); await completed(page, 3);
+    await expect(page.locator('#job-list > .console')).toHaveCount(2);
+    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    const saved = await page.evaluate(async () => (await fetch('/api/jobs')).json());
+    expect(saved.jobs.find(job => job.id === nestedId).resplit).toEqual({ parentJobId: originalId, stem: 'vocals', placement: 'with_original' });
+    await page.evaluate(async ids => {
+      await mixers.get(ids[0]).play();
+      await mixers.get(ids[1]).play();
+    }, [originalId, nestedId]);
+    expect(await page.evaluate(id => ({ originalPlaying: mixers.get(id).playing, active: [...mixers.values()].filter(m => m.playing || m.starting).length }), originalId))
+      .toEqual({ originalPlaying: false, active: 1 });
+    await page.evaluate(id => { mixers.get(id).setCollapsed(true); }, originalId);
+    expect(await page.evaluate(() => [...mixers.values()].filter(m => m.playing || m.starting).length)).toBe(0);
+    await page.evaluate(() => { for (const mixer of mixers.values()) mixer.pause(); });
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(id => { setJobCollapsed(id, false); renderJobs(); }, originalId);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath('resplit-placement-' + width + '.png'), animations: 'disabled', fullPage: true });
+    }
+    // An unavailable or removed original must not conceal its finished resplit.
+    await page.evaluate(id => { unavailableJobStates.add(id); setJobCollapsed(id, true); renderJobs(); }, originalId);
+    await expect(page.locator('#job-list > .console')).toHaveCount(3);
+    await expect(child).toBeVisible();
+    await page.evaluate(id => { unavailableJobStates.delete(id); saveJobs(getJobs().filter(job => job.id !== id)); renderJobs(); }, originalId);
+    await expect(page.locator('#job-list > .console')).toHaveCount(2);
+    await expect(child).toBeVisible();
+    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    expect(f.counts().providerStarts).toBe(3);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });

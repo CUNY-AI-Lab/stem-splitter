@@ -563,12 +563,21 @@ function saveJobs(jobs) {
 // A new song takes the spotlight: previous sessions collapse (nothing is
 // deleted — one click on a console head reopens it).
 function addJob(job) {
-  const jobs = getJobs().map((j) => ({ ...j, collapsed: true }));
+  const previous = getJobs();
+  const parents = new Set();
+  let parent = job.resplit?.placement === 'with_original' ? job.resplit.parentJobId : null;
+  while (parent && !parents.has(parent)) {
+    parents.add(parent);
+    const ancestor = previous.find(item => item.id === parent)?.resplit;
+    parent = ancestor?.placement === 'with_original' ? ancestor.parentJobId : null;
+  }
+  const jobs = previous.map((j) => ({ ...j, collapsed: !parents.has(j.id) }));
   jobs.unshift({
     id: job.id,
     filename: job.filename,
     model: job.model,
     expectedStems: job.expectedStems || [],
+    resplit: job.resplit || null,
     ...(job.adaptiveOutput ? {adaptiveOutput:job.adaptiveOutput} : {}),
     ...(job.autoRouting ? { autoRouting: job.autoRouting } : {}),
     // POST /api/jobs doesn't carry a timestamp; this stands in until the first
@@ -1633,6 +1642,7 @@ async function handleFile(file, settings = {}) {
       });
       await putWithProgress(uploadUrl, file, (pct) => { progressBar.style.width = `${pct}%`; });
       input = { key, filename: file.name, model,
+        ...(settings.resplit ? { resplit: settings.resplit } : {}),
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}) };
       // Retain the accepted upload and exact job body across uncertain retries.
@@ -1672,11 +1682,16 @@ async function chooseStemResplit(mixer, stem) {
   dialog.setAttribute('aria-labelledby', 'resplit-title');
   const filename = stemFilename(mixer.job.filename, mixer.label(stem.name));
   dialog.innerHTML = `<form class="class-code-form">
-    <h2 id="resplit-title">Split again</h2>
+    <h2 id="resplit-title">Resplit</h2>
     <p class="resplit-filename">${esc(filename)}</p>
     <select id="resplit-model" aria-label="Number of splits" required></select>
+    <fieldset class="resplit-placement"><legend>Keep result</legend>
+      <label><input type="radio" name="resplit-placement" value="with_original"> With original split</label>
+      <label><input type="radio" name="resplit-placement" value="separate" checked> Separate split</label>
+    </fieldset>
+    <p class="resplit-placement-help account-help" hidden></p>
     <p class="resplit-status" role="status">Loading split choices…</p>
-    <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Split again</button></div>
+    <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Resplit</button></div>
   </form>`;
   document.body.appendChild(dialog);
   let busy = false;
@@ -1693,6 +1708,14 @@ async function chooseStemResplit(mixer, stem) {
     await separationOptionsReady;
     if (!dialog.isConnected) return;
     const courseContext = await waitForCreationCourse();
+    const ownOriginal = runtime.authMode === 'cail' && mixer.job.permissions?.owner === true;
+    const originalChoice = dialog.querySelector('[value="with_original"]');
+    originalChoice.disabled = !ownOriginal || (mixer.job.courseId || 'personal') !== courseContext;
+    if (originalChoice.disabled) {
+      const help = dialog.querySelector('.resplit-placement-help');
+      help.hidden = false;
+      help.textContent = ownOriginal ? 'Choose the original split’s workspace to keep the result with it.' : 'Keeping results with the original is available for your own saved splits.';
+    }
     // Use exactly the choices the server made available on this page.
     for (const input of stemChoice.querySelectorAll('input[name="stem-model"]')) {
       const model = catalogueModels.find(model => model.id === input.value);
@@ -1701,19 +1724,43 @@ async function chooseStemResplit(mixer, stem) {
       select.add(option);
     }
     if (!select.options.length) throw new Error('Split choices are unavailable. Reload the page and try again.');
-    const workspace = document.getElementById('new-split-course')?.selectedOptions[0]?.textContent || 'Personal';
-    status.textContent = `Creates a new run in ${workspace} and uses one split from your allowance.`;
-    submit.disabled = false;
+    let description = 'Creates a separate split from this audio.', allowance = '', guest = false, exhausted = false;
+    if (runtime.authMode === 'cail') {
+      const response = await fetch('/api/account', { cache: 'no-store', credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Your account could not be checked. Close this dialog and try again.');
+      const { account, splitAllowance } = await response.json();
+      if (!accountSubject || account?.subject !== accountSubject) throw new Error('Your session changed. Reload the page before resplitting.');
+      guest = account.quotaClass === 'guest';
+      const workspace = document.getElementById('new-split-course')?.selectedOptions[0]?.textContent || 'Personal';
+      description = guest ? 'Creates a new guest run, available in this browser.' : `Creates a new run in ${workspace}.`;
+      if (splitAllowance && Number.isInteger(splitAllowance.limit) && splitAllowance.limit > 0 &&
+          Number.isInteger(splitAllowance.remaining) && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit) {
+        allowance = ` ${splitAllowance.remaining} of ${splitAllowance.limit} ${guest ? 'guest ' : ''}splits left today.`;
+        exhausted = splitAllowance.remaining === 0;
+      } else allowance = ' Your remaining daily splits could not be loaded.';
+    }
+    if (!dialog.isConnected) return;
+    const describePlacement = () => {
+      status.textContent = (originalChoice.checked
+        ? `Keeps the resplit with “${mixer.job.filename}”${guest ? ' in this browser' : ''}. Original stems stay available.`
+        : description) + allowance;
+    };
+    describePlacement();
+    dialog.querySelector('.resplit-placement').addEventListener('change', describePlacement);
+    submit.disabled = exhausted;
     select.focus();
     dialog.querySelector('form').addEventListener('submit', async event => {
       event.preventDefault();
-      if (busy) return;
+      if (busy || exhausted) return;
       busy = true;
       submit.disabled = true; cancel.disabled = true; select.disabled = true;
+      dialog.querySelector('.resplit-placement').disabled = true;
       submit.textContent = 'Preparing…';
       status.textContent = 'Preparing the selected audio…';
       resplitAbort = new AbortController();
-      const requestKey = JSON.stringify([accountSubject, courseContext, mixer.job.id, stem.name, filename, select.value]);
+      const placement = originalChoice.checked ? 'with_original' : 'separate';
+      const resplit = ownOriginal ? { parentJobId: mixer.job.id, stem: stem.name, placement } : undefined;
+      const requestKey = JSON.stringify([accountSubject, courseContext, mixer.job.id, stem.name, filename, select.value, placement]);
       const retryState = resplitRequests.get(requestKey) || {};
       resplitRequests.set(requestKey, retryState);
       try {
@@ -1723,7 +1770,7 @@ async function chooseStemResplit(mixer, stem) {
         const audio = await response.blob();
         if (!dialog.isConnected || resplitAbort.signal.aborted) return;
         status.textContent = 'Starting a new split…';
-        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext, retryState });
+        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext, retryState, resplit });
         if (job) { resplitRequests.delete(requestKey); dialog.close(); return; }
         status.textContent = uploadMessage.textContent || 'The split could not start. Please try again.';
       } catch (error) {
@@ -1731,7 +1778,8 @@ async function chooseStemResplit(mixer, stem) {
       } finally {
         resplitAbort = null;
         busy = false; submit.disabled = false; cancel.disabled = false; select.disabled = false;
-        submit.textContent = 'Split again';
+        dialog.querySelector('.resplit-placement').disabled = false;
+        submit.textContent = 'Resplit';
       }
     });
   } catch (error) { status.textContent = error.message; }
@@ -2079,7 +2127,7 @@ class Mixer {
       toggleFolderMenu(this);
       this.setActionsOpen(false);
       if (actionsWereOpen) {
-        const folderTarget = this.el.querySelector('.folder-menu input, .folder-menu button');
+        const folderTarget = this.el.querySelector(':scope > .folder-menu input, :scope > .folder-menu button');
         (folderTarget || this.actionsToggle).focus();
       }
     });
@@ -2190,13 +2238,13 @@ class Mixer {
       row.className = 'channel';
       row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
       row.innerHTML = `
-        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="Click to rename">${esc(this.label(stem.name))}</span></span>
+        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="${esc(this.label(stem.name))} — click to rename">${esc(this.label(stem.name))}</span></span>
         <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
         <span class="ch-actions">
           <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
           <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
           <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
-          <button type="button" class="resplit-btn" title="Split ${esc(this.label(stem.name))} again" aria-label="Split ${esc(this.label(stem.name))} again">↩</button>
+          <button type="button" class="resplit-btn" title="Resplit ${esc(this.label(stem.name))}" aria-label="Resplit ${esc(this.label(stem.name))}">↩</button>
         </span>
       `;
       const muteBtn = row.querySelector('.mute-btn');
@@ -2333,7 +2381,7 @@ class Mixer {
       notice.textContent = this.job.instructorReview ? 'Student listening view.' : 'Shared listening view. Only the owner can rename splits or add notes.';
       li.querySelector('.console-sub').after(notice);
       for (const node of li.querySelectorAll('.coach, .note-btn, .folder-btn, .export-btn, .to-remix-btn')) node.hidden = true;
-      for (const node of li.querySelectorAll('.ch-name')) { node.removeAttribute('tabindex'); node.removeAttribute('title'); }
+      for (const node of li.querySelectorAll('.ch-name')) { node.removeAttribute('tabindex'); node.title = node.textContent; }
       this.readyBadge.textContent = this.job.instructorReview ? 'READY' : 'SHARED';
       if (this.job.instructorReview) li.querySelectorAll('.share-btn').forEach(node => { node.hidden = true; });
       this.keysHint.textContent = 'SPACE play · ←→ 5s · 1–9 mute · ⇧1–9 solo';
@@ -2371,6 +2419,7 @@ class Mixer {
     li.addEventListener('keydown', (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target;
+      if (t.closest('.console') !== li) return;
       if (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
 
       const digit = /^Digit([1-9])$/.exec(e.code);
@@ -2482,7 +2531,10 @@ class Mixer {
     // A folder chooser belongs to the expanded session. Leaving it mounted
     // while the console is collapsed makes the next + FOLDER press close an
     // invisible stale menu instead of opening a fresh one.
-    if (collapsed) this.el.querySelector('.folder-menu')?.remove();
+    if (collapsed) {
+      this.el.querySelector(':scope > .folder-menu')?.remove();
+      for (const mixer of mixers.values()) if (mixer !== this && this.el.contains(mixer.el)) mixer.pause();
+    }
     if (this.el.classList.contains('collapsed') === collapsed) return;
     if (collapsed && (this.playing || this.starting)) this.pause();
     this.setActionsOpen(false);
@@ -3256,7 +3308,7 @@ class Mixer {
 
   addNote() {
     if (this.job.readOnlyShared || this.job.permissions?.comment === false) return;
-    if (this.el.querySelector('.note-form')) return;
+    if (this.el.querySelector(':scope > .note-form')) return;
     const t = this.audios[0].currentTime;
     const form = document.createElement('form');
     form.className = 'note-form';
@@ -3343,11 +3395,12 @@ class Mixer {
       const nameEl = channel.row.querySelector('.ch-name');
       if (!nameEl) continue; // a rename is open in this strip — leave it alone
       nameEl.textContent = this.label(name);
+      nameEl.title = this.job.readOnlyShared ? this.label(name) : `${this.label(name)} — click to rename`;
       channel.muteBtn.setAttribute('aria-label', `Mute ${this.label(name)}`);
       channel.download.title = `Download ${this.label(name)}`;
       channel.download.setAttribute('aria-label', `Download ${this.label(name)}`);
-      channel.resplit.title = `Split ${this.label(name)} again`;
-      channel.resplit.setAttribute('aria-label', `Split ${this.label(name)} again`);
+      channel.resplit.title = `Resplit ${this.label(name)}`;
+      channel.resplit.setAttribute('aria-label', `Resplit ${this.label(name)}`);
       if (channel.download.hasAttribute('href')) channel.download.href = stemDownloadUrl(channel.audio.src, this.job.filename, this.label(name));
     }
   }
@@ -3372,7 +3425,7 @@ class Mixer {
       this.coachUsage.hidden = false;
       const remaining = guestUsage?.remainingTurns ?? 2;
       this.coachUsage.querySelector('.coach-usage-status').textContent = guestUsage?.signInRequired
-        ? 'Two demo replies used.' : `${remaining} of 2 demo replies left.`;
+        ? '2 of 2 guest turns used.' : `${remaining} of 2 guest turns left.`;
       this.coachUsage.querySelector('.coach-cooldown-timer').textContent = '';
       this.coachSignIn.hidden = !guestUsage?.showSignIn || this.coachBusy;
       this.coachSignIn.textContent = this.guestSignInRequested ? 'Please sign in to continue' : 'Sign in to continue';
@@ -4119,7 +4172,7 @@ async function loadWholeFolder(folder, button) {
 // The "+ FOLDER" popover on a finished console: pick an existing folder or
 // name a new one; either way it organizes a split that is already saved.
 function toggleFolderMenu(mixer) {
-  const existing = mixer.el.querySelector('.folder-menu');
+  const existing = mixer.el.querySelector(':scope > .folder-menu');
   if (existing) {
     existing.remove();
     return;
@@ -4294,7 +4347,7 @@ function rememberRecordingTitle(id,filename){
   const state=jobStates.get(id);if(state)state.filename=filename;
   const mixer=mixers.get(id);if(mixer){mixer.job.filename=filename;mixer.renderChannelNames();}
   saveJobs(getJobs().map(job=>job.id===id?{...job,filename}:job));
-  const title=[...jobList.children].find(el=>el.dataset.jobId===id)?.querySelector('.console-title');
+  const title=[...jobList.querySelectorAll('.console[data-job-id]')].find(el=>el.dataset.jobId===id)?.querySelector('.console-title');
   if(title){title.textContent=filename;if(title.matches('button'))title.setAttribute('aria-label','Rename recording: '+filename);}
   for(const row of folderList.querySelectorAll('.folder-item'))if(row.dataset.jobId===id)row.querySelector('.folder-item-name').textContent=filename;
   renderShelf();
@@ -4316,7 +4369,7 @@ function editRecordingTitle(job,titleEl){
       catch(error){showUploadMessage(error.message,true);}
     }
     titleEdits.delete(job.id);titleEl.textContent=jobStates.get(job.id)?.filename||job.filename;titleEl.setAttribute('aria-label','Rename recording: '+titleEl.textContent);
-    input.replaceWith(titleEl);renderJobs();[...jobList.children].find(el=>el.dataset.jobId===job.id)?.querySelector('.console-title-editable')?.focus({preventScroll:true});
+    input.replaceWith(titleEl);renderJobs();[...jobList.querySelectorAll('.console[data-job-id]')].find(el=>el.dataset.jobId===job.id)?.querySelector('.console-title-editable')?.focus({preventScroll:true});
   };
   input.addEventListener('input',()=>input.setCustomValidity(''));
   input.addEventListener('keydown',event=>{if(event.isComposing)return;if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();void done(event.key==='Enter');}});
@@ -4350,7 +4403,7 @@ function removeFromRack(id) {
 function renderJobs() {
   const jobs = getJobs();
   emptyState.hidden = jobs.length > 0;
-  const previous = new Map([...jobList.children].map(el => [el.dataset.jobId, el]));
+  const previous = new Map([...jobList.querySelectorAll('.console[data-job-id]')].map(el => [el.dataset.jobId, el]));
   const cards = [];
 
   for (const job of jobs) {
@@ -4429,11 +4482,38 @@ function renderJobs() {
 
   // Keep settled cards attached: detaching them restarts their CSS entrance
   // animation and interrupts media while other saved runs are still loading.
-  const retained = new Set(cards);
-  for (const el of [...jobList.children]) if (!retained.has(el)) el.remove();
-  cards.forEach((el, index) => {
-    if (jobList.children[index] !== el) jobList.insertBefore(el, jobList.children[index] || null);
+  const byId = new Map(cards.map(card => [card.dataset.jobId, card]));
+  const parents = new Map(jobs.filter(job => job.resplit?.placement === 'with_original' &&
+      byId.has(job.resplit.parentJobId) && !unavailableJobStates.has(job.resplit.parentJobId) &&
+      jobStates.get(job.resplit.parentJobId)?.status === 'done' && jobStates.get(job.resplit.parentJobId)?.stems?.length)
+    .map(job => [job.id, job.resplit.parentJobId]));
+  for (const [id, parent] of parents) {
+    const seen = new Set([id]); let next = parent;
+    while (next && !seen.has(next)) { seen.add(next); next = parents.get(next); }
+    if (next) parents.delete(id); // Corrupt cached metadata must not break the rack.
+  }
+  const groups = new Map([[jobList, []]]);
+  for (const card of cards) {
+    const parent = byId.get(parents.get(card.dataset.jobId));
+    let container = jobList;
+    if (parent) {
+      container = parent.querySelector(':scope > .resplit-results');
+      if (!container) {
+        container = document.createElement('ol'); container.className = 'resplit-results';
+        container.setAttribute('aria-label', 'Resplits'); parent.append(container);
+      }
+    }
+    if (!groups.has(container)) groups.set(container, []);
+    groups.get(container).push(card);
+  }
+  for (const [container, children] of groups) children.forEach((card, index) => {
+    if (container.children[index] !== card) container.insertBefore(card, container.children[index] || null);
   });
+  for (const [container, children] of groups) {
+    const retained = new Set(children);
+    for (const card of [...container.children]) if (!retained.has(card)) card.remove();
+  }
+  for (const container of jobList.querySelectorAll('.resplit-results')) if (!groups.has(container)) container.remove();
 
   runElapsedClock();
   renderShelf();
@@ -4483,6 +4563,7 @@ async function adoptJobById(id, reviewSubject = null) {
     model: state.model,
     expectedStems: state.expectedStems || [],
     autoRouting: state.autoRouting,
+    resplit: state.resplit,
   });
   renderJobs();
   if (state.status !== 'done' && state.status !== 'failed') pollSoon();
@@ -4509,8 +4590,15 @@ async function adoptSharedJob() {
     return;
   }
 
-  const position = getJobs().findIndex((existing) => existing.id === id);
-  jobList.children[position]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const visible = new Set(); let current = id;
+  while (current && !visible.has(current)) {
+    visible.add(current);
+    const resplit = getJobs().find(job => job.id === current)?.resplit;
+    current = resplit?.placement === 'with_original' ? resplit.parentJobId : null;
+  }
+  saveJobs(getJobs().map(job => visible.has(job.id) ? { ...job, collapsed: false } : job));
+  renderJobs();
+  [...jobList.querySelectorAll('.console[data-job-id]')].find(el => el.dataset.jobId === id)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   if (!jobStates.get(id)?.readOnlyShared) {
     showUploadMessage(runtime.authMode === 'cail' ? 'Opened your saved split.' : 'Opened a shared track. Names and notes here are shared with the class.');
   }
@@ -5516,10 +5604,8 @@ async function initialize() {
   }
   if (runtime.authMode === 'cail') {
     jobsStorageKey = null;
-    const account = document.createElement('p');
-    account.className = 'account-nav';
+    const account = document.querySelector('.lab-account .account-nav');
     let principal = null;
-    let accountNeedsHelp = false;
     try {
       let response = await fetch('/api/account');
       const claimedGuest = response.status === 403
@@ -5530,12 +5616,10 @@ async function initialize() {
       }
       if (response.ok) principal = (await response.json()).account;
       else if (response.status !== 401) {
-        accountNeedsHelp = true;
         rackStatus.hidden = false;
-        rackStatus.textContent = response.status === 403 ? 'Your Lab access needs attention. Open Settings for details.' : 'Account access is temporarily unavailable. Reload to try again.';
+        rackStatus.textContent = response.status === 403 ? 'Your Lab access needs attention. Sign in again to check your access.' : 'Account access is temporarily unavailable. Reload to try again.';
       }
     } catch {
-      accountNeedsHelp = true;
       rackStatus.hidden = false;
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
@@ -5556,30 +5640,14 @@ async function initialize() {
       try { await window.StemGuestClaim.run(principal); }
       catch (error) { showUploadMessage(error.message, true); }
       await initializeCourseSelection();
-    } else if (runtime.loginUrl && !accountNeedsHelp) {
-      const link = document.createElement('a');
-      link.className = 'account-button';
+    } else if (runtime.loginUrl) {
+      const link = document.getElementById('header-signin');
       const linkedJob = new URLSearchParams(location.search).get('job');
       link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
-      link.textContent = guestSessionActive ? 'Sign in' : 'CUNY Login';
+      link.textContent = 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
-      if (guestSessionActive) {
-        account.classList.add('is-guest');
-        link.setAttribute('aria-label', 'Sign in with CUNY Login');
-        const note = document.createElement('span');
-        note.className = 'account-session-note';
-        const label = document.createElement('span');
-        label.id = 'guest-account-state';
-        label.textContent = 'Guest';
-        const separator = document.createElement('span');
-        separator.textContent = '·';
-        separator.setAttribute('aria-hidden', 'true');
-        note.append(label, separator);
-        account.append(note);
-      }
-      account.append(link);
+      if (guestSessionActive) account.classList.add('is-guest');
     } else if (!runtime.loginUrl) account.textContent = 'CUNY Login will be available here soon.';
-    if (account.childNodes.length) (document.getElementById('workspace-nav') || document.querySelector('.masthead-meta')).append(account);
   }
   separationOptionsReady = loadSeparationOptions();
   void ensureClassCode();

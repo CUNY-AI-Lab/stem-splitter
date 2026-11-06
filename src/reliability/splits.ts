@@ -25,9 +25,11 @@ import { logSplitError } from './error-log.ts';
 import { cooldown, retryAt, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
 import { claimedOperationOwner, ownsClaimedOperation } from '../guest/claim.ts';
+import { validateResplit, type ResplitPlacement } from '../resplits.ts';
 
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
+  resplit?: ResplitPlacement;
   sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
   openAudio?: OpenAudioSelection; archiveId?: string; archiveFile?: string; archiveSearch?: boolean; displayTitle?: string; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
@@ -110,6 +112,8 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     if (source.size<=0||source.size>MAX_BYTES) throw new OperationError('invalid_upload',400,'The upload is empty or too large. Upload it again.');
     input.key=value.key;input.filename=title(value.filename);
   }
+  const resplit = await validateResplit(env, principal, value.resplit, input.key);
+  if (resplit) input.resplit = resplit;
   const requestFingerprint=await fingerprint(input);
   if(input.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function')input.browserAudio=true;
   const id=crypto.randomUUID();
@@ -121,6 +125,9 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
         env.DB.prepare(`INSERT INTO ${ownershipTable(principal,'job')}(job_id,subject) SELECT id,subject FROM app_operations WHERE id=?`).bind(opId)];
       const course=courseAssignmentStatement(env,id,principal);
       if (course) statements.push(course);
+      if (resplit) statements.push(env.DB.prepare(`INSERT INTO job_attributions(job_id,attribution)
+        SELECT ?,attribution FROM job_attributions WHERE job_id=? AND EXISTS(SELECT 1 FROM app_operations WHERE id=?)`)
+        .bind(id,resplit.parentJobId,opId));
       return statements;
     }});
 }
