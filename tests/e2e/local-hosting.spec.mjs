@@ -1909,7 +1909,14 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await page.getByRole('button', { name: 'Top' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
-  await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
+  // Nested smooth scrolling can settle one rounded CSS pixel from zero. Check
+  // that the actual first paragraph is fully visible, not just the offset.
+  await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBeLessThanOrEqual(1);
+  const promptTop = await page.locator('#fixed-prompt-scroll').evaluate(node => ({
+    viewport: node.getBoundingClientRect().top + node.clientTop,
+    paragraph: document.querySelector('#fixed-prompt-body > p').getBoundingClientRect().top,
+  }));
+  expect(promptTop.paragraph).toBeGreaterThanOrEqual(promptTop.viewport);
   await expect(page.locator('#fixed-prompt-scroll')).toBeInViewport({ratio:1});
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';

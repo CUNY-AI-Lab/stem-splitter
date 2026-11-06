@@ -243,7 +243,7 @@ for (const resource of ['members', 'students', 'jobs', 'save', 'quota']) test(`S
     });
     await page.goto(new URL('/account.html', f.url).href);
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
-    if (resource !== 'quota') await page.locator(resource === 'students' ? '#student-review summary' : '#account-admin summary').click();
+    if (resource !== 'quota') await page.locator(resource === 'students' ? '#student-review > summary' : '#account-admin > summary').click();
     if (['jobs', 'save'].includes(resource)) await page.locator('#access-member').selectOption(TEST_SUBJECTS.alice);
     if (resource === 'save') await page.locator('#access-form button[type=submit]').click();
     await received;
