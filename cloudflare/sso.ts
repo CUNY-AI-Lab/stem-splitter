@@ -9,10 +9,11 @@ import { clearGuestCookie } from './guest.ts';
 
 // Doorway owns CUNY OIDC, one-use PKCE grants, session revocation and Admission.
 // These RPC capabilities have deployment-pinned audiences and callback hosts.
+export type ReportProfile = { name: string | null; email: string };
 export interface WorkerIdentity {
   begin(challenge: string, state: string): Promise<{ url: string }>;
   redeem(code: string, verifier: string): Promise<{ ok: true; token: string; expiresAt: number } | { ok: false; status: number }>;
-  identities(token: string): Promise<{ ok: true; appJwt: string; gatewayJwt: string; workspaceJwt: string | null } | { ok: false; status: number }>;
+  identities(token: string, purpose?: "private_report"): Promise<{ ok: true; reporter?: ReportProfile | null; appJwt: string; gatewayJwt: string; workspaceJwt: string | null } | { ok: false; status: number }>;
   revoke(token: string): Promise<unknown>;
 }
 export interface SsoEnv {
@@ -196,7 +197,7 @@ export function sanitizedRequest(request: Request): Request {
   return new Request(request.url,{method:request.method,headers,body:request.body,redirect:'manual',signal:request.signal});
 }
 
-export async function authenticatedRequest(request: Request, env: SsoEnv): Promise<Request | Response> {
+export async function authenticatedRequest(request: Request, env: SsoEnv, onReportProfile?: (profile: ReportProfile) => void): Promise<Request | Response> {
   const headers = new Headers(sanitizedRequest(request).headers);
   if (!publicApi(request)) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
@@ -209,7 +210,8 @@ export async function authenticatedRequest(request: Request, env: SsoEnv): Promi
     const client = identityClient(request, env);
     if (!client) return denied(503);
     try {
-      const result = await boundedRpc(client.identities(token));
+      const result = await boundedRpc(onReportProfile ? client.identities(token, "private_report") : client.identities(token));
+      if (result.ok && result.reporter && onReportProfile) onReportProfile(result.reporter);
       if (!result.ok) return denied(result.status);
       if (typeof result.appJwt !== 'string' || !result.appJwt || result.appJwt.length > 16384) return denied(503);
       headers.set('x-cail-identity-jwt', result.appJwt);
