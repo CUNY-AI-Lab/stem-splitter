@@ -263,7 +263,7 @@ for (const resource of ['members', 'students', 'jobs', 'save', 'quota']) test(`S
     });
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
     await expect(page.locator('.workspace-nav')).toBeHidden();
-    for (const id of ['account-details', 'account-admin', 'student-review', 'account-footer']) await expect(page.locator('#' + id)).toBeEmpty();
+    for (const id of ['account-details', 'account-admin', 'student-review']) await expect(page.locator('#' + id)).toBeEmpty();
     await expect(page.locator('#account-status')).toContainText('Your session changed');
     expect(await page.evaluate(() => window.auditReportRetained)).toBe(true);
     expect(f.errors).toEqual([]);

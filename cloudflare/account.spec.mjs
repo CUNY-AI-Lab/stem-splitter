@@ -161,7 +161,7 @@ test('Verified sessions return to Splitter directly; unavailable verification of
   } finally { await page.close(); await frontend?.close(); await server.close(); }
 });
 
-for (const control of ['Sign out', 'Log out']) test(`${control} submits a trusted origin, clears cookies and returns to Splitter`, async ({ page, context }) => {
+test('Log out submits a trusted origin, clears cookies and returns to Splitter', async ({ page, context }) => {
   const server = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)) }] });
   let revoked = false, submittedOrigin, frontend;
   const errors = [];
@@ -185,10 +185,10 @@ for (const control of ['Sign out', 'Log out']) test(`${control} submits a truste
     const origin = frontend.origin;
     await context.addCookies([SESSION_COOKIE, LOGIN_COOKIE].map(name => ({ name, value: name === SESSION_COOKIE ? '00000000-0000-4000-8000-000000000001.' + 'a'.repeat(43) : 'pending', url: origin, secure: true, httpOnly: true, sameSite: 'Lax' })));
     await page.goto(origin + '/account.html');
-    await expect(page.getByRole('button', { name: control, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     const [logout] = await Promise.all([
       page.waitForResponse(response => response.url() === origin + '/auth/logout'),
-      page.getByRole('button', { name: control, exact: true }).click(),
+      page.getByRole('button', { name: 'Log out', exact: true }).click(),
     ]);
     expect(submittedOrigin).toBe(origin);
     expect(logout.request().method()).toBe('POST'); expect(logout.status()).toBe(303); expect(logout.headers().location).toBe('/');
@@ -232,11 +232,11 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
-    await expect(page).toHaveTitle('Stem Splitter · Settings');
+    await expect(page).toHaveTitle('Stem Splitter · Dashboard');
     await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('25 of 25 runs left today. Resets');
-    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Splitter', exact: true })).toHaveAttribute('href', '/');
     await expect(page.locator('#access-form')).toBeHidden();
     await expect(page.locator('#account-id')).toHaveCount(0);
@@ -283,7 +283,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await page.getByText('Manage access', { exact: true }).click();
     await expect(page.locator('#access-status')).toHaveText('Account access is temporarily unavailable.');
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
-    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     await expect(page.locator('#account-login')).toBeHidden();
     await expect(page.locator('#access-form')).toBeHidden();
     await page.unroute('**/api/admin/users');
@@ -311,7 +311,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('main > footer')).toContainText('Uploaded files are deleted after 90 days.');
     await expect(page.locator('#account-splits')).toContainText('15 of 15 runs left today. Resets');
     await expect(page.locator('#account-admin')).toBeHidden();
-    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.getByText('Account ID', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (receipts) await page.screenshot({ path: `${receipts}/account-student-mobile-fixture.png`, fullPage: true });
@@ -350,7 +350,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
 
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
@@ -394,17 +394,16 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
     await page.reload();
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
-    await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
     await expect(page.locator('body')).not.toContainText('Your splits remain in your account for 90 days.');
-    await expect(page.getByRole('button', {name: 'Sign out', exact: true})).toBeVisible();
+    await expect(page.getByRole('button', {name: 'Log out', exact: true})).toBeVisible();
     await expect(page.locator('body')).not.toContainText('open them on any browser');
     // Account details must not survive a sign-out from another tab.
     await context.setExtraHTTPHeaders({});
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect(page.locator('#account-login')).toBeVisible();
     await expect(page.locator('#account-details')).toBeHidden();
-    await expect(page.locator('#account-footer')).toBeHidden();
     await expect(page.locator('#account-id')).toHaveCount(0);
     expect(errors).toEqual([]);
     // Deliberate fixture identity changes can race an old pagehide batch.
@@ -548,7 +547,7 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await context.setExtraHTTPHeaders({'x-fixture-identity':identity});
   await page.setViewportSize({width,height:900});
   await page.goto(new URL('/account.html',url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Settings');
+  await expect(page).toHaveTitle('Stem Splitter · Dashboard');
   await page.getByText('Manage access',{exact:true}).click();
   await expect(page.locator('#access-member')).toContainText('Alice Rivera');
   await expect(page.locator('#access-member')).not.toContainText('cail-');

@@ -20,7 +20,7 @@ for(const mode of ['course','global'])test(mode==='global' ? 'global console kee
  try{
   if(mode==='global')await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.carol});
   await page.goto(new URL('/teacher.html'+(mode==='course'?`?course=${course}`:''),f.url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Dashboard');await expect(page.getByRole('heading',{name:'Account',exact:true})).toBeVisible();
+  await expect(page).toHaveTitle('Stem Splitter · Settings');await expect(page.getByRole('heading',{name:'Account',exact:true})).toBeVisible();
   await expect(page.locator('#console-panel')).toBeVisible();
   if(mode==='course'){await expect(page.locator('.sample-editor')).toBeHidden();await expect(page.locator('#teacher-classroom')).toHaveAttribute('href',`/classroom.html?course=${course}`);await expect(page.locator('#course-roster')).toContainText('Fixture Student');}
   else {
@@ -30,7 +30,7 @@ for(const mode of ['course','global'])test(mode==='global' ? 'global console kee
    await summary.press('Space');await expect(summary).toHaveAttribute('aria-expanded','false');await summary.press('Enter');
    await expect(page.locator('#prompt-scope-note')).toContainText('Applies only to your Personal work');
   }
-  await page.locator('#amendment').fill('Fixture teaching instructions');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Add a change note');
+  await page.locator('#amendment').fill('Fixture teaching instructions');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Say what changed');
   await savePrompt(page,'Fixture teaching instructions','First synthetic revision');
   if(mode==='global'){
    const saved=await(await page.request.get(new URL('/api/account/prompt',f.url).href)).json();
@@ -178,7 +178,7 @@ test('instructor roster separates personal app activity, class work and unavaila
    await route.fulfill({response,json:data});
   });
   await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Dashboard');
+  await expect(page).toHaveTitle('Stem Splitter · Settings');
   await expect(page.locator('#course-roster')).toContainText('0 splits for this class · 0 completed');
   await expect(page.locator('#course-roster')).toContainText('App use: 3 split attempts · 2 completed · 3 replies · 1 opening cues · 5 visit reports in 30 days');
   await expect(page.locator('#course-roster-status')).toHaveText('1 enrolled student shown.');

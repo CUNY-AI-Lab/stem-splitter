@@ -187,7 +187,6 @@ el('access-form').addEventListener('submit', async (event) => {
     if (!currentAccount(generation)) return;
     el('account-details').hidden = false;
     document.querySelector('.dashboard-nav').hidden = false;
-    el('account-footer').hidden = false;
     if (splitAllowance && Number.isInteger(splitAllowance.limit) && Number.isInteger(splitAllowance.remaining) &&
         splitAllowance.limit > 0 && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit &&
         Number.isFinite(Date.parse(splitAllowance.resetsAt))) {

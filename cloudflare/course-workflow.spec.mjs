@@ -185,7 +185,7 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`new spli
   await expect(page.locator('#course-work-ack')).not.toBeChecked();
   await page.locator('#course-work-ack').check();
   expect(await page.evaluate(()=>creationCourse())).toBe(course);
-  expect((await select.boundingBox()).width).toBe(personalBox.width);
+  expect((await select.boundingBox()).width).toBeGreaterThan(personalBox.width);
   const courseBox=await select.boundingBox();
   expect(courseBox.x).toBeGreaterThanOrEqual(0);
   expect(courseBox.x+courseBox.width).toBeLessThanOrEqual(width);

@@ -1,4 +1,4 @@
-// Dashboard: authenticated Personal instructions and authorized class tools.
+// Settings: authenticated Personal instructions and authorized class tools.
 // Inspect the code-owned prompt and keep versioned amendments scoped to their owner. The session lives in an HttpOnly cookie;
 // no credential or session token is stored in browser storage.
 
@@ -630,9 +630,9 @@ document.getElementById('prompt-reload').addEventListener('click',async()=>{
     if(cail) {
       signinForm.hidden=true; signoutBtn.hidden=true;
       const account=(await api('/api/account')).account;
-      if(account.quotaClass==='guest'){denyTeacherAccess('CUNY Login is required to open Dashboard.');return;}
+      if(account.quotaClass==='guest'){denyTeacherAccess('CUNY Login is required to open Settings.');return;}
       teacherAccountSubject=account.subject;
-      window.StemSessionGuard?.start(account.subject,()=>denyTeacherAccess('Your account changed. Reload to open your Dashboard.'));
+      window.StemSessionGuard?.start(account.subject,()=>denyTeacherAccess('Your account changed. Reload to open your Settings.'));
       document.querySelector('.dashboard-nav').hidden=false;
       document.getElementById('dashboard-scope').hidden=false;
       document.querySelector('.sample-editor').hidden=true;
@@ -700,7 +700,7 @@ async function recheckTeacherAccess() {
       } catch { /* Conceal uncertain app-wide tools; Personal access is separate. */ }
     }
   } catch (error) {
-    if (error.name !== 'AbortError') accessStatus.textContent = 'Dashboard access could not be verified. Return to this tab to reconnect.';
+    if (error.name !== 'AbortError') accessStatus.textContent = 'Settings access could not be verified. Return to this tab to reconnect.';
   } finally { recheckingTeacher = false; }
 }
 window.addEventListener('focus', () => void recheckTeacherAccess());

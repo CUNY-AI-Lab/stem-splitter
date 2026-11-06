@@ -1,7 +1,7 @@
 /* Private results belong to the active browser session. Revalidation keeps
  * the original page controls in place while private regions stay concealed. */
 (() => {
-  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel, #course-discovery, #course-context, .resplit-dialog, .dashboard-nav, #dashboard-scope';
+  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #console-panel, #course-discovery, #course-context, .resplit-dialog, .dashboard-nav, #dashboard-scope';
   // Conceal private regions independently of their application-owned visibility.
   // Upload progress and membership results can change while a check is pending.
   const concealment = document.createElement('style');
