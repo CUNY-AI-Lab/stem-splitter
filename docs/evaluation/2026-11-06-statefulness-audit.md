@@ -1,8 +1,10 @@
 # Stateful application audit
 
 Baseline: production `4c115489bb3d9d28847b88ffe47655a5a5504d4b` (PR #94).
-The audit is being verified in `codex/statefulness-audit-20261106`; publication
-and exact production identity must be recorded separately after release.
+The completed audit and intro follow-up were deployed directly to Dev and then
+production from `b953107d6e9d6f744a01d9cb9a6ff7acd108285e`. Exact source, assets,
+versions and rollback identities are saved in the separate release receipts.
+This later documentation checkpoint does not change the deployed application.
 
 ## Persona boundaries
 
@@ -121,11 +123,44 @@ overflow or overlap between the intro, navigation, upload, search and split
 controls. The full container remains at most 780px. Source and deployment
 receipts distinguish the initial audit from this final local follow-up.
 
-Search/layout/menu/resplit-controls work was released in PRs #93/#94. The
-remaining instrument recognition and audio-derived separation work is not
-validated: the saved local diagnostic has classification errors and requires
-a licensed, separately calibrated evaluation set. The three-genre × 2/4/6 ×
-initial/resplit gate remains open. A paid SAM trial additionally requires the
-previously stipulated all-in $0.50 cap and specific excerpt transmission
-rights. Neither gate is established; no paid job or upload occurred. UI tests
-do not count toward the 18 real-audio cases. YouTube and Remixer stay excluded.
+### Direct release and live authentication follow-up
+
+The production receipt verifies source `b953107` and Worker version
+`3c591905-32a0-40a9-ba7b-9762f6376451`, deployment
+`793aff04-e71d-40fa-82f6-b01c4d51414e`, at the existing canonical origin.
+Eleven served assets, four signed-out pages, two desktop/phone layouts and the
+anonymous account denial were checked. Rollback remains the previous version
+`e837e24b-3405-43e0-9d1a-acc6d4018b38`. No additional GitHub push or Actions run
+was needed for this release.
+
+Five subsequent read-only observations passed in a dedicated Firefox tab using
+the user's existing SSO session: guest protected-page redirect, signed-in
+navigation, Administrator access in Settings, the existing Demo class's
+instructor workspace, and Instructor Console entry. No content, settings,
+roles or credentials were changed; no audio or model job ran. Original tabs
+were preserved. This verifies the existing administrator with Demo-class
+instructor capability, not live ordinary-member, enrolled-student or non-admin
+instructor accounts; those distinct personas retain synthetic coverage.
+
+The later command-line health-marker read returned HTTP 403. Its denial layer
+was not established and it was not retried through a different route. The
+live browser observations therefore reference the earlier exact-release
+verification rather than claiming a fresh revision binding.
+
+### Remaining instrument work
+
+Search/layout/menu/resplit-controls work was released in PRs #93/#94. The later
+free comparison ran EfficientAT and the MTG-Jamendo instrument head against
+twelve actual reference/output files. Both made instrument errors. On six
+unequal-level mixture controls, MTG's raw score order matched reference power
+four times and reversed it twice. Raw confidence is not audible prominence.
+An original-gain defect in the separate offline evaluator was corrected and its
+ten tests passed; this did not change production playback or enable labels.
+
+Instrument recognition still needs independently annotated, separate
+calibration/evaluation material, and audio-derived separation still needs a
+model that demonstrates useful isolation. The three-genre × 2/4/6 ×
+initial/resplit gate remains open. No synthetic check or relabeled Demucs
+output counts toward those eighteen cases. The optional paid SAM experiment
+has not run and does not block the completed application audit. Its conditional
+approval is unchanged. YouTube and Remixer stay excluded.

@@ -12,7 +12,7 @@
 - [x] Keep one search field directly below upload; remove the repository selector, search heading, and accordion.
 - [x] Restore the complete interface's 780px desktop container, including workspace and settings; refresh stylesheet versions.
 - [x] Research per-output instrument labeling and prominence; record the model comparison and integration plan in [output labeling research](docs/evaluation/2026-11-05-output-instrument-labeling.md).
-- [ ] Compare supervised instrument taggers on the actual output audio, calibrate silence/leakage rejection, and validate prominence independently of identity confidence.
+- [ ] Calibrate silence/leakage rejection on independently annotated audio and validate prominence independently of identity confidence. The two-tagger comparison is complete; it did not establish reliable labels.
 - [x] Remove “Split into” from the upload controls and the resplit dialog; retain accessible names for the count controls.
 - [x] Save the per-recording action menu, exclusive playback, reload, and stalled-playback fixes in the recovered local candidate.
 - [ ] Replace fixed-category separation for both initial splits and resplits with a validated audio-derived source path.
@@ -31,13 +31,24 @@
 - [x] Fence late class discovery after session loss, keeping a retained report and avoiding duplicate cleanup exceptions.
 - [x] Complete final local audit verification: 1,278/1,278 checks, three typechecks and the production dry build. See the [audit record](docs/evaluation/2026-11-06-statefulness-audit.md); exact publication and served-production identity belong in the separate release receipt.
 
-The instrument/source-selection items above remain blocked on demonstrated
-model quality, a licensed calibration/evaluation set, and the existing
-conditional paid-trial gates. The saved EfficientAT diagnostic did not
-establish reliable output labels. The proposed SAM trial still requires an
-enforceable all-in $0.50 maximum and permission to transmit its specific
-excerpts; neither is established. No paid call or upload is authorized by this
-audit. These checks cannot be marked complete by UI tests.
+The application work and statefulness audit are released from `b953107` on both
+existing Cloudflare Workers. The saved exact-source deployment receipts are
+separate from this later documentation checkpoint. A subsequent real Firefox
+CUNY sign-in passed five read-only checks for the existing administrator and
+Demo-class instructor access; ordinary individual, student and non-admin
+instructor personas remain covered by synthetic checks. See the
+[audit record](docs/evaluation/2026-11-06-statefulness-audit.md).
+
+The three instrument/source-selection items remain open because no candidate
+has demonstrated reliable labels and useful isolation on the required audio.
+EfficientAT and the MTG-Jamendo instrument head were compared locally on twelve
+actual reference/output files. Both made instrument errors; controlled mixtures
+also showed that raw classifier confidence cannot establish prominence. The
+next required evidence is independently annotated calibration material and a
+validated separator, followed by the eighteen actual initial/resplit cases.
+No UI test, fixed Demucs category or relabeling of its output closes these items.
+The optional SAM trial has not run and is not a prerequisite for the completed
+application audit. Its earlier conditional approval remains unchanged.
 
 The last two model evaluations have not established reliable isolation. The
 November 5 [source-separation record](docs/evaluation/2026-11-05-source-separation-status.md)
