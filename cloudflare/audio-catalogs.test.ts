@@ -136,3 +136,16 @@ test('shared Openverse pacing survives concurrent callers and cancelled waits ne
   const cancelled = searchOpenAudio('freesound', 'cancelled song', { db: db as any, maximumSeconds: 300, signal: controller.signal });
   controller.abort(); await assert.rejects(cancelled); assert.equal(starts.length, 2);
 });
+
+test('a refused source logs its host and challenge marker but never the search words', async t => {
+  const { db } = setup(t), warnings: unknown[][] = [];
+  t.mock.method(console, 'warn', (...args: unknown[]) => { warnings.push(args); });
+  mock(t, url => url.hostname === 'api.openverse.org' ? new Response('Just a moment...', { status: 403, headers: { 'cf-mitigated': 'challenge' } })
+    : url.hostname === 'commons.wikimedia.org' ? new Response(null, { status: 404 }) : undefined);
+  await assert.rejects(searchOpenAudio('freesound', 'private words', { db: db as any, maximumSeconds: 300 }), (e: any) => e.code === 'source_access_refused');
+  assert.deepEqual(warnings, [['open_audio_source_refused', { provider: 'freesound', host: 'api.openverse.org', mitigated: 'challenge' }]]);
+  assert.doesNotMatch(JSON.stringify(warnings), /private/);
+  // Other failures are not refusals, and stay out of this log.
+  await assert.rejects(searchOpenAudio('commons', 'private words', { db: db as any, maximumSeconds: 300 }), (e: any) => e.code === 'source_unavailable');
+  assert.equal(warnings.length, 1);
+});

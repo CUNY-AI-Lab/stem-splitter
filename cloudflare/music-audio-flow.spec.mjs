@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 import { preserveWorkerRequestInit } from './test-outbound-request.mjs';
 
-for (const provider of ['archive', 'commons', 'freesound', 'loc']) for (const count of [2, 4, 6]) {
+for (const provider of ['archive', 'commons', 'freesound']) for (const count of [2, 4, 6]) {
   test(`${provider} search audio uses the standard Fetch and ${count}-stem split flow`, async ({ page, context }) => {
     const issuer = await createTestIdentityIssuer();
     const source = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
@@ -47,10 +47,6 @@ for (const provider of ['archive', 'commons', 'freesound', 'loc']) for (const co
       }),
       http.get('https://freesound.org/people/Artist/sounds/415186/', () => new HttpResponse(`<meta property="og:url" content="https://freesound.org/people/Artist/sounds/415186/"><meta property="og:audio:artist" content="Artist"><meta property="og:audio:title" content="Fixture song"><a title="Go to the full license text" href="https://creativecommons.org/licenses/by/4.0/">Attribution 4.0</a><div id="share-link" data-static-file-url="https://cdn.freesound.org/previews/415/415186_1658799-hq.mp3"></div>`, { headers: { 'Content-Type': 'text/html' } })),
       http.get('https://cdn.freesound.org/previews/415/415186_1658799-hq.mp3', () => { imports++; return new HttpResponse(source, { headers: { 'Content-Type': 'audio/mpeg' } }); }),
-      http.get('https://data.labs.loc.gov/jukebox/manifest.json', () => HttpResponse.json({ cols: ['filename','item_id','md5','size','object_key'], rows: [['jukebox-31920_1.mp3','http://www.loc.gov/item/jukebox-31920/','30427eff83451a81d276935b19c7918f',source.length,'data.labs.loc.gov/jukebox/audio/jukebox-31920_1.mp3']] })),
-      http.get('https://www.loc.gov/collections/national-jukebox/', () => HttpResponse.json({ results: provider === 'loc' ? [{ id: 'http://www.loc.gov/item/jukebox-31920/' }] : [] })),
-      http.get('https://www.loc.gov/item/jukebox-31920/', () => HttpResponse.json({ item: { id: 'http://www.loc.gov/item/jukebox-31920/', title: 'Fixture song', date: '1919-04-18', profile: 'jukebox', access_restricted: false, location: ['united states'], item: { recording_repository: 'Recorded Sound Section, Library of Congress' }, rights: ['All recordings published prior to 1923 will enter the public domain.'], contributor_names: ['Fixture ensemble'] }, resources: [{ files: [[{ mediaType: 'A', canDownload: true, duration: seconds }]] }] })),
-      http.get('https://data.labs.loc.gov/jukebox/audio/jukebox-31920_1.mp3', () => { imports++; return new HttpResponse(source, { headers: { 'Content-Type': 'binary/octet-stream' } }); }),
       http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
         const body = await request.json(); starts++;
         expect(body.input.model).toBe(count === 6 ? 'htdemucs_6s' : 'htdemucs_ft');
@@ -80,7 +76,7 @@ for (const provider of ['archive', 'commons', 'freesound', 'loc']) for (const co
       await page.locator('#yt-url').fill('Fixture song');
       const choice = page.locator('#source-songs [role="option"]');
       await expect(choice).toHaveCount(1, { timeout: 18000 });
-      await expect(choice).toContainText({ archive: 'Internet Archive', commons: 'Wikimedia Commons', freesound: 'Freesound', loc: 'Library of Congress' }[provider]);
+      await expect(choice).toContainText({ archive: 'Internet Archive', commons: 'Wikimedia Commons', freesound: 'Freesound' }[provider]);
       await expect(page.locator('#song-search-label, #split-picker-label')).toHaveCount(0);
       await expect(page.locator('.music-search-help')).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Related pages', exact: true })).toHaveCount(0);
@@ -104,14 +100,13 @@ for (const provider of ['archive', 'commons', 'freesound', 'loc']) for (const co
       expect(submitted).toHaveLength(1); expect(submitted[0].model).toBe(model);
       if (provider === 'commons') expect(submitted[0].openAudio).toEqual({ provider: 'commons', itemId: '123', fileId: 'original' });
       else if (provider === 'freesound') expect(submitted[0].openAudio).toEqual({ provider, itemId: '0046330f-daa1-4d39-8e0d-11172d151be8', fileId: '415186' });
-      else if (provider === 'loc') expect(submitted[0].openAudio).toEqual({ provider, itemId: '31920', fileId: '1' });
       else expect(submitted[0]).toMatchObject({ archiveId: 'fixture-linked', archiveFile: 'song.mp3', archiveSearch: true });
       const { DB, AUDIO } = await harness.getWorker().getEnv();
       const stored = await DB.prepare('SELECT source_key,source_type FROM jobs WHERE id=?').bind(job.id).first();
       expect(stored.source_type).toBe(provider);
       expect(Buffer.from(await (await AUDIO.get(stored.source_key)).arrayBuffer())).toEqual(source);
       const attribution = JSON.parse((await DB.prepare('SELECT attribution FROM job_attributions WHERE job_id=?').bind(job.id).first()).attribution);
-      expect(attribution.sourceUrl).toContain({ archive: 'archive.org/details/fixture-linked', commons: 'commons.wikimedia.org/wiki/File:Fixture_song.mp3', freesound: 'freesound.org/people/Artist/sounds/415186', loc: 'www.loc.gov/item/jukebox-31920' }[provider]);
+      expect(attribution.sourceUrl).toContain({ archive: 'archive.org/details/fixture-linked', commons: 'commons.wikimedia.org/wiki/File:Fixture_song.mp3', freesound: 'freesound.org/people/Artist/sounds/415186' }[provider]);
       expect(starts).toBe(1); expect(imports).toBeGreaterThan(0);
       // The app imported and ingested real MP3 bytes. Model responses above are
       // fixtures; this test does not claim a paid provider or model-quality run.

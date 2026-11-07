@@ -154,7 +154,6 @@ test('unified search streams audio before a slow additional catalog and retains 
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
     if (url.hostname === 'api.openverse.org') { metadataStarted = true; await metadata.promise; return Response.json({ results: [] }); }
-    if (url.hostname === 'data.labs.loc.gov' || url.hostname === 'www.loc.gov') return new Response(null, { status: 503, headers: { 'Retry-After': '120' } });
     if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
     if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: [{ identifier: 'unified-melody', title: 'Unified melody' }] } });
     if (url.pathname.startsWith('/metadata/')) return Response.json({ metadata: { title: 'Unified melody', creator: 'Example artist', mediatype: 'audio', subject: 'Music' }, files: [{ name: 'song.mp3', title: 'Unified melody', length: String(80 * 1152 / 44100), size: String(audio.length) }] });
@@ -167,7 +166,7 @@ test('unified search streams audio before a slow additional catalog and retains 
   assert.deepEqual(new Set(beforeMetadata.results.map((row: any) => row.providerName)), new Set(['Internet Archive', 'Wikimedia Commons']));
   metadata.resolve(); let final: any;
   for (;;) { const chunk = await reader.read(); if (chunk.done) break; const value = JSON.parse(new TextDecoder().decode(chunk.value)); if (value.done) final = value; }
-  assert.equal(final.results.length, 2); assert.equal(final.references.length, 0); assert.deepEqual(final.providers, { archive: 'ready', commons: 'ready', freesound: 'ready', loc: 'unavailable' });
+  assert.equal(final.results.length, 2); assert.equal(final.references.length, 0); assert.deepEqual(final.providers, { archive: 'ready', commons: 'ready', freesound: 'ready' });
 });
 
 test('partial provider failures preserve eligible files and ccMixter remains disabled', async t => {
@@ -180,7 +179,7 @@ test('partial provider failures preserve eligible files and ccMixter remains dis
   });
   const response = await musicSearchResponse('partial music', false, context); const result: any = await response.json();
   assert.equal(response.status, 200); assert.equal(result.results.length, 1); assert.equal(result.results[0].openAudio.provider, 'commons');
-  assert.equal(result.providers.freesound, 'unavailable'); assert.equal(result.providers.loc, 'unavailable'); assert.equal(result.providers.archive, 'unavailable'); assert.deepEqual(result.references, []);
+  assert.equal(result.providers.freesound, 'unavailable'); assert.equal(result.providers.archive, 'unavailable'); assert.deepEqual(result.references, []);
   const disabled = await app.request('/api/music/search?q=music&provider=ccmixter', { headers: { 'x-class-code': 'fixture' } }, { DB: context.db, CLASS_CODE: 'fixture' } as any);
   assert.equal(disabled.status, 503);
   assert.equal((await app.request(`/api/music/recordings/${studio}`, {}, { DB: context.db, CLASS_CODE: 'fixture' } as any)).status, 401);
@@ -190,7 +189,7 @@ test('rolling Archive rankings reserve space for every late audio catalog', asyn
   const context = setup(t), probes = new Set<string>();
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
-    if (['api.openverse.org','data.labs.loc.gov','www.loc.gov'].includes(url.hostname)) return new Response(null, { status: 403 });
+    if (url.hostname === 'api.openverse.org') return new Response(null, { status: 403 });
     if (url.hostname === 'commons.wikimedia.org') { await new Promise(resolve => setTimeout(resolve, 150)); return Response.json(commons()); }
     if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: Array.from({ length: 16 }, (_, i) => ({ identifier: `capacity-melody-${i}`, title: 'Capacity melody', creator: 'Example artist' })) } });
     if (url.pathname.startsWith('/metadata/')) {
@@ -235,7 +234,6 @@ test('Freesound effects are removed and a named artist ranks above faster, loose
   const context = setup(t);
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
-    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
     if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
     if (url.hostname === 'api.openverse.org') return Response.json({ results: [
       freesoundRow('11111111-1111-4111-8111-111111111111', 1001, 'Duchess speech', 3),
@@ -256,7 +254,6 @@ test('a genre search lists tagged music above a credit named for the genre, with
     files: [{ name: 'song.mp3', title, length, size: String(audio.length) }] });
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
-    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
     if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
     if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
     if (url.pathname === '/advancedsearch.php') {
@@ -277,7 +274,6 @@ test('a short clip still appears when a search would otherwise find nothing', as
   const context = setup(t);
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
-    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
     if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
     if (url.hostname === 'api.openverse.org') return Response.json({ results: [freesoundRow('44444444-4444-4444-8444-444444444444', 1004, 'Marimba hit', 4)] });
     return Response.json({ response: { docs: [] } });
@@ -292,7 +288,6 @@ test('one stalled catalog cannot hold a search open past the hard limit', async 
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
     if (url.hostname === 'api.openverse.org') { await stalled.promise; return Response.json({ results: [] }); }
-    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
     if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
     return Response.json({ response: { docs: [] } });
   });
@@ -301,4 +296,18 @@ test('one stalled catalog cannot hold a search open past the hard limit', async 
   assert.ok(Date.now() - started < 10000, `took ${Date.now() - started}ms`);
   assert.equal(result.providers.freesound, 'unavailable');
   assert.equal(result.results.length, 1);
+});
+
+test('search never contacts the Library of Congress and reports only the sources it searches', async t => {
+  const context = setup(t), hosts = new Set<string>();
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input)); hosts.add(url.hostname);
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    return Response.json({ response: { docs: [] } });
+  });
+  const result: any = await (await musicSearchResponse('reachable sources', false, context)).json();
+  assert.deepEqual(Object.keys(result.providers).sort(), ['archive', 'commons', 'freesound']);
+  assert.ok(hosts.has('commons.wikimedia.org'), 'the mock must have seen this search');
+  assert.deepEqual([...hosts].filter(host => host.endsWith('loc.gov')), []);
 });

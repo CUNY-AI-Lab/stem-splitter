@@ -19,7 +19,7 @@ const receipt: any = { checkedAt: new Date().toISOString(), surface: 'Actual app
   paidProviderRequests: 0, splitQueueDrained: false, productionDeployed: false, results: [], calls };
 globalThis.fetch = async (input: any, init?: any) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
-  assert.ok(['api.openverse.org', 'freesound.org', 'cdn.freesound.org', 'www.loc.gov', 'data.labs.loc.gov',
+  assert.ok(['api.openverse.org', 'freesound.org', 'cdn.freesound.org',
     'commons.wikimedia.org', 'upload.wikimedia.org', 'archive.org'].includes(url.hostname) || url.hostname.endsWith('.archive.org'), 'Unexpected outbound provider: ' + url.hostname);
   const response = await originalFetch(input, init); calls.push({ host: url.hostname, path: url.pathname, status: response.status }); return response;
 };
@@ -31,10 +31,10 @@ try {
     resolveMembership: async () => membershipFixture(), resolveCourseAccessV2: ({ subject, classId }: any) => courseFixture(subject, classId),
   } } as unknown as Env;
   const principal = { subject, role: 'member', quotaClass: 'member', courseId: null } as AppPrincipal;
-  for (const [provider, query, fileId] of [['loc', 'jazz baby', '31920'], ['freesound', 'Sad heaven piano #3', '415186']]) {
+  for (const [provider, query, fileId] of [['freesound', 'Sad heaven piano #3', '415186']]) {
     const response = await app.request('/api/music/search?q=' + encodeURIComponent(query), { headers: { 'x-class-code': 'fixture' } }, { DB: db, CLASS_CODE: 'fixture' } as any);
     const search: any = await response.json(); assert.equal(response.status, 200);
-    const track = search.results.find((row: any) => row.openAudio?.provider === provider && (provider === 'loc' ? row.openAudio.itemId : row.openAudio.fileId) === fileId);
+    const track = search.results.find((row: any) => row.openAudio?.provider === provider && row.openAudio.fileId === fileId);
     assert.ok(track, JSON.stringify({ provider, providers: search.providers, results: search.results }));
     const reserved = await submitSplit(env, principal, { openAudio: track.openAudio, model: 'htdemucs_ft' }, `live-catalog-import-${provider}-20261104`);
     await resumeOwnedSourceImport(env, principal, reserved.operation);

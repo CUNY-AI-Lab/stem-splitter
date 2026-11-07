@@ -2,13 +2,15 @@ import { archiveSongSearchResponse } from './archive-search-response.ts';
 import { searchOpenAudio, type OpenAudioTrack } from './open-audio.ts';
 import type { PublicSearchCache } from './musicbrainz.ts';
 import { archiveSongSearchKey, creditMatchesQuery, isGenreOnlySearch, searchableText, SHORT_CLIP_SECONDS, type ArchiveSong } from './archive.ts';
-type Provider = 'archive' | 'commons' | 'freesound' | 'loc';
+// Library of Congress is not searched: www.loc.gov serves Workers a Cloudflare challenge,
+// and its API is too slow and rate-limited for this path. See docs/audio-search-catalogs-20261104.md.
+type Provider = 'archive' | 'commons' | 'freesound';
 type AudioTrack = (ArchiveSong | OpenAudioTrack) & { providerName: string };
 type SearchResult = { results: AudioTrack[]; references: never[]; providers: Record<Provider, 'pending' | 'ready' | 'unavailable'> };
 type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache };
 
 // The Archive holds nearly all full-length songs, so it gets more of the list.
-const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesound: 4, loc: 4 };
+const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesound: 4 };
 // Freesound is mostly short effects whose tags loosely match. Tracks must carry the
 // search words, and short clips appear only when a search would otherwise find nothing.
 const MIN_FREESOUND_SECONDS = 30;
@@ -48,8 +50,8 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
   const headers = { 'Cache-Control': 'private, no-store' };
   const run = async (emit: (value: SearchResult) => void): Promise<SearchResult> => {
     const tracks = new Map<string, AudioTrack>();
-    const counts = { archive: 0, commons: 0, freesound: 0, loc: 0 };
-    const result: SearchResult = { results: [], references: [], providers: { archive: 'pending', commons: 'pending', freesound: 'pending', loc: 'pending' } };
+    const counts = { archive: 0, commons: 0, freesound: 0 };
+    const result: SearchResult = { results: [], references: [], providers: { archive: 'pending', commons: 'pending', freesound: 'pending' } };
     const publish = () => {
       result.results = [...tracks.entries()]
         .map(([key, track]) => ({ track, score: relevance(key.split(':')[0] as Provider, track, query) }))
@@ -107,7 +109,7 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
           if (!done) throw new Error('Archive search interrupted');
         } finally { signal.removeEventListener('abort', cancel); await reader.cancel().catch(() => {}); reader.releaseLock(); }
       }),
-      ...(['commons', 'freesound', 'loc'] as const).map(name => provider(name, async () => {
+      ...(['commons', 'freesound'] as const).map(name => provider(name, async () => {
         const key = context.cache && new Request(new URL('/__audio-search/v2/' + name + '?seconds=' + context.maximumSeconds + '&q=' + encodeURIComponent(query.trim().toLowerCase()), context.cache.origin));
         let value: { results: OpenAudioTrack[] } | undefined;
         if (key && context.cache) { try { const hit = await context.cache.storage.match(key); if (hit?.ok) value = await hit.json(); } catch {} }
