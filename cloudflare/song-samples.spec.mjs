@@ -263,6 +263,72 @@ test('unified search keeps one audio import flow and no separate metadata contro
  }finally{await f.harness.close();}
 });
 
+// Workers cancels a request's unfinished work when that request ends, so another request must never wait on it.
+test('a search that ended at its time limit does not stall a later search on the same upload',async({page,context})=>{
+ test.setTimeout(90000);
+ const f=await fixture({TEST_NO_COURSES:'true'}),audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+ let holdSlow=true,slowHeld=0;const never=new Promise(()=>{});
+ const item=title=>HttpResponse.json({metadata:{title,creator:'Fixture ensemble',mediatype:'audio',subject:'Music'},files:[{name:'lantern.mp3',title,artist:'Fixture ensemble',length:'2',size:String(audio.length),format:'VBR MP3'}]});
+ const network=setupServer(
+  http.get('https://archive.org/advancedsearch.php',()=>HttpResponse.json({response:{docs:[{identifier:'lantern-fast',title:'Lantern fixture fast',creator:'Fixture ensemble'},{identifier:'lantern-slow',title:'Lantern fixture slow',creator:'Fixture ensemble'}]}})),
+  http.get('https://archive.org/metadata/:id',async({params})=>{if(params.id==='lantern-slow'){if(holdSlow){slowHeld++;await never;}return item('Lantern fixture slow');}return item('Lantern fixture fast');}),
+  http.get('https://archive.org/download/:id/:file',()=>new HttpResponse(audio,{headers:{'content-type':'audio/mpeg','content-length':String(audio.length)}})),
+ );
+ network.listen({onUnhandledRequest:'bypass'});
+ const search=q=>page.evaluate(async q=>{
+  const started=performance.now(),stop=new AbortController(),timer=setTimeout(()=>stop.abort(),30000);
+  try{const r=await fetch('/api/music/search?q='+encodeURIComponent(q),{signal:stop.signal,headers:{Accept:'application/x-ndjson'}});const lines=(await r.text()).trim().split('\n').map(line=>JSON.parse(line));return{status:r.status,last:lines.at(-1),seconds:(performance.now()-started)/1000};}
+  catch(error){return{error:error.message,seconds:(performance.now()-started)/1000};}
+  finally{clearTimeout(timer);}
+ },q);
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
+  await page.goto(f.url.href);
+  const first=await search('Lantern fixture');
+  expect(first.error).toBeUndefined();
+  expect(slowHeld).toBeGreaterThan(0);
+  expect(first.last.results.map(track=>track.archiveId)).toEqual(['lantern-fast']);
+  holdSlow=false;
+  const second=await search('Lantern fixture slow');
+  expect(second.error).toBeUndefined();
+  expect(second.last.error).toBeUndefined();
+  expect(second.last.results.map(track=>track.archiveId)).toContain('lantern-slow');
+  expect(second.seconds).toBeLessThan(5);
+ }finally{network.close();await f.harness.close();}
+});
+test('a song suggestion check its browser cancelled does not hang the next check for that song',async({page,context})=>{
+ test.setTimeout(60000);
+ const f=await fixture({TEST_NO_COURSES:'true'}),audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+ let hold=true,held=0;const never=new Promise(()=>{});
+ await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
+ await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:1,tracks:[]}}));
+ await page.goto(f.url.href);
+ const [track]=JSON.parse(await readFile(new URL('../public/search-samples.json',import.meta.url),'utf8'));
+ const network=setupServer(
+  http.get(`https://archive.org/metadata/${track.archiveId}`,async()=>{if(hold){held++;await never;}return HttpResponse.json({metadata:{title:track.title,creator:track.artist,mediatype:'audio',subject:'Music'},files:[{name:track.archiveFile,title:track.title,artist:track.artist,length:'2',size:String(audio.length),format:'VBR MP3'}]});}),
+  http.get('https://archive.org/download/:id/:file',()=>new HttpResponse(audio,{headers:{'content-type':'audio/mpeg','content-length':String(audio.length)}})),
+ );
+ network.listen({onUnhandledRequest:'bypass'});
+ const path=`/api/music/search?${new URLSearchParams({q:`${track.artist} ${track.title}`,sampleItem:track.archiveId,sampleFile:track.archiveFile})}`;
+ try{
+  await page.evaluate(path=>{window.firstCheck=new AbortController();window.firstResult=fetch(path,{signal:window.firstCheck.signal}).then(r=>r.status).catch(error=>error.name);},path);
+  await expect.poll(()=>held,{timeout:10000}).toBeGreaterThan(0);
+  expect(await page.evaluate(async()=>{window.firstCheck.abort();return window.firstResult;})).toBe('AbortError');
+  await page.waitForTimeout(500);
+  hold=false;
+  const second=await page.evaluate(async path=>{
+   const started=performance.now(),stop=new AbortController(),timer=setTimeout(()=>stop.abort(),20000);
+   try{const r=await fetch(path,{signal:stop.signal});return{status:r.status,body:await r.json(),seconds:(performance.now()-started)/1000};}
+   catch(error){return{error:error.message,seconds:(performance.now()-started)/1000};}
+   finally{clearTimeout(timer);}
+  },path);
+  expect(second.error).toBeUndefined();
+  expect(second.status).toBe(200);
+  expect(second.body.results.length).toBe(1);
+  expect(second.seconds).toBeLessThan(5);
+ }finally{network.close();await f.harness.close();}
+});
+
 test('a phone double tap takes the suggested song, while single taps, slow taps and typed text do not',async({browser})=>{
  const f=await fixture({TEST_NO_COURSES:'true'});
  const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'hint-exact',archiveFile:'exact.mp3'},query=`${track.artist} ${track.title}`;

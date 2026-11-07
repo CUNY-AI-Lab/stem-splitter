@@ -18,7 +18,7 @@ const probe = () => new Response(audio.subarray(0,65536),{status:206,headers:{'c
   'content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
 const packet = (value: Uint8Array | undefined) => JSON.parse(new TextDecoder().decode(value));
 
-test('verified songs stream before a slow catalog finishes, while concurrent searches share work', {timeout:5000}, async t => {
+test('verified songs stream before a slow catalog finishes, and a finished search is reused', {timeout:5000}, async t => {
   const catalog = deferred(), download = deferred(), probeStarted = deferred();
   let calls = 0, checked = false;
   t.mock.method(globalThis,'fetch',async (input:RequestInfo|URL) => {
@@ -42,20 +42,21 @@ test('verified songs stream before a slow catalog finishes, while concurrent sea
     download.resolve();
     const update = packet((await first).value);
     assert.equal(checked,true); assert.equal(update.done,false); assert.equal(update.results[0].archiveId,'rapid-melody');
-    const updates: unknown[] = [];
-    const joined = searchArchiveSongs('RAPID MELODY',value => updates.push(value));
-    assert.equal(updates.length,1,'a joining subscriber immediately sees verified matches');
     catalog.resolve();
     let final;
     for (;;) {const value=await reader.read();if(value.done)break;const part=packet(value.value);if(part.done)final=part;}
-    assert.equal(final.results.length,1); assert.equal((await joined).results.length,1);
-    assert.equal(calls,6,'four catalogs, one metadata request and one audio probe are shared');
+    assert.equal(final.results.length,1);
+    assert.equal(calls,6,'four catalogs, one metadata request and one audio probe');
+    const updates: unknown[] = [];
+    const reused = await searchArchiveSongs('RAPID MELODY',value => updates.push(value));
+    assert.equal(updates.length,1,'a later search immediately sees finished results');
+    assert.equal(reused.results.length,1); assert.equal(calls,6);
     const cached=await archiveSongSearchResponse('rapid melody',false);
     assert.equal(cached.status,200); assert.equal((await cached.json()).results.length,1); assert.equal(calls,6);
   } finally {catalog.resolve(); download.resolve(); await reader.cancel();}
 });
 
-test('canceling one streaming reader leaves another subscriber able to complete', {timeout:5000}, async t => {
+test('canceling one streaming reader leaves another search able to complete', {timeout:5000}, async t => {
   const gate=deferred();let calls=0;
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
     calls++;const url=new URL(String(input));
@@ -66,7 +67,26 @@ test('canceling one streaming reader leaves another subscriber able to complete'
   const abandoned=await archiveSongSearchResponse('Cancel melody',true);
   const active=archiveSongSearchResponse('Cancel melody',false);
   await abandoned.body!.cancel();gate.resolve();
-  const response=await active;assert.equal(response.status,200);assert.equal((await response.json()).results.length,1);assert.equal(calls,6);
+  const response=await active;assert.equal(response.status,200);assert.equal((await response.json()).results.length,1);assert.ok(calls>=6);
+});
+
+// In Workers an unfinished request's work can stop for good, so a search must never wait on another search.
+test('a search does not wait on the same search still running in another request', {timeout:5000}, async t => {
+  const held=deferred();let catalogs=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){if(++catalogs<=4)await held.promise;return Response.json({response:{docs:[{identifier:'unshared-melody'}]}});}
+    if(url.pathname.startsWith('/metadata/'))return metadata('Unshared melody');
+    return probe();
+  });
+  const first=archiveSongSearchResponse('Unshared melody',false);
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(catalogs,4);
+  try {
+    const second=await archiveSongSearchResponse('Unshared melody',false);
+    assert.equal(second.status,200);assert.equal((await second.json()).results.length,1);
+    assert.equal(catalogs,8);
+  } finally {held.resolve();await first;}
 });
 
 test('stream failures are explicit and failed searches can be retried through JSON',async t=>{

@@ -520,7 +520,7 @@ const hasGenre = (tags: string, genre: GenreQuery) => genre.names.some(name => `
 const genreCatalogQuery = (genre: GenreQuery) => genre.names.map(name => `"${name === 'r b' ? 'r&b' : name}"`).join(' OR ');
 export const archiveSongSearchKey = (query: string) => searchableText(displayText(query, '', MAX_TERM_LENGTH));
 type SearchListener = (results: SongResults) => void;
-const searchCache = new Map<string, { expires: number; songs: Promise<SongResults>; latest: SongResults; listeners: Set<SearchListener> }>();
+const searchCache = new Map<string, { expires: number; results: SongResults }>();
 
 /** Share a bounded number of upstream requests across discovery and verification. */
 function requestPool(width: number) {
@@ -534,33 +534,26 @@ function requestPool(width: number) {
   };
 }
 
-// Related queries often rediscover the same albums and tracks. Share only
-// successful public discovery work; imports always fetch fresh metadata/audio.
-type DiscoveryEntry<T> = { expires: number; promise: Promise<T> };
+// Related queries often rediscover the same albums and tracks, so requests share finished public discovery.
+// They never share unfinished work: Workers ends a request's outstanding work with that request, so a promise
+// from another request can stay pending for good. Each search removes its own duplicates. Imports fetch fresh.
+type DiscoveryEntry<T> = { expires: number; value: T };
 const songMetadataCache = new Map<string, DiscoveryEntry<ArchiveItem>>();
 // Provider locations stay server-side and expire with their metadata object.
 const songDeliveryLocations = new WeakMap<ArchiveItem, string[]>();
 const songDeliveryCache = new Map<string, DiscoveryEntry<boolean>>();
-// In-flight work can die with the request that started it, so a pending entry must expire.
-const IN_FLIGHT_MS = 12000;
-function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
+async function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
   work: () => Promise<T>, reusable: (value: T) => boolean): Promise<T> {
   const now = Date.now();
   for (const [id, entry] of cache) if (entry.expires <= now) cache.delete(id);
   const hit = cache.get(key);
-  if (hit) return hit.promise;
-  if (cache.size >= limit) cache.delete(cache.keys().next().value!);
-  const entry: DiscoveryEntry<T> = { expires: now + IN_FLIGHT_MS, promise: Promise.resolve().then(work) };
-  cache.set(key, entry);
-  entry.promise = entry.promise.then(value => {
-    if (reusable(value)) entry.expires = Date.now() + 60000;
-    else if (cache.get(key) === entry) cache.delete(key);
-    return value;
-  }, error => {
-    if (cache.get(key) === entry) cache.delete(key);
-    throw error;
-  });
-  return entry.promise;
+  if (hit) return hit.value;
+  const value = await work();
+  if (reusable(value)) {
+    if (!cache.has(key) && cache.size >= limit) cache.delete(cache.keys().next().value!);
+    cache.set(key, { expires: Date.now() + 60000, value });
+  }
+  return value;
 }
 
 /** Check public file delivery before exposing a choice; imports still read the complete file. */
@@ -690,30 +683,15 @@ export async function searchArchiveSongs(query: string, onResults?: SearchListen
   const cacheKey = `${durationLimit}:${normalized}`;
   const now = Date.now();
   for (const [key, value] of searchCache) if (value.expires <= now) searchCache.delete(key);
-  let entry = searchCache.get(cacheKey);
-  if (!entry) {
-    entry = { expires: now + IN_FLIGHT_MS, songs: Promise.resolve({ results: [] }), latest: { results: [] }, listeners: new Set() };
-    const current = entry;
-    if (searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
-    searchCache.set(cacheKey, current);
-    current.songs = findArchiveSongs(tokens, results => {
-      current.latest = results;
-      for (const listener of current.listeners) listener(results);
-    }, durationLimit).then(results => {
-      current.latest = results;
-      current.expires = Date.now() + 60000;
-      return results;
-    }, error => {
-      if (searchCache.get(cacheKey) === current) searchCache.delete(cacheKey);
-      throw error;
-    });
+  const hit = searchCache.get(cacheKey);
+  if (hit) {
+    if (hit.results.results.length) onResults?.(hit.results);
+    return hit.results;
   }
-  if (onResults) {
-    entry.listeners.add(onResults);
-    if (entry.latest.results.length) onResults(entry.latest);
-  }
-  try { return await entry.songs; }
-  finally { if (onResults) entry.listeners.delete(onResults); }
+  const results = await findArchiveSongs(tokens, onResults ?? (() => {}), durationLimit);
+  if (!searchCache.has(cacheKey) && searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
+  searchCache.set(cacheKey, { expires: Date.now() + 60000, results });
+  return results;
 }
 
 // Encodings and album repeats of one track differ by a moment, while different takes rarely match this closely.
@@ -830,6 +808,8 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     budget.expired = true;
     finished.catch(() => {});
     const best = budget.bestEffort();
+    // Without this a search that gave up leaves no trace. It carries no search words.
+    console.warn('archive_search_time_limit', { results: best.results.length });
     if (!best.results.length) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
     return best;
   } finally { timers.forEach(clearTimeout); }
@@ -837,7 +817,7 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
 
 type SearchBudget = { expired: boolean; bestEffort: () => SongResults };
 async function discoverArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number, budget: SearchBudget): Promise<SongResults> {
-  // Per search, because a request ended at its time limit may never release a shared slot.
+  // Per search, for the same reason as above: a request ended at its time limit never releases a shared slot.
   const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
   const genreOnly = isGenreOnlySearch(tokens);
   const artistQuery = genreOnly ? '' : tokens.join(' ');
@@ -898,7 +878,7 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
         if (budget.expired || Date.now() >= deadline) { metadataFailures++; return null; }
         try { return await reuseDiscovery(songMetadataCache, `${maximumSeconds}:${id}`, 80,
           () => songMetadataPool(() => {
-            // The pools are shared. Work abandoned at a time limit must leave the queue, not starve the next search.
+            // Work abandoned at the time limit must leave this search's queue.
             if (budget.expired || Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
             return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()) });
           }),

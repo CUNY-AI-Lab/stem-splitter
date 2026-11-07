@@ -12,7 +12,6 @@ export function isPlaylistSample(request: Request, allowedCandidates: readonly A
     archiveSongSearchKey(url.searchParams.get('q') || '') === archiveSongSearchKey(`${track.artist} ${track.title}`));
 }
 
-const pending = new Map<string, Promise<SongResults>>();
 const verified = new Map<string, { expires: number; data: SongResults }>();
 export async function playlistSampleResponse(request: Request, storage?: Pick<Cache, 'match' | 'put'>, allowedCandidates: readonly AllowedTrack[] = candidates): Promise<Response> {
   if (!isPlaylistSample(request, allowedCandidates)) return Response.json({ results: [] }, { status: 400 });
@@ -31,20 +30,13 @@ export async function playlistSampleResponse(request: Request, storage?: Pick<Ca
     const hit = await storage?.match(cacheRequest);
     if (hit?.ok) return respond(await hit.json() as SongResults);
   } catch { /* Cache failures do not block live verification. */ }
-  let work = pending.get(key);
-  if (!work) {
-    work = verifyArchiveSampleFile(url.searchParams.get('sampleItem')!, url.searchParams.get('sampleFile')!, 300)
-      .catch(() => ({ results: [] }))
-      .then(async data => {
-        if (data.results.length) {
-          if (verified.size >= 64) verified.delete(verified.keys().next().value!);
-          verified.set(key, { expires: Date.now() + 60000, data });
-          try { await storage?.put(cacheRequest, Response.json(data, { headers })); } catch { /* Optional cache. */ }
-        }
-        return data;
-      }).finally(() => pending.delete(key));
-    pending.set(key, work);
+  // Each request verifies for itself. Workers ends a request's unfinished work with it, so waiting on another's can hang.
+  const data = await verifyArchiveSampleFile(url.searchParams.get('sampleItem')!, url.searchParams.get('sampleFile')!, 300)
+    .catch((): SongResults => ({ results: [] }));
+  if (data.results.length) {
+    if (verified.size >= 64) verified.delete(verified.keys().next().value!);
+    verified.set(key, { expires: Date.now() + 60000, data });
+    try { await storage?.put(cacheRequest, Response.json(data, { headers })); } catch { /* Optional cache. */ }
   }
-  const data = await work;
   return data.results.length ? respond(data) : Response.json(data, { headers: { 'Cache-Control': 'no-store' } });
 }
