@@ -1,7 +1,7 @@
 import { archiveSongSearchResponse } from './archive-search-response.ts';
 import { searchOpenAudio, type OpenAudioTrack } from './open-audio.ts';
 import type { PublicSearchCache } from './musicbrainz.ts';
-import { archiveSongSearchKey, creditMatchesQuery, isGenreOnlySearch, searchableText, SHORT_CLIP_SECONDS, type ArchiveSong } from './archive.ts';
+import { archiveSongSearchKey, creditMatchesQuery, hiddenFromGenreLists, isGenreOnlySearch, searchableText, SHORT_CLIP_SECONDS, type ArchiveSong } from './archive.ts';
 // Library of Congress is not searched: www.loc.gov serves Workers a Cloudflare challenge,
 // and its API is too slow and rate-limited for this path. See docs/audio-search-catalogs-20261104.md.
 type Provider = 'archive' | 'commons' | 'freesound';
@@ -21,6 +21,7 @@ const credits = (track: ArchiveSong | OpenAudioTrack) => {
   return [artist, fileCreator, itemCreator];
 };
 function relevantTrack(provider: Provider, track: ArchiveSong | OpenAudioTrack, query: string): boolean {
+  if (isGenreOnlySearch(archiveSongSearchKey(query).split(' ')) && hiddenFromGenreLists(`${track.title} ${credits(track).join(' ')}`)) return false;
   if (provider !== 'freesound') return true;
   const text = searchableText(`${track.title} ${credits(track).join(' ')}`);
   return archiveSongSearchKey(query).split(' ').every(token => text.includes(token));

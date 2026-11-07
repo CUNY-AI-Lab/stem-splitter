@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { SqliteD1 } from '../server/d1.ts';
 import { searchRecordingReferences, getRecordingReference } from '../src/musicbrainz.ts';
 import { musicSearchResponse } from '../src/music-search.ts';
+import { HATE_MUSIC_NAMES } from '../src/genre-list-exclusions.ts';
 import app from '../src/index.ts';
 
 const studio = '12345678-1234-1234-1234-123456789012';
@@ -268,6 +269,26 @@ test('a genre search lists tagged music above a credit named for the genre, with
   });
   const result: any = await (await musicSearchResponse('jazz', false, context)).json();
   assert.deepEqual(result.results.map((track: any) => track.title), ['Night Train', 'Jazz album', 'Stage talk']);
+});
+
+test('a genre list leaves out flagged tracks from every source, and naming them still finds them', async t => {
+  const context = setup(t);
+  const [band] = HATE_MUSIC_NAMES;
+  const flagged = commons();
+  flagged.query.pages[0].imageinfo[0].extmetadata.Artist = { value: band };
+  flagged.query.pages[0].imageinfo[0].extmetadata.Attribution = { value: band };
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(flagged);
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: [] } });
+    return new Response(audio, { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const genre: any = await (await musicSearchResponse('blues', false, context)).json();
+  assert.deepEqual(genre.results, []);
+  const named: any = await (await musicSearchResponse(band, false, context)).json();
+  assert.deepEqual(named.results.map((track: any) => track.artist), [band]);
 });
 
 test('a short clip still appears when a search would otherwise find nothing', async t => {

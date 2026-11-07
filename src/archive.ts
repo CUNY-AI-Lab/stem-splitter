@@ -10,6 +10,7 @@
 //   - provider redirects, response sizes, read times, and audio signatures are
 //     bounded before any bytes are stored.
 import type { Env } from './env';
+import { HATE_MUSIC_NAMES, HATE_MUSIC_TAGS, SLURS } from './genre-list-exclusions.ts';
 import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
 import { mp3FrameInfo } from './reliability/media.ts';
 
@@ -110,6 +111,8 @@ export interface ArchiveItem {
   detailsUrl: string;
   /** Subject and genre tags in searchableText form. */
   genreTags?: string;
+  /** Every tag, including those of a keyword-stuffed upload, which genreTags ignores. */
+  allTags?: string;
   tracks: ArchiveTrack[];
 }
 
@@ -503,6 +506,16 @@ export function genreQuery(tokens: string[]): GenreQuery | null {
 }
 /** A search for a genre and nothing else. A credit such as "Jazz" says who uploaded it, not what it sounds like. */
 export const isGenreOnlySearch = (tokens: string[]) => genreQuery(tokens)?.rest.length === 0;
+const hasWords = (text: string, words: string) => ` ${text} `.includes(` ${words} `);
+const SEARCHABLE_TAGS = HATE_MUSIC_TAGS.map(searchableText), SEARCHABLE_NAMES = [...HATE_MUSIC_NAMES, ...SLURS].map(searchableText);
+/** Decides what a genre-only list leaves out. Song names can't decide alone: "Ku Klux Klan" is also an anti-racist reggae song, so tags are read separately. */
+export function hiddenFromGenreLists(text: string, tags = ''): boolean {
+  const words = searchableText(text), labels = searchableText(tags);
+  return SEARCHABLE_NAMES.some(name => hasWords(words, name) || hasWords(labels, name)) || SEARCHABLE_TAGS.some(tag => hasWords(labels, tag));
+}
+const quotedTerms = (terms: string[]) => terms.map(term => `"${term}"`).join(' OR ');
+// Keeps flagged uploads from using a genre search's inspection slots. The Archive's own collections for material it plays down count here too.
+const GENRE_LIST_CATALOG_FILTER = ` AND NOT collection:(deemphasize OR fringe) AND NOT subject:(${quotedTerms([...HATE_MUSIC_TAGS, ...HATE_MUSIC_NAMES])}) AND NOT title:(${quotedTerms(HATE_MUSIC_NAMES)}) AND NOT creator:(${quotedTerms(HATE_MUSIC_NAMES)})`;
 const hasGenre = (tags: string, genre: GenreQuery) => genre.names.some(name => ` ${tags} `.includes(` ${name} `));
 const genreCatalogQuery = (genre: GenreQuery) => genre.names.map(name => `"${name === 'r b' ? 'r&b' : name}"`).join(' OR ');
 export const archiveSongSearchKey = (query: string) => searchableText(displayText(query, '', MAX_TERM_LENGTH));
@@ -758,6 +771,8 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): SongCandidate[] {
   const candidates: SongCandidate[] = [];
   const genre = genreQuery(tokens);
   const genreOnly = genre?.rest.length === 0;
+  // One flagged track speaks for its upload: the other songs on a racist album rarely say so in their titles.
+  if (genreOnly && item.tracks.some(track => hiddenFromGenreLists([item.title, item.creator, track.title, track.name, track.artist, track.creator].join(' '), `${item.allTags || ''} ${track.genre || ''}`))) return candidates;
   for (const track of item.tracks) {
     if (!track.importable) continue;
     const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
@@ -938,7 +953,7 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
   const earlySlots = genre ? [4, 8, 4, 4, 12] : [4, 16, 4, 8];
   // Spoken-word items can never be imported, yet they lead by downloads: "queen"
   // otherwise fills the catalog page with books about queens before reaching the band.
-  const base = 'mediatype:audio AND NOT access-restricted-item:true AND NOT collection:(librivoxaudio OR audio_bookspoetry)';
+  const base = `mediatype:audio AND NOT access-restricted-item:true AND NOT collection:(librivoxaudio OR audio_bookspoetry)${genreOnly ? GENRE_LIST_CATALOG_FILTER : ''}`;
   const queries = [
     // A creator:[* TO *] filter here costs 4-8 seconds on a fresh query, so credits are checked below instead.
     `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
@@ -1213,6 +1228,7 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
     identifier,
     title: displayText(metadata.title, identifier),
     genreTags: genreTagText(metadata.subject, metadata.genre),
+    allTags: `${metadataText(metadata.subject)} ${metadataText(metadata.genre)}`,
     creator: displayText(metadata.creator),
     description: itemDescription(metadata.description),
     year: toYear(metadata.year ?? metadata.date),

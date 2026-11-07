@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ArchiveError, creditMatchesQuery, genreQuery, fetchArchiveAudio, fetchArchiveItem, searchArchiveSongs, validateArchiveSongFrames, verifyArchiveSampleFile } from '../src/archive.ts';
+import { ArchiveError, creditMatchesQuery, genreQuery, fetchArchiveAudio, fetchArchiveItem, hiddenFromGenreLists, searchArchiveSongs, validateArchiveSongFrames, verifyArchiveSampleFile } from '../src/archive.ts';
+import { HATE_MUSIC_NAMES, HATE_MUSIC_TAGS, SLURS } from '../src/genre-list-exclusions.ts';
 import { mp3FrameInfo } from '../src/reliability/media.ts';
 const audio=new Uint8Array(readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url)));
 const duration=mp3FrameInfo(audio.buffer)!.seconds;
@@ -621,6 +622,56 @@ test('a genre word lost among dozens of keywords is not a genre tag',async t=>{
     plain:metadata({title:'Album',creator:'Trio',subject:'prewar;jazz;guitar'},[file({title:'Night Train'})]),
   });
   assert.deepEqual((await searchArchiveSongs('jazz tracks')).results.map(song=>song.archiveId),['plain']);
+});
+
+test('a genre list leaves out a flagged upload from every batch, and naming it still finds it',async t=>{
+  const [slur]=SLURS,[band]=HATE_MUSIC_NAMES,[tag]=HATE_MUSIC_TAGS;
+  const records:Record<string,Response>={
+    'hidden-slur-album':metadata({title:'Porch Songs',creator:'Porch Singer',subject:'gospel'},[file({name:'a.mp3',title:`${slur} song`}),file({name:'b.mp3',title:'Kind Song'})]),
+    'hidden-band-album':metadata({title:'Marching',creator:band,subject:'gospel'},[file({title:'Band Song'})]),
+    'hidden-file-credit':metadata({title:'Sampler',creator:'Compiler',subject:'gospel'},[file({name:'c.mp3',title:'Sampler Song',artist:band}),file({name:'d.mp3',title:'Fair Song',artist:'Fair Singer'})]),
+    'hidden-tagged':metadata({title:'Anthems',creator:'Tagged Band',subject:`gospel; German ${tag}`},[file({title:'Tagged Song'})]),
+    'hidden-stuffed':metadata({title:'Stuffed',creator:'Stuffed Band',subject:[...Array.from({length:60},(_,index)=>`keyword${index}`),tag]},[file({title:'Stuffed Song'})]),
+    'hidden-plain':metadata({title:'Hymns',creator:'Choir',subject:'gospel'},[file({title:'Plain Song'})]),
+  };
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:Object.keys(records).map(identifier=>({identifier,creator:'Credited'}))}});
+    if(url.pathname.startsWith('/metadata/'))return records[url.pathname.split('/')[2]].clone();
+    return partialAudio();
+  });
+  const seen:string[]=[];
+  const {results}=await searchArchiveSongs('gospel',batch=>seen.push(...batch.results.map(song=>song.title)));
+  assert.deepEqual(results.map(song=>song.title),['Plain Song']);
+  assert.ok(seen.length&&seen.every(title=>title==='Plain Song'));
+  assert.deepEqual((await searchArchiveSongs(band)).results.map(song=>song.title).sort(),['Band Song','Sampler Song']);
+  assert.ok((await searchArchiveSongs(`${slur} song`)).results.some(song=>song.title===`${slur} song`));
+});
+
+test('only genre searches ask the catalog to leave out flagged uploads',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    queries.push(new URL(String(input)).searchParams.get('q')!);
+    return Response.json({response:{docs:[]}});
+  });
+  await searchArchiveSongs('bluegrass music');
+  assert.ok(queries.length&&queries.every(q=>q.includes('NOT collection:(deemphasize OR fringe)')&&q.includes(`NOT creator:("${HATE_MUSIC_NAMES[0]}"`)));
+  queries.length=0;
+  await searchArchiveSongs('bluegrass harmony singers');
+  await searchArchiveSongs(HATE_MUSIC_NAMES[0]);
+  assert.ok(queries.length&&queries.every(q=>!q.includes('deemphasize')&&!q.includes('NOT creator:')));
+});
+
+test('exclusions match whole words and read tags apart from song names',()=>{
+  for(const tag of HATE_MUSIC_TAGS)assert.ok(hiddenFromGenreLists('Any Song',`rock; ${tag.toLowerCase()}; live`),tag);
+  for(const entry of [...HATE_MUSIC_NAMES,...SLURS]){
+    assert.ok(hiddenFromGenreLists(`Best of ${entry.toUpperCase()} 1990`),entry);
+    assert.ok(!entry.includes('"'),'an entry is quoted in the catalog query');
+  }
+  assert.ok(hiddenFromGenreLists('Die Lunikoff Verschwörung – Album'));
+  // Music that only shares a word with the lists stays.
+  for(const [text,tags] of [['Racing in the Street','racing; rock'],['In Stahlgewittern, read aloud','spoken'],['Ku Klux Klan Steel Pulse','reggae'],['White Power Station','rock'],
+    ['No Remorse Metallica','metal'],['Funky Broadway Dyke and the Blazers','funk'],['Nazi Punks Fuck Off Dead Kennedys','punk']])assert.ok(!hiddenFromGenreLists(text,tags),text);
 });
 
 test('encodings of one file list once as the largest copy, though their lengths can disagree, and stay importable by name',async t=>{

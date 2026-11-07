@@ -317,5 +317,5 @@ test('edge and metadata caches keep student durations separate from visitor resu
   const repeated = await archiveSongSearchResponse('Duration cache melody', false, cache, 900);
   assert.equal(repeated.headers.get('x-stem-search-cache'), 'hit');
   assert.equal((await repeated.json() as {results:unknown[]}).results.length, 1);
-  assert.ok([...stored.keys()].every(key => key.includes('/v4?seconds=900&')));
+  assert.ok([...stored.keys()].every(key => key.includes('/v5?seconds=900&')));
 });
