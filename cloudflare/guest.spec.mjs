@@ -505,6 +505,42 @@ test('partial song streams preserve visible choices through later updates and in
   }finally{await f.close();}
 });
 
+test('a finished search replaces streamed choices with its final ranking',async({page})=>{
+  const f=await setup(page);
+  try {
+    await page.addInitScript(()=>{
+      const original=window.fetch;
+      window.fetch=(input,options)=>{
+        if(!String(input).startsWith('/api/music/search?q=Settling%20fixture'))return original(input,options);
+        const encoder=new TextEncoder();
+        return Promise.resolve(new Response(new ReadableStream({start(controller){
+          window.pushSearch=packet=>controller.enqueue(encoder.encode(JSON.stringify(packet)+'\n'));
+          window.endSearch=()=>controller.close();
+        }}),{headers:{'Content-Type':'application/x-ndjson'}}));
+      };
+    });
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});await input.fill('Settling fixture');
+    await page.waitForFunction(()=>Boolean(window.pushSearch));
+    const song=(id,title)=>({id,title,artist:'Musician',durationSec:150});
+    const options=page.locator('#source-songs').getByRole('option');
+    // A full list of early matches leaves no room for what arrives later, until the search finishes.
+    const early=[song('weak','Weak match'),song('small-copy','Same recording'),...Array.from({length:14},(_,index)=>song(`early-${index}`,`Early ${index}`))];
+    await page.evaluate(results=>window.pushSearch({results,done:false}),early);
+    await expect(options).toHaveCount(16);
+    await page.evaluate(results=>{window.pushSearch({results,done:true});window.endSearch();},[song('late','Late match'),song('large-copy','Same recording')]);
+    await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
+    await expect(options).toHaveCount(2);
+    await expect(options.first()).toContainText('Late match');
+    await expect(options.nth(1)).toContainText('Same recording');
+    await expect(page.locator('#source-songs')).not.toContainText('(2)');
+    expect(new Set(await options.evaluateAll(nodes=>nodes.map(node=>node.id))).size).toBe(2);
+    await input.press('ArrowDown');await input.press('ArrowDown');await input.press('Enter');
+    await expect(input).toHaveValue('Same recording — File artist: Musician');
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
 const sampleTrack = { id: 'sample-jazz', title: 'Piano sample', artist: 'Fixture ensemble', durationSec: 120, archiveId: 'sample', archiveFile: 'sample.mp3' };
 
 test('sample query streams translucently and Tab reveals preloaded results without another request', async ({page}) => {

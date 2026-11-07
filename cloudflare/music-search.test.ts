@@ -250,6 +250,29 @@ test('Freesound effects are removed and a named artist ranks above faster, loose
   assert.deepEqual(result.results.map((track: any) => track.title), ['Radio Song', 'Duchess cover on drums']);
 });
 
+test('a genre search lists tagged music above a credit named for the genre, with short clips last', async t => {
+  const context = setup(t);
+  const record = (creator: string, subject: string, title: string, length: string) => Response.json({ metadata: { title: `${creator} album`, creator, mediatype: 'audio', subject },
+    files: [{ name: 'song.mp3', title, length, size: String(audio.length) }] });
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    if (url.pathname === '/advancedsearch.php') {
+      const q = url.searchParams.get('q')!;
+      const ids = q.includes('subject:("jazz")') ? ['popular-clip', 'tagged-song'] : q.endsWith('creator:"jazz"') ? ['uploader'] : [];
+      return Response.json({ response: { docs: ids.map(identifier => ({ identifier, title: identifier, creator: 'Credited' })) } });
+    }
+    if (url.pathname === '/metadata/popular-clip') return record('Clip Band', 'Jazz', 'Stage talk', '12');
+    if (url.pathname === '/metadata/tagged-song') return record('Trio', 'Jazz', 'Night Train', '200');
+    if (url.pathname === '/metadata/uploader') return record('Jazz', 'Music', 'tmp', '200');
+    return new Response(audio, { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const result: any = await (await musicSearchResponse('jazz', false, context)).json();
+  assert.deepEqual(result.results.map((track: any) => track.title), ['Night Train', 'Jazz album', 'Stage talk']);
+});
+
 test('a short clip still appears when a search would otherwise find nothing', async t => {
   const context = setup(t);
   t.mock.method(globalThis, 'fetch', async (input: any) => {

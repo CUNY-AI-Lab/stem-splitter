@@ -941,6 +941,7 @@ async function searchSourceSongs(term, sequence) {
     if (current() && !songResults.size) showSongSearchStatus('Still searching. Some sources are slow to respond.');
   }, 4000);
   const seen = new Set(), optionById = new Map();
+  let optionNumber = 0;
   const render = data => {
     if (!current()) return;
     if (data.providers) {
@@ -962,7 +963,7 @@ async function searchSourceSongs(term, sequence) {
       for (let version = 2; songResults.has(value); version++) value = `${label} (${version})`;
       songResults.set(value, track);
       const option = document.createElement('li'), duration = document.createElement('small');
-      option.id = `source-song-${sequence}-${songResults.size}`;
+      option.id = `source-song-${sequence}-${++optionNumber}`;
       option.className = 'source-song';
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', 'false');
@@ -1007,6 +1008,18 @@ async function searchSourceSongs(term, sequence) {
       signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
     });
     if (!current()) return;
+    // The final ranking replaces what streamed in: early weak matches and other copies of a
+    // recording leave the list, and better late matches take their places.
+    if (activeSongIndex < 0 && data.results?.length) {
+      const kept = new Set(data.results.slice(0, 16).map(track => track.id));
+      for (const [value, track] of songResults) {
+        if (kept.has(track.id)) continue;
+        songResults.delete(value);
+        seen.delete(track.id);
+        optionById.get(track.id)?.remove();
+        optionById.delete(track.id);
+      }
+    }
     render(data);
     // Choices hold still while results stream in, then settle into relevance order,
     // unless someone is already moving through the list.

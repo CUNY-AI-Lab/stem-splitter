@@ -1,7 +1,7 @@
 import { archiveSongSearchResponse } from './archive-search-response.ts';
 import { searchOpenAudio, type OpenAudioTrack } from './open-audio.ts';
 import type { PublicSearchCache } from './musicbrainz.ts';
-import { archiveSongSearchKey, creditMatchesQuery, searchableText, type ArchiveSong } from './archive.ts';
+import { archiveSongSearchKey, creditMatchesQuery, isGenreOnlySearch, searchableText, SHORT_CLIP_SECONDS, type ArchiveSong } from './archive.ts';
 type Provider = 'archive' | 'commons' | 'freesound' | 'loc';
 type AudioTrack = (ArchiveSong | OpenAudioTrack) & { providerName: string };
 type SearchResult = { results: AudioTrack[]; references: never[]; providers: Record<Provider, 'pending' | 'ready' | 'unavailable'> };
@@ -23,15 +23,21 @@ function relevantTrack(provider: Provider, track: ArchiveSong | OpenAudioTrack, 
   const text = searchableText(`${track.title} ${credits(track).join(' ')}`);
   return archiveSongSearchKey(query).split(' ').every(token => text.includes(token));
 }
-/** Named artists and exact titles first, then whole-word matches, with full-length sources breaking ties. */
+/**
+ * Named artists and exact titles first, then whole-word matches, with full-length sources breaking ties.
+ * A search for a genre alone puts tagged music first and keeps the Archive's ranking among it, because a
+ * credit such as "Jazz" names an uploader rather than a sound.
+ */
 function relevance(provider: Provider, track: ArchiveSong | OpenAudioTrack, query: string): number {
   const phrase = archiveSongSearchKey(query), title = searchableText(track.title);
+  const tagged = Boolean((track as { genre?: string }).genre);
   const words = new Set(searchableText(`${track.title} ${credits(track).join(' ')}`).split(' '));
-  return (credits(track).some(credit => creditMatchesQuery(credit, phrase)) ? 100 : 0)
-    + (title === phrase ? 80 : ` ${title} `.includes(` ${phrase} `) ? 60 : 0)
-    + ((track as { genre?: string }).genre ? 80 : 0)
-    + (phrase.split(' ').every(token => words.has(token)) ? 20 : 0)
-    + (provider === 'archive' ? 5 : provider === 'freesound' ? 0 : 2);
+  const titleMatch = title === phrase ? 80 : ` ${title} `.includes(` ${phrase} `) ? 60 : 0;
+  const match = isGenreOnlySearch(phrase.split(' ')) ? (tagged ? 100 : titleMatch)
+    : (credits(track).some(credit => creditMatchesQuery(credit, phrase)) ? 100 : 0) + titleMatch + (tagged ? 80 : 0)
+      + (phrase.split(' ').every(token => words.has(token)) ? 20 : 0);
+  // Enough to list a clip after full tracks with the same evidence, without dropping it below looser matches.
+  return match + (provider === 'archive' ? 5 : provider === 'freesound' ? 0 : 2) - (track.durationSec < SHORT_CLIP_SECONDS ? 40 : 0);
 }
 
 /** Federate discovery only. Every import still passes its existing provider's rights/byte checks. */
