@@ -80,7 +80,10 @@ replace the newly selected course's prompt, history, roster or folder state.
 
 Opening the Splitter directly defaults to Personal; a course link selects its
 class after checking current access. Course work requires the
-`course-work-v1` disclosure acknowledgment before creation. Job ownership and
+`course-work-v1` disclosure acknowledgment before creation; a resplit of the
+owner's split that stays in that split's course relies on the acknowledgment
+given for the original, and asks again only when it would bring personal work
+into a course. Job ownership and
 course association are inserted together. Associations are immutable. Existing
 jobs, annotations, and `listening_conversations` documents are never assigned,
 backfilled, copied to the course store, or disclosed to an instructor. No endpoint

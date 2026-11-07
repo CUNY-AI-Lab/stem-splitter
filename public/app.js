@@ -1801,7 +1801,9 @@ async function chooseStemResplit(mixer, stem) {
     const destination = () => originalChoice.checked ? originalCourse : shareWith;
     const needsAcknowledgment = () => {
       const course = destination();
-      return !!course && course !== 'personal' && !(course === selectedCourse && courseAcknowledgment?.checked);
+      // A resplit that stays in its split's class relies on the notice accepted for that split.
+      if (!course || course === 'personal' || (ownOriginal && course === originalCourse)) return false;
+      return !(course === selectedCourse && courseAcknowledgment?.checked);
     };
     const blocked = () => exhausted || !destination() || (needsAcknowledgment() && !acknowledged.checked);
     let acknowledgedCourse = null;
@@ -1810,7 +1812,7 @@ async function chooseStemResplit(mixer, stem) {
       if (course !== acknowledgedCourse) { acknowledged.checked = false; acknowledgedCourse = course; }
       acknowledgment.hidden = !needsAcknowledgment();
       status.textContent = (originalChoice.checked
-        ? `Keeps the resplit with “${mixer.job.filename}”${guest ? ' in this browser' : ''}. Original stems stay available.`
+        ? `Adds the new stems under ${mixer.label(stem.name)} in “${mixer.job.filename}”${guest ? ' in this browser' : ''}. Original stems stay available.`
         : course ? description : 'Close this and choose a workspace under Share with first.') + allowance +
         (needsAcknowledgment() && !acknowledged.checked ? ' Tick the notice to continue.' : '');
       submit.disabled = blocked();
@@ -2300,61 +2302,10 @@ class Mixer {
 
     const channels = li.querySelector('.channels');
 
-    for (const stem of stems) {
-      const audio = new Audio(stem.url);
-      audio.preload = 'metadata';
-      this.audios.push(audio);
-
-      const row = document.createElement('div');
-      row.className = 'channel';
-      row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
-      row.innerHTML = `
-        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="${esc(this.label(stem.name))} — click to rename">${esc(this.label(stem.name))}</span></span>
-        <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
-        <span class="ch-actions">
-          <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
-          <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
-          <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
-          <button type="button" class="resplit-btn" title="Resplit ${esc(this.label(stem.name))}" aria-label="Resplit ${esc(this.label(stem.name))}">↩</button>
-        </span>
-      `;
-      const muteBtn = row.querySelector('.mute-btn');
-      const soloBtn = row.querySelector('.solo-btn');
-      const download = row.querySelector('.dl');
-      const resplit = row.querySelector('.resplit-btn');
-      this.channelsByName.set(stem.name, {
-        audio,
-        row,
-        muteBtn,
-        soloBtn,
-        download,
-        resplit,
-        bars: [...row.querySelectorAll('.meter i')],
-        levels: new Float32Array(METER_BANDS.length),
-        waveform: row.querySelector('.waveform'),
-        waveformStatus: 'idle',
-        waveformPeaks: null,
-        mixGain: 1,
-      });
-      this.userMuted.set(stem.name, false);
-      resplit.addEventListener('click', () => chooseStemResplit(this, stem));
-      muteBtn.addEventListener('click', () =>
-        this.toggleMute(stem.name)
-      );
-      soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
-      audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
-      audio.addEventListener('loadedmetadata', () => { this.restoreAudio(stem.name); this.loadWaveforms(); this.paint(); });
-      audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
-      for (const event of ['canplay', 'seeked']) audio.addEventListener(event, () => this.resumeBufferedAudio());
-
-      const nameEl = row.querySelector('.ch-name');
-      nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
-      nameEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') this.editLabel(stem.name, nameEl);
-      });
-
-      channels.appendChild(row);
-    }
+    this.channelList = channels;
+    this.partGroups = new Map();
+    this.partLabels = new Map();
+    for (const stem of stems) this.addChannel(stem);
 
     const master = this.audios[0];
     master.addEventListener('loadedmetadata', () => {
@@ -2546,6 +2497,182 @@ class Mixer {
     });
   }
 
+  addChannel(stem, part = null) {
+    const audio = new Audio(stem.url);
+    audio.preload = 'metadata';
+    this.audios.push(audio);
+
+    const row = document.createElement('div');
+    row.className = part ? 'channel channel-part' : 'channel';
+    if (part) row.dataset.partOf = part.source;
+    row.style.setProperty('--ch', `var(--c-${cssName(part?.stem || stem.name)}, var(--ink-dim))`);
+    row.innerHTML = `
+      <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" ${part ? `title="${esc(this.label(stem.name))}"` : `tabindex="0" title="${esc(this.label(stem.name))} — click to rename"`}>${esc(this.label(stem.name))}</span></span>
+      <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="ch-actions">
+        <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
+        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
+        <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, part ? `${this.label(part.source)} ${this.label(stem.name)}` : this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
+        <button type="button" class="resplit-btn" title="Resplit ${esc(this.label(stem.name))}" aria-label="Resplit ${esc(this.label(stem.name))}">↩</button>
+      </span>
+    `;
+    const muteBtn = row.querySelector('.mute-btn');
+    const soloBtn = row.querySelector('.solo-btn');
+    const download = row.querySelector('.dl');
+    const resplit = row.querySelector('.resplit-btn');
+    this.channelsByName.set(stem.name, {
+      audio,
+      row,
+      muteBtn,
+      soloBtn,
+      download,
+      resplit,
+      bars: [...row.querySelectorAll('.meter i')],
+      levels: new Float32Array(METER_BANDS.length),
+      waveform: row.querySelector('.waveform'),
+      waveformStatus: 'idle',
+      waveformPeaks: null,
+      mixGain: 1,
+    });
+    this.userMuted.set(stem.name, false);
+    if (part) resplit.hidden = true;
+    else resplit.addEventListener('click', () => chooseStemResplit(this, stem));
+    muteBtn.addEventListener('click', () =>
+      this.toggleMute(stem.name)
+    );
+    soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
+    audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
+    audio.addEventListener('loadedmetadata', () => { this.restoreAudio(stem.name); this.loadWaveforms(); this.paint(); });
+    audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
+    for (const event of ['canplay', 'seeked']) audio.addEventListener(event, () => this.resumeBufferedAudio());
+
+    if (!part) {
+      const nameEl = row.querySelector('.ch-name');
+      nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
+      nameEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.editLabel(stem.name, nameEl);
+      });
+    }
+
+    if (part) part.after.after(row); else this.channelList.appendChild(row);
+    return this.channelsByName.get(stem.name);
+  }
+
+  // A resplit kept with the original joins this player under the stem it came from.
+  syncParts(children) {
+    const seen = new Set();
+    for (const { job, state } of children) {
+      seen.add(job.id);
+      if (state?.status === 'done' && state.stems?.length) this.adoptPart(job, state);
+      else this.showPendingPart(job, state);
+    }
+    for (const id of [...this.partGroups.keys()]) if (!seen.has(id)) this.dropPart(id);
+  }
+
+  partGroup(job) {
+    let group = this.partGroups.get(job.id);
+    if (group) return group;
+    const source = job.resplit.stem;
+    let anchor = this.channelsByName.get(source)?.row || this.channelList.lastElementChild;
+    while (anchor?.nextElementSibling?.dataset.partOf === source) anchor = anchor.nextElementSibling;
+    const head = document.createElement('div');
+    head.className = 'channel-parts-head'; head.dataset.partOf = source;
+    head.innerHTML = '<span class="channel-parts-note" role="status"></span><button type="button" class="head-btn channel-parts-remove"></button>';
+    anchor.after(head);
+    group = { source, head, names: [], stems: [], adopted: false, signature: '', armTimer: 0 };
+    const remove = head.querySelector('button');
+    remove.addEventListener('click', () => {
+      if (!group.armTimer) {
+        remove.dataset.label = remove.textContent; remove.textContent = 'CONFIRM'; remove.classList.add('armed');
+        group.armTimer = setTimeout(() => { group.armTimer = 0; remove.textContent = remove.dataset.label; remove.classList.remove('armed'); }, 4000);
+        return;
+      }
+      clearTimeout(group.armTimer); group.armTimer = 0; remove.textContent = remove.dataset.label; remove.classList.remove('armed');
+      void deleteJob(job.id);
+    });
+    this.partGroups.set(job.id, group);
+    return group;
+  }
+
+  showPendingPart(job, state) {
+    const group = this.partGroup(job);
+    if (group.adopted) return;
+    const failed = state?.status === 'failed' || state?.status === 'done';
+    const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(state?.operation?.stage);
+    const since = serverTime(state?.createdAt) ?? job.startedAt ?? Date.now();
+    const signature = JSON.stringify([failed, queued, since, !state]);
+    if (group.signature === signature) return;
+    group.signature = signature;
+    const note = group.head.querySelector('.channel-parts-note'), remove = group.head.querySelector('button');
+    note.innerHTML = failed ? esc(state?.error || `Resplitting ${this.label(group.source)} did not finish.`)
+      : !state ? 'Checking this resplit…'
+        : `${queued ? 'Waiting to split' : 'Splitting'} ${esc(this.label(group.source))} <span class="elapsed" data-since="${since}">${fmt((Date.now() - since) / 1000)}</span>`;
+    remove.textContent = failed ? 'REMOVE' : 'CANCEL';
+  }
+
+  adoptPart(job, state) {
+    const group = this.partGroup(job);
+    if (group.adopted || this.disposed) return;
+    group.adopted = true;
+    const master = this.audios[0];
+    const stems = [...state.stems].sort((a, b) => idx(STEM_ORDER, a.name) - idx(STEM_ORDER, b.name));
+    let after = group.head;
+    for (const stem of stems) {
+      const name = `part:${job.id}:${stem.name}`;
+      this.partLabels.set(name, state.labels?.[stem.name] || stem.name);
+      const channel = this.addChannel({ name, url: stem.url }, { source: group.source, stem: stem.name, after });
+      after = channel.row;
+      group.names.push(name);
+      group.stems.push({ url: stem.url, label: `${this.label(group.source)} ${this.label(name)}` });
+      channel.audio.preload = master.preload;
+      channel.audio.playbackRate = this.rate;
+      channel.audio.addEventListener('loadedmetadata', () => {
+        channel.audio.currentTime = Math.min(master.currentTime, channel.audio.duration);
+        if (this.playing) void channel.audio.play().catch(() => {});
+      }, { once: true });
+      if (this.graphWired && audioCtx) this.wireChannel(audioCtx, channel);
+      if (this.savedProgress?.muted?.includes(name)) this.userMuted.set(name, true);
+    }
+    // Keep number keys in the order the rows are drawn.
+    this.channelsByName = new Map([...this.channelsByName].sort(([, a], [, b]) =>
+      a.row.compareDocumentPosition(b.row) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    group.head.querySelector('.channel-parts-note').textContent = `${stems.length} stems from ${this.label(group.source)}`;
+    group.head.querySelector('button').textContent = 'REMOVE';
+    // The new stems add up to the original, so hearing both would double it.
+    if (this.channelsByName.has(group.source)) this.userMuted.set(group.source, true);
+    this.clockProgress = null;
+    this.applyMix();
+    this.loadWaveforms();
+  }
+
+  dropPart(id) {
+    const group = this.partGroups.get(id);
+    if (!group) return;
+    clearTimeout(group.armTimer);
+    for (const name of group.names) {
+      const channel = this.channelsByName.get(name);
+      if (!channel) continue;
+      channel.audio.pause();
+      channel.audio.removeAttribute('src');
+      channel.audio.load();
+      channel.gainNode?.disconnect();
+      channel.row.remove();
+      this.audios = this.audios.filter(audio => audio !== channel.audio);
+      this.channelsByName.delete(name);
+      this.userMuted.delete(name);
+      this.partLabels.delete(name);
+      if (this.soloState?.stem === name) this.soloState = null;
+    }
+    group.head.remove();
+    this.partGroups.delete(id);
+    if (group.adopted && ![...this.partGroups.values()].some(other => other.adopted && other.source === group.source)) {
+      if (this.channelsByName.has(group.source)) this.userMuted.set(group.source, false);
+    }
+    this.clockProgress = null;
+    this.applyMix();
+    this.paint();
+  }
+
   renderSplitMeta() {
     const meta = splitMeta.get(this.job.model);
     const count = this.job.stems.length;
@@ -2632,7 +2759,7 @@ class Mixer {
     const lines = [`# ${this.job.filename} — listening session export`, ''];
     lines.push(`- Exported: ${new Date().toISOString()}`);
     if (this.job.model) lines.push(`- Model: ${this.job.model}`);
-    lines.push(`- Tracks: ${this.job.stems.map((s) => this.label(s.name)).join(', ')}`, '');
+    lines.push(`- Tracks: ${[...this.job.stems.map((s) => this.label(s.name)), ...[...this.partGroups.values()].flatMap(group => group.stems.map(stem => stem.label))].join(', ')}`, '');
 
     if (this.job.attribution && ['commons','ccmixter','freesound','loc'].includes(this.job.attribution.provider)) lines.push('## Source and recording license', '', this.job.attribution.attributionText || '', '');
     if (this.job.guide && this.job.guide.text) {
@@ -2667,10 +2794,12 @@ class Mixer {
       if (runtime.authMode === 'cail') await this.loadConversation();
       const entries = [];
       const used = new Set();
-      for (const stem of this.job.stems) {
-        const res = await fetch(stem.url);
-        if (!res.ok) throw new Error(`Could not fetch the ${this.label(stem.name)} track (${res.status}).`);
-        const filename = stemFilename(this.job.filename, this.label(stem.name));
+      const tracks = [...this.job.stems.map(stem => ({ url: stem.url, label: this.label(stem.name) })),
+        ...[...this.partGroups.values()].flatMap(group => group.stems)];
+      for (const track of tracks) {
+        const res = await fetch(track.url);
+        if (!res.ok) throw new Error(`Could not fetch the ${track.label} track (${res.status}).`);
+        const filename = stemFilename(this.job.filename, track.label);
         let unique = filename;
         for (let suffix = 2; used.has(unique.toLowerCase()); suffix++) unique = filename.replace(/\.mp3$/, ` (${suffix}).mp3`);
         used.add(unique.toLowerCase());
@@ -2976,25 +3105,27 @@ class Mixer {
     if (ctx.state !== 'running' || this.graphWired) return; // may have raced another resume
 
     this.graphWired = true;
-    for (const channel of this.channelsByName.values()) {
-      try {
-        const source = ctx.createMediaElementSource(channel.audio);
-        const gain = ctx.createGain();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        analyser.smoothingTimeConstant = 0.7;
-        source.connect(gain).connect(analyser).connect(ctx.destination);
-        channel.gainNode = gain;
-        channel.analyser = analyser;
-        channel.bins = new Uint8Array(analyser.frequencyBinCount);
-        channel.samples = new Float32Array(analyser.fftSize);
-        channel.row.querySelector('.meter').classList.add('live');
-      } catch {
-        // This strip keeps element-level mixing and a resting signal line.
-      }
-    }
+    for (const channel of this.channelsByName.values()) this.wireChannel(ctx, channel);
     // Gain nodes are the authority for any strip that got one.
     this.applyMix();
+  }
+
+  wireChannel(ctx, channel) {
+    try {
+      const source = ctx.createMediaElementSource(channel.audio);
+      const gain = ctx.createGain();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.7;
+      source.connect(gain).connect(analyser).connect(ctx.destination);
+      channel.gainNode = gain;
+      channel.analyser = analyser;
+      channel.bins = new Uint8Array(analyser.frequencyBinCount);
+      channel.samples = new Float32Array(analyser.fftSize);
+      channel.row.querySelector('.meter').classList.add('live');
+    } catch {
+      // This strip keeps element-level mixing and a resting signal line.
+    }
   }
 
   tick() {
@@ -3142,7 +3273,7 @@ class Mixer {
   }
 
   label(name) {
-    return (this.job.labels && this.job.labels[name]) || name;
+    return this.partLabels?.get(name) || (this.job.labels && this.job.labels[name]) || name;
   }
 
   editLabel(stemName, nameEl) {
@@ -4599,8 +4730,27 @@ function renderJobs() {
   emptyState.hidden = jobs.length > 0;
   const previous = new Map([...jobList.querySelectorAll('.console[data-job-id]')].map(el => [el.dataset.jobId, el]));
   const cards = [];
+  const byJobId = new Map(jobs.map(job => [job.id, job]));
+  const partsByHost = new Map();
+  // An unavailable or removed original must not conceal its finished resplit.
+  const resplitHost = job => {
+    if (job.resplit?.placement !== 'with_original') return null;
+    const parent = byJobId.get(job.resplit.parentJobId);
+    if (!parent || unavailableJobStates.has(parent.id)) return null;
+    if (parent.resplit?.placement === 'with_original' && byJobId.has(parent.resplit.parentJobId)) return null;
+    const state = jobStates.get(parent.id);
+    return !state || (state.status === 'done' && state.stems?.length) ? parent.id : null;
+  };
 
   for (const job of jobs) {
+    const host = resplitHost(job);
+    if (host) {
+      if (!partsByHost.has(host)) partsByHost.set(host, []);
+      partsByHost.get(host).push({ job, state: jobStates.get(job.id) });
+      const stray = mixers.get(job.id);
+      if (stray) { if (stray.playing || stray.starting) stray.pause(); stray.disposeWaveforms(); mixers.delete(job.id); }
+      continue;
+    }
     const state = jobStates.get(job.id) || {
       status: 'checking',
       stems: [],
@@ -4676,38 +4826,12 @@ function renderJobs() {
 
   // Keep settled cards attached: detaching them restarts their CSS entrance
   // animation and interrupts media while other saved runs are still loading.
-  const byId = new Map(cards.map(card => [card.dataset.jobId, card]));
-  const parents = new Map(jobs.filter(job => job.resplit?.placement === 'with_original' &&
-      byId.has(job.resplit.parentJobId) && !unavailableJobStates.has(job.resplit.parentJobId) &&
-      jobStates.get(job.resplit.parentJobId)?.status === 'done' && jobStates.get(job.resplit.parentJobId)?.stems?.length)
-    .map(job => [job.id, job.resplit.parentJobId]));
-  for (const [id, parent] of parents) {
-    const seen = new Set([id]); let next = parent;
-    while (next && !seen.has(next)) { seen.add(next); next = parents.get(next); }
-    if (next) parents.delete(id); // Corrupt cached metadata must not break the rack.
-  }
-  const groups = new Map([[jobList, []]]);
-  for (const card of cards) {
-    const parent = byId.get(parents.get(card.dataset.jobId));
-    let container = jobList;
-    if (parent) {
-      container = parent.querySelector(':scope > .resplit-results');
-      if (!container) {
-        container = document.createElement('ol'); container.className = 'resplit-results';
-        container.setAttribute('aria-label', 'Resplits'); parent.append(container);
-      }
-    }
-    if (!groups.has(container)) groups.set(container, []);
-    groups.get(container).push(card);
-  }
-  for (const [container, children] of groups) children.forEach((card, index) => {
-    if (container.children[index] !== card) container.insertBefore(card, container.children[index] || null);
+  cards.forEach((card, index) => {
+    if (jobList.children[index] !== card) jobList.insertBefore(card, jobList.children[index] || null);
   });
-  for (const [container, children] of groups) {
-    const retained = new Set(children);
-    for (const card of [...container.children]) if (!retained.has(card)) card.remove();
-  }
-  for (const container of jobList.querySelectorAll('.resplit-results')) if (!groups.has(container)) container.remove();
+  const retained = new Set(cards);
+  for (const card of [...jobList.children]) if (!retained.has(card)) card.remove();
+  for (const [id, mixer] of mixers) mixer.syncParts(partsByHost.get(id) || []);
 
   runElapsedClock();
   renderShelf();

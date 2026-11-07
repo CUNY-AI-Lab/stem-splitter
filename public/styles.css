@@ -1503,8 +1503,10 @@ footer a:hover { color: var(--hot); }
 .class-code-form .resplit-course-ack { display: flex; align-items: flex-start; gap: .5rem; cursor: pointer; font: 400 .8rem/1.45 var(--font-body); letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
 .resplit-course-ack[hidden] { display: none; }
 .resplit-course-ack input { flex: none; width: auto; margin: .15rem 0 0; }
-.resplit-results { list-style: none; padding: .5rem; margin: .5rem; border-top: 1px solid var(--panel-edge); }
-.resplit-results > .console { margin-top: .5rem; }
+.channel-parts-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .35rem .1rem .35rem .9rem; border-bottom: 1px solid var(--panel-edge); color: var(--ink-dim); font: .68rem/1.4 var(--font-mono); }
+.channel-parts-head .elapsed { color: var(--hot); }
+.channel-parts-remove.armed { color: var(--danger); border-color: var(--danger); }
+.channel-part .ch-id { padding-left: .9rem; }
 .channel .meter {
   grid-column: 2;
   grid-row: 2;

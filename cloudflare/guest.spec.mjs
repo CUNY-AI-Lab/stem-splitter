@@ -1088,7 +1088,7 @@ test('guest Resplit explains browser access and the actual guest allowance witho
   } finally { await f.close(); }
 });
 
-for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' can keep a resplit with its original or separate it, retaining both through reload', async ({ page }, testInfo) => {
+for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' adds a resplit to the original player or separates it, retaining both through reload', async ({ page }, testInfo) => {
   const f = await setup(page);
   try {
     if (signedIn) {
@@ -1099,61 +1099,74 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
     await startUpload(page); await completed(page, 1);
     const originalId = await page.evaluate(() => getJobs()[0].id);
     const original = page.locator('.console[data-job-id="' + originalId + '"]');
+    const source = await page.evaluate(id => [...mixers.get(id).channelsByName.keys()][0], originalId);
+    const originalRows = await original.locator('.channel').count();
     await original.locator('.resplit-btn').first().click();
     const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
     await expect(dialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
     await expect(dialog.locator('.resplit-status')).toContainText('Original stems stay available.');
+    await expect(dialog.locator('.resplit-course-ack')).toBeHidden();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(f.counts().providerStarts).toBe(1);
     await original.locator('.resplit-btn').first().click();
     await expect(dialog.getByRole('button', { name: 'Resplit', exact: true })).toBeEnabled();
     await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    await completed(page, 2);
     const nestedId = await page.evaluate(() => getJobs()[0].id);
     const child = page.locator('.console[data-job-id="' + nestedId + '"]');
-    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
+    const parts = original.locator('.channel-part'), head = original.locator('.channel-parts-head');
+    await expect(head).toBeVisible();
+    await expect(head).toContainText('stems from', { timeout: 25000 });
+    await expect.poll(async () => (await account(page)).splitAllowance.completed).toBe(2);
+    const partCount = await parts.count();
+    expect(partCount).toBeGreaterThan(0);
+    // One card and one player: no second transport, and the original stem does not double the new ones.
     await expect(page.locator('#job-list > .console')).toHaveCount(1);
-    await page.reload(); await completed(page, 2);
-    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
-    await expect(child).toBeVisible();
-    // Keyboard controls and note drafts belong to the selected recording,
-    // even though its card is nested within the original.
-    await child.locator('.ch-name').first().press('1');
-    expect(await page.evaluate(ids => ids.map(id => Boolean(mixers.get(id).userMuted.get('vocals'))), [originalId, nestedId]))
-      .toEqual([false, true]);
-    await child.locator('.ch-name').first().press('1');
-    await child.locator('.note-btn').first().click();
-    await original.locator('.note-btn').first().click();
-    await expect(original.locator(':scope > .note-form')).toBeVisible();
-    await expect(child.locator(':scope > .note-form')).toBeVisible();
-    await child.locator(':scope > .note-form input').press('Escape');
-    await original.locator(':scope > .note-form input').press('Escape');
-    await child.locator('.console-title-editable').first().click();
-    await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('My nested resplit');
-    await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
-    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await expect(child).toHaveCount(0);
+    await expect(original.locator('.play-btn, .transport-play').first()).toBeVisible();
+    const mix = id => page.evaluate(id => {
+      const mixer = mixers.get(id);
+      return { rows: mixer.channelsByName.size, audios: mixer.audios.length, muted: [...mixer.userMuted].filter(([, value]) => value).map(([name]) => name), resplits: [...mixer.el.querySelectorAll('.channel-part .resplit-btn')].every(button => button.hidden) };
+    }, id);
+    expect(await mix(originalId)).toEqual({ rows: originalRows + partCount, audios: originalRows + partCount, muted: [source], resplits: true });
+    await expect(original.locator('.channels > *').nth(1)).toHaveClass(/channel-parts-head/);
+    await expect(original.locator('.channels > *').nth(2)).toHaveClass(/channel-part/);
+    await page.reload();
+    await expect(parts).toHaveCount(partCount, { timeout: 25000 });
+    await expect(page.locator('#job-list > .console')).toHaveCount(1);
+    // The new stems use the same controls and start with the same play button.
+    await parts.first().locator('.mute-btn').click();
+    await expect(parts.first()).toHaveClass(/muted/);
+    await parts.first().locator('.mute-btn').click();
+    await parts.first().locator('.solo-btn').click();
+    await expect(parts.first()).toHaveClass(/focused/);
+    await parts.first().locator('.solo-btn').click();
+    await parts.first().locator('.solo-btn').click();
+    await page.evaluate(id => mixers.get(id).play(), originalId);
+    await expect.poll(() => page.evaluate(id => mixers.get(id).audios.filter(audio => !audio.paused).length, originalId)).toBe(originalRows + partCount);
+    await page.evaluate(id => mixers.get(id).pause(), originalId);
+    // A running or failed resplit stays in the row it came from, with no card of its own.
+    await page.evaluate(([id, stem]) => mixers.get(id).syncParts([{ job: { id: 'pending-part', startedAt: Date.now(), resplit: { stem, placement: 'with_original' } }, state: { status: 'processing' } }]), [originalId, source]);
+    await expect(head).toContainText(/Splitting .*\d:\d\d/);
+    await expect(head.getByRole('button', { name: 'CANCEL', exact: true })).toBeVisible();
+    await page.evaluate(([id, stem]) => mixers.get(id).syncParts([{ job: { id: 'pending-part', startedAt: Date.now(), resplit: { stem, placement: 'with_original' } }, state: { status: 'failed', error: 'Fixture failure' } }]), [originalId, source]);
+    await expect(head).toContainText('Fixture failure');
+    await expect(head.getByRole('button', { name: 'REMOVE', exact: true })).toBeVisible();
+    await page.evaluate(() => renderJobs());
+    await expect(parts).toHaveCount(partCount);
+    await expect(head).toContainText('stems from');
     await original.locator('.resplit-btn').first().click();
     await dialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
-    await expect(dialog.getByRole('radio', { name: 'Separate split', exact: true })).toBeChecked();
     await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
-    await completed(page, 3);
-    await expect(page.locator('#job-list > .console')).toHaveCount(2);
-    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
-    await page.reload(); await completed(page, 3);
-    await expect(page.locator('#job-list > .console')).toHaveCount(2);
-    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await expect(page.locator('#job-list > .console')).toHaveCount(2, { timeout: 25000 });
+    await expect(page.locator('.badge.ready')).toHaveCount(2, { timeout: 25000 });
+    await expect.poll(async () => (await account(page)).splitAllowance.completed).toBe(3);
+    await expect(parts).toHaveCount(partCount);
+    await page.reload();
+    await expect(page.locator('#job-list > .console')).toHaveCount(2, { timeout: 25000 });
+    await expect(parts).toHaveCount(partCount, { timeout: 25000 });
     const saved = await page.evaluate(async () => (await fetch('/api/jobs')).json());
-    expect(saved.jobs.find(job => job.id === nestedId).resplit).toEqual({ parentJobId: originalId, stem: 'vocals', placement: 'with_original' });
-    await page.evaluate(async ids => {
-      await mixers.get(ids[0]).play();
-      await mixers.get(ids[1]).play();
-    }, [originalId, nestedId]);
-    expect(await page.evaluate(id => ({ originalPlaying: mixers.get(id).playing, active: [...mixers.values()].filter(m => m.playing || m.starting).length }), originalId))
-      .toEqual({ originalPlaying: false, active: 1 });
-    await page.evaluate(id => { mixers.get(id).setCollapsed(true); }, originalId);
-    expect(await page.evaluate(() => [...mixers.values()].filter(m => m.playing || m.starting).length)).toBe(0);
-    await page.evaluate(() => { for (const mixer of mixers.values()) mixer.pause(); });
+    expect(saved.jobs.find(job => job.id === nestedId).resplit).toEqual({ parentJobId: originalId, stem: source, placement: 'with_original' });
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.evaluate(id => { setJobCollapsed(id, false); renderJobs(); }, originalId);
@@ -1161,13 +1174,28 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
       await page.screenshot({ path: testInfo.outputPath('resplit-placement-' + width + '.png'), animations: 'disabled', fullPage: true });
     }
     // An unavailable or removed original must not conceal its finished resplit.
-    await page.evaluate(id => { unavailableJobStates.add(id); setJobCollapsed(id, true); renderJobs(); }, originalId);
+    await page.evaluate(id => { unavailableJobStates.add(id); renderJobs(); }, originalId);
     await expect(page.locator('#job-list > .console')).toHaveCount(3);
     await expect(child).toBeVisible();
-    await page.evaluate(id => { unavailableJobStates.delete(id); saveJobs(getJobs().filter(job => job.id !== id)); renderJobs(); }, originalId);
+    await expect(parts).toHaveCount(0);
+    await page.evaluate(id => { unavailableJobStates.delete(id); renderJobs(); }, originalId);
+    await expect(page.locator('#job-list > .console')).toHaveCount(2);
+    await expect(child).toHaveCount(0);
+    await expect(parts).toHaveCount(partCount);
+    await page.evaluate(id => { window.keptJobs = getJobs(); saveJobs(getJobs().filter(job => job.id !== id)); renderJobs(); }, originalId);
     await expect(page.locator('#job-list > .console')).toHaveCount(2);
     await expect(child).toBeVisible();
-    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await page.evaluate(() => { saveJobs(window.keptJobs); renderJobs(); });
+    await expect(child).toHaveCount(0);
+    await expect(parts).toHaveCount(partCount);
+    // Remove takes the stems out and gives the original stem back. Run deletion itself has its own tests.
+    await head.getByRole('button', { name: 'REMOVE', exact: true }).click();
+    await head.getByRole('button', { name: 'CONFIRM', exact: true }).click();
+    await expect(parts).toHaveCount(0);
+    await expect(head).toHaveCount(0);
+    expect((await mix(originalId)).muted).toEqual([]);
+    expect((await mix(originalId)).audios).toBe(originalRows);
+    expect(await page.evaluate(id => getJobs().some(job => job.id === id), nestedId)).toBe(false);
     expect(f.counts().providerStarts).toBe(3);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }

@@ -86,7 +86,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await expect(resplitDialog).toBeVisible();
     await expect(resplitDialog).toContainText('Renamed recording — Lead voice.mp3');
     await expect(resplitDialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
-    await expect(resplitDialog.locator('.resplit-status')).toContainText('Keeps the resplit with');
+    await expect(resplitDialog.locator('.resplit-status')).toContainText('Adds the new stems under');
     await resplitDialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
     await expect(resplitDialog.locator('.resplit-status')).toContainText('Creates a new run in Personal.');
     await expect(resplitDialog.locator('.resplit-status')).not.toContainText('guest');

@@ -200,8 +200,9 @@
         playing: mixer.playing === true,
         position: Math.min(900, Math.max(0, Number(mixer.audios[0]?.currentTime) || 0)),
         playbackRate: mixer.rate || 1,
-        focusStem: mixer.soloState?.stem || null,
-        focusMode: mixer.soloState?.stage || null,
+        // A resplit's added stems belong to this player alone; followers have only the original's.
+        focusStem: mixer.soloState && !mixer.partLabels?.has(mixer.soloState.stem) ? mixer.soloState.stem : null,
+        focusMode: mixer.soloState && !mixer.partLabels?.has(mixer.soloState.stem) ? mixer.soloState.stage : null,
         selection: mixer.loop ? { start: mixer.loop.start, end: mixer.loop.end } : null,
       };
     }

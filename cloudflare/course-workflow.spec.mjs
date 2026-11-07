@@ -157,21 +157,21 @@ const openResplit=async(page,jobId)=>{
   await expect(dialog.locator('.resplit-status')).not.toHaveText('Loading split choices…');
   return dialog;
 };
-test('a class split resplits with its original by default while Share with stays on Personal, after its own notice',async({browser},testInfo)=>{
+test('a class split resplits with its original by default while Share with stays on Personal, with no new notice',async({browser})=>{
   const f=await fixture(browser);
   try{
     const {page,sent}=await resplitPage(f);
     await page.goto(f.url.href);
     await expect(page.getByLabel('Share with')).toHaveValue('personal');
     const dialog=await openResplit(page,'shared-course');
-    const original=dialog.getByRole('radio',{name:'With original split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true}),separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
     await expect(original).toBeEnabled();await expect(original).toBeChecked();
-    await expect(notice).toBeVisible();await expect(notice).toContainText('my instructor can review');
-    await expect(go).toBeDisabled();await expect(dialog.locator('.resplit-status')).toContainText('Tick the notice to continue.');
-    expect(await go.evaluate(el=>[getComputedStyle(el).opacity,getComputedStyle(el).cursor])).toEqual(['0.45','not-allowed']);
-    await dialog.screenshot({path:testInfo.outputPath('resplit-class-notice.png'),animations:'disabled'});
-    await notice.locator('input').check();
-    await expect(go).toBeEnabled();await expect(dialog.locator('.resplit-status')).not.toContainText('Tick the notice');
+    await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await expect(dialog.locator('.resplit-status')).toContainText('Adds the new stems under');
+    await expect(dialog.locator('.resplit-status')).not.toContainText('Tick the notice');
+    // Separate with Personal selected stays personal and asks nothing.
+    await separate.check();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await original.check();
     await go.click();
     await expect.poll(()=>sent.filter(entry=>entry.path==='jobs').length).toBe(1);
     expect(sent.map(entry=>entry.course)).toEqual([course,course]);
@@ -179,6 +179,26 @@ test('a class split resplits with its original by default while Share with stays
     expect(body.coursePolicy).toBe('course-work-v1');
     expect(body.resplit).toEqual({parentJobId:'shared-course',stem:'vocals',placement:'with_original'});
     await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  }finally{await f.close();}
+});
+test('a separate resplit into the same class needs no new notice, while someone else\'s split still does',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const {page}=await resplitPage(f);
+    await page.goto(new URL(`/?course=${course}`,f.url).href);
+    await expect(page.getByLabel('Share with')).toHaveValue(course);
+    await expect(page.locator('#course-work-ack')).not.toBeChecked();
+    const dialog=await openResplit(page,'shared-course');
+    const separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    await separate.check();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.route('**/api/jobs/shared-course',async route=>{const response=await route.fetch();const json=await response.json();return route.fulfill({response,json:{...json,permissions:{...json.permissions,owner:false}}});});
+    await page.reload();
+    await expect(page.getByLabel('Share with')).toHaveValue(course);
+    const other=await openResplit(page,'shared-course');
+    await expect(other.locator('.resplit-course-ack')).toBeVisible();
+    await expect(other.getByRole('button',{name:'Resplit',exact:true})).toBeDisabled();
+    expect(await other.getByRole('button',{name:'Resplit',exact:true}).evaluate(el=>[getComputedStyle(el).opacity,getComputedStyle(el).cursor])).toEqual(['0.45','not-allowed']);
   }finally{await f.close();}
 });
 test('a personal split resplits with its original while Share with names a class, and a separate split takes the class notice',async({browser})=>{
