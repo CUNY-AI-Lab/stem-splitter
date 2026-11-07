@@ -31,6 +31,100 @@ async function fixture(browser,vars={}) {
   return {issuer,url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
 }
 
+// Resplit: With original split is the default for a split you own, whatever Share with says.
+async function resplitPage(f,routeJob){
+  const page=await f.pageFor(TEST_SUBJECTS.alice,true),sent=[],audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+  await page.route('**/api/files/stems/personal-one/*',route=>route.fulfill({contentType:'audio/mpeg',body:audio}));
+  await page.route('**/api/uploads',route=>{sent.push({path:'uploads',course:route.request().headers()['x-stem-course']});return route.fulfill({json:{key:'uploads/resplit-fixture.mp3',uploadUrl:new URL('/__resplit-upload',f.url).href}});});
+  await page.route('**/__resplit-upload',route=>route.fulfill({status:200}));
+  await page.route('**/api/jobs',async route=>{
+    if(route.request().method()!=='POST')return route.continue();
+    sent.push({path:'jobs',course:route.request().headers()['x-stem-course'],body:route.request().postDataJSON()});
+    return route.fulfill({status:400,json:{error:'Fixture stops before any provider job.'}});
+  });
+  if(routeJob)await routeJob(page);
+  return {page,sent};
+}
+const openResplit=async(page,jobId)=>{
+  const entry=page.locator(`.console[data-job-id="${jobId}"]`);
+  await expect(entry).toBeVisible();
+  const expand=entry.getByRole('button',{name:'Expand this session',exact:true});
+  if(await expand.count())await expand.click();
+  await entry.locator('.resplit-btn').first().click();
+  const dialog=page.getByRole('dialog',{name:'Resplit',exact:true});
+  await expect(dialog.locator('.resplit-status')).not.toHaveText('Loading split choices…');
+  return dialog;
+};
+test('a class split resplits with its original by default while Share with stays on Personal, after its own notice',async({browser},testInfo)=>{
+  const f=await fixture(browser);
+  try{
+    const {page,sent}=await resplitPage(f);
+    await page.goto(f.url.href);
+    await expect(page.getByLabel('Share with')).toHaveValue('personal');
+    const dialog=await openResplit(page,'shared-course');
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    await expect(original).toBeEnabled();await expect(original).toBeChecked();
+    await expect(notice).toBeVisible();await expect(notice).toContainText('my instructor can review');
+    await expect(go).toBeDisabled();await expect(dialog.locator('.resplit-status')).toContainText('Tick the notice to continue.');
+    expect(await go.evaluate(el=>[getComputedStyle(el).opacity,getComputedStyle(el).cursor])).toEqual(['0.45','not-allowed']);
+    await dialog.screenshot({path:testInfo.outputPath('resplit-class-notice.png'),animations:'disabled'});
+    await notice.locator('input').check();
+    await expect(go).toBeEnabled();await expect(dialog.locator('.resplit-status')).not.toContainText('Tick the notice');
+    await go.click();
+    await expect.poll(()=>sent.filter(entry=>entry.path==='jobs').length).toBe(1);
+    expect(sent.map(entry=>entry.course)).toEqual([course,course]);
+    const body=sent.at(-1).body;
+    expect(body.coursePolicy).toBe('course-work-v1');
+    expect(body.resplit).toEqual({parentJobId:'shared-course',stem:'vocals',placement:'with_original'});
+    await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  }finally{await f.close();}
+});
+test('a personal split resplits with its original while Share with names a class, and a separate split takes the class notice',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('personal-one','Personal fixture','uploads/personal.wav','done','htdemucs_ft','[{"name":"vocals","key":"stems/personal-one/vocals.mp3"}]')`,
+      `INSERT INTO job_owners VALUES('personal-one','${TEST_SUBJECTS.alice}')`]);
+    const {page,sent}=await resplitPage(f);
+    await page.goto(f.url.href);
+    await expect(page.getByLabel('Share with')).toBeEnabled();await page.getByLabel('Share with').selectOption(course);
+    await expect(page.locator('#course-work-ack')).not.toBeChecked();
+    const dialog=await openResplit(page,'personal-one');
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true}),separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    await expect(original).toBeChecked();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await expect(dialog.getByRole('combobox',{name:'Number of splits',exact:true})).not.toHaveValue('');
+    await separate.check();
+    await expect(notice).toBeVisible();await expect(go).toBeDisabled();
+    await notice.locator('input').check();await expect(go).toBeEnabled();
+    await original.check();
+    await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await separate.check();
+    await expect(notice.locator('input')).not.toBeChecked();await expect(go).toBeDisabled();
+    await original.check();
+    await go.click();
+    await expect.poll(()=>sent.filter(entry=>entry.path==='jobs').length).toBe(1);
+    expect(sent.map(entry=>entry.course)).toEqual(['personal','personal']);
+    expect(sent.at(-1).body.coursePolicy).toBeUndefined();
+    expect(sent.at(-1).body.resplit).toEqual({parentJobId:'personal-one',stem:'vocals',placement:'with_original'});
+  }finally{await f.close();}
+});
+test('someone else\'s split cannot be kept with its original, and the greyed choice says why',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const {page}=await resplitPage(f,page=>page.route('**/api/jobs/shared-course',async route=>{
+      const response=await route.fetch();const json=await response.json();
+      return route.fulfill({response,json:{...json,permissions:{...json.permissions,owner:false}}});
+    }));
+    await page.goto(f.url.href);
+    const dialog=await openResplit(page,'shared-course');
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true});
+    await expect(original).toBeDisabled();await expect(original).not.toBeChecked();
+    await expect(dialog.getByRole('radio',{name:'Separate split',exact:true})).toBeChecked();
+    await expect(dialog.locator('.resplit-placement-help')).toHaveText('Keeping results with the original is available for your own saved splits.');
+    expect(await dialog.locator('.resplit-placement label').first().evaluate(el=>getComputedStyle(el).opacity)).toBe('0.45');
+    await expect(dialog.getByRole('button',{name:'Resplit',exact:true})).toBeEnabled();
+  }finally{await f.close();}
+});
+
 test('course creation requires disclosure and sends an exact course with the acknowledged policy',async({browser})=>{
   const f=await fixture(browser);
   try{

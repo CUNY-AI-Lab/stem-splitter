@@ -1496,8 +1496,12 @@ footer a:hover { color: var(--hot); }
 .channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
 .resplit-placement { display: grid; gap: .6rem; margin: .4rem 0; padding: .8rem; border: 1px solid var(--panel-edge); }
 .resplit-placement legend { padding-inline: .3rem; }
-.resplit-placement label { display: flex; align-items: center; gap: .5rem; min-height: 32px; }
+.resplit-placement label { display: flex; align-items: center; gap: .5rem; min-height: 32px; cursor: pointer; }
+.resplit-placement label:has(input:disabled) { opacity: .45; cursor: not-allowed; }
 .resplit-placement input { width: auto; margin: 0; }
+.class-code-form .resplit-course-ack { display: flex; align-items: flex-start; gap: .5rem; cursor: pointer; font: 400 .8rem/1.45 var(--font-body); letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
+.resplit-course-ack[hidden] { display: none; }
+.resplit-course-ack input { flex: none; width: auto; margin: .15rem 0 0; }
 .resplit-results { list-style: none; padding: .5rem; margin: .5rem; border-top: 1px solid var(--panel-edge); }
 .resplit-results > .console { margin-top: .5rem; }
 .channel .meter {
@@ -2708,6 +2712,7 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 :is(.account-button, .yt-go, .page-btn, .teacher-submit):focus-visible {
   outline: 2px solid var(--hot); outline-offset: 3px;
 }
+.yt-go:disabled, .yt-go:disabled:hover { background: transparent; color: var(--ink-dim); opacity: .45; cursor: not-allowed; }
 :is(.head-btn, .note-btn, .rt-btn, .coach-form button, .folder-menu-new button) {
   border-radius: 6px; font-weight: 500; letter-spacing: .04em; line-height: 1.3;
 }

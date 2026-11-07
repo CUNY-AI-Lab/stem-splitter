@@ -1075,6 +1075,9 @@ test('guest Resplit explains browser access and the actual guest allowance witho
     await page.locator('.resplit-btn').first().click();
     const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
+    await expect(dialog.locator('.resplit-status')).toContainText('in this browser. Original stems stay available.');
+    await dialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
     await expect(dialog.locator('.resplit-status')).toHaveText('Creates a new guest run, available in this browser. ' +
       before.splitAllowance.remaining + ' of ' + before.splitAllowance.limit + ' guest splits left today.');
     await expect(dialog).not.toContainText('Personal');
@@ -1098,12 +1101,12 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
     const original = page.locator('.console[data-job-id="' + originalId + '"]');
     await original.locator('.resplit-btn').first().click();
     const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
-    await dialog.getByRole('radio', { name: 'With original split', exact: true }).check();
+    await expect(dialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
     await expect(dialog.locator('.resplit-status')).toContainText('Original stems stay available.');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(f.counts().providerStarts).toBe(1);
     await original.locator('.resplit-btn').first().click();
-    await dialog.getByRole('radio', { name: 'With original split', exact: true }).check();
+    await expect(dialog.getByRole('button', { name: 'Resplit', exact: true })).toBeEnabled();
     await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await completed(page, 2);
@@ -1131,6 +1134,7 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
     await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
     await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
     await original.locator('.resplit-btn').first().click();
+    await dialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
     await expect(dialog.getByRole('radio', { name: 'Separate split', exact: true })).toBeChecked();
     await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
     await completed(page, 3);

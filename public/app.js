@@ -222,6 +222,7 @@ async function ensureClassCode() {
 
 let selectedCourse = 'personal';
 let courseAcknowledgment = null;
+const COURSE_WORK_DISCLOSURE = 'I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.';
 let courseSelectionPending = false, courseSelectionSequence = 0;
 let courseSelectionReady = Promise.resolve();
 function creationCourse() {
@@ -233,8 +234,12 @@ function creationCourse() {
 async function waitForCreationCourse() {
   // Returning from a native file picker refreshes membership on window focus.
   // Keep the selected file while that refresh confirms its destination.
-  while (courseSelectionPending) await courseSelectionReady;
+  await settledCourseSelection();
   return creationCourse();
+}
+async function settledCourseSelection() {
+  while (courseSelectionPending) await courseSelectionReady;
+  return selectedCourse;
 }
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
@@ -243,7 +248,7 @@ async function initializeCourseSelection() {
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
-  region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
+  region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> ' + COURSE_WORK_DISCLOSURE + '</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
   const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
   courseAcknowledgment = region.querySelector('input');
@@ -310,12 +315,13 @@ async function splitRequestKey(body, course = 'personal') {
 }
 
 async function api(path, options = {}) {
-  const { onResults, background = false, publicSample = false, courseContext, ...requestOptions } = options;
+  const { onResults, background = false, publicSample = false, courseContext, fixedCourse = false, ...requestOptions } = options;
   if (!publicSample) await appReady;
   const creating = runtime.authMode === 'cail' && ['/api/uploads', '/api/jobs'].includes(path) && options.method === 'POST';
-  const currentCourse = creating ? creationCourse() : 'personal';
+  // fixedCourse: the Resplit dialog chose this workspace and showed its own notice.
+  const currentCourse = creating && !fixedCourse ? creationCourse() : 'personal';
   const course = creating ? (courseContext || currentCourse) : 'personal';
-  if (creating && course !== selectedCourse) throw new Error('The workspace changed. Start the import again in the selected workspace.');
+  if (creating && !fixedCourse && course !== selectedCourse) throw new Error('The workspace changed. Start the import again in the selected workspace.');
   if (creating && course !== 'personal' && path === '/api/jobs') requestOptions.body = JSON.stringify({ ...JSON.parse(requestOptions.body), coursePolicy: 'course-work-v1' });
   const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(requestOptions.body, course) : null;
   const send = () => fetch(path, {
@@ -1671,7 +1677,7 @@ async function handleFile(file, settings = {}) {
       const { model, note } = resolved;
       if (note) showUploadMessage(note);
       const { key, uploadUrl } = await api('/api/uploads', {
-        method: 'POST', courseContext, body: JSON.stringify({ filename: file.name }),
+        method: 'POST', courseContext, fixedCourse: settings.fixedCourse, body: JSON.stringify({ filename: file.name }),
       });
       await putWithProgress(uploadUrl, file, (pct) => { progressBar.style.width = `${pct}%`; });
       input = { key, filename: file.name, model,
@@ -1687,6 +1693,7 @@ async function handleFile(file, settings = {}) {
     const job = await api('/api/jobs', {
       method: 'POST',
       courseContext,
+      fixedCourse: settings.fixedCourse,
       body: JSON.stringify(input),
     });
 
@@ -1719,10 +1726,11 @@ async function chooseStemResplit(mixer, stem) {
     <p class="resplit-filename">${esc(filename)}</p>
     <select id="resplit-model" aria-label="Number of splits" required></select>
     <fieldset class="resplit-placement"><legend>Keep result</legend>
-      <label><input type="radio" name="resplit-placement" value="with_original"> With original split</label>
-      <label><input type="radio" name="resplit-placement" value="separate" checked> Separate split</label>
+      <label><input type="radio" name="resplit-placement" value="with_original" checked> With original split</label>
+      <label><input type="radio" name="resplit-placement" value="separate"> Separate split</label>
     </fieldset>
     <p class="resplit-placement-help account-help" hidden></p>
+    <label class="resplit-course-ack account-help" hidden><input type="checkbox"> <span>${esc(COURSE_WORK_DISCLOSURE)}</span></label>
     <p class="resplit-status" role="status">Loading split choices…</p>
     <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Resplit</button></div>
   </form>`;
@@ -1740,15 +1748,6 @@ async function chooseStemResplit(mixer, stem) {
     await appReady;
     await separationOptionsReady;
     if (!dialog.isConnected) return;
-    const courseContext = await waitForCreationCourse();
-    const ownOriginal = runtime.authMode === 'cail' && mixer.job.permissions?.owner === true;
-    const originalChoice = dialog.querySelector('[value="with_original"]');
-    originalChoice.disabled = !ownOriginal || (mixer.job.courseId || 'personal') !== courseContext;
-    if (originalChoice.disabled) {
-      const help = dialog.querySelector('.resplit-placement-help');
-      help.hidden = false;
-      help.textContent = ownOriginal ? 'Choose the original split’s workspace to keep the result with it.' : 'Keeping results with the original is available for your own saved splits.';
-    }
     // Use exactly the choices the server made available on this page.
     for (const input of stemChoice.querySelectorAll('input[name="stem-model"]')) {
       const model = catalogueModels.find(model => model.id === input.value);
@@ -1757,6 +1756,22 @@ async function chooseStemResplit(mixer, stem) {
       select.add(option);
     }
     if (!select.options.length) throw new Error('Split choices are unavailable. Reload the page and try again.');
+    // A resplit kept with its original belongs to that split's workspace. Only a
+    // separate split follows Share with, which this modal dialog covers.
+    const shareWith = await settledCourseSelection();
+    if (!dialog.isConnected) return;
+    const shareWithSelect = document.getElementById('new-split-course');
+    const originalCourse = mixer.job.courseId || 'personal';
+    const ownOriginal = runtime.authMode === 'cail' && mixer.job.permissions?.owner === true;
+    const originalChoice = dialog.querySelector('[value="with_original"]');
+    const classAvailable = originalCourse === 'personal' || [...(shareWithSelect?.options || [])].some(option => option.value === originalCourse);
+    originalChoice.disabled = !ownOriginal || !classAvailable;
+    if (originalChoice.disabled) {
+      dialog.querySelector('[value="separate"]').checked = true;
+      const help = dialog.querySelector('.resplit-placement-help');
+      help.hidden = false;
+      help.textContent = ownOriginal ? 'This split’s class is not available to you right now.' : 'Keeping results with the original is available for your own saved splits.';
+    }
     let description = 'Creates a separate split from this audio.', allowance = '', guest = false, exhausted = false;
     if (runtime.authMode === 'cail') {
       const response = await fetch('/api/account', { cache: 'no-store', credentials: 'same-origin' });
@@ -1764,7 +1779,7 @@ async function chooseStemResplit(mixer, stem) {
       const { account, splitAllowance } = await response.json();
       if (!accountSubject || account?.subject !== accountSubject) throw new Error('Your session changed. Reload the page before resplitting.');
       guest = account.quotaClass === 'guest';
-      const workspace = document.getElementById('new-split-course')?.selectedOptions[0]?.textContent || 'Personal';
+      const workspace = shareWithSelect?.selectedOptions[0]?.textContent || 'Personal';
       description = guest ? 'Creates a new guest run, available in this browser.' : `Creates a new run in ${workspace}.`;
       if (splitAllowance && Number.isInteger(splitAllowance.limit) && splitAllowance.limit > 0 &&
           Number.isInteger(splitAllowance.remaining) && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit) {
@@ -1773,27 +1788,41 @@ async function chooseStemResplit(mixer, stem) {
       } else allowance = ' Your remaining daily splits could not be loaded.';
     }
     if (!dialog.isConnected) return;
+    const acknowledgment = dialog.querySelector('.resplit-course-ack');
+    const acknowledged = acknowledgment.querySelector('input');
+    const destination = () => originalChoice.checked ? originalCourse : shareWith;
+    const needsAcknowledgment = () => {
+      const course = destination();
+      return !!course && course !== 'personal' && !(course === selectedCourse && courseAcknowledgment?.checked);
+    };
+    const blocked = () => exhausted || !destination() || (needsAcknowledgment() && !acknowledged.checked);
+    let acknowledgedCourse = null;
     const describePlacement = () => {
+      const course = destination();
+      if (course !== acknowledgedCourse) { acknowledged.checked = false; acknowledgedCourse = course; }
+      acknowledgment.hidden = !needsAcknowledgment();
       status.textContent = (originalChoice.checked
         ? `Keeps the resplit with “${mixer.job.filename}”${guest ? ' in this browser' : ''}. Original stems stay available.`
-        : description) + allowance;
+        : course ? description : 'Close this and choose a workspace under Share with first.') + allowance +
+        (needsAcknowledgment() && !acknowledged.checked ? ' Tick the notice to continue.' : '');
+      submit.disabled = blocked();
     };
     describePlacement();
-    dialog.querySelector('.resplit-placement').addEventListener('change', describePlacement);
-    submit.disabled = exhausted;
+    dialog.querySelector('form').addEventListener('change', describePlacement);
     select.focus();
     dialog.querySelector('form').addEventListener('submit', async event => {
       event.preventDefault();
-      if (busy || exhausted) return;
+      if (busy || blocked()) return;
       busy = true;
-      submit.disabled = true; cancel.disabled = true; select.disabled = true;
+      submit.disabled = true; cancel.disabled = true; select.disabled = true; acknowledged.disabled = true;
       dialog.querySelector('.resplit-placement').disabled = true;
       submit.textContent = 'Preparing…';
       status.textContent = 'Preparing the selected audio…';
       resplitAbort = new AbortController();
       const placement = originalChoice.checked ? 'with_original' : 'separate';
       const resplit = ownOriginal ? { parentJobId: mixer.job.id, stem: stem.name, placement } : undefined;
-      const requestKey = JSON.stringify([accountSubject, courseContext, mixer.job.id, stem.name, filename, select.value, placement]);
+      const course = destination();
+      const requestKey = JSON.stringify([accountSubject, course, mixer.job.id, stem.name, filename, select.value, placement]);
       const retryState = resplitRequests.get(requestKey) || {};
       resplitRequests.set(requestKey, retryState);
       try {
@@ -1803,16 +1832,17 @@ async function chooseStemResplit(mixer, stem) {
         const audio = await response.blob();
         if (!dialog.isConnected || resplitAbort.signal.aborted) return;
         status.textContent = 'Starting a new split…';
-        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext, retryState, resplit });
+        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext: course, fixedCourse: true, retryState, resplit });
         if (job) { resplitRequests.delete(requestKey); dialog.close(); return; }
         status.textContent = uploadMessage.textContent || 'The split could not start. Please try again.';
       } catch (error) {
         status.textContent = error.message || 'The split could not start. Please try again.';
       } finally {
         resplitAbort = null;
-        busy = false; submit.disabled = false; cancel.disabled = false; select.disabled = false;
+        busy = false; cancel.disabled = false; select.disabled = false; acknowledged.disabled = false;
         dialog.querySelector('.resplit-placement').disabled = false;
         submit.textContent = 'Resplit';
+        submit.disabled = blocked();
       }
     });
   } catch (error) { status.textContent = error.message; }
