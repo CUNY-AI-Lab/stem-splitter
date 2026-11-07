@@ -235,6 +235,7 @@ h1 span {
   font-family: var(--font-mono);
   font-size: 0.8rem;
   padding: 0.55rem 0.7rem;
+  touch-action: manipulation;
 }
 #yt-url::placeholder { color: var(--ink-faint); }
 #yt-url:focus { outline: none; border-color: var(--hot); }

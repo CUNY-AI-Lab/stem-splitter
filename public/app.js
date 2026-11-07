@@ -865,6 +865,14 @@ function acceptSongSample() {
   void searchSourceSongs(SAMPLE_SONG_QUERY, ++songSearchSequence);
 }
 sampleHint.addEventListener('click', acceptSongSample);
+// Phones have no Tab key, so a double tap on the empty field takes the suggestion.
+let lastSourceFieldClick = -Infinity;
+ytUrlInput.addEventListener('click', (event) => {
+  if (event.timeStamp - lastSourceFieldClick < 500) {
+    lastSourceFieldClick = -Infinity;
+    acceptSongSample();
+  } else lastSourceFieldClick = event.timeStamp;
+});
 ytUrlInput.addEventListener('compositionstart', () => { sampleDismissed = true; stopSongSample(); });
 sampleReducedMotion.addEventListener('change', () => {
   if (sampleReducedMotion.matches && !sampleHint.hidden) {

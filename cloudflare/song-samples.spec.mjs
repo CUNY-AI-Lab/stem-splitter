@@ -263,6 +263,26 @@ test('unified search keeps one audio import flow and no separate metadata contro
  }finally{await f.harness.close();}
 });
 
+test('a phone double tap takes the suggested song, while single taps, slow taps and typed text do not',async({browser})=>{
+ const f=await fixture({TEST_NO_COURSES:'true'});
+ const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'hint-exact',archiveFile:'exact.mp3'},query=`${track.artist} ${track.title}`;
+ const exact={...track,id:'hint-exact/exact.mp3',durationSec:30,sourceUrl:'https://archive.org/details/hint-exact'};
+ const context=await browser.newContext({hasTouch:true,viewport:{width:375,height:812},reducedMotion:'reduce',extraHTTPHeaders:{'x-fixture-identity':f.student}});
+ try{
+  const page=await context.newPage();
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:true,revision:1,tracks:[track]}}));
+  await page.route('**/api/music/search?*',route=>route.fulfill({json:{results:[exact]}}));
+  await page.goto(f.url.href);const input=page.locator('#yt-url'),options=page.locator('#source-songs [role="option"]');
+  await expect(input).toHaveAttribute('placeholder',query);await expect(page.locator('#source-sample-hint')).toBeHidden();
+  await input.tap();await page.waitForTimeout(600);await expect(input).toHaveValue('');
+  await input.tap();await page.waitForTimeout(600);await expect(input).toHaveValue('');
+  await input.tap();await input.tap();
+  await expect(input).toHaveValue(query);await expect(options).toHaveCount(1);await expect(options).toContainText('Verified suggestion');
+  await input.fill('typed by hand');await input.tap();await input.tap();await page.waitForTimeout(100);
+  await expect(input).toHaveValue('typed by hand');
+ }finally{await context.close();await f.harness.close();}
+});
+
 test('manually searching a preloaded hint stays unified and accepting the hint keeps its exact file',async({page,context})=>{
  const f=await fixture({TEST_NO_COURSES:'true'}),requests=[];
  const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'hint-exact',archiveFile:'exact.mp3'},query=`${track.artist} ${track.title}`;
