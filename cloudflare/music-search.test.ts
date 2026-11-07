@@ -319,6 +319,49 @@ test('one stalled catalog cannot hold a search open past the hard limit', async 
   assert.equal(result.results.length, 1);
 });
 
+test('other sources listing results do not cut off an Archive that has found nothing yet', async t => {
+  const context = setup(t);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    if (url.pathname === '/advancedsearch.php') {
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      return Response.json({ response: { docs: [{ identifier: 'patient-song' }] } });
+    }
+    if (url.pathname.startsWith('/metadata/')) {
+      await new Promise(resolve => setTimeout(resolve, 7500));
+      return Response.json({ metadata: { title: 'Patient song', creator: 'Example artist', mediatype: 'audio', subject: 'Music' },
+        files: [{ name: 'song.mp3', title: 'Patient song', size: String(audio.length), length: String(80 * 1152 / 44100) }] });
+    }
+    return new Response(audio.subarray(0, 65536), { status: 206, headers: { 'content-type': 'audio/mpeg', 'content-range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const started = Date.now();
+  const result: any = await (await musicSearchResponse('patient song', false, context)).json();
+  assert.ok(Date.now() - started < 16500, `took ${Date.now() - started}ms`);
+  assert.equal(result.providers.archive, 'ready');
+  assert.ok(result.results.some((track: any) => track.archiveId === 'patient-song'));
+});
+
+test('an earlier Archive list is marked as a fallback and the Archive does not read as unavailable', async t => {
+  const context = setup(t), stored = new Map<string, Response>();
+  const cache = { origin: 'https://split.test', storage: {
+    match: async (request: any) => stored.get(request.url)?.clone(),
+    put: async (request: any, response: Response) => { stored.set(request.url, response); },
+  } } as any;
+  stored.set('https://split.test/__stem-search-cache/v5/last-good?seconds=300&q=earlier%20song', Response.json({ results: [{ id: 'earlier/song.mp3', archiveId: 'earlier', archiveFile: 'song.mp3', title: 'Earlier song', artist: 'Example artist', durationSec: 120 }] }));
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    return new Response('unavailable', { status: 503 });
+  });
+  const result: any = await (await musicSearchResponse('earlier song', false, { ...context, cache })).json();
+  assert.equal(result.fallback, true);
+  assert.equal(result.providers.archive, 'ready');
+  assert.equal(result.results[0].archiveId, 'earlier');
+});
+
 test('search never contacts the Library of Congress and reports only the sources it searches', async t => {
   const context = setup(t), hosts = new Set<string>();
   t.mock.method(globalThis, 'fetch', async (input: any) => {

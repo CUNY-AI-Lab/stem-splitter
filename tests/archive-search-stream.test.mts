@@ -89,6 +89,64 @@ test('a search does not wait on the same search still running in another request
   } finally {held.resolve();await first;}
 });
 
+test('a failed search falls back to the last good list for the same words', {timeout:20000}, async t => {
+  const stored=new Map<string,Response>();
+  const cache={origin:'https://split.test',storage:{
+    match:async(request:RequestInfo|URL)=>stored.get(String((request as Request).url))?.clone(),
+    put:async(request:RequestInfo|URL,response:Response)=>{stored.set(String((request as Request).url),response);},
+  }} as never;
+  let healthy=true;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    if(!healthy)return new Response('unavailable',{status:503});
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'last-good-melody'}]}});
+    if(url.pathname.startsWith('/metadata/'))return metadata('Last good melody');
+    return probe();
+  });
+  const first=await (await archiveSongSearchResponse('Last good melody',false,cache)).json();
+  assert.equal(first.results.length,1);assert.equal(first.fallback,undefined);
+  assert.equal([...stored.keys()].filter(key=>key.includes('/last-good')).length,1);
+  // The minute's copies have expired and the Archive is failing.
+  for(const key of stored.keys())if(!key.includes('/last-good'))stored.delete(key);
+  const later=Date.now()+61000;
+  t.mock.method(Date,'now',()=>later);
+  healthy=false;
+  const fallback=await archiveSongSearchResponse('Last good melody',false,cache);
+  assert.equal(fallback.status,200);
+  const body=await fallback.json();
+  assert.equal(body.fallback,true);assert.equal(body.results[0].archiveId,'last-good-melody');
+  assert.equal((await archiveSongSearchResponse('Words never found melody',false,cache)).status,502,'with no earlier list a failure stays a failure');
+});
+
+test('a stuck metadata connection gets another try inside the same search', {timeout:8000}, async t => {
+  let metadataCalls=0;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'stuck-once-melody'}]}});
+    if(url.pathname.startsWith('/metadata/')){
+      if(++metadataCalls===1)return await new Promise<Response>((_resolve,reject)=>init?.signal?.addEventListener('abort',()=>reject(init.signal!.reason)));
+      return metadata('Stuck once melody');
+    }
+    return probe();
+  });
+  const found=await searchArchiveSongs('Stuck once melody');
+  assert.equal(metadataCalls,2);
+  assert.equal(found.results[0].archiveId,'stuck-once-melody');
+});
+
+test('a search with nothing to list by the limit keeps going a little longer', {timeout:20000}, async t => {
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){await new Promise(resolve=>setTimeout(resolve,2000));return Response.json({response:{docs:[{identifier:'late-melody'}]}});}
+    if(url.pathname.startsWith('/metadata/')){await new Promise(resolve=>setTimeout(resolve,7500));return metadata('Late melody');}
+    return probe();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('Late melody');
+  assert.equal(found.results[0].archiveId,'late-melody');
+  assert.ok(Date.now()-started>9000&&Date.now()-started<15500,`took ${Date.now()-started}ms`);
+});
+
 test('stream failures are explicit and failed searches can be retried through JSON',async t=>{
   let healthy=false;
   t.mock.method(globalThis,'fetch',async()=>healthy?Response.json({response:{docs:[]}}):new Response('private upstream content',{status:403}));
@@ -162,7 +220,7 @@ test('the edge cache serves verified matches across requests without exposing br
   const stored = new Map<string,Response>(); let calls=0, writes=0;
   const storage = {
     match: async (request: Request) => stored.get(request.url)?.clone(),
-    put: async (request: Request, response: Response) => { writes++; assert.equal(response.headers.get('cache-control'),'public, max-age=60'); stored.set(request.url,response.clone()); },
+    put: async (request: Request, response: Response) => { writes++; assert.equal(response.headers.get('cache-control'),request.url.includes('/last-good')?'public, max-age=604800':'public, max-age=60'); stored.set(request.url,response.clone()); },
   } as unknown as Cache;
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
     calls++; const url=new URL(String(input));
@@ -173,14 +231,14 @@ test('the edge cache serves verified matches across requests without exposing br
   const cache={storage,origin:'https://stem.example'};
   const fresh=await archiveSongSearchResponse('Edge lantern song',false,cache);
   assert.equal(fresh.headers.get('x-stem-search-cache'),'miss');
-  assert.equal((await fresh.json()).results.length,1);assert.equal(writes,1);
+  assert.equal((await fresh.json()).results.length,1);assert.equal(writes,2,'the minute copy and the last good list');
   const before=calls;
   const hit=await archiveSongSearchResponse('EDGE  LANTERN SONG',true,cache);
   const packets=(await hit.text()).trim().split('\n').map(line=>JSON.parse(line));
   assert.equal(hit.headers.get('x-stem-search-cache'),'hit');
   assert.equal(hit.headers.get('cache-control'),'private, no-store');
   assert.equal(packets.at(-1).results[0].archiveId,'edge-lantern-song');
-  assert.equal(calls,before);assert.equal(writes,1);
+  assert.equal(calls,before);assert.equal(writes,2);
 });
 
 test('a full fast broad catalog cannot starve the music catalog behind a stalled credited search', {timeout:5000}, async t => {
@@ -337,5 +395,5 @@ test('edge and metadata caches keep student durations separate from visitor resu
   const repeated = await archiveSongSearchResponse('Duration cache melody', false, cache, 900);
   assert.equal(repeated.headers.get('x-stem-search-cache'), 'hit');
   assert.equal((await repeated.json() as {results:unknown[]}).results.length, 1);
-  assert.ok([...stored.keys()].every(key => key.includes('/v5?seconds=900&')));
+  assert.ok([...stored.keys()].every(key => key.includes('?seconds=900&')));
 });

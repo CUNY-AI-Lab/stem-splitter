@@ -286,6 +286,7 @@ h1 span {
 .source-song:hover, .source-song[aria-selected="true"] { background: var(--hot-soft); }
 .source-song small { display: block; margin-top: 0.15rem; color: var(--ink-dim); font-size: 0.7rem; }
 .source-search-status { color: var(--ink-dim); }
+.source-search-retry { display: block; min-height: 36px; margin-top: .4rem; padding: .35rem .7rem; border: 1px solid var(--hot); border-radius: 6px; background: var(--hot-soft); color: var(--ink); font: 500 .75rem/1.3 var(--font-mono); cursor: pointer; }
 
 .yt-go {
   background: var(--hot-soft);

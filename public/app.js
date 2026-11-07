@@ -626,6 +626,7 @@ const ytFetchLabel = ytFetchButton.textContent;
 const sourceSongs = document.getElementById('source-songs');
 let songResults = new Map(), songSearchTimer, songSearchSequence = 0, songSearchAbort;
 let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
+const SEARCH_RETRY_WITHIN_MS = 10000, SEARCH_RETRY_DELAY_MS = 1200;
 let acceptedSongSample = null;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
 
@@ -919,6 +920,19 @@ function clearSongSuggestions() {
   musicSearchStatus.textContent = '';
 }
 
+// A failed search always leaves a next step, and does not claim a cause it cannot know.
+function showSongSearchFailure(term) {
+  showSongSearchStatus('Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.');
+  songSearchStatus = 'error';
+  const retry = document.createElement('button');
+  retry.type = 'button'; retry.className = 'source-search-retry'; retry.textContent = 'Try again';
+  retry.addEventListener('click', () => {
+    ytUrlInput.focus();
+    songSuggestionsDismissed = false;
+    void searchSourceSongs(term, ++songSearchSequence);
+  });
+  sourceSongs.querySelector('.source-search-status')?.append(retry);
+}
 function showSongSearchStatus(message) {
   sourceSongs.replaceChildren();
   const item = document.createElement('li'), status = document.createElement('span');
@@ -960,7 +974,8 @@ async function searchSourceSongs(term, sequence) {
     if (!current()) return;
     if (data.providers) {
       // The Archive holds most songs. A smaller catalog failing is not worth a warning beside usable results.
-      musicSearchStatus.textContent = Object.values(data.providers).includes('pending') ? 'Searching more sources…'
+      musicSearchStatus.textContent = data.fallback ? 'The Internet Archive is slow right now, so these are earlier results for this search.'
+        : Object.values(data.providers).includes('pending') ? 'Searching more sources…'
         : data.providers.archive === 'unavailable' ? 'Some audio sources are temporarily unavailable. Other results remain usable.' : '';
     }
     if (!songResults.size && data.results?.length) sourceSongs.replaceChildren();
@@ -1018,10 +1033,23 @@ async function searchSourceSongs(term, sequence) {
       if (!current()) return;
       data = outcome.data;
     }
-    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
-      signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
-    });
+    if (!data) {
+      const started = Date.now();
+      const load = () => api(`/api/music/search?q=${encodeURIComponent(term)}`, {
+        signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
+      });
+      try { data = await load(); }
+      catch (error) { if (controller.signal.aborted || (error.status && error.status < 500 && error.status !== 429)) throw error; }
+      // One quiet retry for a failure that came quickly: finished work is reused, so it is cheap.
+      // A search that already used its whole time limit is not repeated without being asked.
+      if (current() && !songResults.size && (!data || data.providers?.archive === 'unavailable') && Date.now() - started < SEARCH_RETRY_WITHIN_MS) {
+        await new Promise(resolve => setTimeout(resolve, SEARCH_RETRY_DELAY_MS));
+        if (!current()) return;
+        data = await load();
+      }
+    }
     if (!current()) return;
+    if (!data) throw new Error('Search unavailable');
     // The final ranking replaces what streamed in: early weak matches and other copies of a
     // recording leave the list, and better late matches take their places.
     if (activeSongIndex < 0 && data.results?.length) {
@@ -1043,17 +1071,17 @@ async function searchSourceSongs(term, sequence) {
       if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
     }
     const archiveFailed = data.providers?.archive === 'unavailable';
-    if (!cached && !archiveFailed) rememberSongSearch(term, data);
+    if (!cached && !archiveFailed && !data.fallback) rememberSongSearch(term, data);
     songSearchStatus = 'ready';
     if (!songResults.size) {
       musicSearchStatus.textContent = '';
-      showSongSearchStatus(archiveFailed ? 'Internet Archive is busy right now. Try again in a moment.'
-        : 'No downloadable audio found. Try another recording or upload an audio file.');
+      if (archiveFailed) showSongSearchFailure(term);
+      else showSongSearchStatus('No downloadable audio found. Try another recording or upload an audio file.');
     }
   } catch {
     if (!current()) return;
     songSearchStatus = songResults.size ? 'ready' : 'error';
-    if (!songResults.size) showSongSearchStatus('Search is temporarily unavailable. Try again.');
+    if (!songResults.size) showSongSearchFailure(term);
   } finally {
     clearTimeout(slowSearch);
     if (current()) sourceSongs.removeAttribute('aria-busy');

@@ -329,6 +329,70 @@ test('a song suggestion check its browser cancelled does not hang the next check
  }finally{network.close();await f.harness.close();}
 });
 
+// A search should end in results or a next step, never in a dead end.
+test('search retries a quick failure once, then offers Try again, and marks earlier results',async({page,context})=>{
+ test.setTimeout(60000);
+ const f=await fixture({TEST_NO_COURSES:'true'});
+ const track={id:'fallback/song.mp3',archiveId:'fallback',archiveFile:'song.mp3',title:'Fallback song',artist:'Fixture ensemble',durationSec:120,providerName:'Internet Archive'};
+ const failed={results:[],references:[],providers:{archive:'unavailable',commons:'ready',freesound:'ready'},done:true};
+ const found=extra=>({results:[track],references:[],providers:{archive:'ready',commons:'ready',freesound:'ready'},done:true,...extra});
+ const ndjson=value=>({status:200,contentType:'application/x-ndjson',body:JSON.stringify(value)+'\n'});
+ let replies=[],requests=0;
+ try{
+  await context.setExtraHTTPHeaders({'x-fixture-identity':f.student});
+  await page.route('**/api/song-samples',route=>route.fulfill({json:{enabled:false,revision:1,tracks:[]}}));
+  await page.route('**/api/music/search?*',route=>{requests++;const next=replies.shift();return next==='abort'?route.abort():route.fulfill(ndjson(next));});
+  await page.goto(f.url.href);
+  const input=page.locator('#yt-url'),options=page.locator('#source-songs [role="option"]'),list=page.locator('#source-songs'),retry=page.getByRole('button',{name:'Try again',exact:true});
+  // A quick failure is retried without being asked, and the person only sees results.
+  replies=[failed,found()];
+  await input.fill('quick failure song');
+  await expect(options).toHaveCount(1,{timeout:10000});
+  expect(requests).toBe(2);
+  await expect(list).not.toContainText('Search could not finish');
+  // So is a network failure.
+  replies=['abort',found()];requests=0;
+  await input.fill('dropped connection song');
+  await expect(options).toHaveCount(1,{timeout:10000});
+  expect(requests).toBe(2);
+  // Two failures leave a plain next step that does not blame one source for certain.
+  replies=[failed,failed];requests=0;
+  await input.fill('failing song');
+  await expect(retry).toBeVisible({timeout:10000});
+  expect(requests).toBe(2);
+  await expect(list).toContainText('Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.');
+  await expect(list).not.toContainText('busy right now');
+  replies=[found()];
+  await retry.click();
+  await expect(options).toHaveCount(1,{timeout:10000});
+  await expect(input).toBeFocused();
+  await expect(retry).toHaveCount(0);
+  // Enter does the same as the button.
+  replies=[failed,failed];
+  await input.fill('another failing song');
+  await expect(retry).toBeVisible({timeout:10000});
+  replies=[found()];
+  await input.press('Enter');
+  await expect(options).toHaveCount(1,{timeout:10000});
+  // Earlier results say so, and are not remembered as a fresh answer.
+  replies=[found({fallback:true})];requests=0;
+  await input.fill('earlier results song');
+  await expect(options).toHaveCount(1,{timeout:10000});
+  await expect(list).toContainText('The Internet Archive is slow right now, so these are earlier results for this search.');
+  replies=[found()];
+  await input.fill('earlier results son');
+  await page.waitForTimeout(100);
+  await input.fill('earlier results song');
+  await expect(list).not.toContainText('earlier results for this search',{timeout:10000});
+  // A request the server refuses is not repeated.
+  await page.unroute('**/api/music/search?*');requests=0;
+  await page.route('**/api/music/search?*',route=>{requests++;return route.fulfill({status:400,json:{error:'Enter a song or artist using 2–120 characters.'}});});
+  await input.fill('refused song');
+  await expect(retry).toBeVisible({timeout:10000});
+  expect(requests).toBe(1);
+ }finally{await f.harness.close();}
+});
+
 test('a phone double tap takes the suggested song, while single taps, slow taps and typed text do not',async({browser})=>{
  const f=await fixture({TEST_NO_COURSES:'true'});
  const track={artist:'Fixture ensemble',title:'Verified suggestion',archiveId:'hint-exact',archiveFile:'exact.mp3'},query=`${track.artist} ${track.title}`;

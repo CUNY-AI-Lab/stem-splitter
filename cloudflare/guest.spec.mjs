@@ -364,7 +364,7 @@ test('song search shows empty and failed searches and ignores stale responses',a
     });
     const input=page.getByRole('combobox',{name:'Song or link',exact:true}),list=page.getByRole('listbox',{name:'Songs'});
     await input.fill('Empty');await expect(list).toContainText('No downloadable audio found. Try another recording or upload an audio file.');
-    await input.fill('Failure');await expect(list).toContainText('Search is temporarily unavailable. Try again.');
+    await input.fill('Failure');await expect(list).toContainText('Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.');await expect(list.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
     await input.fill('Slow');await expect.poll(()=>Boolean(slow)).toBe(true);
     await input.fill('Latest');await expect.poll(()=>Boolean(latest)).toBe(true);
     await input.press('Enter');expect(latestRequests).toBe(1);

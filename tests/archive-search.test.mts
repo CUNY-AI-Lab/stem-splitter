@@ -518,13 +518,13 @@ test('a thin result list waits for the second limit, and abandoned work leaves t
   assert.equal(probesAfterExpiry,0);
 });
 
-test('a search with nothing verified gives up and reports the source as busy',async t=>{
+test('a search with nothing at all gives up after its extra time and reports the source as busy',async t=>{
   const release:(()=>void)[]=[];
   t.after(()=>release.forEach(done=>done()));
   t.mock.method(globalThis,'fetch',async()=>{await new Promise<void>(done=>release.push(done));return Response.json({response:{docs:[]}});});
   const started=Date.now();
   await assert.rejects(()=>searchArchiveSongs('stalled completely'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
-  assert.ok(Date.now()-started<9500,`took ${Date.now()-started}ms`);
+  assert.ok(Date.now()-started<16000,`took ${Date.now()-started}ms`);
 });
 
 test('at the time limit, matches still being checked are listed instead of an empty result',async t=>{

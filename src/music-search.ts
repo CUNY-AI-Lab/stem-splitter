@@ -6,7 +6,7 @@ import { archiveSongSearchKey, creditMatchesQuery, hiddenFromGenreLists, isGenre
 // and its API is too slow and rate-limited for this path. See docs/audio-search-catalogs-20261104.md.
 type Provider = 'archive' | 'commons' | 'freesound';
 type AudioTrack = (ArchiveSong | OpenAudioTrack) & { providerName: string };
-type SearchResult = { results: AudioTrack[]; references: never[]; providers: Record<Provider, 'pending' | 'ready' | 'unavailable'> };
+type SearchResult = { results: AudioTrack[]; references: never[]; providers: Record<Provider, 'pending' | 'ready' | 'unavailable'>; fallback?: boolean };
 type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache };
 
 // The Archive holds nearly all full-length songs, so it gets more of the list.
@@ -14,8 +14,10 @@ const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesou
 // Freesound is mostly short effects whose tags loosely match. Tracks must carry the
 // search words, and short clips appear only when a search would otherwise find nothing.
 const MIN_FREESOUND_SECONDS = 30;
-// Just past the Archive's own limit. No slow source can hold a search open longer.
+// Just past the Archive's own limits. No slow source can hold a search open longer.
 const SEARCH_HARD_LIMIT_MS = 9000;
+// The Archive holds nearly all full-length songs. Until it has listed something, it gets its full extra time.
+const SEARCH_ARCHIVE_EMPTY_LIMIT_MS = 16000;
 const credits = (track: ArchiveSong | OpenAudioTrack) => {
   const { artist, fileCreator, itemCreator } = track as { artist?: string; fileCreator?: string; itemCreator?: string };
   return [artist, fileCreator, itemCreator];
@@ -103,6 +105,7 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
             while ((newline = pending.indexOf('\n')) >= 0) {
               const batch = JSON.parse(pending.slice(0, newline)); pending = pending.slice(newline + 1);
               if (batch.error) throw new Error('Archive unavailable');
+              if (batch.fallback) result.fallback = true;
               if (Array.isArray(batch.results)) add('archive', batch.results);
               if (batch.done) done = true;
             }
@@ -121,12 +124,18 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
         add(name, value.results);
       })),
     ]);
-    let endLimit = () => {};
-    const timedOut = await Promise.race([everySource.then(() => false), new Promise<boolean>(resolve => {
-      const limit = setTimeout(() => resolve(true), SEARCH_HARD_LIMIT_MS);
-      endLimit = () => clearTimeout(limit);
-    })]);
-    endLimit();
+    const settled = everySource.then(() => false);
+    const waitUpTo = async (ms: number) => {
+      let endLimit = () => {};
+      const timedOut = await Promise.race([settled, new Promise<boolean>(resolve => {
+        const limit = setTimeout(() => resolve(true), ms);
+        endLimit = () => clearTimeout(limit);
+      })]);
+      endLimit();
+      return timedOut;
+    };
+    let timedOut = await waitUpTo(SEARCH_HARD_LIMIT_MS);
+    for (let waited = SEARCH_HARD_LIMIT_MS; timedOut && result.providers.archive === 'pending' && !counts.archive && waited < SEARCH_ARCHIVE_EMPTY_LIMIT_MS; waited += 250) timedOut = await waitUpTo(250);
     if (timedOut) {
       for (const name of Object.keys(result.providers) as Provider[]) if (result.providers[name] === 'pending') result.providers[name] = 'unavailable';
       abort.abort();

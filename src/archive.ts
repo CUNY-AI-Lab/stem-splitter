@@ -467,7 +467,7 @@ export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, pub
 }
 
 export const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-export type SongResults = { results: ArchiveSong[] };
+export type SongResults = { results: ArchiveSong[]; fallback?: boolean };
 const withoutArticle = (text: string) => text.replace(/^the /, '');
 /** True when the query names this credit, or one artist in a shared credit such as "Michael Kamen, Queen". */
 export function creditMatchesQuery(credit: string | undefined, query: string): boolean {
@@ -795,6 +795,8 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): SongCandidate[] {
 // list. With fewer results it waits for the second limit, then returns what it has,
 // or reports the source as busy when it has nothing.
 const SEARCH_SETTLE_MS = 5000, SEARCH_GIVE_UP_MS = 8000, SEARCH_ENOUGH_RESULTS = 4;
+// An empty list at the limit is a dead end, so a search with nothing to show waits this much longer.
+const SEARCH_EMPTY_LIMIT_MS = 15000;
 async function findArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number): Promise<SongResults> {
   let latest: SongResults = { results: [] };
   const budget: SearchBudget = { expired: false, bestEffort: () => latest };
@@ -805,6 +807,11 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     const running = finished.then(() => false as const);
     if (!await Promise.race([running, after(SEARCH_SETTLE_MS)])) return await finished;
     if (budget.bestEffort().results.length < SEARCH_ENOUGH_RESULTS && !await Promise.race([running, after(SEARCH_GIVE_UP_MS - SEARCH_SETTLE_MS)])) return await finished;
+    let outOfTime = false;
+    void after(SEARCH_EMPTY_LIMIT_MS - SEARCH_GIVE_UP_MS).then(() => { outOfTime = true; });
+    while (!budget.bestEffort().results.length && !outOfTime) {
+      if (!await Promise.race([running, after(250)])) return await finished;
+    }
     budget.expired = true;
     finished.catch(() => {});
     const best = budget.bestEffort();
@@ -880,7 +887,8 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
           () => songMetadataPool(() => {
             // Work abandoned at the time limit must leave this search's queue.
             if (budget.expired || Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
-            return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()) });
+            // A stuck connection gets another try inside the same budget, rather than using all of it.
+            return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()), attemptTimeoutMs: 3500 });
           }),
           item => item.tracks.length <= 256); }
         catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; else metadataRejected++; return null; }
@@ -1092,14 +1100,14 @@ function archiveFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean; signal?: AbortSignal } = {}): Promise<ArchiveItem> {
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; attemptTimeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean; signal?: AbortSignal } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
 
   const payload = await fetchJson(
     `${METADATA_API}/${encodeURIComponent(identifier)}`,
-    'metadata', options.timeoutMs, options.timeoutMs, options.signal
+    'metadata', options.timeoutMs, options.attemptTimeoutMs ?? options.timeoutMs, options.signal
   );
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ArchiveError('That Internet Archive item returned unreadable metadata.');
