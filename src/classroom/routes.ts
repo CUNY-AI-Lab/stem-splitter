@@ -140,5 +140,11 @@ routes.post('/courses/:courseId/folders/:id/items',async c=>{
 routes.delete('/courses/:courseId/folders/:id/items/:jobId',async c=>{
   const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));await c.env.DB.prepare('DELETE FROM course_folder_items WHERE folder_id=? AND job_id=?').bind(f.id,c.req.param('jobId')).run();return c.json({ok:true});
 });
+// Deleting a folder leaves its splits in the class. Its sharing history stays immutable.
+routes.delete('/courses/:courseId/folders/:id',async c=>{
+  const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  await c.env.DB.batch([c.env.DB.prepare('DELETE FROM course_folder_items WHERE folder_id=?').bind(f.id),c.env.DB.prepare('DELETE FROM course_folders WHERE id=? AND course_id=?').bind(f.id,f.course_id)]);
+  return c.json({ok:true});
+});
 routes.route('/', liveRoutes);
 export default routes;

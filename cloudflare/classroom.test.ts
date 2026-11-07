@@ -491,6 +491,26 @@ test('storage failures before and after finish remain recoverable and never dupl
  const retry=await beginCourseTurn(env,'storage',p,'Another request',fresh.turnId,fresh.revision);assert.ok(retry.replay);assert.equal(retry.replay.reply,'Saved once');assert.equal((await conversationPage(env,'storage',p.subject)).entries.length,4);
 });
 
+test('class folder delete is instructor-only, leaves the split and ends access through the folder',async()=>{
+ const {request,db,job}=await setup();await job('kept-split');
+ const root=`/api/classroom/courses/${A}/folders`;
+ const made=await(await request(root,'ownerA','POST',{name:'Week one'})).json() as any;
+ const path=root+'/'+made.folder.id;
+ await request(path,'ownerA','PUT',{permission:'read',revision:0});
+ await request(path+'/items','ownerA','POST',{jobId:'kept-split'});
+ assert.equal((await request('/api/jobs/kept-split','bob')).status,200);
+ assert.equal((await request(path,'alice','DELETE')).status,403);
+ assert.equal((await request(path,'ownerB','DELETE')).status,403);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folders WHERE id=?').bind(made.folder.id).first())?.n,1);
+ assert.equal((await request(path,'ownerA','DELETE')).status,200);
+ assert.equal((await request(path,'ownerA')).status,404);
+ assert.equal((await request(path,'ownerA','DELETE')).status,404);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folder_items WHERE folder_id=?').bind(made.folder.id).first())?.n,0);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM jobs WHERE id=?').bind('kept-split').first())?.n,1);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folder_events WHERE folder_id=?').bind(made.folder.id).first())?.n,1);
+ assert.notEqual((await request('/api/jobs/kept-split','bob')).status,200);
+ assert.equal((await request('/api/jobs/kept-split','alice')).status,200);
+});
 test('class folder rename retains sharing, contents and course while rejecting students and stale revisions',async()=>{
  const {request,db,job}=await setup();await job('rename-kept');
  const root=`/api/classroom/courses/${A}/folders`;
