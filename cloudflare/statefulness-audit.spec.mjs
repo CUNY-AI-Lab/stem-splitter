@@ -76,7 +76,7 @@ for (const startsAsInstructor of [false, true]) test(`Workspace refresh follows 
     await expect(page.locator('#console-panel')).toBeVisible();
     await expect(page.locator('#classroom-folder-create')).toBeVisible({ visible: !startsAsInstructor });
     await expect(page.locator('#classroom-guidance')).toBeVisible({ visible: !startsAsInstructor });
-    await expect(page.locator('#classroom-roster-section')).toBeVisible({ visible: !startsAsInstructor });
+    await expect(page.locator('#classroom-view-students')).toBeVisible({ visible: !startsAsInstructor });
     expect(await page.evaluate(() => window.auditDocument)).toBe(documentId);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
@@ -91,7 +91,7 @@ for (const persona of ['individual', 'student', 'course instructor']) test(`${pe
       await page.goto(new URL(path, f.url).href);
       await expect(page.locator('.workspace-nav')).toBeVisible();
       await expect(page.locator('#header-signin')).toBeHidden();
-      await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter', 'Workspace', 'Account']);
+      await expect(page.locator('.workspace-nav a:visible')).toHaveText(['Splitter', 'Classes', 'Account']);
       if (path === '/account.html') {
         await expect(page.locator('#account-role')).toHaveText(persona === 'student' ? 'Student access' : 'CUNY AI Lab member access');
         await expect(page.locator('#account-admin')).toBeHidden();
@@ -104,7 +104,7 @@ for (const persona of ['individual', 'student', 'course instructor']) test(`${pe
           await expect(page.locator('#console-panel')).toBeVisible();
           await expect(page.locator('#classroom-course')).toHaveValue(courseId);
           await expect(page.locator('#classroom-guidance')).toBeVisible({ visible: teaches });
-          await expect(page.locator('#classroom-roster-section')).toBeVisible({ visible: teaches });
+          await expect(page.locator('#classroom-view-students')).toBeVisible({ visible: teaches });
         }
       } else if (path === '/teacher.html') {
         await expect(page.locator('#console-panel')).toBeVisible();

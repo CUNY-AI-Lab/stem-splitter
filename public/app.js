@@ -2078,7 +2078,7 @@ class Mixer {
             <span class="split-action-heading">Recording</span>
             ${canRenameRun(this.job) ? '<button type="button" class="head-btn rename-btn">RENAME</button>' : ''}
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
-            <button class="head-btn folder-btn" title="Add this split to a class folder">+ FOLDER</button>
+            <button class="head-btn folder-btn" title="Move this split out of the rack and into one of your private folders">MOVE TO MY FOLDERS</button>
             </div>
             <div class="split-action-group split-sharing-actions" role="group" aria-label="Sharing">
             <span class="split-action-heading">Sharing</span>
@@ -2464,7 +2464,13 @@ class Mixer {
       const heading = document.createElement('span'); heading.className = 'split-action-heading'; heading.textContent = 'Class';
       const workspace = document.createElement('a'); workspace.className = 'class-workspace-link';
       workspace.href = `/classroom.html?course=${encodeURIComponent(this.job.courseId)}`;
-      workspace.textContent = 'Open class workspace'; classActions.append(heading, workspace);
+      workspace.textContent = 'Open class'; classActions.append(heading, workspace);
+      if (this.job.permissions?.instructor) {
+        const addToClassFolder = document.createElement('button');
+        addToClassFolder.type = 'button'; addToClassFolder.className = 'head-btn class-folder-btn'; addToClassFolder.textContent = 'ADD TO CLASS FOLDER';
+        addToClassFolder.addEventListener('click', () => { void toggleClassFolderMenu(this); this.setActionsOpen(false); });
+        classActions.append(addToClassFolder);
+      }
       li.querySelector('.split-remove-actions').before(classActions);
       li.querySelector('.folder-btn').hidden = true;
       if (!this.job.permissions?.comment) li.querySelector('.note-btn').hidden = true;
@@ -2604,6 +2610,7 @@ class Mixer {
     // invisible stale menu instead of opening a fresh one.
     if (collapsed) {
       this.el.querySelector(':scope > .folder-menu')?.remove();
+      this.el.querySelector(':scope > .class-folder-menu')?.remove();
       for (const mixer of mixers.values()) if (mixer !== this && this.el.contains(mixer.el)) mixer.pause();
     }
     if (this.el.classList.contains('collapsed') === collapsed) return;
@@ -4213,7 +4220,7 @@ async function loadFolderItems(folder, container) {
   container.innerHTML = '';
   if (!detail.items.length) {
     container.innerHTML =
-      '<li class="mono folder-items-note">This folder is empty. Use “+ FOLDER” on a finished split to add it here.</li>';
+      '<li class="mono folder-items-note">This folder is empty. Use “MOVE TO MY FOLDERS” on a finished split to add it here.</li>';
     return;
   }
   for (const item of detail.items) {
@@ -4286,6 +4293,78 @@ async function loadWholeFolder(folder, button) {
 
 // The "+ FOLDER" popover on a finished console: pick an existing folder or
 // name a new one; either way it organizes a split that is already saved.
+// A class split stays in the rack. Adding it to a class folder only changes what the folder lists.
+async function toggleClassFolderMenu(mixer) {
+  const existing = mixer.el.querySelector(':scope > .class-folder-menu');
+  if (existing) { existing.remove(); return; }
+  if (mixer.el.classList.contains('collapsed')) {
+    mixer.setCollapsed(false);
+    setJobCollapsed(mixer.job.id, false);
+  }
+  const course = mixer.job.courseId, root = `/api/classroom/courses/${encodeURIComponent(course)}/folders`;
+  const menu = document.createElement('div');
+  menu.className = 'class-folder-menu';
+  menu.innerHTML = `
+    <p class="folder-menu-title mono">ADD TO CLASS FOLDER</p>
+    <div class="folder-menu-rows"><p class="mono folder-menu-none">loading…</p></div>
+    <form class="folder-menu-new">
+      <input maxlength="80" placeholder="new class folder name" aria-label="New class folder name" />
+      <button type="submit">ADD</button>
+    </form>
+    <p class="folder-menu-none class-folder-status" role="status"></p>
+  `;
+  mixer.el.querySelector('.console-head').after(menu);
+  const rows = menu.querySelector('.folder-menu-rows'), status = menu.querySelector('.class-folder-status');
+  const send = async (path, body) => {
+    const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    if (!res.ok) throw new Error('This class folder could not be updated. Reload and try again.');
+    return res.json();
+  };
+  const confirmAdded = (folder) => {
+    status.replaceChildren(`Added to ${folder.name}. Choose who can open it in `);
+    const open = document.createElement('a');
+    open.href = `/classroom.html?course=${encodeURIComponent(course)}&folder=${encodeURIComponent(folder.id)}`; open.textContent = 'Classes';
+    status.append(open, '.');
+  };
+  const saveTo = async (folder, row) => {
+    if (row) row.disabled = true;
+    status.textContent = '';
+    try {
+      await send(`${root}/${encodeURIComponent(folder.id)}/items`, { jobId: mixer.job.id });
+      if (row) row.textContent = `${folder.name} ✓`;
+      confirmAdded(folder);
+    } catch (error) { if (row) row.disabled = false; status.textContent = error.message; }
+  };
+  const addRow = (folder) => {
+    const row = document.createElement('button');
+    row.type = 'button'; row.className = 'folder-menu-row'; row.textContent = folder.name;
+    row.addEventListener('click', () => void saveTo(folder, row));
+    rows.append(row);
+    return row;
+  };
+  const input = menu.querySelector('input');
+  menu.querySelector('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = input.value.trim(); if (!name) return;
+    const submit = menu.querySelector('.folder-menu-new button'); submit.disabled = true; status.textContent = '';
+    try {
+      const { folder } = await send(root, { name });
+      rows.querySelector('.folder-menu-none')?.remove();
+      const row = addRow(folder);
+      input.value = '';
+      await saveTo(folder, row);
+    } catch (error) { status.textContent = error.message; }
+    finally { submit.disabled = false; }
+  });
+  try {
+    const { folders: classFolders } = await send(root);
+    rows.replaceChildren();
+    if (!classFolders.length) rows.innerHTML = '<p class="mono folder-menu-none">no class folders yet</p>';
+    for (const folder of classFolders) addRow(folder);
+    (menu.querySelector('.folder-menu-row') || input).focus();
+  } catch (error) { rows.replaceChildren(); status.textContent = error.message; }
+}
+
 function toggleFolderMenu(mixer) {
   const existing = mixer.el.querySelector(':scope > .folder-menu');
   if (existing) {
@@ -4321,7 +4400,7 @@ function toggleFolderMenu(mixer) {
     )
     .join('');
   menu.innerHTML = `
-    <p class="folder-menu-title mono">ADD TO FOLDER</p>
+    <p class="folder-menu-title mono">MOVE TO MY FOLDERS</p>
     <div class="folder-menu-rows">${rows || '<p class="mono folder-menu-none">no folders yet</p>'}</div>
     <form class="folder-menu-new">
       <input maxlength="80" placeholder="new folder name" aria-label="New folder name" />

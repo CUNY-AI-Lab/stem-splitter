@@ -2175,7 +2175,10 @@ footer a:hover { color: var(--hot); }
 .folder-btn { display: none; }
 body.instructor .folder-btn { display: inline-block; }
 
-.folder-menu {
+.folders-note { margin: 0 0 .75rem; color: var(--ink-dim); font-size: .8rem; }
+.folders-note a { color: var(--hot); text-underline-offset: .2em; }
+.class-folder-status a { color: var(--hot); text-underline-offset: .2em; }
+.folder-menu, .class-folder-menu {
   margin-top: 0.6rem;
   border: 1px solid var(--panel-edge);
   border-radius: 10px;

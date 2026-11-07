@@ -80,7 +80,7 @@ test('all four footers expose one accessible description field without submittin
       await expect(page.locator('.bug-report textarea')).toHaveCount(1);
       await expect(panel(page)).toContainText('No sign-in needed. Please leave out private information.');
       await expect(page.getByRole('group', { name: 'Report page context' })).toContainText(new Map([
-        ['/account.html', 'My account'], ['/teacher.html', 'Instructor'], ['/', 'Workspace'], ['/classroom.html', 'Class workspace'],
+        ['/account.html', 'My account'], ['/teacher.html', 'Instructor'], ['/', 'Splitter'], ['/classroom.html', 'Classes'],
       ]).get(path));
       if (path === '/') await page.screenshot({ path: testInfo.outputPath('report-desktop.png'), animations: 'disabled' });
       await page.getByRole('button', { name: 'Close bug report', exact: true }).click();

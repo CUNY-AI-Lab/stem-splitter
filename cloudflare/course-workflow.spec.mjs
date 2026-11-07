@@ -31,6 +31,108 @@ async function fixture(browser,vars={}) {
   return {issuer,url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
 }
 
+// The class page keeps one place per section. A folder opens under its own row.
+test('an instructor builds a class folder in place: create, add splits, share, remove and delete',async({browser},testInfo)=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('second-song','Second class fixture','uploads/second.wav','done','htdemucs_ft','[]')`,
+      `INSERT INTO job_owners VALUES('second-song','${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO job_courses(job_id,course_id,member_id,assigned_by,policy_version) VALUES('second-song','${course}','stem-member-v1-${createHash('sha256').update(`fixture:${course}:${TEST_SUBJECTS.alice}`).digest('hex')}','${TEST_SUBJECTS.alice}','course-work-v1')`]);
+    const page=await f.pageFor(TEST_SUBJECTS.alice,true),errors=[];
+    page.on('pageerror',error=>errors.push(error.message));
+    await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await expect(page.getByRole('button',{name:'Folders',exact:true})).toHaveAttribute('aria-current','true');
+    await expect(page.locator('#classroom-create')).toBeHidden();
+    await expect(page.locator('#account-status')).toBeHidden();
+    await expect(page.locator('#classroom-folder-create')).toContainText('Only instructors see a new folder until you choose who can open it.');
+    await page.getByLabel('New folder').fill('Week one');
+    await page.getByRole('button',{name:'Create folder',exact:true}).click();
+    const row=page.locator('#classroom-folders > li',{hasText:'Week one'});
+    await expect(row.locator('#classroom-folder-detail')).toBeVisible();
+    await expect(row.getByRole('button',{name:'Week one',exact:true})).toHaveAttribute('aria-expanded','true');
+    await expect(page).toHaveURL(/folder=/);
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Only instructors can see this folder until you share it with the class.');
+    await expect(page.locator('#classroom-folder-share')).toBeHidden();
+    await row.getByRole('button',{name:'Add splits',exact:true}).click();
+    await row.getByRole('button',{name:'Add Second class fixture to this folder',exact:true}).click();
+    await expect(page.locator('#classroom-folder-items')).toContainText('Second class fixture');
+    await expect(row.getByRole('button',{name:'Second class fixture is in this folder',exact:true})).toBeDisabled();
+    await expect(row.getByRole('button',{name:'Add Class fixture to this folder',exact:true})).toBeEnabled();
+    await page.getByLabel('Who can use this folder?').selectOption('read');
+    await page.getByRole('button',{name:'Save sharing',exact:true}).click();
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can listen and read notes.');
+    await expect(page.locator('#classroom-folder-share')).toBeVisible();
+    await expect(row.locator('.classroom-entry-meta')).toHaveText('Class · can listen');
+    await page.screenshot({path:testInfo.outputPath('class-folder-open.png'),fullPage:true,animations:'disabled'});
+    await page.setViewportSize({width:390,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:testInfo.outputPath('class-folder-open-390.png'),fullPage:true,animations:'disabled'});
+    await page.setViewportSize({width:1280,height:900});
+    await page.reload();
+    await expect(page.locator('#classroom-folders > li',{hasText:'Week one'}).locator('#classroom-folder-detail')).toBeVisible();
+    await page.getByRole('button',{name:'Remove Second class fixture from this folder',exact:true}).click();
+    await expect(page.locator('#classroom-folder-items')).not.toContainText('Second class fixture');
+    await expect(page.locator('#classroom-folder-items')).toContainText('No splits in this folder yet.');
+    await page.getByRole('button',{name:'My splits',exact:true}).click();
+    await expect(page).toHaveURL(/view=splits/);
+    await expect(page.locator('#classroom-student-name')).toHaveText('My splits in this class');
+    await expect(page.locator('#classroom-jobs')).toContainText('Second class fixture');
+    await expect(page.locator('#classroom-create')).toBeVisible();
+    await expect(page.locator('#classroom-folders-section')).toBeHidden();
+    await page.reload();
+    await expect(page.getByRole('button',{name:'My splits',exact:true})).toHaveAttribute('aria-current','true');
+    await expect(page.locator('#classroom-jobs')).toContainText('Second class fixture');
+    await page.getByRole('button',{name:'Folders',exact:true}).click();
+    await page.getByRole('button',{name:'Week one',exact:true}).click();
+    const remove=page.getByRole('button',{name:'Delete folder',exact:true});
+    await remove.click();
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Deleting removes this folder. Its splits stay in the class.');
+    await page.getByRole('button',{name:'Confirm delete',exact:true}).click();
+    await expect(page.locator('#classroom-folders')).not.toContainText('Week one');
+    await expect(page).not.toHaveURL(/folder=/);
+    await expect(page.locator('#classroom-folders')).toContainText('Class comments');
+    const job=await page.request.get(new URL('/api/jobs/second-song',f.url).href);
+    expect(job.status()).toBe(200);
+    expect(errors).toEqual([]);
+  }finally{await f.close();}
+});
+test('a student sees a plain empty folder message and no instructor controls',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`DELETE FROM course_folder_items`,`UPDATE course_folders SET permission='private'`]);
+    const page=await f.pageFor(TEST_SUBJECTS.bob);
+    await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await expect(page.locator('#classroom-folders-status')).toHaveText('Your instructor has not shared a folder for this class yet.');
+    await expect(page.locator('#classroom-views')).toBeHidden();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await expect(page.locator('#classroom-create')).toBeVisible();
+  }finally{await f.close();}
+});
+test('from the Splitter, an instructor adds a class split to a class folder and it stays in the rack',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const page=await f.pageFor(TEST_SUBJECTS.alice,true);
+    await page.goto(f.url.href);
+    const entry=page.locator('.console[data-job-id="shared-course"]');
+    await expect(entry).toBeVisible();
+    await expect(page.locator('#folders .rack-title')).toHaveText('MY FOLDERS');
+    await entry.locator('.actions-toggle').click();
+    await expect(entry.locator('.folder-btn')).toBeHidden();
+    await expect(entry.locator('.class-workspace-link')).toHaveText('Open class');
+    await entry.getByRole('button',{name:'ADD TO CLASS FOLDER',exact:true}).click();
+    const menu=entry.locator('.class-folder-menu');
+    await expect(menu.getByRole('button',{name:'Class comments',exact:true})).toBeVisible();
+    await menu.getByLabel('New class folder name').fill('Made on the Splitter');
+    await menu.getByRole('button',{name:'ADD',exact:true}).click();
+    await expect(menu.locator('.class-folder-status')).toContainText('Added to Made on the Splitter.');
+    await expect(entry).toBeVisible();
+    await menu.locator('.class-folder-status a').click();
+    await expect(page).toHaveURL(/\/classroom/);
+    await expect(page.locator('#classroom-folders > li',{hasText:'Made on the Splitter'}).locator('#classroom-folder-items')).toContainText('Class fixture');
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Only instructors can see this folder until you share it with the class.');
+  }finally{await f.close();}
+});
+
 // Resplit: With original split is the default for a split you own, whatever Share with says.
 async function resplitPage(f,routeJob){
   const page=await f.pageFor(TEST_SUBJECTS.alice,true),sent=[],audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
@@ -161,8 +263,10 @@ test('instructors retain roster and class controls when supplemental usage stora
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-roster')).toContainText('App usage temporarily unavailable');
   await expect(page.locator('#classroom-roster-status')).toHaveText('');
-  await expect(page.getByRole('link',{name:'Run splitter',exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Course record',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'My splits',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'My splits',exact:true}).click();
+  await expect(page.getByRole('link',{name:'New class split',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Folders',exact:true}).click();
   await expect(page.locator('#classroom-folders')).toContainText('Class comments');
  } finally {await f.close();}
 });
@@ -204,7 +308,7 @@ test('owner Listening Guy cue recovers visibly after a failed stream and can be 
 });
 
 
-for (const owner of [false,true]) for (const width of [1280,390]) test(`workspace Run splitter retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
+for (const owner of [false,true]) for (const width of [1280,390]) test(`New class split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
  const f=await fixture(browser);
  try {
   const page=await f.pageFor(TEST_SUBJECTS.alice,owner),errors=[];
@@ -212,7 +316,8 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`workspac
   await page.setViewportSize({width,height:900});
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-course')).toHaveValue(course);
-  await page.getByRole('link',{name:'Run splitter',exact:true}).click();
+  if(owner)await page.getByRole('button',{name:'My splits',exact:true}).click();
+  await page.getByRole('link',{name:'New class split',exact:true}).click();
   await expect(page).toHaveURL(new URL(`/?course=${course}`,f.url).href);
   await expect(page).toHaveTitle(/Stem Splitter/);
   const select=page.getByLabel('Share with');

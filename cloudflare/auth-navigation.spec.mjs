@@ -39,7 +39,7 @@ async function header(page, signedIn, instructor = false) {
   await expect(nav).toBeVisible();
   await expect(page.locator('#header-signin')).toBeHidden();
   await expect(nav.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
-  await expect(nav.locator('a:visible')).toHaveText(['Splitter', 'Workspace', 'Account']);
+  await expect(nav.locator('a:visible')).toHaveText(['Splitter', 'Classes', 'Account']);
 }
 for (const path of paths) test('signed-out ' + path + ' hides the whole menu with login below the logo', async ({ page }) => {
   const f = await fixture(page);
