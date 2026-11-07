@@ -567,7 +567,7 @@ const genreOnlySearch=(t:{mock:{method:(...args:never[])=>unknown}},catalog:stri
     if(url.pathname==='/advancedsearch.php'){
       const q=url.searchParams.get('q')!;
       const ids=q.includes('subject:("jazz")')?catalog:q.endsWith('creator:"jazz"')?uploader:[];
-      return Response.json({response:{docs:ids.map(identifier=>({identifier,title:identifier,creator:'Credited'}))}});
+      return Response.json({response:{docs:ids.map((identifier,index)=>({identifier,title:identifier,creator:'Credited',downloads:1000-index}))}});
     }
     if(url.pathname.startsWith('/metadata/'))return records[url.pathname.split('/')[2]].clone();
     return partialAudio();
@@ -690,6 +690,68 @@ test('titles spelled as file names read as titles, and real titles are left alon
   const {results}=await searchArchiveSongs('neat band');
   assert.equal(results.length,8);
   for(const song of results)assert.equal(song.title,names[Object.keys(names)[Number(song.archiveFile.match(/\d+/)![0])]]);
+});
+
+test('between equally good matches the most downloaded upload leads, and each upload takes two places first',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[
+      {identifier:'cassette-tape',title:'Cassette tape',creator:'Loud Band',downloads:13438},
+      {identifier:'real-album',title:'Real album',creator:'Loud Band',downloads:'52237'},
+      {identifier:'word-match',title:'Loud Band tribute',creator:'Someone Else',downloads:900000},
+    ]}});
+    if(url.pathname==='/metadata/cassette-tape')return metadata({title:'Cassette tape',creator:'Loud Band'},['Sketch','Noise','Loop'].map(title=>file({name:`${title}.mp3`,title,artist:'Loud Band'})));
+    if(url.pathname==='/metadata/real-album')return metadata({title:'Real album',creator:'Loud Band'},['Airbag','Lucky','Let Down'].map(title=>file({name:`${title}.mp3`,title})));
+    if(url.pathname==='/metadata/word-match')return metadata({title:'Tribute',creator:'Someone Else'},[file({title:'Loud Band forever',artist:'Loud Band tribute players'})]);
+    return partialAudio();
+  });
+  const listed=(await searchArchiveSongs('loud band')).results.map(song=>song.title);
+  // The band's own tracks all outrank a looser match with far more downloads. Among them the real album leads.
+  assert.deepEqual(listed,['Airbag','Lucky','Loop','Noise','Let Down','Sketch','Loud Band forever']);
+});
+
+test('downloads never lift a weaker match over a stronger one',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[
+      {identifier:'named-rare',title:'Rare album',creator:'Pale Moon',downloads:3},
+      {identifier:'loose-famous',title:'Pale Moon stories',creator:'Famous Narrator',downloads:5000000},
+    ]}});
+    if(url.pathname==='/metadata/named-rare')return metadata({title:'Rare album',creator:'Pale Moon'},[file({title:'First Song'})]);
+    if(url.pathname==='/metadata/loose-famous')return metadata({title:'Stories',creator:'Famous Narrator'},[file({title:'Moon'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('pale moon')).results.map(song=>song.archiveId),['named-rare']);
+});
+
+test('numbered placeholder titles list after real titles, and titles lose a file extension',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'numbered',title:'Tracks',creator:'Plain Band',downloads:10},{identifier:'titled',title:'Songs',creator:'Plain Band',downloads:1}]}});
+    if(url.pathname==='/metadata/numbered')return metadata({title:'Tracks',creator:'Plain Band'},[file({name:'01.mp3',title:'01 Track 1'}),file({name:'02.mp3',title:'トラック02'})]);
+    if(url.pathname==='/metadata/titled')return metadata({title:'Songs',creator:'Plain Band'},[file({name:'x.mp3',title:'Real Song.mp3'})]);
+    return partialAudio();
+  });
+  const titles=(await searchArchiveSongs('plain band')).results.map(song=>song.title);
+  assert.equal(titles[0],'Real Song');
+  assert.deepEqual(titles.slice(1).sort(),['01 Track 1','トラック02']);
+});
+
+test('keyword-stuffed uploads do not take genre slots from music further down the catalog',async t=>{
+  const stuffed=Array.from({length:20},(_,index)=>`stuffed-${index}`),inspected:string[]=[];
+  const keywords=Array.from({length:60},(_,index)=>`keyword${index}`).join(', ');
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      if(!url.searchParams.get('q')!.includes('subject:("disco")'))return Response.json({response:{docs:[]}});
+      assert.ok(url.searchParams.getAll('fl[]').includes('subject'));
+      return Response.json({response:{docs:[...stuffed.map(identifier=>({identifier,title:identifier,creator:'Reader',subject:`${keywords}, disco`})),{identifier:'real-disco',title:'Album',creator:'Dance Band',subject:'disco'}]}});
+    }
+    if(url.pathname.startsWith('/metadata/')){inspected.push(url.pathname.split('/')[2]);return metadata({title:'Album',creator:'Dance Band',subject:'disco'},[file({title:'Night Fever Style'})]);}
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('disco')).results.map(song=>song.archiveId),['real-disco']);
+  assert.deepEqual(inspected,['real-disco']);
 });
 
 test('short clips list after full tracks in an artist search',async t=>{

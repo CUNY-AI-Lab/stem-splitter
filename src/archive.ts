@@ -416,17 +416,18 @@ export interface ArchiveSong {
   sourceUrl: string;
   itemTitle: string;
 }
-type SongCandidate = ArchiveSong & { score: number; sourceKey: string; creditKey: string; labelKey: string };
+type SongCandidate = ArchiveSong & { evidence: number; score: number; sourceKey: string; creditKey: string; labelKey: string };
 
 // Bitrate labels and upload ids that file names carry: Bossa_Nova_64kb, Crazy(128k), Song-279221631.
 const FILE_NAME_NOISE = /(?:(?:[\s._-]+[([]?|[([])(?:\d{2,3}\s?k(?:bps|b)?|vbr)[)\]]?|-\d{9,})$/i;
-const PLACEHOLDER_TITLE = /^(?:file|track|audio|tmp|temp|untitled|unknown)[\s._-]*\d*$/i;
+const AUDIO_EXTENSION = /\.(?:mp3|ogg|flac|wav|m4a|aiff?)$/i;
+const PLACEHOLDER_TITLE = /^(?:\d+[\s._-]*)?(?:file|track|audio|tmp|temp|untitled|unknown|トラック)[\s._-]*\d*(?:\.\w{2,4})?$/i;
 /** File-derived titles can arrive URL-encoded, with their folder path, or spelled as a file name. */
 function readableText(text: string, path: string): string {
   let title = text;
   if (/%[0-9a-f]{2}/i.test(title)) { try { title = decodeURIComponent(title); } catch { /* Keep the source text. */ } }
   if (path.includes(title) && title.includes('/')) title = title.split('/').filter(Boolean).at(-1) || title;
-  title = title.replace(FILE_NAME_NOISE, '') || title;
+  title = title.replace(AUDIO_EXTENSION, '').replace(FILE_NAME_NOISE, '') || title;
   return /\s/.test(title) ? title : title.replace(/_+/g, ' ').trim() || title;
 }
 const readableTitle = (track: ArchiveTrack) => readableText(track.title, track.name);
@@ -437,7 +438,7 @@ function songTitle(item: ArchiveItem, track: ArchiveTrack): string {
   // Some uploads tag every file "tmp" while the file name holds the real title.
   const fileName = track.name.split('/').at(-1)!.replace(/\.[^.]+$/, '');
   const named = readableText(fileName, track.name);
-  return PLACEHOLDER_TITLE.test(named) ? readableTitle(track) : named;
+  return PLACEHOLDER_TITLE.test(named) || !/\p{L}/u.test(named) ? readableTitle(track) : named;
 }
 function recordingCredit(value: string | undefined): string {
   return value && !/^(artist|unknown|unknown artist|various artists)$/i.test(value) ? value : '';
@@ -721,21 +722,20 @@ function distinctRecordings(ranked: SongCandidate[], usable: (song: SongCandidat
       byLabel.set(song.labelKey, [...sameLabel, index]);
     } else {
       bySource.set(song.sourceKey, copy);
-      if (song.bytes > kept[copy].bytes && (usable(song) || !usable(kept[copy]))) kept[copy] = { ...song, score: kept[copy].score };
+      if (song.bytes > kept[copy].bytes && (usable(song) || !usable(kept[copy]))) kept[copy] = { ...song, evidence: kept[copy].evidence, score: kept[copy].score };
     }
   }
   return kept;
 }
-// A genre search should show the genre, so one prolific artist or upload cannot fill the list.
-const GENRE_PLACES_EACH = 2;
-/** The first places of each artist and upload come first. The rest only fill a list that would otherwise be short. */
-function variedSources(ranked: SongCandidate[]): SongCandidate[] {
+// One upload should not fill a list, and in a genre search neither should one artist.
+const PLACES_PER_SOURCE = 2;
+/** The first places of each source come first. The rest only fill a list that would otherwise be short. */
+function variedSources(ranked: SongCandidate[], countArtists: boolean): SongCandidate[] {
   const places = new Map<string, number>(), first: SongCandidate[] = [], rest: SongCandidate[] = [];
   for (const song of ranked) {
-    const artist = `artist\n${song.creditKey}`, upload = `upload\n${song.archiveId}`;
-    if ((places.get(artist) ?? 0) >= GENRE_PLACES_EACH || (places.get(upload) ?? 0) >= GENRE_PLACES_EACH) { rest.push(song); continue; }
-    places.set(artist, (places.get(artist) ?? 0) + 1);
-    places.set(upload, (places.get(upload) ?? 0) + 1);
+    const sources = [`upload\n${song.archiveId}`, ...(countArtists ? [`artist\n${song.creditKey}`] : [])];
+    if (sources.some(source => (places.get(source) ?? 0) >= PLACES_PER_SOURCE)) { rest.push(song); continue; }
+    for (const source of sources) places.set(source, (places.get(source) ?? 0) + 1);
     first.push(song);
   }
   return [...first, ...rest];
@@ -743,7 +743,7 @@ function variedSources(ranked: SongCandidate[]): SongCandidate[] {
 
 /** The first eight, without the fields that only ranking needs. */
 const publicSongs = (songs: SongCandidate[]): SongResults => ({ results: songs.slice(0, 8)
-  .map(({ score: _score, sourceKey: _sourceKey, creditKey: _creditKey, labelKey: _labelKey, ...song }) => song) });
+  .map(({ evidence: _evidence, score: _score, sourceKey: _sourceKey, creditKey: _creditKey, labelKey: _labelKey, ...song }) => song) });
 
 function archiveSongMetadata(item: ArchiveItem, track: ArchiveTrack): ArchiveSong {
   return { id: `${item.identifier}/${track.name}`, archiveId: item.identifier, archiveFile: track.name,
@@ -783,17 +783,16 @@ function matchingSongs(item: ArchiveItem, tokens: string[]): SongCandidate[] {
       if (!tokens.some(token => titleText.includes(token)) &&
           ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
     }
-    const clipPenalty = track.durationSec < SHORT_CLIP_SECONDS ? 20 : 0;
-    // A genre search trusts the tag, then a title naming the genre: "Monkey Man Blues" is a safer bet than a loosely tagged upload.
-    const score = genreOnly ? (genreMatch ? 8 : 0) + (genre.names.some(name => ` ${titleText} `.includes(` ${name} `)) ? 5 : 0) - clipPenalty
+    const penalty = (track.durationSec < SHORT_CLIP_SECONDS ? 20 : 0) + (PLACEHOLDER_TITLE.test(title) ? 3 : 0);
+    // How well a track answers the search. A genre search trusts the tag, then a title naming the genre: "Monkey Man Blues" is a safer bet than a loosely tagged upload.
+    const evidence = (genreOnly ? (genreMatch ? 8 : 0) + (genre.names.some(name => ` ${titleText} `.includes(` ${name} `)) ? 5 : 0)
       : (namedArtist || restArtist ? 12 : 0) + (genreMatch ? 8 : 0) + tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
-      + (titleText === tokens.join(' ') ? 6 : 0)
-      + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
-      - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
-      - Math.abs(text.split(' ').length - tokens.length) * 0.2 - clipPenalty;
+        + (titleText === tokens.join(' ') ? 6 : 0) - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)) - penalty;
+    // Small preferences that only choose among tracks in one upload.
+    const score = evidence + (genreOnly ? 0 : (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0) - Math.abs(text.split(' ').length - tokens.length) * 0.2);
     const song = archiveSongMetadata(item, track);
     const creditKey = searchableText(song.artist || song.fileCreator || song.itemCreator);
-    candidates.push({ ...song, ...(genreMatch ? { genre: genre.label } : {}), score, creditKey,
+    candidates.push({ ...song, ...(genreMatch ? { genre: genre.label } : {}), evidence, score, creditKey,
       sourceKey: `${item.identifier}\n${track.sourceFile || track.name}`, labelKey: `${item.identifier}\n${creditKey}\n${titleText}` });
   }
   return candidates;
@@ -827,6 +826,10 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
   const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
   const genreOnly = isGenreOnlySearch(tokens);
   const artistQuery = genreOnly ? '' : tokens.join(' ');
+  // The Archive counts downloads per upload. Between equally good matches, it is the best guess at what people mean.
+  // It orders the final list only: letting it choose which uploads to inspect spends the time limit on the largest albums.
+  const downloads = new Map<string, number>();
+  const downloadsOf = (id: string) => downloads.get(id) ?? 0;
   const docScore = (doc: { title?: unknown; creator?: unknown; musicQuery?: boolean }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
     // A title plus its credited performer covers an artist-qualified query as
@@ -857,13 +860,17 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
   const verified = new Set<string>();
   const earlyChecks: Promise<void>[] = [];
   let metadataFailures = 0, metadataRejected = 0, deliveryFailures = 0, earlyProbes = 0;
-  // Between otherwise equal matches for a genre, prefer what people download most. Always less than a title naming the genre.
-  const genrePopularity = new Map<string, number>();
-  const rank = (song: SongCandidate) => song.score + (genrePopularity.get(song.archiveId) ?? 0);
-  const byRank = (a: SongCandidate, b: SongCandidate) => rank(b)-rank(a) || a.id.localeCompare(b.id);
+  const byRank = (a: SongCandidate, b: SongCandidate) => b.evidence-a.evidence || downloadsOf(b.archiveId)-downloadsOf(a.archiveId) || b.score-a.score || a.id.localeCompare(b.id);
   const listing = (songs: SongCandidate[], usable?: (song: SongCandidate) => boolean) => {
     const distinct = distinctRecordings(songs, usable);
-    return genreOnly ? variedSources(distinct) : distinct;
+    if (genreOnly) return variedSources(distinct, true);
+    // Elsewhere, variety only reorders equally good matches, so it never lifts a weak match over a strong one.
+    const runs: SongCandidate[][] = [];
+    for (const song of distinct) {
+      if (runs.at(-1)?.[0].evidence === song.evidence) runs.at(-1)!.push(song);
+      else runs.push([song]);
+    }
+    return runs.flatMap(run => variedSources(run, false));
   };
   const results = (): SongResults => publicSongs(listing([...candidates.values()].filter(song => verified.has(song.id)).sort(byRank)));
   // At a time limit, list matches whose download check has not finished, verified ones first.
@@ -944,16 +951,18 @@ async function discoverArchiveSongs(tokens: string[], onResults: SearchListener,
   const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
     url.searchParams.set('q', q);
-    for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
+    const genreCatalog = index === 4;
+    for (const field of ['identifier','title','creator','downloads',...(genreCatalog ? ['subject'] : [])]) url.searchParams.append('fl[]', field);
     // Keep the credited items from a longer page of the word query, so uncredited
     // filenames cannot fill the page before artist/title matching can inspect them.
     // Title-only searches still discover file-level credits in other items.
     url.searchParams.append('sort[]', 'downloads desc');
-    url.searchParams.set('rows', index === 0 ? '32' : '16'); url.searchParams.set('output', 'json');
-    const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
+    url.searchParams.set('rows', index === 0 || genreCatalog ? '32' : '16'); url.searchParams.set('output', 'json');
+    const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown; downloads?: unknown; subject?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
-    const page = data.response.docs.map(doc => ({...doc, musicQuery: index === 1 || index === 4}));
-    if (index === 4 && genreOnly) page.forEach((doc, position) => { if (typeof doc.identifier === 'string') genrePopularity.set(doc.identifier, (16 - position) / 4); });
+    // Popular keyword-stuffed uploads would otherwise take every genre slot before their tags are read.
+    const page = data.response.docs.filter(doc => !genreCatalog || !stuffedWithKeywords(doc.subject)).map(doc => ({...doc, musicQuery: index === 1 || genreCatalog}));
+    for (const doc of page) if (typeof doc.identifier === 'string') downloads.set(doc.identifier, Math.max(0, Number(doc.downloads) || 0));
     const credited = index === 0 ? page.filter(doc => recordingCredit(displayText(doc.creator))).slice(0, 16) : [];
     const found = credited.length ? credited : page.slice(0, 16);
     const deadline = Date.now()+18000;
@@ -1029,11 +1038,10 @@ interface ArchiveFile {
 
 // A genre word among dozens of keywords ("faith, spirit, soul, hereafter") was added for discovery and says nothing about the sound.
 const MAX_GENRE_TAG_KEYWORDS = 40;
-const genreTagText = (subject: unknown, genre: unknown): string => {
-  const subjects = metadataText(subject), keywords = (Array.isArray(subject) ? subject : [subject])
-    .flatMap(tag => typeof tag === 'string' ? tag.split(/[,;]/) : []).length;
-  return searchableText(`${keywords > MAX_GENRE_TAG_KEYWORDS ? '' : subjects} ${metadataText(genre)}`);
-};
+const stuffedWithKeywords = (subject: unknown) => (Array.isArray(subject) ? subject : [subject])
+  .flatMap(tag => typeof tag === 'string' ? tag.split(/[,;]/) : []).length > MAX_GENRE_TAG_KEYWORDS;
+const genreTagText = (subject: unknown, genre: unknown): string =>
+  searchableText(`${stuffedWithKeywords(subject) ? '' : metadataText(subject)} ${metadataText(genre)}`);
 const metadataText = (value: unknown): string => {
   let text = (Array.isArray(value) ? value : [value]).filter((part): part is string => typeof part === 'string').join(' ');
   const entities: Record<string, string> = {nbsp:' ',amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'};
