@@ -169,6 +169,7 @@ test('a class split resplits with its original by default while Share with stays
     await expect(notice).toBeHidden();await expect(go).toBeEnabled();
     await expect(dialog.locator('.resplit-status')).toContainText('Adds the new stems under');
     await expect(dialog.locator('.resplit-status')).not.toContainText('Tick the notice');
+    expect(await go.evaluate(el=>[getComputedStyle(el).opacity,getComputedStyle(el).cursor,getComputedStyle(el).backgroundColor==='rgba(0, 0, 0, 0)'])).toEqual(['1','pointer',false]);
     // Separate with Personal selected stays personal and asks nothing.
     await separate.check();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
     await original.check();
