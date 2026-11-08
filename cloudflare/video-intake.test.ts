@@ -444,6 +444,46 @@ test('failed or unavailable browser loaders refund marked YouTube work without p
   }
 });
 
+test('YouTube imports try the fetcher first and use the browser only after a failure worth retrying',async t=>{
+  const fetcherAudio=()=>{const bytes=new Uint8Array(4096);bytes.set([0,0,0,24,0x66,0x74,0x79,0x70]);return bytes;};
+  for(const [mode,answer] of [
+    ['fetched',()=>new Response(fetcherAudio(),{headers:{'Content-Type':'audio/mp4','X-Audio-Duration':'120','X-Audio-Title':'Fetcher%20fixture'}})],
+    ['bot-checked',()=>Response.json({code:'source_denied_bot_verification'},{status:503})],
+    ['too-long',()=>Response.json({code:'source_too_long'},{status:422})],
+  ] as const){
+    const {db,env}=await setup(t);let loads=0,fetches=0;
+    Object.assign(env,{YOUTUBE_FETCHER_URL:'https://fetcher.test',YOUTUBE_FETCHER_SECRET:'s'.repeat(40)});
+    env.fetchYouTubeBrowserAudio=async()=>{loads++;return browserAudio();};
+    const guest=await guestRequests(db,env,mode==='fetched'?'1':mode==='too-long'?'2':'3');
+    const {operation}=await submitSplit(guest.env,guest.principal,{videoUrl:youtube},`youtube-fetcher-first-${mode}`);
+    t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const request=new Request(input,init);
+      if(request.url.startsWith('https://fetcher.test/')){
+        fetches++;assert.equal(request.url,'https://fetcher.test/audio');
+        // Guests have the five-minute limit; only the video ID leaves the Worker.
+        assert.deepEqual(await request.json(),{videoId:'jNQXAC9IVRw',maxSeconds:300});
+        return answer();
+      }
+      assert.ok(request.url.startsWith('https://api.replicate.com/'));
+      return Response.json({id:`fetcher-${mode}-split`,status:'processing'});
+    });
+    await resumeOwnedSourceImport(guest.env,guest.principal,operation);
+    const after=(await readOperation(db,operation.id))!;
+    assert.equal(fetches,1);
+    if(mode==='too-long'){
+      // A refusal that every importer would repeat ends the work and refunds it.
+      assert.equal(loads,0);assert.equal(after.state,'failed');assert.equal(after.error_code,'source_too_long');
+      assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+    } else {
+      assert.equal(loads,mode==='bot-checked'?1:0);assert.equal(after.phase,'split');
+      const job=(await db.prepare('SELECT source_key FROM jobs WHERE id=?').bind(operation.job_id).first<{source_key:string}>())!;
+      assert.match(job.source_key,mode==='fetched'?/\.m4a$/:/\.webm$/);
+      assert.equal((await env.AUDIO.get(job.source_key))!.httpMetadata!.contentType,mode==='fetched'?'audio/mp4':'audio/webm');
+    }
+    t.mock.restoreAll();
+  }
+});
+
 test('saved Vimeo jobs remain readable with their stored source type',async t=>{
   const {db,env}=await setup(t),owner=await guestRequests(db,env,'d');
   const existing=await submitSplit(owner.env,owner.principal,{videoUrl:vimeo},'saved-vimeo-existing');

@@ -4,6 +4,14 @@ The source control is labeled **Search**. It presents one list and uses the exis
 
 Search now federates Internet Archive, Wikimedia Commons and Freesound via Openverse. Internet Archive has eight result slots and each other source has four, so a fast source cannot crowd out a slower one. Results settle into relevance order when every source has answered: named artists and exact titles first. Freesound results must be at least 30 seconds and contain the search words, which removes short effects, and short clips appear only when nothing else matches. A genre name at either end of a search, such as `jazz` or `queen rock`, also searches Internet Archive subject tags, while a genre word mid-query, as in `we will rock you`, stays part of the title. Results stream independently; failures in one source preserve the other results. Searches are cached for ten minutes, cancelled searches stop their pending provider requests, and the UI retains its existing stale-query guard.
 
+## YouTube
+
+Added 2026-11-08. Where the YouTube fetcher is configured, search also lists up to six
+YouTube videos. They come from YouTube's own search API (Innertube), which needs no
+key and answers Cloudflare's network in about a second. Each result must carry every
+search word, and videos that are live, upcoming, shorter than 30 seconds or longer than
+the person's import limit are dropped. Choosing a result imports it as a video link.
+
 ## Additional sources
 
 **Freesound via Openverse:** use the public Openverse audio API, restricted to Freesound MP3 files with supported CC BY, CC0 or Public Domain Mark licenses. No API account or key is created. Openverse requests share a D1 lease, with at least 3.1 seconds between completions and subsequent starts; upstream quota responses persist their Retry-After cooldown. The anonymous quota can make this source temporarily unavailable while the others continue.

@@ -629,6 +629,8 @@ let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggest
 const SEARCH_RETRY_WITHIN_MS = 10000, SEARCH_RETRY_DELAY_MS = 1200;
 let acceptedSongSample = null;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
+// The server parses the link again and refuses anything it does not recognize.
+const youtubeLink = value => /^https?:\/\/((www|m|music)\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)\//i.test(value);
 
 // Playlist candidates become suggestions only after the live Archive search
 // verifies the exact item and audio file. Never substitute an unrelated result.
@@ -983,7 +985,8 @@ async function searchSourceSongs(term, sequence) {
       // Keep existing choices in place while more verified matches arrive.
       if (seen.has(track.id) || songResults.size >= 16) continue;
       seen.add(track.id);
-      const credit = track.artist ? `File artist: ${track.artist}`
+      const credit = track.provider === 'youtube' ? (track.channel ? `YouTube: ${track.channel}` : '')
+        : track.artist ? `File artist: ${track.artist}`
         : track.fileCreator ? `File creator: ${track.fileCreator}`
         : track.itemCreator ? `Item creator: ${track.itemCreator}` : '';
       const label = `${track.title}${credit ? ` — ${credit}` : ''}`;
@@ -999,7 +1002,7 @@ async function searchSourceSongs(term, sequence) {
       option.dataset.value = value;
       option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')}${track.genre ? ` · ${track.genre}` : ''} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')}${track.genre ? ` · ${track.genre}` : ''} · ${track.provider === 'youtube' ? 'YouTube video' : `${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}`}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
       optionById.set(track.id, option);
       sourceSongs.appendChild(option);
@@ -1610,17 +1613,17 @@ ytForm.addEventListener('submit', async (e) => {
   progressBar.style.width = '0%';
   showUploadMessage('IMPORTING AUDIO…');
 
-  let followUpQuery = '';
   try {
     await appReady;
     const courseContext = await waitForCreationCourse();
-    const imports = song ? null : await api('/api/import-options');
+    // YouTube audio is fetched by the server's video importer. A fetch that fails uses no allowance.
+    let videoUrl = !song && youtubeLink(url) ? url : '';
+    const imports = song || videoUrl ? null : await api('/api/import-options');
     if (imports?.linkRouter) {
-      // Only direct files and share links become jobs; YouTube links turn into
-      // an Internet Archive search, since the app does not fetch their audio.
+      // Direct files and share links go through the link importer.
       const link = await api('/api/link-info', { method: 'POST', body: JSON.stringify({ url }) });
-      if (link.kind !== 'direct' && link.kind !== 'share') {
-        followUpQuery = link.kind === 'youtube' && link.query ? link.query : '';
+      if (link.kind === 'youtube' && link.canonicalUrl) videoUrl = link.canonicalUrl;
+      else if (link.kind !== 'direct' && link.kind !== 'share') {
         showUploadMessage(linkGuidance(link), link.kind === 'invalid');
         if (link.kind !== 'invalid') offerLocalUpload();
         ytUrlInput.value = '';
@@ -1635,7 +1638,7 @@ ytForm.addEventListener('submit', async (e) => {
       method: 'POST',
       courseContext,
       body: JSON.stringify({
-        ...(song ? { ...(song.openAudio?{openAudio:song.openAudio}:{archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true}), displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
+        ...(song?.provider === 'youtube' ? { videoUrl: song.videoUrl } : song ? { ...(song.openAudio?{openAudio:song.openAudio}:{archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true}), displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : videoUrl ? { videoUrl } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
@@ -1657,12 +1660,6 @@ ytForm.addEventListener('submit', async (e) => {
     ytUrlInput.disabled = false;
     ytFetchButton.disabled = false;
     ytFetchButton.textContent = ytFetchLabel;
-    if (followUpQuery) {
-      ytUrlInput.value = followUpQuery;
-      songSuggestionsDismissed = false;
-      ytUrlInput.focus();
-      searchSourceSongs(followUpQuery, ++songSearchSequence);
-    }
   }
 });
 
@@ -1674,11 +1671,6 @@ function offerLocalUpload() {
 }
 
 function linkGuidance(link) {
-  if (link.kind === 'youtube') {
-    return link.query
-      ? 'This app can’t fetch audio from YouTube. Here are matching recordings from the Internet Archive, or upload your own file.'
-      : 'This app can’t fetch audio from YouTube. Type the song title to search the Internet Archive, or upload your own file.';
-  }
   if (link.kind === 'retired') return 'Vimeo links are no longer supported. Upload an original or licensed audio file.';
   return 'Paste a public HTTPS link to an audio file, or search for a song.';
 }

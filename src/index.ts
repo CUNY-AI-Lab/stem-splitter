@@ -1,6 +1,7 @@
 import personalPromptRoutes from './personal-prompts.ts';
 import {searchOpenAudio,OpenAudioError} from './open-audio.ts';
 import { musicSearchResponse } from './music-search.ts';
+import { youtubeFetcherConfigured } from './youtube-fetcher.ts';
 import { getRecordingReference, MusicBrainzError } from './musicbrainz.ts';
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
@@ -1052,7 +1053,7 @@ app.get('/api/music/search', async (c, next) => {
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   if (!provider && c.req.query('examples') !== '1') {
     return musicSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson', {
-      db: c.env.DB, signal: c.req.raw.signal,
+      db: c.env.DB, signal: c.req.raw.signal, youtube: youtubeFetcherConfigured(c.env),
       maximumSeconds: c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300,
       cache: storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
     });

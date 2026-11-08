@@ -67,6 +67,10 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   REPLICATE_YT_MODEL_VERSION?: string;
   /** "replicate-first" in production; defaults to the free in-Worker fetch first. */
   YOUTUBE_FETCH_ORDER?: string;
+  /** HTTPS base URL of the yt-dlp fetcher (youtube-fetcher/), reached through a Cloudflare Tunnel. */
+  YOUTUBE_FETCHER_URL?: string;
+  /** Shared secret the fetcher requires; at least 32 characters. Unset disables the fetcher. */
+  YOUTUBE_FETCHER_SECRET?: string;
   /** Requires the canaried public-address-only general URL fetch model. */
   URL_IMPORT_ENABLED?: string;
   /** Service binding to cail-stem-import, which owns every fetch to a user-supplied host. */
