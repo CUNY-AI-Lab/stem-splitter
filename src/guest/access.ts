@@ -64,7 +64,8 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
   const file = /^\/api\/files\/stems\/([a-zA-Z0-9-]+)\/(?:[a-zA-Z0-9_-]+\/(?:display\/)?)?[a-zA-Z0-9_.-]+$/.exec(path);
   const general = read && ['/api/import-options','/api/account','/api/auth-check','/api/jobs','/api/teacher/me','/api/archive/scopes','/api/archive/search','/api/music/search'].includes(path)
     || read && /^\/api\/archive\/items\/[a-zA-Z0-9_.-]+$/.test(path)
-    || method === 'POST' && ['/api/uploads','/api/jobs','/api/usage-events'].includes(path)
+    // A pasted link is classified before it is imported; guests may import links, so they may classify them.
+    || method === 'POST' && ['/api/uploads','/api/jobs','/api/usage-events','/api/link-info'].includes(path)
     || method === 'PUT' && path.startsWith('/api/local-uploads/');
   const jobAllowed = job && (!job[2] ? read || method === 'DELETE' : ['title','labels'].includes(job[2]) ? method === 'PUT' && !job[3]
     : ['guide','chat','cancel'].includes(job[2]) ? method === 'POST' && !job[3]
