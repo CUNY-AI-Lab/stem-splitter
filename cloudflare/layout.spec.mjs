@@ -47,6 +47,23 @@ for (const remixer of [false, true]) test(`No Crate and no adversarial panel; Re
       expect(button.width).toBeLessThan(form.width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
+    // The song box's placeholder fits whole at phone widths and keeps its size on wider screens.
+    for (const width of [320, 375, 390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      // The box's width reaches the stylesheet through a ResizeObserver, which runs before the next paint.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const fit = await page.evaluate(() => {
+        const input = document.querySelector('#yt-url'), style = getComputedStyle(input), placeholder = getComputedStyle(input, '::placeholder');
+        const context = document.createElement('canvas').getContext('2d');
+        context.font = `${placeholder.fontWeight} ${placeholder.fontSize} ${placeholder.fontFamily}`;
+        return { text: context.measureText(input.getAttribute('placeholder')).width, room: input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          size: parseFloat(placeholder.fontSize), base: parseFloat(style.fontSize) };
+      });
+      expect(fit.text, `placeholder at ${width}px`).toBeLessThanOrEqual(fit.room);
+      // Shrinking is only for a box too narrow for the whole placeholder plus the stylesheet's 3% margin (room / 21).
+      if (fit.room >= 21 * fit.base) expect(fit.size).toBe(fit.base);
+      if (width === 1280) expect(fit.size).toBe(fit.base);
+    }
     if (remixer) await page.getByRole('tab', { name: /REMIXER/ }).click();
     await expect(page.locator(remixer ? '#remix-deck' : '#jobs')).toBeVisible();
     await expect(page.locator('#crate, [id^="crate-"], [class*="crate"]')).toHaveCount(0);

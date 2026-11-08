@@ -637,6 +637,13 @@ const youtubeLink = value => /^https?:\/\/((www|m|music)\.)?(youtube\.com|youtub
 let SAMPLE_SONG_QUERY = '';
 const sampleHint = document.getElementById('source-sample-hint');
 const defaultSongPlaceholder = ytUrlInput.placeholder;
+// The box's text width, which the stylesheet uses to shrink the placeholder on narrow screens
+// instead of cutting it off. It depends on the layout (a "Share with" menu also takes room).
+new ResizeObserver(() => {
+  const style = getComputedStyle(ytUrlInput);
+  const room = ytUrlInput.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  if (room > 0) ytUrlInput.style.setProperty('--song-room', `${room}px`);
+}).observe(ytUrlInput);
 function renderSongSample(text) {
   ytUrlInput.placeholder = text;
 }

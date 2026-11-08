@@ -237,7 +237,10 @@ h1 span {
   padding: 0.55rem 0.7rem;
   touch-action: manipulation;
 }
-#yt-url::placeholder { color: var(--ink-faint); }
+/* "Search songs or paste YouTube link" is 34 monospace characters, 0.6em each. app.js sets
+   --song-room to the box's text width, so on a narrow box the placeholder shrinks to fit
+   instead of being cut off. Wider boxes keep 1em. */
+#yt-url::placeholder { color: var(--ink-faint); font-size: min(1em, calc(var(--song-room, 100vw) / 21)); }
 #yt-url:focus { outline: none; border-color: var(--hot); }
 #yt-url.showing-sample { padding-right: 8.2rem; }
 #yt-url.showing-sample::placeholder { color: var(--ink); opacity: 0.5; }
