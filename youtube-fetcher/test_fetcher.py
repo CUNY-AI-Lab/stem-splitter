@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
@@ -18,7 +19,7 @@ GUEST, MEMBER = 300, 900
 
 class FakeYouTube:
     """Stands in for yt_dlp.YoutubeDL and counts what would have reached YouTube."""
-    videos, asked, downloads = {}, 0, 0
+    videos, asked, downloads, searches, listing = {}, 0, 0, 0, []
     guard = threading.Lock()
 
     def __init__(self, options):
@@ -31,6 +32,10 @@ class FakeYouTube:
         return False
 
     def extract_info(self, url, download=False):
+        if url.startswith("ytsearch"):
+            with FakeYouTube.guard:
+                FakeYouTube.searches += 1
+            return {"entries": FakeYouTube.listing}
         video_id = url.rsplit("=", 1)[1]
         with FakeYouTube.guard:
             FakeYouTube.asked += 1
@@ -55,7 +60,9 @@ class FetcherIdempotency(unittest.TestCase):
         fetcher.CACHE = pathlib.Path(self.folder.name) / "cache"
         fetcher._locks.clear()
         fetcher.yt_dlp.YoutubeDL = FakeYouTube
-        FakeYouTube.videos, FakeYouTube.asked, FakeYouTube.downloads = {}, 0, 0
+        FakeYouTube.videos, FakeYouTube.asked, FakeYouTube.downloads, FakeYouTube.searches = {}, 0, 0, 0
+        FakeYouTube.listing = []
+        fetcher._searches.clear()
 
     def tearDown(self):
         self.folder.cleanup()
@@ -182,6 +189,24 @@ class FetcherIdempotency(unittest.TestCase):
         finally:
             fetcher.SLOTS, fetcher.MAX_WAITING, fetcher.SLOT_WAIT_SECONDS = originals
 
+    def test_a_search_lists_valid_videos_and_is_reused_for_ten_minutes(self):
+        FakeYouTube.listing = [
+            {"id": "Yxep-gS-Btg", "title": "Rydeen", "channel": "Fixture Channel", "duration": 259},
+            {"id": "UC1234567890abcdefghijkl", "title": "A channel"},
+            {"id": "aaaaaaaaaaa", "title": "Live now", "uploader": "Fixture", "live_status": "is_live"},
+        ]
+        results, cache = fetcher.search("Rydeen")
+        self.assertEqual(cache, "miss")
+        self.assertEqual(results, [
+            {"id": "Yxep-gS-Btg", "title": "Rydeen", "channel": "Fixture Channel", "duration": 259, "live": False},
+            {"id": "aaaaaaaaaaa", "title": "Live now", "channel": "Fixture", "duration": None, "live": True}])
+        self.assertEqual(fetcher.search("rydeen")[1], "hit")
+        self.assertEqual(FakeYouTube.searches, 1)
+        key = next(iter(fetcher._searches))
+        fetcher._searches[key] = (time.time() - fetcher.SEARCH_SECONDS - 1, [])
+        self.assertEqual(fetcher.search("Rydeen")[1], "miss")
+        self.assertEqual(FakeYouTube.searches, 2)
+
     def test_http_answers_carry_the_checksum_and_cache_outcome(self):
         FakeYouTube.videos["kkkkkkkkkkk"] = {"duration": 200}
         server = ThreadingHTTPServer(("127.0.0.1", 0), fetcher.Handler)
@@ -199,6 +224,18 @@ class FetcherIdempotency(unittest.TestCase):
             self.assertEqual(first["X-Audio-Sha256"], hashlib.sha256(body).hexdigest())
             self.assertEqual(body, again)
             self.assertEqual(FakeYouTube.downloads, 1)
+            def search(query):
+                request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/search", method="POST",
+                    data=json.dumps({"query": query}).encode(),
+                    headers={"Authorization": "Bearer " + fetcher.SECRET.decode(), "Content-Type": "application/json"})
+                try:
+                    with urllib.request.urlopen(request) as response:
+                        return response.status, json.loads(response.read())
+                except urllib.error.HTTPError as error:
+                    return error.code, json.loads(error.read())
+            FakeYouTube.listing = [{"id": "kkkkkkkkkkk", "title": "Song", "channel": "C", "duration": 200}]
+            self.assertEqual(search("song")[1]["results"][0]["id"], "kkkkkkkkkkk")
+            self.assertEqual(search("x"), (400, {"code": "invalid_request"}))
         finally:
             server.shutdown()
             server.server_close()

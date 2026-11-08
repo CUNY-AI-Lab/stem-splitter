@@ -1053,7 +1053,7 @@ app.get('/api/music/search', async (c, next) => {
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   if (!provider && c.req.query('examples') !== '1') {
     return musicSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson', {
-      db: c.env.DB, signal: c.req.raw.signal, youtube: youtubeFetcherConfigured(c.env),
+      db: c.env.DB, signal: c.req.raw.signal, youtube: youtubeFetcherConfigured(c.env) ? c.env : undefined,
       maximumSeconds: c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300,
       cache: storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
     });

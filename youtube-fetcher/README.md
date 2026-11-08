@@ -50,11 +50,18 @@ Production needs an always-on machine and a named tunnel.
   50 s; beyond that the answer is 429 with `Retry-After`. All waits end before the
   Worker's 60 s, so a download that outlasts the request still finishes and is cached for
   the retry. A failure that is not a refusal gets one more try after 2 s.
-- **Logs:** outcomes, cache hits, sizes and timings, never titles or video IDs.
+- **Search:** `POST /search` takes `{"query"}` and answers up to ten videos (ID, title,
+  channel, duration, live) from yt-dlp's YouTube search, in about a second. Results are
+  reused for 10 minutes. Searches use their own four slots, so they never wait behind downloads.
+- **Logs:** outcomes, cache hits, sizes and timings, never titles, video IDs or search words.
 - **Tests:** `python3 -m unittest discover -s youtube-fetcher -p 'test_*.py'` with yt-dlp
   installed. yt-dlp itself is faked; nothing reaches YouTube.
 
 ## In the app
+
+Search asks YouTube's own search API from Cloudflare first (3.5 s). From Cloudflare's
+network it sometimes does not answer in time, so a failed, slow or empty answer falls back
+to the fetcher's `/search` (4.5 s), inside the 9 s every search source gets.
 
 The split pipeline asks the fetcher first. When the fetcher is offline, busy or
 bot-checked, Cloudflare's browser gets one try. After that the import waits in the queue

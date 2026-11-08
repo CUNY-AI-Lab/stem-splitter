@@ -10,7 +10,7 @@ Added 2026-11-08. Where the YouTube fetcher is configured, search also lists up 
 YouTube videos. They come from YouTube's own search API (Innertube), which needs no
 key and answers Cloudflare's network in about a second. Each result must carry every
 search word, and videos that are live, upcoming, shorter than 30 seconds or longer than
-the person's import limit are dropped. Choosing a result imports it as a video link.
+the person's import limit are dropped. Choosing a result imports it as a video link. When YouTube's search does not answer Cloudflare within 3.5 s, or answers with nothing, the YouTube fetcher searches instead (see `youtube-fetcher/README.md`).
 
 ## Additional sources
 

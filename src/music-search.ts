@@ -2,6 +2,7 @@ import { archiveSongSearchResponse } from './archive-search-response.ts';
 import { searchOpenAudio, type OpenAudioTrack } from './open-audio.ts';
 import { searchYouTube, type YouTubeTrack } from './youtube-search.ts';
 import type { PublicSearchCache } from './musicbrainz.ts';
+import type { Env } from './env';
 import { archiveSongSearchKey, creditMatchesQuery, hiddenFromGenreLists, isGenreOnlySearch, searchableText, SHORT_CLIP_SECONDS, type ArchiveSong } from './archive.ts';
 // Library of Congress is not searched: www.loc.gov serves Workers a Cloudflare challenge,
 // and its API is too slow and rate-limited for this path. See docs/audio-search-catalogs-20261104.md.
@@ -10,7 +11,7 @@ type Track = ArchiveSong | OpenAudioTrack | YouTubeTrack;
 type AudioTrack = Track & { providerName: string };
 // YouTube is listed only where its audio can be fetched (see youtube-fetcher.ts).
 type SearchResult = { results: AudioTrack[]; references: never[]; providers: Partial<Record<Provider, 'pending' | 'ready' | 'unavailable'>>; fallback?: boolean };
-type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache; youtube?: boolean };
+type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache; youtube?: Pick<Env, 'YOUTUBE_FETCHER_URL' | 'YOUTUBE_FETCHER_SECRET'> };
 
 // The Archive holds nearly all full-length songs, so it gets more of the list.
 const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesound: 4, youtube: 6 };
@@ -122,7 +123,7 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
         let value: { results: (OpenAudioTrack | YouTubeTrack)[] } | undefined;
         if (key && context.cache) { try { const hit = await context.cache.storage.match(key); if (hit?.ok) value = await hit.json(); } catch {} }
         if (!value) {
-          value = name === 'youtube' ? await searchYouTube(query, { maximumSeconds: context.maximumSeconds, signal })
+          value = name === 'youtube' ? await searchYouTube(query, { maximumSeconds: context.maximumSeconds, signal, fetcher: context.youtube })
             : await searchOpenAudio(name, query, { ...context, signal });
           if (key && context.cache && !signal.aborted) { try { await context.cache.storage.put(key, Response.json(value, { headers: { 'Cache-Control': 'public, max-age=600' } })); } catch {} }
         }

@@ -7,6 +7,10 @@ every request must carry the shared secret.
 
     YT_FETCHER_SECRET=... python3 fetcher.py
 
+POST /search {"query": "<2-120 chars>"}
+  200: {"results": [{"id", "title", "channel", "duration", "live"}]}, at most 10, with X-Fetcher-Cache.
+  The Worker uses it when YouTube's search does not answer Cloudflare's network.
+
 POST /audio  {"videoId": "<11 chars>", "maxSeconds": 300|900}
   200: the audio bytes (audio/mp4 or audio/webm), with X-Audio-Title (percent-encoded),
        X-Audio-Duration (seconds), X-Audio-Sha256 and X-Fetcher-Cache (hit or miss).
@@ -62,6 +66,11 @@ REFUSALS = (
 )
 _locks, _locks_guard = {}, threading.Lock()
 _waiting, _waiting_guard = 0, threading.Lock()
+SEARCH_SECONDS = 600  # How long a search's results are reused.
+SEARCH_ENTRIES = 500  # Searches kept in memory; the oldest go first.
+# Searches are light and must answer in seconds, so they never wait behind downloads.
+SEARCH_SLOTS = threading.BoundedSemaphore(4)
+_searches, _searches_guard = {}, threading.Lock()
 
 
 class Refused(Exception):
@@ -254,6 +263,42 @@ def fetch(video_id, max_seconds):
         lock.release()
 
 
+def search(query):
+    """Up to ten videos for a search, from yt-dlp's YouTube search. Returns (results, cache)."""
+    key = hmac.new(SECRET, query.casefold().encode(), hashlib.sha256).hexdigest()
+    with _searches_guard:
+        found = _searches.get(key)
+        if found and time.time() - found[0] < SEARCH_SECONDS:
+            return found[1], "hit"
+    if not SEARCH_SLOTS.acquire(timeout=5):
+        raise Refused("fetcher_busy", 429)
+    try:
+        options = {"quiet": True, "no_warnings": True, "cachedir": False, "skip_download": True,
+                   "extract_flat": "in_playlist", "socket_timeout": 10}
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                listing = ydl.extract_info(f"ytsearch10:{query}", download=False)
+        except yt_dlp.utils.DownloadError as error:
+            raise refusal(error)[0] from None
+    finally:
+        SEARCH_SLOTS.release()
+    results = []
+    for entry in listing.get("entries") or []:
+        video_id = entry.get("id")
+        if not isinstance(video_id, str) or not VIDEO_ID.match(video_id):
+            continue
+        duration = entry.get("duration")
+        results.append({"id": video_id, "title": str(entry.get("title") or "")[:200],
+                        "channel": str(entry.get("channel") or entry.get("uploader") or "")[:200],
+                        "duration": duration if isinstance(duration, (int, float)) else None,
+                        "live": entry.get("live_status") in ("is_live", "is_upcoming")})
+    with _searches_guard:
+        _searches[key] = (time.time(), results)
+        while len(_searches) > SEARCH_ENTRIES:
+            _searches.pop(next(iter(_searches)))
+    return results, "miss"
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "stem-youtube-fetcher"
     sys_version = ""
@@ -290,10 +335,12 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, json.dumps({"ok": True, "ytDlp": yt_dlp.version.__version__}).encode())
 
     def do_POST(self):
-        if self.path != "/audio":
+        if self.path not in ("/audio", "/search"):
             return self.refuse(404, "not_found")
         if not self.authorized():
             return self.refuse(401, "unauthorized")
+        if self.path == "/search":
+            return self.search()
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 512:
@@ -320,6 +367,33 @@ class Handler(BaseHTTPRequestHandler):
             "X-Audio-Sha256": record["sha256"],
             "X-Fetcher-Cache": cache,
         })
+
+
+    def search(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 1024:
+                raise ValueError
+            query = json.loads(self.rfile.read(length))["query"]
+            if not isinstance(query, str):
+                raise ValueError
+            query = re.sub(r"[\x00-\x1f\x7f]", " ", query).strip()
+            if not 2 <= len(query) <= 120:
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            return self.refuse(400, "invalid_request")
+        started = time.monotonic()
+        try:
+            results, cache = search(query)
+        except Refused as refused:
+            log("search_refused", code=refused.code, ms=round((time.monotonic() - started) * 1000))
+            return self.refuse(refused.status, refused.code)
+        except Exception as error:
+            log("search_failed", error=type(error).__name__, ms=round((time.monotonic() - started) * 1000))
+            return self.refuse(502, "extractor_failed")
+        # No search words in the log.
+        log("searched", cache=cache, results=len(results), ms=round((time.monotonic() - started) * 1000))
+        self.reply(200, json.dumps({"results": results}).encode(), headers={"X-Fetcher-Cache": cache})
 
 
 if __name__ == "__main__":
