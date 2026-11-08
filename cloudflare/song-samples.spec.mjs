@@ -182,7 +182,7 @@ for(const cadenceMs of [5000,6000])test(`configured hints reveal slowly at ${cad
   for(const e of full.slice(0,-1)){const left=events.find(x=>x.time>e.time&&x.value!==e.value);expect(left.time-e.time).toBeGreaterThanOrEqual(3500);}
   await page.reload();await expect(input).toHaveAttribute('placeholder','Artist 1 Song 1',{timeout:3500});
   snapshot={...snapshot,revision:2,version:'2-disabled',enabled:false,tracks:[]};
-  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await expect(page.locator('#source-sample-hint')).toBeHidden({timeout:1500});await expect(input).toHaveAttribute('placeholder','Search songs');
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await expect(page.locator('#source-sample-hint')).toBeHidden({timeout:1500});await expect(input).toHaveAttribute('placeholder','Search songs or paste YouTube link');
   expect(errors).toEqual([]);
  }finally{await f.harness.close();}
 });

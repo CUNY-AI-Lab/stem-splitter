@@ -109,7 +109,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'Search songs');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste YouTube link');
     await expect(page.locator('#song-search-label, #split-picker-label')).toHaveCount(0);
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
@@ -579,7 +579,7 @@ test('unverified sample stays hidden and typing rejects a late match', async ({p
     await expect.poll(() => Boolean(delayed)).toBe(true);
     const input = page.locator('#yt-url');
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    await expect(input).toHaveAttribute('placeholder', 'Search songs');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste YouTube link');
     await input.fill('https://example.com/song.mp3');
     await delayed.fulfill({json: {results: [sampleTrack]}}).catch(() => {}); delayed = null;
     await expect(page.locator('#source-songs')).toBeHidden();
@@ -726,7 +726,7 @@ test('no verified playlist recordings means no animated suggestion or retired pa
     await page.goto(f.origin);
     await expect.poll(()=>page.evaluate(()=>sampleStarted && sampleCache===null)).toBe(true);
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs');
+    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs or paste YouTube link');
     await expect(page.getByRole('link',{name:'Listen to Sound Station playlists →'})).toHaveCount(0);
     expect((await page.request.get(f.origin+'/sound-stations.html')).status()).toBe(410);
     expect(f.errors).toEqual([]);
