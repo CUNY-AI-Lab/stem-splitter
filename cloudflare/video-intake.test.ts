@@ -484,6 +484,62 @@ test('YouTube imports try the fetcher first and use the browser only after a fai
   }
 });
 
+test('a YouTube import waits in the queue while the fetcher is down, tries the browser once, then completes from the fetcher',async t=>{
+  const {db,env}=await setup(t);let loads=0,fetches=0;
+  Object.assign(env,{YOUTUBE_FETCHER_URL:'https://fetcher.test',YOUTUBE_FETCHER_SECRET:'s'.repeat(40)});
+  // From Cloudflare, YouTube's bot check reaches the browser as a refusal; it must not end the import.
+  env.fetchYouTubeBrowserAudio=async()=>{loads++;throw new YouTubeError('Video audio is unavailable.','youtube_source_restricted');};
+  const guest=await guestRequests(db,env,'4');
+  const {operation}=await submitSplit(guest.env,guest.principal,{videoUrl:youtube},'youtube-fetcher-queue-wait');
+  const fetcherAnswers=[()=>new Response('tunnel down',{status:530}),()=>Response.json({code:'fetcher_busy'},{status:429}),
+    ()=>new Response(new Uint8Array(4096).fill(7),{headers:{'Content-Type':'audio/mp4','X-Audio-Duration':'120'}})];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    const request=new Request(input,init);
+    if(request.url.startsWith('https://fetcher.test/'))return fetcherAnswers[fetches++]();
+    assert.ok(request.url.startsWith('https://api.replicate.com/'));
+    return Response.json({id:'fetcher-queue-split',status:'processing'});
+  });
+  const due=async()=>db.prepare('UPDATE app_operations SET not_before=? WHERE id=?').bind(Date.now()-1,operation.id).run();
+  const waiting=async(waits:number,delay:number)=>{
+    const op=(await readOperation(db,operation.id))!;
+    assert.equal(op.state,'queued');assert.equal(op.error_code,'youtube_fetcher_waiting');
+    assert.equal(JSON.parse(op.request_json).fetcherWaits,waits);
+    assert.ok(op.not_before>Date.now()+delay-5000&&op.not_before<=Date.now()+delay,`waits ${waits}`);
+    // The place stays held while it waits; nothing is refunded or charged.
+    assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,4);
+    return op;
+  };
+  await resumeOwnedSourceImport(guest.env,guest.principal,operation);
+  let op=await waiting(1,15_000);assert.equal(loads,1);assert.equal(fetches,1);
+  // Not yet due: the owner's page checking in does not fetch again.
+  await resumeOwnedSourceImport(guest.env,guest.principal,op);assert.equal(fetches,1);
+  await due();await resumeOwnedSourceImport(guest.env,guest.principal,(await readOperation(db,operation.id))!);
+  op=await waiting(2,30_000);assert.equal(loads,1,'the browser is tried once, not on every wait');assert.equal(fetches,2);
+  await due();await resumeOwnedSourceImport(guest.env,guest.principal,(await readOperation(db,operation.id))!);
+  op=(await readOperation(db,operation.id))!;assert.equal(op.phase,'split');assert.equal(fetches,3);assert.equal(loads,1);
+  const job=(await db.prepare('SELECT source_key FROM jobs WHERE id=?').bind(operation.job_id).first<{source_key:string}>())!;
+  assert.match(job.source_key,/\.m4a$/);
+});
+
+test('a YouTube import that waited its whole allowance of retries fails cleanly and is refunded',async t=>{
+  const {db,env}=await setup(t);let loads=0;
+  Object.assign(env,{YOUTUBE_FETCHER_URL:'https://fetcher.test',YOUTUBE_FETCHER_SECRET:'s'.repeat(40)});
+  env.fetchYouTubeBrowserAudio=async()=>{loads++;return browserAudio();};
+  const guest=await guestRequests(db,env,'5');
+  const {operation}=await submitSplit(guest.env,guest.principal,{videoUrl:youtube},'youtube-fetcher-queue-spent');
+  const request=JSON.parse((await readOperation(db,operation.id))!.request_json);
+  await db.prepare('UPDATE app_operations SET request_json=? WHERE id=?').bind(JSON.stringify({...request,fetcherWaits:8}),operation.id).run();
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+    assert.ok(new Request(input,init).url.startsWith('https://fetcher.test/'),'no provider work after the waits are spent');
+    return new Response('tunnel down',{status:530});
+  });
+  await resumeOwnedSourceImport(guest.env,guest.principal,(await readOperation(db,operation.id))!);
+  const failed=(await readOperation(db,operation.id))!;
+  assert.equal(failed.state,'failed');assert.equal(failed.error_code,'youtube_fetch_unavailable');
+  assert.equal(loads,0,'after the first wait the browser is not tried again');
+  assert.equal((await splitAllowance(db,guest.principal.subject,new Date(),'guest')).remaining,5);
+});
+
 test('saved Vimeo jobs remain readable with their stored source type',async t=>{
   const {db,env}=await setup(t),owner=await guestRequests(db,env,'d');
   const existing=await submitSplit(owner.env,owner.principal,{videoUrl:vimeo},'saved-vimeo-existing');

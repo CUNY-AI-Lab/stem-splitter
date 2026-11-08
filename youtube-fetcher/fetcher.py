@@ -8,10 +8,17 @@ every request must carry the shared secret.
     YT_FETCHER_SECRET=... python3 fetcher.py
 
 POST /audio  {"videoId": "<11 chars>", "maxSeconds": 300|900}
-  200: the audio bytes (audio/mp4 or audio/webm), with X-Audio-Title (percent-encoded)
-       and X-Audio-Duration (seconds).
-  4xx/5xx: {"code": "..."}; codes ending in a refusal are final, the rest may be retried.
+  200: the audio bytes (audio/mp4 or audio/webm), with X-Audio-Title (percent-encoded),
+       X-Audio-Duration (seconds), X-Audio-Sha256 and X-Fetcher-Cache (hit or miss).
+  4xx/5xx: {"code": "..."}; final refusals are not retried by the Worker, the rest may be.
+
+Requests are idempotent per video. A finished download is kept for a week and served again
+without asking YouTube; a second request for a video that is downloading waits for that
+download instead of starting another; a final refusal (private, unavailable, live) is
+remembered for an hour. Repeated downloads of one video from one connection are what YouTube
+is most likely to bot-check, and a class often picks the same song.
 """
+import hashlib
 import hmac
 import json
 import os
@@ -28,19 +35,33 @@ import yt_dlp
 
 SECRET = os.environ.get("YT_FETCHER_SECRET", "").encode()
 PORT = int(os.environ.get("YT_FETCHER_PORT", "8790"))
+CACHE = pathlib.Path(os.environ.get("YT_FETCHER_CACHE") or pathlib.Path.home() / "Library" / "Caches" / "stem-youtube-fetcher")
 MAX_BYTES = 12 * 1024 * 1024  # The app's import limit (CAIL_IMPORT_BYTES).
 ALLOWED_SECONDS = (300, 900)  # Guest and member import limits.
+AUDIO_SECONDS = 7 * 86400  # How long a download is reused.
+INFO_SECONDS = 86400  # How long a known duration is reused to refuse a too-long video.
+REFUSAL_SECONDS = 3600  # How long a final refusal is remembered.
+CACHE_BYTES = int(os.environ.get("YT_FETCHER_CACHE_BYTES", str(2 * 1024 ** 3)))
+# The Worker gives a request 60 s. Waits end before that, so a busy fetcher answers "busy"
+# and the job is queued for a retry, while the download in progress still finishes and is cached.
+WAIT_SECONDS = 55  # How long a second request waits for the same video's download.
+SLOT_WAIT_SECONDS = 50  # How long a request waits in line for a download slot.
+MAX_WAITING = 20  # Requests in line beyond this are told to come back later.
+RETRY_PAUSE_SECONDS = 2  # Before the one retry of a failure that is not a refusal.
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 # Two downloads at once keeps a home connection usable and looks like a person, not a farm.
 SLOTS = threading.BoundedSemaphore(2)
 CONTENT_TYPES = {".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm"}
-# yt-dlp reports refusals as text. Final refusals must not be retried by the Worker.
+# yt-dlp reports refusals as text. Final refusals are remembered; the bot check is not,
+# because it depends on the moment rather than the video.
 REFUSALS = (
-    ("source_denied_bot_verification", re.compile(r"not a bot|captcha|unusual traffic", re.I), 503),
-    ("source_denied_private", re.compile(r"private video", re.I), 422),
-    ("source_denied_age_restricted", re.compile(r"confirm your age|age[- ]restrict", re.I), 422),
-    ("source_denied_unavailable", re.compile(r"video unavailable|not available|has been removed|terminated", re.I), 422),
+    ("source_denied_bot_verification", re.compile(r"not a bot|captcha|unusual traffic", re.I), 503, False),
+    ("source_denied_private", re.compile(r"private video", re.I), 422, True),
+    ("source_denied_age_restricted", re.compile(r"confirm your age|age[- ]restrict", re.I), 422, True),
+    ("source_denied_unavailable", re.compile(r"video unavailable|not available|has been removed|terminated", re.I), 422, True),
 )
+_locks, _locks_guard = {}, threading.Lock()
+_waiting, _waiting_guard = 0, threading.Lock()
 
 
 class Refused(Exception):
@@ -54,7 +75,77 @@ def log(event, **fields):
     print(json.dumps({"t": round(time.time()), "event": event, **fields}), file=sys.stderr, flush=True)
 
 
-def fetch(video_id, max_seconds):
+def entry_name(video_id):
+    # Keyed, so the cache folder does not list which videos were imported.
+    return hmac.new(SECRET, video_id.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def video_lock(video_id):
+    with _locks_guard:
+        return _locks.setdefault(video_id, threading.Lock())
+
+
+def write_atomically(path, data):
+    temporary = path.with_name(path.name + ".partial")
+    temporary.write_bytes(data)
+    os.replace(temporary, path)
+
+
+def remember(name, record, audio=None):
+    CACHE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if audio is not None:
+        write_atomically(CACHE / f"{name}.audio", audio)
+    else:
+        (CACHE / f"{name}.audio").unlink(missing_ok=True)
+    write_atomically(CACHE / f"{name}.json", json.dumps({**record, "stored": time.time()}).encode())
+
+
+def recall(name):
+    """The cached record for a video and its audio, if still fresh and intact."""
+    try:
+        record = json.loads((CACHE / f"{name}.json").read_bytes())
+        age = time.time() - float(record["stored"])
+        if record["state"] == "audio":
+            if age > AUDIO_SECONDS:
+                return None, None
+            audio = (CACHE / f"{name}.audio").read_bytes()
+            # A damaged file is downloaded again rather than served.
+            if len(audio) != record["bytes"] or hashlib.sha256(audio).hexdigest() != record["sha256"]:
+                return None, None
+            os.utime(CACHE / f"{name}.json")  # Recently used entries are evicted last.
+            return record, audio
+        if age > (INFO_SECONDS if record["state"] == "info" else REFUSAL_SECONDS):
+            return None, None
+        return record, None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, None
+
+
+def evict():
+    """Keep the cache under CACHE_BYTES by removing the least recently used downloads."""
+    records = sorted(CACHE.glob("*.json"), key=lambda path: path.stat().st_mtime)
+    total = sum(path.stat().st_size for path in CACHE.glob("*.audio"))
+    for record in records:
+        if total <= CACHE_BYTES:
+            break
+        audio = record.with_suffix(".audio")
+        if audio.exists():
+            total -= audio.stat().st_size
+            audio.unlink(missing_ok=True)
+        record.unlink(missing_ok=True)
+
+
+def refusal(error):
+    text = str(error)
+    for code, pattern, status, final in REFUSALS:
+        if pattern.search(text):
+            return Refused(code, status), final
+    return Refused("extractor_failed", 502), False
+
+
+def download(video_id, name, max_seconds):
+    """Ask YouTube once. Remembers what it learns, then returns the audio or raises.
+    A video longer than the requester's limit is not downloaded; its duration is remembered."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     with tempfile.TemporaryDirectory(prefix="stem-yt-") as folder:
         options = {
@@ -67,28 +158,100 @@ def fetch(video_id, max_seconds):
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=False)
+                title = str(info.get("title") or "")[:200]
                 if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming", "post_live"):
+                    remember(name, {"state": "refused", "code": "live_stream", "status": 422})
                     raise Refused("live_stream")
                 duration = info.get("duration")
                 if not isinstance(duration, (int, float)) or duration <= 0:
+                    remember(name, {"state": "refused", "code": "duration_unknown", "status": 422})
                     raise Refused("duration_unknown")
                 if duration > max_seconds:
-                    raise Refused("source_too_long")
+                    remember(name, {"state": "info", "title": title, "duration": float(duration)})
+                    return {"state": "info", "title": title, "duration": float(duration)}, None
                 ydl.process_ie_result(info, download=True)
         except yt_dlp.utils.DownloadError as error:
-            text = str(error)
-            for code, pattern, status in REFUSALS:
-                if pattern.search(text):
-                    raise Refused(code, status) from None
-            raise Refused("extractor_failed", 502) from None
+            refused, final = refusal(error)
+            if final:
+                remember(name, {"state": "refused", "code": refused.code, "status": refused.status})
+            raise refused from None
         files = [path for path in pathlib.Path(folder).glob("audio.*") if path.suffix in CONTENT_TYPES]
         # yt-dlp skips, rather than truncates, a file over max_filesize.
-        if not files:
-            raise Refused("audio_too_large", 413)
-        data = files[0].read_bytes()
+        data = files[0].read_bytes() if files else b""
         if not data or len(data) > MAX_BYTES:
+            remember(name, {"state": "refused", "code": "audio_too_large", "status": 413})
             raise Refused("audio_too_large", 413)
-        return data, CONTENT_TYPES[files[0].suffix], str(info.get("title") or ""), float(duration)
+        record = {"state": "audio", "title": title, "duration": float(duration), "type": CONTENT_TYPES[files[0].suffix],
+                  "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        remember(name, record, data)
+        evict()
+        return record, data
+
+
+class Slot:
+    """A place in the bounded line for one of the download slots."""
+
+    def __enter__(self):
+        global _waiting
+        with _waiting_guard:
+            if _waiting >= MAX_WAITING:
+                raise Refused("fetcher_busy", 429)
+            _waiting += 1
+        try:
+            if not SLOTS.acquire(timeout=SLOT_WAIT_SECONDS):
+                raise Refused("fetcher_busy", 429)
+        finally:
+            with _waiting_guard:
+                _waiting -= 1
+        return self
+
+    def __exit__(self, *args):
+        SLOTS.release()
+        return False
+
+
+def download_once_more(video_id, name, max_seconds):
+    """Download with one retry for a failure that is not a refusal (a dropped connection, an extractor hiccup)."""
+    with Slot():
+        try:
+            return download(video_id, name, max_seconds)
+        except Refused as refused:
+            if refused.code != "extractor_failed":
+                raise
+    log("retry", code="extractor_failed")
+    time.sleep(RETRY_PAUSE_SECONDS)
+    with Slot():
+        return download(video_id, name, max_seconds)
+
+
+def fetch(video_id, max_seconds):
+    """Returns (record, audio, cache) where cache is "hit" or "miss"; raises Refused."""
+    lock = video_lock(video_id)
+    # A request for a video already downloading waits for it, so YouTube is asked once.
+    if not lock.acquire(timeout=WAIT_SECONDS):
+        raise Refused("fetcher_busy", 429)
+    try:
+        name = entry_name(video_id)
+        record, audio = recall(name)
+        cache = "hit"
+        if record is None:
+            # Only a real download takes one of the two slots; cache hits need none.
+            record, audio = download_once_more(video_id, name, max_seconds)
+            cache = "miss"
+        if record["state"] == "refused":
+            raise Refused(record["code"], record["status"])
+        if record["duration"] > max_seconds:
+            raise Refused("source_too_long")
+        if audio is None:
+            # Known only from an earlier, longer limit: it now fits, so download it once.
+            (CACHE / f"{name}.json").unlink(missing_ok=True)
+            record, audio = download_once_more(video_id, name, max_seconds)
+            cache = "miss"
+            if audio is None or record["duration"] > max_seconds:
+                raise Refused("source_too_long")
+        return record, audio, cache
+    finally:
+        lock.release()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -105,11 +268,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for name, value in (headers or {}).items():
             self.send_header(name, value)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # The Worker stopped waiting. A download is already cached for its retry.
+            log("caller_gone")
 
     def refuse(self, status, code):
-        self.reply(status, json.dumps({"code": code}).encode())
+        self.reply(status, json.dumps({"code": code}).encode(), headers={"Retry-After": "15"} if status == 429 else None)
 
     def authorized(self):
         supplied = self.headers.get("Authorization", "")
@@ -137,28 +304,27 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError
         except (ValueError, KeyError, TypeError):
             return self.refuse(400, "invalid_request")
-        if not SLOTS.acquire(timeout=30):
-            return self.refuse(429, "fetcher_busy")
         started = time.monotonic()
         try:
-            data, content_type, title, duration = fetch(video_id, max_seconds)
-        except Refused as refusal:
-            log("refused", code=refusal.code, ms=round((time.monotonic() - started) * 1000))
-            return self.refuse(refusal.status, refusal.code)
+            record, data, cache = fetch(video_id, max_seconds)
+        except Refused as refused:
+            log("refused", code=refused.code, ms=round((time.monotonic() - started) * 1000))
+            return self.refuse(refused.status, refused.code)
         except Exception as error:  # Never return a traceback to the caller.
             log("failed", error=type(error).__name__, ms=round((time.monotonic() - started) * 1000))
             return self.refuse(502, "extractor_failed")
-        finally:
-            SLOTS.release()
-        log("fetched", bytes=len(data), seconds=round(duration), ms=round((time.monotonic() - started) * 1000))
-        self.reply(200, data, content_type, {
-            "X-Audio-Title": urllib.parse.quote(title[:200], safe=""),
-            "X-Audio-Duration": str(duration),
+        log("fetched", cache=cache, bytes=len(data), seconds=round(record["duration"]), ms=round((time.monotonic() - started) * 1000))
+        self.reply(200, data, record["type"], {
+            "X-Audio-Title": urllib.parse.quote(record["title"], safe=""),
+            "X-Audio-Duration": str(record["duration"]),
+            "X-Audio-Sha256": record["sha256"],
+            "X-Fetcher-Cache": cache,
         })
 
 
 if __name__ == "__main__":
     if len(SECRET) < 32:
         sys.exit("Set YT_FETCHER_SECRET to at least 32 characters.")
+    CACHE.mkdir(parents=True, exist_ok=True, mode=0o700)
     log("listening", port=PORT, ytDlp=yt_dlp.version.__version__)
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

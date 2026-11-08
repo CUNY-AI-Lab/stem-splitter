@@ -39,8 +39,29 @@ Production needs an always-on machine and a named tunnel.
   The Worker does not retry these.
 - **Other failures:** a bot check or extractor failure lets the Worker fall back to its
   own importers.
-- **Load and logs:** at most two downloads run at once. The log records outcomes, sizes
-  and timings, never titles or video IDs.
+- **Idempotent per video:** a finished download is kept for a week (2 GiB at most, least
+  recently used dropped first) and served again without asking YouTube. A request for a
+  video that is already downloading waits for that download instead of starting another.
+  A final refusal (private, unavailable, live) is remembered for an hour; a bot check is
+  not, because it is about the moment, not the video. Cache files are named by a keyed
+  hash, so the folder does not list which videos were imported, and each answer carries
+  `X-Audio-Sha256` and `X-Fetcher-Cache` (hit or miss).
+- **Queue:** at most two downloads run at once. Up to 20 more requests wait in line for
+  50 s; beyond that the answer is 429 with `Retry-After`. All waits end before the
+  Worker's 60 s, so a download that outlasts the request still finishes and is cached for
+  the retry. A failure that is not a refusal gets one more try after 2 s.
+- **Logs:** outcomes, cache hits, sizes and timings, never titles or video IDs.
+- **Tests:** `python3 -m unittest discover -s youtube-fetcher -p 'test_*.py'` with yt-dlp
+  installed. yt-dlp itself is faked; nothing reaches YouTube.
+
+## In the app
+
+The split pipeline asks the fetcher first. When the fetcher is offline, busy or
+bot-checked, Cloudflare's browser gets one try. After that the import waits in the queue
+(`youtube_fetcher_waiting`), and the owner's open page tries again after 15 s, 30 s, 1, 2
+and 5 minutes, then every 10 minutes, about 39 minutes in all. Then it uses the hosted
+importer where that is configured, or fails with no allowance used. Only the fetcher's
+refusals (too long, private, live) end an import at once.
 
 Keep yt-dlp current (`pip install -U yt-dlp`). YouTube changes often, and yt-dlp
 releases follow within days.

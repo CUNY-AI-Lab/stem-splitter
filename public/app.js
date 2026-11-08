@@ -4816,6 +4816,7 @@ function renderJobs() {
     const progressNote = checking ? 'Checking the saved run’s current status…'
       : queued ? operation?.errorCode === 'auto_quality_fallback' ? 'Waiting for an available processing slot…'
         : operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…'
+        : operation?.errorCode === 'youtube_fetcher_waiting' ? 'The YouTube importer is busy or offline. Trying again shortly…'
         : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…'
       : importing ? 'Downloading and checking the source audio before separation…'
       : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
