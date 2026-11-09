@@ -64,6 +64,45 @@ for (const remixer of [false, true]) test(`No Crate and no adversarial panel; Re
       if (fit.room >= 21 * fit.base) expect(fit.size).toBe(fit.base);
       if (width === 1280) expect(fit.size).toBe(fit.base);
     }
+    // The header lines up at every width: the logo spans the capitals of "Stem" (cap tops to
+    // baseline), the account line sits on the baseline of "Splitter", the account link keeps its
+    // 44 px tap area without covering the logo, and the subtitle starts where the title does.
+    for (const width of [320, 375, 390, 616, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const header = await page.evaluate(() => {
+        const context = document.createElement('canvas').getContext('2d');
+        const fontOf = element => { const s = getComputedStyle(element); context.font = `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`; };
+        // A text node's box is its font's ascent plus descent, so its baseline is the top plus the ascent.
+        const baselineOf = (node, text) => { const range = document.createRange(); range.selectNodeContents(node);
+          fontOf(node.parentElement); return range.getClientRects()[0].top + context.measureText(text).fontBoundingBoxAscent; };
+        const inkLeft = (element, text) => { const range = document.createRange(); range.selectNodeContents(element.firstChild ?? element);
+          fontOf(element); return range.getClientRects()[0].left - context.measureText(text).actualBoundingBoxLeft; };
+        const brand = document.querySelector('.masthead .home-brand'), stem = brand.firstChild, splitter = brand.querySelector('span').firstChild;
+        const stemBaseline = baselineOf(stem, 'Stem');
+        fontOf(brand);
+        const capTop = stemBaseline - context.measureText('S').actualBoundingBoxAscent;
+        const nav = document.querySelector('.masthead .account-nav'), link = nav.querySelector('.account-button');
+        const walker = document.createTreeWalker(nav, NodeFilter.SHOW_TEXT, { acceptNode: node => node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
+        const navText = walker.nextNode();
+        const logo = document.querySelector('.masthead .lab-logo').getBoundingClientRect(), tap = link.getBoundingClientRect();
+        const logoTap = document.querySelector('.masthead .lab-brand').getBoundingClientRect();
+        const tagline = document.querySelector('.masthead .tagline p');
+        return { capTop, stemBaseline, splitterBaseline: baselineOf(splitter, 'Splitter'), navBaseline: baselineOf(navText, navText.textContent.trim()),
+          logoTop: logo.top, logoBottom: logo.bottom, logoRight: logo.right, navRight: nav.getBoundingClientRect().right, tapTop: tap.top, tapHeight: tap.height,
+          logoTapHeight: logoTap.height, logoTapBottom: logoTap.bottom,
+          titleInk: inkLeft(brand, 'S'), taglineInk: tagline ? inkLeft(tagline, tagline.textContent.trim()[0]) : null };
+      });
+      const at = `header at ${width}px: ${JSON.stringify(header)}`;
+      expect(Math.abs(header.logoTop - header.capTop), at).toBeLessThanOrEqual(1);
+      expect(Math.abs(header.logoBottom - header.stemBaseline), at).toBeLessThanOrEqual(1);
+      expect(Math.abs(header.navBaseline - header.splitterBaseline), at).toBeLessThanOrEqual(1);
+      expect(Math.abs(header.logoRight - header.navRight), at).toBeLessThanOrEqual(1);
+      expect(header.tapHeight, at).toBeGreaterThanOrEqual(44);
+      expect(header.logoTapHeight, at).toBeGreaterThanOrEqual(44);
+      expect(header.tapTop, at).toBeGreaterThanOrEqual(header.logoTapBottom - .5); // The two tap areas never overlap.
+      if (header.taglineInk !== null) expect(Math.abs(header.taglineInk - header.titleInk), at).toBeLessThanOrEqual(1.5);
+    }
     if (remixer) await page.getByRole('tab', { name: /REMIXER/ }).click();
     await expect(page.locator(remixer ? '#remix-deck' : '#jobs')).toBeVisible();
     await expect(page.locator('#crate, [id^="crate-"], [class*="crate"]')).toHaveCount(0);

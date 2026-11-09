@@ -121,7 +121,9 @@ h1 span {
 .masthead-title {
   --title-size: clamp(1.25rem, 7vw, 3.5rem);
   display: flex;
-  align-items: center;
+  /* The account column takes the title's height, so the logo and the account line can meet
+     the title's lines instead of being centred beside them. */
+  align-items: stretch;
   justify-content: space-between;
   gap: clamp(.75rem, 2vw, 1.5rem);
 }
@@ -130,8 +132,19 @@ h1 span {
 .home-brand:focus-visible { outline: 2px solid var(--hot); outline-offset: 5px; }
 .page-title { font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; margin: 0 0 1.5rem; }
 .masthead-title .lab-brand { flex: 0 1 auto; min-width: 0; margin: 0; }
-.masthead-title .lab-logo { height: calc(var(--title-size) * .92); max-width: 100%; object-fit: contain; }
+/* The logo spans the capitals of "Stem": its top meets their tops and its bottom their baseline.
+   From the brand font: cap tops sit .114 of the title size below the line box, capitals are .674
+   tall, so their baseline is at .788. The logo link keeps its 44 px tap area with the logo at its
+   bottom, so the extra area reaches up above the title rather than down over the account link. */
+.masthead-title .lab-brand { align-items: flex-end; margin-top: calc(var(--title-size) * .788 - 44px); }
+.masthead-title .lab-logo { height: calc(var(--title-size) * .674); max-width: 100%; object-fit: contain; }
 .lab-account { display: flex; flex-direction: column; align-items: flex-end; max-width: 50%; gap: .25rem; }
+/* The account line's text sits on the baseline of "Splitter", .132 of the title size above the
+   title's bottom. Its link keeps a 44 px tap area centred on the text; that area hangs below the
+   title instead of pushing the line down. In the account font, the box bottom is 22px - .375em
+   below the baseline. Out of the column's flow, it cannot make the column taller than the title. */
+.masthead-title .lab-account { position: relative; }
+.masthead-title .lab-account .account-nav { position: absolute; right: 0; bottom: calc(var(--title-size) * .132 - 22px + .375em); }
 .lab-account .account-nav { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
 .lab-account .account-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--hot); font: inherit; text-decoration: none; }
 .lab-account .account-button:hover { text-decoration: underline; }
