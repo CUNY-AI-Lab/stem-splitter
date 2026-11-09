@@ -39,6 +39,20 @@ test('a fetch sends only the video ID and limit, with the secret, and returns th
   assert.equal(result.data.byteLength, 8);
 });
 
+test('with a fetcher service binding, the fetch goes through it and never over the network', async () => {
+  const seen: Request[] = [];
+  const service = { fetch: async (input: RequestInfo | URL, init?: RequestInit) => { seen.push(new Request(input, init)); return audio(); } } as unknown as Fetcher;
+  let networkCalls = 0;
+  const result = await withFetch(() => { networkCalls++; return audio(); },
+    () => fetchViaYouTubeFetcher('https://youtu.be/Yxep-gS-Btg', { ...env, YOUTUBE_FETCHER_SERVICE: service } as Env, options));
+  assert.equal(networkCalls, 0);
+  assert.equal(seen.length, 1);
+  assert.equal(new URL(seen[0].url).pathname, '/audio');
+  assert.equal(seen[0].headers.get('authorization'), `Bearer ${secret}`);
+  assert.deepEqual(await seen[0].json(), { videoId: 'Yxep-gS-Btg', maxSeconds: 900 });
+  assert.equal(result.durationSec, 258);
+});
+
 test('links that are not YouTube never reach the fetcher', async () => {
   let calls = 0;
   await withFetch(() => { calls++; return audio(); }, async () => {

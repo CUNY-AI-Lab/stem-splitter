@@ -11,7 +11,7 @@ type Track = ArchiveSong | OpenAudioTrack | YouTubeTrack;
 type AudioTrack = Track & { providerName: string };
 // YouTube is listed only where its audio can be fetched (see youtube-fetcher.ts).
 type SearchResult = { results: AudioTrack[]; references: never[]; providers: Partial<Record<Provider, 'pending' | 'ready' | 'unavailable'>>; fallback?: boolean };
-type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache; youtube?: Pick<Env, 'YOUTUBE_FETCHER_URL' | 'YOUTUBE_FETCHER_SECRET'>;
+type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache; youtube?: Pick<Env, 'YOUTUBE_FETCHER_URL' | 'YOUTUBE_FETCHER_SECRET' | 'YOUTUBE_FETCHER_SERVICE'>;
   /** Asked before a search goes to the YouTube fetcher, and who to count it against (src/search-limits.ts). */
   youtubeFallbackAllowed?: () => Promise<boolean>; youtubeCaller?: string };
 

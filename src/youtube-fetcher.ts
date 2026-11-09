@@ -3,9 +3,10 @@ import { parseYouTubeVideoId } from './video-source.ts';
 import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
 import { CAIL_IMPORT_BYTES, YouTubeError } from './youtube.ts';
 
-// YouTube refuses full audio to Cloudflare's network: the player is bot-checked, and
+// YouTube refuses full audio to a Worker's own requests: the player is bot-checked, and
 // direct links stop after the first megabyte. The fetcher (youtube-fetcher/) runs yt-dlp
-// on an ordinary connection and is reached through a Cloudflare Tunnel.
+// on an ordinary connection and is reached through a Cloudflare Tunnel, or, on Dev's
+// Containers trial, through a service binding to the Worker that runs it in a container.
 
 /** Leaves time for the browser and hosted importers if the fetcher cannot answer. */
 const FETCHER_TIMEOUT_MS = 60_000;
@@ -26,6 +27,12 @@ export function youtubeFetcherConfigured(env: Pick<Env, 'YOUTUBE_FETCHER_URL' | 
   try { return new URL(env.YOUTUBE_FETCHER_URL ?? '').protocol === 'https:'; } catch { return false; }
 }
 
+/** How to reach the fetcher: its service binding when the Worker has one, else the public URL. */
+export function fetcherFetch(env: Pick<Env, 'YOUTUBE_FETCHER_SERVICE'>): typeof fetch {
+  const service = env.YOUTUBE_FETCHER_SERVICE;
+  return ((input: RequestInfo | URL, init?: RequestInit) => service ? service.fetch(input, init) : fetch(input, init)) as typeof fetch;
+}
+
 /**
  * Fetch one video's audio through the fetcher. A final refusal (too long, private, live)
  * is a YouTubeError with retryable false; anything else may be retried by another importer.
@@ -39,7 +46,7 @@ export async function fetchViaYouTubeFetcher(url: string, env: Env, options: { d
   const unavailable = () => new YouTubeError('Video import is temporarily unavailable.', 'youtube_fetch_unavailable', true);
   let response: Response;
   try {
-    response = await fetch(new URL('/audio', env.YOUTUBE_FETCHER_URL), {
+    response = await fetcherFetch(env)(new URL('/audio', env.YOUTUBE_FETCHER_URL), {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: { Authorization: `Bearer ${env.YOUTUBE_FETCHER_SECRET}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoId, maxSeconds: options.maximumDurationSeconds }),

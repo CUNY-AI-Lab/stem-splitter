@@ -1,6 +1,6 @@
 import { Innertube } from 'youtubei.js/cf-worker';
 import { createInnertubeFetch } from './youtube.ts';
-import { youtubeFetcherConfigured } from './youtube-fetcher.ts';
+import { fetcherFetch, youtubeFetcherConfigured } from './youtube-fetcher.ts';
 import type { Env } from './env';
 
 /** A YouTube search result. Choosing it imports `videoUrl` through the video importer. */
@@ -44,7 +44,7 @@ export function youtubeTracks(videos: VideoNode[], maximumSeconds: number): YouT
   return tracks;
 }
 
-type FetcherSettings = Pick<Env, 'YOUTUBE_FETCHER_URL' | 'YOUTUBE_FETCHER_SECRET'>;
+type FetcherSettings = Pick<Env, 'YOUTUBE_FETCHER_URL' | 'YOUTUBE_FETCHER_SECRET' | 'YOUTUBE_FETCHER_SERVICE'>;
 type VideoSearch = (query: string) => Promise<VideoNode[]>;
 
 /** Race work against a time limit and the caller's cancellation. */
@@ -68,7 +68,7 @@ const innertubeVideos: VideoSearch = async query => {
 
 /** The fetcher's yt-dlp search, shaped like Innertube's results. */
 async function fetcherVideos(query: string, fetcher: FetcherSettings, signal?: AbortSignal, caller?: string): Promise<VideoNode[]> {
-  const response = await fetch(new URL('/search', fetcher.YOUTUBE_FETCHER_URL), {
+  const response = await fetcherFetch(fetcher)(new URL('/search', fetcher.YOUTUBE_FETCHER_URL), {
     method: 'POST', redirect: 'manual', signal: AbortSignal.any([AbortSignal.timeout(FETCHER_LIMIT_MS), ...(signal ? [signal] : [])]),
     headers: { Authorization: `Bearer ${fetcher.YOUTUBE_FETCHER_SECRET}`, 'Content-Type': 'application/json' },
     // The caller lets the fetcher share its hour fairly; it names no one (src/search-limits.ts).

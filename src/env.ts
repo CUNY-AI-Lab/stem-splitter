@@ -74,6 +74,12 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   YOUTUBE_FETCHER_URL?: string;
   /** Shared secret the fetcher requires; at least 32 characters. Unset disables the fetcher. */
   YOUTUBE_FETCHER_SECRET?: string;
+  /**
+   * A fetcher running as a Worker on this account (Dev's Cloudflare Containers trial). Workers
+   * cannot fetch another workers.dev Worker on the same account, so calls go through this
+   * binding when it is set; the URL and secret above are still required and still sent.
+   */
+  YOUTUBE_FETCHER_SERVICE?: Fetcher;
   /** Requires the canaried public-address-only general URL fetch model. */
   URL_IMPORT_ENABLED?: string;
   /** Service binding to cail-stem-import, which owns every fetch to a user-supplied host. */
