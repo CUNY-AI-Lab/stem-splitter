@@ -2,10 +2,16 @@
 
 YouTube refuses full audio downloads to Cloudflare's network, but serves them to an
 ordinary home or campus connection. This service runs yt-dlp on such a machine. The
-Worker reaches it through a Cloudflare Tunnel, so it listens on 127.0.0.1 only, and
-every request must carry the shared secret.
+Worker reaches it through a Cloudflare Tunnel, so it listens on 127.0.0.1 only (or, in
+its container, on the container's private network), and every request must carry a secret.
 
-    YT_FETCHER_SECRET=... python3 fetcher.py
+    YT_FETCHER_SECRET_FILE=secrets YT_FETCHER_CACHE_KEY_FILE=cache-key python3 fetcher.py
+
+The secrets file holds one secret per line, each at least 32 characters: one for each
+Worker that may call (Dev and production), so either can be rotated alone by adding the
+new line, updating that Worker, then removing the old line. The cache key names cached
+files and searches; it is separate so that rotating a secret keeps the cache.
+YT_FETCHER_SECRET (a single secret, which then also keys the cache) still works.
 
 POST /search {"query": "<2-120 chars>"}
   200: {"results": [{"id", "title", "channel", "duration", "live"}]}, at most 10, with X-Fetcher-Cache.
@@ -22,6 +28,7 @@ download instead of starting another; a final refusal (private, unavailable, liv
 remembered for an hour. Repeated downloads of one video from one connection are what YouTube
 is most likely to bot-check, and a class often picks the same song.
 """
+import collections
 import hashlib
 import hmac
 import json
@@ -37,7 +44,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import yt_dlp
 
-SECRET = os.environ.get("YT_FETCHER_SECRET", "").encode()
+def secret_lines(path):
+    """Non-empty, non-comment lines of a secrets file; none when no file is named."""
+    if not path:
+        return []
+    lines = pathlib.Path(path).read_text().splitlines()
+    return [line.strip().encode() for line in lines if line.strip() and not line.strip().startswith("#")]
+
+
+_single = os.environ.get("YT_FETCHER_SECRET", "").encode()
+# Every secret a caller may present. Each is compared on every request, so the time taken
+# does not reveal which one matched or how much of a guess was right.
+SECRETS = tuple(([_single] if _single else []) + secret_lines(os.environ.get("YT_FETCHER_SECRET_FILE")))
+CACHE_KEY = (secret_lines(os.environ.get("YT_FETCHER_CACHE_KEY_FILE")) or [SECRETS[0] if SECRETS else b""])[0]
+HOST = os.environ.get("YT_FETCHER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("YT_FETCHER_PORT", "8790"))
 CACHE = pathlib.Path(os.environ.get("YT_FETCHER_CACHE") or pathlib.Path.home() / "Library" / "Caches" / "stem-youtube-fetcher")
 MAX_BYTES = 12 * 1024 * 1024  # The app's import limit (CAIL_IMPORT_BYTES).
@@ -69,6 +89,8 @@ _waiting, _waiting_guard = 0, threading.Lock()
 SEARCH_SECONDS = 600  # How long a search's results are reused.
 SEARCH_ENTRIES = 500  # Searches kept in memory; the oldest go first.
 # Searches are light and must answer in seconds, so they never wait behind downloads.
+# Four at once; the Workers send at most 120 a minute in all, because many searches from one
+# connection are what YouTube bot-checks. Beyond what this answers it says "busy" after 5 s.
 SEARCH_SLOTS = threading.BoundedSemaphore(4)
 _searches, _searches_guard = {}, threading.Lock()
 
@@ -79,6 +101,63 @@ class Refused(Exception):
         self.code, self.status = code, status
 
 
+# YouTube's documented rate for a guest session (no account, as here) is about 300 videos, or
+# about 1000 webpage/player requests, an hour; past it YouTube answers "This content isn't
+# available, try again later" for imports and searches alike (yt-dlp wiki, "Extractors").
+# This fetcher is the one place that sees everything sent from this connection (Dev and
+# production, searches and imports), so it keeps the count: 60% of that rate, with searches
+# held to a third so imports always have room. Answers from the cache cost nothing.
+HOURLY_REQUESTS = int(os.environ.get("YT_FETCHER_HOURLY_REQUESTS", "600"))
+SEARCH_SHARE = 1 / 3
+VIDEO_COST = 4  # One video looked up or downloaded: 1000 / 300 is about 3.3, rounded up.
+SEARCH_COST = 2  # One results page, counted twice to stay on the safe side.
+# The wiki recommends 5 to 10 seconds between downloads; the low end, because people wait on imports.
+VIDEO_GAP_SECONDS = float(os.environ.get("YT_FETCHER_VIDEO_GAP_SECONDS", "5"))
+
+
+class Budget:
+    """What was asked of YouTube in the last hour."""
+
+    def __init__(self, hourly):
+        self.hourly, self.spent, self.guard = hourly, collections.deque(), threading.Lock()
+
+    def used(self, kind=None):
+        with self.guard:
+            self._trim(time.time())
+            return sum(cost for _, cost, spent_on in self.spent if kind in (None, spent_on))
+
+    def _trim(self, now):
+        while self.spent and now - self.spent[0][0] >= 3600:
+            self.spent.popleft()
+
+    def take(self, kind, cost):
+        """Spends cost if the hour has room for it, or raises Refused (429) to come back later."""
+        with self.guard:
+            now = time.time()
+            self._trim(now)
+            total = sum(spent for _, spent, _ in self.spent)
+            searches = sum(spent for _, spent, spent_on in self.spent if spent_on == "search")
+            if total + cost <= self.hourly and (kind != "search" or searches + cost <= self.hourly * SEARCH_SHARE):
+                self.spent.append((now, cost, kind))
+                return
+        log("hourly_budget_full", kind=kind, used=total, hourly=self.hourly)
+        raise Refused("hourly_budget", 429)
+
+
+BUDGET = Budget(HOURLY_REQUESTS)
+_last_video, _video_gap_guard = 0.0, threading.Lock()
+
+
+def space_video_lookups():
+    """Starts YouTube video lookups at least VIDEO_GAP_SECONDS apart, across both download slots."""
+    global _last_video
+    with _video_gap_guard:
+        wait = _last_video + VIDEO_GAP_SECONDS - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_video = time.monotonic()
+
+
 def log(event, **fields):
     # No titles or video IDs: the log shows what happened, not what anyone listened to.
     print(json.dumps({"t": round(time.time()), "event": event, **fields}), file=sys.stderr, flush=True)
@@ -86,7 +165,7 @@ def log(event, **fields):
 
 def entry_name(video_id):
     # Keyed, so the cache folder does not list which videos were imported.
-    return hmac.new(SECRET, video_id.encode(), hashlib.sha256).hexdigest()[:32]
+    return hmac.new(CACHE_KEY, video_id.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def video_lock(video_id):
@@ -156,6 +235,8 @@ def download(video_id, name, max_seconds):
     """Ask YouTube once. Remembers what it learns, then returns the audio or raises.
     A video longer than the requester's limit is not downloaded; its duration is remembered."""
     url = f"https://www.youtube.com/watch?v={video_id}"
+    BUDGET.take("video", VIDEO_COST)  # Each attempt, the retry included, asks YouTube again.
+    space_video_lookups()
     with tempfile.TemporaryDirectory(prefix="stem-yt-") as folder:
         options = {
             "quiet": True, "no_warnings": True, "noplaylist": True, "cachedir": False,
@@ -163,6 +244,8 @@ def download(video_id, name, max_seconds):
             "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
             "outtmpl": f"{folder}/audio.%(ext)s",
             "max_filesize": MAX_BYTES, "socket_timeout": 20, "retries": 2,
+            # Part of yt-dlp's recommended "sleep" preset: a pause between a lookup's requests.
+            "sleep_interval_requests": 0.75,
         }
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
@@ -265,11 +348,12 @@ def fetch(video_id, max_seconds):
 
 def search(query):
     """Up to ten videos for a search, from yt-dlp's YouTube search. Returns (results, cache)."""
-    key = hmac.new(SECRET, query.casefold().encode(), hashlib.sha256).hexdigest()
+    key = hmac.new(CACHE_KEY, query.casefold().encode(), hashlib.sha256).hexdigest()
     with _searches_guard:
         found = _searches.get(key)
         if found and time.time() - found[0] < SEARCH_SECONDS:
             return found[1], "hit"
+    BUDGET.take("search", SEARCH_COST)  # Before waiting for a slot: a full hour answers at once.
     if not SEARCH_SLOTS.acquire(timeout=5):
         raise Refused("fetcher_busy", 429)
     try:
@@ -324,15 +408,20 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(status, json.dumps({"code": code}).encode(), headers={"Retry-After": "15"} if status == 429 else None)
 
     def authorized(self):
-        supplied = self.headers.get("Authorization", "")
-        return bool(SECRET) and hmac.compare_digest(supplied.encode(), b"Bearer " + SECRET)
+        supplied = self.headers.get("Authorization", "").encode()
+        matched = False
+        for secret in SECRETS:
+            matched |= hmac.compare_digest(supplied, b"Bearer " + secret)
+        return matched
 
     def do_GET(self):
         if self.path != "/healthz":
             return self.refuse(404, "not_found")
         if not self.authorized():
             return self.refuse(401, "unauthorized")
-        self.reply(200, json.dumps({"ok": True, "ytDlp": yt_dlp.version.__version__}).encode())
+        # How much of the hour is used, for whoever watches the fetcher (no IDs or search words).
+        self.reply(200, json.dumps({"ok": True, "ytDlp": yt_dlp.version.__version__, "hourly": BUDGET.hourly,
+                                    "usedThisHour": BUDGET.used(), "searchesThisHour": BUDGET.used("search")}).encode())
 
     def do_POST(self):
         if self.path not in ("/audio", "/search"):
@@ -397,8 +486,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    if len(SECRET) < 32:
-        sys.exit("Set YT_FETCHER_SECRET to at least 32 characters.")
+    if not SECRETS or any(len(secret) < 32 for secret in SECRETS):
+        sys.exit("Give at least one secret, each at least 32 characters (YT_FETCHER_SECRET_FILE or YT_FETCHER_SECRET).")
+    if len(CACHE_KEY) < 32:
+        sys.exit("The cache key must be at least 32 characters (YT_FETCHER_CACHE_KEY_FILE).")
     CACHE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    log("listening", port=PORT, ytDlp=yt_dlp.version.__version__)
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    log("listening", port=PORT, secrets=len(SECRETS), ytDlp=yt_dlp.version.__version__)
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

@@ -63,9 +63,58 @@ class FetcherIdempotency(unittest.TestCase):
         FakeYouTube.videos, FakeYouTube.asked, FakeYouTube.downloads, FakeYouTube.searches = {}, 0, 0, 0
         FakeYouTube.listing = []
         fetcher._searches.clear()
+        fetcher.BUDGET = fetcher.Budget(fetcher.HOURLY_REQUESTS)
+        fetcher.VIDEO_GAP_SECONDS = 0
 
     def tearDown(self):
         self.folder.cleanup()
+
+    def test_the_hour_stays_under_youtubes_rate_and_keeps_room_for_imports(self):
+        budget = fetcher.Budget(24)  # Searches may use 8 of it.
+        for _ in range(4):
+            budget.take("search", fetcher.SEARCH_COST)
+        with self.assertRaises(fetcher.Refused) as searches_full:
+            budget.take("search", fetcher.SEARCH_COST)
+        self.assertEqual((searches_full.exception.code, searches_full.exception.status), ("hourly_budget", 429))
+        for _ in range(4):
+            budget.take("video", fetcher.VIDEO_COST)  # Imports still fit: 8 + 16 = 24.
+        with self.assertRaises(fetcher.Refused):
+            budget.take("video", fetcher.VIDEO_COST)
+        budget.spent[0] = (time.time() - 3600, *budget.spent[0][1:])  # An hour later the oldest is free again.
+        budget.take("search", fetcher.SEARCH_COST)
+        self.assertEqual(budget.used(), 24)
+
+    def test_the_documented_rate_sets_the_default(self):
+        # yt-dlp wiki: a guest session gets about 1000 webpage/player requests (300 videos) an hour.
+        self.assertLessEqual(fetcher.HOURLY_REQUESTS, 1000 * 0.6)
+        self.assertGreaterEqual(fetcher.VIDEO_COST, 1000 / 300)
+
+    def test_cached_answers_cost_nothing_and_a_full_hour_asks_youtube_nothing(self):
+        FakeYouTube.videos["mmmmmmmmmmm"] = {"duration": 200}
+        FakeYouTube.listing = [{"id": "mmmmmmmmmmm", "title": "Song", "channel": "C", "duration": 200}]
+        fetcher.fetch("mmmmmmmmmmm", MEMBER)
+        fetcher.search("song")
+        spent = fetcher.BUDGET.used()
+        self.assertEqual(spent, fetcher.VIDEO_COST + fetcher.SEARCH_COST)
+        self.assertEqual(fetcher.fetch("mmmmmmmmmmm", MEMBER)[2], "hit")
+        self.assertEqual(fetcher.search("Song")[1], "hit")
+        self.assertEqual(fetcher.BUDGET.used(), spent)
+        fetcher.BUDGET = fetcher.Budget(0)
+        FakeYouTube.videos["nnnnnnnnnnn"] = {"duration": 200}
+        for attempt in (lambda: fetcher.fetch("nnnnnnnnnnn", MEMBER), lambda: fetcher.search("another song")):
+            with self.assertRaises(fetcher.Refused) as full:
+                attempt()
+            self.assertEqual(full.exception.code, "hourly_budget")
+        self.assertEqual((FakeYouTube.asked, FakeYouTube.searches), (1, 1))
+        self.assertIsNone(fetcher.recall(fetcher.entry_name("nnnnnnnnnnn"))[0], "a full hour is not remembered as a refusal")
+
+    def test_video_lookups_start_apart(self):
+        fetcher.VIDEO_GAP_SECONDS = 0.3
+        FakeYouTube.videos.update({"ooooooooooo": {"duration": 200}, "ppppppppppp": {"duration": 200}})
+        started = time.monotonic()
+        fetcher.fetch("ooooooooooo", MEMBER)
+        fetcher.fetch("ppppppppppp", MEMBER)
+        self.assertGreaterEqual(time.monotonic() - started, 0.3)
 
     def test_a_second_request_is_served_from_the_first_download(self):
         FakeYouTube.videos["aaaaaaaaaaa"] = {"duration": 200}
@@ -215,7 +264,7 @@ class FetcherIdempotency(unittest.TestCase):
             def post():
                 request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/audio", method="POST",
                     data=json.dumps({"videoId": "kkkkkkkkkkk", "maxSeconds": MEMBER}).encode(),
-                    headers={"Authorization": "Bearer " + fetcher.SECRET.decode(), "Content-Type": "application/json"})
+                    headers={"Authorization": "Bearer " + fetcher.SECRETS[0].decode(), "Content-Type": "application/json"})
                 with urllib.request.urlopen(request) as response:
                     return response.headers, response.read()
             first, body = post()
@@ -227,7 +276,7 @@ class FetcherIdempotency(unittest.TestCase):
             def search(query):
                 request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/search", method="POST",
                     data=json.dumps({"query": query}).encode(),
-                    headers={"Authorization": "Bearer " + fetcher.SECRET.decode(), "Content-Type": "application/json"})
+                    headers={"Authorization": "Bearer " + fetcher.SECRETS[0].decode(), "Content-Type": "application/json"})
                 try:
                     with urllib.request.urlopen(request) as response:
                         return response.status, json.loads(response.read())
@@ -239,6 +288,54 @@ class FetcherIdempotency(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+
+class FetcherSecrets(unittest.TestCase):
+    """Each Worker has its own secret; anything else is refused before the body is read."""
+
+    def setUp(self):
+        self.saved = fetcher.SECRETS, fetcher.CACHE_KEY
+        self.folder = tempfile.TemporaryDirectory()
+        path = pathlib.Path(self.folder.name) / "secrets"
+        path.write_text("# dev\n" + "d" * 40 + "\n\n  # production\n" + "p" * 40 + "  \n")
+        fetcher.SECRETS = tuple(fetcher.secret_lines(str(path)))
+        fetcher.CACHE_KEY = b"k" * 40
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), fetcher.Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        fetcher.SECRETS, fetcher.CACHE_KEY = self.saved
+        self.folder.cleanup()
+
+    def status(self, authorization):
+        headers = {"Authorization": authorization} if authorization is not None else {}
+        request = urllib.request.Request(f"http://127.0.0.1:{self.server.server_port}/healthz", headers=headers)
+        try:
+            with urllib.request.urlopen(request) as response:
+                return response.status
+        except urllib.error.HTTPError as error:
+            return error.code
+
+    def test_the_file_gives_one_secret_per_line_without_comments_or_blanks(self):
+        self.assertEqual(fetcher.SECRETS, (b"d" * 40, b"p" * 40))
+
+    def test_each_workers_secret_is_accepted(self):
+        self.assertEqual(self.status("Bearer " + "d" * 40), 200)
+        self.assertEqual(self.status("Bearer " + "p" * 40), 200)
+
+    def test_anything_else_is_refused(self):
+        for attempt in (None, "", "Bearer ", "Bearer " + "d" * 39, "Bearer " + "d" * 41, "d" * 40,
+                        "Bearer " + "d" * 40 + "p" * 40, "Bearer " + "k" * 40):
+            self.assertEqual(self.status(attempt), 401, attempt)
+
+    def test_cache_names_come_from_the_cache_key_so_rotating_a_secret_keeps_the_cache(self):
+        before = fetcher.entry_name("aaaaaaaaaaa")
+        fetcher.SECRETS = (b"n" * 40,)
+        self.assertEqual(fetcher.entry_name("aaaaaaaaaaa"), before)
+        fetcher.CACHE_KEY = b"j" * 40
+        self.assertNotEqual(fetcher.entry_name("aaaaaaaaaaa"), before)
 
 
 if __name__ == "__main__":
