@@ -28,6 +28,17 @@ export async function searchAllowed(env: SearchLimits, searcher: string): Promis
   catch { return true; }
 }
 
+/** Who the fetcher counts a search against, so one person or script cannot use up everyone's
+ *  hour: a keyed hash of the searcher that changes every hour. The key stays in the Workers, so
+ *  the fetcher can count callers but cannot tell who they are. None without a key. */
+export async function fetcherCaller(key: string | undefined, searcher: string, now = Date.now()): Promise<string | undefined> {
+  if (!key || key.length < 32) return undefined;
+  const encoder = new TextEncoder();
+  const hmac = await crypto.subtle.importKey('raw', encoder.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', hmac, encoder.encode(`fetcher-caller:${Math.floor(now / 3_600_000)}:${searcher}`));
+  return [...new Uint8Array(mac).slice(0, 16)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /** Whether this person's search may go to the fetcher. A limiter that fails leaves YouTube
  *  out, because the fetcher, unlike search, cannot take an unbounded load. */
 export async function fetcherSearchAllowed(env: SearchLimits, searcher: string): Promise<boolean> {

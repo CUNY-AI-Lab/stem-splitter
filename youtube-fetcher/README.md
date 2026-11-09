@@ -80,6 +80,10 @@ or bot-checked connection stops every import, so the fetcher keeps well inside i
   counts 2. Searches may use a third of the hour, so imports always keep about 100 new songs.
   Answers from the cache count nothing. Past the budget the answer is 429 `hourly_budget`:
   search leaves YouTube out, and an import waits in the queue.
+- **Fair share:** the Workers name each searcher by an hourly keyed hash (`"caller"` in
+  `/search`; the key stays in the Workers, so the fetcher can count callers but not tell who
+  they are). One caller may use at most a fifth of the hour's searches, so one person or
+  script cannot use up everyone's.
 - **Spacing:** video lookups start at least 5 s apart (the wiki recommends 5 to 10 s between
   downloads), with yt-dlp's 0.75 s pause between a lookup's requests.
 - **In the Workers:** each person may send 10 searches a minute to the fetcher and make 120

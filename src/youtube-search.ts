@@ -67,11 +67,12 @@ const innertubeVideos: VideoSearch = async query => {
 };
 
 /** The fetcher's yt-dlp search, shaped like Innertube's results. */
-async function fetcherVideos(query: string, fetcher: FetcherSettings, signal?: AbortSignal): Promise<VideoNode[]> {
+async function fetcherVideos(query: string, fetcher: FetcherSettings, signal?: AbortSignal, caller?: string): Promise<VideoNode[]> {
   const response = await fetch(new URL('/search', fetcher.YOUTUBE_FETCHER_URL), {
     method: 'POST', redirect: 'manual', signal: AbortSignal.any([AbortSignal.timeout(FETCHER_LIMIT_MS), ...(signal ? [signal] : [])]),
     headers: { Authorization: `Bearer ${fetcher.YOUTUBE_FETCHER_SECRET}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
+    // The caller lets the fetcher share its hour fairly; it names no one (src/search-limits.ts).
+    body: JSON.stringify(caller ? { query, caller } : { query }),
   });
   if (!response.ok) { await response.body?.cancel().catch(() => {}); throw new Error(`YouTube fetcher search answered ${response.status}`); }
   const body = await response.json() as { results?: unknown };
@@ -92,7 +93,7 @@ export class YouTubeSearchLimited extends Error {
 }
 
 export async function searchYouTube(query: string,
-  options: { maximumSeconds: number; signal?: AbortSignal; fetcher?: FetcherSettings; fallbackAllowed?: () => Promise<boolean> },
+  options: { maximumSeconds: number; signal?: AbortSignal; fetcher?: FetcherSettings; fallbackAllowed?: () => Promise<boolean>; caller?: string },
   innertube: VideoSearch = innertubeVideos): Promise<{ results: YouTubeTrack[] }> {
   options.signal?.throwIfAborted();
   const words = query.trim();
@@ -108,7 +109,7 @@ export async function searchYouTube(query: string,
     }
     // No search words in the log.
     console.info(JSON.stringify({ event: 'youtube_search_fallback', reason: failure ? 'failed' : 'empty' }));
-    videos = await fetcherVideos(words, options.fetcher, options.signal);
+    videos = await fetcherVideos(words, options.fetcher, options.signal, options.caller);
   } else if (failure) throw failure;
   return { results: youtubeTracks(videos, options.maximumSeconds) };
 }

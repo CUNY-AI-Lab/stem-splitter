@@ -109,6 +109,10 @@ class Refused(Exception):
 # held to a third so imports always have room. Answers from the cache cost nothing.
 HOURLY_REQUESTS = int(os.environ.get("YT_FETCHER_HOURLY_REQUESTS", "600"))
 SEARCH_SHARE = 1 / 3
+# Each caller the Workers name (an hourly keyed hash, never a person) gets at most a fifth of the
+# search share, so one person or script cannot use up everyone's searches for the hour.
+CALLER_SEARCH_SHARE = 1 / 5
+CALLER = re.compile(r"^[0-9a-f]{32}$")
 VIDEO_COST = 4  # One video looked up or downloaded: 1000 / 300 is about 3.3, rounded up.
 SEARCH_COST = 2  # One results page, counted twice to stay on the safe side.
 # The wiki recommends 5 to 10 seconds between downloads; the low end, because people wait on imports.
@@ -124,23 +128,28 @@ class Budget:
     def used(self, kind=None):
         with self.guard:
             self._trim(time.time())
-            return sum(cost for _, cost, spent_on in self.spent if kind in (None, spent_on))
+            return sum(cost for _, cost, spent_on, _ in self.spent if kind in (None, spent_on))
 
     def _trim(self, now):
         while self.spent and now - self.spent[0][0] >= 3600:
             self.spent.popleft()
 
-    def take(self, kind, cost):
+    def take(self, kind, cost, caller=None):
         """Spends cost if the hour has room for it, or raises Refused (429) to come back later."""
         with self.guard:
             now = time.time()
             self._trim(now)
-            total = sum(spent for _, spent, _ in self.spent)
-            searches = sum(spent for _, spent, spent_on in self.spent if spent_on == "search")
-            if total + cost <= self.hourly and (kind != "search" or searches + cost <= self.hourly * SEARCH_SHARE):
-                self.spent.append((now, cost, kind))
+            total = sum(spent for _, spent, _, _ in self.spent)
+            searches = sum(spent for _, spent, spent_on, _ in self.spent if spent_on == "search")
+            mine = sum(spent for _, spent, spent_on, who in self.spent if spent_on == "search" and who == caller) if caller else 0
+            fits = total + cost <= self.hourly
+            if kind == "search":
+                fits = fits and searches + cost <= self.hourly * SEARCH_SHARE
+                fits = fits and (not caller or mine + cost <= self.hourly * SEARCH_SHARE * CALLER_SEARCH_SHARE)
+            if fits:
+                self.spent.append((now, cost, kind, caller))
                 return
-        log("hourly_budget_full", kind=kind, used=total, hourly=self.hourly)
+        log("hourly_budget_full", kind=kind, used=total, hourly=self.hourly, callerShareUsed=bool(caller) and mine > 0)
         raise Refused("hourly_budget", 429)
 
 
@@ -346,14 +355,14 @@ def fetch(video_id, max_seconds):
         lock.release()
 
 
-def search(query):
+def search(query, caller=None):
     """Up to ten videos for a search, from yt-dlp's YouTube search. Returns (results, cache)."""
     key = hmac.new(CACHE_KEY, query.casefold().encode(), hashlib.sha256).hexdigest()
     with _searches_guard:
         found = _searches.get(key)
         if found and time.time() - found[0] < SEARCH_SECONDS:
             return found[1], "hit"
-    BUDGET.take("search", SEARCH_COST)  # Before waiting for a slot: a full hour answers at once.
+    BUDGET.take("search", SEARCH_COST, caller)  # Before waiting for a slot: a full hour answers at once.
     if not SEARCH_SLOTS.acquire(timeout=5):
         raise Refused("fetcher_busy", 429)
     try:
@@ -463,8 +472,9 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 1024:
                 raise ValueError
-            query = json.loads(self.rfile.read(length))["query"]
-            if not isinstance(query, str):
+            request = json.loads(self.rfile.read(length))
+            query, caller = request["query"], request.get("caller")
+            if not isinstance(query, str) or not (caller is None or isinstance(caller, str) and CALLER.match(caller)):
                 raise ValueError
             query = re.sub(r"[\x00-\x1f\x7f]", " ", query).strip()
             if not 2 <= len(query) <= 120:
@@ -473,7 +483,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(400, "invalid_request")
         started = time.monotonic()
         try:
-            results, cache = search(query)
+            results, cache = search(query, caller)
         except Refused as refused:
             log("search_refused", code=refused.code, ms=round((time.monotonic() - started) * 1000))
             return self.refuse(refused.status, refused.code)

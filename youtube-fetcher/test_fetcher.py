@@ -84,6 +84,17 @@ class FetcherIdempotency(unittest.TestCase):
         budget.take("search", fetcher.SEARCH_COST)
         self.assertEqual(budget.used(), 24)
 
+    def test_one_caller_cannot_use_up_everyones_searches(self):
+        budget = fetcher.Budget(60)  # Searches may use 20, each caller 4: two searches.
+        one, two = "a" * 32, "b" * 32
+        budget.take("search", fetcher.SEARCH_COST, one)
+        budget.take("search", fetcher.SEARCH_COST, one)
+        with self.assertRaises(fetcher.Refused):
+            budget.take("search", fetcher.SEARCH_COST, one)
+        budget.take("search", fetcher.SEARCH_COST, two)  # Someone else still searches.
+        budget.take("search", fetcher.SEARCH_COST)  # Unnamed callers share only the overall search share.
+        self.assertEqual(budget.used("search"), 4 * fetcher.SEARCH_COST)
+
     def test_the_documented_rate_sets_the_default(self):
         # yt-dlp wiki: a guest session gets about 1000 webpage/player requests (300 videos) an hour.
         self.assertLessEqual(fetcher.HOURLY_REQUESTS, 1000 * 0.6)
@@ -285,6 +296,18 @@ class FetcherIdempotency(unittest.TestCase):
             FakeYouTube.listing = [{"id": "kkkkkkkkkkk", "title": "Song", "channel": "C", "duration": 200}]
             self.assertEqual(search("song")[1]["results"][0]["id"], "kkkkkkkkkkk")
             self.assertEqual(search("x"), (400, {"code": "invalid_request"}))
+            def search_as(caller):
+                request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/search", method="POST",
+                    data=json.dumps({"query": "another song", "caller": caller}).encode(),
+                    headers={"Authorization": "Bearer " + fetcher.SECRETS[0].decode(), "Content-Type": "application/json"})
+                try:
+                    with urllib.request.urlopen(request) as response:
+                        return response.status
+                except urllib.error.HTTPError as error:
+                    return error.code
+            self.assertEqual(search_as("c" * 32), 200)
+            for bad in ("C" * 32, "c" * 31, "guest-123", 5):
+                self.assertEqual(search_as(bad), 400, bad)
         finally:
             server.shutdown()
             server.server_close()

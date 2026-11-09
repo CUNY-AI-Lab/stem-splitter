@@ -12,8 +12,8 @@ type AudioTrack = Track & { providerName: string };
 // YouTube is listed only where its audio can be fetched (see youtube-fetcher.ts).
 type SearchResult = { results: AudioTrack[]; references: never[]; providers: Partial<Record<Provider, 'pending' | 'ready' | 'unavailable'>>; fallback?: boolean };
 type Context = { db: D1Database; maximumSeconds: number; signal?: AbortSignal; cache?: PublicSearchCache; youtube?: Pick<Env, 'YOUTUBE_FETCHER_URL' | 'YOUTUBE_FETCHER_SECRET'>;
-  /** Asked before a search goes to the YouTube fetcher (src/search-limits.ts). */
-  youtubeFallbackAllowed?: () => Promise<boolean> };
+  /** Asked before a search goes to the YouTube fetcher, and who to count it against (src/search-limits.ts). */
+  youtubeFallbackAllowed?: () => Promise<boolean>; youtubeCaller?: string };
 
 // The Archive holds nearly all full-length songs, so it gets more of the list.
 const RESULT_SLOTS: Record<Provider, number> = { archive: 8, commons: 4, freesound: 4, youtube: 6 };
@@ -125,7 +125,7 @@ export async function musicSearchResponse(query: string, streaming: boolean, con
         let value: { results: (OpenAudioTrack | YouTubeTrack)[] } | undefined;
         if (key && context.cache) { try { const hit = await context.cache.storage.match(key); if (hit?.ok) value = await hit.json(); } catch {} }
         if (!value) {
-          value = name === 'youtube' ? await searchYouTube(query, { maximumSeconds: context.maximumSeconds, signal, fetcher: context.youtube, fallbackAllowed: context.youtubeFallbackAllowed })
+          value = name === 'youtube' ? await searchYouTube(query, { maximumSeconds: context.maximumSeconds, signal, fetcher: context.youtube, fallbackAllowed: context.youtubeFallbackAllowed, caller: context.youtubeCaller })
             : await searchOpenAudio(name, query, { ...context, signal });
           if (key && context.cache && !signal.aborted) { try { await context.cache.storage.put(key, Response.json(value, { headers: { 'Cache-Control': 'public, max-age=600' } })); } catch {} }
         }

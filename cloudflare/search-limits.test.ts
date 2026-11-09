@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SqliteD1 } from '../server/d1.ts';
-import { fetcherSearchAllowed, searchAllowed, searcherKey } from '../src/search-limits.ts';
+import { fetcherCaller, fetcherSearchAllowed, searchAllowed, searcherKey } from '../src/search-limits.ts';
 import { containsYouTubeLink } from '../src/video-source.ts';
 import { searchYouTube, YouTubeSearchLimited } from '../src/youtube-search.ts';
 import { musicSearchResponse } from '../src/music-search.ts';
@@ -48,6 +48,24 @@ test('a person may send 10 searches a minute to the fetcher; a broken limiter le
   assert.equal(await fetcherSearchAllowed({ FETCHER_SEARCH_LIMIT }, 'account:b'), true);
   assert.deepEqual([...FETCHER_SEARCH_LIMIT.counts.keys()], ['fetcher-search:account:a', 'fetcher-search:account:b']);
   assert.equal(await fetcherSearchAllowed({ FETCHER_SEARCH_LIMIT: broken }, 'account:a'), false);
+});
+
+test('the fetcher counts each caller by an hourly keyed hash that names no one', async t => {
+  const key = 'k'.repeat(40), hour = 3_600_000, now = 1794193200000;
+  const one = await fetcherCaller(key, 'account:guest-abc', now);
+  assert.match(one!, /^[0-9a-f]{32}$/);
+  assert.equal(await fetcherCaller(key, 'account:guest-abc', now + 60_000), one, 'the same within the hour');
+  assert.notEqual(await fetcherCaller(key, 'account:guest-abc', now + hour), one, 'a new one the next hour');
+  assert.notEqual(await fetcherCaller(key, 'account:guest-xyz', now), one);
+  assert.notEqual(await fetcherCaller('j'.repeat(40), 'account:guest-abc', now), one, 'the key, kept in the Workers, decides it');
+  assert.equal(one!.includes('guest'), false);
+  assert.equal(await fetcherCaller(undefined, 'account:guest-abc', now), undefined);
+  assert.equal(await fetcherCaller('short', 'account:guest-abc', now), undefined);
+  const bodies: unknown[] = [];
+  t.mock.method(globalThis, 'fetch', async (_input: any, init: any) => { bodies.push(JSON.parse(init.body)); return Response.json({ results: [] }); });
+  await searchYouTube('rydeen', { maximumSeconds: 900, fetcher, caller: one }, async () => []);
+  await searchYouTube('rydeen', { maximumSeconds: 900, fetcher }, async () => []);
+  assert.deepEqual(bodies, [{ query: 'rydeen', caller: one }, { query: 'rydeen' }]);
 });
 
 test('YouTube links are recognised with or without https:// and inside shared text, song names are not', () => {

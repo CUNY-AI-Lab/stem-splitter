@@ -32,7 +32,6 @@
   ],
   "ratelimits": [
     { "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } },
-    // Song search backstops (src/search-limits.ts): per person, and per person to the YouTube fetcher.
     { "name": "SEARCH_LIMIT", "namespace_id": "879101", "simple": { "limit": 120, "period": 60 } },
     { "name": "FETCHER_SEARCH_LIMIT", "namespace_id": "879102", "simple": { "limit": 10, "period": 60 } }
   ],

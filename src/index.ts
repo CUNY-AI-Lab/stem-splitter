@@ -2,7 +2,7 @@ import personalPromptRoutes from './personal-prompts.ts';
 import {searchOpenAudio,OpenAudioError} from './open-audio.ts';
 import { musicSearchResponse } from './music-search.ts';
 import { youtubeFetcherConfigured } from './youtube-fetcher.ts';
-import { fetcherSearchAllowed, searchAllowed, searcherKey } from './search-limits.ts';
+import { fetcherCaller, fetcherSearchAllowed, searchAllowed, searcherKey } from './search-limits.ts';
 import { getRecordingReference, MusicBrainzError } from './musicbrainz.ts';
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
@@ -1067,6 +1067,8 @@ app.get('/api/music/search', async (c, next) => {
     return musicSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson', {
       db: c.env.DB, signal: c.req.raw.signal, youtube: youtubeFetcherConfigured(c.env) ? c.env : undefined,
       youtubeFallbackAllowed: () => fetcherSearchAllowed(c.env, searcher),
+      // A Workers-only key; the guest cookie key is the one both Workers already hold.
+      youtubeCaller: await fetcherCaller(c.env.GUEST_COOKIE_SECRET, searcher),
       maximumSeconds: c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300,
       cache: storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
     });
