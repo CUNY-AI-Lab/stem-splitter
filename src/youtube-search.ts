@@ -86,7 +86,13 @@ async function fetcherVideos(query: string, fetcher: FetcherSettings, signal?: A
  * YouTube's own search first. From Cloudflare's network it sometimes does not answer within seconds,
  * so a failed, slow or empty answer falls back to the fetcher, which searches from an ordinary connection.
  */
-export async function searchYouTube(query: string, options: { maximumSeconds: number; signal?: AbortSignal; fetcher?: FetcherSettings },
+/** A search the fetcher would have answered, left out by the search limits. Not cached. */
+export class YouTubeSearchLimited extends Error {
+  constructor() { super('youtube_search_limited'); }
+}
+
+export async function searchYouTube(query: string,
+  options: { maximumSeconds: number; signal?: AbortSignal; fetcher?: FetcherSettings; fallbackAllowed?: () => Promise<boolean> },
   innertube: VideoSearch = innertubeVideos): Promise<{ results: YouTubeTrack[] }> {
   options.signal?.throwIfAborted();
   const words = query.trim();
@@ -94,6 +100,12 @@ export async function searchYouTube(query: string, options: { maximumSeconds: nu
   try { videos = await limited(innertube(words), INNERTUBE_LIMIT_MS, options.signal); }
   catch (error) { if (options.signal?.aborted) throw error; failure = error; }
   if (!videos.length && options.fetcher && youtubeFetcherConfigured(options.fetcher)) {
+    // Counted only when the fetcher would be asked. Left out, YouTube is "unavailable" for this
+    // search rather than empty, so the shared cache does not keep it empty for everyone.
+    if (options.fallbackAllowed && !(await options.fallbackAllowed())) {
+      console.info(JSON.stringify({ event: 'youtube_search_fallback_limited' }));
+      throw new YouTubeSearchLimited();
+    }
     // No search words in the log.
     console.info(JSON.stringify({ event: 'youtube_search_fallback', reason: failure ? 'failed' : 'empty' }));
     videos = await fetcherVideos(words, options.fetcher, options.signal);

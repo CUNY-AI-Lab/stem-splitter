@@ -27,7 +27,12 @@
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter", "workspace": false } },
     { "binding": "PREVIEW_IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "cail-stem-splitter-preview", "workspace": false } }
   ],
-  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } }],
+  "ratelimits": [
+    { "name": "REQUEST_LIMIT", "namespace_id": "350609", "simple": { "limit": 30, "period": 60 } },
+    // Song search backstops (src/search-limits.ts): per person, and per person to the YouTube fetcher.
+    { "name": "SEARCH_LIMIT", "namespace_id": "879001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "FETCHER_SEARCH_LIMIT", "namespace_id": "879002", "simple": { "limit": 10, "period": 60 } }
+  ],
   "vars": {
     "BUG_REPORT_MODE": "redmine-fallback",
     "GATEWAY_MODEL": "glm-5.2",

@@ -2,6 +2,7 @@ import personalPromptRoutes from './personal-prompts.ts';
 import {searchOpenAudio,OpenAudioError} from './open-audio.ts';
 import { musicSearchResponse } from './music-search.ts';
 import { youtubeFetcherConfigured } from './youtube-fetcher.ts';
+import { fetcherSearchAllowed, searchAllowed, searcherKey } from './search-limits.ts';
 import { getRecordingReference, MusicBrainzError } from './musicbrainz.ts';
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
@@ -89,7 +90,7 @@ import {
   validateAndOrderStems,
 } from './separation/options';
 import { fetchVideoAudio, YouTubeError } from './youtube';
-import { parseVideoSource, isVimeoUrl } from './video-source.ts';
+import { parseVideoSource, isVimeoUrl, containsYouTubeLink } from './video-source.ts';
 import { importLinkViaService, linkImportEnabled, resolveLinkViaService } from './link-import-client.ts';
 import type { ImportResult } from './link-import.ts';
 import {
@@ -1031,6 +1032,17 @@ app.get('/api/music/search', async (c, next) => {
   if (isPlaylistSample(c.req.raw)) return playlistSampleResponse(c.req.raw);
   return next();
 }, requireClassCode, async (c) => {
+  // Backstops against scripts (src/search-limits.ts); people searching never reach them.
+  const searcher = searcherKey(c.get('principal')?.subject, c.req.header('cf-connecting-ip'));
+  if (!(await searchAllowed(c.env, searcher))) {
+    return c.json({ error: { code: 'search_rate_limited', message: 'Searching too quickly. Wait a few seconds, then try again.' } }, 429,
+      { 'Retry-After': '15', 'Cache-Control': 'private, no-store' });
+  }
+  // A YouTube link is imported as itself; no source searches for it (the owner's rule).
+  if (containsYouTubeLink(c.req.query('q') ?? '')) {
+    return c.json({ error: { code: 'youtube_link_not_search', message: 'Paste a YouTube link to import that video; search is for song names.' } }, 400,
+      { 'Cache-Control': 'private, no-store' });
+  }
   if (c.req.query('sampleItem') !== undefined || c.req.query('sampleFile') !== undefined) {
     try {
       const result = await verifyArchiveSample(c.req.query('q') ?? '', c.req.query('sampleItem') ?? '', c.req.query('sampleFile') ?? '',
@@ -1054,6 +1066,7 @@ app.get('/api/music/search', async (c, next) => {
   if (!provider && c.req.query('examples') !== '1') {
     return musicSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson', {
       db: c.env.DB, signal: c.req.raw.signal, youtube: youtubeFetcherConfigured(c.env) ? c.env : undefined,
+      youtubeFallbackAllowed: () => fetcherSearchAllowed(c.env, searcher),
       maximumSeconds: c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300,
       cache: storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
     });

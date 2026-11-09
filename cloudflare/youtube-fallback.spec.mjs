@@ -60,13 +60,18 @@ test('a YouTube link imports its audio through the video importer, not an Archiv
     await page.goto(url.href);
     const input = page.getByRole('combobox', { name: 'Song or link' });
     await page.getByLabel('Share with').selectOption('personal');
-    // A recognizable link is a link to import, not a search.
-    await input.fill(sourceUrl);
-    await page.locator('#yt-form .yt-go').click();
-    await expect(page.locator('#upload-message')).toContainText('Fixture blocks all work creation.');
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].videoUrl).toBe(sourceUrl);
-    expect(['sourceUrl', 'archiveId', 'openAudio'].filter(key => key in jobs[0])).toEqual([]);
+    // A recognizable link is a link to import, not a search: with or without https://, and inside
+    // the text a phone's share sheet adds. Typing it starts no search either.
+    for (const typed of [sourceUrl, 'youtu.be/jNQXAC9IVRw', 'Watch this: https://youtu.be/jNQXAC9IVRw']) {
+      const before = jobs.length;
+      await input.fill(typed);
+      await page.waitForTimeout(400); // Longer than the page's 200 ms pause before a search.
+      await page.locator('#yt-form .yt-go').click();
+      await expect(page.locator('#upload-message')).toContainText('Fixture blocks all work creation.');
+      await expect.poll(() => jobs.length).toBe(before + 1);
+      expect(jobs.at(-1).videoUrl, typed).toBe(sourceUrl);
+      expect(['sourceUrl', 'archiveId', 'openAudio'].filter(key => key in jobs.at(-1))).toEqual([]);
+    }
     // The link router is never asked, so no metadata lookup can turn the link into a search.
     expect(metadataRequests).toEqual([]);
     expect(searchQueries).toEqual([]);

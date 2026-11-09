@@ -631,6 +631,13 @@ let acceptedSongSample = null;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
 // The server parses the link again and refuses anything it does not recognize.
 const youtubeLink = value => /^https?:\/\/((www|m|music)\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)\//i.test(value);
+// A YouTube link pasted without https://, or inside text a phone's share sheet adds
+// ("Watch this: https://youtu.be/…"), is still that video: it is imported, never searched for.
+const YOUTUBE_IN_TEXT = /(?:^|[^\w.-])((?:https?:\/\/)?(?:(?:www|m|music)\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)\/[^\s<>"'()]+)/i;
+const youtubeLinkIn = value => {
+  const found = YOUTUBE_IN_TEXT.exec(value)?.[1];
+  return !found ? '' : sourceIsLink(found) ? found : `https://${found}`;
+};
 
 // Playlist candidates become suggestions only after the live Archive search
 // verifies the exact item and audio file. Never substitute an unrelated result.
@@ -930,8 +937,9 @@ function clearSongSuggestions() {
 }
 
 // A failed search always leaves a next step, and does not claim a cause it cannot know.
-function showSongSearchFailure(term) {
-  showSongSearchStatus('Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.');
+const SONG_SEARCH_LIMITED = 'Searching too quickly. Wait a few seconds, then try again.';
+function showSongSearchFailure(term, message = 'Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.') {
+  showSongSearchStatus(message);
   songSearchStatus = 'error';
   const retry = document.createElement('button');
   retry.type = 'button'; retry.className = 'source-search-retry'; retry.textContent = 'Try again';
@@ -1049,7 +1057,8 @@ async function searchSourceSongs(term, sequence) {
         signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
       });
       try { data = await load(); }
-      catch (error) { if (controller.signal.aborted || (error.status && error.status < 500 && error.status !== 429)) throw error; }
+      // Searching too quickly is not retried: the retry would count against the same limit.
+      catch (error) { if (controller.signal.aborted || error.code === 'search_rate_limited' || (error.status && error.status < 500 && error.status !== 429)) throw error; }
       // One quiet retry for a failure that came quickly: finished work is reused, so it is cheap.
       // A search that already used its whole time limit is not repeated without being asked.
       if (current() && !songResults.size && (!data || data.providers?.archive === 'unavailable') && Date.now() - started < SEARCH_RETRY_WITHIN_MS) {
@@ -1088,10 +1097,10 @@ async function searchSourceSongs(term, sequence) {
       if (archiveFailed) showSongSearchFailure(term);
       else showSongSearchStatus('No downloadable audio found. Try another recording or upload an audio file.');
     }
-  } catch {
+  } catch (error) {
     if (!current()) return;
     songSearchStatus = songResults.size ? 'ready' : 'error';
-    if (!songResults.size) showSongSearchFailure(term);
+    if (!songResults.size) showSongSearchFailure(term, error?.code === 'search_rate_limited' ? SONG_SEARCH_LIMITED : undefined);
   } finally {
     clearTimeout(slowSearch);
     if (current()) sourceSongs.removeAttribute('aria-busy');
@@ -1108,7 +1117,7 @@ ytUrlInput.addEventListener('input', (event) => {
   songSuggestionsDismissed = false;
   if (songResults.has(term)) { closeSongSuggestions(); return; }
   clearSongSuggestions();
-  if (event.isComposing || sourceIsLink(term) || term.length < 2 || youtubeFetchInProgress) return;
+  if (event.isComposing || sourceIsLink(term) || youtubeLinkIn(term) || term.length < 2 || youtubeFetchInProgress) return;
   songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence); }, 200);
 });
 ytUrlInput.addEventListener('focus', () => {
@@ -1594,7 +1603,8 @@ dropzone.addEventListener('drop', (e) => {
 
 ytForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const url = ytUrlInput.value.trim();
+  const typed = ytUrlInput.value.trim();
+  const url = youtubeLinkIn(typed) || typed;
   if (youtubeFetchInProgress) return;
   if (!url) { acceptSongSample(); return; }
   const song = songResults.get(url) || (acceptedSongSample?.query === url ? acceptedSongSample.track : null);

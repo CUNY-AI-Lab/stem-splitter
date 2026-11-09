@@ -353,18 +353,23 @@ test('song suggestions support keyboard selection and stay closed after Escape o
 });
 
 test('song search shows empty and failed searches and ignores stale responses',async({page})=>{
-  const f=await setup(page);let slow,latest,latestRequests=0;
+  const f=await setup(page);let slow,latest,latestRequests=0,limitedRequests=0;
   try {
     await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
     await page.route('**/api/music/search?*',route=>{
       const query=new URL(route.request().url()).searchParams.get('q');
       if(query==='Slow'){slow=route;return;}
+      if(query==='Limited'){limitedRequests++;return route.fulfill({status:429,headers:{'Retry-After':'15'},json:{error:{code:'search_rate_limited',message:'Searching too quickly. Wait a few seconds, then try again.'}}});}
       if(query==='Latest'){latestRequests++;latest=route;return;}
       return route.fulfill(query==='Empty'?{json:{results:[]}}:{status:502,json:{error:'Provider unavailable'}});
     });
     const input=page.getByRole('combobox',{name:'Song or link',exact:true}),list=page.getByRole('listbox',{name:'Songs'});
     await input.fill('Empty');await expect(list).toContainText('No downloadable audio found. Try another recording or upload an audio file.');
     await input.fill('Failure');await expect(list).toContainText('Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.');await expect(list.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
+    // Searching too quickly says so, and is not retried by itself: a retry would count against the same limit.
+    await input.fill('Limited');await expect(list).toContainText('Searching too quickly. Wait a few seconds, then try again.');
+    await expect(list).not.toContainText('Internet Archive');await expect(list.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
+    await page.waitForTimeout(1600);expect(limitedRequests).toBe(1);
     await input.fill('Slow');await expect.poll(()=>Boolean(slow)).toBe(true);
     await input.fill('Latest');await expect.poll(()=>Boolean(latest)).toBe(true);
     await input.press('Enter');expect(latestRequests).toBe(1);

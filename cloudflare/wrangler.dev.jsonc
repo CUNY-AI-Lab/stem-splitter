@@ -30,7 +30,12 @@
     { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter-dev", "workspace": false } }
   ],
-  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } }],
+  "ratelimits": [
+    { "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } },
+    // Song search backstops (src/search-limits.ts): per person, and per person to the YouTube fetcher.
+    { "name": "SEARCH_LIMIT", "namespace_id": "879101", "simple": { "limit": 120, "period": 60 } },
+    { "name": "FETCHER_SEARCH_LIMIT", "namespace_id": "879102", "simple": { "limit": 10, "period": 60 } }
+  ],
   "vars": {
     "GATEWAY_MODEL": "glm-5.2",
     "GATEWAY_FALLBACK_MODEL": "deepseek-v4-flash-0731",

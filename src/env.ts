@@ -47,6 +47,9 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   APP_BASE_PATH?: string;
   RELEASE?: string;
   REQUEST_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
+  // Song search backstops (src/search-limits.ts).
+  SEARCH_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
+  FETCHER_SEARCH_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
 
   // Vars (wrangler.jsonc)
   R2_BUCKET_NAME: string;
