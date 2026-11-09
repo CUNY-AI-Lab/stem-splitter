@@ -19,7 +19,7 @@ Ethnomusicology Professor **Agustina Checa**.
 SQLite job state → a GPU provider (Replicate, pinned Demucs) or a local
 separator runs the split → webhook/polling marks the job done → the student
 streams synchronized MP3 parts → the host enforces 30-day retention. The
-Listening Guide uses CAIL Gateway (`glm-5.2` by default) behind class-code
+Listening Guide uses CAIL Gateway (`glm-5.3` by default) behind class-code
 and institutional-identity checks; guides are generated once per song and
 cached class-wide.
 
@@ -113,7 +113,7 @@ Vars:
 - `PUBLIC_BASE_URL` — the deployed URL (the provider posts completion
   webhooks here)
 - `ASSISTANT_MODEL` — prefix-free Gateway model ID for the Listening Guy
-  (`glm-5.2`; remove it to disable the Listening Guide entirely)
+  (`glm-5.3`; remove it to disable the Listening Guide entirely)
 - `CAIL_GATEWAY_URL` — `https://tools.ailab.gc.cuny.edu`, without `/v1`
 - `CAIL_SOURCE_VERSION` — exact 40-character deployed source commit
 - `REPLICATE_YT_MODEL` / `REPLICATE_YT_MODEL_VERSION` — owner/name and exact
