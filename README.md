@@ -142,6 +142,11 @@ Vars:
 - `YOUTUBE_FETCHER_URL` / `YOUTUBE_FETCHER_SECRET`: the yt-dlp fetcher behind a
   Cloudflare Tunnel (`youtube-fetcher/`). It is tried first for YouTube imports,
   and YouTube search results are listed only when both are set.
+- `YOUTUBE_FETCHER_SERVICE` (service binding): when set, fetcher calls go to that
+  Worker instead of `YOUTUBE_FETCHER_URL`, with the same secret. Since Nov 9 2026,
+  Dev binds `stem-youtube-fetcher-trial` and production `stem-youtube-fetcher`:
+  the same fetcher on Cloudflare Containers, with the Mac's tunnel as fallback.
+  Remove the binding before deleting either Worker.
 - `YOUTUBE_FETCH_ORDER` — `replicate-first` in production so the
   authenticated yt-dlp service runs before the usually bot-blocked direct
   client
