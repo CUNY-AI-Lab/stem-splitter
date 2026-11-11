@@ -86,7 +86,7 @@ test('instructor reviews course roster, splits and paginated conversations and e
         const box=await page.locator(id).boundingBox();
         expect(box.height).toBeGreaterThanOrEqual(44); expect(box.height).toBeLessThanOrEqual(46);
       }
-      await expect(page.locator('#classroom-own-splits')).toHaveText('My splits');
+      await expect(page.locator('#classroom-own-splits')).toHaveText('Splits');
       await page.locator('#classroom-messages').focus();
       await expect(page.locator('#classroom-messages')).toBeFocused();
       expect(await page.locator('#classroom-messages').evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
@@ -123,7 +123,7 @@ test('an instructor outside the student roster can add their own course split to
   try {
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.bob, 'x-fixture-course-role': 'owner' });
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
-    await page.getByRole('button', { name: 'My splits', exact: true }).click();
+    await page.getByRole('button', { name: 'Splits', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Instructor course fixture');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Class fixture recording');
     await page.getByRole('button', { name: 'Annotations', exact: true }).click();

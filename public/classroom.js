@@ -69,7 +69,7 @@
     el('add-panel').hidden = true; el('add-list').replaceChildren(); el('add-more').hidden = true; el('add-status').textContent = '';
     el('add-toggle').setAttribute('aria-expanded', 'false');
   }
-  function disarmDelete() { clearTimeout(deleteTimer); deleteTimer = null; el('delete-folder').textContent = 'Delete folder'; el('delete-folder').classList.remove('armed'); }
+  function disarmDelete() { clearTimeout(deleteTimer); deleteTimer = null; el('delete-folder').textContent = 'Delete'; el('delete-folder').classList.remove('armed'); }
   function closeFolder() {
     folderGeneration++; currentFolder = null; folderItems = []; renameFolder = null; closePicker(); disarmDelete();
     el('rename-form').hidden = true; el('folder-detail').hidden = true; el('folder-items').replaceChildren(); placeFolderDetail(); syncAddress();
@@ -335,7 +335,7 @@
       pickerJobs = append ? [...pickerJobs, ...usable] : usable;
       pickerCursor = data.nextCursor; el('add-more').hidden = !pickerCursor;
       renderPicker();
-      el('add-status').textContent = pickerJobs.length ? '' : 'You have no finished splits in this class yet. Start one with New class split under My splits.';
+      el('add-status').textContent = pickerJobs.length ? '' : 'You have no finished splits in this class yet. Start one with New class split under Splits.';
     } catch (error) { if (current === generation && viewing === pickerGeneration) report('add-status', error); }
     finally { if (viewing === pickerGeneration) el('add-more').disabled = false; }
   }
