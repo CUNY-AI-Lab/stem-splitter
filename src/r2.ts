@@ -259,7 +259,7 @@ export async function serveStemAudio(env: Env, key: string, request: Request): P
 /** Presigned PUT for browser uploads (15 min). */
 export function presignUpload(env: Env, key: string): Promise<string> {
   if (usesRoutedAudio(env)) {
-    return Promise.resolve(localObjectPath('/api/local-uploads/', key));
+    return Promise.resolve(`${env.APP_BASE_PATH || ''}${localObjectPath('/api/local-uploads/', key)}`);
   }
   return presign(env, 'PUT', key, 15 * 60);
 }

@@ -292,7 +292,7 @@ app.post('/api/jobs/:id/share', async (c) => {
     WHERE j.id=? AND o.subject=? AND j.status='done' AND j.created_at > datetime('now', '-90 days')
     ON CONFLICT(job_id) DO UPDATE SET job_id=excluded.job_id RETURNING job_id`)
     .bind(id, principal.subject).first();
-  return result ? c.json({ url: `/?job=${encodeURIComponent(id)}` }) : c.json({ error: 'Split not found.' }, 404);
+  return result ? c.json({ url: `${c.env.APP_BASE_PATH || ''}/?job=${encodeURIComponent(id)}` }) : c.json({ error: 'Split not found.' }, 404);
 });
 
 app.delete('/api/jobs/:id/share', async (c) => {
@@ -317,7 +317,7 @@ app.get('/api/shared-jobs/:id', async (c) => {
   const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
   return c.json({ id: row.id, filename: row.filename, status: 'done', model: row.model,
     readOnlyShared: true, labels: {}, annotations: [], guide: null, ...(publicCredit?{attribution:publicCredit}:{}),
-    stems: stems.map((stem, i) => ({ name: stem.name, url: `/api/shared-jobs/${row.id}/stems/${i}` })) });
+    stems: stems.map((stem, i) => ({ name: stem.name, url: `${c.env.APP_BASE_PATH || ''}/api/shared-jobs/${row.id}/stems/${i}` })) });
 });
 
 app.get('/api/shared-jobs/:id/stems/:index', async (c) => {
@@ -408,7 +408,7 @@ app.get('/api/teacher/students/:subject/jobs/:id',async c=>{
     if(!row)return c.json({error:'Split unavailable.'},404);
     const stems=JSON.parse(row.stems||'[]') as Array<{name:string;key:string}>;
     return c.json({id:row.id,filename:row.filename,model:row.model,status:'done',readOnlyShared:true,instructorReview:true,
-      labels:{},annotations:[],guide:null,stems:stems.map((stem,index)=>({name:stem.name,url:`/api/teacher/students/${c.req.param('subject')}/jobs/${row.id}/stems/${index}`}))});
+      labels:{},annotations:[],guide:null,stems:stems.map((stem,index)=>({name:stem.name,url:`${c.env.APP_BASE_PATH || ''}/api/teacher/students/${c.req.param('subject')}/jobs/${row.id}/stems/${index}`}))});
   }catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 app.get('/api/teacher/students/:subject/jobs/:id/stems/:index',async c=>{
@@ -1130,7 +1130,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     await resumeOwnedSourceImport(c.env,c.get('principal')!,result.operation);
     try { c.executionCtx.waitUntil(runReliableJobs(c.env)); } catch { await runReliableJobs(c.env); }
     const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(result.operation.job_id).first<JobRow>();
-    return c.json({...jobResponse(row!), resplit:storedResplit(result.operation.request_json), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
+    return c.json({...jobResponse(row!, [], null, c.env.APP_BASE_PATH), resplit:storedResplit(result.operation.request_json), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
   }
   const body = parsed.value as
     | {
@@ -1601,7 +1601,7 @@ app.get('/api/jobs/:id', async (c) => {
   const permission = principal ? await jobPermission(c.env, principal, id) : null;
   if(principal&&row.status==='failed'){await recordFailedRunSession(c.env,principal,c.req.header('X-Stem-Rack-Session')??null,id);if(await runWasDeleted(c.env,id))return c.json({error:'Run not found.'},404);}
   const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
-  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+  return c.json({ ...jobResponse(row, results ?? [], guide, c.env.APP_BASE_PATH), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
     courseId:permission?.courseId??null, permissions:permission, publicSharing, resplit:permission?.owner?storedResplit(operation?.request_json):null, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
@@ -2714,11 +2714,11 @@ function looksLikeMp3(audio: ArrayBuffer): boolean {
   return false;
 }
 
-function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null) {
+function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null, basePath = '') {
   const stems = row.stems
     ? (JSON.parse(row.stems) as { name: string; key: string }[]).map((s) => ({
         name: s.name,
-        url: `/api/files/${s.key}`,
+        url: `${basePath}/api/files/${s.key}`,
       }))
     : [];
   let autoRouting: AppAutoRoutingDecisionV1 | undefined;

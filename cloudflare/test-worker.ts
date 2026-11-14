@@ -1,3 +1,4 @@
+import { serveTools, TOOLS_ORIGIN } from './tools.ts';
 import { pollYouTubeImport } from '../src/youtube.ts';
 import { validateStemAudio } from './audio-validator.ts';
 import { courseFixture } from './course-fixture.ts';
@@ -64,7 +65,7 @@ export default {
       headers.delete('x-fixture-identity');
       request = new Request(request.url, { method: request.method, headers, body: request.body, redirect: 'manual', signal: request.signal });
     }
-    return preview.fetch(request, {
+    const runtimeEnv: WorkerEnv = {
       ...env,
       IDENTITY: identity,
       PREVIEW_IDENTITY: identity,
@@ -99,6 +100,28 @@ export default {
         accessRole: subject === env.TEST_ADMIN ? 'admin' : 'member',
         budgetScope: subject === env.TEST_ADMIN ? 'admin' : 'person',
       }) },
-    }, ctx);
+    };
+    // Test-only Doorway double supplies signed identity legs over the private
+    // Tools boundary; production never converts browser fixture headers.
+    const local = new URL(request.url);
+    if (local.pathname === '/stem-splitter' || local.pathname.startsWith('/stem-splitter/')) {
+      const target = new URL(local.pathname + local.search, TOOLS_ORIGIN);
+      const headers = new Headers(request.headers);
+      headers.delete('x-fixture-identity');
+      headers.delete('x-fixture-gateway-identity');
+      if (jwt) headers.set('x-cail-identity-jwt', jwt);
+      if (gatewayJwt) headers.set('x-cail-gateway-identity-jwt', gatewayJwt);
+      if (headers.get('origin') === local.origin) headers.set('origin', TOOLS_ORIGIN);
+      const response = await serveTools(new Request(target, { method: request.method, headers, body: request.body, redirect: 'manual' }), runtimeEnv, ctx);
+      const location = response.headers.get('location');
+      if (location && new URL(location, TOOLS_ORIGIN).origin === TOOLS_ORIGIN) {
+        const destination = new URL(location, TOOLS_ORIGIN);
+        const outputHeaders = new Headers(response.headers);
+        outputHeaders.set('location', local.origin + destination.pathname + destination.search);
+        return new Response(response.body, { status: response.status, headers: outputHeaders });
+      }
+      return response;
+    }
+    return preview.fetch(request, runtimeEnv, ctx);
   },
 };

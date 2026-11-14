@@ -42,7 +42,7 @@
     const subject = account.subject;
     if (pending.has(subject)) return pending.get(subject);
     const attempt = (async () => {
-      const response = await fetch('/api/account/claim-guest', { method: 'POST', credentials: 'same-origin',
+      const response = await window.StemFetch('/api/account/claim-guest', { method: 'POST', credentials: 'same-origin',
         cache: 'no-store', headers: { 'X-Stem-Claim-Actor': subject }, signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error('Guest splits could not be saved to your account yet. Reload to try again; the originals are preserved.');
       if (response.headers.get('X-Stem-Account') !== subject) throw new Error('Your account changed. Reload before saving guest splits.');

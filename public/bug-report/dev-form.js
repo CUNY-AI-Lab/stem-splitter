@@ -135,7 +135,7 @@ export function mountBugReport(container, { loginUrl = '/auth/start', loginClass
     const controller = new AbortController(); controllers.add(controller);
     const deadline = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
+      const response = await window.StemFetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
       return { response, result: await response.json() };
     } finally { clearTimeout(deadline); controllers.delete(controller); }
   }

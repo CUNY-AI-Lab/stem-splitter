@@ -15,7 +15,7 @@
   let view = 'folders', rosterPerson = null, folderItems = [], deleteTimer = null;
   let pickerJobs = [], pickerCursor = null, pickerGeneration = 0;
   const coursePath = suffix => `/api/classroom/courses/${encodeURIComponent(selected.classId)}${suffix}`;
-  const link = (text, href) => { const node = document.createElement('a'); node.textContent = text; node.href = href; return node; };
+  const link = (text, href) => { const node = document.createElement('a'); node.textContent = text; node.href = StemPath(href); return node; };
   const button = (text, action) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'page-btn'; node.textContent = text; node.addEventListener('click', action); return node; };
   const row = text => { const node = document.createElement('li'); node.className = 'teacher-history-item'; if (text) node.textContent = text; return node; };
   const canManage = () => Boolean(selected?.capabilities.instructorPanel);
@@ -105,7 +105,7 @@
     const timer = setTimeout(() => controller.abort(), 8000);
     if (scoped) { pendingRequests++; panel.dataset.checking = 'true'; if (quiet && !refreshing) panel.dataset.backgroundRefresh = 'true'; }
     try {
-      const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options,
+      const response = await window.StemFetch(path, { credentials: 'same-origin', cache: 'no-store', ...options,
         headers: { 'Content-Type': 'application/json', ...options.headers }, signal: controller.signal });
       const body = await response.json();
       if (expectedGeneration !== generation) throw new DOMException('Previous class request', 'AbortError');
@@ -293,7 +293,7 @@
       el('delete-folder').hidden = el('add-toggle').hidden = !selected.capabilities.instructorPanel;
       el('folder-share').hidden = currentFolder.permission === 'private';
       el('folder-permission').value = currentFolder.permission;
-      const url = new URL('/classroom.html', location.origin); url.searchParams.set('course', selected.classId); url.searchParams.set('folder', id);
+      const url = new URL(StemPath('/classroom.html'), location.origin); url.searchParams.set('course', selected.classId); url.searchParams.set('folder', id);
       el('folder-link').value = url.href;
       folderItems = data.items;
       for (const job of data.items) {
@@ -367,8 +367,8 @@
     view = requested.get('course') === id && !requested.get('folder') && ['splits', 'students'].includes(requested.get('view')) ? requested.get('view') : 'folders';
     history.replaceState(null,'',url);
     el('guidance').hidden = !course.capabilities.instructorPanel;
-    el('guidance').href = `/teacher.html?course=${encodeURIComponent(id)}`;
-    el('create').href = `/?course=${encodeURIComponent(id)}`;
+    el('guidance').href = StemPath(`/teacher.html?course=${encodeURIComponent(id)}`);
+    el('create').href = StemPath(`/?course=${encodeURIComponent(id)}`);
     el('folder-create').hidden = !course.capabilities.instructorPanel;
     applyView(); if (requested.get('view') && !requested.get('folder') && view === 'folders') syncAddress();
     const current = generation;

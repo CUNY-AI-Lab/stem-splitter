@@ -26,7 +26,7 @@ function teacherLoginNext(courseId) {
   return `${path.pathname}${path.search}`;
 }
 // Preserve a direct class destination even while account discovery is pending.
-document.getElementById('header-signin').href='/auth/login?next='+encodeURIComponent(teacherLoginNext(requestedCourse));
+document.getElementById('header-signin').href=StemPath('/auth/login?next='+encodeURIComponent(teacherLoginNext(requestedCourse)));
 
 async function instructorCourses() {
   const courses = new Map(), seen = new Set();
@@ -114,7 +114,7 @@ async function api(path, options = {}) {
   const timer = setTimeout(() => controller.abort(), 8000);
   if (scoped) { coursePendingRequests++; syncTeacherVisibility(); }
   try {
-    const res = await fetch(path, {
+    const res = await window.StemFetch(path, {
       credentials: 'same-origin',
       ...fetchOptions,
       headers: { 'Content-Type': 'application/json', ...headers,
@@ -614,7 +614,7 @@ async function loadDashboardScopes() {
   }
 }
 document.getElementById('instruction-scope').addEventListener('change',event=>{
-  location.assign(teacherLoginNext(event.target.value==='personal'?null:event.target.value));
+  location.assign(StemPath(teacherLoginNext(event.target.value==='personal'?null:event.target.value)));
 });
 document.getElementById('prompt-reload').addEventListener('click',async()=>{
   if(!teacherAccessVerified)return;
@@ -643,7 +643,7 @@ document.getElementById('prompt-reload').addEventListener('click',async()=>{
         courseModeId=course.classId; courseModeName=course.className;
         document.getElementById('instruction-scope').add(new Option(courseModeName,courseModeId));
         document.getElementById('instruction-scope').value=courseModeId;
-        document.getElementById('teacher-classroom').href=`/classroom.html?course=${encodeURIComponent(courseModeId)}`;
+        document.getElementById('teacher-classroom').href=StemPath(`/classroom.html?course=${encodeURIComponent(courseModeId)}`);
         document.getElementById('course-roster-section').hidden=!course.capabilities.rosterRead;
         document.getElementById('amendment-label').textContent='Class instructions';
         document.getElementById('prompt-scope-note').textContent=`Applies to ${courseModeName}. Personal and guest work use separate instructions.`;
@@ -845,7 +845,7 @@ async function loadSongSampleEditor(){
   }catch(error){if(generation!==sampleEditorGeneration)return false;if([401,403].includes(error.status))sampleEditor.hidden=true;sampleEditorStatus(error.message,true);return false;}
 }
 async function streamSampleSearch(query,signal,receive){
-  const response=await fetch('/api/music/search?examples=1&q='+encodeURIComponent(query),{credentials:'same-origin',headers:{Accept:'application/x-ndjson'},signal});
+  const response=await window.StemFetch('/api/music/search?examples=1&q='+encodeURIComponent(query),{credentials:'same-origin',headers:{Accept:'application/x-ndjson'},signal});
   if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'Archive search is temporarily unavailable.');}
   if(!response.headers.get('content-type')?.includes('application/x-ndjson')){receive(await response.json());return;}
   const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',bytes=0;

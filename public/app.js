@@ -111,7 +111,7 @@ function waveformFor(audio, signal) {
     const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Offline) throw new Error('Waveform decoding unavailable');
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)]);
-    const response = await fetch(audio.src, { signal: deadline, cache: 'force-cache' });
+    const response = await window.StemFetch(audio.src, { signal: deadline, cache: 'force-cache' });
     const decoder = new Offline(1, 1, 8000);
     const buffer = await decoder.decodeAudioData(await waveformBytes(response));
     deadline.throwIfAborted();
@@ -210,7 +210,7 @@ async function ensureClassCode() {
       localStorage.setItem('classCode', code);
     }
     try {
-      const res = await fetch('/api/auth-check', { headers: { 'x-class-code': code } });
+      const res = await window.StemFetch('/api/auth-check', { headers: { 'x-class-code': code } });
       if (res.status !== 401) return;
     } catch {
       return; // network hiccup — don't lock anyone out; the first write re-checks anyway
@@ -274,7 +274,7 @@ async function initializeCourseSelection() {
     try {
       const courses = []; let cursor = null; const seen = new Set();
       do {
-        const response = await fetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
+        const response = await window.StemFetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
         if (!response.ok) throw new Error('Class access is temporarily unavailable. Choose Personal or reload to retry.');
         const data = await response.json(); courses.push(...(data.courses || [])); cursor = data.nextCursor;
         if (cursor && (seen.has(cursor) || seen.size >= 9)) throw new Error('Class access could not be fully checked. Choose Personal or reload to retry.');
@@ -324,7 +324,7 @@ async function api(path, options = {}) {
   if (creating && !fixedCourse && course !== selectedCourse) throw new Error('The workspace changed. Start the import again in the selected workspace.');
   if (creating && course !== 'personal' && path === '/api/jobs') requestOptions.body = JSON.stringify({ ...JSON.parse(requestOptions.body), coursePolicy: 'course-work-v1' });
   const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(requestOptions.body, course) : null;
-  const send = () => fetch(path, {
+  const send = () => window.StemFetch(path, {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
@@ -434,7 +434,7 @@ async function streamApi(path, body, onEvent, signal) {
   await appReady;
   if (path.endsWith('/chat') && !body.messageId) body = { ...body, messageId: crypto.randomUUID() };
   const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120000)]);
-  const send = () => fetch(path, {
+  const send = () => window.StemFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode(), ...(body.messageId ? { 'Idempotency-Key': body.messageId } : {}) },
     body: JSON.stringify(body),
@@ -742,7 +742,7 @@ async function refreshSongSampleSettings(){
   if(sampleConfigRefresh||!sampleVisible())return;
   sampleConfigRefresh=(async()=>{
     try{
-      const response=await fetch('/api/song-samples',{cache:'no-cache',signal:AbortSignal.timeout(5000)});if(!response.ok)return;
+      const response=await window.StemFetch('/api/song-samples',{cache:'no-cache',signal:AbortSignal.timeout(5000)});if(!response.ok)return;
       const payload=await response.json();sampleConfigFetchedAt=Date.now();
       if(Array.isArray(payload))return;
       if(!payload||!Array.isArray(payload.tracks))return;
@@ -777,7 +777,7 @@ function preloadSongSample() {
   const deadline = setTimeout(() => controller.abort(), 600000);
   void (async () => {
     let payload=sampleConfigSnapshot;
-    if(!payload){const response=await fetch('/api/song-samples',{signal:controller.signal});if(!response.ok)return;payload=await response.json();sampleConfigFetchedAt=Date.now();if(!Array.isArray(payload))sampleConfigSnapshot=payload;}
+    if(!payload){const response=await window.StemFetch('/api/song-samples',{signal:controller.signal});if(!response.ok)return;payload=await response.json();sampleConfigFetchedAt=Date.now();if(!Array.isArray(payload))sampleConfigSnapshot=payload;}
     const candidates=configureSongSamples(payload);
     const shuffled=sampleOrder.map(key=>candidates.find(track=>sampleTrackKey(track)===key)).filter(Boolean).filter(track=>!verifiedSongSamples.some(cache=>sampleCacheKey(cache)===sampleTrackKey(track)&&Date.now()-cache.createdAt<600000));
     samplePoolComplete=false;sampleUnavailable.clear();
@@ -1203,7 +1203,7 @@ function fallbackModel() {
 
 function classifyAudio(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker('/autosplit-worker.js');
+    const worker = new Worker(StemPath('/autosplit-worker.js'));
     const timeout = setTimeout(() => {
       worker.terminate();
       reject(new Error('Audio analysis timed out'));
@@ -1396,7 +1396,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
 
 async function loadSeparationOptions() {
   try {
-    const res = await fetch('/api/separation-options');
+    const res = await window.StemFetch('/api/separation-options');
     if (!res.ok) throw new Error('Split choices request failed');
     const options = await res.json();
     if (
@@ -1819,7 +1819,7 @@ async function chooseStemResplit(mixer, stem) {
     }
     let description = 'Creates a separate split from this audio.', allowance = '', guest = false, exhausted = false;
     if (runtime.authMode === 'cail') {
-      const response = await fetch('/api/account', { cache: 'no-store', credentials: 'same-origin' });
+      const response = await window.StemFetch('/api/account', { cache: 'no-store', credentials: 'same-origin' });
       if (!response.ok) throw new Error('Your account could not be checked. Close this dialog and try again.');
       const { account, splitAllowance } = await response.json();
       if (!accountSubject || account?.subject !== accountSubject) throw new Error('Your session changed. Reload the page before resplitting.');
@@ -1873,7 +1873,7 @@ async function chooseStemResplit(mixer, stem) {
       const retryState = resplitRequests.get(requestKey) || {};
       resplitRequests.set(requestKey, retryState);
       try {
-        const response = await fetch(stem.url, { signal: AbortSignal.any([resplitAbort.signal, AbortSignal.timeout(60_000)]) });
+        const response = await window.StemFetch(stem.url, { signal: AbortSignal.any([resplitAbort.signal, AbortSignal.timeout(60_000)]) });
         if (!response.ok) throw new Error(`Could not load this split (${response.status}).`);
         if (Number(response.headers.get('content-length')) > 100 * 1024 * 1024) throw new Error('File too large (max 100 MB).');
         const audio = await response.blob();
@@ -1920,7 +1920,7 @@ async function fileIsReadable(file) {
 function putOnce(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url);
+    xhr.open('PUT', StemPath(url));
     if (new URL(url, window.location.href).origin === window.location.origin) {
       xhr.setRequestHeader('x-class-code', getClassCode());
     }
@@ -1969,7 +1969,7 @@ async function diagnoseUploadFailure(file) {
     return `Upload failed — ${UNREADABLE_FILE_MESSAGE}`;
   }
   try {
-    const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
+    const res = await window.StemFetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
     if (res.status === 401) {
       if (runtime.authMode === 'cail') return 'Upload failed — sign in with CUNY Login and try again.';
       localStorage.removeItem('classCode');
@@ -2451,7 +2451,7 @@ class Mixer {
       classActions.setAttribute('role', 'group'); classActions.setAttribute('aria-label', 'Class');
       const heading = document.createElement('span'); heading.className = 'split-action-heading'; heading.textContent = 'Class';
       const workspace = document.createElement('a'); workspace.className = 'class-workspace-link';
-      workspace.href = `/classroom.html?course=${encodeURIComponent(this.job.courseId)}`;
+      workspace.href = StemPath(`/classroom.html?course=${encodeURIComponent(this.job.courseId)}`);
       workspace.textContent = 'Open class'; classActions.append(heading, workspace);
       if (this.job.permissions?.instructor) {
         const addToClassFolder = document.createElement('button');
@@ -2472,7 +2472,7 @@ class Mixer {
     const sharing = li.querySelector('.split-sharing-actions');
     sharing.hidden = ![...sharing.querySelectorAll('button')].some(button => !button.hidden);
     if (runtime.instrumentTargets && this.job.permissions?.owner && !this.job.readOnlyShared) {
-      import('/instrument-targets.js').then(({ mountInstrumentTargets }) =>
+      import(StemPath('/instrument-targets.js')).then(({ mountInstrumentTargets }) =>
         mountInstrumentTargets(li, { jobId: this.job.id, request: api })).catch(() => {});
     }
     return li;
@@ -2535,7 +2535,7 @@ class Mixer {
   }
 
   addChannel(stem, part = null) {
-    const audio = new Audio(stem.url);
+    const audio = new Audio(StemPath(stem.url));
     audio.preload = 'metadata';
     this.audios.push(audio);
 
@@ -2834,7 +2834,7 @@ class Mixer {
       const tracks = [...this.job.stems.map(stem => ({ url: stem.url, label: this.label(stem.name) })),
         ...[...this.partGroups.values()].flatMap(group => group.stems)];
       for (const track of tracks) {
-        const res = await fetch(track.url);
+        const res = await window.StemFetch(track.url);
         if (!res.ok) throw new Error(`Could not fetch the ${track.label} track (${res.status}).`);
         const filename = stemFilename(this.job.filename, track.label);
         let unique = filename;
@@ -3607,7 +3607,7 @@ class Mixer {
     if (this.job.readOnlyShared || this.refreshing) return;
     this.refreshing = true;
     try {
-      const res = await fetch(`/api/jobs/${this.job.id}`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+      const res = await window.StemFetch(`/api/jobs/${this.job.id}`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
       if (!res.ok) throw new Error('Class work is unavailable. Reconnecting…');
       const state = await res.json();
       jobStates.set(this.job.id, state);
@@ -4256,7 +4256,7 @@ async function detectInstructor() {
   foldersSection.style.visibility = 'hidden';
   for (const menu of document.querySelectorAll('.folder-menu')) { menu.inert = true; menu.style.visibility = 'hidden'; }
   try {
-    const res = await fetch('/api/teacher/me', { cache: 'no-store', signal: controller.signal });
+    const res = await window.StemFetch('/api/teacher/me', { cache: 'no-store', signal: controller.signal });
     if (generation !== instructorGeneration || actor !== accountSubject) return;
     if (!res.ok) {
       if ([401, 403].includes(res.status)) clearInstructorAccess();
@@ -4288,7 +4288,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 async function refreshFolders() {
   const generation = instructorGeneration, actor = accountSubject;
   try {
-    const res = await fetch('/api/teacher/folders', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    const res = await window.StemFetch('/api/teacher/folders', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
     const body = await res.json();
     if (generation !== instructorGeneration || actor !== accountSubject || !instructorVerified) return;
     if (!res.ok) {
@@ -4358,7 +4358,7 @@ function renderFolders() {
     delBtn.addEventListener('click', () =>
       armThenRun(delBtn, 'SURE?', async () => {
         try {
-          await fetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
+          await window.StemFetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
         } catch {
           // The refresh below shows whichever state the server really holds.
         }
@@ -4371,7 +4371,7 @@ function renderFolders() {
 }
 
 async function fetchFolderDetail(folderId) {
-  const res = await fetch(`/api/teacher/folders/${folderId}`);
+  const res = await window.StemFetch(`/api/teacher/folders/${folderId}`);
   if (!res.ok) throw new Error('Could not load that folder.');
   return res.json();
 }
@@ -4419,7 +4419,7 @@ async function loadFolderItems(folder, container) {
     removeBtn.addEventListener('click', () =>
       armThenRun(removeBtn, 'SURE?', async () => {
         try {
-          await fetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
+          await window.StemFetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
           li.remove();
         } catch {
           // Row stays; the next open re-reads the folder from the server.
@@ -4484,14 +4484,14 @@ async function toggleClassFolderMenu(mixer) {
   mixer.el.querySelector('.console-head').after(menu);
   const rows = menu.querySelector('.folder-menu-rows'), status = menu.querySelector('.class-folder-status');
   const send = async (path, body) => {
-    const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const res = await window.StemFetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
     if (!res.ok) throw new Error('This class folder could not be updated. Reload and try again.');
     return res.json();
   };
   const confirmAdded = (folder) => {
     status.replaceChildren(`Added to ${folder.name}. Choose who can open it in `);
     const open = document.createElement('a');
-    open.href = `/classroom.html?course=${encodeURIComponent(course)}&folder=${encodeURIComponent(folder.id)}`; open.textContent = 'Classes';
+    open.href = StemPath(`/classroom.html?course=${encodeURIComponent(course)}&folder=${encodeURIComponent(folder.id)}`); open.textContent = 'Classes';
     status.append(open, '.');
   };
   const saveTo = async (folder, row) => {
@@ -4579,7 +4579,7 @@ function toggleFolderMenu(mixer) {
   const saveTo = async (folderId, row) => {
     row.disabled = true;
     try {
-      const res = await fetch(`/api/teacher/folders/${folderId}/items`, {
+      const res = await window.StemFetch(`/api/teacher/folders/${folderId}/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: mixer.job.id }),
@@ -4610,7 +4610,7 @@ function toggleFolderMenu(mixer) {
     submit.disabled = true;
     let folder;
     try {
-      const res = await fetch('/api/teacher/folders', {
+      const res = await window.StemFetch('/api/teacher/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -4651,8 +4651,8 @@ async function loadAccountJobs(more = false) {
   rackStatus.textContent = 'Loading your saved splits…';
   emptyState.hidden = true;
   try {
-    const response = await fetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`, {headers:rackRequestHeaders()});
-    if (response.status === 401 || response.status === 403) { location.assign('/account.html'); return; }
+    const response = await window.StemFetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`, {headers:rackRequestHeaders()});
+    if (response.status === 401 || response.status === 403) { location.assign(StemPath('/account.html')); return; }
     if (!response.ok) throw new Error('load');
     const result = await response.json();
     if (!Array.isArray(result.jobs)) throw new Error('load');
@@ -4905,10 +4905,10 @@ function runElapsedClock() {
 // which owns the user-facing message for its own context.
 async function adoptJobById(id, reviewSubject = null) {
   if (getJobs().some((existing) => existing.id === id)) return 'present';
-  let res = reviewSubject ? await fetch(`/api/teacher/students/${encodeURIComponent(reviewSubject)}/jobs/${encodeURIComponent(id)}`)
-    : accountSubject || runtime.authMode !== 'cail' ? await fetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
+  let res = reviewSubject ? await window.StemFetch(`/api/teacher/students/${encodeURIComponent(reviewSubject)}/jobs/${encodeURIComponent(id)}`)
+    : accountSubject || runtime.authMode !== 'cail' ? await window.StemFetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
   if (!reviewSubject && runtime.authMode === 'cail' && (!res || res.status === 401 || res.status === 403 || res.status === 404)) {
-    res = await fetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
+    res = await window.StemFetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
   }
   if (!res.ok) return 'missing';
   const state = await res.json();
@@ -4979,14 +4979,14 @@ async function pollActiveJobs() {
     if (cached && (cached.status === 'done' || cached.status === 'failed')) continue;
 
     try {
-      const res = await fetch(`/api/jobs/${job.id}`, { signal: AbortSignal.timeout(150000), headers:rackRequestHeaders() });
+      const res = await window.StemFetch(`/api/jobs/${job.id}`, { signal: AbortSignal.timeout(150000), headers:rackRequestHeaders() });
       if (runtime.authMode === 'cail' && (res.status === 401 || res.status === 403)) {
         for (const mixer of mixers.values()) if (mixer.playing || mixer.starting) mixer.pause();
         accountJobs = [];
         accountSubject = null;
         jobStates.clear();
         renderJobs();
-        location.assign('/account.html');
+        location.assign(StemPath('/account.html'));
         return;
       }
       if (res.status === 404) {
@@ -5289,7 +5289,7 @@ function addRemixLayer(job, stem) {
     row: null,
   };
 
-  const audio = new Audio(stem.url);
+  const audio = new Audio(StemPath(stem.url));
   audio.preload = 'auto';
   layer.audio = audio;
   audio.addEventListener('loadedmetadata', () => {
@@ -5571,7 +5571,7 @@ async function setLayerReverse(layer, on) {
 function reversedBufferFor(url, ctx) {
   if (!remix.reversedCache.has(url)) {
     const promise = (async () => {
-      const res = await fetch(url);
+      const res = await window.StemFetch(url);
       if (!res.ok) throw new Error(`fetch ${res.status}`);
       const decoded = await ctx.decodeAudioData(await res.arrayBuffer());
       const rev = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
@@ -5854,7 +5854,7 @@ function stemFilename(title, label) {
 }
 
 function stemDownloadUrl(source, title, label) {
-  const url = new URL(source, location.href);
+  const url = new URL(StemPath(source), location.href);
   url.searchParams.set('download', stemFilename(title, label));
   return url.href;
 }
@@ -5945,7 +5945,7 @@ async function preserveProgressBeforeSignIn(event, url) {
   event.preventDefault();
   for (const mixer of mixers.values()) mixer.saveListeningProgress();
   await Promise.all([...mixers.values()].map(mixer => mixer.conversationSaveQueue));
-  location.assign(url);
+  location.assign(StemPath(url));
 }
 window.addEventListener('pagehide', () => { for (const mixer of mixers.values()) mixer.saveListeningProgress(); });
 
@@ -5954,7 +5954,7 @@ window.addEventListener('pageshow', event => { if (event.persisted && runtime.au
 
 async function initialize() {
   try {
-    const response = await fetch('/api/runtime');
+    const response = await window.StemFetch('/api/runtime');
     if (!response.ok) throw new Error('runtime');
     runtime = await response.json();
   } catch {
@@ -5967,12 +5967,12 @@ async function initialize() {
     const account = document.querySelector('.lab-account .account-nav');
     let principal = null;
     try {
-      let response = await fetch('/api/account');
+      let response = await window.StemFetch('/api/account');
       const claimedGuest = response.status === 403
         && (await response.clone().json().catch(() => ({}))).error?.code === 'guest_session_claimed';
       if ((response.status === 401 || claimedGuest) && runtime.guest?.canStart === true) {
         await window.StemGuest.ensure(runtime.guest);
-        response = await fetch('/api/account');
+        response = await window.StemFetch('/api/account');
       }
       if (response.ok) principal = (await response.json()).account;
       else if (response.status !== 401) {

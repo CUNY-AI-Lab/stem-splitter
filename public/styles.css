@@ -3,7 +3,7 @@
   font-style: normal;
   font-weight: 800;
   font-display: swap;
-  src: url("/fonts/bricolage-grotesque-800.ttf") format("truetype");
+  src: url("fonts/bricolage-grotesque-800.ttf") format("truetype");
 }
 
 /* ─── Stem Splitter · studio console ──────────────────────────────── */

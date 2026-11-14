@@ -42,7 +42,7 @@ window.addEventListener('focus', async () => {
   const generation = accountGeneration;
   checkingAccount = true;
   try {
-    const response = await fetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
+    const response = await window.StemFetch('/api/account', { credentials: 'same-origin', cache: 'no-store' });
     if (!currentAccount(generation)) return;
     if (response.status === 401 || response.status === 403) {
       window.StemSessionGuard ? window.StemSessionGuard.clear() : location.reload();
@@ -57,7 +57,7 @@ window.addEventListener('focus', async () => {
   finally { checkingAccount = false; }
 });
 async function request(path, options = {}) {
-  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options });
+  const response = await window.StemFetch(path, { credentials: 'same-origin', cache: 'no-store', ...options });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || body.error || 'Please try again.');
   return body;
@@ -177,7 +177,7 @@ el('access-form').addEventListener('submit', async (event) => {
   try {
     const { account, splitAllowance, listeningUsage } = await request('/api/account');
     if (!currentAccount(generation)) return;
-    if (account.quotaClass === 'guest') { location.replace('/'); return; }
+    if (account.quotaClass === 'guest') { location.replace(StemPath('/')); return; }
     subject = account.subject;
     applyAccountCapabilities(account);
     window.StemSessionGuard?.start(subject, clearAccountState);
@@ -344,7 +344,7 @@ async function loadStudentJobs(student, more = false) {
       text.append(title, detail); row.append(text);
       if (job.status === 'done' && job.stemCount) {
         const load = document.createElement('a'); load.className = 'account-button'; load.textContent = 'Load';
-        load.href = `/?student=${encodeURIComponent(student.subject)}&job=${encodeURIComponent(job.id)}`;
+        load.href = StemPath(`/?student=${encodeURIComponent(student.subject)}&job=${encodeURIComponent(job.id)}`);
         row.append(load);
       }
       el('student-jobs').append(row);

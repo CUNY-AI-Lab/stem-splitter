@@ -1,7 +1,7 @@
 const footer = document.querySelector('main footer') || document.querySelector('footer');
 const paths = new Map([['/', '/'], ['/index.html', '/'], ['/account', '/account.html'], ['/account.html', '/account.html'],
   ['/teacher', '/teacher.html'], ['/teacher.html', '/teacher.html'], ['/classroom', '/classroom.html'], ['/classroom.html', '/classroom.html']]);
-const path = paths.get(location.pathname) || '/';
+const path = paths.get(location.pathname.slice(StemPath.base.length) || '/') || '/';
 let checking = false, mounted = false, attempts = 0, retryTimer, recovery;
 
 // Availability checks never submit a report. Once mounted, preserve the same form
@@ -28,7 +28,7 @@ async function mountAvailableReport(explicit = false) {
   checking = true; attempts++;
   if (recovery) recovery.querySelector('button').disabled = true;
   try {
-    const response = await fetch('/api/bug-reports/availability', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    const response = await window.StemFetch('/api/bug-reports/availability', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
     if (!response.ok) throw new Error('availability');
     const availability = await response.json();
     // A deliberately disabled receiver has no form or automatic retries.
@@ -36,13 +36,13 @@ async function mountAvailableReport(explicit = false) {
     if (availability.enabled !== true) throw new Error('availability');
     const dev = ['contact', 'dev-contact'].includes(availability.mode);
     const { mountBugReport } = await import(dev ? './bug-report/dev-form.js' : './bug-report/form.js');
-    if (dev && !document.querySelector('link[href="/bug-report/dev-form.css"]')) {
+    if (dev && !document.querySelector(`link[href="${StemPath('/bug-report/dev-form.css')}"]`)) {
       const style = document.createElement('link');
-      style.rel = 'stylesheet'; style.href = '/bug-report/dev-form.css'; document.head.append(style);
+      style.rel = 'stylesheet'; style.href = StemPath('/bug-report/dev-form.css'); document.head.append(style);
     }
     const container = document.createElement('section');
     container.className = 'footer-feedback-slot';
-    const report = mountBugReport(container, { path: () => path, loginUrl: '/auth/login?next=' + encodeURIComponent(path), loginClassName: 'account-button' });
+    const report = mountBugReport(container, { path: () => path, loginUrl: StemPath('/auth/login?next=' + encodeURIComponent(path)), loginClassName: 'account-button' });
     footer.append(container); recovery?.remove(); recovery = null; mounted = true;
     window.removeEventListener('online', retryAvailableReport);
     window.removeEventListener('focus', retryAvailableReport);

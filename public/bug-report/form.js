@@ -73,7 +73,7 @@ export function mountBugReport(container, { path = () => location.pathname, endp
     controller = new AbortController();
     const deadline = setTimeout(() => controller?.abort(), 30000);
     try {
-      const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
+      const response = await window.StemFetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
       return { response, result: await response.json() };
     } finally { clearTimeout(deadline); controller = null; }
   }

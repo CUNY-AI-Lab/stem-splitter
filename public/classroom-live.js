@@ -213,7 +213,7 @@
       const timer = setTimeout(() => controller.abort(), 8000);
       this.abort = controller;
       try {
-        const response = await fetch(this.url, {
+        const response = await window.StemFetch(this.url, {
           method, credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
           headers: { 'Content-Type': 'application/json', 'X-Stem-Course': this.mixer.job.courseId },
           ...(body ? { body: JSON.stringify(body) } : {}),
@@ -317,7 +317,7 @@
       // heartbeat or a retry of an uncertain write. If another write won the
       // revision race, the server's short lease remains the final boundary.
       const body = { action: 'update', expectedRevision: this.revision, ...this.snapshot(), playing: false };
-      void fetch(this.url, { method: 'PUT', credentials: 'same-origin', cache: 'no-store', keepalive: true,
+      void window.StemFetch(this.url, { method: 'PUT', credentials: 'same-origin', cache: 'no-store', keepalive: true,
         headers: { 'Content-Type': 'application/json', 'X-Stem-Course': this.mixer.job.courseId }, body: JSON.stringify(body),
       }).catch(() => {});
     }

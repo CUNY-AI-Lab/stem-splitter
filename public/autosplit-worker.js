@@ -1,6 +1,6 @@
 // Keep the FFT work off the UI thread. autosplit.js is deliberately a plain
 // browser/worker script so the exact classifier is shared with Node tests.
-importScripts('/autosplit.js');
+importScripts('./autosplit.js');
 
 self.addEventListener('message', (event) => {
   try {

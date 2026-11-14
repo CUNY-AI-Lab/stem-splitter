@@ -50,7 +50,7 @@
     const timer = setTimeout(() => controller.abort(), 5000);
     const current = () => generation === navigationGeneration && actor === subject && signedIn() && !suspended;
     const read = async path => {
-      const response = await originalFetch(path, { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+      const response = await originalFetch(StemPath(path), { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
       if (!current()) throw new Error('Navigation changed');
       observe(response);
       if (!response.ok) throw new Error('Instructor access unavailable');
@@ -76,7 +76,7 @@
         seen.add(cursor);
       }
       if (current() && destination) {
-        instructorLink.href = destination;
+        instructorLink.href = StemPath(destination);
         instructorLink.hidden = false;
       }
     } catch { /* Unverified capabilities never expose an instructor entry. */ }
@@ -97,7 +97,7 @@
     const actor = usageActor, batch = usageQueue.slice(0, 10);
     usageSending = true;
     try {
-      const response = await originalFetch('/api/usage-events', {
+      const response = await originalFetch(StemPath('/api/usage-events'), {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', keepalive: true,
         headers: { 'Content-Type': 'application/json', 'X-Stem-Usage-Actor': actor },
         body: JSON.stringify({ events: batch }), signal: AbortSignal.timeout(5000),
@@ -218,7 +218,7 @@
     try {
       const url = new URL(input instanceof Request ? input.url : String(input), location.href);
       sameOrigin = url.origin === location.origin;
-      reportRequest = sameOrigin && ['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname);
+      reportRequest = sameOrigin && ['/api/bug-reports', '/api/bug-reports/session'].map(StemPath).includes(url.pathname);
     } catch {}
     // A retained draft does not keep the old workspace alive or permit stale writes.
     // Report routes independently verify the session and compare its original actor.
@@ -237,7 +237,7 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       try {
-        const response = observe(await originalFetch('/api/account', {
+        const response = observe(await originalFetch(StemPath('/api/account'), {
           cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
         }));
         if ([401, 403].includes(response.status)) { clear(); return; }

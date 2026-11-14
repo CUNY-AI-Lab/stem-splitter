@@ -82,7 +82,7 @@ export async function release(root, args) {
     // JSONC configs here use full-line comments only. Wrangler performs full validation below.
     const config = JSON.parse(readFileSync(configPath, 'utf8').replace(/^\s*\/\/.*$/gm, ''));
     if (config.name !== target.worker || config.account_id !== policy.account) throw new Error('Worker/account does not match the approved target.');
-    if (policy.project === 'stem-splitter' && config.main !== 'worker.ts') throw new Error('Only the current Cloudflare Stem adapter may deploy.');
+    if (policy.project === 'stem-splitter' && config.main !== 'entry.ts') throw new Error('Only the current Cloudflare Stem adapter may deploy.');
     if (policy.project === 'systems-mapping') {
       // Registry settings contain a literal env reference, never a saved token.
       const npmrc = join(dir, 'registry.npmrc');
