@@ -97,6 +97,7 @@ test('Tools landing and assets stay public while anonymous and forged API reques
       expect((await harness.fetch('/stem-splitter' + path)).status).toBe(404);
     }
     const destination = '/stem-splitter/?job=fixture&course=demo';
+    const availabilityResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/api/bug-reports/availability'));
     await page.goto(new URL(destination, url).href);
     await expect(page.locator('#header-signin')).toBeVisible();
     await expect(page.locator('#stem-choice')).toHaveText('Sign in with CUNY Login to upload and split tracks.');
@@ -106,6 +107,11 @@ test('Tools landing and assets stay public while anonymous and forged API reques
     await expect(page.locator('#yt-url')).toBeDisabled();
     await expect(page.locator('#engine-summary')).toBeHidden();
     await expect(page.locator('#class-code-dialog')).not.toBeVisible();
+    expect((await availabilityResponse).status()).toBe(401);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    await expect(page.getByRole('button', { name: 'Retry problem reporting', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toHaveCount(0);
+    await expect(page.getByText('Problem reporting is temporarily unavailable.', { exact: true })).toHaveCount(0);
     expect(loginRequests).toEqual([]);
     const login = '/stem-splitter/auth/login?returnTo=' + encodeURIComponent(destination);
     await expect(page.locator('#header-signin')).toHaveAttribute('href', login);
@@ -114,6 +120,33 @@ test('Tools landing and assets stay public while anonymous and forged API reques
     await expect(page).toHaveURL(new URL(login, url).href);
     expect(loginRequests).toHaveLength(1);
     expect(errors).toEqual([]);
+  } finally { await harness.close(); }
+});
+
+test('mounted reporting treats sign-out as normal and retains real outage recovery', async ({ page }) => {
+  const issuer = await createTestIdentityIssuer();
+  const harness = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)), vars: {
+    TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true',
+  } }] });
+  let availabilityStatus = 503;
+  await page.route('**/api/bug-reports/availability', route => route.fulfill({ status: availabilityStatus,
+    json: availabilityStatus === 200 ? { enabled: true } : { error: 'fixture' } }));
+  try {
+    const { url } = await harness.listen();
+    await page.goto(new URL('/stem-splitter/', url).href);
+    const retry = page.getByRole('button', { name: 'Retry problem reporting', exact: true });
+    await expect(retry).toBeVisible();
+    availabilityStatus = 401;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(retry).toHaveCount(0);
+    await expect(page.getByText('Problem reporting is temporarily unavailable.', { exact: true })).toHaveCount(0);
+    availabilityStatus = 503;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(retry).toBeVisible();
+    availabilityStatus = 200;
+    await retry.click();
+    await expect(page.getByRole('button', { name: 'Report a problem', exact: true })).toBeVisible();
+    await expect(retry).toHaveCount(0);
   } finally { await harness.close(); }
 });
 

@@ -29,6 +29,9 @@ async function mountAvailableReport(explicit = false) {
   if (recovery) recovery.querySelector('button').disabled = true;
   try {
     const response = await window.StemFetch('/api/bug-reports/availability', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    // The public Tools shell has no reporting authority until CUNY sign-in.
+    // A later focus/online check can discover a newly authenticated session.
+    if (StemPath.base && response.status === 401) { recovery?.remove(); recovery = null; attempts = 0; return; }
     if (!response.ok) throw new Error('availability');
     const availability = await response.json();
     // A deliberately disabled receiver has no form or automatic retries.
