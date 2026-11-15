@@ -48,7 +48,7 @@ for (const origin of ['https://attacker.test', 'https://stem-splitter.ailab-452.
 test('private Tools ingress refuses a mismatched Gateway subject before Admission', async () => {
   const other = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.bob });
   let called = false;
-  const result = await toolsRequest(request('/stem-splitter/', { headers: { 'x-cail-gateway-identity-jwt': other } }), env(async () => { called = true; throw new Error('must not resolve'); }));
+  const result = await toolsRequest(request('/stem-splitter/api/account', { headers: { 'x-cail-gateway-identity-jwt': other } }), env(async () => { called = true; throw new Error('must not resolve'); }));
   assert.ok(result instanceof Response); assert.equal(result.status, 401); assert.equal(called, false);
 });
 
@@ -61,7 +61,7 @@ for (const [label, supplied] of [
 ] as const) {
   test(`private Tools ingress rejects ${label} before Admission`, async () => {
     let called = false;
-    const result = await toolsRequest(request('/stem-splitter/', { headers: supplied }), env(async () => { called = true; throw new Error('must not resolve'); }));
+    const result = await toolsRequest(request('/stem-splitter/api/account', { headers: supplied }), env(async () => { called = true; throw new Error('must not resolve'); }));
     assert.ok(result instanceof Response); assert.equal(result.status, 401); assert.equal(called, false);
   });
 }
@@ -70,15 +70,51 @@ for (const membership of [
   { ok: false, code: 'not_admitted' },
   { ok: true, accessRole: 'member', budgetScope: 'person', revision: 1, expiresAt: new Date(Date.now() - 60000).toISOString() },
 ]) {
-  test(`private Tools ingress refuses ${membership.ok ? 'expired' : 'revoked'} Admission even for static pages`, async () => {
-    const result = await toolsRequest(request('/stem-splitter/'), env(async () => membership as never));
+  test(`private Tools ingress refuses ${membership.ok ? 'expired' : 'revoked'} Admission on protected APIs`, async () => {
+    const result = await toolsRequest(request('/stem-splitter/api/account'), env(async () => membership as never));
     assert.ok(result instanceof Response); assert.equal(result.status, 403);
   });
 }
 
 test('private Tools ingress does not turn service failure into anonymous access', async () => {
-  const result = await toolsRequest(request('/stem-splitter/'), env(async () => { throw new Error('private service details'); }));
+  const result = await toolsRequest(request('/stem-splitter/api/account'), env(async () => { throw new Error('private service details'); }));
   assert.ok(result instanceof Response); assert.equal(result.status, 503); assert.doesNotMatch(await result.text(), /private service details/);
+});
+
+test('anonymous static reads strip all identity and browser credentials without contacting Admission', async () => {
+  for (const method of ['GET', 'HEAD']) {
+    for (const path of ['/', '/app.js', '/teacher.html?course=demo', '/docs/getting-started.html']) {
+      const result = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter' + path, {
+        method, headers: { cookie: 'never-forward', authorization: 'Bearer never-forward', 'x-cail-identity-jwt': 'forged', 'x-cail-gateway-identity-jwt': 'forged', 'x-cail-subject': 'forged', 'cf-connecting-ip': '192.0.2.99', 'x-forwarded-for': '192.0.2.12' },
+      }), {} as WorkerEnv);
+      assert.ok(result instanceof Request);
+      assert.equal(result.url, TOOLS_ORIGIN + path);
+      assert.equal(result.method, method);
+      for (const header of ['cookie', 'authorization', 'x-cail-identity-jwt', 'x-cail-gateway-identity-jwt', 'x-cail-subject', 'cf-connecting-ip', 'x-forwarded-for']) assert.equal(result.headers.get(header), null);
+    }
+  }
+});
+
+test('non-page writes cannot enter the public static dispatch', async () => {
+  for (const path of ['/', '/app.js', '/healthz', '/auth/login']) {
+    for (const method of ['POST', 'PUT', 'DELETE', 'OPTIONS']) {
+      const result = await toolsRequest(request('/stem-splitter' + path, { method, headers: { origin: TOOLS_ORIGIN } }), env());
+      assert.ok(result instanceof Response); assert.equal(result.status, 405);
+    }
+  }
+});
+
+test('every mounted API and explicit login require signed identities, including otherwise public standalone endpoints', async () => {
+  for (const path of ['/api', '/api/runtime', '/api/separation-options', '/api/shared-jobs/fixture', '/api/files/stems/fixture/vocals.mp3', '/api/local-sources/fixture', '/api/bug-reports/availability', '/auth/login?returnTo=%2Fstem-splitter%2F']) {
+    const result = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter' + path), env());
+    assert.ok(result instanceof Response); assert.equal(result.status, 401);
+  }
+  const webhook = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter/api/webhooks/separation?token=fixture', { method: 'POST', headers: { origin: TOOLS_ORIGIN } }), env());
+  assert.ok(webhook instanceof Response); assert.equal(webhook.status, 401);
+  for (const path of ['/auth', '/auth/logout', '/auth/callback', '/auth/guest', '/auth/login/']) {
+    const result = await toolsRequest(request('/stem-splitter' + path), env());
+    assert.ok(result instanceof Response); assert.equal(result.status, 404);
+  }
 });
 
 test('browser mount paths preserve external destinations and the shared logout route', async () => {
@@ -86,12 +122,14 @@ test('browser mount paths preserve external destinations and the shared logout r
   for (const base of ['', '/stem-splitter']) {
     const sent: unknown[] = [];
     const window: Record<string, any> = { fetch: (...args: unknown[]) => { sent.push(args); } };
-    runInNewContext(source, { window, URL, document: { currentScript: { src: TOOLS_ORIGIN + base + '/app-path.js' } } });
+    runInNewContext(source, { window, URL, location: { pathname: base + '/classroom.html', search: '?course=demo&view=students' }, document: { currentScript: { src: TOOLS_ORIGIN + base + '/app-path.js' } } });
     assert.equal(window.StemPath('/api/account'), base + '/api/account');
     assert.equal(window.StemPath(base + '/api/account'), base + '/api/account');
     assert.equal(window.StemPath('/auth/logout'), '/auth/logout');
     assert.equal(window.StemPath('https://archive.org/source.mp3'), 'https://archive.org/source.mp3');
     assert.equal(window.StemPath('blob:local-audio'), 'blob:local-audio');
+    assert.equal(window.StemPath('/auth/login'), base ? '/stem-splitter/auth/login?returnTo=%2Fstem-splitter%2Fclassroom.html%3Fcourse%3Ddemo%26view%3Dstudents' : '/auth/login');
+    assert.equal(window.StemPath('/auth/login?next=%2Fteacher.html%3Fcourse%3Ddemo'), base ? '/stem-splitter/auth/login?returnTo=%2Fstem-splitter%2Fteacher.html%3Fcourse%3Ddemo' : '/auth/login?next=%2Fteacher.html%3Fcourse%3Ddemo');
     window.StemFetch('/api/account', { method: 'GET' });
     assert.deepEqual(sent[0], [base + '/api/account', { method: 'GET' }]);
   }

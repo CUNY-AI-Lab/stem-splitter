@@ -27,7 +27,7 @@ export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
   { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService; REDMINE_API_KEY?: string; BUG_REPORT_MODE?: string };
 
-const HEADERS = {
+export const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   // Native same-origin POST forms need their Origin for CSRF validation.
   // Continue suppressing referrers to other sites.

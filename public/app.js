@@ -2282,7 +2282,7 @@ class Mixer {
     this.coachSignIn = document.createElement('a');
     this.coachSignIn.className = 'coach-sign-in';
     this.coachSignIn.textContent = 'Sign in to continue';
-    this.coachSignIn.href = `${runtime.loginUrl || '/auth/login'}?next=${encodeURIComponent('/?job=' + this.job.id)}`;
+    this.coachSignIn.href = StemPath(`${runtime.loginUrl || '/auth/login'}?next=${encodeURIComponent('/?job=' + this.job.id)}`);
     this.coachSignIn.hidden = true;
     this.coachSignIn.addEventListener('click', event => preserveProgressBeforeSignIn(event, this.coachSignIn.href));
     this.coachLog.append(this.coachSignIn);
@@ -5955,6 +5955,21 @@ window.addEventListener('pageshow', event => { if (event.persisted && runtime.au
 async function initialize() {
   try {
     const response = await window.StemFetch('/api/runtime');
+    if (StemPath.base && response.status === 401) {
+      runtime = { authMode: 'cail', remixer: false, loginUrl: StemPath('/auth/login') };
+      jobsStorageKey = null;
+      document.getElementById('header-signin').href = runtime.loginUrl;
+      dropzone.inert = true;
+      dropzone.setAttribute('aria-disabled', 'true');
+      ytUrlInput.disabled = true;
+      ytFetchButton.disabled = true;
+      stopSongSample();
+      stemChoice.textContent = 'Sign in with CUNY Login to upload and split tracks.';
+      stemChoice.classList.add('mono');
+      engineSummary.hidden = true;
+      renderJobs();
+      return;
+    }
     if (!response.ok) throw new Error('runtime');
     runtime = await response.json();
   } catch {
@@ -6004,7 +6019,9 @@ async function initialize() {
     } else if (runtime.loginUrl) {
       const link = document.getElementById('header-signin');
       const linkedJob = new URLSearchParams(location.search).get('job');
-      link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      link.href = StemPath.base
+        ? StemPath(runtime.loginUrl + '?next=' + encodeURIComponent(location.pathname + location.search))
+        : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
       if (guestSessionActive) account.classList.add('is-guest');
