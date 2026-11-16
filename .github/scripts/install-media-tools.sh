@@ -30,7 +30,7 @@ case "${1:-}" in
     fi
     # Hosted runners usually have a usable package index. Refresh it only when
     # installation needs newer metadata, rather than waiting on every mirror.
-    if timeout --kill-after=10s 45s sudo apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 install --yes --no-install-recommends ffmpeg; then
+    if timeout --kill-after=10s 240s sudo apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 install --yes --no-install-recommends ffmpeg; then
       ffmpeg -version
       exit 0
     fi
