@@ -3769,7 +3769,7 @@ class Mixer {
     cue.className = 'coach-cue';
     cue.innerHTML = `
       <button class="coach-cue-btn">CUE THE LISTENING GUIDE</button>
-      <p class="coach-hint">The coach opens the conversation — first words in a few seconds.</p>
+      <p class="coach-hint">Engage in dialogue with the Listening Guide for additional context and support</p>
     `;
     cue.querySelector('.coach-cue-btn').addEventListener('click', () => this.requestGuide());
     this.coachGuide.appendChild(cue);
