@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-identity/testing';
-import { TOOLS_ORIGIN, toolsLoginPath, toolsRequest } from './tools.ts';
+import { TOOLS_ORIGIN, toolsLoginPath, toolsRequest, serveTools } from './tools.ts';
+import { SqliteD1 } from '../server/d1.ts';
 import type { WorkerEnv } from './worker.ts';
 
 const issuer = await createTestIdentityIssuer();
@@ -104,16 +105,31 @@ test('non-page writes cannot enter the public static dispatch', async () => {
   }
 });
 
-test('every mounted API and explicit login require signed identities, including otherwise public standalone endpoints', async () => {
-  for (const path of ['/api', '/api/runtime', '/api/separation-options', '/api/shared-jobs/fixture', '/api/files/stems/fixture/vocals.mp3', '/api/local-sources/fixture', '/api/bug-reports/availability', '/auth/login?returnTo=%2Fstem-splitter%2F']) {
+test('anonymous APIs reach the app guest boundary with only scoped cookies and no caller identity', async () => {
+  for (const path of ['/api', '/api/runtime', '/api/account', '/api/shared-jobs/fixture', '/api/files/stems/fixture/vocals.mp3']) {
+    const result = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter' + path, { headers: {
+      cookie: '__Host-stem-guest=fixture; __Host-stem-transfer=nonce; __Host-cail-session=private; unrelated=private',
+      authorization: 'Bearer forged', 'x-cail-subject': 'forged', 'x-forwarded-for': '192.0.2.10',
+    } }), env(async () => { throw new Error('anonymous guests must not resolve Admission'); }));
+    assert.ok(result instanceof Request);
+    assert.equal(result.headers.get('cookie'), '__Host-stem-guest=fixture; __Host-stem-transfer=nonce');
+    for (const header of ['authorization', 'x-cail-subject', 'x-cail-identity-jwt', 'x-cail-gateway-identity-jwt']) assert.equal(result.headers.get(header), null);
+    assert.equal(result.headers.get('cf-connecting-ip'), '192.0.2.10');
+  }
+});
+
+test('login requires signed identities and only exact guest auth routes are accepted', async () => {
+  for (const path of ['/auth/login?returnTo=%2Fstem-splitter%2F']) {
     const result = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter' + path), env());
     assert.ok(result instanceof Response); assert.equal(result.status, 401);
   }
-  const webhook = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter/api/webhooks/separation?token=fixture', { method: 'POST', headers: { origin: TOOLS_ORIGIN } }), env());
-  assert.ok(webhook instanceof Response); assert.equal(webhook.status, 401);
   for (const path of ['/auth', '/auth/logout', '/auth/callback', '/auth/guest', '/auth/login/']) {
     const result = await toolsRequest(request('/stem-splitter' + path), env());
     assert.ok(result instanceof Response); assert.equal(result.status, 404);
+  }
+  for (const [path, method] of [['/auth/guest', 'POST'], ['/auth/guest-transfer/start', 'GET'], ['/auth/guest-transfer/finish', 'POST']]) {
+    const result = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter' + path, { method, headers: { origin: TOOLS_ORIGIN } }), env());
+    assert.ok(result instanceof Request);
   }
 });
 
@@ -143,4 +159,23 @@ test('Tools sign-in return paths preserve app pages and query strings without op
   for (const path of [null, '//attacker.test/', '/\\attacker.test/', 'https://attacker.test/', '/auth/logout', '/api/account', '/stem-splitter-other/']) {
     assert.equal(toolsLoginPath(path), '/stem-splitter/');
   }
+});
+
+test('mounted pages and verified sign-in return contribute privacy-safe server usage', async () => {
+  const database = new SqliteD1(':memory:');
+  database.applySchema(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
+  const pending: Promise<unknown>[] = [];
+  const ctx = { waitUntil: (value: Promise<unknown>) => pending.push(value) } as unknown as ExecutionContext;
+  const runtime = { ...env(), DB: database, AUTH_MODE: 'cail', PUBLIC_BASE_URL: 'https://stem-splitter.ailab-452.workers.dev',
+    ASSETS: { fetch: async () => new Response('fixture asset', { headers: { 'content-type': 'text/plain' } }) },
+  } as unknown as WorkerEnv;
+  assert.equal((await serveTools(new Request(TOOLS_ORIGIN + '/stem-splitter/'), runtime, ctx)).status, 200);
+  assert.equal((await serveTools(new Request(TOOLS_ORIGIN + '/stem-splitter/app.js'), runtime, ctx)).status, 200);
+  assert.equal((await serveTools(new Request(TOOLS_ORIGIN + '/stem-splitter/', { method: 'HEAD' }), runtime, ctx)).status, 200);
+  assert.equal((await serveTools(request('/stem-splitter/auth/login?returnTo=%2Fstem-splitter%2F'), runtime, ctx)).status, 303);
+  await Promise.all(pending);
+  const rows = (await database.prepare('SELECT * FROM usage_events').all()).results;
+  assert.deepEqual(rows.map(row => row.event_type).sort(), ['page_response', 'signin_attempt', 'signin_session_reused']);
+  assert.ok(rows.every(row => row.actor_class === 'anonymous' && row.source === 'server'));
+  for (const secret of [appJwt, gatewayJwt, TEST_SUBJECTS.alice, 'returnTo']) assert.equal(JSON.stringify(rows).includes(secret), false);
 });

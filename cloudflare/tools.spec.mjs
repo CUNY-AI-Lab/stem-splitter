@@ -5,6 +5,75 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
+test.use({ ignoreHTTPSErrors: true });
+
+test('Tools restores the original guest tracks, notes and conversation and keeps new writes visible at both addresses', async ({ page, context }) => {
+  const legacy = 'https://stem-splitter.ailab-452.workers.dev';
+  const issuer = await createTestIdentityIssuer();
+  const config = JSON.parse(await readFile(new URL('./test-wrangler.jsonc', import.meta.url), 'utf8'));
+  const harness = createTestHarness({ root: fileURLToPath(new URL('./', import.meta.url)), workers: [{ config: {
+    ...config, dev: { local_protocol: 'https' }, vars: { ...config.vars, TEST_BROWSER: 'true', TEST_JWKS: issuer.jwksJson,
+      GUEST_ENABLED: 'true', GUEST_COOKIE_SECRET: 'browser-fixture-transfer-secret-0000000000',
+      GUEST_TURNSTILE_SITE_KEY: 'fixture-site-key', GUEST_TURNSTILE_SECRET: 'fixture-turnstile-secret-only' },
+  } }] });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    const { url } = await harness.listen();
+    const worker = harness.getWorker('stem-preview-contract-test');
+    const sql = async statements => {
+      expect((await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(statements) })).status).toBe(200);
+    };
+    await sql(schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8')));
+    const started = await worker.fetch(legacy + '/auth/guest', { method: 'POST', headers: { origin: legacy, 'content-type': 'application/json' }, body: '{}' });
+    expect(started.status).toBe(200);
+    const sourceCookie = started.headers.get('set-cookie').split(';')[0];
+    const oldCall = (path, init = {}) => worker.fetch(legacy + path, { ...init, headers: { origin: legacy, cookie: sourceCookie, 'content-type': 'application/json', ...init.headers } });
+    const original = await (await oldCall('/api/account')).json();
+    const subject = original.account.subject;
+    expect(subject).toMatch(/^guest-[0-9a-f]{64}$/);
+    await sql([
+      `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('remix-fixture','Restored guest track','uploads/fixture.wav','done','htdemucs_ft','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+      `INSERT INTO guest_job_owners(job_id,subject) VALUES('remix-fixture','${subject}')`,
+    ]);
+    await worker.fetch('/__fixture/audio', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url)) });
+    expect((await oldCall('/api/jobs/remix-fixture/annotations', { method: 'POST', body: JSON.stringify({ atSeconds: 1, text: 'Original listening note' }) })).status).toBe(200);
+    expect((await oldCall('/api/jobs/remix-fixture/listening-conversation', { method: 'PUT', body: JSON.stringify({ revision: 0, entries: [{ kind: 'you', text: 'Original private conversation' }] }) })).status).toBe(200);
+    // Follow the real HTTP handoff through the Worker. Only the browser domain
+    // is local; its guest cookie is signed for the actual private Tools origin.
+    const transfer = await worker.fetch('/stem-splitter/auth/guest-transfer/start', { redirect: 'manual' });
+    const nonce = transfer.headers.get('set-cookie').split(';')[0].split('=')[1];
+    const source = await worker.fetch(transfer.headers.get('location'), { headers: { cookie: sourceCookie }, redirect: 'manual' });
+    const returned = new URL(source.headers.get('location'));
+    await context.addCookies([{ name: '__Host-stem-transfer', value: nonce, url: url.origin, secure: true, httpOnly: true, sameSite: 'Lax' }]);
+    await page.goto(url.origin + returned.pathname + returned.hash);
+    await expect(page).toHaveURL(url.origin + '/stem-splitter/');
+    await expect(page.locator('.console-title')).toHaveText('Restored guest track');
+    await expect(page.getByText('Original listening note — Guest', { exact: true })).toBeVisible();
+    await expect(page.locator('#yt-url')).toBeEnabled();
+    await expect(page.locator('.sign-in-notice')).toHaveCount(0);
+    const restored = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
+    expect(restored.account.subject).toBe(subject);
+    expect(restored.guest.expiresAt).toBe(original.guest.expiresAt);
+    expect(restored.splitAllowance.limit).toBe(original.splitAllowance.limit);
+    expect((await context.cookies()).some(cookie => cookie.name === '__Host-stem-transfer')).toBe(false);
+    const conversation = await page.evaluate(async () => (await window.StemFetch('/api/jobs/remix-fixture/listening-conversation')).json());
+    expect(JSON.stringify(conversation)).toContain('Original private conversation');
+    await page.locator('.console .play-btn').click();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios[0].currentTime)).toBeGreaterThan(0);
+    await page.locator('.console .play-btn').click();
+    expect(await page.evaluate(async () => (await window.StemFetch('/api/jobs/remix-fixture/annotations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ atSeconds: 2, text: 'New Tools listening note' }) })).status)).toBe(200);
+    expect(await (await oldCall('/api/jobs/remix-fixture')).text()).toContain('New Tools listening note');
+    await page.reload();
+    await expect(page.locator('.console-title')).toHaveText('Restored guest track');
+    await expect(page.getByText('New Tools listening note — Guest', { exact: true })).toBeVisible();
+    // The same app boundary still rejects private work for a different guest.
+    const other = await worker.fetch(legacy + '/auth/guest', { method: 'POST', headers: { origin: legacy, 'content-type': 'application/json' }, body: '{}' });
+    expect((await worker.fetch(legacy + '/api/jobs/remix-fixture', { headers: { cookie: other.headers.get('set-cookie').split(';')[0] } })).status).toBe(404);
+    expect(errors).toEqual([]);
+  } finally { await harness.close(); }
+});
+
 test('Tools mount loads saved splits, plays audio, and keeps navigation and uploads in its namespace', async ({ page, context }) => {
   const issuer = await createTestIdentityIssuer();
   const appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
@@ -62,7 +131,7 @@ test('Tools mount loads saved splits, plays audio, and keeps navigation and uplo
   } finally { await harness.close(); }
 });
 
-test('Tools landing and assets stay public while anonymous and forged API requests remain denied', async ({ page }) => {
+test('Tools pages and runtime stay public while private APIs and forged identities remain denied', async ({ page }) => {
   const issuer = await createTestIdentityIssuer();
   const harness = createTestHarness({ workers: [{ configPath: fileURLToPath(new URL('./test-wrangler.jsonc', import.meta.url)), vars: {
     TEST_JWKS: issuer.jwksJson, TEST_BROWSER: 'true',
@@ -72,7 +141,7 @@ test('Tools landing and assets stay public while anonymous and forged API reques
   page.on('request', request => { if (new URL(request.url()).pathname.includes('/auth/')) loginRequests.push(request.url()); });
   try {
     const { url } = await harness.listen();
-    // No database fixture is initialized: public reads must use ASSETS only.
+    // Public reads remain usable even if background visit recording is unavailable.
     for (const method of ['GET', 'HEAD']) {
       for (const path of ['/', '/app-path.js', '/app.js', '/styles.css', '/fonts/bricolage-grotesque-800.ttf']) {
         const response = await harness.fetch('/stem-splitter' + path, { method });
@@ -83,12 +152,18 @@ test('Tools landing and assets stay public while anonymous and forged API reques
       }
     }
     expect((await harness.fetch('/stem-splitter/healthz')).status).toBe(404);
-    for (const path of ['/api', '/api/runtime', '/api/account', '/api/shared-jobs/fixture', '/api/files/stems/fixture/vocals.mp3', '/api/bug-reports/availability', '/auth/login']) {
+    expect((await harness.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'))) })).status).toBe(200);
+    for (const path of ['/api/account', '/api/files/stems/fixture/vocals.mp3', '/auth/login']) {
       for (const headers of [{}, { 'x-cail-identity-jwt': 'forged', 'x-cail-gateway-identity-jwt': 'forged' }]) {
         const response = await harness.fetch('/stem-splitter' + path, { headers, redirect: 'manual' });
         expect(response.status).toBe(401);
         expect(response.headers.get('location')).toBeNull();
       }
+    }
+    expect((await harness.fetch('/stem-splitter/api/shared-jobs/fixture')).status).toBe(404);
+    for (const path of ['/api/runtime', '/api/bug-reports/availability']) {
+      expect((await harness.fetch('/stem-splitter' + path)).status).toBe(200);
+      expect((await harness.fetch('/stem-splitter' + path, { headers: { 'x-cail-identity-jwt': 'forged' } })).status).toBe(401);
     }
     for (const path of ['/', '/app.js']) {
       expect((await harness.fetch('/stem-splitter' + path, { method: 'POST', headers: { origin: url.origin } })).status).toBe(405);
@@ -97,6 +172,10 @@ test('Tools landing and assets stay public while anonymous and forged API reques
       expect((await harness.fetch('/stem-splitter' + path)).status).toBe(404);
     }
     const destination = '/stem-splitter/?job=fixture&course=demo';
+    // A gateway released before its receiver can still reject runtime access.
+    // Keep that recovery message legible without making it the normal guest UI.
+    await page.route('**/stem-splitter/api/runtime', route => route.fulfill({ status: 401, json: {} }));
+    await page.route('**/stem-splitter/api/bug-reports/availability', route => route.fulfill({ status: 401, json: {} }));
     const availabilityResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/api/bug-reports/availability'));
     await page.goto(new URL(destination, url).href);
     await expect(page.locator('#header-signin')).toBeVisible();

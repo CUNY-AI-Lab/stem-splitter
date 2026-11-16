@@ -1,6 +1,10 @@
+import { GUEST_COOKIE } from './guest.ts';
+import { TRANSFER_COOKIE } from './guest-transfer.ts';
+import { uniqueCookie } from './session-contract/session.js';
 import { CAIL_CANONICAL_ISSUER, loadIdentityVerifierConfig, verifyIdentityJwt } from '@cuny-ai-lab/cail-identity';
 import { authFailure } from '../src/identity.ts';
 import { currentMembership } from '../src/membership.ts';
+import { recordPageUse, recordSignInUse } from '../src/reliability/observability.ts';
 import { boundedRpc, sanitizedRequest } from './sso.ts';
 import worker, { HEADERS, type WorkerEnv } from './worker.ts';
 
@@ -15,15 +19,22 @@ function isAuthPath(path: string): boolean {
   return path === '/auth' || path.startsWith('/auth/');
 }
 
-function internalRequest(request: Request, url: URL, appJwt?: string, gatewayJwt?: string): Request {
+function internalRequest(request: Request, url: URL, appJwt?: string, gatewayJwt?: string, guest = false): Request {
   const headers = new Headers(sanitizedRequest(new Request(request.url, { headers: request.headers })).headers);
-  // Only authenticated private ingress uses Doorway's platform IP for limits.
+  // Only the private ingress uses Doorway's platform IP for limits.
   headers.delete('cf-connecting-ip');
   const clientIp = request.headers.get('x-forwarded-for');
-  if (appJwt && clientIp && /^[0-9a-fA-F:.]{3,45}$/.test(clientIp)) headers.set('cf-connecting-ip', clientIp);
+  if ((appJwt || guest) && clientIp && /^[0-9a-fA-F:.]{3,45}$/.test(clientIp)) headers.set('cf-connecting-ip', clientIp);
   headers.delete('x-forwarded-for');
   if (appJwt) headers.set('x-cail-identity-jwt', appJwt);
   if (gatewayJwt) headers.set('x-cail-gateway-identity-jwt', gatewayJwt);
+  if (guest || appJwt) {
+    const cookies = [GUEST_COOKIE, TRANSFER_COOKIE].map(name => {
+      const value = uniqueCookie(request, name);
+      return value && /^[A-Za-z0-9_.-]{1,512}$/.test(value) ? `${name}=${value}` : '';
+    }).filter(Boolean);
+    if (cookies.length) headers.set('cookie', cookies.join('; '));
+  }
   const internal = new Request(url, request);
   for (const name of [...internal.headers.keys()]) internal.headers.delete(name);
   for (const [name, value] of headers) internal.headers.set(name, value);
@@ -38,12 +49,17 @@ export async function toolsRequest(request: Request, env: WorkerEnv): Promise<Re
   }
   url.pathname = url.pathname.slice(TOOLS_MOUNT.length) || '/';
   const read = ['GET', 'HEAD'].includes(request.method);
-  if (!isApiPath(url.pathname) && !read) return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' } });
+  const guestAuth = url.pathname === '/auth/guest' || url.pathname === '/auth/guest-transfer/finish'
+    ? request.method === 'POST' : url.pathname === '/auth/guest-transfer/start' && request.method === 'GET';
+  if (!isApiPath(url.pathname) && !read && !guestAuth) return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' } });
   if (!isApiPath(url.pathname) && !isAuthPath(url.pathname)) return internalRequest(request, url);
-  if (isAuthPath(url.pathname) && url.pathname !== '/auth/login') return new Response('Not found', { status: 404 });
+  if (isAuthPath(url.pathname) && url.pathname !== '/auth/login' && !guestAuth) return new Response('Not found', { status: 404 });
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
       (request.headers.get('origin') !== TOOLS_ORIGIN || request.headers.get('sec-fetch-site') === 'cross-site')) {
     return authFailure('invalid_credential', 403);
+  }
+  if (url.pathname !== '/auth/login' && !request.headers.has('x-cail-identity-jwt') && !request.headers.has('x-cail-gateway-identity-jwt')) {
+    return internalRequest(request, url, undefined, undefined, true);
   }
   const [appConfig, gatewayConfig] = await Promise.all(['cail:stem-splitter', 'cail:gateway'].map(expectedAudience =>
     loadIdentityVerifierConfig({ jwks: env.CAIL_IDENTITY_JWKS, issuer: CAIL_CANONICAL_ISSUER, expectedAudience, supportedIssuers: [CAIL_CANONICAL_ISSUER] })));
@@ -115,21 +131,25 @@ export async function serveTools(request: Request, env: WorkerEnv, ctx: Executio
   }
   const url = new URL(internal.url);
   if (url.pathname === '/auth/login' && ['GET', 'HEAD'].includes(request.method)) {
-    return new Response(null, { status: 303, headers: { Location: toolsLoginPath(url.searchParams.get('returnTo')), 'Cache-Control': 'private, no-store' } });
+    const response = new Response(null, { status: 303, headers: { Location: toolsLoginPath(url.searchParams.get('returnTo')), 'Cache-Control': 'private, no-store' } });
+    ctx.waitUntil(recordSignInUse({ ...env, PUBLIC_BASE_URL: TOOLS_ORIGIN }, internal, response, Date.now()));
+    return response;
   }
   // CUNY sign-in and logout at this mount belong to Doorway's session.
-  if (url.pathname.startsWith('/auth/')) return new Response('Not found', { status: 404 });
-  if (!isApiPath(url.pathname)) {
+  if (url.pathname.startsWith('/auth/') && !['/auth/guest', '/auth/guest-transfer/start', '/auth/guest-transfer/finish'].includes(url.pathname)) return new Response('Not found', { status: 404 });
+  if (!isApiPath(url.pathname) && !isAuthPath(url.pathname)) {
     // Public landing requests can read actual static files only. Do not enter
     // dynamic health, report, sample or account routes without verification.
     const asset = env.ASSETS ? await env.ASSETS.fetch(internal) : new Response('Not found', { status: 404 });
+    if (request.method === 'GET' && ['/', '/index.html', '/account.html', '/teacher.html', '/classroom.html'].includes(url.pathname)) ctx.waitUntil(recordPageUse(env, asset));
     const headers = new Headers(asset.headers);
     for (const [name, value] of Object.entries(HEADERS)) headers.set(name, value);
+    headers.set('Content-Security-Policy', HEADERS['Content-Security-Policy'].replace("script-src 'self';", "script-src 'self' https://challenges.cloudflare.com;").replace("connect-src 'self';", "connect-src 'self' https://challenges.cloudflare.com;") + '; frame-src https://challenges.cloudflare.com');
     return mountedResponse(new Response(asset.body, { status: asset.status, headers }), original);
   }
   const response = await worker.fetch(internal, {
     ...env, APP_BASE_PATH: TOOLS_MOUNT, CAIL_LOGIN_URL: `${TOOLS_MOUNT}/auth/login`,
-    CAIL_BROWSER_ORIGIN: TOOLS_ORIGIN, GUEST_ENABLED: 'false',
+    CAIL_BROWSER_ORIGIN: TOOLS_ORIGIN,
   }, ctx, true);
   return mountedResponse(response, original);
 }

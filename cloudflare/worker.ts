@@ -1,3 +1,4 @@
+import { guestTransfer } from './guest-transfer.ts';
 import { publicSampleResource, readSampleResource } from '../src/song-sample-resource.ts';
 import { isPlaylistSample, playlistSampleResponse } from '../src/playlist-samples.ts';
 import { recordPageUse, recordServerUse, recordSignInUse } from '../src/reliability/observability.ts';
@@ -94,7 +95,7 @@ const worker = {
     if (env.CANONICAL_BASE_URL && url.origin === env.CANONICAL_BASE_URL) {
       env = { ...env, PUBLIC_BASE_URL: env.CANONICAL_BASE_URL };
     }
-    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined,guestClaimSession:undefined};
+    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request) && !(tools && request.headers.has('x-cail-identity-jwt')),guestSession:undefined,guestClaimSession:undefined};
     let response: Response;
     try {
       const paused = intakePauseResponse(request, env);
@@ -152,6 +153,8 @@ const worker = {
           release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
+      } else if (url.pathname.startsWith('/auth/guest-transfer')) {
+        response = await guestTransfer(request, env);
       } else if (url.pathname === '/auth/guest') {
         response = await startGuestSession(request,env);
       } else if (url.pathname.startsWith('/auth/')) {
@@ -162,7 +165,7 @@ const worker = {
         // Admission and ownership run in the shared application. Limit expensive
         // ingress before provider work; signed provider callbacks are independent.
         let internal: Request | Response;
-        if (tools) internal = request;
+        if (tools && request.headers.has('x-cail-identity-jwt')) internal = request;
         else if (!publicApi(request) && !hasMemberCookie(request) && env.guestRuntimeReady) {
           const session=await readGuestSession(request,env);
           if (session) {env={...env,guestSession:session};internal=sanitizedRequest(request);}
@@ -171,7 +174,7 @@ const worker = {
             internal.headers.append('Set-Cookie',clearGuestCookie());
           } else internal=await authenticatedRequest(request,env);
         } else internal=await authenticatedRequest(request,env);
-        if (!(internal instanceof Response) && hasMemberCookie(request) && request.method==='POST' && url.pathname==='/api/account/claim-guest') {
+        if (!(internal instanceof Response) && (hasMemberCookie(request) || tools && request.headers.has('x-cail-identity-jwt')) && request.method==='POST' && url.pathname==='/api/account/claim-guest') {
           env={...env,guestClaimSession:(await readGuestSession(request,env))??undefined};
         }
         if(internal instanceof Response)ctx.waitUntil(recordServerUse(env,request,internal,undefined,Date.now()));

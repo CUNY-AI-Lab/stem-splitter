@@ -5993,6 +5993,11 @@ async function initialize() {
       const claimedGuest = response.status === 403
         && (await response.clone().json().catch(() => ({}))).error?.code === 'guest_session_claimed';
       if ((response.status === 401 || claimedGuest) && runtime.guest?.canStart === true) {
+        if (StemPath.base) {
+          try { sessionStorage.setItem('stem-transfer-return', location.pathname + location.search); } catch {}
+          location.assign(StemPath('/auth/guest-transfer/start'));
+          return;
+        }
         await window.StemGuest.ensure(runtime.guest);
         response = await window.StemFetch('/api/account');
       }
