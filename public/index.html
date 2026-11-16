@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script src="/app-path.js"></script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Stem Splitter</title>
@@ -9,8 +10,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20261105-auth-nav" />
+  <link rel="stylesheet" href="/styles.css?v=20261116-compact" />
   <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
+  <link rel="stylesheet" href="/stem-select.css?v=20261116-compact">
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -29,17 +31,19 @@
         <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab">
           <img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" />
         </a>
-        <p class="account-nav"><span class="account-session-note"><span id="guest-account-state">Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login">CUNY Login</a></p>
+        <p class="account-nav"><a id="header-signin" class="account-button" href="/auth/login">CUNY Login</a></p>
+        <form class="account-nav header-logout" action="/auth/logout" method="post"><button class="account-button" type="submit">Log out</button></form>
         </div>
       </div>
       <div class="masthead-meta">
-        <p id="station-tagline" class="tagline">Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.</p>
+        <div id="station-tagline" class="tagline">
+          <p>Split audio tracks into musical layers for deep listening, one stem at a time.</p>
+        </div>
       </div>
       <nav id="workspace-nav" class="workspace-nav" aria-label="Stem Splitter" hidden>
         <a href="/" aria-current="page">Splitter</a>
-        <a href="/classroom.html">Workspace</a>
-        <a href="/account.html">Settings</a>
-        <a data-instructor-nav href="/teacher.html" hidden>Instructor Console</a>
+        <a href="/classroom.html">Classes</a>
+        <a href="/account.html">Account</a>
       </nav>
     </header>
 
@@ -57,7 +61,7 @@
       <section id="yt-disclosure" class="yt-disclosure" aria-label="Song search">
         <form id="yt-form" class="yt-form">
           <div class="source-field">
-            <input id="yt-url" type="text" placeholder="Search songs" aria-label="Song or link" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
+            <input id="yt-url" type="text" placeholder="Search songs or paste YouTube link" aria-label="Song or link" role="combobox" aria-autocomplete="list" aria-controls="source-songs" aria-expanded="false" autocomplete="off" />
             <button id="source-sample-hint" class="source-sample-hint" type="button" aria-label="Use suggested song. Tab to accept." hidden><kbd>Tab</kbd> to accept</button>
             <ul id="source-songs" role="listbox" aria-label="Songs" hidden></ul>
           </div>
@@ -88,8 +92,9 @@
 
       <!-- Instructor-only: revealed when a teacher session cookie is present. -->
       <section id="folders" class="rack folders" hidden>
-        <h2 class="rack-title"><span>CLASS FOLDERS</span></h2>
-        <p id="folders-empty" class="empty mono" hidden>Your splits are saved automatically. Use “+ FOLDER” to organize them.</p>
+        <h2 class="rack-title"><span>MY FOLDERS</span></h2>
+        <p class="folders-note">Only you can see these. Folders a class can open are under <a href="/classroom.html">Classes</a>.</p>
+        <p id="folders-empty" class="empty mono" hidden>Your splits are saved automatically. Use “MOVE TO MY FOLDERS” to organize them.</p>
         <ul id="folder-list" class="folder-list"></ul>
       </section>
 
@@ -165,11 +170,12 @@
 
   <script src="/autosplit.js?v=app-20260822-1"></script>
   <script src="/remix-license.js?v=20260906"></script>
-  <script src="/session-guard.js?v=20261105-auth-nav"></script>
+  <script src="/session-guard.js?v=20261106-account-nav"></script>
 <script src="/guest.js?v=20261023-two-reply-demo"></script>
   <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-  <script src="/classroom-live.js?v=20261104-split-actions"></script>
-  <script src="/app.js?v=20261105-stateful-resplits"></script>
+  <script src="/classroom-live.js?v=20261107-resplit-stems"></script>
+  <script src="/stem-select.js?v=20261116-compact"></script>
+  <script src="/app.js?v=20261116-compact"></script>
   <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </body>
 </html>

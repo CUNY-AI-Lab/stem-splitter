@@ -38,6 +38,11 @@ async function signingKey(env: Env) {
   return crypto.subtle.importKey('raw',new TextEncoder().encode(env.GUEST_COOKIE_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);
 }
 const message = (origin: string,id: string,expires: number) => new TextEncoder().encode(`stem-splitter-guest-v1\n${origin}\n${id}.${expires}`);
+export async function guestSessionCookie(env: Env, origin: string, session: GuestSession): Promise<string> {
+  const id = session.subject.slice(6);
+  const signature = encode(new Uint8Array(await crypto.subtle.sign('HMAC', await signingKey(env), message(origin, id, session.expiresAt))));
+  return cookie(`${id}.${session.expiresAt}.${signature}`, Math.max(0, Math.floor((session.expiresAt-Date.now())/1000)));
+}
 export async function readGuestSession(request: Request,env: Env): Promise<GuestSession | null> {
   const match = TOKEN.exec(uniqueCookie(request,GUEST_COOKIE));
   if (!match || !Number.isSafeInteger(Number(match[2])) || Number(match[2]) <= Date.now() || Number(match[2]) > Date.now()+GUEST_SESSION_MS+1000) return null;
@@ -58,7 +63,7 @@ export async function revokeGuestSession(request: Request,env: Env): Promise<voi
 export async function startGuestSession(request: Request,env: GuestAdapterEnv): Promise<Response> {
   const url=new URL(request.url);
   if (request.method !== 'POST') return new Response(null,{status:405,headers:{Allow:'POST'}});
-  if (url.protocol !== 'https:' || ![env.PUBLIC_BASE_URL,env.CANONICAL_BASE_URL].includes(url.origin)
+  if (url.protocol !== 'https:' || ![env.PUBLIC_BASE_URL,env.CANONICAL_BASE_URL, ...(env.APP_BASE_PATH === '/stem-splitter' ? [env.CAIL_BROWSER_ORIGIN] : [])].includes(url.origin)
     || request.headers.get('origin') !== url.origin || request.headers.get('sec-fetch-site') === 'cross-site') return guestFailure('guest_origin_invalid',403,'Open Stem Splitter directly to start a guest session.');
   if (hasMemberCookie(request)) return guestFailure('guest_signout_required',403,'Sign out of your existing account before starting a separate guest session.');
   if (!guestConfigured(env)) return guestFailure('guest_unavailable',503,'Guest access is not available. You can use CUNY Login.');

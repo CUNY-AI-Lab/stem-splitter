@@ -10,6 +10,7 @@
 //   - provider redirects, response sizes, read times, and audio signatures are
 //     bounded before any bytes are stored.
 import type { Env } from './env';
+import { HATE_MUSIC_NAMES, HATE_MUSIC_TAGS, SLURS } from './genre-list-exclusions.ts';
 import { readBoundedResponse, responseMediaType } from './http/bounded-response.ts';
 import { mp3FrameInfo } from './reliability/media.ts';
 
@@ -92,6 +93,9 @@ export interface ArchiveTrack {
   bytes: number;
   artist?: string;
   creator?: string;
+  genre?: string;
+  /** The file this one was encoded from. Every encoding of one recording shares it. */
+  sourceFile?: string;
   /** False when the track breaks the duration or size cap; UI greys these out. */
   importable: boolean;
 }
@@ -105,6 +109,10 @@ export interface ArchiveItem {
   license: string;
   licenseUrl: string;
   detailsUrl: string;
+  /** Subject and genre tags in searchableText form. */
+  genreTags?: string;
+  /** Every tag, including those of a keyword-stuffed upload, which genreTags ignores. */
+  allTags?: string;
   tracks: ArchiveTrack[];
 }
 
@@ -411,9 +419,29 @@ export interface ArchiveSong {
   sourceUrl: string;
   itemTitle: string;
 }
+type SongCandidate = ArchiveSong & { evidence: number; score: number; sourceKey: string; creditKey: string; labelKey: string };
 
+// Bitrate labels and upload ids that file names carry: Bossa_Nova_64kb, Crazy(128k), Song-279221631.
+const FILE_NAME_NOISE = /(?:(?:[\s._-]+[([]?|[([])(?:\d{2,3}\s?k(?:bps|b)?|vbr)[)\]]?|-\d{9,})$/i;
+const AUDIO_EXTENSION = /\.(?:mp3|ogg|flac|wav|m4a|aiff?)$/i;
+const PLACEHOLDER_TITLE = /^(?:\d+[\s._-]*)?(?:file|track|audio|tmp|temp|untitled|unknown|トラック)[\s._-]*\d*(?:\.\w{2,4})?$/i;
+/** File-derived titles can arrive URL-encoded, with their folder path, or spelled as a file name. */
+function readableText(text: string, path: string): string {
+  let title = text;
+  if (/%[0-9a-f]{2}/i.test(title)) { try { title = decodeURIComponent(title); } catch { /* Keep the source text. */ } }
+  if (path.includes(title) && title.includes('/')) title = title.split('/').filter(Boolean).at(-1) || title;
+  title = title.replace(AUDIO_EXTENSION, '').replace(FILE_NAME_NOISE, '') || title;
+  return /\s/.test(title) ? title : title.replace(/_+/g, ' ').trim() || title;
+}
+const readableTitle = (track: ArchiveTrack) => readableText(track.title, track.name);
 function songTitle(item: ArchiveItem, track: ArchiveTrack): string {
-  return item.tracks.length === 1 && /^(?:file|track|audio)[\s._-]*\d*$/i.test(track.title) ? item.title : track.title;
+  if (!PLACEHOLDER_TITLE.test(track.title)) return readableTitle(track);
+  const source = track.sourceFile || track.name;
+  if (item.tracks.every(entry => (entry.sourceFile || entry.name) === source)) return item.title;
+  // Some uploads tag every file "tmp" while the file name holds the real title.
+  const fileName = track.name.split('/').at(-1)!.replace(/\.[^.]+$/, '');
+  const named = readableText(fileName, track.name);
+  return PLACEHOLDER_TITLE.test(named) || !/\p{L}/u.test(named) ? readableTitle(track) : named;
 }
 function recordingCredit(value: string | undefined): string {
   return value && !/^(artist|unknown|unknown artist|various artists)$/i.test(value) ? value : '';
@@ -438,11 +466,61 @@ export function archiveAudioMetadata(item: ArchiveItem, track: ArchiveTrack, pub
   };
 }
 
-const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-export type SongResults = { results: ArchiveSong[] };
+export const searchableText = (text: string) => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export type SongResults = { results: ArchiveSong[]; fallback?: boolean };
+const withoutArticle = (text: string) => text.replace(/^the /, '');
+/** True when the query names this credit, or one artist in a shared credit such as "Michael Kamen, Queen". */
+export function creditMatchesQuery(credit: string | undefined, query: string): boolean {
+  const target = withoutArticle(searchableText(query));
+  if (!credit || !target) return false;
+  return [credit, ...credit.split(/\s*(?:[,;&/+]|\b(?:and|feat|ft|with)\b\.?)\s*/i)]
+    .some(part => withoutArticle(searchableText(part)) === target);
+}
+// Names people search by, in searchableText form. Subject tags vary, so each genre lists its usual spellings.
+const GENRES: Record<string, string[]> = {
+  'Hard rock': ['hard rock'], 'Folk rock': ['folk rock'], 'Indie rock': ['indie rock'], 'Classic rock': ['classic rock'],
+  'Progressive rock': ['progressive rock', 'prog rock'], 'Psychedelic rock': ['psychedelic rock'], 'Alternative rock': ['alternative rock'],
+  'Smooth jazz': ['smooth jazz'], 'Bossa nova': ['bossa nova'], Salsa: ['salsa'], Samba: ['samba'],
+  Rock: ['rock'], Pop: ['pop'], Jazz: ['jazz'], Blues: ['blues'], Classical: ['classical'], Folk: ['folk'],
+  Soul: ['soul'], Funk: ['funk'], Country: ['country'], 'Hip hop': ['hip hop', 'hiphop', 'rap'],
+  Electronic: ['electronic', 'electronica', 'edm'], Techno: ['techno'], House: ['house'], Ambient: ['ambient'],
+  Reggae: ['reggae'], Metal: ['heavy metal', 'metal'], Punk: ['punk rock', 'punk'], 'R&B': ['rhythm and blues', 'rnb', 'r b'],
+  Gospel: ['gospel'], Disco: ['disco'], Opera: ['opera'], Bluegrass: ['bluegrass'],
+};
+const GENRE_FILLER = new Set(['the', 'music', 'song', 'songs', 'track', 'tracks']);
+export type GenreQuery = { label: string; names: string[]; rest: string[] };
+/** A genre counts at either end of a query, so "queen rock" is a genre search and "we will rock you" stays a title. */
+export function genreQuery(tokens: string[]): GenreQuery | null {
+  const text = tokens.join(' ');
+  // Longest names first, so "rhythm and blues" is not read as blues.
+  const candidates = Object.entries(GENRES).flatMap(([label, names]) => names.map(name => ({ label, names, name })))
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const { label, names, name } of candidates) {
+    const remainder = text === name ? '' : text.startsWith(`${name} `) ? text.slice(name.length + 1)
+      : text.endsWith(` ${name}`) ? text.slice(0, -name.length - 1) : null;
+    if (remainder === null) continue;
+    const rest = remainder.split(' ').filter(token => token && !GENRE_FILLER.has(token));
+    if (rest.length <= 3) return { label, names, rest };
+  }
+  return null;
+}
+/** A search for a genre and nothing else. A credit such as "Jazz" says who uploaded it, not what it sounds like. */
+export const isGenreOnlySearch = (tokens: string[]) => genreQuery(tokens)?.rest.length === 0;
+const hasWords = (text: string, words: string) => ` ${text} `.includes(` ${words} `);
+const SEARCHABLE_TAGS = HATE_MUSIC_TAGS.map(searchableText), SEARCHABLE_NAMES = [...HATE_MUSIC_NAMES, ...SLURS].map(searchableText);
+/** Decides what a genre-only list leaves out. Song names can't decide alone: "Ku Klux Klan" is also an anti-racist reggae song, so tags are read separately. */
+export function hiddenFromGenreLists(text: string, tags = ''): boolean {
+  const words = searchableText(text), labels = searchableText(tags);
+  return SEARCHABLE_NAMES.some(name => hasWords(words, name) || hasWords(labels, name)) || SEARCHABLE_TAGS.some(tag => hasWords(labels, tag));
+}
+const quotedTerms = (terms: string[]) => terms.map(term => `"${term}"`).join(' OR ');
+// Keeps flagged uploads from using a genre search's inspection slots. The Archive's own collections for material it plays down count here too.
+const GENRE_LIST_CATALOG_FILTER = ` AND NOT collection:(deemphasize OR fringe) AND NOT subject:(${quotedTerms([...HATE_MUSIC_TAGS, ...HATE_MUSIC_NAMES])}) AND NOT title:(${quotedTerms(HATE_MUSIC_NAMES)}) AND NOT creator:(${quotedTerms(HATE_MUSIC_NAMES)})`;
+const hasGenre = (tags: string, genre: GenreQuery) => genre.names.some(name => ` ${tags} `.includes(` ${name} `));
+const genreCatalogQuery = (genre: GenreQuery) => genre.names.map(name => `"${name === 'r b' ? 'r&b' : name}"`).join(' OR ');
 export const archiveSongSearchKey = (query: string) => searchableText(displayText(query, '', MAX_TERM_LENGTH));
 type SearchListener = (results: SongResults) => void;
-const searchCache = new Map<string, { expires: number; songs: Promise<SongResults>; latest: SongResults; listeners: Set<SearchListener> }>();
+const searchCache = new Map<string, { expires: number; results: SongResults }>();
 
 /** Share a bounded number of upstream requests across discovery and verification. */
 function requestPool(width: number) {
@@ -456,32 +534,26 @@ function requestPool(width: number) {
   };
 }
 
-// Related queries often rediscover the same albums and tracks. Share only
-// successful public discovery work; imports always fetch fresh metadata/audio.
-type DiscoveryEntry<T> = { expires: number; promise: Promise<T> };
+// Related queries often rediscover the same albums and tracks, so requests share finished public discovery.
+// They never share unfinished work: Workers ends a request's outstanding work with that request, so a promise
+// from another request can stay pending for good. Each search removes its own duplicates. Imports fetch fresh.
+type DiscoveryEntry<T> = { expires: number; value: T };
 const songMetadataCache = new Map<string, DiscoveryEntry<ArchiveItem>>();
 // Provider locations stay server-side and expire with their metadata object.
 const songDeliveryLocations = new WeakMap<ArchiveItem, string[]>();
 const songDeliveryCache = new Map<string, DiscoveryEntry<boolean>>();
-const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
-function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
+async function reuseDiscovery<T>(cache: Map<string, DiscoveryEntry<T>>, key: string, limit: number,
   work: () => Promise<T>, reusable: (value: T) => boolean): Promise<T> {
   const now = Date.now();
   for (const [id, entry] of cache) if (entry.expires <= now) cache.delete(id);
   const hit = cache.get(key);
-  if (hit) return hit.promise;
-  if (cache.size >= limit) cache.delete(cache.keys().next().value!);
-  const entry: DiscoveryEntry<T> = { expires: Infinity, promise: Promise.resolve().then(work) };
-  cache.set(key, entry);
-  entry.promise = entry.promise.then(value => {
-    if (reusable(value)) entry.expires = Date.now() + 60000;
-    else if (cache.get(key) === entry) cache.delete(key);
-    return value;
-  }, error => {
-    if (cache.get(key) === entry) cache.delete(key);
-    throw error;
-  });
-  return entry.promise;
+  if (hit) return hit.value;
+  const value = await work();
+  if (reusable(value)) {
+    if (!cache.has(key) && cache.size >= limit) cache.delete(cache.keys().next().value!);
+    cache.set(key, { expires: Date.now() + 60000, value });
+  }
+  return value;
 }
 
 /** Check public file delivery before exposing a choice; imports still read the complete file. */
@@ -576,8 +648,7 @@ export async function verifyArchiveSample(query: string, identifier: string, fil
   const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: typeof maximumSeconds === 'number' ? archiveDurationLimit(maximumSeconds) : undefined, suggestionAvailability: maximumSeconds === 'availability', timeoutMs: 9000, signal });
   const song = matchingSongs(item, tokens).find(track => track.archiveFile === file);
   if (!song || !await downloadableSong(song, songDeliveryLocations.get(item), signal)) return { results: [] };
-  const { score: _score, ...result } = song;
-  return { results: [result] };
+  return publicSongs([song]);
 }
 
 /** Verify an instructor-selected file by its source identity, independently of display labels. */
@@ -595,14 +666,12 @@ export async function searchReferencedArchiveItem(identifier: string, query: str
   const tokens = archiveSongSearchKey(query).split(' ').filter(Boolean).slice(0, 8);
   if (!tokens.length) return { results: [] };
   const item = await fetchArchiveItem(identifier, { publicAudio: true, maximumSeconds: archiveDurationLimit(maximumSeconds), timeoutMs: 9000, signal });
-  const results: ArchiveSong[] = [];
+  const found: SongCandidate[] = [];
   for (const song of matchingSongs(item, tokens).sort((a, b) => b.score - a.score).slice(0, 2)) {
     signal?.throwIfAborted();
-    if (await downloadableSong(song, songDeliveryLocations.get(item), signal)) {
-      const { score: _score, ...track } = song; results.push(track);
-    }
+    if (await downloadableSong(song, songDeliveryLocations.get(item), signal)) found.push(song);
   }
-  return { results };
+  return publicSongs(found);
 }
 
 /** The main field searches public downloads. */
@@ -614,31 +683,58 @@ export async function searchArchiveSongs(query: string, onResults?: SearchListen
   const cacheKey = `${durationLimit}:${normalized}`;
   const now = Date.now();
   for (const [key, value] of searchCache) if (value.expires <= now) searchCache.delete(key);
-  let entry = searchCache.get(cacheKey);
-  if (!entry) {
-    entry = { expires: Infinity, songs: Promise.resolve({ results: [] }), latest: { results: [] }, listeners: new Set() };
-    const current = entry;
-    if (searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
-    searchCache.set(cacheKey, current);
-    current.songs = findArchiveSongs(tokens, results => {
-      current.latest = results;
-      for (const listener of current.listeners) listener(results);
-    }, durationLimit).then(results => {
-      current.latest = results;
-      current.expires = Date.now() + 60000;
-      return results;
-    }, error => {
-      if (searchCache.get(cacheKey) === current) searchCache.delete(cacheKey);
-      throw error;
-    });
+  const hit = searchCache.get(cacheKey);
+  if (hit) {
+    if (hit.results.results.length) onResults?.(hit.results);
+    return hit.results;
   }
-  if (onResults) {
-    entry.listeners.add(onResults);
-    if (entry.latest.results.length) onResults(entry.latest);
-  }
-  try { return await entry.songs; }
-  finally { if (onResults) entry.listeners.delete(onResults); }
+  const results = await findArchiveSongs(tokens, onResults ?? (() => {}), durationLimit);
+  if (!searchCache.has(cacheKey) && searchCache.size >= 30) searchCache.delete(searchCache.keys().next().value!);
+  searchCache.set(cacheKey, { expires: Date.now() + 60000, results });
+  return results;
 }
+
+// Encodings and album repeats of one track differ by a moment, while different takes rarely match this closely.
+const SAME_RECORDING_SECONDS = 2;
+/**
+ * One place per recording, at its best rank, holding its largest file, the fullest source to split.
+ * Within an upload, the Archive links encodings of one file, and repeats share a credit, a title and a length.
+ * Separate uploads stay separate: each is a distinct source with its own item, credit and rights.
+ */
+function distinctRecordings(ranked: SongCandidate[], usable: (song: SongCandidate) => boolean = () => true): SongCandidate[] {
+  const kept: SongCandidate[] = [];
+  const bySource = new Map<string, number>(), byLabel = new Map<string, number[]>();
+  for (const song of ranked) {
+    const sameLabel = byLabel.get(song.labelKey) ?? [];
+    const copy = bySource.get(song.sourceKey) ?? sameLabel.find(index => Math.abs(kept[index].durationSec - song.durationSec) <= SAME_RECORDING_SECONDS);
+    if (copy === undefined) {
+      const index = kept.push(song) - 1;
+      bySource.set(song.sourceKey, index);
+      byLabel.set(song.labelKey, [...sameLabel, index]);
+    } else {
+      bySource.set(song.sourceKey, copy);
+      if (song.bytes > kept[copy].bytes && (usable(song) || !usable(kept[copy]))) kept[copy] = { ...song, evidence: kept[copy].evidence, score: kept[copy].score };
+    }
+  }
+  return kept;
+}
+// One upload should not fill a list, and in a genre search neither should one artist.
+const PLACES_PER_SOURCE = 2;
+/** The first places of each source come first. The rest only fill a list that would otherwise be short. */
+function variedSources(ranked: SongCandidate[], countArtists: boolean): SongCandidate[] {
+  const places = new Map<string, number>(), first: SongCandidate[] = [], rest: SongCandidate[] = [];
+  for (const song of ranked) {
+    const sources = [`upload\n${song.archiveId}`, ...(countArtists ? [`artist\n${song.creditKey}`] : [])];
+    if (sources.some(source => (places.get(source) ?? 0) >= PLACES_PER_SOURCE)) { rest.push(song); continue; }
+    for (const source of sources) places.set(source, (places.get(source) ?? 0) + 1);
+    first.push(song);
+  }
+  return [...first, ...rest];
+}
+
+/** The first eight, without the fields that only ranking needs. */
+const publicSongs = (songs: SongCandidate[]): SongResults => ({ results: songs.slice(0, 8)
+  .map(({ evidence: _evidence, score: _score, sourceKey: _sourceKey, creditKey: _creditKey, labelKey: _labelKey, ...song }) => song) });
 
 function archiveSongMetadata(item: ArchiveItem, track: ArchiveTrack): ArchiveSong {
   return { id: `${item.identifier}/${track.name}`, archiveId: item.identifier, archiveFile: track.name,
@@ -647,43 +743,102 @@ function archiveSongMetadata(item: ArchiveItem, track: ArchiveTrack): ArchiveSon
     bytes: track.bytes, sourceUrl: item.detailsUrl, itemTitle: item.title };
 }
 
-function matchingSongs(item: ArchiveItem, tokens: string[]): (ArchiveSong & { score: number })[] {
-  const candidates: (ArchiveSong & { score: number })[] = [];
+// Stage talk and clips are rarely what a search for music wants, so they list only after full tracks.
+export const SHORT_CLIP_SECONDS = 30;
+function matchingSongs(item: ArchiveItem, tokens: string[]): SongCandidate[] {
+  const candidates: SongCandidate[] = [];
+  const genre = genreQuery(tokens);
+  const genreOnly = genre?.rest.length === 0;
+  // One flagged track speaks for its upload: the other songs on a racist album rarely say so in their titles.
+  if (genreOnly && item.tracks.some(track => hiddenFromGenreLists([item.title, item.creator, track.title, track.name, track.artist, track.creator].join(' '), `${item.allTags || ''} ${track.genre || ''}`))) return candidates;
   for (const track of item.tracks) {
     if (!track.importable) continue;
     const versions = searchableText(`${item.title} ${track.title} ${item.identifier}`);
     const title = songTitle(item, track);
     const artist = recordingCredit(track.artist), fileCreator = recordingCredit(track.creator);
     if (!artist && !fileCreator && !recordingCredit(item.creator)) continue;
+    // File credits outrank the item credit, so a compilation cannot credit every track to its album artist.
+    const namedArtist = !genreOnly && (artist || fileCreator ? [artist, fileCreator] : [recordingCredit(item.creator)]).some(credit => creditMatchesQuery(credit, tokens.join(' ')));
     // Item creator remains useful for finding a song, but never becomes its artist tag.
     const text = searchableText(`${title} ${artist} ${fileCreator} ${item.creator}`);
-    // Matching only the album description would return unrelated tracks.
-    if (!tokens.every(token => text.includes(token))) continue;
     const titleText = searchableText(title), artistText = searchableText(`${artist} ${fileCreator} ${item.creator}`);
-    const artistTokens = tokens.filter(token => !titleText.includes(token));
-    if (artistTokens.length && (artist || fileCreator) &&
-        ![artist, fileCreator].some(credit => artistTokens.every(token => searchableText(credit).includes(token)))) continue;
-    // A partial creator-name match alone is not a match for the requested song.
-    // An exact artist query still returns that artist's available tracks.
-    if (!tokens.some(token => titleText.includes(token)) &&
-        ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
-    const score = tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
-      + (titleText === tokens.join(' ') ? 6 : 0)
-      + (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0)
-      - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)
-      - Math.abs(text.split(' ').length - tokens.length) * 0.2;
-    candidates.push({ ...archiveSongMetadata(item, track), score });
+    const genreMatch = genre !== null && hasGenre(searchableText(`${item.genreTags || ''} ${track.genre || ''}`), genre);
+    const restPhrase = genre?.rest.join(' ') || '';
+    const restArtist = genreMatch && restPhrase !== '' && (artist || fileCreator ? [artist, fileCreator] : [recordingCredit(item.creator)]).some(credit => creditMatchesQuery(credit, restPhrase));
+    const genreAccepted = genreMatch && (restArtist || !genre.rest.length || genre.rest.every(token => text.includes(token)));
+    if (!namedArtist && !genreAccepted) {
+      // Matching only the album description would return unrelated tracks.
+      if (!tokens.every(token => text.includes(token))) continue;
+      const artistTokens = tokens.filter(token => !titleText.includes(token));
+      if (artistTokens.length && (artist || fileCreator) &&
+          ![artist, fileCreator].some(credit => artistTokens.every(token => searchableText(credit).includes(token)))) continue;
+      // A partial creator-name match alone is not a match for the requested song.
+      if (!tokens.some(token => titleText.includes(token)) &&
+          ![artist, fileCreator, item.creator].some(credit => searchableText(credit) === tokens.join(' '))) continue;
+    }
+    const penalty = (track.durationSec < SHORT_CLIP_SECONDS ? 20 : 0) + (PLACEHOLDER_TITLE.test(title) ? 3 : 0);
+    // How well a track answers the search. A genre search trusts the tag, then a title naming the genre: "Monkey Man Blues" is a safer bet than a loosely tagged upload.
+    const evidence = (genreOnly ? (genreMatch ? 8 : 0) + (genre.names.some(name => ` ${titleText} `.includes(` ${name} `)) ? 5 : 0)
+      : (namedArtist || restArtist ? 12 : 0) + (genreMatch ? 8 : 0) + tokens.filter(token => titleText.includes(token)).length * 5 + tokens.filter(token => artistText.includes(token)).length * 2
+        + (titleText === tokens.join(' ') ? 6 : 0) - (/\b(demo|live|acoustic)\b/.test(versions) ? 4 : 0)) - penalty;
+    // Small preferences that only choose among tracks in one upload.
+    const score = evidence + (genreOnly ? 0 : (track.artist && !/^(artist|unknown|unknown artist|various artists)$/i.test(track.artist) ? 2 : 0) - Math.abs(text.split(' ').length - tokens.length) * 0.2);
+    const song = archiveSongMetadata(item, track);
+    const creditKey = searchableText(song.artist || song.fileCreator || song.itemCreator);
+    candidates.push({ ...song, ...(genreMatch ? { genre: genre.label } : {}), evidence, score, creditKey,
+      sourceKey: `${item.identifier}\n${track.sourceFile || track.name}`, labelKey: `${item.identifier}\n${creditKey}\n${titleText}` });
   }
   return candidates;
 }
 
+// A search should settle in seconds. Past the first limit it returns a useful verified
+// list. With fewer results it waits for the second limit, then returns what it has,
+// or reports the source as busy when it has nothing.
+const SEARCH_SETTLE_MS = 5000, SEARCH_GIVE_UP_MS = 8000, SEARCH_ENOUGH_RESULTS = 4;
+// An empty list at the limit is a dead end, so a search with nothing to show waits this much longer.
+const SEARCH_EMPTY_LIMIT_MS = 15000;
 async function findArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number): Promise<SongResults> {
+  let latest: SongResults = { results: [] };
+  const budget: SearchBudget = { expired: false, bestEffort: () => latest };
+  const finished = discoverArchiveSongs(tokens, results => { latest = results; onResults(results); }, maximumSeconds, budget);
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const after = (ms: number) => new Promise<true>(resolve => { timers.push(setTimeout(() => resolve(true), ms)); });
+  try {
+    const running = finished.then(() => false as const);
+    if (!await Promise.race([running, after(SEARCH_SETTLE_MS)])) return await finished;
+    if (budget.bestEffort().results.length < SEARCH_ENOUGH_RESULTS && !await Promise.race([running, after(SEARCH_GIVE_UP_MS - SEARCH_SETTLE_MS)])) return await finished;
+    let outOfTime = false;
+    void after(SEARCH_EMPTY_LIMIT_MS - SEARCH_GIVE_UP_MS).then(() => { outOfTime = true; });
+    while (!budget.bestEffort().results.length && !outOfTime) {
+      if (!await Promise.race([running, after(250)])) return await finished;
+    }
+    budget.expired = true;
+    finished.catch(() => {});
+    const best = budget.bestEffort();
+    // Without this a search that gave up leaves no trace. It carries no search words.
+    console.warn('archive_search_time_limit', { results: best.results.length });
+    if (!best.results.length) throw new ArchiveError('Internet Archive is responding slowly. Try the search again.', 'archive_busy', true);
+    return best;
+  } finally { timers.forEach(clearTimeout); }
+}
+
+type SearchBudget = { expired: boolean; bestEffort: () => SongResults };
+async function discoverArchiveSongs(tokens: string[], onResults: SearchListener, maximumSeconds: number, budget: SearchBudget): Promise<SongResults> {
+  // Per search, for the same reason as above: a request ended at its time limit never releases a shared slot.
+  const songMetadataPool = requestPool(6), songDeliveryPool = requestPool(4);
+  const genreOnly = isGenreOnlySearch(tokens);
+  const artistQuery = genreOnly ? '' : tokens.join(' ');
+  // The Archive counts downloads per upload. Between equally good matches, it is the best guess at what people mean.
+  // It orders the final list only: letting it choose which uploads to inspect spends the time limit on the largest albums.
+  const downloads = new Map<string, number>();
+  const downloadsOf = (id: string) => downloads.get(id) ?? 0;
   const docScore = (doc: { title?: unknown; creator?: unknown; musicQuery?: boolean }) => {
     const title = searchableText(displayText(doc.title)), artist = searchableText(displayText(doc.creator));
     // A title plus its credited performer covers an artist-qualified query as
     // well as a filename containing every word. Prefer useful source credits.
     return tokens.filter(token => title.includes(token)).length * 4
       + tokens.filter(token => !title.includes(token) && artist.includes(token)).length * 4
+      + (creditMatchesQuery(displayText(doc.creator), artistQuery) ? 10 : 0)
       + (recordingCredit(displayText(doc.creator)) ? 6 : 0) + (doc.musicQuery ? 4 : 0) - (title + artist).length / 200;
   };
   const discoveryOrder = <T extends { title?: unknown; creator?: unknown; musicQuery?: boolean }>(docs: T[]): T[] => {
@@ -702,23 +857,38 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   };
   const metadata = new Map<string, Promise<ArchiveItem | null>>();
   const probes = new Map<string, Promise<boolean>>();
-  const candidates = new Map<string, ArchiveSong & { score: number }>();
+  const candidates = new Map<string, SongCandidate>();
   const locations = new Map<string, string[]>();
   const verified = new Set<string>();
   const earlyChecks: Promise<void>[] = [];
   let metadataFailures = 0, metadataRejected = 0, deliveryFailures = 0, earlyProbes = 0;
-  const results = (): SongResults => ({ results: [...candidates.values()]
-    .filter(song => verified.has(song.id)).sort((a,b) => b.score-a.score).slice(0,8)
-    .map(({score: _score, ...song}) => song) });
+  const byRank = (a: SongCandidate, b: SongCandidate) => b.evidence-a.evidence || downloadsOf(b.archiveId)-downloadsOf(a.archiveId) || b.score-a.score || a.id.localeCompare(b.id);
+  const listing = (songs: SongCandidate[], usable?: (song: SongCandidate) => boolean) => {
+    const distinct = distinctRecordings(songs, usable);
+    if (genreOnly) return variedSources(distinct, true);
+    // Elsewhere, variety only reorders equally good matches, so it never lifts a weak match over a strong one.
+    const runs: SongCandidate[][] = [];
+    for (const song of distinct) {
+      if (runs.at(-1)?.[0].evidence === song.evidence) runs.at(-1)!.push(song);
+      else runs.push([song]);
+    }
+    return runs.flatMap(run => variedSources(run, false));
+  };
+  const results = (): SongResults => publicSongs(listing([...candidates.values()].filter(song => verified.has(song.id)).sort(byRank)));
+  // At a time limit, list matches whose download check has not finished, verified ones first.
+  // Importing re-checks the file and its bytes, so a slow check never needs to mean an empty list.
+  budget.bestEffort = () => publicSongs(listing([...candidates.values()].sort((a,b) => Number(verified.has(b.id)) - Number(verified.has(a.id)) || byRank(a,b)), song => verified.has(song.id)));
   const inspect = (id: string, deadline: number): Promise<ArchiveItem | null> => {
     let pending = metadata.get(id);
     if (!pending) {
       pending = (async () => {
-        if (Date.now() >= deadline) { metadataFailures++; return null; }
+        if (budget.expired || Date.now() >= deadline) { metadataFailures++; return null; }
         try { return await reuseDiscovery(songMetadataCache, `${maximumSeconds}:${id}`, 80,
           () => songMetadataPool(() => {
-            if (Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
-            return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()) });
+            // Work abandoned at the time limit must leave this search's queue.
+            if (budget.expired || Date.now() >= deadline) throw new ArchiveError('Internet Archive is responding slowly.', 'archive_busy', true);
+            // A stuck connection gets another try inside the same budget, rather than using all of it.
+            return fetchArchiveItem(id, { publicAudio: true, maximumSeconds, timeoutMs: Math.min(9000, deadline-Date.now()), attemptTimeoutMs: 3500 });
           }),
           item => item.tracks.length <= 256); }
         catch (error) { if (error instanceof ArchiveError && error.retryable) metadataFailures++; else metadataRejected++; return null; }
@@ -727,13 +897,13 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     }
     return pending;
   };
-  const check = (song: ArchiveSong & { score: number }): Promise<boolean> => {
+  const check = (song: SongCandidate): Promise<boolean> => {
     let pending = probes.get(song.id);
     if (!pending) {
       pending = (async () => {
         try {
           const available = await reuseDiscovery(songDeliveryCache, JSON.stringify([song.id, song.bytes, song.durationSec]), 160,
-            () => songDeliveryPool(() => downloadableSong(song, locations.get(song.archiveId))), available => available);
+            () => songDeliveryPool(() => budget.expired ? Promise.resolve(false) : downloadableSong(song, locations.get(song.archiveId))), available => available);
           if (available) { verified.add(song.id); onResults(results()); }
           return available;
         } catch (error) {
@@ -750,38 +920,56 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
     if (!item) return null;
     locations.set(id, songDeliveryLocations.get(item) || []);
     const checks: Promise<boolean>[] = [];
-    for (const song of matchingSongs(item, tokens).sort((a,b) => b.score-a.score)) {
-      candidates.set(song.id,song);
-      if (earlyProbes < 8 && !probes.has(song.id)) { earlyProbes++; checks.push(check(song)); }
+    let itemProbes = 0;
+    const songs = matchingSongs(item, tokens).sort((a,b) => b.score-a.score);
+    for (const song of songs) candidates.set(song.id,song);
+    for (const song of distinctRecordings(songs)) {
+      // Sample across items. A single concert must not use every early check, and
+      // items that refuse downloads should fail fast so others still get a turn.
+      if (earlyProbes < 24 && itemProbes < 2 && !probes.has(song.id)) { earlyProbes++; itemProbes++; checks.push(check(song)); }
     }
     await Promise.all(checks);
     return item;
   };
   // Reserve discovery work for each catalog. A fast broad catalog must not
   // consume every early slot and delay music matches until the slowest catalog
-  // finishes. Inspect all sixteen music hits plus four from each other catalog;
-  // the final relevance pass still considers its full sixteen (forty items max).
+  // finishes. Inspect all sixteen music hits, eight named-artist hits and four
+  // from each other catalog; the final relevance pass adds eight (forty items max).
+  // A genre search moves those slots to items carrying the genre's tags.
   const earlyIds = new Set<string>();
-  const base = 'mediatype:audio AND NOT access-restricted-item:true';
+  const genre = genreQuery(tokens);
+  const earlySlots = genre ? [4, 8, 4, 4, 12] : [4, 16, 4, 8];
+  // Spoken-word items can never be imported, yet they lead by downloads: "queen"
+  // otherwise fills the catalog page with books about queens before reaching the band.
+  const base = `mediatype:audio AND NOT access-restricted-item:true AND NOT collection:(librivoxaudio OR audio_bookspoetry)${genreOnly ? GENRE_LIST_CATALOG_FILTER : ''}`;
   const queries = [
-    `${base} AND creator:[* TO *] AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
+    // A creator:[* TO *] filter here costs 4-8 seconds on a fresh query, so credits are checked below instead.
+    `${base} AND (${tokens.map(token => `(title:"${token}" OR creator:"${token}")`).join(' AND ')})`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')}) AND subject:(music OR rock OR pop OR jazz OR blues OR classical OR folk OR soul OR electronic OR hiphop)`,
     `${base} AND (${tokens.map(token => `title:"${token}"`).join(' AND ')})`,
+    // The whole name as one credit. Word-by-word matching cannot tell the band from the word.
+    `${base} AND creator:"${tokens.join(' ')}"`,
+    ...(genre ? [`${base} AND subject:(${genreCatalogQuery(genre)})${genre.rest.map(token => ` AND (title:"${token}" OR creator:"${token}")`).join('')}`] : []),
   ];
   const searches = await Promise.allSettled(queries.map(async (q, index) => {
     const url = new URL(SEARCH_API);
     url.searchParams.set('q', q);
-    for (const field of ['identifier','title','creator']) url.searchParams.append('fl[]', field);
-    // Retrieve credited items separately so uncredited filenames cannot fill
-    // the limited catalog page before artist/title matching can inspect them.
+    const genreCatalog = index === 4;
+    for (const field of ['identifier','title','creator','downloads',...(genreCatalog ? ['subject'] : [])]) url.searchParams.append('fl[]', field);
+    // Keep the credited items from a longer page of the word query, so uncredited
+    // filenames cannot fill the page before artist/title matching can inspect them.
     // Title-only searches still discover file-level credits in other items.
     url.searchParams.append('sort[]', 'downloads desc');
-    url.searchParams.set('rows', '16'); url.searchParams.set('output', 'json');
-    const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown }[] } };
+    url.searchParams.set('rows', index === 0 || genreCatalog ? '32' : '16'); url.searchParams.set('output', 'json');
+    const data = await fetchJson(url.toString(), 'search', 20000, 10000) as { response?: { docs?: { identifier?: unknown; title?: unknown; creator?: unknown; downloads?: unknown; subject?: unknown }[] } };
     if (!Array.isArray(data?.response?.docs)) throw new ArchiveError('Internet Archive search is temporarily unavailable.');
-    const found = data.response.docs.map(doc => ({...doc, musicQuery: index === 1}));
+    // Popular keyword-stuffed uploads would otherwise take every genre slot before their tags are read.
+    const page = data.response.docs.filter(doc => !genreCatalog || !stuffedWithKeywords(doc.subject)).map(doc => ({...doc, musicQuery: index === 1 || genreCatalog}));
+    for (const doc of page) if (typeof doc.identifier === 'string') downloads.set(doc.identifier, Math.max(0, Number(doc.downloads) || 0));
+    const credited = index === 0 ? page.filter(doc => recordingCredit(displayText(doc.creator))).slice(0, 16) : [];
+    const found = credited.length ? credited : page.slice(0, 16);
     const deadline = Date.now()+18000;
-    for (const doc of discoveryOrder(found).slice(0,index === 1 ? 16 : 4)) {
+    for (const doc of discoveryOrder(found).slice(0,earlySlots[index])) {
       const id = doc.identifier;
       if (typeof id !== 'string' || !IDENTIFIER_PATTERN.test(id) || earlyIds.has(id)) continue;
       earlyIds.add(id);
@@ -795,16 +983,16 @@ async function findArchiveSongs(tokens: string[], onResults: SearchListener, max
   }
   const docs = searches.flatMap(result => result.status === 'fulfilled' ? result.value : []);
   docs.sort((a,b) => docScore(b) - docScore(a));
-  const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 16);
+  const ids = [...new Set(docs.map(doc => doc?.identifier).filter((id): id is string => typeof id === 'string' && IDENTIFIER_PATTERN.test(id)))].slice(0, 8);
   const metadataDeadline = Date.now() + 18000;
   const selected = new Set(ids);
   const orderedIds = [...new Set(discoveryOrder(docs.filter(doc => selected.has(String(doc.identifier)))).map(doc => String(doc.identifier)))];
   const items = await Promise.all(orderedIds.map(id => inspectMatches(id, metadataDeadline)));
   await Promise.all(earlyChecks);
-  // Reuse early probes and retain the complete relevance pass. At most eight
+  // Reuse early probes and retain the complete relevance pass. At most twenty-four
   // speculative probes plus twenty-four final candidates can reach the source.
-  const ranked = [...candidates.values()].sort((a,b) => b.score-a.score).slice(0,24);
-  for (let offset=0; offset<ranked.length; offset+=6) {
+  const ranked = listing([...candidates.values()].sort(byRank)).slice(0,24);
+  for (let offset=0; offset<ranked.length && !budget.expired; offset+=6) {
     const batch = ranked.slice(offset,offset+6);
     await Promise.all(batch.map(check));
     if (ranked.slice(0,offset+6).filter(song => verified.has(song.id)).length >= 8) break;
@@ -847,9 +1035,16 @@ interface ArchiveFile {
   track?: string;
   description?: string;
   comment?: string;
+  original?: unknown;
   private?: boolean | string;
 }
 
+// A genre word among dozens of keywords ("faith, spirit, soul, hereafter") was added for discovery and says nothing about the sound.
+const MAX_GENRE_TAG_KEYWORDS = 40;
+const stuffedWithKeywords = (subject: unknown) => (Array.isArray(subject) ? subject : [subject])
+  .flatMap(tag => typeof tag === 'string' ? tag.split(/[,;]/) : []).length > MAX_GENRE_TAG_KEYWORDS;
+const genreTagText = (subject: unknown, genre: unknown): string =>
+  searchableText(`${stuffedWithKeywords(subject) ? '' : metadataText(subject)} ${metadataText(genre)}`);
 const metadataText = (value: unknown): string => {
   let text = (Array.isArray(value) ? value : [value]).filter((part): part is string => typeof part === 'string').join(' ');
   const entities: Record<string, string> = {nbsp:' ',amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'};
@@ -905,14 +1100,14 @@ function archiveFlag(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
 
-export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean; signal?: AbortSignal } = {}): Promise<ArchiveItem> {
+export async function fetchArchiveItem(identifier: string, options: { publicAudio?: boolean; timeoutMs?: number; attemptTimeoutMs?: number; songPolicy?: boolean; maximumSeconds?: number; suggestionAvailability?: boolean; signal?: AbortSignal } = {}): Promise<ArchiveItem> {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ArchiveError('That is not a valid Internet Archive identifier.', 'invalid_identifier');
   }
 
   const payload = await fetchJson(
     `${METADATA_API}/${encodeURIComponent(identifier)}`,
-    'metadata', options.timeoutMs, options.timeoutMs, options.signal
+    'metadata', options.timeoutMs, options.attemptTimeoutMs ?? options.timeoutMs, options.signal
   );
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ArchiveError('That Internet Archive item returned unreadable metadata.');
@@ -984,6 +1179,8 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
       title: displayText(file.title, base.replace(/^\d+[\s._-]*/, '') || base),
       artist: displayText(file.artist),
       creator: displayText(file.creator),
+      genre: displayText(file.genre),
+      sourceFile: firstString(file.original) || name,
       durationSec,
       bytes,
       importable:
@@ -1018,6 +1215,8 @@ export async function fetchArchiveItem(identifier: string, options: { publicAudi
   const item: ArchiveItem = {
     identifier,
     title: displayText(metadata.title, identifier),
+    genreTags: genreTagText(metadata.subject, metadata.genre),
+    allTags: `${metadataText(metadata.subject)} ${metadataText(metadata.genre)}`,
     creator: displayText(metadata.creator),
     description: itemDescription(metadata.description),
     year: toYear(metadata.year ?? metadata.date),

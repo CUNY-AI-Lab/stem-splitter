@@ -1,3 +1,4 @@
+import { guestTransfer } from './guest-transfer.ts';
 import { publicSampleResource, readSampleResource } from '../src/song-sample-resource.ts';
 import { isPlaylistSample, playlistSampleResponse } from '../src/playlist-samples.ts';
 import { recordPageUse, recordServerUse, recordSignInUse } from '../src/reliability/observability.ts';
@@ -27,7 +28,7 @@ export type WorkerEnv = Omit<Env, 'AUDIO' | 'DB' | 'ASSETS' | 'REQUEST_LIMIT'> &
   Partial<Pick<PreviewBindings, 'CANONICAL_BASE_URL'>> & IntakePauseEnv &
   { ADAPTIVE_OUTPUT?: Queue<{jobId:string}>; IDENTITY?: WorkerIdentity; PREVIEW_IDENTITY?: WorkerIdentity; GATEWAY?: Fetcher; GATEWAY_MODEL?: string; GATEWAY_FALLBACK_MODEL?: string; BUG_REPORTS?: BugReportService; REDMINE_API_KEY?: string; BUG_REPORT_MODE?: string };
 
-const HEADERS = {
+export const HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   // Native same-origin POST forms need their Origin for CSRF validation.
   // Continue suppressing referrers to other sites.
@@ -60,7 +61,7 @@ async function serveApi(request: Request, env: WorkerEnv, ctx: ExecutionContext)
     fetchYouTubeBrowserAudio: youtubeBrowserLoader(env.BROWSER) }, ctx);
 }
 
-export default {
+const worker = {
   async queue(batch: MessageBatch<unknown>, env: WorkerEnv): Promise<void> {
     env = intakeEnvironment(env);
     for (const message of batch.messages) {
@@ -82,7 +83,7 @@ export default {
     ctx.waitUntil(refreshCourseUsageAccounts(env).catch(()=>{}));
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },
-  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext, tools = false): Promise<Response> {
     env = intakeEnvironment(env);
     const url = new URL(request.url);
     if (['/sound-stations', '/sound-stations.html', '/sound-stations.js', '/sound-stations.json'].includes(url.pathname)) {
@@ -94,7 +95,7 @@ export default {
     if (env.CANONICAL_BASE_URL && url.origin === env.CANONICAL_BASE_URL) {
       env = { ...env, PUBLIC_BASE_URL: env.CANONICAL_BASE_URL };
     }
-    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request),guestSession:undefined,guestClaimSession:undefined};
+    env = {...env,guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),guestStartAllowed:!hasMemberCookie(request) && !(tools && request.headers.has('x-cail-identity-jwt')),guestSession:undefined,guestClaimSession:undefined};
     let response: Response;
     try {
       const paused = intakePauseResponse(request, env);
@@ -130,28 +131,30 @@ export default {
       } else if ((env.REDMINE_API_KEY || env.BUG_REPORT_MODE === 'redmine-fallback') && url.pathname === '/api/bug-reports/guest') {
         const ip = request.headers.get('cf-connecting-ip');
         response = ip && /^[0-9a-fA-F:.]{3,45}$/.test(ip)
-          ? await handleGuestBugReport(request, { origin: env.PUBLIC_BASE_URL, release: env.RELEASE,
+          ? await handleGuestBugReport(request, { origin: tools ? new URL(request.url).origin : env.PUBLIC_BASE_URL, release: env.RELEASE,
             rateKey: await bugReportActor(`guest-report-ip:v1\n${env.REDMINE_API_KEY ?? new Date().toISOString().slice(0,10)}\n${ip}`),
             service: env.BUG_REPORT_MODE === 'redmine-fallback' ? reportDelivery(env.DB, env.REDMINE_API_KEY, env.BUG_REPORTS) : redmineReports(env.DB, env.REDMINE_API_KEY!), limiter: env.REQUEST_LIMIT })
           : Response.json({ ok: false, code: 'unavailable' }, { status: 503 });
       } else if ((env.REDMINE_API_KEY || env.BUG_REPORT_MODE === 'redmine-fallback') && ['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
         let profile: ReportProfile | undefined;
-        const internal = await authenticatedRequest(request, env, env.REDMINE_API_KEY ? value => { profile = value; } : undefined);
+        const internal = tools ? request : await authenticatedRequest(request, env, env.REDMINE_API_KEY ? value => { profile = value; } : undefined);
         if (internal instanceof Response) response = internal;
         else {
           let principal: AppPrincipal | undefined;
           const denied = await authorizeCailRequest(internal, { ...env, verifyCailIdentity }, value => { principal = value; });
           response = denied ?? (principal
-            ? await handleDevBugReport(internal, { origin: env.PUBLIC_BASE_URL, subject: principal.subject,
+            ? await handleDevBugReport(internal, { origin: tools ? new URL(request.url).origin : env.PUBLIC_BASE_URL, subject: principal.subject,
               preferredName: principal.preferredName || profile?.name, sessionEmail: profile?.email || principal.reportEmail, acceptsReplyEmail: Boolean(env.REDMINE_API_KEY), release: env.RELEASE,
               service: env.BUG_REPORT_MODE === 'redmine-fallback' ? reportDelivery(env.DB, env.REDMINE_API_KEY, env.BUG_REPORTS) : redmineReports(env.DB, env.REDMINE_API_KEY!), limiter: env.REQUEST_LIMIT })
             : Response.json({ ok: false, code: 'unavailable' }, { status: 503 }));
         }
       } else if (['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname)) {
-        response = await handleBugReport(request, { origin: env.PUBLIC_BASE_URL,
+        response = await handleBugReport(request, { origin: tools ? new URL(request.url).origin : env.PUBLIC_BASE_URL,
           release: env.RELEASE, service: env.BUG_REPORTS, limiter: env.REQUEST_LIMIT });
       } else if (env.AUTH_MODE !== 'cail') {
         response = Response.json({ error: 'Service configuration is incomplete.' }, { status: 503 });
+      } else if (url.pathname.startsWith('/auth/guest-transfer')) {
+        response = await guestTransfer(request, env);
       } else if (url.pathname === '/auth/guest') {
         response = await startGuestSession(request,env);
       } else if (url.pathname.startsWith('/auth/')) {
@@ -162,7 +165,8 @@ export default {
         // Admission and ownership run in the shared application. Limit expensive
         // ingress before provider work; signed provider callbacks are independent.
         let internal: Request | Response;
-        if (!publicApi(request) && !hasMemberCookie(request) && env.guestRuntimeReady) {
+        if (tools && request.headers.has('x-cail-identity-jwt')) internal = request;
+        else if (!publicApi(request) && !hasMemberCookie(request) && env.guestRuntimeReady) {
           const session=await readGuestSession(request,env);
           if (session) {env={...env,guestSession:session};internal=sanitizedRequest(request);}
           else if ((request.headers.get('cookie') ?? '').split(';').some(part=>part.trim().split('=',1)[0]===GUEST_COOKIE)) {
@@ -170,11 +174,11 @@ export default {
             internal.headers.append('Set-Cookie',clearGuestCookie());
           } else internal=await authenticatedRequest(request,env);
         } else internal=await authenticatedRequest(request,env);
-        if (!(internal instanceof Response) && hasMemberCookie(request) && request.method==='POST' && url.pathname==='/api/account/claim-guest') {
+        if (!(internal instanceof Response) && (hasMemberCookie(request) || tools && request.headers.has('x-cail-identity-jwt')) && request.method==='POST' && url.pathname==='/api/account/claim-guest') {
           env={...env,guestClaimSession:(await readGuestSession(request,env))??undefined};
         }
         if(internal instanceof Response)ctx.waitUntil(recordServerUse(env,request,internal,undefined,Date.now()));
-        response = internal instanceof Response ? internal : await serveApi(internal, { ...env, CAIL_LOGIN_URL: '/auth/login' }, ctx);
+        response = internal instanceof Response ? internal : await serveApi(internal, { ...env, CAIL_LOGIN_URL: env.CAIL_LOGIN_URL || '/auth/login' }, ctx);
       } else {
         response = env.ASSETS ? await env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
         if(request.method==='GET'&&['/','/index.html','/account.html','/teacher.html','/classroom.html'].includes(url.pathname))ctx.waitUntil(recordPageUse(env,response));
@@ -194,3 +198,5 @@ export default {
     return new Response(response.body, { status: response.status, headers });
   },
 } satisfies ExportedHandler<WorkerEnv>;
+
+export default worker;

@@ -20,33 +20,24 @@ for(const mode of ['course','global'])test(mode==='global' ? 'global console kee
  try{
   if(mode==='global')await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.carol});
   await page.goto(new URL('/teacher.html'+(mode==='course'?`?course=${course}`:''),f.url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Instructor Console');await expect(page.getByRole('heading',{name:'Instructor Console',exact:true})).toBeVisible();
+  await expect(page).toHaveTitle('Stem Splitter · Settings');await expect(page.getByRole('heading',{name:'Account',exact:true})).toBeVisible();
   await expect(page.locator('#console-panel')).toBeVisible();
-  if(mode==='global'){
-   await expect(page.locator('.teacher-amendment-section')).toBeHidden();
-   await expect(page.locator('.teacher-more-tools')).toBeHidden();
-   await expect(page.locator('#class-instructions-help')).toContainText('Guest and Personal sessions use the default instructions.');
-   await expect(page.locator('#class-instructions-help a')).toHaveAttribute('href','/classroom.html');
-   await expect(page.locator('.sample-editor')).toBeVisible();
-   await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Instructor Console');
-   expect(errors).toEqual([]);expect(modelCalls).toEqual([]);return;
-  }
   if(mode==='course'){await expect(page.locator('.sample-editor')).toBeHidden();await expect(page.locator('#teacher-classroom')).toHaveAttribute('href',`/classroom.html?course=${course}`);await expect(page.locator('#course-roster')).toContainText('Fixture Student');}
   else {
    await expect(page.locator('.sample-editor')).toBeVisible();await expect(page.locator('#sample-settings-form')).toBeHidden();
    const summary=page.locator('#sample-editor-summary');await expect(summary).toHaveAttribute('aria-expanded','false');
    await summary.focus();await summary.press('Enter');await expect(summary).toHaveAttribute('aria-expanded','true');await expect(page.locator('#sample-settings-form')).toBeVisible();
    await summary.press('Space');await expect(summary).toHaveAttribute('aria-expanded','false');await summary.press('Enter');
-   await expect(page.locator('#prompt-scope-note')).toContainText('Applies across Stem Splitter');
+   await expect(page.locator('#prompt-scope-note')).toContainText('Applies only to your Personal work');
   }
-  await page.locator('#amendment').fill('Fixture teaching instructions');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Add a change note');
+  await page.locator('#amendment').fill('Fixture teaching instructions');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Say what changed');
   await savePrompt(page,'Fixture teaching instructions','First synthetic revision');
   if(mode==='global'){
-   const saved=await(await page.request.get(new URL('/api/teacher/prompt',f.url).href)).json();
-   expect(saved.updatedBy).toBe(TEST_SUBJECTS.carol);expect(saved.history[0].updatedBy).toBe(TEST_SUBJECTS.carol);
+   const saved=await(await page.request.get(new URL('/api/account/prompt',f.url).href)).json();
+   expect(saved.updatedBy).toBe('You');expect(saved.history[0].updatedBy).toBe('You');
    await expect(page.locator('#amendment-meta')).not.toContainText(TEST_SUBJECTS.carol);
    await expect(page.locator('#prompt-history')).not.toContainText(TEST_SUBJECTS.carol);
-   await expect(page.locator('#amendment-meta')).toContainText('Saved ·');
+   await expect(page.locator('#amendment-meta')).toContainText('Saved by You ·');
   }
   await page.locator('#preview-btn').click();await expect(page.locator('#preview-body')).toContainText('Fixture teaching instructions');
   await page.reload();await expect(page.locator('#amendment')).toHaveValue('Fixture teaching instructions');
@@ -55,8 +46,8 @@ for(const mode of ['course','global'])test(mode==='global' ? 'global console kee
   await page.locator('#prompt-history-title').click();await expect(page.locator('#prompt-history')).toContainText('First synthetic revision');
   if(mode==='course'){await page.getByRole('button',{name:'Restore revision 1 as a new version',exact:true}).click();await expect(page.locator('#amendment')).toHaveValue('Fixture teaching instructions');await expect(page.locator('#change-note')).toHaveValue('Restored revision 1');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('#prompt-status')).toContainText('Saved.');await expect(page.locator('#prompt-history')).toContainText('Revision 3');}
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await expect(page.getByRole('textbox',{name:'Teaching instructions',exact:true})).toBeVisible();
-  await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Instructor Console');
+  await expect(page.getByRole('textbox',{name:mode==='course'?'Class instructions':'Personal instructions',exact:true})).toBeVisible();
+  await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Account');
   const instructionCount=await page.locator('#amendment-count').boundingBox(),noteLabel=await page.locator('label[for="change-note"]').boundingBox();
   expect(instructionCount.y+instructionCount.height).toBeLessThan(noteLabel.y);
   await expect(page.locator('#amendment')).toHaveAttribute('aria-describedby','amendment-count');
@@ -75,14 +66,14 @@ for(const mode of ['course','global'])test(mode==='global' ? 'global console kee
 test('class discovery excludes students and course settings fail closed on role loss',async({page,context})=>{
  const f=await fixture(context);
  try{
-  await page.goto(new URL('/teacher.html',f.url).href);await expect(page).toHaveURL(new URL(`/teacher?course=${course}`,f.url).href);
+  await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);
   await expect(page.locator('#console-panel')).toBeVisible();
   await savePrompt(page,'Private course fixture','Synthetic setting');await page.locator('#preview-btn').click();
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.alice,'x-fixture-course-state':'revoked'});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(page.locator('#teacher-protected-region')).toBeHidden();await expect(page.locator('#amendment')).toHaveValue('');await expect(page.locator('#fixed-prompt-body')).toBeEmpty();await expect(page.locator('#preview-body')).toBeEmpty();await expect(page.locator('#course-roster')).toBeEmpty();
   await page.reload();await expect(page.locator('#console-panel')).toBeHidden();
-  await page.goto('about:blank');await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.bob});await page.goto(new URL('/teacher.html',f.url).href);await expect(page.locator('#course-discovery-status')).toContainText('No instructor classes');await expect(page.locator('#console-panel')).toBeHidden();
-  await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);await expect(page.locator('#console-panel')).toBeHidden();await expect(page.locator('#teacher-access-status')).toContainText('Instructor access is not available');
+  await page.goto('about:blank');await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.bob});await page.goto(new URL('/teacher.html',f.url).href);await expect(page.locator('#console-panel')).toBeVisible();await expect(page.locator('#amendment-label')).toHaveText('Personal instructions');await expect(page.locator('#instruction-scope option')).toHaveCount(1);
+  await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);await expect(page.locator('#console-panel')).toBeHidden();await expect(page.locator('#teacher-access-status')).toContainText('Instruction access is not available');
  }finally{await f.harness.close();}
 });
 test('failed prompt saves retain the draft and uncertain authority conceals prior settings',async({page,context})=>{
@@ -121,7 +112,7 @@ test('switching signed-in accounts removes the prior instructor settings',async(
  try{
   await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);await expect(page.locator('#console-panel')).toBeVisible();await savePrompt(page,'Prior account private instructions','Synthetic account test');await page.locator('#preview-btn').click();await expect(page.locator('#preview-body')).toContainText('Prior account private instructions');
   await context.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.bob});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('#console-panel')).toBeHidden();await expect(page.locator('body')).not.toContainText('Prior account private instructions');await expect(page.locator('#teacher-access-status')).toContainText('Instructor access is not available');
+  await expect(page.locator('#console-panel')).toBeHidden();await expect(page.locator('body')).not.toContainText('Prior account private instructions');await expect(page.locator('#teacher-access-status')).toContainText('Instruction access is not available');
  }finally{await f.harness.close();}
 });
 test('late prompt preview cannot restore content after course revocation',async({page,context})=>{
@@ -182,14 +173,14 @@ test('instructor roster separates personal app activity, class work and unavaila
    const response=await route.fetch(),data=await response.json();
    data.appUsageStatus=usageStatus;
    data.participants=[{displayName:'Fixture Student',memberId:'fixture-member',splitCount:0,completedCount:0,
-    appUsage:usageStatus==='available'?{runs:3,completed:2,guideTurns:4,recordedVisits:5,lastActiveAt:null}:null}];
+    appUsage:usageStatus==='available'?{runs:3,completed:2,guideTurns:4,chatReplies:3,guideCues:1,recordedVisits:5,lastActiveAt:null}:null}];
    data.demonstrationParticipants=[{displayName:'Sample student',splitCount:3}];
    await route.fulfill({response,json:data});
   });
   await page.goto(new URL(`/teacher.html?course=${course}`,f.url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Instructor Console');
+  await expect(page).toHaveTitle('Stem Splitter · Settings');
   await expect(page.locator('#course-roster')).toContainText('0 splits for this class · 0 completed');
-  await expect(page.locator('#course-roster')).toContainText('App use: 3 split attempts · 2 completed · 4 Guide turns · 5 recorded visits in 30 days');
+  await expect(page.locator('#course-roster')).toContainText('App use: 3 split attempts · 2 completed · 3 replies · 1 opening cues · 5 visit reports in 30 days');
   await expect(page.locator('#course-roster-status')).toHaveText('1 enrolled student shown.');
   await page.locator('#course-roster').scrollIntoViewIfNeeded();
   await page.screenshot({path:testInfo.outputPath('instructor-usage-desktop.png')});

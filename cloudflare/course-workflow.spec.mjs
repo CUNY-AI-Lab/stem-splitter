@@ -31,6 +31,355 @@ async function fixture(browser,vars={}) {
   return {issuer,url,seed,pageFor,close:async()=>{for(const c of contexts)await c.close();await server.close();}};
 }
 
+// The class page keeps one place per section. A folder opens under its own row.
+test('an instructor builds a class folder in place: create, add splits, share, remove and delete',async({browser},testInfo)=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('second-song','Second class fixture','uploads/second.wav','done','htdemucs_ft','[]')`,
+      `INSERT INTO job_owners VALUES('second-song','${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO job_courses(job_id,course_id,member_id,assigned_by,policy_version) VALUES('second-song','${course}','stem-member-v1-${createHash('sha256').update(`fixture:${course}:${TEST_SUBJECTS.alice}`).digest('hex')}','${TEST_SUBJECTS.alice}','course-work-v1')`]);
+    const page=await f.pageFor(TEST_SUBJECTS.alice,true),errors=[];
+    page.on('pageerror',error=>errors.push(error.message));
+    await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await expect(page.getByRole('button',{name:'Folders',exact:true})).toHaveAttribute('aria-current','true');
+    await expect(page.locator('#classroom-create')).toBeHidden();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await page.getByRole('button',{name:'Make class folder',exact:true}).click();
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.getByLabel('New folder')).toBeFocused();
+    await expect(page.locator('#account-status')).toBeHidden();
+    await expect(page.locator('#classroom-folder-create')).toContainText('Private until shared.');
+    await page.getByLabel('New folder').fill('Week one');
+    await page.getByRole('button',{name:'Create folder',exact:true}).click();
+    const row=page.locator('#classroom-folders > li',{hasText:'Week one'});
+    await expect(row.locator('#classroom-folder-detail')).toBeVisible();
+    await expect(row.getByRole('button',{name:'Week one',exact:true})).toHaveAttribute('aria-expanded','true');
+    await expect(page).toHaveURL(/folder=/);
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Only the creator and instructors can see this folder until it is shared with the class.');
+    await expect(page.locator('#classroom-folder-share')).toBeHidden();
+    await row.getByRole('button',{name:'Add splits',exact:true}).click();
+    await row.getByRole('button',{name:'Add Second class fixture to this folder',exact:true}).click();
+    await expect(page.locator('#classroom-folder-items')).toContainText('Second class fixture');
+    await expect(row.getByRole('button',{name:'Second class fixture is in this folder',exact:true})).toBeDisabled();
+    await expect(row.getByRole('button',{name:'Add Class fixture to this folder',exact:true})).toBeEnabled();
+    await page.getByLabel('Who can use this folder?').selectOption('read');
+    await page.getByRole('button',{name:'Save sharing',exact:true}).click();
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can contribute splits, listen and read notes.');
+    await expect(page.locator('#classroom-folder-share')).toBeVisible();
+    await expect(row.locator('.classroom-entry-meta')).toHaveText('Class · can listen');
+    await page.screenshot({path:testInfo.outputPath('class-folder-open.png'),fullPage:true,animations:'disabled'});
+    await page.setViewportSize({width:390,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:testInfo.outputPath('class-folder-open-390.png'),fullPage:true,animations:'disabled'});
+    await page.setViewportSize({width:1280,height:900});
+    await page.reload();
+    await expect(page.locator('#classroom-folders > li',{hasText:'Week one'}).locator('#classroom-folder-detail')).toBeVisible();
+    await page.getByRole('button',{name:'Remove Second class fixture from this folder',exact:true}).click();
+    await expect(page.locator('#classroom-folder-items')).not.toContainText('Second class fixture');
+    await expect(page.locator('#classroom-folder-items')).toContainText('No splits in this folder yet.');
+    await page.getByRole('button',{name:'Splits',exact:true}).click();
+    await expect(page).toHaveURL(/view=splits/);
+    await expect(page.locator('#classroom-student-name')).toHaveText('My splits in this class');
+    await expect(page.locator('#classroom-jobs')).toContainText('Second class fixture');
+    await expect(page.locator('#classroom-create')).toBeVisible();
+    await expect(page.locator('#classroom-folders-section')).toBeHidden();
+    await page.reload();
+    await expect(page.getByRole('button',{name:'Splits',exact:true})).toHaveAttribute('aria-current','true');
+    await expect(page.locator('#classroom-jobs')).toContainText('Second class fixture');
+    await page.getByRole('button',{name:'Folders',exact:true}).click();
+    await page.getByRole('button',{name:'Week one',exact:true}).click();
+    const remove=page.getByRole('button',{name:'Delete',exact:true});
+    await remove.click();
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Deleting removes this folder. Its splits stay in the class.');
+    await page.getByRole('button',{name:'Confirm delete',exact:true}).click();
+    await expect(page.locator('#classroom-folders')).not.toContainText('Week one');
+    await expect(page).not.toHaveURL(/folder=/);
+    await expect(page.locator('#classroom-folders')).toContainText('Class comments');
+    const job=await page.request.get(new URL('/api/jobs/second-song',f.url).href);
+    expect(job.status()).toBe(200);
+    expect(errors).toEqual([]);
+  }finally{await f.close();}
+});
+test('a student can start a folder and open their own splits without instructor controls',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`DELETE FROM course_folder_items`,`UPDATE course_folders SET permission='private'`]);
+    const page=await f.pageFor(TEST_SUBJECTS.bob);
+    await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await expect(page.locator('#classroom-folders-status')).toHaveText('No folders yet.');
+    await expect(page.locator('#classroom-views')).toBeVisible();
+    await expect(page.locator('#classroom-create')).toBeHidden();
+    await expect(page.locator('#classroom-view-students')).toBeHidden();
+    await expect(page.locator('#classroom-guidance')).toBeHidden();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await page.getByRole('button',{name:'Make class folder',exact:true}).click();
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.getByLabel('New folder')).toBeFocused();
+    await expect(page.locator('#classroom-folder-create')).toContainText('Private until shared.');
+    await page.getByLabel('New folder').fill('Discard this draft');
+    await page.getByLabel('New folder').press('Escape');
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await expect(page.locator('#classroom-make-folder')).toHaveAttribute('aria-expanded','false');
+    await page.getByRole('button',{name:'Make class folder',exact:true}).click();
+    await expect(page.getByLabel('New folder')).toHaveValue('');
+    await page.getByRole('button',{name:'Splits',exact:true}).click();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await expect(page.locator('#classroom-student-name')).toHaveText('My splits in this class');
+    await expect(page.locator('#classroom-jobs-status')).toContainText('You have no splits in this class yet.');
+  }finally{await f.close();}
+});
+test('students create and manage their folders, contribute their own splits, and retain ownership after instructor edits',async({browser},testInfo)=>{
+  const f=await fixture(browser);
+  try{
+    const bobMember='stem-member-v1-'+createHash('sha256').update(`fixture:${course}:${TEST_SUBJECTS.bob}`).digest('hex');
+    await f.seed([
+      `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('peer-song','Peer class recording','uploads/peer.wav','done','htdemucs_ft','[]')`,
+      `INSERT INTO job_owners VALUES('peer-song','${TEST_SUBJECTS.bob}')`,
+      `INSERT INTO job_courses(job_id,course_id,member_id,assigned_by,policy_version) VALUES('peer-song','${course}','${bobMember}','${TEST_SUBJECTS.bob}','course-work-v1')`,
+    ]);
+    const creator=await f.pageFor(TEST_SUBJECTS.alice),peer=await f.pageFor(TEST_SUBJECTS.bob),instructor=await f.pageFor(TEST_SUBJECTS.bob,true);
+    await creator.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await creator.getByRole('button',{name:'Make class folder',exact:true}).click();
+    await creator.getByLabel('New folder').fill('Student listening');
+    await creator.getByRole('button',{name:'Create folder',exact:true}).click();
+    await expect(creator.locator('#classroom-folder-title')).toHaveText('Student listening');
+    const address=creator.url(),folderId=new URL(address).searchParams.get('folder');
+    await expect(creator.getByRole('button',{name:'Rename',exact:true})).toBeVisible();
+    await expect(creator.locator('#classroom-view-students')).toBeHidden();
+    await peer.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await expect(peer.locator('#classroom-folders')).not.toContainText('Student listening');
+    expect((await peer.request.get(new URL(`/api/classroom/courses/${course}/folders/${folderId}`,f.url).href)).status()).toBe(404);
+    await creator.getByRole('button',{name:'Add splits',exact:true}).click();
+    await expect(creator.locator('#classroom-add-list')).not.toContainText('Peer class recording');
+    await creator.getByRole('button',{name:'Add Class fixture to this folder',exact:true}).click();
+    await expect(creator.locator('#classroom-folder-items')).toContainText('Class fixture');
+    await creator.getByLabel('Who can use this folder?').selectOption('comment');
+    await creator.getByRole('button',{name:'Save sharing',exact:true}).click();
+    await expect(creator.locator('#classroom-folder-status')).toContainText('Class members can contribute splits');
+    await peer.goto(address);
+    await expect(peer.locator('#classroom-folder-items')).toContainText('Class fixture');
+    await expect(peer.locator('#classroom-folder-sharing')).toBeHidden();
+    await expect(peer.getByRole('button',{name:'Rename',exact:true})).toBeHidden();
+    await expect(peer.getByRole('button',{name:'Remove Class fixture from this folder',exact:true})).toBeHidden();
+    await peer.getByRole('button',{name:'Add splits',exact:true}).click();
+    await expect(peer.locator('#classroom-add-list')).not.toContainText('Class fixture');
+    await peer.getByRole('button',{name:'Add Peer class recording to this folder',exact:true}).click();
+    await expect(peer.getByRole('button',{name:'Remove Peer class recording from this folder',exact:true})).toBeVisible();
+    await peer.getByRole('button',{name:'Remove Peer class recording from this folder',exact:true}).click();
+    await expect(peer.locator('#classroom-folder-items')).not.toContainText('Peer class recording');
+    await peer.getByRole('button',{name:'Splits',exact:true}).click();
+    await expect(peer.locator('#classroom-jobs')).toContainText('Peer class recording');
+    await expect(peer.getByRole('button',{name:'Listening Guy messages',exact:true})).toBeHidden();
+    await peer.getByLabel('Folder for Peer class recording').selectOption(folderId);
+    await peer.getByRole('button',{name:'Add to folder',exact:true}).click();
+    await expect(peer.locator('#classroom-jobs')).toContainText('Added to class folder.');
+    await instructor.goto(address);
+    await instructor.getByRole('button',{name:'Rename',exact:true}).click();
+    await instructor.getByLabel('Folder name',{exact:true}).fill('Student listening renamed');
+    await instructor.getByRole('button',{name:'Save name',exact:true}).click();
+    await expect(instructor.locator('#classroom-folder-title')).toHaveText('Student listening renamed');
+    await creator.reload();
+    await expect(creator.getByRole('button',{name:'Rename',exact:true})).toBeVisible();
+    await expect(creator.getByRole('button',{name:'Remove Peer class recording from this folder',exact:true})).toBeVisible();
+    await creator.setViewportSize({width:390,height:844});
+    expect(await creator.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await creator.screenshot({path:testInfo.outputPath('student-folder-mobile.png'),fullPage:true,animations:'disabled'});
+    await peer.goto(address);
+    await expect(peer.getByRole('button',{name:'Remove Peer class recording from this folder',exact:true})).toBeVisible();
+    await creator.getByLabel('Who can use this folder?').selectOption('private');
+    await creator.getByRole('button',{name:'Save sharing',exact:true}).click();
+    await expect(creator.locator('#classroom-folder-status')).toContainText('Only the creator and instructors');
+    await peer.getByRole('button',{name:'Remove Peer class recording from this folder',exact:true}).click();
+    await expect(peer.locator('#classroom-folder-detail')).toBeHidden();
+    await expect(peer.locator('#classroom-folders')).not.toContainText('Student listening renamed');
+    await creator.getByRole('button',{name:'Delete',exact:true}).click();
+    await creator.getByRole('button',{name:'Confirm delete',exact:true}).click();
+    await expect(creator.locator('#classroom-folders')).not.toContainText('Student listening renamed');
+    expect((await creator.request.get(new URL('/api/jobs/shared-course',f.url).href)).status()).toBe(200);
+    expect((await peer.request.get(new URL('/api/jobs/peer-song',f.url).href)).status()).toBe(200);
+  }finally{await f.close();}
+});
+for (const instructor of [false,true]) test(`from the Splitter, a ${instructor?'instructor':'student'} adds a class split to a class folder and it stays in the rack`,async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const page=await f.pageFor(TEST_SUBJECTS.alice,instructor);
+    await page.goto(f.url.href);
+    const entry=page.locator('.console[data-job-id="shared-course"]');
+    await expect(entry).toBeVisible();
+    await expect(page.locator('#folders .rack-title')).toHaveText('MY FOLDERS');
+    await entry.locator('.actions-toggle').click();
+    await expect(entry.locator('.folder-btn')).toBeHidden();
+    await expect(entry.locator('.class-workspace-link')).toHaveText('Open class');
+    await entry.getByRole('button',{name:'ADD TO CLASS FOLDER',exact:true}).click();
+    const menu=entry.locator('.class-folder-menu');
+    await expect(menu.getByRole('button',{name:'Class comments',exact:true})).toBeVisible();
+    await menu.getByLabel('New class folder name').fill('Made on the Splitter');
+    await menu.getByRole('button',{name:'ADD',exact:true}).click();
+    await expect(menu.locator('.class-folder-status')).toContainText('Added to Made on the Splitter.');
+    await expect(entry).toBeVisible();
+    await menu.locator('.class-folder-status a').click();
+    await expect(page).toHaveURL(/\/classroom/);
+    await expect(page.locator('#classroom-folders > li',{hasText:'Made on the Splitter'}).locator('#classroom-folder-items')).toContainText('Class fixture');
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Only the creator and instructors can see this folder until it is shared with the class.');
+  }finally{await f.close();}
+});
+test('a withdrawn class folder is cleared from an open Splitter picker after a denied contribution',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const page=await f.pageFor(TEST_SUBJECTS.alice);
+    await page.goto(f.url.href);
+    const entry=page.locator('.console[data-job-id="shared-course"]');
+    await expect(entry).toBeVisible();
+    await entry.locator('.actions-toggle').click();
+    await entry.getByRole('button',{name:'ADD TO CLASS FOLDER',exact:true}).click();
+    const menu=entry.locator('.class-folder-menu');
+    await expect(menu.getByRole('button',{name:'Class comments',exact:true})).toBeVisible();
+    await f.seed(["UPDATE course_folders SET permission='private',revision=revision+1 WHERE id='shared-folder'"]);
+    await menu.getByRole('button',{name:'Class comments',exact:true}).click();
+    await expect(menu.locator('.class-folder-status')).toContainText('Class access changed.');
+    await expect(menu.locator('.folder-menu-rows')).toBeEmpty();
+    await expect(menu.locator('form')).toBeHidden();
+  }finally{await f.close();}
+});
+test('a withdrawn folder is removed from the own-splits assignment picker after a denied contribution',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const page=await f.pageFor(TEST_SUBJECTS.alice);
+    await page.goto(new URL(`/classroom.html?course=${course}&view=splits`,f.url).href);
+    const picker=page.getByLabel('Folder for Class fixture');
+    await picker.selectOption('shared-folder');
+    await expect(page.locator('#classroom-folder-detail')).toBeHidden();
+    await f.seed(["UPDATE course_folders SET permission='private',revision=revision+1 WHERE id='shared-folder'"]);
+    await page.getByRole('button',{name:'Add to folder',exact:true}).click();
+    await expect(picker.locator('option[value="shared-folder"]')).toHaveCount(0);
+    await expect(picker).toHaveValue('');
+  }finally{await f.close();}
+});
+
+// Resplit: With original split is the default for a split you own, whatever Share with says.
+async function resplitPage(f,routeJob){
+  const page=await f.pageFor(TEST_SUBJECTS.alice,true),sent=[],audio=await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url));
+  await page.route('**/api/files/stems/personal-one/*',route=>route.fulfill({contentType:'audio/mpeg',body:audio}));
+  await page.route('**/api/uploads',route=>{sent.push({path:'uploads',course:route.request().headers()['x-stem-course']});return route.fulfill({json:{key:'uploads/resplit-fixture.mp3',uploadUrl:new URL('/__resplit-upload',f.url).href}});});
+  await page.route('**/__resplit-upload',route=>route.fulfill({status:200}));
+  await page.route('**/api/jobs',async route=>{
+    if(route.request().method()!=='POST')return route.continue();
+    sent.push({path:'jobs',course:route.request().headers()['x-stem-course'],body:route.request().postDataJSON()});
+    return route.fulfill({status:400,json:{error:'Fixture stops before any provider job.'}});
+  });
+  if(routeJob)await routeJob(page);
+  return {page,sent};
+}
+const openResplit=async(page,jobId)=>{
+  const entry=page.locator(`.console[data-job-id="${jobId}"]`);
+  await expect(entry).toBeVisible();
+  const resplit=entry.locator('.resplit-btn').first();
+  // Initial rack restoration and a workspace change can finish after the card appears.
+  // Wait for the visible session, opening it through its normal control if needed.
+  await expect(async()=>{
+    const expand=entry.getByRole('button',{name:'Expand this session',exact:true});
+    if(await expand.isVisible())await expand.click();
+    await expect(resplit).toBeVisible({timeout:1000});
+  }).toPass({timeout:10000});
+  await resplit.click();
+  const dialog=page.getByRole('dialog',{name:'Resplit',exact:true});
+  await expect(dialog.locator('.resplit-status')).not.toHaveText('Loading split choices…');
+  return dialog;
+};
+test('a class split resplits with its original by default while Share with stays on Personal, with no new notice',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const {page,sent}=await resplitPage(f);
+    await page.goto(f.url.href);
+    await expect(page.getByLabel('Share with')).toHaveValue('personal');
+    const dialog=await openResplit(page,'shared-course');
+    await expect(dialog.locator('#resplit-model')).toHaveValue('vocals_instrumental');
+    expect(await dialog.locator('#resplit-model option').allTextContents()).toEqual(['2 splits', '4 splits']);
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true}),separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    await expect(original).toBeEnabled();await expect(original).toBeChecked();
+    await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await expect(dialog.locator('.resplit-status')).toContainText('Adds the new stems under');
+    await expect(dialog.locator('.resplit-status')).not.toContainText('Tick the notice');
+    expect(await go.evaluate(el=>[getComputedStyle(el).opacity,getComputedStyle(el).cursor,getComputedStyle(el).backgroundColor==='rgba(0, 0, 0, 0)'])).toEqual(['1','pointer',false]);
+    // Separate with Personal selected stays personal and asks nothing.
+    await separate.check();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await original.check();
+    await go.click();
+    await expect.poll(()=>sent.filter(entry=>entry.path==='jobs').length).toBe(1);
+    expect(sent.map(entry=>entry.course)).toEqual([course,course]);
+    const body=sent.at(-1).body;
+    expect(body.model).toBe('vocals_instrumental');
+    expect(body.coursePolicy).toBe('course-work-v1');
+    expect(body.resplit).toEqual({parentJobId:'shared-course',stem:'vocals',placement:'with_original'});
+    await expect(page.getByLabel('Share with')).toHaveValue('personal');
+  }finally{await f.close();}
+});
+test('a separate resplit into the same class needs no new notice, while someone else\'s split still does',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const {page}=await resplitPage(f);
+    await page.goto(new URL(`/?course=${course}`,f.url).href);
+    await expect(page.getByLabel('Share with')).toHaveValue(course);
+    await expect(page.locator('#course-work-ack')).not.toBeChecked();
+    const dialog=await openResplit(page,'shared-course');
+    const separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    await separate.check();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.route('**/api/jobs/shared-course',async route=>{const response=await route.fetch();const json=await response.json();return route.fulfill({response,json:{...json,permissions:{...json.permissions,owner:false}}});});
+    await page.reload();
+    await expect(page.getByLabel('Share with')).toHaveValue(course);
+    const other=await openResplit(page,'shared-course');
+    await expect(other.locator('.resplit-course-ack')).toBeVisible();
+    await expect(other.getByRole('button',{name:'Resplit',exact:true})).toBeDisabled();
+    expect(await other.getByRole('button',{name:'Resplit',exact:true}).evaluate(el=>[getComputedStyle(el).opacity,getComputedStyle(el).cursor])).toEqual(['0.45','not-allowed']);
+  }finally{await f.close();}
+});
+test('a personal split resplits with its original while Share with names a class, and a separate split takes the class notice',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('personal-one','Personal fixture','uploads/personal.wav','done','htdemucs_ft','[{"name":"vocals","key":"stems/personal-one/vocals.mp3"}]')`,
+      `INSERT INTO job_owners VALUES('personal-one','${TEST_SUBJECTS.alice}')`]);
+    const {page,sent}=await resplitPage(f);
+    await page.goto(f.url.href);
+    await expect(page.getByLabel('Share with')).toBeEnabled();await page.getByLabel('Share with').selectOption(course);
+    await expect(page.locator('#course-work-ack')).not.toBeChecked();
+    const dialog=await openResplit(page,'personal-one');
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true}),separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
+    await expect(original).toBeChecked();await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await expect(dialog.getByRole('combobox',{name:'Number of splits',exact:true})).not.toHaveValue('');
+    await separate.check();
+    await expect(notice).toBeVisible();await expect(go).toBeDisabled();
+    await notice.locator('input').check();await expect(go).toBeEnabled();
+    await original.check();
+    await expect(notice).toBeHidden();await expect(go).toBeEnabled();
+    await separate.check();
+    await expect(notice.locator('input')).not.toBeChecked();await expect(go).toBeDisabled();
+    await original.check();
+    await go.click();
+    await expect.poll(()=>sent.filter(entry=>entry.path==='jobs').length).toBe(1);
+    expect(sent.map(entry=>entry.course)).toEqual(['personal','personal']);
+    expect(sent.at(-1).body.coursePolicy).toBeUndefined();
+    expect(sent.at(-1).body.resplit).toEqual({parentJobId:'personal-one',stem:'vocals',placement:'with_original'});
+  }finally{await f.close();}
+});
+test('someone else\'s split cannot be kept with its original, and the greyed choice says why',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    const {page}=await resplitPage(f,page=>page.route('**/api/jobs/shared-course',async route=>{
+      const response=await route.fetch();const json=await response.json();
+      return route.fulfill({response,json:{...json,permissions:{...json.permissions,owner:false}}});
+    }));
+    await page.goto(f.url.href);
+    const dialog=await openResplit(page,'shared-course');
+    const original=dialog.getByRole('radio',{name:'With original split',exact:true});
+    await expect(original).toBeDisabled();await expect(original).not.toBeChecked();
+    await expect(dialog.getByRole('radio',{name:'Separate split',exact:true})).toBeChecked();
+    await expect(dialog.locator('.resplit-placement-help')).toHaveText('Keeping results with the original is available for your own saved splits.');
+    expect(await dialog.locator('.resplit-placement label').first().evaluate(el=>getComputedStyle(el).opacity)).toBe('0.45');
+    await expect(dialog.getByRole('button',{name:'Resplit',exact:true})).toBeEnabled();
+  }finally{await f.close();}
+});
+
 test('course creation requires disclosure and sends an exact course with the acknowledged policy',async({browser})=>{
   const f=await fixture(browser);
   try{
@@ -67,8 +416,10 @@ test('instructors retain roster and class controls when supplemental usage stora
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-roster')).toContainText('App usage temporarily unavailable');
   await expect(page.locator('#classroom-roster-status')).toHaveText('');
-  await expect(page.getByRole('link',{name:'Create a split',exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Course record',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Splits',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Splits',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Create shared split',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Folders',exact:true}).click();
   await expect(page.locator('#classroom-folders')).toContainText('Class comments');
  } finally {await f.close();}
 });
@@ -110,7 +461,7 @@ test('owner Listening Guy cue recovers visibly after a failed stream and can be 
 });
 
 
-for (const owner of [false,true]) for (const width of [1280,390]) test(`workspace Create a split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
+for (const owner of [false,true]) for (const width of [1280,390]) test(`Create shared split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
  const f=await fixture(browser);
  try {
   const page=await f.pageFor(TEST_SUBJECTS.alice,owner),errors=[];
@@ -118,7 +469,9 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`workspac
   await page.setViewportSize({width,height:900});
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-course')).toHaveValue(course);
-  await page.getByRole('link',{name:'Create a split',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Create shared split',exact:true})).toBeHidden();
+  await page.getByRole('button',{name:'Splits',exact:true}).click();
+  await page.getByRole('link',{name:'Create shared split',exact:true}).click();
   await expect(page).toHaveURL(new URL(`/?course=${course}`,f.url).href);
   await expect(page).toHaveTitle(/Stem Splitter/);
   const select=page.getByLabel('Share with');
@@ -175,18 +528,19 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`new spli
   await expect(select).toHaveValue('personal');
   await expect(page.locator('#course-work-ack')).toBeHidden();
   expect(await page.evaluate(()=>creationCourse())).toBe('personal');
-  const personalBox=await select.boundingBox();
+  const control=page.getByRole('combobox',{name:/^Workspace:/});
+  const personalBox=await control.boundingBox();
   expect(personalBox.width).toBeGreaterThan(150);expect(personalBox.height).toBeGreaterThanOrEqual(44);
-  await select.focus();await expect(select).toBeFocused();
-  await select.press('Tab');await expect(select).not.toBeFocused();
+  await control.focus();await expect(control).toBeFocused();
+  await control.press('Tab');await expect(control).not.toBeFocused();
   await select.selectOption(course);
   await expect(select).toHaveValue(course);
   await expect(page.locator('#course-work-ack')).toBeVisible();
   await expect(page.locator('#course-work-ack')).not.toBeChecked();
   await page.locator('#course-work-ack').check();
   expect(await page.evaluate(()=>creationCourse())).toBe(course);
-  expect((await select.boundingBox()).width).toBe(personalBox.width);
-  const courseBox=await select.boundingBox();
+  expect((await control.boundingBox()).width).toBeGreaterThan(personalBox.width);
+  const courseBox=await control.boundingBox();
   expect(courseBox.x).toBeGreaterThanOrEqual(0);
   expect(courseBox.x+courseBox.width).toBeLessThanOrEqual(width);
   await page.evaluate(()=>dispatchEvent(new Event('focus')));

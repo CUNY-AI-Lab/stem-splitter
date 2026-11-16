@@ -28,3 +28,6 @@ tests/corpus/audio/
 
 # Node host (Railway) local data dir
 .railway-data/
+
+# Local source archives and Cloudflare release receipts (never credentials).
+.local-releases/

@@ -38,12 +38,20 @@ test('instructor reviews course roster, splits and paginated conversations and e
   page.on('request', request => { if (/\/(guide|chat)$/.test(new URL(request.url()).pathname)) modelCalls.push(request.url()); });
   try {
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
-    await expect(page).toHaveTitle('Stem Splitter · Class workspace');
-    await expect(page.getByRole('heading', { name: 'Class workspace', exact: true })).toBeVisible();
+    await expect(page).toHaveTitle('Stem Splitter · Classes');
+    await expect(page.getByRole('heading', { name: 'Classes', exact: true })).toBeVisible();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await expect(page.locator('#classroom-roster-section')).toBeHidden();
+    await expect(page.locator('#classroom-make-folder')).toBeVisible();
+    await expect(page.locator('#classroom-create')).toBeHidden();
     await expect(page.locator('#classroom-roster')).toContainText('Zero split student');
     await expect(page.locator('#classroom-usage')).toContainText('2 enrolled students shown · 1 assigned split');
     await expect(page.locator('#classroom-roster')).toContainText('App use: 2 split attempts · 2 completed');
     await expect(page.locator('#classroom-roster')).not.toContainText('Private personal fixture');
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
+    await expect(page).toHaveURL(/view=students/);
+    await expect(page.locator('#classroom-make-folder')).toBeHidden();
+    await expect(page.locator('#classroom-create')).toBeHidden();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Class fixture recording');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Private personal fixture');
@@ -55,7 +63,12 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
     expect(modelCalls).toEqual([]);
-    await page.getByLabel('New private folder').fill('New class listening');
+    await page.getByRole('button', { name: 'Folders', exact: true }).click();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await page.getByRole('button', { name: 'Make class folder', exact: true }).click();
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.locator('#classroom-folder-create')).toContainText('Private until shared.');
+    await page.getByLabel('New folder').fill('New class listening');
     await page.getByRole('button', { name: 'Create folder' }).click();
     await expect(page.locator('#classroom-folder-title')).toHaveText('New class listening');
     await expect(page.getByLabel('Who can use this folder?')).toHaveValue('private');
@@ -65,7 +78,8 @@ test('instructor reviews course roster, splits and paginated conversations and e
     const beforeSave = await page.request.get(new URL(`/api/classroom/courses/${course}/folders/${created.id}`, f.url).href);
     expect((await beforeSave.json()).folder.permission).toBe('private');
     await page.getByRole('button', { name: 'Save sharing', exact: true }).click();
-    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can listen and add notes.');
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can contribute splits, listen and add notes.');
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByLabel('Folder for Class fixture recording').selectOption(created.id);
     await page.getByRole('button', { name: 'Add to folder', exact: true }).click();
     await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
@@ -73,14 +87,15 @@ test('instructor reviews course roster, splits and paginated conversations and e
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Workspace');
-      expect((await page.locator('#classroom-course').boundingBox()).height).toBeGreaterThanOrEqual(44);
-      if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(104);
-      for (const id of ['#classroom-create','#classroom-own-splits']) {
+      await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Classes');
+      expect((await page.getByRole('combobox', { name: /^Class:/ }).boundingBox()).height).toBeGreaterThanOrEqual(44);
+      // Tabs and the contextual action stay compact on phones.
+      if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(156);
+      for (const id of ['#classroom-view-folders','#classroom-own-splits','#classroom-view-students']) {
         const box=await page.locator(id).boundingBox();
         expect(box.height).toBeGreaterThanOrEqual(44); expect(box.height).toBeLessThanOrEqual(46);
       }
-      await expect(page.locator('#classroom-own-splits')).toHaveText('Course record');
+      await expect(page.locator('#classroom-own-splits')).toHaveText('Splits');
       await page.locator('#classroom-messages').focus();
       await expect(page.locator('#classroom-messages')).toBeFocused();
       expect(await page.locator('#classroom-messages').evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
@@ -88,7 +103,9 @@ test('instructor reviews course roster, splits and paginated conversations and e
       await page.screenshot({ path: `/tmp/stem-classroom-acceptance/instructor-${width}.png`, fullPage: true });
       await page.evaluate(() => scrollTo(0, 0));
       await page.screenshot({ path: `/tmp/stem-classroom-acceptance/instructor-${width}-viewport.png` });
+      await page.getByRole('button', { name: 'Folders', exact: true }).click();
       await page.locator('#classroom-folder-detail').screenshot({ path: `/tmp/stem-classroom-acceptance/folder-${width}.png` });
+      await page.getByRole('button', { name: 'Students', exact: true }).click();
     }
     expect(errors).toEqual([]);
   } finally { await f.harness.close(); }
@@ -99,14 +116,23 @@ test('student sees shared folder and annotation permission without instructor or
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.bob });
     await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`, f.url).href);
     await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
-    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can listen and add notes.');
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can contribute splits, listen and add notes.');
     await expect(page.locator('#classroom-roster-section')).toBeHidden();
     await expect(page.locator('#classroom-guidance')).toBeHidden();
-    await expect(page.locator('#classroom-own-splits')).toBeHidden();
+    await expect(page.locator('#classroom-own-splits')).toBeVisible();
     await expect(page.locator('#classroom-folder-create')).toBeHidden();
     await expect(page.locator('#classroom-folder-sharing')).toBeHidden();
     await expect(page.locator('#classroom-folders')).not.toContainText('Instructor preparation');
     await expect(page.locator('#classroom-messages')).toBeEmpty();
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await expect(page.locator('#classroom-make-folder')).toBeVisible();
+      await expect(page.locator('#classroom-create')).toBeHidden();
+      await page.getByRole('button', { name: 'Splits', exact: true }).click();
+      await expect(page.locator('#classroom-create')).toBeVisible();
+      await expect(page.locator('#classroom-create')).toHaveAttribute('href', /course=/);
+      await expect(page.locator('#classroom-make-folder')).toBeHidden();
+      await page.getByRole('button', { name: 'Folders', exact: true }).click();
+    }
     expect((await page.request.get(new URL(`/api/classroom/courses/${course}/jobs/course-song/conversation`, f.url).href)).status()).toBe(403);
   } finally { await f.harness.close(); }
 });
@@ -115,13 +141,14 @@ test('an instructor outside the student roster can add their own course split to
   try {
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.bob, 'x-fixture-course-role': 'owner' });
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
-    await page.getByRole('button', { name: 'Course record', exact: true }).click();
+    await page.getByRole('button', { name: 'Splits', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Instructor course fixture');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Class fixture recording');
     await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('Alex Rivera: A student hears the melody');
     await page.getByLabel('Folder for Instructor course fixture').selectOption('shared-folder');
     await page.getByRole('button', { name: 'Add to folder', exact: true }).click();
+    await page.getByRole('button', { name: 'Folders', exact: true }).click();
     await page.getByRole('button', { name: 'Shared listening', exact: true }).click();
     await expect(page.locator('#classroom-folder-items')).toContainText('Instructor course fixture');
   } finally { await f.harness.close(); }
@@ -146,14 +173,18 @@ test('automatic refresh reflects enrolled course work and attributed notes while
   try {
     await page.clock.install();
     await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`, f.url).href);
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
     await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('Listen to the bass entrance');
     await page.getByRole('button', { name: 'Listening Guy messages', exact: true }).click();
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
-    await page.getByLabel('New private folder').fill('Unsaved folder draft');
+    await page.getByRole('button', { name: 'Folders', exact: true }).click();
+    await page.getByRole('button', { name: 'Make class folder', exact: true }).click();
+    await page.getByLabel('New folder').fill('Unsaved folder draft');
     await page.getByLabel('Who can use this folder?').selectOption('read');
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByLabel('Folder for Class fixture recording').selectOption('shared-folder');
     await f.seed([
       `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('new-course-song','New enrolled course run','uploads/new.wav','done','htdemucs_ft','[]')`,
@@ -167,7 +198,7 @@ test('automatic refresh reflects enrolled course work and attributed notes while
     await expect(page.locator('#classroom-notes')).toContainText('0:08 · Blair Chen: A second listener hears the drums');
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
     await expect(page.locator('#classroom-notes')).not.toContainText('Private personal note');
-    await expect(page.getByLabel('New private folder')).toHaveValue('Unsaved folder draft');
+    await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder draft');
     await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
     await expect(page.getByLabel('Folder for Class fixture recording')).toHaveValue('shared-folder');
     const stored = await page.request.get(new URL(`/api/classroom/courses/${course}/folders/shared-folder`, f.url).href);
@@ -195,7 +226,11 @@ test('automatic class refresh pauses in a hidden tab and rechecks on return', as
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await expect(page.locator('#classroom-refresh-status')).toContainText('Updated');
-    expect(reads.length).toBe(before + 2);
+    await expect.poll(() => reads.slice(before).map(value => new URL(value).pathname)).toEqual([
+      `/api/classroom/courses/${course}`,
+      `/api/classroom/courses/${course}/folders`,
+      `/api/classroom/courses/${course}/roster`,
+    ]);
     await expect(page.locator('#console-panel')).toBeVisible();
   } finally { await f.harness.close(); }
 });
@@ -204,6 +239,7 @@ test('selected annotation refresh fails closed when course access is revoked', a
   try {
     await page.clock.install();
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
     await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#classroom-notes')).toContainText('Listen to the bass entrance');
@@ -247,6 +283,7 @@ test('annotation review rejects a response for a different or personal workspace
   try {
     await page.route('**/api/jobs/course-song', route => route.fulfill({ json: { courseId: null, annotations: [{ atSeconds: 0, text: 'Unexpected personal fixture' }] } }));
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
     await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#console-panel')).toBeHidden();
@@ -262,6 +299,7 @@ for (const failure of ['503', 'network', 'invalid JSON']) test(`${failure} conce
   try {
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
     await expect(page.locator('#classroom-roster')).toContainText('Zero split student');
+    await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.route(pattern, async route => {
       await pending;
       if (failure === 'network') await route.abort();
@@ -292,7 +330,7 @@ test('changing course selection clears in-flight roster and conversation results
     });
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(page.locator('#classroom-roster-status')).toContainText('Loading');
-    await page.getByLabel('Class', { exact: true }).selectOption('');
+    await page.locator('#classroom-course').selectOption('');
     release();
     await expect(page.locator('#console-panel')).toBeHidden();
     await expect(page.locator('#classroom-roster')).toBeEmpty();
@@ -308,7 +346,9 @@ test('routine class refresh keeps loaded content, scroll and sharing selections 
   await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
   await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
   await expect(page.locator('#console-panel')).toBeVisible();
-  await page.getByLabel('New private folder').fill('Unsaved folder name');
+  await expect(page.locator('#classroom-folder-create')).toBeHidden();
+  await page.getByRole('button',{name:'Make class folder',exact:true}).click();
+  await page.getByLabel('New folder').fill('Unsaved folder name');
   await page.getByLabel('Who can use this folder?').selectOption('read');
   await page.evaluate(()=>{scrollTo(0,document.body.scrollHeight);window.refreshSamples=[];window.refreshSampleTimer=setInterval(()=>{const panel=document.querySelector('#console-panel');window.refreshSamples.push({visible:getComputedStyle(panel).visibility,scroll:scrollY,text:document.querySelector('#classroom-folder-items').textContent});},20);});
   const scroll=await page.evaluate(()=>scrollY),before=reads;
@@ -316,13 +356,36 @@ test('routine class refresh keeps loaded content, scroll and sharing selections 
   const samples=await page.evaluate(()=>{clearInterval(window.refreshSampleTimer);return window.refreshSamples;});
   expect(reads-before).toBeGreaterThanOrEqual(2);
   expect(samples.every(s=>s.visible==='visible'&&s.text.includes('Class fixture recording'))).toBe(true);
-  expect(await page.evaluate(()=>scrollY)).toBe(scroll);
-  await expect(page.getByLabel('New private folder')).toHaveValue('Unsaved folder name');
+  // Firefox can quantize an integer scroll request to a fractional CSS pixel.
+  expect(Math.abs(await page.evaluate(()=>scrollY) - scroll)).toBeLessThanOrEqual(1);
+  await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder name');
+  await expect(page.locator('#classroom-folder-create')).toBeVisible();
   await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
+  // Repeated window focus keeps the verified page visible while a slow scoped
+  // permission check runs. Duplicate focus must not hide or restart that check.
+  for (let cycle = 0; cycle < 3; cycle++) {
+    let resume; const pause = new Promise(resolve => { resume = resolve; });
+    const authorityUrl = new URL(`/api/classroom/courses/${course}`, f.url).href;
+    await page.route(authorityUrl, async route => { await pause; await route.continue(); });
+    const checking = page.waitForRequest(authorityUrl);
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await checking;
+    await expect(page.locator('#console-panel')).toBeVisible();
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await expect(page.locator('#console-panel')).toBeVisible();
+    await page.waitForTimeout(100);
+    resume();
+    await expect(page.locator('#console-panel')).not.toHaveAttribute('data-checking', 'true');
+    await page.unroute(authorityUrl);
+    expect(Math.abs(await page.evaluate(() => scrollY) - scroll)).toBeLessThanOrEqual(1);
+    await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder name');
+    await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
+  }
   let release;const waiting=new Promise(resolve=>release=resolve);
   await page.route('**/api/classroom/courses/*/folders',async route=>{await waiting;await route.fulfill({status:403,json:{error:'Access changed'}});});
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
-  await expect(page.locator('#console-panel')).toBeHidden();release();
+  await expect(page.locator('#console-panel')).toBeVisible();release();
+  await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('#classroom-folder-items')).toBeEmpty();
  } finally {await f.harness.close();}
 });

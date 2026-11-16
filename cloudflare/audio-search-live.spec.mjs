@@ -11,9 +11,9 @@ import { preserveWorkerRequestInit } from './test-outbound-request.mjs';
 test('live unified search offers real audio through the existing controls without separate metadata buttons', async ({ page, context }, testInfo) => {
   test.skip(process.env.STEM_LIVE_AUDIO !== '1', 'Explicit public metadata check; no paid providers.');
   const issuer = await createTestIdentityIssuer(), upstream = [], writes = [], queries = [], errors = [];
-  const query = process.env.STEM_LIVE_MUSIC_QUERY || 'jazz baby';
-  const expectedSource = process.env.STEM_EXPECTED_AUDIO_SOURCE || 'loc';
-  const observedHosts = ['api.openverse.org', 'www.loc.gov', 'data.labs.loc.gov'];
+  const query = process.env.STEM_LIVE_MUSIC_QUERY || 'Sad heaven piano #3';
+  const expectedSource = process.env.STEM_EXPECTED_AUDIO_SOURCE || 'freesound';
+  const observedHosts = ['api.openverse.org'];
   // Observe real catalog responses; identity is the only fixture.
   const network = setupServer();
   network.events.on('request:start', ({ request }) => {

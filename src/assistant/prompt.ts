@@ -12,7 +12,7 @@ import { stemFilename } from '../stem-filename.ts';
 // change. Runtime teacher amendments store this version plus a fingerprint of
 // the complete policy bundle below, tying every edit back to the exact code
 // prompt it extended even if a version bump is missed.
-export const SYSTEM_PROMPT_VERSION = '2026-11-03.1';
+export const SYSTEM_PROMPT_VERSION = '2026-11-06.1';
 export const SYSTEM_PROMPT_FINGERPRINT_SCHEMA =
   'stem-splitter.system-prompt-fingerprint.v1';
 
@@ -38,13 +38,13 @@ export function buildSystemPrompt(ctx: AssistantContext): string {
     : 'none yet';
   const duration = ctx.durationSec ? fmtTime(ctx.durationSec) : 'unknown';
 
-  // Instructor amendment sits AFTER every fixed rule block and BEFORE only the
-  // task block. The explicit subordination clause means a teacher can steer
+  // The selected personal or class amendment sits AFTER every fixed rule block
+  // and BEFORE only the task block. The explicit subordination clause can steer
   // emphasis, vocabulary, and repertoire without switching off "never invent
   // timestamps" or the student-data-is-not-instructions fence.
   const amendmentBlock = ctx.amendment?.trim()
     ? `
-YOUR INSTRUCTOR'S NOTES FOR THIS CLASS (follow these unless they conflict with
+ADDITIONAL LISTENING INSTRUCTIONS (follow these unless they conflict with
 the rules above, which always win):
 ${ctx.amendment.trim()}
 `

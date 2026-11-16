@@ -111,7 +111,7 @@ function waveformFor(audio, signal) {
     const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Offline) throw new Error('Waveform decoding unavailable');
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)]);
-    const response = await fetch(audio.src, { signal: deadline, cache: 'force-cache' });
+    const response = await window.StemFetch(audio.src, { signal: deadline, cache: 'force-cache' });
     const decoder = new Offline(1, 1, 8000);
     const buffer = await decoder.decodeAudioData(await waveformBytes(response));
     deadline.throwIfAborted();
@@ -210,7 +210,7 @@ async function ensureClassCode() {
       localStorage.setItem('classCode', code);
     }
     try {
-      const res = await fetch('/api/auth-check', { headers: { 'x-class-code': code } });
+      const res = await window.StemFetch('/api/auth-check', { headers: { 'x-class-code': code } });
       if (res.status !== 401) return;
     } catch {
       return; // network hiccup — don't lock anyone out; the first write re-checks anyway
@@ -222,6 +222,7 @@ async function ensureClassCode() {
 
 let selectedCourse = 'personal';
 let courseAcknowledgment = null;
+const COURSE_WORK_DISCLOSURE = 'I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can access a split when its folder creator or an instructor shares the folder; shared notes require annotation permission. Existing personal work stays private.';
 let courseSelectionPending = false, courseSelectionSequence = 0;
 let courseSelectionReady = Promise.resolve();
 function creationCourse() {
@@ -233,8 +234,12 @@ function creationCourse() {
 async function waitForCreationCourse() {
   // Returning from a native file picker refreshes membership on window focus.
   // Keep the selected file while that refresh confirms its destination.
-  while (courseSelectionPending) await courseSelectionReady;
+  await settledCourseSelection();
   return creationCourse();
+}
+async function settledCourseSelection() {
+  while (courseSelectionPending) await courseSelectionReady;
+  return selectedCourse;
 }
 async function initializeCourseSelection() {
   if (!accountSubject || guestSessionActive) return;
@@ -243,14 +248,16 @@ async function initializeCourseSelection() {
   const region = document.createElement('section');
   region.id = 'course-context';
   region.className = 'account-help';
-  region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.</label></p><p class="course-load-status" role="status"></p>';
+  region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> ' + COURSE_WORK_DISCLOSURE + '</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
   const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
+  const workspaceMenu = window.StemSelect?.enhance(select, 'Workspace');
   courseAcknowledgment = region.querySelector('input');
   let initialized = false;
   const choose = value => {
     if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
     selectedCourse = value; select.value = value;
+    workspaceMenu?.sync();
     courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
   };
   select.addEventListener('change', () => {
@@ -267,18 +274,21 @@ async function initializeCourseSelection() {
     const sequence = ++courseSelectionSequence;
     courseSelectionPending = true; select.disabled = true;
     try {
-      const courses = []; let cursor = null;
+      const courses = []; let cursor = null; const seen = new Set();
       do {
-        const response = await fetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
+        const response = await window.StemFetch(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { cache:'no-store',signal:AbortSignal.timeout(8000) });
         if (!response.ok) throw new Error('Class access is temporarily unavailable. Choose Personal or reload to retry.');
         const data = await response.json(); courses.push(...(data.courses || [])); cursor = data.nextCursor;
-      } while (cursor && courses.length < 1000);
+        if (cursor && (seen.has(cursor) || seen.size >= 9)) throw new Error('Class access could not be fully checked. Choose Personal or reload to retry.');
+        if (cursor) seen.add(cursor);
+      } while (cursor);
       if (sequence !== courseSelectionSequence || accountSubject !== subject) return;
       const valid = new Set(['personal',...courses.map(course=>course.classId)]);
       const previous = initialized ? selectedCourse : requestedCourse;
       const choice = valid.has(previous) ? previous : '';
-      select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'),
-        ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId)));
+      const options=[new Option('Choose a workspace',''),new Option('Personal','personal'),
+        ...courses.map(course=>new Option(window.StemSelect.courseLabel(course),course.classId))];
+      if(options.length!==select.options.length||options.some((option,index)=>option.value!==select.options[index]?.value||option.text!==select.options[index]?.text))select.replaceChildren(...options);
       select.options[0].disabled = true;
       choose(choice); initialized = true;
       status.textContent = previous && !valid.has(previous) ? 'Class access changed. Choose a workspace for this split.' : '';
@@ -307,15 +317,16 @@ async function splitRequestKey(body, course = 'personal') {
 }
 
 async function api(path, options = {}) {
-  const { onResults, background = false, publicSample = false, courseContext, ...requestOptions } = options;
+  const { onResults, background = false, publicSample = false, courseContext, fixedCourse = false, ...requestOptions } = options;
   if (!publicSample) await appReady;
   const creating = runtime.authMode === 'cail' && ['/api/uploads', '/api/jobs'].includes(path) && options.method === 'POST';
-  const currentCourse = creating ? creationCourse() : 'personal';
+  // fixedCourse: the Resplit dialog chose this workspace and showed its own notice.
+  const currentCourse = creating && !fixedCourse ? creationCourse() : 'personal';
   const course = creating ? (courseContext || currentCourse) : 'personal';
-  if (creating && course !== selectedCourse) throw new Error('The workspace changed. Start the import again in the selected workspace.');
+  if (creating && !fixedCourse && course !== selectedCourse) throw new Error('The workspace changed. Start the import again in the selected workspace.');
   if (creating && course !== 'personal' && path === '/api/jobs') requestOptions.body = JSON.stringify({ ...JSON.parse(requestOptions.body), coursePolicy: 'course-work-v1' });
   const pending = path === '/api/jobs' && options.method === 'POST' ? await splitRequestKey(requestOptions.body, course) : null;
-  const send = () => fetch(path, {
+  const send = () => window.StemFetch(path, {
     ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
@@ -425,7 +436,7 @@ async function streamApi(path, body, onEvent, signal) {
   await appReady;
   if (path.endsWith('/chat') && !body.messageId) body = { ...body, messageId: crypto.randomUUID() };
   const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(120000)]);
-  const send = () => fetch(path, {
+  const send = () => window.StemFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-class-code': getClassCode(), ...(body.messageId ? { 'Idempotency-Key': body.messageId } : {}) },
     body: JSON.stringify(body),
@@ -617,14 +628,31 @@ const ytFetchLabel = ytFetchButton.textContent;
 const sourceSongs = document.getElementById('source-songs');
 let songResults = new Map(), songSearchTimer, songSearchSequence = 0, songSearchAbort;
 let activeSongIndex = -1, songQuery = '', songSearchStatus = 'idle', songSuggestionsDismissed = false;
+const SEARCH_RETRY_WITHIN_MS = 10000, SEARCH_RETRY_DELAY_MS = 1200;
 let acceptedSongSample = null;
 const sourceIsLink = value => /^https?:\/\//i.test(value);
+// The server parses the link again and refuses anything it does not recognize.
+const youtubeLink = value => /^https?:\/\/((www|m|music)\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)\//i.test(value);
+// A YouTube link pasted without https://, or inside text a phone's share sheet adds
+// ("Watch this: https://youtu.be/…"), is still that video: it is imported, never searched for.
+const YOUTUBE_IN_TEXT = /(?:^|[^\w.-])((?:https?:\/\/)?(?:(?:www|m|music)\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)\/[^\s<>"'()]+)/i;
+const youtubeLinkIn = value => {
+  const found = YOUTUBE_IN_TEXT.exec(value)?.[1];
+  return !found ? '' : sourceIsLink(found) ? found : `https://${found}`;
+};
 
 // Playlist candidates become suggestions only after the live Archive search
 // verifies the exact item and audio file. Never substitute an unrelated result.
 let SAMPLE_SONG_QUERY = '';
 const sampleHint = document.getElementById('source-sample-hint');
 const defaultSongPlaceholder = ytUrlInput.placeholder;
+// The box's text width, which the stylesheet uses to shrink the placeholder on narrow screens
+// instead of cutting it off. It depends on the layout (a "Share with" menu also takes room).
+new ResizeObserver(() => {
+  const style = getComputedStyle(ytUrlInput);
+  const room = ytUrlInput.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  if (room > 0) ytUrlInput.style.setProperty('--song-room', `${room}px`);
+}).observe(ytUrlInput);
 function renderSongSample(text) {
   ytUrlInput.placeholder = text;
 }
@@ -716,7 +744,7 @@ async function refreshSongSampleSettings(){
   if(sampleConfigRefresh||!sampleVisible())return;
   sampleConfigRefresh=(async()=>{
     try{
-      const response=await fetch('/api/song-samples',{cache:'no-cache',signal:AbortSignal.timeout(5000)});if(!response.ok)return;
+      const response=await window.StemFetch('/api/song-samples',{cache:'no-cache',signal:AbortSignal.timeout(5000)});if(!response.ok)return;
       const payload=await response.json();sampleConfigFetchedAt=Date.now();
       if(Array.isArray(payload))return;
       if(!payload||!Array.isArray(payload.tracks))return;
@@ -751,7 +779,7 @@ function preloadSongSample() {
   const deadline = setTimeout(() => controller.abort(), 600000);
   void (async () => {
     let payload=sampleConfigSnapshot;
-    if(!payload){const response=await fetch('/api/song-samples',{signal:controller.signal});if(!response.ok)return;payload=await response.json();sampleConfigFetchedAt=Date.now();if(!Array.isArray(payload))sampleConfigSnapshot=payload;}
+    if(!payload){const response=await window.StemFetch('/api/song-samples',{signal:controller.signal});if(!response.ok)return;payload=await response.json();sampleConfigFetchedAt=Date.now();if(!Array.isArray(payload))sampleConfigSnapshot=payload;}
     const candidates=configureSongSamples(payload);
     const shuffled=sampleOrder.map(key=>candidates.find(track=>sampleTrackKey(track)===key)).filter(Boolean).filter(track=>!verifiedSongSamples.some(cache=>sampleCacheKey(cache)===sampleTrackKey(track)&&Date.now()-cache.createdAt<600000));
     samplePoolComplete=false;sampleUnavailable.clear();
@@ -856,6 +884,14 @@ function acceptSongSample() {
   void searchSourceSongs(SAMPLE_SONG_QUERY, ++songSearchSequence);
 }
 sampleHint.addEventListener('click', acceptSongSample);
+// Phones have no Tab key, so a double tap on the empty field takes the suggestion.
+let lastSourceFieldClick = -Infinity;
+ytUrlInput.addEventListener('click', (event) => {
+  if (event.timeStamp - lastSourceFieldClick < 500) {
+    lastSourceFieldClick = -Infinity;
+    acceptSongSample();
+  } else lastSourceFieldClick = event.timeStamp;
+});
 ytUrlInput.addEventListener('compositionstart', () => { sampleDismissed = true; stopSongSample(); });
 sampleReducedMotion.addEventListener('change', () => {
   if (sampleReducedMotion.matches && !sampleHint.hidden) {
@@ -902,6 +938,20 @@ function clearSongSuggestions() {
   musicSearchStatus.textContent = '';
 }
 
+// A failed search always leaves a next step, and does not claim a cause it cannot know.
+const SONG_SEARCH_LIMITED = 'Searching too quickly. Wait a few seconds, then try again.';
+function showSongSearchFailure(term, message = 'Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.') {
+  showSongSearchStatus(message);
+  songSearchStatus = 'error';
+  const retry = document.createElement('button');
+  retry.type = 'button'; retry.className = 'source-search-retry'; retry.textContent = 'Try again';
+  retry.addEventListener('click', () => {
+    ytUrlInput.focus();
+    songSuggestionsDismissed = false;
+    void searchSourceSongs(term, ++songSearchSequence);
+  });
+  sourceSongs.querySelector('.source-search-status')?.append(retry);
+}
 function showSongSearchStatus(message) {
   sourceSongs.replaceChildren();
   const item = document.createElement('li'), status = document.createElement('span');
@@ -934,20 +984,26 @@ async function searchSourceSongs(term, sequence) {
   songSearchStatus = 'loading';
   sourceSongs.setAttribute('aria-busy', 'true');
   showSongSearchStatus('Searching…');
-  const seen = new Set();
+  const slowSearch = setTimeout(() => {
+    if (current() && !songResults.size) showSongSearchStatus('Still searching. Some sources are slow to respond.');
+  }, 4000);
+  const seen = new Set(), optionById = new Map();
+  let optionNumber = 0;
   const render = data => {
     if (!current()) return;
     if (data.providers) {
-      musicSearchStatus.textContent = Object.values(data.providers).includes('unavailable')
-        ? 'Some audio sources are temporarily unavailable. Other results remain usable.' : '';
-
+      // The Archive holds most songs. A smaller catalog failing is not worth a warning beside usable results.
+      musicSearchStatus.textContent = data.fallback ? 'The Internet Archive is slow right now, so these are earlier results for this search.'
+        : Object.values(data.providers).includes('pending') ? 'Searching more sources…'
+        : data.providers.archive === 'unavailable' ? 'Some audio sources are temporarily unavailable. Other results remain usable.' : '';
     }
     if (!songResults.size && data.results?.length) sourceSongs.replaceChildren();
     for (const track of data.results || []) {
       // Keep existing choices in place while more verified matches arrive.
       if (seen.has(track.id) || songResults.size >= 16) continue;
       seen.add(track.id);
-      const credit = track.artist ? `File artist: ${track.artist}`
+      const credit = track.provider === 'youtube' ? (track.channel ? `YouTube: ${track.channel}` : '')
+        : track.artist ? `File artist: ${track.artist}`
         : track.fileCreator ? `File creator: ${track.fileCreator}`
         : track.itemCreator ? `Item creator: ${track.itemCreator}` : '';
       const label = `${track.title}${credit ? ` — ${credit}` : ''}`;
@@ -956,15 +1012,16 @@ async function searchSourceSongs(term, sequence) {
       for (let version = 2; songResults.has(value); version++) value = `${label} (${version})`;
       songResults.set(value, track);
       const option = document.createElement('li'), duration = document.createElement('small');
-      option.id = `source-song-${sequence}-${songResults.size}`;
+      option.id = `source-song-${sequence}-${++optionNumber}`;
       option.className = 'source-song';
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', 'false');
       option.dataset.value = value;
       option.title = `${track.itemTitle || track.title}\n${track.archiveFile || ''}\n${track.sourceUrl || ''}`;
       option.appendChild(document.createTextNode(value));
-      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')} · ${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
+      duration.textContent = `${Math.floor(track.durationSec / 60)}:${String(Math.floor(track.durationSec % 60)).padStart(2, '0')}${track.genre ? ` · ${track.genre}` : ''} · ${track.provider === 'youtube' ? 'YouTube video' : `${track.providerName || 'Internet Archive'}: ${track.licenseName || track.itemTitle || track.title}`}${track.fileDescription ? ` · ${track.fileDescription}` : ''}${track.itemDescription ? ` · Item note: ${track.itemDescription}` : ''}`;
       option.appendChild(duration);
+      optionById.set(track.id, option);
       sourceSongs.appendChild(option);
     }
     if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
@@ -996,19 +1053,58 @@ async function searchSourceSongs(term, sequence) {
       if (!current()) return;
       data = outcome.data;
     }
-    if (!data) data = await api(`/api/music/search?q=${encodeURIComponent(term)}`, {
-      signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
-    });
+    if (!data) {
+      const started = Date.now();
+      const load = () => api(`/api/music/search?q=${encodeURIComponent(term)}`, {
+        signal: controller.signal, headers: { Accept: 'application/x-ndjson' }, onResults: render,
+      });
+      try { data = await load(); }
+      // Searching too quickly is not retried: the retry would count against the same limit.
+      catch (error) { if (controller.signal.aborted || error.code === 'search_rate_limited' || (error.status && error.status < 500 && error.status !== 429)) throw error; }
+      // One quiet retry for a failure that came quickly: finished work is reused, so it is cheap.
+      // A search that already used its whole time limit is not repeated without being asked.
+      if (current() && !songResults.size && (!data || data.providers?.archive === 'unavailable') && Date.now() - started < SEARCH_RETRY_WITHIN_MS) {
+        await new Promise(resolve => setTimeout(resolve, SEARCH_RETRY_DELAY_MS));
+        if (!current()) return;
+        data = await load();
+      }
+    }
     if (!current()) return;
+    if (!data) throw new Error('Search unavailable');
+    // The final ranking replaces what streamed in: early weak matches and other copies of a
+    // recording leave the list, and better late matches take their places.
+    if (activeSongIndex < 0 && data.results?.length) {
+      const kept = new Set(data.results.slice(0, 16).map(track => track.id));
+      for (const [value, track] of songResults) {
+        if (kept.has(track.id)) continue;
+        songResults.delete(value);
+        seen.delete(track.id);
+        optionById.get(track.id)?.remove();
+        optionById.delete(track.id);
+      }
+    }
     render(data);
-    if (!cached) rememberSongSearch(term, data);
+    // Choices hold still while results stream in, then settle into relevance order,
+    // unless someone is already moving through the list.
+    if (activeSongIndex < 0 && songResults.size) {
+      const ranked = (data.results || []).map(track => optionById.get(track.id)).filter(Boolean);
+      for (const option of new Set([...ranked, ...optionById.values()])) sourceSongs.appendChild(option);
+      if (musicSearchStatus.textContent) sourceSongs.appendChild(musicSearchStatus);
+    }
+    const archiveFailed = data.providers?.archive === 'unavailable';
+    if (!cached && !archiveFailed && !data.fallback) rememberSongSearch(term, data);
     songSearchStatus = 'ready';
-    if (!songResults.size) showSongSearchStatus('No downloadable audio found. Try another recording or upload an audio file.');
-  } catch {
+    if (!songResults.size) {
+      musicSearchStatus.textContent = '';
+      if (archiveFailed) showSongSearchFailure(term);
+      else showSongSearchStatus('No downloadable audio found. Try another recording or upload an audio file.');
+    }
+  } catch (error) {
     if (!current()) return;
     songSearchStatus = songResults.size ? 'ready' : 'error';
-    if (!songResults.size) showSongSearchStatus('Search is temporarily unavailable. Try again.');
+    if (!songResults.size) showSongSearchFailure(term, error?.code === 'search_rate_limited' ? SONG_SEARCH_LIMITED : undefined);
   } finally {
+    clearTimeout(slowSearch);
     if (current()) sourceSongs.removeAttribute('aria-busy');
   }
 }
@@ -1023,7 +1119,7 @@ ytUrlInput.addEventListener('input', (event) => {
   songSuggestionsDismissed = false;
   if (songResults.has(term)) { closeSongSuggestions(); return; }
   clearSongSuggestions();
-  if (event.isComposing || sourceIsLink(term) || term.length < 2 || youtubeFetchInProgress) return;
+  if (event.isComposing || sourceIsLink(term) || youtubeLinkIn(term) || term.length < 2 || youtubeFetchInProgress) return;
   songSearchTimer = setTimeout(() => { void searchSourceSongs(term, sequence); }, 200);
 });
 ytUrlInput.addEventListener('focus', () => {
@@ -1109,7 +1205,7 @@ function fallbackModel() {
 
 function classifyAudio(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker('/autosplit-worker.js');
+    const worker = new Worker(StemPath('/autosplit-worker.js'));
     const timeout = setTimeout(() => {
       worker.terminate();
       reject(new Error('Audio analysis timed out'));
@@ -1302,7 +1398,7 @@ async function resolveModel(chosen, file, sourceLabel = 'this source') {
 
 async function loadSeparationOptions() {
   try {
-    const res = await fetch('/api/separation-options');
+    const res = await window.StemFetch('/api/separation-options');
     if (!res.ok) throw new Error('Split choices request failed');
     const options = await res.json();
     if (
@@ -1509,7 +1605,8 @@ dropzone.addEventListener('drop', (e) => {
 
 ytForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const url = ytUrlInput.value.trim();
+  const typed = ytUrlInput.value.trim();
+  const url = youtubeLinkIn(typed) || typed;
   if (youtubeFetchInProgress) return;
   if (!url) { acceptSongSample(); return; }
   const song = songResults.get(url) || (acceptedSongSample?.query === url ? acceptedSongSample.track : null);
@@ -1535,17 +1632,17 @@ ytForm.addEventListener('submit', async (e) => {
   progressBar.style.width = '0%';
   showUploadMessage('IMPORTING AUDIO…');
 
-  let followUpQuery = '';
   try {
     await appReady;
     const courseContext = await waitForCreationCourse();
-    const imports = song ? null : await api('/api/import-options');
+    // YouTube audio is fetched by the server's video importer. A fetch that fails uses no allowance.
+    let videoUrl = !song && youtubeLink(url) ? url : '';
+    const imports = song || videoUrl ? null : await api('/api/import-options');
     if (imports?.linkRouter) {
-      // Only direct files and share links become jobs; YouTube links turn into
-      // an Internet Archive search, since the app does not fetch their audio.
+      // Direct files and share links go through the link importer.
       const link = await api('/api/link-info', { method: 'POST', body: JSON.stringify({ url }) });
-      if (link.kind !== 'direct' && link.kind !== 'share') {
-        followUpQuery = link.kind === 'youtube' && link.query ? link.query : '';
+      if (link.kind === 'youtube' && link.canonicalUrl) videoUrl = link.canonicalUrl;
+      else if (link.kind !== 'direct' && link.kind !== 'share') {
         showUploadMessage(linkGuidance(link), link.kind === 'invalid');
         if (link.kind !== 'invalid') offerLocalUpload();
         ytUrlInput.value = '';
@@ -1560,7 +1657,7 @@ ytForm.addEventListener('submit', async (e) => {
       method: 'POST',
       courseContext,
       body: JSON.stringify({
-        ...(song ? { ...(song.openAudio?{openAudio:song.openAudio}:{archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true}), displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
+        ...(song?.provider === 'youtube' ? { videoUrl: song.videoUrl } : song ? { ...(song.openAudio?{openAudio:song.openAudio}:{archiveId: song.archiveId, archiveFile: song.archiveFile, archiveSearch: true}), displayTitle: [...`${song.artist ? song.artist+' — ' : ''}${song.title}`].slice(0,200).join('') } : videoUrl ? { videoUrl } : imports?.urlImport ? { sourceUrl: url } : { videoUrl: url }),
         model,
         ...(resolved.routingRequest ? { routingRequest: resolved.routingRequest } : {}),
         ...(resolved.browserAnalysis ? { browserAnalysis: resolved.browserAnalysis } : {}),
@@ -1582,12 +1679,6 @@ ytForm.addEventListener('submit', async (e) => {
     ytUrlInput.disabled = false;
     ytFetchButton.disabled = false;
     ytFetchButton.textContent = ytFetchLabel;
-    if (followUpQuery) {
-      ytUrlInput.value = followUpQuery;
-      songSuggestionsDismissed = false;
-      ytUrlInput.focus();
-      searchSourceSongs(followUpQuery, ++songSearchSequence);
-    }
   }
 });
 
@@ -1599,11 +1690,6 @@ function offerLocalUpload() {
 }
 
 function linkGuidance(link) {
-  if (link.kind === 'youtube') {
-    return link.query
-      ? 'This app can’t fetch audio from YouTube. Here are matching recordings from the Internet Archive, or upload your own file.'
-      : 'This app can’t fetch audio from YouTube. Type the song title to search the Internet Archive, or upload your own file.';
-  }
   if (link.kind === 'retired') return 'Vimeo links are no longer supported. Upload an original or licensed audio file.';
   return 'Paste a public HTTPS link to an audio file, or search for a song.';
 }
@@ -1638,7 +1724,7 @@ async function handleFile(file, settings = {}) {
       const { model, note } = resolved;
       if (note) showUploadMessage(note);
       const { key, uploadUrl } = await api('/api/uploads', {
-        method: 'POST', courseContext, body: JSON.stringify({ filename: file.name }),
+        method: 'POST', courseContext, fixedCourse: settings.fixedCourse, body: JSON.stringify({ filename: file.name }),
       });
       await putWithProgress(uploadUrl, file, (pct) => { progressBar.style.width = `${pct}%`; });
       input = { key, filename: file.name, model,
@@ -1654,6 +1740,7 @@ async function handleFile(file, settings = {}) {
     const job = await api('/api/jobs', {
       method: 'POST',
       courseContext,
+      fixedCourse: settings.fixedCourse,
       body: JSON.stringify(input),
     });
 
@@ -1686,10 +1773,11 @@ async function chooseStemResplit(mixer, stem) {
     <p class="resplit-filename">${esc(filename)}</p>
     <select id="resplit-model" aria-label="Number of splits" required></select>
     <fieldset class="resplit-placement"><legend>Keep result</legend>
-      <label><input type="radio" name="resplit-placement" value="with_original"> With original split</label>
-      <label><input type="radio" name="resplit-placement" value="separate" checked> Separate split</label>
+      <label><input type="radio" name="resplit-placement" value="with_original" checked> With original split</label>
+      <label><input type="radio" name="resplit-placement" value="separate"> Separate split</label>
     </fieldset>
     <p class="resplit-placement-help account-help" hidden></p>
+    <label class="resplit-course-ack account-help" hidden><input type="checkbox"> <span>${esc(COURSE_WORK_DISCLOSURE)}</span></label>
     <p class="resplit-status" role="status">Loading split choices…</p>
     <div class="class-code-actions"><button type="button" class="dialog-cancel">Cancel</button><button type="submit" class="yt-go" disabled>Resplit</button></div>
   </form>`;
@@ -1707,31 +1795,40 @@ async function chooseStemResplit(mixer, stem) {
     await appReady;
     await separationOptionsReady;
     if (!dialog.isConnected) return;
-    const courseContext = await waitForCreationCourse();
-    const ownOriginal = runtime.authMode === 'cail' && mixer.job.permissions?.owner === true;
-    const originalChoice = dialog.querySelector('[value="with_original"]');
-    originalChoice.disabled = !ownOriginal || (mixer.job.courseId || 'personal') !== courseContext;
-    if (originalChoice.disabled) {
-      const help = dialog.querySelector('.resplit-placement-help');
-      help.hidden = false;
-      help.textContent = ownOriginal ? 'Choose the original split’s workspace to keep the result with it.' : 'Keeping results with the original is available for your own saved splits.';
-    }
-    // Use exactly the choices the server made available on this page.
+    // Resplitting one stem starts with two layers; keep six-track separation
+    // on the original-track intake and respect the server's available models.
     for (const input of stemChoice.querySelectorAll('input[name="stem-model"]')) {
       const model = catalogueModels.find(model => model.id === input.value);
-      const option = new Option(model ? `${model.stems.length} splits` : input.getAttribute('aria-label') || input.value, input.value, false, input.checked);
+      if (!model || ![2, 4].includes(model.stems.length)) continue;
+      const option = new Option(`${model.stems.length} splits`, input.value, false, model.stems.length === 2);
       option.title = input.getAttribute('aria-label') || option.text;
       select.add(option);
     }
     if (!select.options.length) throw new Error('Split choices are unavailable. Reload the page and try again.');
+    // A resplit kept with its original belongs to that split's workspace. Only a
+    // separate split follows Share with, which this modal dialog covers.
+    const shareWith = await settledCourseSelection();
+    if (!dialog.isConnected) return;
+    const shareWithSelect = document.getElementById('new-split-course');
+    const originalCourse = mixer.job.courseId || 'personal';
+    const ownOriginal = runtime.authMode === 'cail' && mixer.job.permissions?.owner === true;
+    const originalChoice = dialog.querySelector('[value="with_original"]');
+    const classAvailable = originalCourse === 'personal' || [...(shareWithSelect?.options || [])].some(option => option.value === originalCourse);
+    originalChoice.disabled = !ownOriginal || !classAvailable;
+    if (originalChoice.disabled) {
+      dialog.querySelector('[value="separate"]').checked = true;
+      const help = dialog.querySelector('.resplit-placement-help');
+      help.hidden = false;
+      help.textContent = ownOriginal ? 'This split’s class is not available to you right now.' : 'Keeping results with the original is available for your own saved splits.';
+    }
     let description = 'Creates a separate split from this audio.', allowance = '', guest = false, exhausted = false;
     if (runtime.authMode === 'cail') {
-      const response = await fetch('/api/account', { cache: 'no-store', credentials: 'same-origin' });
+      const response = await window.StemFetch('/api/account', { cache: 'no-store', credentials: 'same-origin' });
       if (!response.ok) throw new Error('Your account could not be checked. Close this dialog and try again.');
       const { account, splitAllowance } = await response.json();
       if (!accountSubject || account?.subject !== accountSubject) throw new Error('Your session changed. Reload the page before resplitting.');
       guest = account.quotaClass === 'guest';
-      const workspace = document.getElementById('new-split-course')?.selectedOptions[0]?.textContent || 'Personal';
+      const workspace = shareWithSelect?.selectedOptions[0]?.textContent || 'Personal';
       description = guest ? 'Creates a new guest run, available in this browser.' : `Creates a new run in ${workspace}.`;
       if (splitAllowance && Number.isInteger(splitAllowance.limit) && splitAllowance.limit > 0 &&
           Number.isInteger(splitAllowance.remaining) && splitAllowance.remaining >= 0 && splitAllowance.remaining <= splitAllowance.limit) {
@@ -1740,46 +1837,63 @@ async function chooseStemResplit(mixer, stem) {
       } else allowance = ' Your remaining daily splits could not be loaded.';
     }
     if (!dialog.isConnected) return;
+    const acknowledgment = dialog.querySelector('.resplit-course-ack');
+    const acknowledged = acknowledgment.querySelector('input');
+    const destination = () => originalChoice.checked ? originalCourse : shareWith;
+    const needsAcknowledgment = () => {
+      const course = destination();
+      // A resplit that stays in its split's class relies on the notice accepted for that split.
+      if (!course || course === 'personal' || (ownOriginal && course === originalCourse)) return false;
+      return !(course === selectedCourse && courseAcknowledgment?.checked);
+    };
+    const blocked = () => exhausted || !destination() || (needsAcknowledgment() && !acknowledged.checked);
+    let acknowledgedCourse = null;
     const describePlacement = () => {
+      const course = destination();
+      if (course !== acknowledgedCourse) { acknowledged.checked = false; acknowledgedCourse = course; }
+      acknowledgment.hidden = !needsAcknowledgment();
       status.textContent = (originalChoice.checked
-        ? `Keeps the resplit with “${mixer.job.filename}”${guest ? ' in this browser' : ''}. Original stems stay available.`
-        : description) + allowance;
+        ? `Adds the new stems under ${mixer.label(stem.name)} in “${mixer.job.filename}”${guest ? ' in this browser' : ''}. Original stems stay available.`
+        : course ? description : 'Close this and choose a workspace under Share with first.') + allowance +
+        (needsAcknowledgment() && !acknowledged.checked ? ' Tick the notice to continue.' : '');
+      submit.disabled = blocked();
     };
     describePlacement();
-    dialog.querySelector('.resplit-placement').addEventListener('change', describePlacement);
-    submit.disabled = exhausted;
+    dialog.querySelector('form').addEventListener('change', describePlacement);
     select.focus();
     dialog.querySelector('form').addEventListener('submit', async event => {
       event.preventDefault();
-      if (busy || exhausted) return;
+      if (busy || blocked()) return;
       busy = true;
-      submit.disabled = true; cancel.disabled = true; select.disabled = true;
+      submit.disabled = true; cancel.disabled = true; select.disabled = true; acknowledged.disabled = true;
       dialog.querySelector('.resplit-placement').disabled = true;
       submit.textContent = 'Preparing…';
       status.textContent = 'Preparing the selected audio…';
       resplitAbort = new AbortController();
       const placement = originalChoice.checked ? 'with_original' : 'separate';
       const resplit = ownOriginal ? { parentJobId: mixer.job.id, stem: stem.name, placement } : undefined;
-      const requestKey = JSON.stringify([accountSubject, courseContext, mixer.job.id, stem.name, filename, select.value, placement]);
+      const course = destination();
+      const requestKey = JSON.stringify([accountSubject, course, mixer.job.id, stem.name, filename, select.value, placement]);
       const retryState = resplitRequests.get(requestKey) || {};
       resplitRequests.set(requestKey, retryState);
       try {
-        const response = await fetch(stem.url, { signal: AbortSignal.any([resplitAbort.signal, AbortSignal.timeout(60_000)]) });
+        const response = await window.StemFetch(stem.url, { signal: AbortSignal.any([resplitAbort.signal, AbortSignal.timeout(60_000)]) });
         if (!response.ok) throw new Error(`Could not load this split (${response.status}).`);
         if (Number(response.headers.get('content-length')) > 100 * 1024 * 1024) throw new Error('File too large (max 100 MB).');
         const audio = await response.blob();
         if (!dialog.isConnected || resplitAbort.signal.aborted) return;
         status.textContent = 'Starting a new split…';
-        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext, retryState, resplit });
+        const job = await handleFile(new File([audio], filename, { type: audio.type || 'audio/mpeg' }), { model: select.value, courseContext: course, fixedCourse: true, retryState, resplit });
         if (job) { resplitRequests.delete(requestKey); dialog.close(); return; }
         status.textContent = uploadMessage.textContent || 'The split could not start. Please try again.';
       } catch (error) {
         status.textContent = error.message || 'The split could not start. Please try again.';
       } finally {
         resplitAbort = null;
-        busy = false; submit.disabled = false; cancel.disabled = false; select.disabled = false;
+        busy = false; cancel.disabled = false; select.disabled = false; acknowledged.disabled = false;
         dialog.querySelector('.resplit-placement').disabled = false;
         submit.textContent = 'Resplit';
+        submit.disabled = blocked();
       }
     });
   } catch (error) { status.textContent = error.message; }
@@ -1810,7 +1924,7 @@ async function fileIsReadable(file) {
 function putOnce(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url);
+    xhr.open('PUT', StemPath(url));
     if (new URL(url, window.location.href).origin === window.location.origin) {
       xhr.setRequestHeader('x-class-code', getClassCode());
     }
@@ -1859,7 +1973,7 @@ async function diagnoseUploadFailure(file) {
     return `Upload failed — ${UNREADABLE_FILE_MESSAGE}`;
   }
   try {
-    const res = await fetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
+    const res = await window.StemFetch('/api/auth-check', { headers: { 'x-class-code': getClassCode() } });
     if (res.status === 401) {
       if (runtime.authMode === 'cail') return 'Upload failed — sign in with CUNY Login and try again.';
       localStorage.removeItem('classCode');
@@ -2007,7 +2121,7 @@ class Mixer {
             <span class="split-action-heading">Recording</span>
             ${canRenameRun(this.job) ? '<button type="button" class="head-btn rename-btn">RENAME</button>' : ''}
             <button class="head-btn export-btn" title="Download stems + guide, chat, and notes as a zip">EXPORT</button>
-            <button class="head-btn folder-btn" title="Add this split to a class folder">+ FOLDER</button>
+            <button class="head-btn folder-btn" title="Move this split out of the rack and into one of your private folders">MOVE TO MY FOLDERS</button>
             </div>
             <div class="split-action-group split-sharing-actions" role="group" aria-label="Sharing">
             <span class="split-action-heading">Sharing</span>
@@ -2172,7 +2286,7 @@ class Mixer {
     this.coachSignIn = document.createElement('a');
     this.coachSignIn.className = 'coach-sign-in';
     this.coachSignIn.textContent = 'Sign in to continue';
-    this.coachSignIn.href = `${runtime.loginUrl || '/auth/login'}?next=${encodeURIComponent('/?job=' + this.job.id)}`;
+    this.coachSignIn.href = StemPath(`${runtime.loginUrl || '/auth/login'}?next=${encodeURIComponent('/?job=' + this.job.id)}`);
     this.coachSignIn.hidden = true;
     this.coachSignIn.addEventListener('click', event => preserveProgressBeforeSignIn(event, this.coachSignIn.href));
     this.coachLog.append(this.coachSignIn);
@@ -2229,61 +2343,10 @@ class Mixer {
 
     const channels = li.querySelector('.channels');
 
-    for (const stem of stems) {
-      const audio = new Audio(stem.url);
-      audio.preload = 'metadata';
-      this.audios.push(audio);
-
-      const row = document.createElement('div');
-      row.className = 'channel';
-      row.style.setProperty('--ch', `var(--c-${cssName(stem.name)}, var(--ink-dim))`);
-      row.innerHTML = `
-        <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" tabindex="0" title="${esc(this.label(stem.name))} — click to rename">${esc(this.label(stem.name))}</span></span>
-        <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
-        <span class="ch-actions">
-          <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
-          <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
-          <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
-          <button type="button" class="resplit-btn" title="Resplit ${esc(this.label(stem.name))}" aria-label="Resplit ${esc(this.label(stem.name))}">↩</button>
-        </span>
-      `;
-      const muteBtn = row.querySelector('.mute-btn');
-      const soloBtn = row.querySelector('.solo-btn');
-      const download = row.querySelector('.dl');
-      const resplit = row.querySelector('.resplit-btn');
-      this.channelsByName.set(stem.name, {
-        audio,
-        row,
-        muteBtn,
-        soloBtn,
-        download,
-        resplit,
-        bars: [...row.querySelectorAll('.meter i')],
-        levels: new Float32Array(METER_BANDS.length),
-        waveform: row.querySelector('.waveform'),
-        waveformStatus: 'idle',
-        waveformPeaks: null,
-        mixGain: 1,
-      });
-      this.userMuted.set(stem.name, false);
-      resplit.addEventListener('click', () => chooseStemResplit(this, stem));
-      muteBtn.addEventListener('click', () =>
-        this.toggleMute(stem.name)
-      );
-      soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
-      audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
-      audio.addEventListener('loadedmetadata', () => { this.restoreAudio(stem.name); this.loadWaveforms(); this.paint(); });
-      audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
-      for (const event of ['canplay', 'seeked']) audio.addEventListener(event, () => this.resumeBufferedAudio());
-
-      const nameEl = row.querySelector('.ch-name');
-      nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
-      nameEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') this.editLabel(stem.name, nameEl);
-      });
-
-      channels.appendChild(row);
-    }
+    this.channelList = channels;
+    this.partGroups = new Map();
+    this.partLabels = new Map();
+    for (const stem of stems) this.addChannel(stem);
 
     const master = this.audios[0];
     master.addEventListener('loadedmetadata', () => {
@@ -2392,8 +2455,14 @@ class Mixer {
       classActions.setAttribute('role', 'group'); classActions.setAttribute('aria-label', 'Class');
       const heading = document.createElement('span'); heading.className = 'split-action-heading'; heading.textContent = 'Class';
       const workspace = document.createElement('a'); workspace.className = 'class-workspace-link';
-      workspace.href = `/classroom.html?course=${encodeURIComponent(this.job.courseId)}`;
-      workspace.textContent = 'Open class workspace'; classActions.append(heading, workspace);
+      workspace.href = StemPath(`/classroom.html?course=${encodeURIComponent(this.job.courseId)}`);
+      workspace.textContent = 'Open class'; classActions.append(heading, workspace);
+      if (this.job.permissions?.instructor || this.job.permissions?.owner) {
+        const addToClassFolder = document.createElement('button');
+        addToClassFolder.type = 'button'; addToClassFolder.className = 'head-btn class-folder-btn'; addToClassFolder.textContent = 'ADD TO CLASS FOLDER';
+        addToClassFolder.addEventListener('click', () => { void toggleClassFolderMenu(this); this.setActionsOpen(false); });
+        classActions.append(addToClassFolder);
+      }
       li.querySelector('.split-remove-actions').before(classActions);
       li.querySelector('.folder-btn').hidden = true;
       if (!this.job.permissions?.comment) li.querySelector('.note-btn').hidden = true;
@@ -2407,7 +2476,7 @@ class Mixer {
     const sharing = li.querySelector('.split-sharing-actions');
     sharing.hidden = ![...sharing.querySelectorAll('button')].some(button => !button.hidden);
     if (runtime.instrumentTargets && this.job.permissions?.owner && !this.job.readOnlyShared) {
-      import('/instrument-targets.js').then(({ mountInstrumentTargets }) =>
+      import(StemPath('/instrument-targets.js')).then(({ mountInstrumentTargets }) =>
         mountInstrumentTargets(li, { jobId: this.job.id, request: api })).catch(() => {});
     }
     return li;
@@ -2467,6 +2536,182 @@ class Mixer {
         default:
       }
     });
+  }
+
+  addChannel(stem, part = null) {
+    const audio = new Audio(StemPath(stem.url));
+    audio.preload = 'metadata';
+    this.audios.push(audio);
+
+    const row = document.createElement('div');
+    row.className = part ? 'channel channel-part' : 'channel';
+    if (part) row.dataset.partOf = part.source;
+    row.style.setProperty('--ch', `var(--c-${cssName(part?.stem || stem.name)}, var(--ink-dim))`);
+    row.innerHTML = `
+      <span class="ch-id"><span class="ch-dot"></span><span class="ch-name" ${part ? `title="${esc(this.label(stem.name))}"` : `tabindex="0" title="${esc(this.label(stem.name))} — click to rename"`}>${esc(this.label(stem.name))}</span></span>
+      <span class="meter" aria-hidden="true"><canvas class="waveform"></canvas><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="ch-actions">
+        <button class="solo-btn" aria-pressed="false" title="Press once to bring this split forward, again to hear it alone">SOLO</button>
+        <button class="mute-btn" aria-pressed="false" aria-label="Mute ${esc(this.label(stem.name))}">MUTE</button>
+        <a class="dl" href="${esc(stemDownloadUrl(stem.url, this.job.filename, part ? `${this.label(part.source)} ${this.label(stem.name)}` : this.label(stem.name)))}" title="Download ${esc(this.label(stem.name))}" aria-label="Download ${esc(this.label(stem.name))}">↓</a>
+        <button type="button" class="resplit-btn" title="Resplit ${esc(this.label(stem.name))}" aria-label="Resplit ${esc(this.label(stem.name))}">↩</button>
+      </span>
+    `;
+    const muteBtn = row.querySelector('.mute-btn');
+    const soloBtn = row.querySelector('.solo-btn');
+    const download = row.querySelector('.dl');
+    const resplit = row.querySelector('.resplit-btn');
+    this.channelsByName.set(stem.name, {
+      audio,
+      row,
+      muteBtn,
+      soloBtn,
+      download,
+      resplit,
+      bars: [...row.querySelectorAll('.meter i')],
+      levels: new Float32Array(METER_BANDS.length),
+      waveform: row.querySelector('.waveform'),
+      waveformStatus: 'idle',
+      waveformPeaks: null,
+      mixGain: 1,
+    });
+    this.userMuted.set(stem.name, false);
+    if (part) resplit.hidden = true;
+    else resplit.addEventListener('click', () => chooseStemResplit(this, stem));
+    muteBtn.addEventListener('click', () =>
+      this.toggleMute(stem.name)
+    );
+    soloBtn.addEventListener('click', () => this.cycleSolo(stem.name));
+    audio.addEventListener('error', () => this.markAudioUnavailable(stem.name));
+    audio.addEventListener('loadedmetadata', () => { this.restoreAudio(stem.name); this.loadWaveforms(); this.paint(); });
+    audio.addEventListener('emptied', () => { this.endScrub(false); this.paint(); });
+    for (const event of ['canplay', 'seeked']) audio.addEventListener(event, () => this.resumeBufferedAudio());
+
+    if (!part) {
+      const nameEl = row.querySelector('.ch-name');
+      nameEl.addEventListener('click', () => this.editLabel(stem.name, nameEl));
+      nameEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.editLabel(stem.name, nameEl);
+      });
+    }
+
+    if (part) part.after.after(row); else this.channelList.appendChild(row);
+    return this.channelsByName.get(stem.name);
+  }
+
+  // A resplit kept with the original joins this player under the stem it came from.
+  syncParts(children) {
+    const seen = new Set();
+    for (const { job, state } of children) {
+      seen.add(job.id);
+      if (state?.status === 'done' && state.stems?.length) this.adoptPart(job, state);
+      else this.showPendingPart(job, state);
+    }
+    for (const id of [...this.partGroups.keys()]) if (!seen.has(id)) this.dropPart(id);
+  }
+
+  partGroup(job) {
+    let group = this.partGroups.get(job.id);
+    if (group) return group;
+    const source = job.resplit.stem;
+    let anchor = this.channelsByName.get(source)?.row || this.channelList.lastElementChild;
+    while (anchor?.nextElementSibling?.dataset.partOf === source) anchor = anchor.nextElementSibling;
+    const head = document.createElement('div');
+    head.className = 'channel-parts-head'; head.dataset.partOf = source;
+    head.innerHTML = '<span class="channel-parts-note" role="status"></span><button type="button" class="head-btn channel-parts-remove"></button>';
+    anchor.after(head);
+    group = { source, head, names: [], stems: [], adopted: false, signature: '', armTimer: 0 };
+    const remove = head.querySelector('button');
+    remove.addEventListener('click', () => {
+      if (!group.armTimer) {
+        remove.dataset.label = remove.textContent; remove.textContent = 'CONFIRM'; remove.classList.add('armed');
+        group.armTimer = setTimeout(() => { group.armTimer = 0; remove.textContent = remove.dataset.label; remove.classList.remove('armed'); }, 4000);
+        return;
+      }
+      clearTimeout(group.armTimer); group.armTimer = 0; remove.textContent = remove.dataset.label; remove.classList.remove('armed');
+      void deleteJob(job.id);
+    });
+    this.partGroups.set(job.id, group);
+    return group;
+  }
+
+  showPendingPart(job, state) {
+    const group = this.partGroup(job);
+    if (group.adopted) return;
+    const failed = state?.status === 'failed' || state?.status === 'done';
+    const queued = ['queued', 'waiting_capacity', 'retry_wait'].includes(state?.operation?.stage);
+    const since = serverTime(state?.createdAt) ?? job.startedAt ?? Date.now();
+    const signature = JSON.stringify([failed, queued, since, !state]);
+    if (group.signature === signature) return;
+    group.signature = signature;
+    const note = group.head.querySelector('.channel-parts-note'), remove = group.head.querySelector('button');
+    note.innerHTML = failed ? esc(state?.error || `Resplitting ${this.label(group.source)} did not finish.`)
+      : !state ? 'Checking this resplit…'
+        : `${queued ? 'Waiting to split' : 'Splitting'} ${esc(this.label(group.source))} <span class="elapsed" data-since="${since}">${fmt((Date.now() - since) / 1000)}</span>`;
+    remove.textContent = failed ? 'REMOVE' : 'CANCEL';
+  }
+
+  adoptPart(job, state) {
+    const group = this.partGroup(job);
+    if (group.adopted || this.disposed) return;
+    group.adopted = true;
+    const master = this.audios[0];
+    const stems = [...state.stems].sort((a, b) => idx(STEM_ORDER, a.name) - idx(STEM_ORDER, b.name));
+    let after = group.head;
+    for (const stem of stems) {
+      const name = `part:${job.id}:${stem.name}`;
+      this.partLabels.set(name, state.labels?.[stem.name] || stem.name);
+      const channel = this.addChannel({ name, url: stem.url }, { source: group.source, stem: stem.name, after });
+      after = channel.row;
+      group.names.push(name);
+      group.stems.push({ url: stem.url, label: `${this.label(group.source)} ${this.label(name)}` });
+      channel.audio.preload = master.preload;
+      channel.audio.playbackRate = this.rate;
+      channel.audio.addEventListener('loadedmetadata', () => {
+        channel.audio.currentTime = Math.min(master.currentTime, channel.audio.duration);
+        if (this.playing) void channel.audio.play().catch(() => {});
+      }, { once: true });
+      if (this.graphWired && audioCtx) this.wireChannel(audioCtx, channel);
+      if (this.savedProgress?.muted?.includes(name)) this.userMuted.set(name, true);
+    }
+    // Keep number keys in the order the rows are drawn.
+    this.channelsByName = new Map([...this.channelsByName].sort(([, a], [, b]) =>
+      a.row.compareDocumentPosition(b.row) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    group.head.querySelector('.channel-parts-note').textContent = `${stems.length} stems from ${this.label(group.source)}`;
+    group.head.querySelector('button').textContent = 'REMOVE';
+    // The new stems add up to the original, so hearing both would double it.
+    if (this.channelsByName.has(group.source)) this.userMuted.set(group.source, true);
+    this.clockProgress = null;
+    this.applyMix();
+    this.loadWaveforms();
+  }
+
+  dropPart(id) {
+    const group = this.partGroups.get(id);
+    if (!group) return;
+    clearTimeout(group.armTimer);
+    for (const name of group.names) {
+      const channel = this.channelsByName.get(name);
+      if (!channel) continue;
+      channel.audio.pause();
+      channel.audio.removeAttribute('src');
+      channel.audio.load();
+      channel.gainNode?.disconnect();
+      channel.row.remove();
+      this.audios = this.audios.filter(audio => audio !== channel.audio);
+      this.channelsByName.delete(name);
+      this.userMuted.delete(name);
+      this.partLabels.delete(name);
+      if (this.soloState?.stem === name) this.soloState = null;
+    }
+    group.head.remove();
+    this.partGroups.delete(id);
+    if (group.adopted && ![...this.partGroups.values()].some(other => other.adopted && other.source === group.source)) {
+      if (this.channelsByName.has(group.source)) this.userMuted.set(group.source, false);
+    }
+    this.clockProgress = null;
+    this.applyMix();
+    this.paint();
   }
 
   renderSplitMeta() {
@@ -2533,6 +2778,7 @@ class Mixer {
     // invisible stale menu instead of opening a fresh one.
     if (collapsed) {
       this.el.querySelector(':scope > .folder-menu')?.remove();
+      this.el.querySelector(':scope > .class-folder-menu')?.remove();
       for (const mixer of mixers.values()) if (mixer !== this && this.el.contains(mixer.el)) mixer.pause();
     }
     if (this.el.classList.contains('collapsed') === collapsed) return;
@@ -2554,7 +2800,7 @@ class Mixer {
     const lines = [`# ${this.job.filename} — listening session export`, ''];
     lines.push(`- Exported: ${new Date().toISOString()}`);
     if (this.job.model) lines.push(`- Model: ${this.job.model}`);
-    lines.push(`- Tracks: ${this.job.stems.map((s) => this.label(s.name)).join(', ')}`, '');
+    lines.push(`- Tracks: ${[...this.job.stems.map((s) => this.label(s.name)), ...[...this.partGroups.values()].flatMap(group => group.stems.map(stem => stem.label))].join(', ')}`, '');
 
     if (this.job.attribution && ['commons','ccmixter','freesound','loc'].includes(this.job.attribution.provider)) lines.push('## Source and recording license', '', this.job.attribution.attributionText || '', '');
     if (this.job.guide && this.job.guide.text) {
@@ -2589,10 +2835,12 @@ class Mixer {
       if (runtime.authMode === 'cail') await this.loadConversation();
       const entries = [];
       const used = new Set();
-      for (const stem of this.job.stems) {
-        const res = await fetch(stem.url);
-        if (!res.ok) throw new Error(`Could not fetch the ${this.label(stem.name)} track (${res.status}).`);
-        const filename = stemFilename(this.job.filename, this.label(stem.name));
+      const tracks = [...this.job.stems.map(stem => ({ url: stem.url, label: this.label(stem.name) })),
+        ...[...this.partGroups.values()].flatMap(group => group.stems)];
+      for (const track of tracks) {
+        const res = await window.StemFetch(track.url);
+        if (!res.ok) throw new Error(`Could not fetch the ${track.label} track (${res.status}).`);
+        const filename = stemFilename(this.job.filename, track.label);
         let unique = filename;
         for (let suffix = 2; used.has(unique.toLowerCase()); suffix++) unique = filename.replace(/\.mp3$/, ` (${suffix}).mp3`);
         used.add(unique.toLowerCase());
@@ -2898,25 +3146,27 @@ class Mixer {
     if (ctx.state !== 'running' || this.graphWired) return; // may have raced another resume
 
     this.graphWired = true;
-    for (const channel of this.channelsByName.values()) {
-      try {
-        const source = ctx.createMediaElementSource(channel.audio);
-        const gain = ctx.createGain();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        analyser.smoothingTimeConstant = 0.7;
-        source.connect(gain).connect(analyser).connect(ctx.destination);
-        channel.gainNode = gain;
-        channel.analyser = analyser;
-        channel.bins = new Uint8Array(analyser.frequencyBinCount);
-        channel.samples = new Float32Array(analyser.fftSize);
-        channel.row.querySelector('.meter').classList.add('live');
-      } catch {
-        // This strip keeps element-level mixing and a resting signal line.
-      }
-    }
+    for (const channel of this.channelsByName.values()) this.wireChannel(ctx, channel);
     // Gain nodes are the authority for any strip that got one.
     this.applyMix();
+  }
+
+  wireChannel(ctx, channel) {
+    try {
+      const source = ctx.createMediaElementSource(channel.audio);
+      const gain = ctx.createGain();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.7;
+      source.connect(gain).connect(analyser).connect(ctx.destination);
+      channel.gainNode = gain;
+      channel.analyser = analyser;
+      channel.bins = new Uint8Array(analyser.frequencyBinCount);
+      channel.samples = new Float32Array(analyser.fftSize);
+      channel.row.querySelector('.meter').classList.add('live');
+    } catch {
+      // This strip keeps element-level mixing and a resting signal line.
+    }
   }
 
   tick() {
@@ -3064,7 +3314,7 @@ class Mixer {
   }
 
   label(name) {
-    return (this.job.labels && this.job.labels[name]) || name;
+    return this.partLabels?.get(name) || (this.job.labels && this.job.labels[name]) || name;
   }
 
   editLabel(stemName, nameEl) {
@@ -3361,7 +3611,7 @@ class Mixer {
     if (this.job.readOnlyShared || this.refreshing) return;
     this.refreshing = true;
     try {
-      const res = await fetch(`/api/jobs/${this.job.id}`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+      const res = await window.StemFetch(`/api/jobs/${this.job.id}`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
       if (!res.ok) throw new Error('Class work is unavailable. Reconnecting…');
       const state = await res.json();
       jobStates.set(this.job.id, state);
@@ -3975,41 +4225,85 @@ function armThenRun(button, armedLabel, action) {
 // their delete/reset controls work without any sign-in.
 
 let instructor = null; // { username, displayName } once /api/teacher/me says so
+let instructorGeneration = 0, instructorCheck = null, instructorVerified = false, foldersLoaded = false;
 let folders = []; // [{ id, name, itemCount, ... }]
 const folderList = document.getElementById('folder-list');
 const foldersSection = document.getElementById('folders');
 const foldersEmpty = document.getElementById('folders-empty');
 
+function showInstructorTools(verified) {
+  instructorVerified = verified;
+  document.body.classList.toggle('instructor', verified);
+  foldersSection.hidden = !verified;
+  foldersSection.style.visibility = '';
+  foldersSection.inert = false;
+  for (const menu of document.querySelectorAll('.folder-menu')) { menu.hidden = !verified; menu.inert = false; menu.style.visibility = ''; }
+}
+
+function clearInstructorAccess() {
+  instructorGeneration++;
+  instructorCheck?.abort(); instructorCheck = null;
+  showInstructorTools(false);
+  instructor = null; folders = []; foldersLoaded = false;
+  folderList.replaceChildren();
+  for (const menu of document.querySelectorAll('.folder-menu')) menu.remove();
+}
+
 async function detectInstructor() {
+  const generation = ++instructorGeneration, actor = accountSubject;
+  instructorCheck?.abort();
+  const controller = new AbortController(); instructorCheck = controller;
+  const timer = setTimeout(() => controller.abort(), 5000);
+  // Keep layout geometry while concealing and disabling pending authority.
+  instructorVerified = false;
+  foldersSection.inert = true;
+  foldersSection.style.visibility = 'hidden';
+  for (const menu of document.querySelectorAll('.folder-menu')) { menu.inert = true; menu.style.visibility = 'hidden'; }
   try {
-    const res = await fetch('/api/teacher/me');
-    if (!res.ok) return;
+    const res = await window.StemFetch('/api/teacher/me', { cache: 'no-store', signal: controller.signal });
+    if (generation !== instructorGeneration || actor !== accountSubject) return;
+    if (!res.ok) {
+      if ([401, 403].includes(res.status)) clearInstructorAccess();
+      return;
+    }
     const { teacher } = await res.json();
-    if (!teacher) return; // a student — the folder UI stays hidden
+    if (generation !== instructorGeneration || actor !== accountSubject) return;
+    if (!teacher) { clearInstructorAccess(); return; }
+    if (instructor?.username !== teacher.username) {
+      folders = []; foldersLoaded = false; folderList.replaceChildren();
+      for (const menu of document.querySelectorAll('.folder-menu')) menu.remove();
+    }
     instructor = teacher;
-    document.body.classList.add('instructor');
-    foldersSection.hidden = false;
-    await refreshFolders();
+    showInstructorTools(true);
+    // Revalidating an unchanged instructor must not discard a folder draft.
+    if (!foldersLoaded) await refreshFolders();
   } catch {
-    // Network blip at load: stay in student mode rather than half-reveal UI.
+    if (generation === instructorGeneration) showInstructorTools(false);
+  } finally {
+    clearTimeout(timer);
+    if (instructorCheck === controller) instructorCheck = null;
   }
 }
 
-// Signing in happens on /teacher.html, usually in another tab. Re-probe when
-// this page regains focus so the instructor controls appear without a manual
-// reload.
-window.addEventListener('focus', () => {
-  if (!instructor) void detectInstructor();
-});
+// Grants can be added, expire or be revoked while this document is open.
+window.addEventListener('focus', () => void detectInstructor());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void detectInstructor(); });
 
 async function refreshFolders() {
+  const generation = instructorGeneration, actor = accountSubject;
   try {
-    const res = await fetch('/api/teacher/folders');
-    if (!res.ok) return;
-    folders = (await res.json()).folders || [];
+    const res = await window.StemFetch('/api/teacher/folders', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    const body = await res.json();
+    if (generation !== instructorGeneration || actor !== accountSubject || !instructorVerified) return;
+    if (!res.ok) {
+      if ([401, 403].includes(res.status)) clearInstructorAccess();
+      else showInstructorTools(false);
+      return;
+    }
+    folders = body.folders || []; foldersLoaded = true;
     renderFolders();
   } catch {
-    // Keep the last known list on a network blip.
+    if (generation === instructorGeneration) showInstructorTools(false);
   }
 }
 
@@ -4068,7 +4362,7 @@ function renderFolders() {
     delBtn.addEventListener('click', () =>
       armThenRun(delBtn, 'SURE?', async () => {
         try {
-          await fetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
+          await window.StemFetch(`/api/teacher/folders/${folder.id}`, { method: 'DELETE' });
         } catch {
           // The refresh below shows whichever state the server really holds.
         }
@@ -4081,7 +4375,7 @@ function renderFolders() {
 }
 
 async function fetchFolderDetail(folderId) {
-  const res = await fetch(`/api/teacher/folders/${folderId}`);
+  const res = await window.StemFetch(`/api/teacher/folders/${folderId}`);
   if (!res.ok) throw new Error('Could not load that folder.');
   return res.json();
 }
@@ -4098,7 +4392,7 @@ async function loadFolderItems(folder, container) {
   container.innerHTML = '';
   if (!detail.items.length) {
     container.innerHTML =
-      '<li class="mono folder-items-note">This folder is empty. Use “+ FOLDER” on a finished split to add it here.</li>';
+      '<li class="mono folder-items-note">This folder is empty. Use “MOVE TO MY FOLDERS” on a finished split to add it here.</li>';
     return;
   }
   for (const item of detail.items) {
@@ -4129,7 +4423,7 @@ async function loadFolderItems(folder, container) {
     removeBtn.addEventListener('click', () =>
       armThenRun(removeBtn, 'SURE?', async () => {
         try {
-          await fetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
+          await window.StemFetch(`/api/teacher/folders/${folder.id}/items/${item.jobId}`, { method: 'DELETE' });
           li.remove();
         } catch {
           // Row stays; the next open re-reads the folder from the server.
@@ -4171,6 +4465,85 @@ async function loadWholeFolder(folder, button) {
 
 // The "+ FOLDER" popover on a finished console: pick an existing folder or
 // name a new one; either way it organizes a split that is already saved.
+// A class split stays in the rack. Adding it to a class folder only changes what the folder lists.
+async function toggleClassFolderMenu(mixer) {
+  const existing = mixer.el.querySelector(':scope > .class-folder-menu');
+  if (existing) { existing.remove(); return; }
+  if (mixer.el.classList.contains('collapsed')) {
+    mixer.setCollapsed(false);
+    setJobCollapsed(mixer.job.id, false);
+  }
+  const course = mixer.job.courseId, root = `/api/classroom/courses/${encodeURIComponent(course)}/folders`;
+  const menu = document.createElement('div');
+  menu.className = 'class-folder-menu';
+  menu.innerHTML = `
+    <p class="folder-menu-title mono">ADD TO CLASS FOLDER</p>
+    <div class="folder-menu-rows"><p class="mono folder-menu-none">loading…</p></div>
+    <form class="folder-menu-new">
+      <input maxlength="80" placeholder="new class folder name" aria-label="New class folder name" />
+      <button type="submit">ADD</button>
+    </form>
+    <p class="folder-menu-none class-folder-status" role="status"></p>
+  `;
+  mixer.el.querySelector('.console-head').after(menu);
+  const rows = menu.querySelector('.folder-menu-rows'), status = menu.querySelector('.class-folder-status');
+  const send = async (path, body) => {
+    const res = await window.StemFetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    if (!res.ok) throw Object.assign(new Error('This class folder could not be updated. Reload and try again.'), { status: res.status });
+    return res.json();
+  };
+  const confirmAdded = (folder) => {
+    status.replaceChildren(`Added to ${folder.name}. ${folder.canManage ? 'Choose who can open it in' : 'Open this folder in'} `);
+    const open = document.createElement('a');
+    open.href = StemPath(`/classroom.html?course=${encodeURIComponent(course)}&folder=${encodeURIComponent(folder.id)}`); open.textContent = 'Classes';
+    status.append(open, '.');
+  };
+  const saveTo = async (folder, row) => {
+    if (row) row.disabled = true;
+    status.textContent = '';
+    try {
+      await send(`${root}/${encodeURIComponent(folder.id)}/items`, { jobId: mixer.job.id });
+      if (row) row.textContent = `${folder.name} ✓`;
+      confirmAdded(folder);
+    } catch (error) {
+      if ([401, 403, 404].includes(error.status)) {
+        rows.replaceChildren();
+        menu.querySelector('form').hidden = true;
+        status.textContent = 'Class access changed. Close this menu and open it again to check current folders.';
+      } else { if (row) row.disabled = false; status.textContent = error.message; }
+    }
+  };
+  const addRow = (folder) => {
+    const row = document.createElement('button');
+    row.type = 'button'; row.className = 'folder-menu-row'; row.textContent = folder.name;
+    row.addEventListener('click', () => void saveTo(folder, row));
+    rows.append(row);
+    return row;
+  };
+  const input = menu.querySelector('input');
+  menu.querySelector('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = input.value.trim(); if (!name) return;
+    const submit = menu.querySelector('.folder-menu-new button'); submit.disabled = true; status.textContent = '';
+    try {
+      const { folder } = await send(root, { name });
+      rows.querySelector('.folder-menu-none')?.remove();
+      const row = addRow(folder);
+      input.value = '';
+      await saveTo(folder, row);
+    } catch (error) { status.textContent = error.message; }
+    finally { submit.disabled = false; }
+  });
+  try {
+    const { folders: availableFolders } = await send(root);
+    const classFolders = availableFolders.filter(folder => folder.canManage || folder.canContribute);
+    rows.replaceChildren();
+    if (!classFolders.length) rows.innerHTML = '<p class="mono folder-menu-none">no class folders yet</p>';
+    for (const folder of classFolders) addRow(folder);
+    (menu.querySelector('.folder-menu-row') || input).focus();
+  } catch (error) { rows.replaceChildren(); status.textContent = error.message; }
+}
+
 function toggleFolderMenu(mixer) {
   const existing = mixer.el.querySelector(':scope > .folder-menu');
   if (existing) {
@@ -4183,7 +4556,7 @@ function toggleFolderMenu(mixer) {
     mixer.setCollapsed(false);
     setJobCollapsed(mixer.job.id, false);
   }
-  if (!instructor) {
+  if (!instructorVerified) {
     // The button is CSS-hidden for students, so landing here usually means an
     // expired teacher session or a stale cached stylesheet. Say so instead of
     // doing nothing.
@@ -4191,7 +4564,7 @@ function toggleFolderMenu(mixer) {
     hint.className = 'folder-menu';
     hint.innerHTML = `
       <p class="folder-menu-title mono">INSTRUCTOR TOOL</p>
-      <p class="folder-menu-none">Folders need an instructor sign-in. Open the INSTRUCTOR link in the footer, sign in, then come back to this tab.</p>
+      <p class="folder-menu-none">Instructor folder access could not be verified. Return to this tab to check your current access.</p>
     `;
     mixer.el.querySelector('.console-head').after(hint);
     setTimeout(() => hint.remove(), 8000);
@@ -4206,7 +4579,7 @@ function toggleFolderMenu(mixer) {
     )
     .join('');
   menu.innerHTML = `
-    <p class="folder-menu-title mono">ADD TO FOLDER</p>
+    <p class="folder-menu-title mono">MOVE TO MY FOLDERS</p>
     <div class="folder-menu-rows">${rows || '<p class="mono folder-menu-none">no folders yet</p>'}</div>
     <form class="folder-menu-new">
       <input maxlength="80" placeholder="new folder name" aria-label="New folder name" />
@@ -4217,7 +4590,7 @@ function toggleFolderMenu(mixer) {
   const saveTo = async (folderId, row) => {
     row.disabled = true;
     try {
-      const res = await fetch(`/api/teacher/folders/${folderId}/items`, {
+      const res = await window.StemFetch(`/api/teacher/folders/${folderId}/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: mixer.job.id }),
@@ -4248,7 +4621,7 @@ function toggleFolderMenu(mixer) {
     submit.disabled = true;
     let folder;
     try {
-      const res = await fetch('/api/teacher/folders', {
+      const res = await window.StemFetch('/api/teacher/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -4289,8 +4662,8 @@ async function loadAccountJobs(more = false) {
   rackStatus.textContent = 'Loading your saved splits…';
   emptyState.hidden = true;
   try {
-    const response = await fetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`, {headers:rackRequestHeaders()});
-    if (response.status === 401 || response.status === 403) { location.assign('/account.html'); return; }
+    const response = await window.StemFetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`, {headers:rackRequestHeaders()});
+    if (response.status === 401 || response.status === 403) { location.assign(StemPath('/account.html')); return; }
     if (!response.ok) throw new Error('load');
     const result = await response.json();
     if (!Array.isArray(result.jobs)) throw new Error('load');
@@ -4405,8 +4778,27 @@ function renderJobs() {
   emptyState.hidden = jobs.length > 0;
   const previous = new Map([...jobList.querySelectorAll('.console[data-job-id]')].map(el => [el.dataset.jobId, el]));
   const cards = [];
+  const byJobId = new Map(jobs.map(job => [job.id, job]));
+  const partsByHost = new Map();
+  // An unavailable or removed original must not conceal its finished resplit.
+  const resplitHost = job => {
+    if (job.resplit?.placement !== 'with_original') return null;
+    const parent = byJobId.get(job.resplit.parentJobId);
+    if (!parent || unavailableJobStates.has(parent.id)) return null;
+    if (parent.resplit?.placement === 'with_original' && byJobId.has(parent.resplit.parentJobId)) return null;
+    const state = jobStates.get(parent.id);
+    return !state || (state.status === 'done' && state.stems?.length) ? parent.id : null;
+  };
 
   for (const job of jobs) {
+    const host = resplitHost(job);
+    if (host) {
+      if (!partsByHost.has(host)) partsByHost.set(host, []);
+      partsByHost.get(host).push({ job, state: jobStates.get(job.id) });
+      const stray = mixers.get(job.id);
+      if (stray) { if (stray.playing || stray.starting) stray.pause(); stray.disposeWaveforms(); mixers.delete(job.id); }
+      continue;
+    }
     const state = jobStates.get(job.id) || {
       status: 'checking',
       stems: [],
@@ -4445,6 +4837,7 @@ function renderJobs() {
     const progressNote = checking ? 'Checking the saved run’s current status…'
       : queued ? operation?.errorCode === 'auto_quality_fallback' ? 'Waiting for an available processing slot…'
         : operation?.errorCode === 'browser_import_fallback' ? 'A temporary browser import failed. Waiting to try the hosted importer…'
+        : operation?.errorCode === 'youtube_fetcher_waiting' ? 'The YouTube importer is busy or offline. Trying again shortly…'
         : operation?.errorCode ? 'The import hit a temporary error. A retry is scheduled…' : 'Waiting for an available processing slot…'
       : importing ? 'Downloading and checking the source audio before separation…'
       : `Creating ${stemDescription(state.expectedStems || job.expectedStems)}…`;
@@ -4482,38 +4875,12 @@ function renderJobs() {
 
   // Keep settled cards attached: detaching them restarts their CSS entrance
   // animation and interrupts media while other saved runs are still loading.
-  const byId = new Map(cards.map(card => [card.dataset.jobId, card]));
-  const parents = new Map(jobs.filter(job => job.resplit?.placement === 'with_original' &&
-      byId.has(job.resplit.parentJobId) && !unavailableJobStates.has(job.resplit.parentJobId) &&
-      jobStates.get(job.resplit.parentJobId)?.status === 'done' && jobStates.get(job.resplit.parentJobId)?.stems?.length)
-    .map(job => [job.id, job.resplit.parentJobId]));
-  for (const [id, parent] of parents) {
-    const seen = new Set([id]); let next = parent;
-    while (next && !seen.has(next)) { seen.add(next); next = parents.get(next); }
-    if (next) parents.delete(id); // Corrupt cached metadata must not break the rack.
-  }
-  const groups = new Map([[jobList, []]]);
-  for (const card of cards) {
-    const parent = byId.get(parents.get(card.dataset.jobId));
-    let container = jobList;
-    if (parent) {
-      container = parent.querySelector(':scope > .resplit-results');
-      if (!container) {
-        container = document.createElement('ol'); container.className = 'resplit-results';
-        container.setAttribute('aria-label', 'Resplits'); parent.append(container);
-      }
-    }
-    if (!groups.has(container)) groups.set(container, []);
-    groups.get(container).push(card);
-  }
-  for (const [container, children] of groups) children.forEach((card, index) => {
-    if (container.children[index] !== card) container.insertBefore(card, container.children[index] || null);
+  cards.forEach((card, index) => {
+    if (jobList.children[index] !== card) jobList.insertBefore(card, jobList.children[index] || null);
   });
-  for (const [container, children] of groups) {
-    const retained = new Set(children);
-    for (const card of [...container.children]) if (!retained.has(card)) card.remove();
-  }
-  for (const container of jobList.querySelectorAll('.resplit-results')) if (!groups.has(container)) container.remove();
+  const retained = new Set(cards);
+  for (const card of [...jobList.children]) if (!retained.has(card)) card.remove();
+  for (const [id, mixer] of mixers) mixer.syncParts(partsByHost.get(id) || []);
 
   runElapsedClock();
   renderShelf();
@@ -4549,10 +4916,10 @@ function runElapsedClock() {
 // which owns the user-facing message for its own context.
 async function adoptJobById(id, reviewSubject = null) {
   if (getJobs().some((existing) => existing.id === id)) return 'present';
-  let res = reviewSubject ? await fetch(`/api/teacher/students/${encodeURIComponent(reviewSubject)}/jobs/${encodeURIComponent(id)}`)
-    : accountSubject || runtime.authMode !== 'cail' ? await fetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
+  let res = reviewSubject ? await window.StemFetch(`/api/teacher/students/${encodeURIComponent(reviewSubject)}/jobs/${encodeURIComponent(id)}`)
+    : accountSubject || runtime.authMode !== 'cail' ? await window.StemFetch(`/api/jobs/${encodeURIComponent(id)}`) : null;
   if (!reviewSubject && runtime.authMode === 'cail' && (!res || res.status === 401 || res.status === 403 || res.status === 404)) {
-    res = await fetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
+    res = await window.StemFetch(`/api/shared-jobs/${encodeURIComponent(id)}`);
   }
   if (!res.ok) return 'missing';
   const state = await res.json();
@@ -4623,14 +4990,14 @@ async function pollActiveJobs() {
     if (cached && (cached.status === 'done' || cached.status === 'failed')) continue;
 
     try {
-      const res = await fetch(`/api/jobs/${job.id}`, { signal: AbortSignal.timeout(150000), headers:rackRequestHeaders() });
+      const res = await window.StemFetch(`/api/jobs/${job.id}`, { signal: AbortSignal.timeout(150000), headers:rackRequestHeaders() });
       if (runtime.authMode === 'cail' && (res.status === 401 || res.status === 403)) {
         for (const mixer of mixers.values()) if (mixer.playing || mixer.starting) mixer.pause();
         accountJobs = [];
         accountSubject = null;
         jobStates.clear();
         renderJobs();
-        location.assign('/account.html');
+        location.assign(StemPath('/account.html'));
         return;
       }
       if (res.status === 404) {
@@ -4679,7 +5046,7 @@ function pollSoon() {
 const STATIONS = {
   splitter: {
     word: 'Splitter',
-    tagline: 'Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.',
+    tagline: 'Split audio tracks into musical layers for deep listening, one stem at a time.',
   },
   remixer: {
     word: 'Remixer',
@@ -4720,7 +5087,11 @@ function switchStation(name) {
     stationTabs[key].setAttribute('aria-selected', String(active));
     stationTabs[key].tabIndex = active ? 0 : -1;
   }
-  stationTagline.textContent = STATIONS[name].tagline;
+  stationTagline.replaceChildren(...STATIONS[name].tagline.split('\n').map(text => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = text;
+    return paragraph;
+  }));
   splitSummary.textContent = name === 'splitter' ? splitterKicker : STATIONS.remixer.kicker;
   splitSummary.hidden = !splitSummary.textContent;
   try {
@@ -4929,7 +5300,7 @@ function addRemixLayer(job, stem) {
     row: null,
   };
 
-  const audio = new Audio(stem.url);
+  const audio = new Audio(StemPath(stem.url));
   audio.preload = 'auto';
   layer.audio = audio;
   audio.addEventListener('loadedmetadata', () => {
@@ -5211,7 +5582,7 @@ async function setLayerReverse(layer, on) {
 function reversedBufferFor(url, ctx) {
   if (!remix.reversedCache.has(url)) {
     const promise = (async () => {
-      const res = await fetch(url);
+      const res = await window.StemFetch(url);
       if (!res.ok) throw new Error(`fetch ${res.status}`);
       const decoded = await ctx.decodeAudioData(await res.arrayBuffer());
       const rev = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
@@ -5494,7 +5865,7 @@ function stemFilename(title, label) {
 }
 
 function stemDownloadUrl(source, title, label) {
-  const url = new URL(source, location.href);
+  const url = new URL(StemPath(source), location.href);
   url.searchParams.set('download', stemFilename(title, label));
   return url.href;
 }
@@ -5585,16 +5956,52 @@ async function preserveProgressBeforeSignIn(event, url) {
   event.preventDefault();
   for (const mixer of mixers.values()) mixer.saveListeningProgress();
   await Promise.all([...mixers.values()].map(mixer => mixer.conversationSaveQueue));
-  location.assign(url);
+  location.assign(StemPath(url));
 }
 window.addEventListener('pagehide', () => { for (const mixer of mixers.values()) mixer.saveListeningProgress(); });
 
 // --- init -------------------------------------------------------------
-window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail') location.reload(); });
+window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail' && !window.StemSessionGuard) location.reload(); });
+
+function restorePreviousGuest(member = null) {
+  try {
+    if (sessionStorage.getItem('stem-transfer-checked') === '1') return false;
+    sessionStorage.setItem('stem-transfer-return', location.pathname + location.search);
+    if (member) sessionStorage.setItem('stem-transfer-member', member);
+    else sessionStorage.removeItem('stem-transfer-member');
+  } catch {
+    // Without a session marker, let normal account or guest startup proceed.
+    return false;
+  }
+  location.assign(StemPath('/auth/guest-transfer/start') + (member ? '?existingOnly=1' : ''));
+  return true;
+}
 
 async function initialize() {
   try {
-    const response = await fetch('/api/runtime');
+    const response = await window.StemFetch('/api/runtime');
+    if (StemPath.base && response.status === 401) {
+      runtime = { authMode: 'cail', remixer: false, loginUrl: StemPath('/auth/login') };
+      jobsStorageKey = null;
+      document.getElementById('header-signin').href = runtime.loginUrl;
+      dropzone.inert = true;
+      dropzone.setAttribute('aria-disabled', 'true');
+      ytUrlInput.disabled = true;
+      ytFetchButton.disabled = true;
+      stopSongSample();
+      const notice = document.createElement('p');
+      notice.className = 'stem-choice-status sign-in-notice';
+      const signIn = document.createElement('a');
+      signIn.href = runtime.loginUrl;
+      signIn.textContent = 'Sign in with CUNY';
+      notice.append(signIn, ' to upload and split tracks.');
+      stemChoice.replaceChildren(notice);
+      stemChoice.removeAttribute('role');
+      stemChoice.removeAttribute('aria-label');
+      engineSummary.hidden = true;
+      renderJobs();
+      return;
+    }
     if (!response.ok) throw new Error('runtime');
     runtime = await response.json();
   } catch {
@@ -5607,12 +6014,13 @@ async function initialize() {
     const account = document.querySelector('.lab-account .account-nav');
     let principal = null;
     try {
-      let response = await fetch('/api/account');
+      let response = await window.StemFetch('/api/account');
       const claimedGuest = response.status === 403
         && (await response.clone().json().catch(() => ({}))).error?.code === 'guest_session_claimed';
       if ((response.status === 401 || claimedGuest) && runtime.guest?.canStart === true) {
+        if (StemPath.base && restorePreviousGuest()) return;
         await window.StemGuest.ensure(runtime.guest);
-        response = await fetch('/api/account');
+        response = await window.StemFetch('/api/account');
       }
       if (response.ok) principal = (await response.json()).account;
       else if (response.status !== 401) {
@@ -5624,11 +6032,14 @@ async function initialize() {
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
     guestSessionActive = principal?.quotaClass === 'guest' && principal?.role === 'guest' && /^guest-[0-9a-f]{64}$/.test(principal.subject);
+    if (guestSessionActive) try { sessionStorage.removeItem('stem-transfer-checked'); } catch {}
+    if (StemPath.base && runtime.guest?.enabled && /^cail-[0-9a-f]{32}$/.test(principal?.subject || '') && restorePreviousGuest(principal.subject)) return;
     if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
+        clearInstructorAccess();
         resplitAbort?.abort(); resplitDialog?.close(); resplitRequests.clear();
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
@@ -5643,7 +6054,9 @@ async function initialize() {
     } else if (runtime.loginUrl) {
       const link = document.getElementById('header-signin');
       const linkedJob = new URLSearchParams(location.search).get('job');
-      link.href = runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
+      link.href = StemPath.base
+        ? StemPath(runtime.loginUrl + '?next=' + encodeURIComponent(location.pathname + location.search))
+        : runtime.loginUrl + (linkedJob ? `?next=${encodeURIComponent('/?job=' + linkedJob)}` : '');
       link.textContent = 'CUNY Login';
       link.addEventListener('click', event => preserveProgressBeforeSignIn(event, link.href));
       if (guestSessionActive) account.classList.add('is-guest');

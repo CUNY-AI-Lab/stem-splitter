@@ -38,7 +38,7 @@ export async function mountInstrumentTargets(container, { jobId, request }) {
       if (target.outputAvailable) {
         const audio = document.createElement('audio'); audio.controls = true; audio.preload = 'none'; audio.muted = true;
         audio.setAttribute('aria-label', `Preview requested ${target.target} extraction`);
-        audio.src = `${base}/${encodeURIComponent(target.id)}/audio`;
+        audio.src = StemPath(`${base}/${encodeURIComponent(target.id)}/audio`);
         const download = document.createElement('a'); download.href = audio.src; download.download = `${target.target}.wav`;
         download.textContent = 'Download extraction'; li.append(audio, download);
       }

@@ -1,9 +1,10 @@
 <meta charset="utf-8" />
+<script src="/app-path.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>Stem Splitter · Instructor Console</title>
-<link rel="stylesheet" href="/styles.css?v=20261105-auth-nav" />
-<link rel="stylesheet" href="/instructor-console.css?v=20261105-compact" />
+<title>Stem Splitter · Settings</title>
+<link rel="stylesheet" href="/styles.css?v=20261116-header-account" />
+<link rel="stylesheet" href="/instructor-console.css?v=20261106-account-nav" />
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso" />
 
 <div class="grain" aria-hidden="true"></div>
@@ -14,18 +15,27 @@
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
       <div class="lab-account">
         <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
-        <p class="account-nav"><span class="account-session-note"><span>Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login?next=/teacher.html">CUNY Login</a></p>
+        <p class="account-nav"><a id="header-signin" class="account-button" href="/auth/login?next=/teacher.html">CUNY Login</a></p>
+        <form class="account-nav header-logout" action="/auth/logout" method="post"><button class="account-button" type="submit">Log out</button></form>
       </div>
     </div>
     <nav class="workspace-nav" aria-label="Stem Splitter" hidden>
       <a href="/">Splitter</a>
-      <a id="teacher-classroom" href="/classroom.html">Workspace</a>
-      <a href="/account.html">Settings</a>
-      <a data-instructor-nav href="/teacher.html" aria-current="page" hidden>Instructor Console</a>
+      <a id="teacher-classroom" href="/classroom.html">Classes</a>
+      <a href="/account.html" aria-current="page">Account</a>
     </nav>
   </header>
-  <h2 class="page-title" id="class-guidance-title">Instructor Console</h2>
+  <h2 class="page-title" id="class-guidance-title">Account</h2>
+  <nav class="dashboard-nav" aria-label="Account" hidden>
+    <a href="/teacher.html" aria-current="page">Settings</a>
+    <a href="/account.html">Dashboard</a>
+  </nav>
   <p id="teacher-access-status" role="status"></p>
+  <section id="dashboard-scope" class="intake-selector" hidden>
+    <label for="instruction-scope">Instructions for</label>
+    <select id="instruction-scope"><option value="personal">Personal</option></select>
+    <p id="instruction-scope-status" class="account-help" role="status"></p>
+  </section>
 
   <section id="course-discovery" class="deck teacher-panel" hidden aria-labelledby="course-discovery-title">
     <h2 id="course-discovery-title">Choose a class</h2>
@@ -51,7 +61,7 @@
   </section>
 
   <div id="teacher-protected-region">
-    <p id="class-instructions-help" class="account-help" hidden>Open a class in <a href="/classroom.html">Workspace</a> to edit its Listening Guy instructions. Guest and Personal sessions use the default instructions.</p>
+    <p id="class-instructions-help" class="account-help" hidden>Open a class in <a href="/classroom.html">Classes</a> to edit its Listening Guy instructions. Guest and Personal sessions use the default instructions.</p>
   <section id="console-panel" class="teacher-panel" hidden>
     <div class="teacher-bar">
       <span id="teacher-who" class="mono"></span>
@@ -68,13 +78,13 @@
 
     <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="instructions-title">
       <h2 id="instructions-title">Listening Guy instructions</h2>
-      <p class="account-help">Add teaching instructions to the fixed system prompt. To reset them, clear the field and save with a change note.</p>
+      <p class="account-help">Add instructions for Listening Guy. Each saved change is recorded below. To reset, clear the field, say what changed, and save.</p>
       <p id="prompt-scope-note" class="account-help">Applies across Stem Splitter, not just one class.</p>
       <span id="effective-prompt-meta" hidden></span>
 
       <form id="prompt-form" class="teacher-form">
         <label class="teacher-field" for="amendment">
-          <span>Teaching instructions</span>
+          <span id="amendment-label">Instructions</span>
           <textarea
             id="amendment"
             class="teacher-textarea"
@@ -84,7 +94,7 @@
           <span id="amendment-count" class="console-field-count" aria-hidden="true"></span>
         </label>
         <label class="teacher-field" for="change-note">
-          <span>Change note</span>
+          <span>What changed?</span>
           <input
             id="change-note"
             maxlength="240"
@@ -97,7 +107,8 @@
         </div>
         <div class="teacher-actions">
           <button type="submit" class="yt-go">Save</button>
-          <button type="button" id="preview-btn" class="page-btn">Preview saved prompt</button>
+          <button type="button" id="preview-btn" class="page-btn">Preview</button>
+          <button type="button" id="prompt-reload" class="page-btn">Reload</button>
         </div>
         <p id="prompt-status" class="mono teacher-status" hidden></p>
       </form>
@@ -143,7 +154,7 @@
           <span id="fixed-prompt-meta" hidden></span>
         </summary>
         <section class="teacher-tool-body" aria-labelledby="fixed-prompt-title">
-          <p class="teacher-help">Read only. Your teaching instructions are added to this prompt.</p>
+          <p class="teacher-help">Read only. Your saved instructions are added to this prompt.</p>
           <div
             id="fixed-prompt-scroll"
             class="teacher-fixed-scroll"
@@ -188,7 +199,7 @@
   </footer>
 </main>
 
-<script src="/session-guard.js?v=20261105-auth-nav"></script>
+<script src="/session-guard.js?v=20261106-account-nav"></script>
 <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-<script src="/teacher.js?v=20261105-stateful-resplits"></script>
+<script src="/teacher.js?v=20261106-account-nav"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>

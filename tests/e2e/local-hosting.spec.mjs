@@ -197,15 +197,27 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  const expectAlignedBrand = () => expect.poll(() => page.evaluate(() => {
+  const expectAlignedBrand = async () => {
+    await page.evaluate(() => document.fonts.ready);
+    await expect.poll(() => page.evaluate(() => {
     const row = document.querySelector('.masthead-title').getBoundingClientRect();
     const title = document.querySelector('.masthead-title h1').getBoundingClientRect();
     const logo = document.querySelector('.masthead-title .lab-logo').getBoundingClientRect();
-    return Math.abs(title.height / 2 - logo.height) < 1
+    const brand = document.querySelector('.masthead-title .home-brand');
+    const style = getComputedStyle(brand), context = document.createElement('canvas').getContext('2d');
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const range = document.createRange(); range.selectNodeContents(brand.firstChild);
+    const metrics = context.measureText('S');
+    const baseline = range.getClientRects()[0].top + metrics.fontBoundingBoxAscent;
+    // Canvas ink metrics round differently on Linux and macOS (1.047 px at 1280 px).
+    // Keep a sub-two-pixel tolerance for ink; geometric edges still align within one pixel.
+    return Math.abs(logo.top - (baseline - metrics.actualBoundingBoxAscent)) <= 1.5
+      && Math.abs(logo.bottom - baseline) <= 1.5
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
-  })).toBe(true);
+    })).toBe(true);
+  };
   await expectAlignedBrand();
-  await expect(page.locator('.tagline')).toHaveText('Split audio tracks into musical layers. Listen closely, one stem at a time. Take notes and cue the Listening Guy to guide analysis.');
+  await expect(page.locator('#station-tagline > p')).toHaveText(['Split audio tracks into musical layers for deep listening, one stem at a time.']);
   await expect(page.locator('#split-summary')).toBeHidden();
   await expect(page.locator('#engine-summary')).toHaveText('SEPARATION MODEL: DEMUCS');
   await expect(
@@ -325,10 +337,9 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   // Opening the + FOLDER popover on a collapsed console must expand it first:
   // a collapsed console hides every child below its head, so without the
   // expand the menu would render invisibly and the click would look dead.
-  await page.evaluate(() => {
-    instructor = { username: 'e2e', displayName: 'E2E' };
-    document.body.classList.add('instructor');
-  });
+  await page.route('**/api/teacher/me', route => route.fulfill({ json: { teacher: { username: 'e2e', displayName: 'E2E' } } }));
+  await page.route('**/api/teacher/folders', route => route.fulfill({ json: { folders: [] } }));
+  await page.evaluate(() => detectInstructor());
   await openSplitActions(page);
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.console')).toHaveClass(/collapsed/);
@@ -336,7 +347,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.locator('.folder-btn').click();
   await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
   await expect(page.locator('.folder-menu')).toBeVisible();
-  await expect(page.locator('.folder-menu')).toContainText('ADD TO FOLDER');
+  await expect(page.locator('.folder-menu')).toContainText('MOVE TO MY FOLDERS');
   const [{ collapsed: collapsedAfterMenu }] = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('jobs') || '[]')
   );
@@ -352,7 +363,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.folder-menu')).toHaveCount(0);
 
-  // Class-folder rows use the same explicit open/closed contract. Keep the
+  // Private-folder rows use the same explicit open/closed contract. Keep the
   // item list genuinely hidden until its folder heading is expanded, then
   // hide it again on the next press.
   await page.route('**/api/teacher/folders/folder-collapse-e2e', (route) =>
@@ -385,10 +396,9 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await folderOpen.click();
   await expect(folderOpen).toHaveAttribute('aria-expanded', 'false');
   await expect(folderItems).toBeHidden();
-  await page.evaluate(() => {
-    instructor = null;
-    document.body.classList.remove('instructor');
-  });
+  await page.unroute('**/api/teacher/me');
+  await page.unroute('**/api/teacher/folders');
+  await page.evaluate(() => detectInstructor());
 
   expect(signedSourceUrl).toMatch(/^http:\/\/stem-splitter\.test\/api\/local-sources\//);
   const signedSourceResponse = await server.fetch(signedSourceUrl);
@@ -1719,7 +1729,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#console-panel')).toBeVisible();
   await expect(page.locator('#teacher-who')).toBeEmpty();
   await expect(page.locator('#teacher-access-status')).toBeEmpty();
-  await expect(page.getByRole('heading', { name: 'Instructor Console' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible();
   await expect(page.getByText('Prompt reference', { exact: true })).toBeVisible();
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
@@ -1906,18 +1916,25 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     "WHO YOU'RE TALKING TO",
     'HOW YOU TALK (every message, both modes)',
   ]);
-  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-11-03.1');
+  await expect(page.locator('#fixed-prompt-meta')).toContainText('2026-11-06.1');
   expect(await page.locator('#fixed-prompt-body').getAttribute('contenteditable')).toBeNull();
   await page.getByRole('button', { name: 'Top' }).click();
   await expect(page.locator('#fixed-prompt-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
-  await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBe(0);
+  // Nested smooth scrolling can settle one rounded CSS pixel from zero. Check
+  // that the actual first paragraph is fully visible, not just the offset.
+  await expect.poll(() => page.locator('#fixed-prompt-scroll').evaluate((node) => node.scrollTop)).toBeLessThanOrEqual(1);
+  const promptTop = await page.locator('#fixed-prompt-scroll').evaluate(node => ({
+    viewport: node.getBoundingClientRect().top + node.clientTop,
+    paragraph: document.querySelector('#fixed-prompt-body > p').getBoundingClientRect().top,
+  }));
+  expect(promptTop.paragraph).toBeGreaterThanOrEqual(promptTop.viewport);
   await expect(page.locator('#fixed-prompt-scroll')).toBeInViewport({ratio:1});
 
   const amendment = 'Focus on Latin American popular music; define terms in Spanish too.';
   await page.locator('#amendment').fill(amendment);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.locator('#prompt-status')).toContainText('Add a change note');
+  await expect(page.locator('#prompt-status')).toContainText('Say what changed');
 
   const changeNote = 'Add bilingual vocabulary guidance for the survey course';
   await page.locator('#change-note').fill(changeNote);
@@ -1926,7 +1943,7 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#amendment-meta')).toContainText('Saved by e2eteacher');
   await expect(page.locator('.teacher-history-item')).toHaveCount(1);
   await expect(page.locator('.teacher-history-item')).toContainText(changeNote);
-  await expect(page.locator('.teacher-history-trace')).toContainText('System prompt 2026-11-03.1');
+  await expect(page.locator('.teacher-history-trace')).toContainText('System prompt 2026-11-06.1');
 
   const promptReadback = await page.evaluate(() =>
     fetch('/api/teacher/prompt', { credentials: 'same-origin' }).then(async (response) => ({
@@ -1943,14 +1960,14 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
     settingsRevision: 1,
     amendment,
     changeNote,
-    basePromptVersion: '2026-11-03.1',
+    basePromptVersion: '2026-11-06.1',
     basePromptHash: trace.basePromptHash,
     effectivePromptHash: trace.effectivePromptHash,
     updatedBy: 'e2eteacher',
   });
 
   // The amendment reaches the real system prompt, and the guardrails outrank it.
-  await page.getByRole('button', { name: 'Preview saved prompt', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.locator('#preview-body')).toContainText(amendment);
   await expect(page.locator('#preview-body')).toContainText('NEVER invent timestamps');
 

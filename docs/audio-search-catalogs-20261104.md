@@ -2,7 +2,15 @@
 
 The source control is labeled **Search**. It presents one list and uses the existing Fetch and 2/4/6-stem workflow. Source and license attribution remain attached to each result and saved run. MusicBrainz does not participate in audio search; its metadata client remains available for a separate future Listening Guy integration. No Listening Guy audio-grounding capability is added here.
 
-Search now federates Internet Archive, Wikimedia Commons, Freesound via Openverse, and the Library of Congress National Jukebox data package. Each source has four result slots so a fast source cannot crowd out a slower one. Results stream independently; failures in one source preserve the other results. Searches are cached for ten minutes, cancelled searches stop their pending provider requests, and the UI retains its existing stale-query guard.
+Search now federates Internet Archive, Wikimedia Commons and Freesound via Openverse. Internet Archive has eight result slots and each other source has four, so a fast source cannot crowd out a slower one. Results settle into relevance order when every source has answered: named artists and exact titles first. Freesound results must be at least 30 seconds and contain the search words, which removes short effects, and short clips appear only when nothing else matches. A genre name at either end of a search, such as `jazz` or `queen rock`, also searches Internet Archive subject tags, while a genre word mid-query, as in `we will rock you`, stays part of the title. Results stream independently; failures in one source preserve the other results. Searches are cached for ten minutes, cancelled searches stop their pending provider requests, and the UI retains its existing stale-query guard.
+
+## YouTube
+
+Added 2026-11-08. Where the YouTube fetcher is configured, search also lists up to six
+YouTube videos. They come from YouTube's own search API (Innertube), which needs no
+key and answers Cloudflare's network in about a second. Each result must carry every
+search word, and videos that are live, upcoming, shorter than 30 seconds or longer than
+the person's import limit are dropped. Choosing a result imports it as a video link. When YouTube's search does not answer Cloudflare within 3.5 s, or answers with nothing, the YouTube fetcher searches instead (see `youtube-fetcher/README.md`).
 
 ## Additional sources
 
@@ -10,7 +18,17 @@ Search now federates Internet Archive, Wikimedia Commons, Freesound via Openvers
 
 At import, the app re-fetches the exact Openverse record and verifies its native Freesound ID, source page, artist, title, license and publicly shared MP3 URL against the original Freesound page. It imports the high-quality MP3 rendition, explicitly labeled **MP3 preview**, rather than claiming to obtain the original upload. The authenticated original-download endpoint is not used. Downloaded bytes must match the advertised length, audio signature and duration. Both the original source page and index ID are retained in provenance.
 
-**Library of Congress:** search the National Jukebox, but only accept exact item/file IDs listed in the LC Labs published audio manifest. This is the specific 1900–1922 dataset described as public domain by its publisher, not the entire Jukebox collection. Import rechecks manifest membership and current item identity, recording date, repository, country, rights statement and downloadable audio metadata. Only the manifest's pinned `data.labs.loc.gov/jukebox/audio/jukebox-ID_1.mp3` file can be fetched. Its length and actual MP3 duration are verified. Attribution says **Public domain (United States)** and retains the dataset's rights statement, recording date and manifest checksum as evidence.
+## Library of Congress is not searched
+
+Removed from search on 2026-11-06. `www.loc.gov` answers Worker requests with a Cloudflare managed challenge (HTTP 403, `cf-mitigated: challenge`), which a Worker cannot complete. The app reports this as `source_access_refused`. A probe from a public Workers preview showed the challenge, while the same requests from a developer's machine return 200; it was not observed on Dev's own Worker. `data.labs.loc.gov` is not challenged. Do not send a browser User-Agent or a proxy past the challenge: that would evade a control the Library chose to apply.
+
+Lifting the challenge would not be enough. An uncached search makes up to five `www.loc.gov` requests against a published limit of 20 a minute, with a one-hour block, and three runs from a developer's machine took 15 to 25 seconds against the 9-second search limit.
+
+Refused sources now log `open_audio_source_refused` with the host and any `cf-mitigated` value, so a signed-in request to `/api/music/search?provider=loc` shows the outcome in Workers logs.
+
+The adapter stays in `src/open-audio.ts` for that route, and saved runs keep their attribution. Its rules, unchanged:
+
+**Library of Congress adapter:** search the National Jukebox, but only accept exact item/file IDs listed in the LC Labs published audio manifest. This is the specific 1900–1922 dataset described as public domain by its publisher, not the entire Jukebox collection. Import rechecks manifest membership and current item identity, recording date, repository, country, rights statement and downloadable audio metadata. Only the manifest's pinned `data.labs.loc.gov/jukebox/audio/jukebox-ID_1.mp3` file can be fetched. Its length and actual MP3 duration are verified. Attribution says **Public domain (United States)** and retains the dataset's rights statement, recording date and manifest checksum as evidence.
 
 The dataset serves MP3s and its JSON manifest with `binary/octet-stream`. This MIME exception is limited to those pinned dataset paths; the MP3 parser still verifies the actual audio. General National Jukebox streaming URLs are not substituted. The generic item's streaming-rights flag is not used as the license for the separately published dataset file.
 
@@ -24,9 +42,9 @@ The dataset serves MP3s and its JSON manifest with `binary/octet-stream`. This M
 
 ## Verification
 
-`cloudflare/audio-catalogs.test.ts` covers strict identity parsing, source-license changes, manifest membership, pinned files, native byte storage, provenance, quota handling and cancellation. `cloudflare/music-audio-flow.spec.mjs` exercises all four providers with 2/4/6 choices through local Workerd/D1/R2 and the browser. Catalog/audio responses and model outputs in that suite are fixtures; it does not establish real model quality.
+`cloudflare/audio-catalogs.test.ts` covers strict identity parsing, source-license changes, manifest membership, pinned files, native byte storage, provenance, quota handling and cancellation. `cloudflare/music-audio-flow.spec.mjs` exercises the three search providers with 2/4/6 choices through local Workerd/D1/R2 and the browser. Catalog/audio responses and model outputs in that suite are fixtures; it does not establish real model quality.
 
-The explicit opt-in `cloudflare/audio-catalogs.live.ts` uses real catalog responses through the actual application search route and stores real source bytes through the owned import path. It never drains the split queue and refuses outbound calls outside the public source hosts. `cloudflare/audio-search-live.spec.mjs` verifies real provider results through local Workerd and the browser, with fixture identity only and zero job submissions. These checks are separate from paid production acceptance.
+The explicit opt-in `cloudflare/audio-catalogs.live.ts` uses real catalog responses through the actual application search route and stores real source bytes through the owned import path. It never drains the split queue and refuses outbound calls outside the public source hosts. `cloudflare/audio-search-live.spec.mjs` verifies real provider results through local Workerd and the browser, with fixture identity only and zero job submissions. These checks are separate from paid production acceptance. Both leave through the developer's network, so neither shows that a source is reachable from a Worker: the Library of Congress code that a Worker could not reach still works from a developer's machine.
 
 ## Provider references
 
@@ -34,4 +52,5 @@ The explicit opt-in `cloudflare/audio-catalogs.live.ts` uses real catalog respon
 - [Freesound sound and preview fields](https://freesound.org/docs/api/resources_apiv2.html)
 - [National Jukebox data package and download manifest](https://data.labs.loc.gov/jukebox/)
 - [Dataset rights statement](https://data.labs.loc.gov/jukebox/README.html#rights-statement)
+- [Library of Congress API limits](https://www.loc.gov/apis/json-and-yaml/working-within-limits/)
 - [Openverse's Jamendo download-permission issue](https://github.com/WordPress/openverse/issues/3499)

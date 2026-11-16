@@ -1,5 +1,8 @@
+import personalPromptRoutes from './personal-prompts.ts';
 import {searchOpenAudio,OpenAudioError} from './open-audio.ts';
 import { musicSearchResponse } from './music-search.ts';
+import { youtubeFetcherConfigured } from './youtube-fetcher.ts';
+import { fetcherCaller, fetcherSearchAllowed, searchAllowed, searcherKey } from './search-limits.ts';
 import { getRecordingReference, MusicBrainzError } from './musicbrainz.ts';
 import { instructorSampleResource, publicSampleResource, saveSampleResource, SampleResourceError } from './song-sample-resource.ts';
 import { JOB_TITLE_ERROR, normalizeRecordingTitle } from './recording-title.ts';
@@ -14,7 +17,6 @@ import classroomRoutes from './classroom/routes.ts';
 import instrumentTargetRoutes from './isolation/routes.ts';
 import { courseAssignmentStatement, jobCourse, jobPermission, CourseError, courseErrorResponse } from './classroom/access.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation } from './classroom/conversations.ts';
-import { coursePrompt } from './classroom/prompts.ts';
 import { storedResplit } from './resplits.ts';
 import { Hono } from 'hono';
 import { archiveSongSearchResponse } from './archive-search-response.ts';
@@ -88,7 +90,7 @@ import {
   validateAndOrderStems,
 } from './separation/options';
 import { fetchVideoAudio, YouTubeError } from './youtube';
-import { parseVideoSource, isVimeoUrl } from './video-source.ts';
+import { parseVideoSource, isVimeoUrl, containsYouTubeLink } from './video-source.ts';
 import { importLinkViaService, linkImportEnabled, resolveLinkViaService } from './link-import-client.ts';
 import type { ImportResult } from './link-import.ts';
 import {
@@ -103,6 +105,7 @@ import {
   COACH_DOWN,
   COACH_UNCONFIGURED,
   getGuide,
+  loadAmendmentState,
   streamGuide,
   streamChat,
   validateTurns,
@@ -204,6 +207,10 @@ async function sha256Text(value: string): Promise<string> {
 
 type AppContext = { Bindings: Env; Variables: { principal?: AppPrincipal } };
 const app = new Hono<AppContext>();
+function assistantEnv(c: Context<AppContext>): Env {
+  const p = c.get('principal');
+  return { ...c.env, ASSISTANT_PERSONAL_SUBJECT: p && !guestPrincipal(p) ? p.subject : null };
+}
 
 // The shared footer also runs on the legacy host, which has no report receiver.
 app.get('/api/bug-reports/availability', (c) => {
@@ -238,6 +245,7 @@ app.use('/api/*', async(c,next)=>{
 });
 
 app.route('/api/classroom', classroomRoutes);
+app.route('/api/account', personalPromptRoutes);
 
 app.post('/api/usage-events',async c=>{
   const principal=c.get('principal');
@@ -284,7 +292,7 @@ app.post('/api/jobs/:id/share', async (c) => {
     WHERE j.id=? AND o.subject=? AND j.status='done' AND j.created_at > datetime('now', '-90 days')
     ON CONFLICT(job_id) DO UPDATE SET job_id=excluded.job_id RETURNING job_id`)
     .bind(id, principal.subject).first();
-  return result ? c.json({ url: `/?job=${encodeURIComponent(id)}` }) : c.json({ error: 'Split not found.' }, 404);
+  return result ? c.json({ url: `${c.env.APP_BASE_PATH || ''}/?job=${encodeURIComponent(id)}` }) : c.json({ error: 'Split not found.' }, 404);
 });
 
 app.delete('/api/jobs/:id/share', async (c) => {
@@ -309,7 +317,7 @@ app.get('/api/shared-jobs/:id', async (c) => {
   const stems = JSON.parse(row.stems || '[]') as Array<{ name: string; key: string }>;
   return c.json({ id: row.id, filename: row.filename, status: 'done', model: row.model,
     readOnlyShared: true, labels: {}, annotations: [], guide: null, ...(publicCredit?{attribution:publicCredit}:{}),
-    stems: stems.map((stem, i) => ({ name: stem.name, url: `/api/shared-jobs/${row.id}/stems/${i}` })) });
+    stems: stems.map((stem, i) => ({ name: stem.name, url: `${c.env.APP_BASE_PATH || ''}/api/shared-jobs/${row.id}/stems/${i}` })) });
 });
 
 app.get('/api/shared-jobs/:id/stems/:index', async (c) => {
@@ -400,7 +408,7 @@ app.get('/api/teacher/students/:subject/jobs/:id',async c=>{
     if(!row)return c.json({error:'Split unavailable.'},404);
     const stems=JSON.parse(row.stems||'[]') as Array<{name:string;key:string}>;
     return c.json({id:row.id,filename:row.filename,model:row.model,status:'done',readOnlyShared:true,instructorReview:true,
-      labels:{},annotations:[],guide:null,stems:stems.map((stem,index)=>({name:stem.name,url:`/api/teacher/students/${c.req.param('subject')}/jobs/${row.id}/stems/${index}`}))});
+      labels:{},annotations:[],guide:null,stems:stems.map((stem,index)=>({name:stem.name,url:`${c.env.APP_BASE_PATH || ''}/api/teacher/students/${c.req.param('subject')}/jobs/${row.id}/stems/${index}`}))});
   }catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 app.get('/api/teacher/students/:subject/jobs/:id/stems/:index',async c=>{
@@ -1024,6 +1032,17 @@ app.get('/api/music/search', async (c, next) => {
   if (isPlaylistSample(c.req.raw)) return playlistSampleResponse(c.req.raw);
   return next();
 }, requireClassCode, async (c) => {
+  // Backstops against scripts (src/search-limits.ts); people searching never reach them.
+  const searcher = searcherKey(c.get('principal')?.subject, c.req.header('cf-connecting-ip'));
+  if (!(await searchAllowed(c.env, searcher))) {
+    return c.json({ error: { code: 'search_rate_limited', message: 'Searching too quickly. Wait a few seconds, then try again.' } }, 429,
+      { 'Retry-After': '15', 'Cache-Control': 'private, no-store' });
+  }
+  // A YouTube link is imported as itself; no source searches for it (the owner's rule).
+  if (containsYouTubeLink(c.req.query('q') ?? '')) {
+    return c.json({ error: { code: 'youtube_link_not_search', message: 'Paste a YouTube link to import that video; search is for song names.' } }, 400,
+      { 'Cache-Control': 'private, no-store' });
+  }
   if (c.req.query('sampleItem') !== undefined || c.req.query('sampleFile') !== undefined) {
     try {
       const result = await verifyArchiveSample(c.req.query('q') ?? '', c.req.query('sampleItem') ?? '', c.req.query('sampleFile') ?? '',
@@ -1046,7 +1065,10 @@ app.get('/api/music/search', async (c, next) => {
   const storage = typeof caches !== 'undefined' && 'default' in caches ? caches.default : undefined;
   if (!provider && c.req.query('examples') !== '1') {
     return musicSearchResponse(c.req.query('q') ?? '', c.req.header('accept') === 'application/x-ndjson', {
-      db: c.env.DB, signal: c.req.raw.signal,
+      db: c.env.DB, signal: c.req.raw.signal, youtube: youtubeFetcherConfigured(c.env) ? c.env : undefined,
+      youtubeFallbackAllowed: () => fetcherSearchAllowed(c.env, searcher),
+      // A Workers-only key; the guest cookie key is the one both Workers already hold.
+      youtubeCaller: await fetcherCaller(c.env.GUEST_COOKIE_SECRET, searcher),
       maximumSeconds: c.env.AUTH_MODE === 'cail' ? importDurationLimit(c.get('principal')) : 300,
       cache: storage ? { storage, origin: new URL(c.req.url).origin } : undefined,
     });
@@ -1108,7 +1130,7 @@ app.post('/api/jobs', requireClassCode, async (c) => {
     await resumeOwnedSourceImport(c.env,c.get('principal')!,result.operation);
     try { c.executionCtx.waitUntil(runReliableJobs(c.env)); } catch { await runReliableJobs(c.env); }
     const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(result.operation.job_id).first<JobRow>();
-    return c.json({...jobResponse(row!), resplit:storedResplit(result.operation.request_json), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
+    return c.json({...jobResponse(row!, [], null, c.env.APP_BASE_PATH), resplit:storedResplit(result.operation.request_json), savedToAccount:!guestPrincipal(c.get('principal')), operationId:result.operation.id, replay:!result.created}, result.created?202:200);
   }
   const body = parsed.value as
     | {
@@ -1572,14 +1594,14 @@ app.get('/api/jobs/:id', async (c) => {
     .all<AnnotationRow>();
   // The cached listening guide only exists for finished jobs; skip the extra
   // SELECT on the frequent still-processing polls.
-  const guide = row.status === 'done' ? await getGuide(c.env, id) : null;
+  const guide = row.status === 'done' ? await getGuide(assistantEnv(c), id) : null;
   const attribution = await c.env.DB.prepare('SELECT attribution FROM job_attributions WHERE job_id = ?').bind(id).first<{ attribution: string }>();
   const publicSharing = c.env.AUTH_MODE === 'cail' && Boolean(await c.env.DB.prepare('SELECT 1 FROM public_split_links WHERE job_id=?').bind(id).first());
   const principal = c.get('principal');
   const permission = principal ? await jobPermission(c.env, principal, id) : null;
   if(principal&&row.status==='failed'){await recordFailedRunSession(c.env,principal,c.req.header('X-Stem-Rack-Session')??null,id);if(await runWasDeleted(c.env,id))return c.json({error:'Run not found.'},404);}
   const operation=c.env.AUTH_MODE==='cail'?await readOperation(c.env.DB,id):null;
-  return c.json({ ...jobResponse(row, results ?? [], guide), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
+  return c.json({ ...jobResponse(row, results ?? [], guide, c.env.APP_BASE_PATH), operation:operation?{id:operation.id,stage:operation.state,phase:operation.phase,errorCode:operation.error_code,nextAttemptAt:operation.not_before,cancelRequested:!!operation.cancel_requested,supportId:operation.id}:null, annotations: (results ?? []).map(a => ({ id:a.id,atSeconds:a.at_seconds,text:a.text,
     authorName:a.author_subject ? (a.author_name || 'Student') : 'Author unavailable',canDelete:!principal || a.author_subject===principal.subject,provenance:a.provenance??null })),
     courseId:permission?.courseId??null, permissions:permission, publicSharing, resplit:permission?.owner?storedResplit(operation?.request_json):null, attribution: attribution ? JSON.parse(attribution.attribution) : null });
 });
@@ -2070,10 +2092,10 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
     .all<AnnotationRow>();
 
   const principal=c.get('principal');
-  const cachedGuide=await getGuide(c.env,id);
+  const cachedGuide=await getGuide(assistantEnv(c),id);
   if(cachedGuide)return sseResponse(c,async emit=>{await emit({type:'done',text:cachedGuide.text,model:cachedGuide.model,createdAt:cachedGuide.createdAt,cached:true,finishReason:'stop',usage:await currentListeningUsage(c)});});
   const scope=await jobCourse(c.env,id);
-  const prompt=await coursePrompt(c.env,scope?.course_id ?? null);
+  const prompt=await loadAmendmentState({ ...assistantEnv(c), ASSISTANT_COURSE_ID: scope?.course_id ?? null });
   const guideInput=[id,scope?.course_id ?? null,prompt.revision,await hashSystemPromptFingerprint(prompt.amendment),parseDuration(body?.durationSec)];
   const guideKey=typeof body?.messageId==='string'?body.messageId:c.req.header('Idempotency-Key') ?? await fingerprint([...guideInput,Math.floor(Date.now()/300000)]);
   const reservation=principal?await reserveAssistant(c.env,principal.subject,scope?.course_id ?? null,'guide',guideKey,id,guideInput,principal.quotaClass ?? 'member'):null;
@@ -2082,7 +2104,7 @@ app.post('/api/jobs/:id/guide', requireClassCode, async (c) => {
   return sseResponse(c, async (emit, signal) => {
     try {
       const { guide, cached } = await streamGuide(
-        { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id,assistantEffectIntent:()=>receipt?.effect() ?? Promise.resolve() }, row, results ?? [], parseDuration(body?.durationSec),
+        { ...assistantEnv(c), ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id,assistantEffectIntent:()=>receipt?.effect() ?? Promise.resolve() }, row, results ?? [], parseDuration(body?.durationSec),
         async text => {await receipt?.delta(text);await emit({type:'delta',text});}
       );
       if(cached)await receipt?.cached();else await receipt?.complete(guide.text);
@@ -2253,7 +2275,7 @@ app.post('/api/jobs/:id/chat', requireClassCode, async (c) => {
     try {
       if(durable?.replay) {await receipt?.failed();throw new AssistantError(503,'This input was already accepted. Reload the conversation before continuing.');}
       const result = await streamChat(
-        { ...c.env, ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
+        { ...assistantEnv(c), ASSISTANT_ABORT_SIGNAL: signal,ASSISTANT_OPERATION_ID:reservation?.operation.id }, row, results ?? [], durable?.turns ?? turns, parseDuration(body?.durationSec),
         async text => {
           if(durable && !await c.env.DB.prepare(`SELECT 1 FROM course_conversations WHERE job_id=? AND subject=? AND pending_turn=? AND pending_expires_at>datetime('now') AND expires_at>datetime('now')`)
             .bind(id,principal!.subject,durable.claimId).first()) throw new AssistantError(503,'This conversation changed. Refresh before continuing.');
@@ -2692,11 +2714,11 @@ function looksLikeMp3(audio: ArrayBuffer): boolean {
   return false;
 }
 
-function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null) {
+function jobResponse(row: JobRow, annotations: AnnotationRow[] = [], guide: GuideRecord | null = null, basePath = '') {
   const stems = row.stems
     ? (JSON.parse(row.stems) as { name: string; key: string }[]).map((s) => ({
         name: s.name,
-        url: `/api/files/${s.key}`,
+        url: `${basePath}/api/files/${s.key}`,
       }))
     : [];
   let autoRouting: AppAutoRoutingDecisionV1 | undefined;

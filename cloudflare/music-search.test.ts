@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { SqliteD1 } from '../server/d1.ts';
 import { searchRecordingReferences, getRecordingReference } from '../src/musicbrainz.ts';
 import { musicSearchResponse } from '../src/music-search.ts';
+import { HATE_MUSIC_NAMES } from '../src/genre-list-exclusions.ts';
 import app from '../src/index.ts';
 
 const studio = '12345678-1234-1234-1234-123456789012';
@@ -154,7 +155,6 @@ test('unified search streams audio before a slow additional catalog and retains 
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
     if (url.hostname === 'api.openverse.org') { metadataStarted = true; await metadata.promise; return Response.json({ results: [] }); }
-    if (url.hostname === 'data.labs.loc.gov' || url.hostname === 'www.loc.gov') return new Response(null, { status: 503, headers: { 'Retry-After': '120' } });
     if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
     if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: [{ identifier: 'unified-melody', title: 'Unified melody' }] } });
     if (url.pathname.startsWith('/metadata/')) return Response.json({ metadata: { title: 'Unified melody', creator: 'Example artist', mediatype: 'audio', subject: 'Music' }, files: [{ name: 'song.mp3', title: 'Unified melody', length: String(80 * 1152 / 44100), size: String(audio.length) }] });
@@ -167,7 +167,7 @@ test('unified search streams audio before a slow additional catalog and retains 
   assert.deepEqual(new Set(beforeMetadata.results.map((row: any) => row.providerName)), new Set(['Internet Archive', 'Wikimedia Commons']));
   metadata.resolve(); let final: any;
   for (;;) { const chunk = await reader.read(); if (chunk.done) break; const value = JSON.parse(new TextDecoder().decode(chunk.value)); if (value.done) final = value; }
-  assert.equal(final.results.length, 2); assert.equal(final.references.length, 0); assert.deepEqual(final.providers, { archive: 'ready', commons: 'ready', freesound: 'ready', loc: 'unavailable' });
+  assert.equal(final.results.length, 2); assert.equal(final.references.length, 0); assert.deepEqual(final.providers, { archive: 'ready', commons: 'ready', freesound: 'ready' });
 });
 
 test('partial provider failures preserve eligible files and ccMixter remains disabled', async t => {
@@ -180,7 +180,7 @@ test('partial provider failures preserve eligible files and ccMixter remains dis
   });
   const response = await musicSearchResponse('partial music', false, context); const result: any = await response.json();
   assert.equal(response.status, 200); assert.equal(result.results.length, 1); assert.equal(result.results[0].openAudio.provider, 'commons');
-  assert.equal(result.providers.freesound, 'unavailable'); assert.equal(result.providers.loc, 'unavailable'); assert.equal(result.providers.archive, 'unavailable'); assert.deepEqual(result.references, []);
+  assert.equal(result.providers.freesound, 'unavailable'); assert.equal(result.providers.archive, 'unavailable'); assert.deepEqual(result.references, []);
   const disabled = await app.request('/api/music/search?q=music&provider=ccmixter', { headers: { 'x-class-code': 'fixture' } }, { DB: context.db, CLASS_CODE: 'fixture' } as any);
   assert.equal(disabled.status, 503);
   assert.equal((await app.request(`/api/music/recordings/${studio}`, {}, { DB: context.db, CLASS_CODE: 'fixture' } as any)).status, 401);
@@ -190,7 +190,7 @@ test('rolling Archive rankings reserve space for every late audio catalog', asyn
   const context = setup(t), probes = new Set<string>();
   t.mock.method(globalThis, 'fetch', async (input: any) => {
     const url = new URL(String(input));
-    if (['api.openverse.org','data.labs.loc.gov','www.loc.gov'].includes(url.hostname)) return new Response(null, { status: 403 });
+    if (url.hostname === 'api.openverse.org') return new Response(null, { status: 403 });
     if (url.hostname === 'commons.wikimedia.org') { await new Promise(resolve => setTimeout(resolve, 150)); return Response.json(commons()); }
     if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: Array.from({ length: 16 }, (_, i) => ({ identifier: `capacity-melody-${i}`, title: 'Capacity melody', creator: 'Example artist' })) } });
     if (url.pathname.startsWith('/metadata/')) {
@@ -203,9 +203,9 @@ test('rolling Archive rankings reserve space for every late audio catalog', asyn
   });
   const result: any = await (await musicSearchResponse('Capacity melody', false, context)).json();
   assert.ok(probes.size > 8, 'fixture must produce replacement Archive rankings');
-  assert.equal(result.results.filter((track: any) => track.providerName === 'Internet Archive').length, 4);
+  assert.equal(result.results.filter((track: any) => track.providerName === 'Internet Archive').length, 8);
   assert.equal(result.results.filter((track: any) => track.providerName === 'Wikimedia Commons').length, 1);
-  assert.equal(result.results.length, 5);
+  assert.equal(result.results.length, 9);
 });
 
 test('cancelled streams stop independent metadata calls and a new search can finish', async t => {
@@ -224,4 +224,154 @@ test('cancelled streams stop independent metadata calls and a new search can fin
   t.mock.method(globalThis, 'fetch', async (input: any) => new URL(String(input)).hostname === 'musicbrainz.org'
     ? Response.json({ recordings: [recording()] }) : Response.json({ response: { docs: [] }, query: { pages: [] } }));
   const retried: any = await (await musicSearchResponse('retry sources', false, context)).json(); assert.deepEqual(retried.references, []); assert.equal(retried.providers.commons, 'ready');
+});
+
+const freesoundRow = (id: string, sound: number, title: string, seconds: number) => ({ id, title, creator: 'Artist',
+  foreign_landing_url: `https://freesound.org/people/Artist/sounds/${sound}/`, url: `https://cdn.freesound.org/previews/${Math.floor(sound / 1000)}/${sound}_9-hq.mp3`,
+  license: 'by', license_version: '4.0', license_url: 'https://creativecommons.org/licenses/by/4.0/', filetype: 'mp3', filesize: audio.length,
+  duration: seconds * 1000, source: 'freesound', provider: 'freesound' });
+
+test('Freesound effects are removed and a named artist ranks above faster, looser matches', async t => {
+  const context = setup(t);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [
+      freesoundRow('11111111-1111-4111-8111-111111111111', 1001, 'Duchess speech', 3),
+      freesoundRow('22222222-2222-4222-8222-222222222222', 1002, 'Unrelated tagged drone', 200),
+      freesoundRow('33333333-3333-4333-8333-333333333333', 1003, 'Duchess cover on drums', 120),
+    ] });
+    if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: [{ identifier: 'duchess-band', title: 'Hits', creator: 'Duchess' }] } });
+    if (url.pathname.startsWith('/metadata/')) return Response.json({ metadata: { title: 'Hits', creator: 'Duchess', mediatype: 'audio', subject: 'Music' }, files: [{ name: 'song.mp3', title: 'Radio Song', length: String(80 * 1152 / 44100), size: String(audio.length), format: 'VBR MP3', source: 'original' }] });
+    return new Response(audio, { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const result: any = await (await musicSearchResponse('duchess', false, context)).json();
+  assert.deepEqual(result.results.map((track: any) => track.title), ['Radio Song', 'Duchess cover on drums']);
+});
+
+test('a genre search lists tagged music above a credit named for the genre, with short clips last', async t => {
+  const context = setup(t);
+  const record = (creator: string, subject: string, title: string, length: string) => Response.json({ metadata: { title: `${creator} album`, creator, mediatype: 'audio', subject },
+    files: [{ name: 'song.mp3', title, length, size: String(audio.length) }] });
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    if (url.pathname === '/advancedsearch.php') {
+      const q = url.searchParams.get('q')!;
+      const ids = q.includes('subject:("jazz")') ? ['popular-clip', 'tagged-song'] : q.endsWith('creator:"jazz"') ? ['uploader'] : [];
+      return Response.json({ response: { docs: ids.map(identifier => ({ identifier, title: identifier, creator: 'Credited' })) } });
+    }
+    if (url.pathname === '/metadata/popular-clip') return record('Clip Band', 'Jazz', 'Stage talk', '12');
+    if (url.pathname === '/metadata/tagged-song') return record('Trio', 'Jazz', 'Night Train', '200');
+    if (url.pathname === '/metadata/uploader') return record('Jazz', 'Music', 'tmp', '200');
+    return new Response(audio, { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const result: any = await (await musicSearchResponse('jazz', false, context)).json();
+  assert.deepEqual(result.results.map((track: any) => track.title), ['Night Train', 'Jazz album', 'Stage talk']);
+});
+
+test('a genre list leaves out flagged tracks from every source, and naming them still finds them', async t => {
+  const context = setup(t);
+  const [band] = HATE_MUSIC_NAMES;
+  const flagged = commons();
+  flagged.query.pages[0].imageinfo[0].extmetadata.Artist = { value: band };
+  flagged.query.pages[0].imageinfo[0].extmetadata.Attribution = { value: band };
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'www.loc.gov' || url.hostname === 'data.labs.loc.gov') return new Response(null, { status: 403 });
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(flagged);
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    if (url.pathname === '/advancedsearch.php') return Response.json({ response: { docs: [] } });
+    return new Response(audio, { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Content-Range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const genre: any = await (await musicSearchResponse('blues', false, context)).json();
+  assert.deepEqual(genre.results, []);
+  const named: any = await (await musicSearchResponse(band, false, context)).json();
+  assert.deepEqual(named.results.map((track: any) => track.artist), [band]);
+});
+
+test('a short clip still appears when a search would otherwise find nothing', async t => {
+  const context = setup(t);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [freesoundRow('44444444-4444-4444-8444-444444444444', 1004, 'Marimba hit', 4)] });
+    return Response.json({ response: { docs: [] } });
+  });
+  const result: any = await (await musicSearchResponse('marimba hit', false, context)).json();
+  assert.deepEqual(result.results.map((track: any) => track.title), ['Marimba hit']);
+});
+
+test('one stalled catalog cannot hold a search open past the hard limit', async t => {
+  const context = setup(t), stalled = deferred();
+  t.after(stalled.resolve);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.openverse.org') { await stalled.promise; return Response.json({ results: [] }); }
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
+    return Response.json({ response: { docs: [] } });
+  });
+  const started = Date.now();
+  const result: any = await (await musicSearchResponse('stalled source', false, context)).json();
+  assert.ok(Date.now() - started < 10000, `took ${Date.now() - started}ms`);
+  assert.equal(result.providers.freesound, 'unavailable');
+  assert.equal(result.results.length, 1);
+});
+
+test('other sources listing results do not cut off an Archive that has found nothing yet', async t => {
+  const context = setup(t);
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    if (url.pathname === '/advancedsearch.php') {
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      return Response.json({ response: { docs: [{ identifier: 'patient-song' }] } });
+    }
+    if (url.pathname.startsWith('/metadata/')) {
+      await new Promise(resolve => setTimeout(resolve, 7500));
+      return Response.json({ metadata: { title: 'Patient song', creator: 'Example artist', mediatype: 'audio', subject: 'Music' },
+        files: [{ name: 'song.mp3', title: 'Patient song', size: String(audio.length), length: String(80 * 1152 / 44100) }] });
+    }
+    return new Response(audio.subarray(0, 65536), { status: 206, headers: { 'content-type': 'audio/mpeg', 'content-range': `bytes 0-${audio.length - 1}/${audio.length}` } });
+  });
+  const started = Date.now();
+  const result: any = await (await musicSearchResponse('patient song', false, context)).json();
+  assert.ok(Date.now() - started < 16500, `took ${Date.now() - started}ms`);
+  assert.equal(result.providers.archive, 'ready');
+  assert.ok(result.results.some((track: any) => track.archiveId === 'patient-song'));
+});
+
+test('an earlier Archive list is marked as a fallback and the Archive does not read as unavailable', async t => {
+  const context = setup(t), stored = new Map<string, Response>();
+  const cache = { origin: 'https://split.test', storage: {
+    match: async (request: any) => stored.get(request.url)?.clone(),
+    put: async (request: any, response: Response) => { stored.set(request.url, response); },
+  } } as any;
+  stored.set('https://split.test/__stem-search-cache/v5/last-good?seconds=300&q=earlier%20song', Response.json({ results: [{ id: 'earlier/song.mp3', archiveId: 'earlier', archiveFile: 'song.mp3', title: 'Earlier song', artist: 'Example artist', durationSec: 120 }] }));
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'commons.wikimedia.org') return Response.json({ query: { pages: [] } });
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    return new Response('unavailable', { status: 503 });
+  });
+  const result: any = await (await musicSearchResponse('earlier song', false, { ...context, cache })).json();
+  assert.equal(result.fallback, true);
+  assert.equal(result.providers.archive, 'ready');
+  assert.equal(result.results[0].archiveId, 'earlier');
+});
+
+test('search never contacts the Library of Congress and reports only the sources it searches', async t => {
+  const context = setup(t), hosts = new Set<string>();
+  t.mock.method(globalThis, 'fetch', async (input: any) => {
+    const url = new URL(String(input)); hosts.add(url.hostname);
+    if (url.hostname === 'commons.wikimedia.org') return Response.json(commons());
+    if (url.hostname === 'api.openverse.org') return Response.json({ results: [] });
+    return Response.json({ response: { docs: [] } });
+  });
+  const result: any = await (await musicSearchResponse('reachable sources', false, context)).json();
+  assert.deepEqual(Object.keys(result.providers).sort(), ['archive', 'commons', 'freesound']);
+  assert.ok(hosts.has('commons.wikimedia.org'), 'the mock must have seen this search');
+  assert.deepEqual([...hosts].filter(host => host.endsWith('loc.gov')), []);
 });

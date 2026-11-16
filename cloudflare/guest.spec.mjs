@@ -11,14 +11,13 @@ test.use({ignoreHTTPSErrors:true});
 
 async function setup(page, chatAvailable = false) {
   let origin = '', providerStarts = 0, verifications = 0, widgetLoads = 0;
+  const predictionStems = new Map();
   const issuer = await createTestIdentityIssuer();
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
   const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble',mediatype:'audio',subject:['Music','Rock']};
   const network = setupServer(
     http.get('https://commons.wikimedia.org/w/api.php',()=>HttpResponse.json({query:{pages:[]}})),
     http.get('https://api.openverse.org/v1/audio/',()=>HttpResponse.json({results:[]})),
-    http.get('https://www.loc.gov/collections/national-jukebox/',()=>HttpResponse.json({results:[]})),
-    http.get('https://data.labs.loc.gov/jukebox/manifest.json',()=>HttpResponse.json({cols:['filename','item_id','md5','size','object_key'],rows:[]})),
     http.get('https://archive.org/advancedsearch.php',()=>HttpResponse.json({response:{docs:[music]}})),
     http.get('https://archive.org/metadata/song-fixture',()=>HttpResponse.json({metadata:music,files:[{name:'song.mp3',title:'Song fixture',size:String(mp3.length),length:String(mp3FrameInfo(new Uint8Array(mp3).buffer).seconds)}]})),
     http.get('https://archive.org/download/song-fixture/song.mp3',({request})=>request.headers.has('range')
@@ -28,8 +27,13 @@ async function setup(page, chatAvailable = false) {
       verifications++;
       return HttpResponse.json({ success: true, hostname: new URL(origin).hostname, action: 'stem_guest', challenge_ts: new Date().toISOString() });
     }),
-    http.post('https://api.replicate.com/v1/predictions', () => HttpResponse.json({ id: `browser-guest-prediction-${++providerStarts}`, status: 'starting' })),
-    http.get('https://api.replicate.com/v1/predictions/:id', ({ params }) => HttpResponse.json({ id: params.id, status: 'succeeded', output: Object.fromEntries(['vocals', 'drums', 'bass', 'other'].map(name => [name, `https://fixtures.replicate.delivery/${name}.mp3`])) })),
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const { input } = await request.json(), id = `browser-guest-prediction-${++providerStarts}`;
+      predictionStems.set(id, input.stem === 'vocals' ? ['vocals', 'no_vocals']
+        : input.model === 'htdemucs_6s' ? ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'] : ['vocals', 'drums', 'bass', 'other']);
+      return HttpResponse.json({ id, status: 'starting' });
+    }),
+    http.get('https://api.replicate.com/v1/predictions/:id', ({ params }) => HttpResponse.json({ id: params.id, status: 'succeeded', output: Object.fromEntries((predictionStems.get(params.id) || []).map(name => [name, `https://fixtures.replicate.delivery/${name}.mp3`])) })),
     http.get('https://fixtures.replicate.delivery/:name.mp3', () => new HttpResponse(mp3, { headers: { 'Content-Type': 'audio/mpeg' } })),
   );
   network.listen({ onUnhandledRequest(request, print) { if (new URL(request.url).origin === origin) return; print.error(); } });
@@ -111,7 +115,7 @@ test('guest rejects retired Vimeo and submits YouTube through the existing video
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     const before = await account(page);
     const input = page.getByRole('combobox', { name: 'Song or link', exact: true });
-    await expect(input).toHaveAttribute('placeholder', 'Search songs');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste YouTube link');
     await expect(page.locator('#song-search-label, #split-picker-label')).toHaveCount(0);
     await page.locator('input[name="stem-model"][value="htdemucs_ft"]').check();
     const retiredResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/jobs'&&response.request().method()==='POST');
@@ -355,18 +359,23 @@ test('song suggestions support keyboard selection and stay closed after Escape o
 });
 
 test('song search shows empty and failed searches and ignores stale responses',async({page})=>{
-  const f=await setup(page);let slow,latest,latestRequests=0;
+  const f=await setup(page);let slow,latest,latestRequests=0,limitedRequests=0;
   try {
     await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
     await page.route('**/api/music/search?*',route=>{
       const query=new URL(route.request().url()).searchParams.get('q');
       if(query==='Slow'){slow=route;return;}
+      if(query==='Limited'){limitedRequests++;return route.fulfill({status:429,headers:{'Retry-After':'15'},json:{error:{code:'search_rate_limited',message:'Searching too quickly. Wait a few seconds, then try again.'}}});}
       if(query==='Latest'){latestRequests++;latest=route;return;}
       return route.fulfill(query==='Empty'?{json:{results:[]}}:{status:502,json:{error:'Provider unavailable'}});
     });
     const input=page.getByRole('combobox',{name:'Song or link',exact:true}),list=page.getByRole('listbox',{name:'Songs'});
     await input.fill('Empty');await expect(list).toContainText('No downloadable audio found. Try another recording or upload an audio file.');
-    await input.fill('Failure');await expect(list).toContainText('Search is temporarily unavailable. Try again.');
+    await input.fill('Failure');await expect(list).toContainText('Search could not finish. The Internet Archive may be slow. Try again, or upload an audio file.');await expect(list.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
+    // Searching too quickly says so, and is not retried by itself: a retry would count against the same limit.
+    await input.fill('Limited');await expect(list).toContainText('Searching too quickly. Wait a few seconds, then try again.');
+    await expect(list).not.toContainText('Internet Archive');await expect(list.getByRole('button',{name:'Try again',exact:true})).toBeVisible();
+    await page.waitForTimeout(1600);expect(limitedRequests).toBe(1);
     await input.fill('Slow');await expect.poll(()=>Boolean(slow)).toBe(true);
     await input.fill('Latest');await expect.poll(()=>Boolean(latest)).toBe(true);
     await input.press('Enter');expect(latestRequests).toBe(1);
@@ -450,7 +459,7 @@ test('streamed song choices are usable before discovery finishes and stay in pla
   const catalog=new Promise(resolve=>{release=resolve;});
   const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble'};
   f.network.use(http.get('https://archive.org/advancedsearch.php',async({request})=>{
-    if(new URL(request.url).searchParams.get('q').includes('creator:[* TO *]'))await catalog;
+    if(new URL(request.url).searchParams.get('q').includes(' OR creator:'))await catalog;
     return HttpResponse.json({response:{docs:[music]}});
   }));
   try {
@@ -505,6 +514,42 @@ test('partial song streams preserve visible choices through later updates and in
   }finally{await f.close();}
 });
 
+test('a finished search replaces streamed choices with its final ranking',async({page})=>{
+  const f=await setup(page);
+  try {
+    await page.addInitScript(()=>{
+      const original=window.fetch;
+      window.fetch=(input,options)=>{
+        if(!String(input).startsWith('/api/music/search?q=Settling%20fixture'))return original(input,options);
+        const encoder=new TextEncoder();
+        return Promise.resolve(new Response(new ReadableStream({start(controller){
+          window.pushSearch=packet=>controller.enqueue(encoder.encode(JSON.stringify(packet)+'\n'));
+          window.endSearch=()=>controller.close();
+        }}),{headers:{'Content-Type':'application/x-ndjson'}}));
+      };
+    });
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    const input=page.getByRole('combobox',{name:'Song or link',exact:true});await input.fill('Settling fixture');
+    await page.waitForFunction(()=>Boolean(window.pushSearch));
+    const song=(id,title)=>({id,title,artist:'Musician',durationSec:150});
+    const options=page.locator('#source-songs').getByRole('option');
+    // A full list of early matches leaves no room for what arrives later, until the search finishes.
+    const early=[song('weak','Weak match'),song('small-copy','Same recording'),...Array.from({length:14},(_,index)=>song(`early-${index}`,`Early ${index}`))];
+    await page.evaluate(results=>window.pushSearch({results,done:false}),early);
+    await expect(options).toHaveCount(16);
+    await page.evaluate(results=>{window.pushSearch({results,done:true});window.endSearch();},[song('late','Late match'),song('large-copy','Same recording')]);
+    await expect(page.locator('#source-songs')).not.toHaveAttribute('aria-busy');
+    await expect(options).toHaveCount(2);
+    await expect(options.first()).toContainText('Late match');
+    await expect(options.nth(1)).toContainText('Same recording');
+    await expect(page.locator('#source-songs')).not.toContainText('(2)');
+    expect(new Set(await options.evaluateAll(nodes=>nodes.map(node=>node.id))).size).toBe(2);
+    await input.press('ArrowDown');await input.press('ArrowDown');await input.press('Enter');
+    await expect(input).toHaveValue('Same recording — File artist: Musician');
+    expect(f.counts().providerStarts).toBe(0);expect(f.errors).toEqual([]);
+  }finally{await f.close();}
+});
+
 const sampleTrack = { id: 'sample-jazz', title: 'Piano sample', artist: 'Fixture ensemble', durationSec: 120, archiveId: 'sample', archiveFile: 'sample.mp3' };
 
 test('sample query streams translucently and Tab reveals preloaded results without another request', async ({page}) => {
@@ -545,7 +590,7 @@ test('unverified sample stays hidden and typing rejects a late match', async ({p
     await expect.poll(() => Boolean(delayed)).toBe(true);
     const input = page.locator('#yt-url');
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    await expect(input).toHaveAttribute('placeholder', 'Search songs');
+    await expect(input).toHaveAttribute('placeholder', 'Search songs or paste YouTube link');
     await input.fill('https://example.com/song.mp3');
     await delayed.fulfill({json: {results: [sampleTrack]}}).catch(() => {}); delayed = null;
     await expect(page.locator('#source-songs')).toBeHidden();
@@ -692,7 +737,7 @@ test('no verified playlist recordings means no animated suggestion or retired pa
     await page.goto(f.origin);
     await expect.poll(()=>page.evaluate(()=>sampleStarted && sampleCache===null)).toBe(true);
     await expect(page.locator('#source-sample-hint')).toBeHidden();
-    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs');
+    await expect(page.locator('#yt-url')).toHaveAttribute('placeholder','Search songs or paste YouTube link');
     await expect(page.getByRole('link',{name:'Listen to Sound Station playlists →'})).toHaveCount(0);
     expect((await page.request.get(f.origin+'/sound-stations.html')).status()).toBe(410);
     expect(f.errors).toEqual([]);
@@ -953,11 +998,11 @@ for (const signIn of [false,true]) test(`guest second reply survives a lost comp
  } finally {await f.close();}
 });
 
-test('guest status is explicit and disappears for a signed-in member with personal work only', async ({ page }) => {
+test('guest keeps a compact optional login that becomes logout for a signed-in member', async ({ page }) => {
   const f = await setup(page);
   try {
     await page.goto(f.origin);
-    await expect(page.locator('#guest-account-state')).toHaveText('Guest');
+    await expect.poll(async () => (await account(page)).account?.quotaClass).toBe('guest');
     const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
     await expect(login).toHaveText('CUNY Login');
     for (const width of [320, 390, 1280]) {
@@ -978,8 +1023,8 @@ test('guest status is explicit and disappears for a signed-in member with person
     await page.setExtraHTTPHeaders({ 'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
     await page.reload();
     await expect.poll(async () => (await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
-    await expect(page.locator('#guest-account-state')).toBeHidden();
     await expect(login).toBeHidden();
+    await expect(page.locator('.lab-account').getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     await expect(page.locator('#course-context')).toBeHidden();
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
@@ -1012,12 +1057,18 @@ for (const active of [false, true]) test(`a claimed guest session recovers ${act
       jobs: localStorage.getItem(`jobs:${subject}`),
       progress: localStorage.getItem(`stem-listening:${subject}:${getJobs()[0].id}`),
     }), originalGuest);
+    // Observe the replacement session after the old page has been discarded;
+    // querying that old page itself races the guard's intentional reload.
+    const renewed = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/guest' && response.request().method() === 'POST');
     expect((await claimOutsidePage(f, page)).claimedJobIds).toEqual([jobId]);
     const before = f.requests.filter(request => request.path === '/api/uploads').length;
     if (active) {
       await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav', import.meta.url)));
     } else await page.reload();
-    await expect(page.locator('#guest-account-state')).toHaveText('Guest');
+    expect((await renewed).status()).toBe(200);
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
+    await expect.poll(async () => (await account(page)).account?.quotaClass).toBe('guest');
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     await expect.poll(async () => (await account(page)).account?.subject).not.toBe(originalGuest);
     await expect(page.locator('.console')).toHaveCount(0);
@@ -1041,6 +1092,9 @@ test('guest Resplit explains browser access and the actual guest allowance witho
     await page.locator('.resplit-btn').first().click();
     const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
+    await expect(dialog.locator('.resplit-status')).toContainText('in this browser. Original stems stay available.');
+    await dialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
     await expect(dialog.locator('.resplit-status')).toHaveText('Creates a new guest run, available in this browser. ' +
       before.splitAllowance.remaining + ' of ' + before.splitAllowance.limit + ' guest splits left today.');
     await expect(dialog).not.toContainText('Personal');
@@ -1051,7 +1105,7 @@ test('guest Resplit explains browser access and the actual guest allowance witho
   } finally { await f.close(); }
 });
 
-for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' can keep a resplit with its original or separate it, retaining both through reload', async ({ page }, testInfo) => {
+for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' adds a resplit to the original player or separates it, retaining both through reload', async ({ page }, testInfo) => {
   const f = await setup(page);
   try {
     if (signedIn) {
@@ -1062,60 +1116,74 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
     await startUpload(page); await completed(page, 1);
     const originalId = await page.evaluate(() => getJobs()[0].id);
     const original = page.locator('.console[data-job-id="' + originalId + '"]');
+    const source = await page.evaluate(id => [...mixers.get(id).channelsByName.keys()][0], originalId);
+    const originalRows = await original.locator('.channel').count();
     await original.locator('.resplit-btn').first().click();
     const dialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
-    await dialog.getByRole('radio', { name: 'With original split', exact: true }).check();
+    await expect(dialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
     await expect(dialog.locator('.resplit-status')).toContainText('Original stems stay available.');
+    await expect(dialog.locator('.resplit-course-ack')).toBeHidden();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(f.counts().providerStarts).toBe(1);
     await original.locator('.resplit-btn').first().click();
-    await dialog.getByRole('radio', { name: 'With original split', exact: true }).check();
+    await expect(dialog.getByRole('button', { name: 'Resplit', exact: true })).toBeEnabled();
     await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
     await expect(dialog).toHaveCount(0);
-    await completed(page, 2);
     const nestedId = await page.evaluate(() => getJobs()[0].id);
     const child = page.locator('.console[data-job-id="' + nestedId + '"]');
-    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
+    const parts = original.locator('.channel-part'), head = original.locator('.channel-parts-head');
+    await expect(head).toBeVisible();
+    await expect(head).toContainText('stems from', { timeout: 25000 });
+    await expect.poll(async () => (await account(page)).splitAllowance.completed).toBe(2);
+    const partCount = await parts.count();
+    expect(partCount).toBeGreaterThan(0);
+    // One card and one player: no second transport, and the original stem does not double the new ones.
     await expect(page.locator('#job-list > .console')).toHaveCount(1);
-    await page.reload(); await completed(page, 2);
-    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
-    await expect(child).toBeVisible();
-    // Keyboard controls and note drafts belong to the selected recording,
-    // even though its card is nested within the original.
-    await child.locator('.ch-name').first().press('1');
-    expect(await page.evaluate(ids => ids.map(id => Boolean(mixers.get(id).userMuted.get('vocals'))), [originalId, nestedId]))
-      .toEqual([false, true]);
-    await child.locator('.ch-name').first().press('1');
-    await child.locator('.note-btn').first().click();
-    await original.locator('.note-btn').first().click();
-    await expect(original.locator(':scope > .note-form')).toBeVisible();
-    await expect(child.locator(':scope > .note-form')).toBeVisible();
-    await child.locator(':scope > .note-form input').press('Escape');
-    await original.locator(':scope > .note-form input').press('Escape');
-    await child.locator('.console-title-editable').first().click();
-    await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('My nested resplit');
-    await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
-    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await expect(child).toHaveCount(0);
+    await expect(original.locator('.play-btn, .transport-play').first()).toBeVisible();
+    const mix = id => page.evaluate(id => {
+      const mixer = mixers.get(id);
+      return { rows: mixer.channelsByName.size, audios: mixer.audios.length, muted: [...mixer.userMuted].filter(([, value]) => value).map(([name]) => name), resplits: [...mixer.el.querySelectorAll('.channel-part .resplit-btn')].every(button => button.hidden) };
+    }, id);
+    expect(await mix(originalId)).toEqual({ rows: originalRows + partCount, audios: originalRows + partCount, muted: [source], resplits: true });
+    await expect(original.locator('.channels > *').nth(1)).toHaveClass(/channel-parts-head/);
+    await expect(original.locator('.channels > *').nth(2)).toHaveClass(/channel-part/);
+    await page.reload();
+    await expect(parts).toHaveCount(partCount, { timeout: 25000 });
+    await expect(page.locator('#job-list > .console')).toHaveCount(1);
+    // The new stems use the same controls and start with the same play button.
+    await parts.first().locator('.mute-btn').click();
+    await expect(parts.first()).toHaveClass(/muted/);
+    await parts.first().locator('.mute-btn').click();
+    await parts.first().locator('.solo-btn').click();
+    await expect(parts.first()).toHaveClass(/focused/);
+    await parts.first().locator('.solo-btn').click();
+    await parts.first().locator('.solo-btn').click();
+    await page.evaluate(id => mixers.get(id).play(), originalId);
+    await expect.poll(() => page.evaluate(id => mixers.get(id).audios.filter(audio => !audio.paused).length, originalId)).toBe(originalRows + partCount);
+    await page.evaluate(id => mixers.get(id).pause(), originalId);
+    // A running or failed resplit stays in the row it came from, with no card of its own.
+    await page.evaluate(([id, stem]) => mixers.get(id).syncParts([{ job: { id: 'pending-part', startedAt: Date.now(), resplit: { stem, placement: 'with_original' } }, state: { status: 'processing' } }]), [originalId, source]);
+    await expect(head).toContainText(/Splitting .*\d:\d\d/);
+    await expect(head.getByRole('button', { name: 'CANCEL', exact: true })).toBeVisible();
+    await page.evaluate(([id, stem]) => mixers.get(id).syncParts([{ job: { id: 'pending-part', startedAt: Date.now(), resplit: { stem, placement: 'with_original' } }, state: { status: 'failed', error: 'Fixture failure' } }]), [originalId, source]);
+    await expect(head).toContainText('Fixture failure');
+    await expect(head.getByRole('button', { name: 'REMOVE', exact: true })).toBeVisible();
+    await page.evaluate(() => renderJobs());
+    await expect(parts).toHaveCount(partCount);
+    await expect(head).toContainText('stems from');
     await original.locator('.resplit-btn').first().click();
-    await expect(dialog.getByRole('radio', { name: 'Separate split', exact: true })).toBeChecked();
+    await dialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
     await dialog.getByRole('button', { name: 'Resplit', exact: true }).click();
-    await completed(page, 3);
-    await expect(page.locator('#job-list > .console')).toHaveCount(2);
-    await expect(original.locator(':scope > .resplit-results > .console')).toHaveCount(1);
-    await page.reload(); await completed(page, 3);
-    await expect(page.locator('#job-list > .console')).toHaveCount(2);
-    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await expect(page.locator('#job-list > .console')).toHaveCount(2, { timeout: 25000 });
+    await expect(page.locator('.badge.ready')).toHaveCount(2, { timeout: 25000 });
+    await expect.poll(async () => (await account(page)).splitAllowance.completed).toBe(3);
+    await expect(parts).toHaveCount(partCount);
+    await page.reload();
+    await expect(page.locator('#job-list > .console')).toHaveCount(2, { timeout: 25000 });
+    await expect(parts).toHaveCount(partCount, { timeout: 25000 });
     const saved = await page.evaluate(async () => (await fetch('/api/jobs')).json());
-    expect(saved.jobs.find(job => job.id === nestedId).resplit).toEqual({ parentJobId: originalId, stem: 'vocals', placement: 'with_original' });
-    await page.evaluate(async ids => {
-      await mixers.get(ids[0]).play();
-      await mixers.get(ids[1]).play();
-    }, [originalId, nestedId]);
-    expect(await page.evaluate(id => ({ originalPlaying: mixers.get(id).playing, active: [...mixers.values()].filter(m => m.playing || m.starting).length }), originalId))
-      .toEqual({ originalPlaying: false, active: 1 });
-    await page.evaluate(id => { mixers.get(id).setCollapsed(true); }, originalId);
-    expect(await page.evaluate(() => [...mixers.values()].filter(m => m.playing || m.starting).length)).toBe(0);
-    await page.evaluate(() => { for (const mixer of mixers.values()) mixer.pause(); });
+    expect(saved.jobs.find(job => job.id === nestedId).resplit).toEqual({ parentJobId: originalId, stem: source, placement: 'with_original' });
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.evaluate(id => { setJobCollapsed(id, false); renderJobs(); }, originalId);
@@ -1123,13 +1191,28 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' c
       await page.screenshot({ path: testInfo.outputPath('resplit-placement-' + width + '.png'), animations: 'disabled', fullPage: true });
     }
     // An unavailable or removed original must not conceal its finished resplit.
-    await page.evaluate(id => { unavailableJobStates.add(id); setJobCollapsed(id, true); renderJobs(); }, originalId);
+    await page.evaluate(id => { unavailableJobStates.add(id); renderJobs(); }, originalId);
     await expect(page.locator('#job-list > .console')).toHaveCount(3);
     await expect(child).toBeVisible();
-    await page.evaluate(id => { unavailableJobStates.delete(id); saveJobs(getJobs().filter(job => job.id !== id)); renderJobs(); }, originalId);
+    await expect(parts).toHaveCount(0);
+    await page.evaluate(id => { unavailableJobStates.delete(id); renderJobs(); }, originalId);
+    await expect(page.locator('#job-list > .console')).toHaveCount(2);
+    await expect(child).toHaveCount(0);
+    await expect(parts).toHaveCount(partCount);
+    await page.evaluate(id => { window.keptJobs = getJobs(); saveJobs(getJobs().filter(job => job.id !== id)); renderJobs(); }, originalId);
     await expect(page.locator('#job-list > .console')).toHaveCount(2);
     await expect(child).toBeVisible();
-    await expect(child.locator('.console-title').first()).toHaveText('My nested resplit');
+    await page.evaluate(() => { saveJobs(window.keptJobs); renderJobs(); });
+    await expect(child).toHaveCount(0);
+    await expect(parts).toHaveCount(partCount);
+    // Remove takes the stems out and gives the original stem back. Run deletion itself has its own tests.
+    await head.getByRole('button', { name: 'REMOVE', exact: true }).click();
+    await head.getByRole('button', { name: 'CONFIRM', exact: true }).click();
+    await expect(parts).toHaveCount(0);
+    await expect(head).toHaveCount(0);
+    expect((await mix(originalId)).muted).toEqual([]);
+    expect((await mix(originalId)).audios).toBe(originalRows);
+    expect(await page.evaluate(id => getJobs().some(job => job.id === id), nestedId)).toBe(false);
     expect(f.counts().providerStarts).toBe(3);
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }

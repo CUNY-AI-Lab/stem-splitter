@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ArchiveError, fetchArchiveAudio, fetchArchiveItem, searchArchiveSongs, validateArchiveSongFrames } from '../src/archive.ts';
+import { ArchiveError, creditMatchesQuery, genreQuery, fetchArchiveAudio, fetchArchiveItem, hiddenFromGenreLists, searchArchiveSongs, validateArchiveSongFrames, verifyArchiveSampleFile } from '../src/archive.ts';
+import { HATE_MUSIC_NAMES, HATE_MUSIC_TAGS, SLURS } from '../src/genre-list-exclusions.ts';
 import { mp3FrameInfo } from '../src/reliability/media.ts';
 const audio=new Uint8Array(readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url)));
 const duration=mp3FrameInfo(audio.buffer)!.seconds;
@@ -104,7 +105,7 @@ test('failed searches log only response diagnostics and preserve upstream retrya
   t.mock.method(console,'warn',(...values:unknown[])=>events.push(values));
   t.mock.method(globalThis,'fetch',async()=>new Response('upstream body must stay private',{status:503,headers:{'content-type':'text/html'}}));
   await assert.rejects(()=>searchArchiveSongs('private search retry fixture'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
-  assert.equal(events.length,3);
+  assert.equal(events.length,4);
   for(const [name,details] of events){assert.equal(name,'archive_fetch_diagnostic');assert.deepEqual(details,{stage:'search',reason:'upstream_busy',status:503,contentType:'text/html'});}
   assert.doesNotMatch(JSON.stringify(events),/private|fixture|upstream body|https:/);
   events.length=0;
@@ -151,7 +152,7 @@ test('a catalog request that exhausts its first attempt still has time for a bou
   });
   const result=await searchArchiveSongs('timed catalog recovery');
   assert.equal(result.results[0]?.archiveId,'slow-catalog');
-  assert.deepEqual([...attempts.values()],[2,2,2]);
+  assert.deepEqual([...attempts.values()],[2,2,2,2]);
 });
 
 test('song index requires affirmative music metadata and per-file duration of at most five minutes',async t=>{
@@ -282,9 +283,9 @@ test('artist-qualified discovery retains credited songs among many filenames con
   t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
     const url=new URL(String(input));
     if(url.pathname==='/advancedsearch.php'){
-      catalogs++;assert.equal(url.searchParams.get('rows'),'16');
+      catalogs++;assert.equal(url.searchParams.get('rows'),url.searchParams.get('q')?.includes(' OR creator:')?'32':'16');
       assert.equal(url.searchParams.get('sort[]'),'downloads desc');
-      const docs=url.searchParams.get('q')?.includes('creator:[* TO *]')
+      const docs=url.searchParams.get('q')?.includes(' OR creator:')
         ? [{identifier:'credited',title:'Midnight Motion',creator:'Signal Orchestra'}] : uncredited;
       return Response.json({response:{docs}});
     }
@@ -294,7 +295,7 @@ test('artist-qualified discovery retains credited songs among many filenames con
     return new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
   });
   assert.deepEqual((await searchArchiveSongs('Signal Orchestra Midnight Motion')).results.map(song=>song.archiveId),['credited']);
-  assert.equal(catalogs,3);assert.ok(inspected<=40);
+  assert.equal(catalogs,4);assert.ok(inspected<=40);
 });
 
 test('temporary delivery failures retry with the same byte range and never cache a false empty result',async t=>{
@@ -311,7 +312,7 @@ test('temporary delivery failures retry with the same byte range and never cache
   await assert.rejects(()=>searchArchiveSongs('Delivery recovery melody'),(error:unknown)=>error instanceof ArchiveError&&error.retryable);
   assert.equal(probes,3);available=true;
   const recovered=await searchArchiveSongs('Delivery recovery melody');
-  assert.equal(recovered.results[0]?.archiveId,'delivery-recovery');assert.equal(probes,5);assert.equal(searches,6);
+  assert.equal(recovered.results[0]?.archiveId,'delivery-recovery');assert.equal(probes,5);assert.equal(searches,8);
 });
 
 test('verified duration limits partition search caches and apply at metadata and audio boundaries',async t=>{
@@ -337,4 +338,479 @@ test('verified duration limits partition search caches and apply at metadata and
     if(delta)assert.throws(()=>validateArchiveSongFrames(bytes.buffer,maximumSeconds,maximumSeconds),e=>e instanceof ArchiveError&&e.code==='track_too_long');
     else assert.doesNotThrow(()=>validateArchiveSongFrames(bytes.buffer,maximumSeconds,maximumSeconds));
   }
+});
+
+const partialAudio=()=>new Response(audio.subarray(0,65536),{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${Math.min(65535,audio.length-1)}/${audio.length}`}});
+
+test('a bare artist name finds the band instead of books that share the word',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;queries.push(q);
+      return Response.json({response:{docs:q.includes('creator:"regina"')
+        ?[{identifier:'band',title:'Greatest Hits',creator:'Regina'},{identifier:'shared',title:'Film score',creator:'Michael Kamen, Regina'},{identifier:'other',title:'Songs',creator:'Regina Spektor'}]
+        :[{identifier:'book',title:'Regina of Scots',creator:'Jacob Abbott'}]}});
+    }
+    if(url.pathname==='/metadata/band')return metadata({title:'Greatest Hits',creator:'Regina'},[file({title:'Radio Song'})]);
+    if(url.pathname==='/metadata/shared')return metadata({title:'Film score',creator:'Michael Kamen, Regina'},[file({title:'Princes'})]);
+    if(url.pathname==='/metadata/other')return metadata({title:'Songs',creator:'Regina Spektor'},[file({title:'Samson'})]);
+    if(url.pathname==='/metadata/book')return metadata({title:'Regina of Scots',creator:'Jacob Abbott',subject:'Librivox'},[file({title:'Regina of Scots part one'})]);
+    return partialAudio();
+  });
+  const found=await searchArchiveSongs('regina');
+  assert.deepEqual(found.results.map(song=>song.archiveId).sort(),['band','shared']);
+  assert.equal(queries.length,4);
+  assert.ok(queries.every(q=>q.includes('NOT collection:(librivoxaudio OR audio_bookspoetry)')),'spoken-word collections stay out of every query');
+  assert.ok(queries.includes(queries.find(q=>q.endsWith('creator:"regina"'))!),'the whole name is searched as one credit');
+});
+
+test('a named artist outranks a title that merely contains the word, and file credits still win',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'mirror-word',title:'Mirrors song',creator:'Solo Player'},{identifier:'mirror-artist',title:'Album',creator:'The Mirrors'},{identifier:'mirror-compilation',title:'Sampler',creator:'Mirrors'}]}});
+    if(url.pathname==='/metadata/mirror-word')return metadata({title:'Mirrors song',creator:'Solo Player'},[file({title:'Mirrors song'})]);
+    if(url.pathname==='/metadata/mirror-artist')return metadata({title:'Album',creator:'The Mirrors'},[file({title:'First Light'})]);
+    if(url.pathname==='/metadata/mirror-compilation')return metadata({title:'Sampler',creator:'Mirrors'},[file({title:'Guest Track',artist:'Someone Else'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('mirrors')).results.map(song=>song.archiveId),['mirror-artist','mirror-word']);
+});
+
+test('credit matching handles articles and shared credits without partial names',()=>{
+  assert.ok(creditMatchesQuery('The Beatles','beatles'));
+  assert.ok(creditMatchesQuery('Beatles','the beatles'));
+  assert.ok(creditMatchesQuery('Michael Kamen, Queen','queen'));
+  assert.ok(creditMatchesQuery('Simon and Garfunkel','simon and garfunkel'));
+  assert.ok(creditMatchesQuery('Bob Dylan feat. The Band','the band'));
+  assert.ok(!creditMatchesQuery('Ellery Queen','queen'));
+  assert.ok(!creditMatchesQuery('Queen Latifah','queen'));
+  assert.ok(!creditMatchesQuery('','queen'));
+});
+
+test('search titles are readable when files carry encoded names or folder paths',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'paths',title:'Loose',creator:'Tidy Band'}]}});
+    if(url.pathname==='/metadata/paths')return metadata({title:'Loose',creator:'Tidy Band'},[
+      file({name:'Loose/Disc 1/04 Downer.mp3',title:'Loose/Disc 1/04 Downer'}),
+      file({name:'1976-03-31 Show/Disc.1/02-Sweet Lady.mp3',title:'03-31 Show/Disc.1/02-Sweet Lady'}),
+      file({name:'Tidy%20Song.mp3',title:'Tidy%20Song'}),
+      file({name:'other.mp3',title:'AC/DC Tribute'}),
+    ]);
+    return partialAudio();
+  });
+  const titles=(await searchArchiveSongs('tidy band')).results.map(song=>song.title).sort();
+  assert.deepEqual(titles,['02-Sweet Lady','04 Downer','AC/DC Tribute','Tidy Song']);
+});
+
+test('genres count at either end of a search and never inside a song title',()=>{
+  const parse=(query:string)=>{const genre=genreQuery(query.split(' '));return genre&&[genre.label,genre.rest.join(' ')];};
+  assert.deepEqual(parse('jazz'),['Jazz','']);
+  assert.deepEqual(parse('the blues'),['Blues','']);
+  assert.deepEqual(parse('jazz music'),['Jazz','']);
+  assert.deepEqual(parse('hip hop'),['Hip hop','']);
+  assert.deepEqual(parse('queen rock'),['Rock','queen']);
+  assert.deepEqual(parse('rock queen'),['Rock','queen']);
+  assert.deepEqual(parse('rhythm and blues'),['R&B','']);
+  assert.equal(parse('we will rock you'),null);
+  assert.equal(parse('queen'),null);
+  assert.equal(parse('rocket man'),null);
+});
+
+test('a genre search finds tagged music with no genre word in its title or credit',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;queries.push(q);
+      return Response.json({response:{docs:q.includes('subject:("bluegrass")')?[{identifier:'genre-tagged',title:'Mountain Hours',creator:'Fiddle Trio'},{identifier:'genre-untagged',title:'Valley Hours',creator:'Other Trio'}]:[]}});
+    }
+    if(url.pathname==='/metadata/genre-tagged')return metadata({title:'Mountain Hours',creator:'Fiddle Trio',subject:['Music','Bluegrass; acoustic']},[file({title:'Sunrise Reel'})]);
+    if(url.pathname==='/metadata/genre-untagged')return metadata({title:'Valley Hours',creator:'Other Trio',subject:'Music'},[file({title:'Evening Reel'})]);
+    return partialAudio();
+  });
+  const found=await searchArchiveSongs('bluegrass');
+  assert.deepEqual(found.results.map(song=>song.archiveId),['genre-tagged']);
+  assert.equal(found.results[0].genre,'Bluegrass');
+  assert.equal(queries.length,5);
+});
+
+test('an artist with a genre keeps the artist and uses the genre to choose among their work',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;queries.push(q);
+      return Response.json({response:{docs:[{identifier:'pair-match',title:'Studio',creator:'Lantern'},{identifier:'pair-other',title:'Studio Two',creator:'Lantern'},{identifier:'pair-stranger',title:'Elsewhere',creator:'Someone'}]}});
+    }
+    if(url.pathname==='/metadata/pair-match')return metadata({title:'Studio',creator:'Lantern',subject:'Music; disco'},[file({title:'Night Lights'})]);
+    if(url.pathname==='/metadata/pair-other')return metadata({title:'Studio Two',creator:'Lantern',subject:'Music; folk'},[file({title:'Day Lights'})]);
+    if(url.pathname==='/metadata/pair-stranger')return metadata({title:'Elsewhere',creator:'Someone',subject:'Music; disco'},[file({title:'Far Away'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('lantern disco')).results.map(song=>song.archiveId),['pair-match']);
+  assert.ok(queries.some(q=>q.includes('subject:("disco") AND (title:"lantern" OR creator:"lantern")')));
+});
+
+test('a song title containing a genre word adds no genre catalog request',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){queries.push(url.searchParams.get('q')!);return Response.json({response:{docs:[]}});}
+    return partialAudio();
+  });
+  await searchArchiveSongs('we will rock you');
+  assert.equal(queries.length,4);
+  assert.ok(queries.every(q=>!q.includes('subject:("rock")')));
+});
+
+test('the word query avoids the slow creator range and still prefers credited items',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){queries.push(url.searchParams.get('q')!);return Response.json({response:{docs:[]}});}
+    return partialAudio();
+  });
+  await searchArchiveSongs('range speed check');
+  assert.ok(queries.length>0&&queries.every(q=>!q.includes('[* TO *]')),'a fresh creator range costs seconds on the Archive');
+});
+
+test('a stalled source cannot hold a search past its budget once enough results are verified',async t=>{
+  const release:(()=>void)[]=[];
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      if(url.searchParams.get('q')!.includes(' OR creator:'))await new Promise<void>(done=>release.push(done));
+      return Response.json({response:{docs:[{identifier:'budget-song-a',title:'Budget melody',creator:'Budget Band'},{identifier:'budget-song-b',title:'Budget melody two',creator:'Budget Band'}]}});
+    }
+    if(url.pathname.startsWith('/metadata/budget-song'))return metadata({title:'Budget melody',creator:'Budget Band'},[file({name:'one.mp3',title:'Budget melody one'}),file({name:'two.mp3',title:'Budget melody two'})]);
+    return partialAudio();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('budget melody');
+  assert.equal(found.results.length,4);
+  assert.ok(Date.now()-started<6500,`took ${Date.now()-started}ms`);
+});
+
+test('a thin result list waits for the second limit, and abandoned work leaves the shared queue',async t=>{
+  const release:(()=>void)[]=[];let probesAfterExpiry=0,expired=false;
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      if(url.searchParams.get('q')!.includes(' OR creator:'))await new Promise<void>(done=>release.push(done));
+      return Response.json({response:{docs:[{identifier:'thin-song',title:'Thin melody',creator:'Thin Band'}]}});
+    }
+    if(url.pathname==='/metadata/thin-song')return metadata({title:'Thin melody',creator:'Thin Band'},[file({title:'Thin melody'})]);
+    if(expired)probesAfterExpiry++;
+    return partialAudio();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('thin melody');
+  expired=true;
+  const elapsed=Date.now()-started;
+  assert.equal(found.results.length,1);
+  assert.ok(elapsed>=7500&&elapsed<9000,`took ${elapsed}ms`);
+  release.forEach(done=>done());
+  await new Promise(done=>setTimeout(done,50));
+  assert.equal(probesAfterExpiry,0);
+});
+
+test('a search with nothing at all gives up after its extra time and reports the source as busy',async t=>{
+  const release:(()=>void)[]=[];
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async()=>{await new Promise<void>(done=>release.push(done));return Response.json({response:{docs:[]}});});
+  const started=Date.now();
+  await assert.rejects(()=>searchArchiveSongs('stalled completely'),(error:unknown)=>error instanceof ArchiveError&&error.code==='archive_busy'&&error.retryable);
+  assert.ok(Date.now()-started<16000,`took ${Date.now()-started}ms`);
+});
+
+test('at the time limit, matches still being checked are listed instead of an empty result',async t=>{
+  const release:(()=>void)[]=[];
+  t.after(()=>release.forEach(done=>done()));
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'slow-check-song',title:'Slowcheck melody',creator:'Slowcheck Band'}]}});
+    if(url.pathname==='/metadata/slow-check-song')return metadata({title:'Slowcheck melody',creator:'Slowcheck Band'},[file({title:'Slowcheck melody'})]);
+    await new Promise<void>(done=>release.push(done));
+    return partialAudio();
+  });
+  const started=Date.now();
+  const found=await searchArchiveSongs('slowcheck melody');
+  assert.deepEqual(found.results.map(song=>song.archiveId),['slow-check-song']);
+  assert.ok(Date.now()-started<9000,`took ${Date.now()-started}ms`);
+});
+
+test('work orphaned by an ended request does not block a later search',async t=>{
+  let now=Date.now();
+  t.mock.method(Date,'now',()=>now);
+  let orphan=true;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'orphan-song',title:'Orphan melody',creator:'Orphan Band'}]}});
+    if(url.pathname==='/metadata/orphan-song'){
+      if(orphan){orphan=false;return new Promise<Response>(()=>{});}
+      return metadata({title:'Orphan melody',creator:'Orphan Band'},[file({title:'Orphan melody'})]);
+    }
+    return partialAudio();
+  });
+  await assert.rejects(()=>searchArchiveSongs('orphan melody'));
+  now+=13000;
+  const found=await searchArchiveSongs('orphan melody');
+  assert.deepEqual(found.results.map(song=>song.archiveId),['orphan-song']);
+});
+
+const genreOnlySearch=(t:{mock:{method:(...args:never[])=>unknown}},catalog:string[],uploader:string[],records:Record<string,Response>)=>{
+  (t.mock.method as (...args:unknown[])=>unknown)(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      const q=url.searchParams.get('q')!;
+      const ids=q.includes('subject:("jazz")')?catalog:q.endsWith('creator:"jazz"')?uploader:[];
+      return Response.json({response:{docs:ids.map((identifier,index)=>({identifier,title:identifier,creator:'Credited',downloads:1000-index}))}});
+    }
+    if(url.pathname.startsWith('/metadata/'))return records[url.pathname.split('/')[2]].clone();
+    return partialAudio();
+  });
+};
+
+test('two-word genres read as one genre, so neither word is taken for an artist',()=>{
+  const parse=(query:string)=>{const genre=genreQuery(query.split(' '));return genre&&[genre.label,genre.rest.join(' ')];};
+  assert.deepEqual(parse('punk rock'),['Punk','']);
+  assert.deepEqual(parse('hard rock'),['Hard rock','']);
+  assert.deepEqual(parse('smooth jazz'),['Smooth jazz','']);
+  assert.deepEqual(parse('bossa nova'),['Bossa nova','']);
+  assert.deepEqual(parse('queen rock'),['Rock','queen']);
+  assert.deepEqual(parse('miles davis jazz'),['Jazz','miles davis']);
+});
+
+test('a genre search ranks tags, then titles naming the genre, then downloads, and never an uploader named after the genre',async t=>{
+  genreOnlySearch(t as never,['popular','quieter','named'],['uploader'],{
+    popular:metadata({title:'Standards',creator:'Ella Group',subject:'Jazz'},[file({title:'All Of You'})]),
+    quieter:metadata({title:'Later',creator:'Quiet Trio',subject:'Jazz'},[file({title:'Night Train'})]),
+    named:metadata({title:'Rare',creator:'Rare Trio',subject:'Jazz'},[file({title:'Jazz Hands'})]),
+    uploader:metadata({title:'Uploads',creator:'Jazz',subject:'Music'},[file({title:'Elevator Noise'})]),
+  });
+  assert.deepEqual((await searchArchiveSongs('jazz')).results.map(song=>song.archiveId),['named','popular','quieter','uploader']);
+});
+
+test('a genre search gives each artist two places unless the list would otherwise be short',async t=>{
+  genreOnlySearch(t as never,['prolific','second','third'],[],{
+    prolific:metadata({title:'Box set',creator:'Prolific Band',subject:'Jazz'},['One','Two','Three','Four'].map(title=>file({name:`${title}.mp3`,title}))),
+    second:metadata({title:'Album',creator:'Second Band',subject:'Jazz'},[file({title:'Fifth'})]),
+    third:metadata({title:'Album',creator:'Third Band',subject:'Jazz'},[file({title:'Sixth'})]),
+  });
+  const listed=(await searchArchiveSongs('jazz music')).results.map(song=>song.itemCreator);
+  assert.deepEqual(listed,['Prolific Band','Prolific Band','Second Band','Third Band','Prolific Band','Prolific Band']);
+});
+
+test('a genre search gives one upload two places though its tracks credit different artists',async t=>{
+  genreOnlySearch(t as never,['many-composers','fourth-album'],[],{
+    'many-composers':metadata({title:'Game themes',creator:'Uploader',subject:'Jazz'},['One','Two','Three'].map(title=>file({name:`${title}.mp3`,title,artist:`${title} Composer`}))),
+    'fourth-album':metadata({title:'Album',creator:'Band',subject:'Jazz'},[file({title:'Fourth'})]),
+  });
+  const listed=(await searchArchiveSongs('jazz songs')).results.map(song=>song.title);
+  assert.deepEqual(listed,['One','Three','Fourth','Two']);
+});
+
+test('a genre word lost among dozens of keywords is not a genre tag',async t=>{
+  const keywords=Array.from({length:60},(_,index)=>`keyword${index}`);
+  genreOnlySearch(t as never,['stuffed','stuffed-list','plain'],[],{
+    stuffed:metadata({title:'Readings',creator:'Reader',subject:[...keywords,'jazz']},[file({title:'Reading one'})]),
+    'stuffed-list':metadata({title:'Readings',creator:'Reader',subject:`${keywords.join(', ')}, jazz`},[file({title:'Reading two'})]),
+    plain:metadata({title:'Album',creator:'Trio',subject:'prewar;jazz;guitar'},[file({title:'Night Train'})]),
+  });
+  assert.deepEqual((await searchArchiveSongs('jazz tracks')).results.map(song=>song.archiveId),['plain']);
+});
+
+test('a genre list leaves out a flagged upload from every batch, and naming it still finds it',async t=>{
+  const [slur]=SLURS,[band]=HATE_MUSIC_NAMES,[tag]=HATE_MUSIC_TAGS;
+  const records:Record<string,Response>={
+    'hidden-slur-album':metadata({title:'Porch Songs',creator:'Porch Singer',subject:'gospel'},[file({name:'a.mp3',title:`${slur} song`}),file({name:'b.mp3',title:'Kind Song'})]),
+    'hidden-band-album':metadata({title:'Marching',creator:band,subject:'gospel'},[file({title:'Band Song'})]),
+    'hidden-file-credit':metadata({title:'Sampler',creator:'Compiler',subject:'gospel'},[file({name:'c.mp3',title:'Sampler Song',artist:band}),file({name:'d.mp3',title:'Fair Song',artist:'Fair Singer'})]),
+    'hidden-tagged':metadata({title:'Anthems',creator:'Tagged Band',subject:`gospel; German ${tag}`},[file({title:'Tagged Song'})]),
+    'hidden-stuffed':metadata({title:'Stuffed',creator:'Stuffed Band',subject:[...Array.from({length:60},(_,index)=>`keyword${index}`),tag]},[file({title:'Stuffed Song'})]),
+    'hidden-plain':metadata({title:'Hymns',creator:'Choir',subject:'gospel'},[file({title:'Plain Song'})]),
+  };
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:Object.keys(records).map(identifier=>({identifier,creator:'Credited'}))}});
+    if(url.pathname.startsWith('/metadata/'))return records[url.pathname.split('/')[2]].clone();
+    return partialAudio();
+  });
+  const seen:string[]=[];
+  const {results}=await searchArchiveSongs('gospel',batch=>seen.push(...batch.results.map(song=>song.title)));
+  assert.deepEqual(results.map(song=>song.title),['Plain Song']);
+  assert.ok(seen.length&&seen.every(title=>title==='Plain Song'));
+  assert.deepEqual((await searchArchiveSongs(band)).results.map(song=>song.title).sort(),['Band Song','Sampler Song']);
+  assert.ok((await searchArchiveSongs(`${slur} song`)).results.some(song=>song.title===`${slur} song`));
+});
+
+test('only genre searches ask the catalog to leave out flagged uploads',async t=>{
+  const queries:string[]=[];
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    queries.push(new URL(String(input)).searchParams.get('q')!);
+    return Response.json({response:{docs:[]}});
+  });
+  await searchArchiveSongs('bluegrass music');
+  assert.ok(queries.length&&queries.every(q=>q.includes('NOT collection:(deemphasize OR fringe)')&&q.includes(`NOT creator:("${HATE_MUSIC_NAMES[0]}"`)));
+  queries.length=0;
+  await searchArchiveSongs('bluegrass harmony singers');
+  await searchArchiveSongs(HATE_MUSIC_NAMES[0]);
+  assert.ok(queries.length&&queries.every(q=>!q.includes('deemphasize')&&!q.includes('NOT creator:')));
+});
+
+test('exclusions match whole words and read tags apart from song names',()=>{
+  for(const tag of HATE_MUSIC_TAGS)assert.ok(hiddenFromGenreLists('Any Song',`rock; ${tag.toLowerCase()}; live`),tag);
+  for(const entry of [...HATE_MUSIC_NAMES,...SLURS]){
+    assert.ok(hiddenFromGenreLists(`Best of ${entry.toUpperCase()} 1990`),entry);
+    assert.ok(!entry.includes('"'),'an entry is quoted in the catalog query');
+  }
+  assert.ok(hiddenFromGenreLists('Die Lunikoff Verschwörung – Album'));
+  // Music that only shares a word with the lists stays.
+  for(const [text,tags] of [['Racing in the Street','racing; rock'],['In Stahlgewittern, read aloud','spoken'],['Ku Klux Klan Steel Pulse','reggae'],['White Power Station','rock'],
+    ['No Remorse Metallica','metal'],['Funky Broadway Dyke and the Blazers','funk'],['Nazi Punks Fuck Off Dead Kennedys','punk']])assert.ok(!hiddenFromGenreLists(text,tags),text);
+});
+
+test('encodings of one file list once as the largest copy, though their lengths can disagree, and stay importable by name',async t=>{
+  const sized=(size:number)=>{const body=new Uint8Array(size);body.set(audio);return new Response(body,{status:206,headers:{'content-type':'audio/mpeg','content-range':`bytes 0-${size-1}/${size}`}});};
+  const small=audio.length,large=audio.length+1000;
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'encodings',title:'Copies',creator:'Copy Band'}]}});
+    if(url.pathname==='/metadata/encodings')return metadata({title:'Copies',creator:'Copy Band'},[
+      {name:'Bossa_Nova_64kb.mp3',original:'Bossa_Nova.ogg',size:String(small),length:'170'},
+      {name:'Bossa_Nova_vbr.mp3',original:'Bossa_Nova.ogg',size:String(large),length:'194'},
+      {name:'Bossa_Nova.ogg',size:'400000',length:'199'},
+    ] as never);
+    return sized(decodeURIComponent(url.pathname).endsWith('_64kb.mp3')?small:large);
+  });
+  const {results}=await searchArchiveSongs('copy band');
+  assert.deepEqual(results.map(song=>[song.title,song.archiveFile]),[['Bossa Nova','Bossa_Nova_vbr.mp3']]);
+  assert.equal(Object.keys(results[0]).some(key=>/score|sourceKey|creditKey|labelKey/.test(key)),false);
+  const direct=await verifyArchiveSampleFile('encodings','Bossa_Nova_64kb.mp3');
+  assert.deepEqual(direct.results.map(song=>song.archiveFile),['Bossa_Nova_64kb.mp3']);
+});
+
+test('one upload repeating a track lists it once, while a different length and separate uploads stay',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'discography',title:'All albums',creator:'Repeat Band'},{identifier:'another-upload',title:'Other upload',creator:'Repeat Band'}]}});
+    if(url.pathname==='/metadata/discography')return metadata({title:'All albums',creator:'Repeat Band'},[
+      file({name:'Album A/7 Same.mp3',title:'Same',length:'153.80'}),
+      file({name:'Album B/13 Same.mp3',title:'Same',length:'153.36'}),
+      file({name:'Album C/2 Same.mp3',title:'Same',length:'180'}),
+    ]);
+    if(url.pathname==='/metadata/another-upload')return metadata({title:'Other upload',creator:'Repeat Band'},[file({name:'same.mp3',title:'Same',length:'153.80'})]);
+    return partialAudio();
+  });
+  const {results}=await searchArchiveSongs('repeat band');
+  assert.deepEqual(results.map(song=>[song.archiveId,Math.floor(song.durationSec)]).sort(),[['another-upload',153],['discography',153],['discography',180]]);
+});
+
+test('placeholder titles use the file name, or the item title when the item holds one recording',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'tagged-tmp',title:'Songbook',creator:'Tmp Band'},{identifier:'one-song',title:'country music is king',creator:'Tmp Band'}]}});
+    if(url.pathname==='/metadata/tagged-tmp')return metadata({title:'Songbook',creator:'Tmp Band'},[
+      file({name:'Songbook- All Of You.mp3',title:'tmp'}),file({name:'Songbook- Get Out Of Town.mp3',title:'tmp'}),
+    ]);
+    if(url.pathname==='/metadata/one-song')return metadata({title:'country music is king',creator:'Tmp Band'},[
+      file({name:'song_1.mp3',original:'song_1.wav',title:'tmp'}),file({name:'song_1_64kb.mp3',original:'song_1.wav',title:'tmp'}),
+    ]);
+    return partialAudio();
+  });
+  const titles=(await searchArchiveSongs('tmp band')).results.map(song=>song.title).sort();
+  assert.deepEqual(titles,['Songbook- All Of You','Songbook- Get Out Of Town','country music is king']);
+});
+
+test('titles spelled as file names read as titles, and real titles are left alone',async t=>{
+  const names:Record<string,string>={
+    'Johnny_Osbourne_-_Buddy_Bye_(reggae_classic)(128k)':'Johnny Osbourne - Buddy Bye (reggae classic)',
+    'Irreplaceable(128k)':'Irreplaceable','Bossa_Nova_64kb':'Bossa Nova','Spider-Man_Theme_vbr':'Spider-Man Theme',
+    "What's a Future Funk-279221631":"What's a Future Funk",'B-52':'B-52','Area 51':'Area 51','Song of 1999-2000':'Song of 1999-2000','Live 128':'Live 128',
+  };
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'file-names',title:'Mixed',creator:'Neat Band'}]}});
+    if(url.pathname==='/metadata/file-names')return metadata({title:'Mixed',creator:'Neat Band'},Object.keys(names).map((title,index)=>file({name:`track${index}.mp3`,title})));
+    return partialAudio();
+  });
+  const {results}=await searchArchiveSongs('neat band');
+  assert.equal(results.length,8);
+  for(const song of results)assert.equal(song.title,names[Object.keys(names)[Number(song.archiveFile.match(/\d+/)![0])]]);
+});
+
+test('between equally good matches the most downloaded upload leads, and each upload takes two places first',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[
+      {identifier:'cassette-tape',title:'Cassette tape',creator:'Loud Band',downloads:13438},
+      {identifier:'real-album',title:'Real album',creator:'Loud Band',downloads:'52237'},
+      {identifier:'word-match',title:'Loud Band tribute',creator:'Someone Else',downloads:900000},
+    ]}});
+    if(url.pathname==='/metadata/cassette-tape')return metadata({title:'Cassette tape',creator:'Loud Band'},['Sketch','Noise','Loop'].map(title=>file({name:`${title}.mp3`,title,artist:'Loud Band'})));
+    if(url.pathname==='/metadata/real-album')return metadata({title:'Real album',creator:'Loud Band'},['Airbag','Lucky','Let Down'].map(title=>file({name:`${title}.mp3`,title})));
+    if(url.pathname==='/metadata/word-match')return metadata({title:'Tribute',creator:'Someone Else'},[file({title:'Loud Band forever',artist:'Loud Band tribute players'})]);
+    return partialAudio();
+  });
+  const listed=(await searchArchiveSongs('loud band')).results.map(song=>song.title);
+  // The band's own tracks all outrank a looser match with far more downloads. Among them the real album leads.
+  assert.deepEqual(listed,['Airbag','Lucky','Loop','Noise','Let Down','Sketch','Loud Band forever']);
+});
+
+test('downloads never lift a weaker match over a stronger one',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[
+      {identifier:'named-rare',title:'Rare album',creator:'Pale Moon',downloads:3},
+      {identifier:'loose-famous',title:'Pale Moon stories',creator:'Famous Narrator',downloads:5000000},
+    ]}});
+    if(url.pathname==='/metadata/named-rare')return metadata({title:'Rare album',creator:'Pale Moon'},[file({title:'First Song'})]);
+    if(url.pathname==='/metadata/loose-famous')return metadata({title:'Stories',creator:'Famous Narrator'},[file({title:'Moon'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('pale moon')).results.map(song=>song.archiveId),['named-rare']);
+});
+
+test('numbered placeholder titles list after real titles, and titles lose a file extension',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'numbered',title:'Tracks',creator:'Plain Band',downloads:10},{identifier:'titled',title:'Songs',creator:'Plain Band',downloads:1}]}});
+    if(url.pathname==='/metadata/numbered')return metadata({title:'Tracks',creator:'Plain Band'},[file({name:'01.mp3',title:'01 Track 1'}),file({name:'02.mp3',title:'トラック02'})]);
+    if(url.pathname==='/metadata/titled')return metadata({title:'Songs',creator:'Plain Band'},[file({name:'x.mp3',title:'Real Song.mp3'})]);
+    return partialAudio();
+  });
+  const titles=(await searchArchiveSongs('plain band')).results.map(song=>song.title);
+  assert.equal(titles[0],'Real Song');
+  assert.deepEqual(titles.slice(1).sort(),['01 Track 1','トラック02']);
+});
+
+test('keyword-stuffed uploads do not take genre slots from music further down the catalog',async t=>{
+  const stuffed=Array.from({length:20},(_,index)=>`stuffed-${index}`),inspected:string[]=[];
+  const keywords=Array.from({length:60},(_,index)=>`keyword${index}`).join(', ');
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php'){
+      if(!url.searchParams.get('q')!.includes('subject:("disco")'))return Response.json({response:{docs:[]}});
+      assert.ok(url.searchParams.getAll('fl[]').includes('subject'));
+      return Response.json({response:{docs:[...stuffed.map(identifier=>({identifier,title:identifier,creator:'Reader',subject:`${keywords}, disco`})),{identifier:'real-disco',title:'Album',creator:'Dance Band',subject:'disco'}]}});
+    }
+    if(url.pathname.startsWith('/metadata/')){inspected.push(url.pathname.split('/')[2]);return metadata({title:'Album',creator:'Dance Band',subject:'disco'},[file({title:'Night Fever Style'})]);}
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('disco')).results.map(song=>song.archiveId),['real-disco']);
+  assert.deepEqual(inspected,['real-disco']);
+});
+
+test('short clips list after full tracks in an artist search',async t=>{
+  t.mock.method(globalThis,'fetch',async(input:RequestInfo|URL)=>{
+    const url=new URL(String(input));
+    if(url.pathname==='/advancedsearch.php')return Response.json({response:{docs:[{identifier:'stage',title:'Live set',creator:'Clip Band'}]}});
+    if(url.pathname==='/metadata/stage')return metadata({title:'Live set',creator:'Clip Band'},[file({name:'a.mp3',title:'Clip Band talk',length:'12'}),file({name:'b.mp3',title:'First Song',length:'200'})]);
+    return partialAudio();
+  });
+  assert.deepEqual((await searchArchiveSongs('clip band')).results.map(song=>song.title),['First Song','Clip Band talk']);
 });

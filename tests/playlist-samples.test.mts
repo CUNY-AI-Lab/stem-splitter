@@ -16,7 +16,7 @@ test('only exact public playlist candidates qualify for anonymous verification',
   }
 });
 
-test('verified public samples coalesce cold reads and cache exact audio without account data', async () => {
+test('verified public samples check for themselves, then cache exact audio without account data', async () => {
   const original=globalThis.fetch;
   const audio=readFileSync(new URL('./fixtures/audio/vocals.mp3',import.meta.url));
   let reads=0;
@@ -28,13 +28,13 @@ test('verified public samples coalesce cold reads and cache exact audio without 
   };
   try {
     const responses=await Promise.all([playlistSampleResponse(new Request(url)),playlistSampleResponse(new Request(url))]);
-    assert.equal(reads,1);
+    assert.equal(reads,2,'a cold read never waits on another request');
     for(const response of responses) {
       assert.equal(response.headers.get('cache-control'),'public, max-age=60');
       const data=await response.json();assert.equal(data.results.length,1);assert.equal(data.results[0].archiveFile,track.archiveFile);
     }
     await playlistSampleResponse(new Request(url+'&unused=ignored'));
-    assert.equal(reads,1,'arbitrary query parameters cannot defeat the verified cache');
+    assert.equal(reads,2,'arbitrary query parameters cannot defeat the verified cache');
     const importItem=await fetchArchiveItem(track.archiveId,{publicAudio:true});
     assert.equal(importItem.tracks[0].importable,true);
   } finally {globalThis.fetch=original;}

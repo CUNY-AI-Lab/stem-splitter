@@ -93,8 +93,12 @@ export async function studentActivity(env:Env,actor:AppPrincipal,cursor?:string)
   if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');
   const page=await namedUsers(env,actor,cursor);
   const users=page.users;
-  const usage=await usageBySubject(env,users.map(user=>user.subject));
-  return {students:users.map(user=>({subject:user.subject,displayName:user.displayName,firstSeenAt:user.firstSeenAt,...usage.get(user.subject)!})),nextCursor:page.nextCursor,complete:page.complete};
+  const now=Date.now(),usage=await usageBySubject(env,users.map(user=>user.subject),now);
+  return {students:users.map(user=>({subject:user.subject,displayName:user.displayName,firstSeenAt:user.firstSeenAt,
+    accountCreatedAt:user.firstSeenAt,...usage.get(user.subject)!})),nextCursor:page.nextCursor,complete:page.complete,
+    coverage:{runs:'recorded-account-history',replies:'completed-model-replies',cues:'completed-opening-guides',browserReportDays:30,
+      browserCapture:'best-effort',browserWindowStart:new Date(now-30*86400000).toISOString(),accountCreatedAt:'database-record-created-not-first-use',
+      lastServerAccessAt:'authenticated-request-may-be-background-refresh'}};
 }
 
 export async function guestActivity(env:Env,actor:AppPrincipal) {

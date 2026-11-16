@@ -112,9 +112,13 @@ for(const chatAvailable of [true,false])test(`workerd guests: five daily splits,
     const memberCookie='__Host-stem-session=invalid';
     assert.equal((await call('/api/account',cookieA+'; '+memberCookie)).status,401,'invalid member cannot become guest');
     assert.equal((await begin('member-downgrade',cookieA+'; '+memberCookie)).status,403);
-    for(const path of ['/api/classroom/courses','/api/teacher/prompt','/api/teacher/folders','/api/admin/users','/api/model-quota'])assert.equal((await call(path,cookieA)).status,403,path);
+    for(const path of ['/api/account/prompt','/api/account/prompt/history?before=1','/api/account/prompt/preview','/api/classroom/courses','/api/teacher/prompt','/api/teacher/folders','/api/admin/users','/api/model-quota'])assert.equal((await call(path,cookieA)).status,403,path);
     assert.equal((await call('/api/account',cookieA,{headers:{'x-stem-course':'msh-245-the-american-musical-experience-fall-2026-01'}})).status,403);
     assert.deepEqual(await(await call('/api/teacher/me',cookieA)).json(),{teacher:null});
+    // Guests may import links, so the lookup that classifies a pasted link must not ask them to sign in.
+    const lookup=await call('/api/link-info',cookieA,{method:'POST',body:JSON.stringify({url:'https://www.dropbox.com/s/abc/song.mp3?dl=0'})});
+    assert.notEqual(lookup.status,401);assert.doesNotMatch(await lookup.text(),/guest_route_forbidden/);
+    assert.equal((await call('/api/link-info',cookieA,{method:'POST',body:'{}',headers:{Origin:'https://attacker.test'}})).status,403,'cross-site link lookup');
 
     await sql([`INSERT INTO app_users(subject) VALUES('${member}')`,
       `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('member-private','Private member lesson','uploads/private.wav','done','htdemucs_ft','[{"name":"vocals","key":"stems/member-private/vocals.mp3"}]')`,

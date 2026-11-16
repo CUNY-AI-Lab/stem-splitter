@@ -12,23 +12,31 @@
 .instructor-console #account-status { color: var(--ink-dim); margin: .75rem 0 1.25rem; }
 .instructor-console #course-discovery { margin-top: 1.25rem; }
 .instructor-console .classroom-toolbar { align-items: center; gap: .5rem; margin-top: 1rem; }
-.instructor-console .classroom-toolbar :is(#classroom-create, #classroom-own-splits) {
+.instructor-console .classroom-toolbar :is(#classroom-create, .classroom-views > .page-btn) {
   display: inline-flex; align-items: center; justify-content: center;
   box-sizing: border-box; min-height: 44px; padding: .4rem .55rem;
   font: 500 .75rem/1.35 var(--font-mono); letter-spacing: 0;
 }
-.instructor-console #classroom-refresh { margin-left: auto; }
+.instructor-console #classroom-guidance { margin-left: auto; }
+.instructor-console #classroom-guidance[hidden] + #classroom-refresh { margin-left: auto; }
+.refined-ui.instructor-console #classroom-create {
+  width: auto; border: 1px solid var(--hot);
+  border-radius: 6px; background: var(--hot-soft); color: var(--ink); text-decoration: none;
+  text-transform: none;
+}
+.refined-ui.instructor-console #classroom-create:hover { background: var(--hot); color: var(--bg); }
+.refined-ui.instructor-console #classroom-create:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .instructor-console #classroom-refresh-status { color: var(--ink-dim); font-size: .75rem; }
 .instructor-console #classroom-usage { padding-bottom: .75rem; border-bottom: 1px solid var(--panel-edge); }
 .instructor-console #classroom-student-name { font-size: 1.05rem; }
 .instructor-console #classroom-roster .page-btn,
-.instructor-console #classroom-folders .page-btn {
+.instructor-console #classroom-folders > .teacher-history-item > .page-btn {
   display: block; width: 100%; text-align: left; padding: .5rem 0;
   border: 0; background: transparent; color: var(--ink); font-size: .875rem;
 }
 .instructor-console #classroom-roster .page-btn:hover,
-.instructor-console #classroom-folders .page-btn:hover { color: var(--hot); }
-.instructor-console :is(#classroom-roster, #classroom-folders) .teacher-history-item { padding: .35rem 0; }
+.instructor-console #classroom-folders > .teacher-history-item > .page-btn:hover { color: var(--hot); }
+.instructor-console :is(#classroom-roster, #classroom-folders) > .teacher-history-item { padding: .35rem 0; }
 .instructor-console .classroom-job-actions a { color: var(--hot); min-height: 44px; display: inline-flex; align-items: center; padding: .5rem 0; margin-right: .5rem; text-underline-offset: .2em; }
 .instructor-console .classroom-folder-assignment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; margin-top: 1rem; }
 .instructor-console #classroom-folder-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .5rem; margin-top: 1.25rem; }
@@ -53,10 +61,10 @@
 
 /* The class picker, actions, roster, and folders share a compact alignment. */
 .refined-ui.instructor-console #account-status { margin: .5rem 0 .75rem; }
-.refined-ui.instructor-console #course-discovery { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .75rem; align-items: center; margin: .75rem 0; max-width: 34rem; }
+.refined-ui.instructor-console #course-discovery { display: grid; grid-template-columns: auto minmax(0, max-content); gap: .65rem; align-items: center; margin: .75rem 0; width: fit-content; max-width: 100%; }
 .refined-ui.instructor-console #classroom-course { margin: 0; }
 .refined-ui.instructor-console .classroom-toolbar { margin: .75rem 0 .4rem; }
-.refined-ui.instructor-console #classroom-refresh-status { display: flex; align-items: center; gap: .45rem; margin: .25rem 0 .75rem; font: .65rem/1.5 var(--font-mono); }
+.refined-ui.instructor-console #classroom-refresh-status { display: flex; align-items: center; justify-content: flex-end; text-align: right; gap: .45rem; margin: .25rem 0 .75rem; font: .65rem/1.5 var(--font-mono); }
 .refined-ui.instructor-console #classroom-refresh-status:empty { display: none; }
 .refined-ui.instructor-console #classroom-usage { margin: 0 0 .5rem; padding-bottom: .65rem; font-variant-numeric: tabular-nums; text-wrap: balance; }
 .refined-ui.instructor-console #classroom-roster .page-btn { min-height: 40px; padding: .45rem 0; font-family: var(--font-body); }
@@ -77,7 +85,7 @@
 .refined-ui.instructor-console .classroom-folder-assignment { margin-top: .5rem; }
 @media (max-width: 600px) {
   .refined-ui.instructor-console #course-discovery { grid-template-columns: 1fr; gap: .35rem; }
-  .refined-ui.instructor-console #classroom-refresh { margin-left: auto; padding-inline: .5rem; }
+  .refined-ui.instructor-console #classroom-refresh { padding-inline: .5rem; }
   .refined-ui.instructor-console .classroom-link-field { grid-template-columns: minmax(0, 1fr); }
   .refined-ui.instructor-console #classroom-copy-link { justify-self: start; }
 }
@@ -95,3 +103,25 @@
   flex: 0 1 auto; width: fit-content; min-width: 44px; max-width: 100%;
   min-height: 44px; padding: .4rem .55rem;
 }
+
+/* One class page: a section stays where it is, and a folder opens under its own row. */
+.instructor-console #account-status:empty { display: none; }
+.classroom-views { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
+.classroom-views[hidden] { display: none; }
+.refined-ui.instructor-console .classroom-views > .account-button { flex: 0 1 auto; width: auto; }
+.refined-ui.instructor-console .classroom-views > .account-button[aria-current="true"] { border-bottom-color: var(--hot); color: var(--ink); }
+.refined-ui.instructor-console .classroom-views > .account-button:hover { color: var(--hot); background: transparent; }
+.refined-ui.instructor-console #classroom-folder-create[hidden] { display: none; }
+.classroom-folder-create-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.refined-ui.instructor-console .classroom-folder-create-actions > .page-btn { width: auto; min-height: 44px; }
+#classroom-folders > .teacher-history-item > #classroom-folder-detail { margin: .5rem 0 .75rem; padding: 1rem; border: 1px solid var(--panel-edge); border-radius: 8px; background: var(--bg-raise); }
+#classroom-folders > .teacher-history-item > .page-btn[aria-expanded="true"] { color: var(--hot); }
+/* The folder's row already names it; keep the heading for screen readers. */
+#classroom-folder-title { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.classroom-folder-title-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.classroom-folder-title-actions > .page-btn.armed { border-color: var(--danger); color: var(--danger); }
+#classroom-folder-items, #classroom-add-list { margin: .75rem 0; }
+#classroom-folder-items > .teacher-history-item, #classroom-add-list > .teacher-history-item { display: flex; align-items: center; justify-content: space-between; gap: .75rem; overflow-wrap: anywhere; }
+#classroom-folder-items > .teacher-history-item > .page-btn, #classroom-add-list > .teacher-history-item > .page-btn { flex: none; }
+#classroom-add-panel { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--panel-edge); }
+.instructor-console .classroom-folder-create-help { grid-column: 1 / -1; margin: 0; }

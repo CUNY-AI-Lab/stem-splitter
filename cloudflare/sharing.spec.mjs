@@ -85,10 +85,15 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     const resplitDialog = page.getByRole('dialog', { name: 'Resplit', exact: true });
     await expect(resplitDialog).toBeVisible();
     await expect(resplitDialog).toContainText('Renamed recording — Lead voice.mp3');
+    await expect(resplitDialog.getByRole('radio', { name: 'With original split', exact: true })).toBeChecked();
+    await expect(resplitDialog.locator('.resplit-status')).toContainText('Adds the new stems under');
+    await resplitDialog.getByRole('radio', { name: 'Separate split', exact: true }).check();
     await expect(resplitDialog.locator('.resplit-status')).toContainText('Creates a new run in Personal.');
     await expect(resplitDialog.locator('.resplit-status')).not.toContainText('guest');
     await expect(resplitDialog.getByRole('combobox', { name: 'Number of splits', exact: true })).toBeVisible();
-    await expect(resplitDialog.locator('option')).toHaveCount(await page.locator('input[name="stem-model"]').count());
+    await expect(resplitDialog.locator('option')).toHaveText(['2 splits', '4 splits']);
+    expect(await resplitDialog.locator('option').evaluateAll(options => options.map(option => option.value))).toEqual(['vocals_instrumental', 'htdemucs_ft']);
+    await expect(resplitDialog.getByRole('combobox', { name: 'Number of splits', exact: true })).toHaveValue('vocals_instrumental');
     await resplitDialog.screenshot({ path: testInfo.outputPath('split-again-dialog.png'), animations: 'disabled' });
     await resplitDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(resplitDialog).toHaveCount(0);
@@ -121,7 +126,7 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     expect(requestKeys[1]).toBe(requestKeys[0]);
     expect(requestKeys[2]).toBe(requestKeys[0]);
     expect(starts[0].filename).toBe('Renamed recording — Lead voice.mp3');
-    expect(starts[0].model).toBe(await page.locator('input[name="stem-model"]:checked').inputValue());
+    expect(starts[0].model).toBe('vocals_instrumental');
     expect(uploads).toHaveLength(1);
     expect(Buffer.compare(uploads[0], fixture)).toBe(0);
     await page.unroute('**/api/uploads'); await page.unroute('**/__resplit-upload'); await page.unroute('**/api/jobs');

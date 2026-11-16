@@ -7,7 +7,7 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "stem-splitter-dev",
   "account_id": "452c33847cf5cb1e46f391fca32fd1b5",
-  "main": "worker.ts",
+  "main": "entry.ts",
   "alias": { "hono": "hono-cloudflare", "hono/factory": "hono-cloudflare/factory" },
   "compatibility_date": "2026-09-06",
   "compatibility_flags": ["nodejs_compat"],
@@ -25,12 +25,16 @@
   "d1_databases": [{ "binding": "DB", "database_name": "stem-splitter-dev", "database_id": "c66d920f-dd3f-417f-9949-438d50128d56" }],
   "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "stem-splitter-dev-audio" }],
   "services": [
-    { "binding": "BUG_REPORTS", "service": "cail-tools-admission", "entrypoint": "AdmissionBugReports", "props": { "app": "stem-splitter", "origins": ["https://stem-splitter-dev.ailab-452.workers.dev"] } },
+    { "binding": "BUG_REPORTS", "service": "cail-tools-admission", "entrypoint": "AdmissionBugReports", "props": { "app": "stem-splitter", "origins": ["https://stem-splitter-dev.ailab-452.workers.dev", "https://tools.ailab.gc.cuny.edu"] } },
     { "binding": "GATEWAY", "service": "cail-model-api" },
     { "binding": "ADMISSION_RESOLVER", "service": "cail-tools-admission", "entrypoint": "AdmissionResolver" },
     { "binding": "IDENTITY", "service": "cail-doorway", "entrypoint": "WorkerIdentity", "props": { "id": "stem-splitter", "worker": "stem-splitter-dev", "workspace": false } }
   ],
-  "ratelimits": [{ "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } }],
+  "ratelimits": [
+    { "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } },
+    { "name": "SEARCH_LIMIT", "namespace_id": "879101", "simple": { "limit": 120, "period": 60 } },
+    { "name": "FETCHER_SEARCH_LIMIT", "namespace_id": "879102", "simple": { "limit": 10, "period": 60 } }
+  ],
   "vars": {
     "GATEWAY_MODEL": "glm-5.2",
     "GATEWAY_FALLBACK_MODEL": "deepseek-v4-flash-0731",
@@ -38,7 +42,9 @@
     "AUTH_MODE": "cail",
     "CAIL_CLASSROOM_ENABLED": "true",
     "CAIL_COURSE_IDS": "msh-245-the-american-musical-experience-fall-2026-01,cail-teaching-tools-demo",
-    "GUEST_ENABLED": "false",
+    "GUEST_ENABLED": "true",
+    // Dev's own Turnstile widget ("Stem Splitter public guests (dev)"), limited to this hostname.
+    "GUEST_TURNSTILE_SITE_KEY": "0x4AAAAAAF5AyU39zfnFEvO2",
     "INTAKE_PAUSED": "false",
     "SPLIT_STARTS_DISABLED": "false",
     "SPLIT_CONCURRENCY": "2",

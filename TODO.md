@@ -1,5 +1,18 @@
 # Stem Splitter — next changes in three PRs
 
+## Dashboard and activity corrections — November 6, 2026
+
+- [x] Replace Settings and Instructor Console in primary navigation with Dashboard; keep Account and Listening Guy views inside it.
+- [x] Allow each signed-in CAIL user to save Personal Listening Guy instructions, previews, resets and immutable revisions. Keep class permissions and prompts separate; guests retain the base prompt.
+- [x] Remove the subtitle divider, balance the user's two sentences, preserve the 780px outer container and wrapping before its midpoint.
+- [x] Style Share with consistently and rename Create a split to Run splitter.
+- [x] Preserve layout, search text, selections and drafts during focus rechecks; update same-account role changes without reloading.
+- [x] Audit production activity read-only. Separate opening cues from replies; distinguish account creation, browser reports, processing and background requests. Remove the incorrect October 29 history-start claim.
+- [ ] Complete frozen-source browser gates, additive Dev migration and direct Dev release; verify the signed-in Dashboard before production promotion.
+- [ ] Complete the separate 18-case instrument-label/isolation acceptance gate; metadata credits and mocked tests do not satisfy it.
+
+See [implementation and verification notes](docs/evaluation/2026-11-06-dashboard.md). No GitHub push or Actions run is part of this release.
+
 ## Current user corrections — November 5, 2026
 
 - [x] Make navigation reflect verified sign-in and instructor capabilities; move “Guest | CUNY Login” below the CAIL logo.
@@ -7,17 +20,54 @@
 - [x] Make Resplit explanations and remaining limits reflect the actual guest/member session; use “guest turns.”
 - [x] Keep instrument labels on one line with the full name available.
 - [x] Exclude teaching instructions from guest and Personal Listening Guy calls and reject old teaching-influenced guide caches.
-- [ ] Finish final aggregate checks and production verification for this stateful-controls follow-up; see [release scope](docs/evaluation/2026-11-05-stateful-navigation-resplits.md).
+- [x] Finish final aggregate checks and production verification for the stateful-controls follow-up: PR #94, production `4c11548`, 1,204 local checks and exact served assets verified November 6. See [release scope](docs/evaluation/2026-11-05-stateful-navigation-resplits.md).
 
 - [x] Keep one search field directly below upload; remove the repository selector, search heading, and accordion.
 - [x] Restore the complete interface's 780px desktop container, including workspace and settings; refresh stylesheet versions.
 - [x] Research per-output instrument labeling and prominence; record the model comparison and integration plan in [output labeling research](docs/evaluation/2026-11-05-output-instrument-labeling.md).
-- [ ] Compare supervised instrument taggers on the actual output audio, calibrate silence/leakage rejection, and validate prominence independently of identity confidence.
+- [ ] Calibrate silence/leakage rejection on independently annotated audio and validate prominence independently of identity confidence. The two-tagger comparison is complete; it did not establish reliable labels.
 - [x] Remove “Split into” from the upload controls and the resplit dialog; retain accessible names for the count controls.
 - [x] Save the per-recording action menu, exclusive playback, reload, and stalled-playback fixes in the recovered local candidate.
 - [ ] Replace fixed-category separation for both initial splits and resplits with a validated audio-derived source path.
 - [ ] Pass all 18 real-audio cases: three genres × 2/4/6 outputs × initial/resplit, with correct instrument labels and useful isolation.
-- [ ] Complete authorized release verification and publication. Local checks do not establish a production release.
+- [x] Complete the authorized Search/UI/resplit-controls release verification and publication (PRs #93 and #94). This does not complete the separate instrument-model acceptance gate.
+
+## Stateful application audit — November 6, 2026
+
+- [x] Use the revised two-paragraph intro and desktop wrapping before the page midpoint (divider removed in the later Dashboard correction); verify downstream spacing and the phone layout.
+- [x] Reconcile the existing local Cloudflare release tooling from the previously deployed dev source. Follow the user's direct dev-then-production release direction; additional GitHub pushes, merges and Actions are not required.
+- [x] Trace guest, SSO-authenticated CAIL individual, enrolled student, course instructor and application instructor/admin authority across application surfaces.
+- [x] Reproduce and fix first-page-only Instructor Console class discovery.
+- [x] Reproduce and fix stale Workspace capabilities after the same person's class role changes.
+- [x] Reproduce and fix application instructor folders remaining visible after that role is revoked; preserve drafts across a temporary read outage.
+- [x] Bound repeated/empty class pagination on Splitter, Workspace and Instructor Console; retain Personal access when optional class discovery fails.
+- [x] Fence late class discovery after session loss, keeping a retained report and avoiding duplicate cleanup exceptions.
+- [x] Complete final local audit verification: 1,278/1,278 checks, three typechecks and the production dry build. See the [audit record](docs/evaluation/2026-11-06-statefulness-audit.md); exact publication and served-production identity belong in the separate release receipt.
+
+The application work and statefulness audit are released from `b953107` on both
+existing Cloudflare Workers. The saved exact-source deployment receipts are
+separate from this later documentation checkpoint. A subsequent real Firefox
+CUNY sign-in passed five read-only checks for the existing administrator and
+Demo-class instructor access; ordinary individual, student and non-admin
+instructor personas remain covered by synthetic checks. See the
+[audit record](docs/evaluation/2026-11-06-statefulness-audit.md).
+
+The three instrument/source-selection items remain open because no candidate
+has demonstrated reliable labels and useful isolation on the required audio.
+EfficientAT and the MTG-Jamendo instrument head were compared locally on twelve
+actual reference/output files. Both made instrument errors; controlled mixtures
+also showed that raw classifier confidence cannot establish prominence. The
+next required evidence is independently annotated calibration material and a
+validated separator, followed by the eighteen actual initial/resplit cases.
+No UI test, fixed Demucs category or relabeling of its output closes these items.
+The optional SAM trial has not run and is not a prerequisite for the completed
+application audit. Its earlier conditional approval remains unchanged.
+
+### Settings follow-up — November 6, 2026
+
+- [x] Invalidate pending Settings requests and cached selections when the session ends; retain an unsent report without stale callbacks touching removed controls.
+- [x] Stop automatic student activity lookups on repeated cursors or after ten additional pages; keep manual pagination and retry available.
+- [ ] Release this additional Settings correction through Dev and production after exact-source verification. It is separate from the already deployed `b953107` audit; the prior command-line production health read returned 403 and has not been retried or bypassed. See [follow-up evidence](docs/evaluation/2026-11-06-settings-follow-up.md).
 
 The last two model evaluations have not established reliable isolation. The
 November 5 [source-separation record](docs/evaluation/2026-11-05-source-separation-status.md)

@@ -1,11 +1,13 @@
-// Instructor console: authenticate, inspect the code-owned prompt, and edit
-// only the versioned class amendment. The session lives in an HttpOnly cookie;
+// Settings: authenticated Personal instructions and authorized class tools.
+// Inspect the code-owned prompt and keep versioned amendments scoped to their owner. The session lives in an HttpOnly cookie;
 // no credential or session token is stored in browser storage.
 
 const signinPanel = document.getElementById('signin-panel');
 const signinForm = document.getElementById('signin-form');
 const signinError = document.getElementById('signin-error');
 const consolePanel = document.getElementById('console-panel');
+const protectedRegion = document.getElementById('teacher-protected-region');
+const accessStatus = document.getElementById('teacher-access-status');
 const courseDiscovery = document.getElementById('course-discovery');
 const courseList = document.getElementById('course-list');
 const courseDiscoveryStatus = document.getElementById('course-discovery-status');
@@ -22,6 +24,21 @@ function teacherLoginNext(courseId) {
   const path = new URL('/teacher.html', location.origin);
   if (courseId) path.searchParams.set('course', courseId);
   return `${path.pathname}${path.search}`;
+}
+// Preserve a direct class destination even while account discovery is pending.
+document.getElementById('header-signin').href=StemPath('/auth/login?next='+encodeURIComponent(teacherLoginNext(requestedCourse)));
+
+async function instructorCourses() {
+  const courses = new Map(), seen = new Set();
+  let cursor = null;
+  do {
+    const page = await api(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { optionalAccess: true });
+    for (const course of page.courses || []) if (course.capabilities?.instructorPanel) courses.set(course.classId, course);
+    cursor = page.nextCursor;
+    if (cursor && (seen.has(cursor) || seen.size >= 9)) throw new Error('Instructor classes could not be fully checked. Reload to try again.');
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return [...courses.values()];
 }
 
 const promptForm = document.getElementById('prompt-form');
@@ -56,6 +73,7 @@ let showingPromptTop = false;
 let historyNextBeforeId = null;
 let historyLoading = false;
 let courseModeId = null;
+let personalMode = false;
 let courseModeName = '';
 let rosterNextCursor = null;
 let teacherGeneration = 0;
@@ -66,43 +84,47 @@ let courseAuthorityUncertain = false;
 let courseFailureVersion = 0;
 
 function syncTeacherVisibility() {
-  document.getElementById('teacher-protected-region').hidden = !teacherAccessVerified || coursePendingRequests > 0 || courseAuthorityUncertain;
+  const region=protectedRegion;
+  region.hidden = !teacherAccessVerified;
+  region.style.visibility = coursePendingRequests > 0 || courseAuthorityUncertain ? 'hidden' : '';
+  region.inert = !teacherAccessVerified || coursePendingRequests > 0 || courseAuthorityUncertain;
 }
 
 function denyTeacherAccess(message) {
   teacherAccessVerified = false;
   clearTeacherConsole();
   consolePanel.hidden = true;
-  document.getElementById('teacher-protected-region').hidden = true;
+  protectedRegion.hidden = true;
   courseDiscovery.hidden = true;
-  document.getElementById('teacher-access-status').textContent = message;
+  accessStatus.textContent = message;
 }
 
 function promptPath(suffix = '') {
   return courseModeId
     ? `/api/classroom/courses/${encodeURIComponent(courseModeId)}/prompt${suffix}`
-    : `/api/teacher/prompt${suffix}`;
+    : personalMode ? `/api/account/prompt${suffix}` : `/api/teacher/prompt${suffix}`;
 }
 
 async function api(path, options = {}) {
   const generation = teacherGeneration;
-  const scoped = !!courseModeId && path.startsWith(`/api/classroom/courses/${encodeURIComponent(courseModeId)}/`);
+  const scoped = (!!courseModeId && path.startsWith(`/api/classroom/courses/${encodeURIComponent(courseModeId)}/`)) || (personalMode && path.startsWith('/api/account/prompt'));
   const failureVersion = courseFailureVersion;
-  const { courseAccessCheck = false, ...fetchOptions } = options;
-  const controller = scoped ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+  const { courseAccessCheck = false, optionalAccess = false, headers = {}, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
   if (scoped) { coursePendingRequests++; syncTeacherVisibility(); }
   try {
-    const res = await fetch(path, {
+    const res = await window.StemFetch(path, {
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', ...(fetchOptions.headers || {}) },
       ...fetchOptions,
-      ...(controller ? { signal: controller.signal } : {}),
+      headers: { 'Content-Type': 'application/json', ...headers,
+        ...(personalMode && path.startsWith('/api/account/prompt') && fetchOptions.method === 'PUT' ? { 'X-Stem-Prompt-Actor': teacherAccountSubject } : {}) },
+      signal: controller.signal,
     });
     const body = await res.json().catch(error => { if (!res.ok) return {}; throw error; });
     if (generation !== teacherGeneration) throw new DOMException('Instructor access changed', 'AbortError');
     if (!res.ok) {
-      if ([401, 403].includes(res.status)) denyTeacherAccess('Instructor access is no longer available. Reload to check your current access.');
+      if ([401, 403].includes(res.status) && !optionalAccess) denyTeacherAccess('Access is no longer available. Return to Account to check your current access.');
       throw Object.assign(new Error(body.error?.message || body.error || `Request failed (${res.status})`), { status: res.status });
     }
     if (scoped && courseAccessCheck && failureVersion === courseFailureVersion) courseAuthorityUncertain = false;
@@ -111,7 +133,7 @@ async function api(path, options = {}) {
     if (scoped && generation === teacherGeneration && ![400, 409].includes(error.status)) {
       courseAuthorityUncertain = true;
       courseFailureVersion++;
-      document.getElementById('teacher-access-status').textContent = 'Instructor access could not be verified. Return to this tab to recheck access. Your draft is retained; reload before retrying a save whose result is uncertain.';
+      accessStatus.textContent = 'Access could not be verified. Return to this tab to recheck. Your draft is retained; use Reload before retrying an uncertain save.';
     }
     throw error;
   } finally {
@@ -119,7 +141,7 @@ async function api(path, options = {}) {
     if (scoped) {
       coursePendingRequests--;
       syncTeacherVisibility();
-      if (teacherAccessVerified && !coursePendingRequests && !courseAuthorityUncertain) document.getElementById('teacher-access-status').textContent = '';
+      if (teacherAccessVerified && !coursePendingRequests && !courseAuthorityUncertain) accessStatus.textContent = '';
     }
   }
 }
@@ -131,7 +153,7 @@ function showPanel(signedIn, teacher) {
   consolePanel.hidden = !signedIn;
   courseDiscovery.hidden = true;
   if (signedIn) {
-    if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = '';
+    if (!courseAuthorityUncertain && !coursePendingRequests) accessStatus.textContent = '';
     const displayName = String(teacher.displayName || '').trim();
     teacherWho.textContent = /^(instructor|student)$/i.test(displayName) ? '' : displayName;
   }
@@ -342,12 +364,12 @@ function renderHistory(history, append = false) {
       renderPromptMarkdown(revision.amendment, body);
     } else {
       const empty = document.createElement('p');
-      empty.textContent = 'No added teaching instructions.';
+      empty.textContent = 'No added instructions.';
       body.appendChild(empty);
     }
     details.append(summary, body);
     item.append(head, trace, details);
-    if (courseModeId) {
+    if (courseModeId || personalMode) {
       const restore = document.createElement('button');
       restore.type = 'button';
       restore.className = 'page-btn';
@@ -416,9 +438,9 @@ async function loadCourseRoster(append = false) {
       const activity = document.createElement('div');
       const use = participant.appUsage;
       activity.textContent = use
-        ? `App use: ${use.runs} split ${use.runs === 1 ? 'attempt' : 'attempts'} · ${use.completed} completed · ${use.guideTurns} Guide ${use.guideTurns === 1 ? 'turn' : 'turns'} · ${use.recordedVisits} recorded ${use.recordedVisits === 1 ? 'visit' : 'visits'} in 30 days`
+        ? `App use: ${use.runs} split ${use.runs === 1 ? 'attempt' : 'attempts'} · ${use.completed} completed · ${use.chatReplies ?? 'Unavailable'} replies · ${use.guideCues ?? 'Unavailable'} opening cues · ${use.recordedVisits} visit reports in 30 days`
         : page.appUsageStatus === 'unavailable' ? 'App usage temporarily unavailable' : 'App usage pending';
-      if (use?.lastActiveAt) activity.title = `Last recorded activity: ${new Date(use.lastActiveAt).toLocaleString()}`;
+      if (use?.lastClientActivityAt) activity.title = `Last browser report: ${new Date(use.lastClientActivityAt).toLocaleString()}`;
       item.dataset.participant = 'true';
       item.append(name, assigned, activity);
       list.appendChild(item);
@@ -503,7 +525,7 @@ promptForm.addEventListener('submit', async (event) => {
   const nextAmendment = amendment.value.trim();
   const changed = nextAmendment !== loadedAmendment;
   if (changed && !changeNote.value.trim()) {
-    showStatus('Add a change note before saving.', true);
+    showStatus('Say what changed before saving.', true);
     changeNote.focus();
     return;
   }
@@ -577,99 +599,108 @@ historyMoreBtn.addEventListener('click', async () => {
 
 document.getElementById('course-roster-more').addEventListener('click', () => void loadCourseRoster(true));
 
-(async function init() {
-  let cail = false;
+async function loadDashboardScopes() {
+  const generation=teacherGeneration;
+  const select=document.getElementById('instruction-scope');
   try {
-    const runtime = await api('/api/runtime');
-    cail = runtime.authMode === 'cail';
-    if (cail) {
-      signinForm.hidden = true;
-      signoutBtn.hidden = true;
-      const message = document.createElement('p');
-      message.textContent = 'Sign in with your CUNY account to open Instructor Console.';
-      signinPanel.append(message);
-      if (runtime.loginUrl) {
-        const link = document.getElementById('header-signin');
-        const separator = runtime.loginUrl.includes('?') ? '&' : '?';
-        const next = new URLSearchParams({ next: teacherLoginNext(requestedCourse) });
-        link.href = `${runtime.loginUrl}${separator}${next}`;
-      }
-      const account = await api('/api/account');
-      teacherAccountSubject = account.account.subject;
-      window.StemSessionGuard?.start(account.account.subject, () => denyTeacherAccess('Your account changed. Reload to check Instructor Console access.'));
-      try { await window.StemGuestClaim.run(account.account); } catch { /* Preserve guest originals; retry on return to Splitter. */ }
-      if (requestedCourse) {
-        const response = await api('/api/classroom/courses');
-        const course = response.courses.find(row => row.classId === requestedCourse && row.capabilities?.instructorPanel);
-        if (!course) throw new Error('Instructor access is not available for this class.');
-        courseModeId = course.classId;
-        try { localStorage.setItem(`stem-workspace-choice:v1:${teacherAccountSubject}`,courseModeId); } catch {}
-        courseModeName = course.className;
-        document.getElementById('teacher-classroom').href = `/classroom.html?course=${encodeURIComponent(courseModeId)}`;
-        document.getElementById('sample-editor-title').closest('.sample-editor').hidden = true;
-        document.getElementById('course-roster-section').hidden = !course.capabilities.rosterRead;
-        document.getElementById('prompt-scope-note').textContent = `Applies to ${courseModeName}. The fixed system prompt is read only.`;
+    const courses=await instructorCourses();
+    if(generation!==teacherGeneration)return;
+    select.replaceChildren(new Option('Personal','personal'),...courses.map(course=>new Option(course.className,course.classId)));
+    if(courseModeId&&!courses.some(course=>course.classId===courseModeId))select.add(new Option(courseModeName,courseModeId));
+    select.value=courseModeId||'personal';
+    document.getElementById('instruction-scope-status').textContent='';
+  } catch {
+    if(generation===teacherGeneration)document.getElementById('instruction-scope-status').textContent='Class choices are temporarily unavailable. Personal instructions remain available.';
+  }
+}
+document.getElementById('instruction-scope').addEventListener('change',event=>{
+  location.assign(StemPath(teacherLoginNext(event.target.value==='personal'?null:event.target.value)));
+});
+document.getElementById('prompt-reload').addEventListener('click',async()=>{
+  if(!teacherAccessVerified)return;
+  try { await api(promptPath(),{courseAccessCheck:true}); await loadPrompt(); changeNote.value=''; paintCounts(); showStatus('Loaded the saved instructions.'); }
+  catch(error){showStatus(error.message,true);}
+});
+
+(async function init() {
+  let cail=false;
+  try {
+    const runtime=await api('/api/runtime');
+    cail=runtime.authMode==='cail';
+    if(cail) {
+      signinForm.hidden=true; signoutBtn.hidden=true;
+      const account=(await api('/api/account')).account;
+      if(account.quotaClass==='guest'){denyTeacherAccess('CUNY Login is required to open Settings.');return;}
+      teacherAccountSubject=account.subject;
+      window.StemSessionGuard?.start(account.subject,()=>denyTeacherAccess('Your account changed. Reload to open your Settings.'));
+      document.querySelector('.dashboard-nav').hidden=false;
+      document.getElementById('dashboard-scope').hidden=false;
+      document.querySelector('.sample-editor').hidden=true;
+      try {await window.StemGuestClaim.run(account);} catch { /* Guest originals remain available. */ }
+      if(requestedCourse) {
+        const {course}=await api(`/api/classroom/courses/${encodeURIComponent(requestedCourse)}`);
+        if(!course?.capabilities?.instructorPanel||!course.capabilities.promptRead)throw new Error('Instruction access is not available for this class.');
+        courseModeId=course.classId; courseModeName=course.className;
+        document.getElementById('instruction-scope').add(new Option(courseModeName,courseModeId));
+        document.getElementById('instruction-scope').value=courseModeId;
+        document.getElementById('teacher-classroom').href=StemPath(`/classroom.html?course=${encodeURIComponent(courseModeId)}`);
+        document.getElementById('course-roster-section').hidden=!course.capabilities.rosterRead;
+        document.getElementById('amendment-label').textContent='Class instructions';
+        document.getElementById('prompt-scope-note').textContent=`Applies to ${courseModeName}. Personal and guest work use separate instructions.`;
         await loadPrompt();
-        if (course.capabilities.rosterRead) await loadCourseRoster();
-        teacherAccessVerified = true;
-        showPanel(true, {displayName:courseModeName});
-        return;
-      }
-    }
-    const { teacher } = await api('/api/teacher/me');
-    if (!teacher) {
-      showPanel(false);
-      if (cail) {
-        const { courses } = await api('/api/classroom/courses');
-        const instructorCourses = courses.filter(row => row.capabilities?.instructorPanel);
-        let prior = null; try { prior = localStorage.getItem(`stem-workspace-choice:v1:${teacherAccountSubject}`); } catch {}
-        const choice = instructorCourses.find(course=>course.classId===prior) || (instructorCourses.length===1 ? instructorCourses[0] : null);
-        if (choice) { location.replace(`/teacher.html?course=${encodeURIComponent(choice.classId)}`); return; }
-        signinPanel.hidden = true;
-        courseDiscovery.hidden = false;
-        courseList.replaceChildren();
-        for (const course of instructorCourses) {
-          const item = document.createElement('li');
-          item.className = 'teacher-history-item';
-          const link = document.createElement('a');
-          link.href = `/teacher.html?course=${encodeURIComponent(course.classId)}`;
-          link.textContent = `${course.className} · ${course.term} · ${course.section}`;
-          item.appendChild(link);
-          courseList.appendChild(item);
+        if(course.capabilities.rosterRead)await loadCourseRoster();
+        showPanel(true,{displayName:courseModeName});
+        if(!course.capabilities.promptWrite)for(const control of promptForm.querySelectorAll('textarea,input,button[type="submit"]'))control.disabled=true;
+      } else {
+        personalMode=true;
+        document.getElementById('amendment-label').textContent='Personal instructions';
+        document.getElementById('prompt-scope-note').textContent='Applies only to your Personal work. Class work uses that class’s instructions.';
+        await loadPrompt();
+        showPanel(true,account);
+        if(['admin','instructor'].includes(account.role)) {
+          const generation=teacherGeneration;
+          sampleEditor.hidden=false;
+          await loadSongSampleEditor();
+          if(generation!==teacherGeneration)return;
         }
-        courseDiscoveryStatus.textContent = instructorCourses.length ? 'Choose a class to review its roster and guidance.' : 'No instructor classes are available to this account.';
       }
+      void loadDashboardScopes();
       return;
     }
-    if (cail) {
-      // Global app administration does not supply teaching instructions to
-      // guests or individual members working outside a class.
-      document.querySelector('.teacher-amendment-section').hidden = true;
-      document.querySelector('.teacher-more-tools').hidden = true;
-      document.getElementById('class-instructions-help').hidden = false;
-    }
-    if (!cail) await loadPrompt();
-    const generation = teacherGeneration;
-    await loadSongSampleEditor();
-    if (generation !== teacherGeneration) return;
-    teacherAccessVerified = true;
-    showPanel(true, teacher);
-  } catch (error) {
+    // Preserve the separately hosted legacy teacher login.
+    document.getElementById('amendment-label').textContent='Teaching instructions';
+    const {teacher}=await api('/api/teacher/me');
+    if(!teacher){showPanel(false);return;}
+    await loadPrompt(); await loadSongSampleEditor(); showPanel(true,teacher);
+  } catch(error) {
     showPanel(false);
-    if (error.name !== 'AbortError') document.getElementById('teacher-access-status').textContent = error.message;
+    if(cail)signinPanel.hidden=true;
+    if(error.name!=='AbortError')accessStatus.textContent=error.message;
   }
 })();
 
 async function recheckTeacherAccess() {
   if (!teacherAccessVerified || recheckingTeacher) return;
   recheckingTeacher = true;
-  document.getElementById('teacher-protected-region').hidden = true;
+  protectedRegion.style.visibility = 'hidden';
+  protectedRegion.inert = true;
   try {
-    if (courseModeId) await api(promptPath(), { courseAccessCheck: true });
+    if (courseModeId || personalMode) await api(promptPath(), { courseAccessCheck: true });
     else if (!(await api('/api/teacher/me')).teacher) { denyTeacherAccess('Instructor access is no longer available.'); return; }
-    if (teacherAccessVerified) { consolePanel.hidden = false; syncTeacherVisibility(); if (!courseAuthorityUncertain && !coursePendingRequests) document.getElementById('teacher-access-status').textContent = ''; }
+    if (teacherAccessVerified) { consolePanel.hidden = false; syncTeacherVisibility(); if (!courseAuthorityUncertain && !coursePendingRequests) accessStatus.textContent = ''; }
+    if (personalMode && teacherAccessVerified) {
+      const generation=teacherGeneration;
+      sampleEditor.style.visibility='hidden'; sampleEditor.inert=true;
+      try {
+        const {teacher}=await api('/api/teacher/me',{optionalAccess:true});
+        if(generation!==teacherGeneration)return;
+        if(!teacher){clearSongSampleEditor();sampleEditor.hidden=true;}
+        else {sampleEditor.hidden=false;if(!sampleLoaded)await loadSongSampleEditor();}
+        sampleEditor.style.visibility=''; sampleEditor.inert=false;
+      } catch { /* Conceal uncertain app-wide tools; Personal access is separate. */ }
+    }
   } catch (error) {
-    if (error.name !== 'AbortError') document.getElementById('teacher-access-status').textContent = 'Instructor access could not be verified. Reload to reconnect.';
+    if (error.name !== 'AbortError') accessStatus.textContent = 'Settings access could not be verified. Return to this tab to reconnect.';
   } finally { recheckingTeacher = false; }
 }
 window.addEventListener('focus', () => void recheckTeacherAccess());
@@ -802,7 +833,7 @@ async function loadSongSampleEditor(){
   const generation=sampleEditorGeneration;
   sampleAvailability(false);
   try{
-    const resource=await api('/api/teacher/song-samples');if(generation!==sampleEditorGeneration)return;
+    const resource=await api('/api/teacher/song-samples', { optionalAccess: true });if(generation!==sampleEditorGeneration)return;
     sampleNameEditor=null;sampleRevision=resource.revision;sampleCatalog=resource.catalog||[];
     selectedSamples=resource.settings.tracks.map(t=>({...sampleCatalog.find(c=>sampleKey(c)===sampleKey(t)),...t}));
     document.getElementById('samples-enabled').checked=resource.settings.enabled;
@@ -811,10 +842,10 @@ async function loadSongSampleEditor(){
     document.getElementById('samples-cadence').value=resource.settings.cadenceMs/1000;
     document.getElementById('sample-settings-meta').textContent=resource.updatedBy?`Revision ${resource.revision} · Saved ${formatUtc(resource.updatedAt)}`:'Six Archive-verified starting examples. Add songs from the full catalog or search.';
     sampleAvailability(true);renderSelectedSamples();renderSampleChoices(sampleCatalog);sampleEditorStatus('');return true;
-  }catch(error){sampleEditorStatus(error.message,true);return false;}
+  }catch(error){if(generation!==sampleEditorGeneration)return false;if([401,403].includes(error.status))sampleEditor.hidden=true;sampleEditorStatus(error.message,true);return false;}
 }
 async function streamSampleSearch(query,signal,receive){
-  const response=await fetch('/api/music/search?examples=1&q='+encodeURIComponent(query),{credentials:'same-origin',headers:{Accept:'application/x-ndjson'},signal});
+  const response=await window.StemFetch('/api/music/search?examples=1&q='+encodeURIComponent(query),{credentials:'same-origin',headers:{Accept:'application/x-ndjson'},signal});
   if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'Archive search is temporarily unavailable.');}
   if(!response.headers.get('content-type')?.includes('application/x-ndjson')){receive(await response.json());return;}
   const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',bytes=0;

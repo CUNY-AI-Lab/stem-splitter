@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
+<script src="/app-path.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Stem Splitter · Settings</title>
+<title>Stem Splitter · Dashboard</title>
 <link rel="preload" href="/fonts/bricolage-grotesque-800.ttf" as="font" type="font/ttf" crossorigin>
-<link rel="stylesheet" href="/styles.css?v=20261105-auth-nav">
+<link rel="stylesheet" href="/styles.css?v=20261116-header-account">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 <main class="teacher-main account-main refined-ui">
   <header class="masthead">
@@ -13,17 +14,21 @@
       <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br /><span>Splitter</span></a></h1>
       <div class="lab-account">
         <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt="" /></a>
-        <p id="account-login" class="account-nav"><span class="account-session-note"><span>Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
+        <p id="account-login" class="account-nav"><a id="header-signin" class="account-button" href="/auth/login?next=/account.html">CUNY Login</a></p>
+        <form class="account-nav header-logout" action="/auth/logout" method="post"><button class="account-button" type="submit">Log out</button></form>
       </div>
     </div>
     <nav class="workspace-nav" aria-label="Stem Splitter" hidden>
       <a href="/">Splitter</a>
-      <a href="/classroom.html">Workspace</a>
-      <a href="/account.html" aria-current="page">Settings</a>
-      <a data-instructor-nav href="/teacher.html" hidden>Instructor Console</a>
+      <a href="/classroom.html">Classes</a>
+      <a href="/account.html" aria-current="page">Account</a>
     </nav>
   </header>
-  <h2 class="page-title">Settings</h2>
+  <h2 class="page-title">Account</h2>
+  <nav class="dashboard-nav" aria-label="Account" hidden>
+    <a href="/teacher.html">Settings</a>
+    <a href="/account.html" aria-current="page">Dashboard</a>
+  </nav>
   <p id="account-status" role="status">Loading…</p>
   <section id="account-details" class="account-overview" hidden>
     <p id="account-role"></p>
@@ -44,16 +49,17 @@
     <p class="account-help">Successful splits count toward your daily allowance. Listening Guy uses your Lab allowance separately.</p>
   </section>
   <details id="student-review" class="account-disclosure" hidden>
-    <summary>Student activity</summary>
+    <summary>Account activity</summary>
     <p class="account-help">Select an account to see its recorded splits and load a recording. Listening to an existing recording also counts as app use.</p>
-    <section aria-labelledby="guest-activity-title">
-      <h3 id="guest-activity-title">Guest activity · past 30 days</h3>
+    <details class="activity-guest">
+      <summary>Guest activity · past 30 days</summary>
       <p id="guest-activity" role="status">Guest activity unavailable.</p>
       <p id="guest-sessions" class="account-help"></p>
       <p class="account-help">Guest sessions include repeat use and testing. Saved guest splits also appear under their accounts; other guest work remains associated with its browser session.</p>
-    </section>
+    </details>
     <h3>Signed-in accounts</h3>
-    <p class="account-help">Includes your account and Personal work. Splits and Guide turns cover recorded history. Visits and plays cover the past 30 days, with collection beginning October 29, 2026. First account access records when each account entered the app.</p>
+    <p class="account-help">Recorded account activity. Visit and playback reports cover the past 30 days.</p>
+    <details class="activity-coverage"><summary>About these totals</summary><p class="account-help">Runs, completed splits, replies and opening cues come from stored records. Missing browser reports do not mean someone did not use the app. Older activity may be incomplete. Guest work is included only after it is saved to an account.</p><p class="account-help">Account added is the date the account record was created, not the first visit. Background requests are listed separately from browser activity.</p></details>
     <p id="student-status" role="status"></p>
     <button id="student-retry" class="account-button" type="button" hidden>Try again</button>
     <section id="student-detail" hidden aria-live="polite">
@@ -87,9 +93,6 @@
     <button id="access-retry" type="button" class="page-btn" hidden>Try again</button>
   </details>
   <p id="account-back" hidden><a href="/">← Back to Stem Splitter</a></p>
-  <section id="account-footer" hidden>
-    <form action="/auth/logout" method="post"><button type="submit" class="account-button">Sign out</button></form>
-  </section>
   <nav class="account-resources" aria-label="CUNY AI Lab resources">
     <h2>CUNY AI Lab</h2>
     <ul>
@@ -105,8 +108,8 @@
     <p>Uploaded files are deleted after 90 days. Only upload music you’re entitled to use for class.</p>
   </footer>
 </main>
-<script src="/session-guard.js?v=20261105-auth-nav"></script>
+<script src="/session-guard.js?v=20261106-account-nav"></script>
 <script src="/guest-claim.js?v=20261023-two-reply-demo"></script>
-<script src="/account.js?v=20261105-stateful-resplits"></script>
+<script src="/account.js?v=20261106-account-nav"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </html>

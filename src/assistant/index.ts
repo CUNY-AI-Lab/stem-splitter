@@ -1,4 +1,5 @@
 import { coursePrompt } from '../classroom/prompts.ts';
+import { personalPrompt } from '../personal-prompts.ts';
 import { jobCourse } from '../classroom/access.ts';
 // Listening Guy orchestrators: cached guide generation + chat with validated
 // mixer tool calls, both streaming prose through an onDelta sink while the
@@ -75,8 +76,12 @@ export function contextFromJob(
  * request instead of at the next isolate recycle. Missing table (a deployment
  * that has not run migration 0004) degrades to no amendment.
  */
-async function loadAmendmentState(env: Env): Promise<AmendmentState> {
-  if (env.AUTH_MODE === 'cail') return coursePrompt(env, env.ASSISTANT_COURSE_ID ?? null);
+export async function loadAmendmentState(env: Env): Promise<AmendmentState> {
+  if (env.AUTH_MODE === 'cail') {
+    if (env.ASSISTANT_COURSE_ID) return coursePrompt(env, env.ASSISTANT_COURSE_ID);
+    if (env.ASSISTANT_PERSONAL_SUBJECT) return personalPrompt(env, env.ASSISTANT_PERSONAL_SUBJECT);
+    return coursePrompt(env, null);
+  }
   try {
     const row = await env.DB.prepare(
       'SELECT amendment, revision FROM assistant_settings WHERE id = 1'
@@ -111,6 +116,16 @@ export async function getGuide(env: Env, jobId: string): Promise<GuideRecord | n
     return row && row.fingerprint === await hashSystemPromptFingerprint(state.amendment) ? { text: row.text, model: row.model, createdAt: row.createdAt } : null;
   }
   if (env.AUTH_MODE === 'cail') {
+    if (env.ASSISTANT_PERSONAL_SUBJECT) {
+      const subject=env.ASSISTANT_PERSONAL_SUBJECT;
+      const state=await personalPrompt(env,subject);
+      const row=await env.DB.prepare('SELECT text,model,created_at AS createdAt,fingerprint FROM personal_guides WHERE job_id=? AND subject=? AND base_version=? AND revision=?')
+        .bind(jobId,subject,SYSTEM_PROMPT_VERSION,state.revision).first<GuideRecord & {fingerprint:string}>();
+      if(row&&row.fingerprint===await hashSystemPromptFingerprint(state.amendment))return {text:row.text,model:row.model,createdAt:row.createdAt};
+      // Existing base-only guides are reusable only before this person has
+      // saved any instruction revision. Personal text never enters that table.
+      if(state.revision!==0||state.amendment)return null;
+    }
     const row = await env.DB.prepare('SELECT text,model,created_at AS createdAt,prompt_hash FROM guides WHERE job_id=? AND prompt_version=? AND prompt_revision=0')
       .bind(jobId, SYSTEM_PROMPT_VERSION).first<GuideRecord & { prompt_hash: string }>();
     // Old personal/guest guides generated with teaching instructions are not
@@ -164,6 +179,18 @@ export async function cacheGuideIfPromptCurrent(
     return (result.meta.changes ?? 0)>0;
   }
   if (env.AUTH_MODE === 'cail') {
+    if (env.ASSISTANT_PERSONAL_SUBJECT) {
+      const subject=env.ASSISTANT_PERSONAL_SUBJECT;
+      const state=await personalPrompt(env,subject);
+      if(state.revision!==expectedRevision||expectedPromptHash!==await hashSystemPromptFingerprint(state.amendment))return false;
+      const result=await env.DB.prepare(`INSERT INTO personal_guides(job_id,subject,text,model,created_at,base_version,revision,fingerprint)
+        SELECT ?,?,?,?,?,?,?,? WHERE COALESCE((SELECT revision FROM personal_prompt_settings WHERE subject=?),0)=?
+          AND NOT EXISTS(SELECT 1 FROM job_courses WHERE job_id=?)
+        ON CONFLICT(job_id,subject) DO UPDATE SET text=excluded.text,model=excluded.model,created_at=excluded.created_at,
+          base_version=excluded.base_version,revision=excluded.revision,fingerprint=excluded.fingerprint`)
+        .bind(guide.jobId,subject,guide.text,guide.model,guide.createdAt,SYSTEM_PROMPT_VERSION,expectedRevision,expectedPromptHash,subject,expectedRevision,guide.jobId).run();
+      return (result.meta.changes??0)>0;
+    }
     if (expectedRevision !== 0 || expectedPromptHash !== await hashSystemPromptFingerprint()) return false;
     const result = await env.DB.prepare(`INSERT INTO guides(job_id,text,model,created_at,prompt_version,prompt_revision,prompt_hash)
       VALUES(?,?,?,?,?,0,?) ON CONFLICT(job_id) DO UPDATE SET text=excluded.text,model=excluded.model,created_at=excluded.created_at,

@@ -16,26 +16,36 @@
     "db:migrate:28:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0028-listening-cycles.sql",
     "db:migrate:dev": "node migrate-dev.mjs",
     "deploy:dev:check": "wrangler deploy -c wrangler.dev.jsonc --dry-run --outdir /tmp/stem-splitter-dev-dry-run",
-    "deploy:dev": "wrangler deploy -c wrangler.dev.jsonc",
+    "deploy:dev": "node ../scripts/local-release/deploy.mjs dev",
     "db:migrate:31": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0031-bug-report-receipts.sql",
     "db:migrate:31:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0031-bug-report-receipts.sql",
     "db:migrate:32": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0032-bug-report-deliveries.sql",
-    "db:migrate:32:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0032-bug-report-deliveries.sql"
+    "db:migrate:32:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0032-bug-report-deliveries.sql",
+    "deploy:production": "node ../scripts/local-release/deploy.mjs production",
+    "deploy:plan": "node ../scripts/local-release/deploy.mjs dev --plan",
+    "deploy:check": "node ../scripts/local-release/deploy.mjs dev --check",
+    "test:local-release": "node --test ../scripts/local-release/deploy.test.mjs",
+    "db:migrate:33": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0033-personal-listening-instructions.sql",
+    "db:migrate:33:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0033-personal-listening-instructions.sql",
+    "db:migrate:34": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0034-course-folder-contributors.sql",
+    "db:migrate:34:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0034-course-folder-contributors.sql"
   },
   "dependencies": {
     "@breezystack/lamejs": "1.2.7",
-    "@cloudflare/puppeteer": "1.1.0",
+    "@cloudflare/puppeteer": "2.0.0",
     "@cuny-ai-lab/cail-client": "6.2.2",
     "@cuny-ai-lab/cail-identity": "5.2.6",
     "@cuny-ai-lab/cail-log": "0.6.4",
     "googlevideo": "4.1.1",
-    "hono-cloudflare": "npm:hono@4.13.11",
+    "hono-cloudflare": "npm:hono@4.13.18",
     "mpg123-decoder": "1.0.3"
   },
   "devDependencies": {
     "wrangler": "4.129.0"
   },
   "overrides": {
-    "zod": "4.6.6"
+    "zod": "4.6.6",
+    "sharp": "0.35.5",
+    "undici": "7.30.2"
   }
 }

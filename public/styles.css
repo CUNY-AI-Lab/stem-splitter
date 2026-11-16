@@ -3,7 +3,7 @@
   font-style: normal;
   font-weight: 800;
   font-display: swap;
-  src: url("/fonts/bricolage-grotesque-800.ttf") format("truetype");
+  src: url("fonts/bricolage-grotesque-800.ttf") format("truetype");
 }
 
 /* ─── Stem Splitter · studio console ──────────────────────────────── */
@@ -121,7 +121,9 @@ h1 span {
 .masthead-title {
   --title-size: clamp(1.25rem, 7vw, 3.5rem);
   display: flex;
-  align-items: center;
+  /* The account column takes the title's height, so the logo and the account line can meet
+     the title's lines instead of being centred beside them. */
+  align-items: stretch;
   justify-content: space-between;
   gap: clamp(.75rem, 2vw, 1.5rem);
 }
@@ -130,12 +132,33 @@ h1 span {
 .home-brand:focus-visible { outline: 2px solid var(--hot); outline-offset: 5px; }
 .page-title { font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; margin: 0 0 1.5rem; }
 .masthead-title .lab-brand { flex: 0 1 auto; min-width: 0; margin: 0; }
-.masthead-title .lab-logo { height: calc(var(--title-size) * .92); max-width: 100%; object-fit: contain; }
+/* The logo spans the capitals of "Stem": its top meets their tops and its bottom their baseline.
+   From the brand font: cap tops sit .114 of the title size below the line box, capitals are .674
+   tall, so their baseline is at .788. The logo link keeps its 44 px tap area with the logo at its
+   bottom, so the extra area reaches up above the title rather than down over the account link. */
+.masthead-title .lab-brand { align-items: flex-end; margin-top: calc(var(--title-size) * .788 - 44px); }
+.masthead-title .lab-logo { height: calc(var(--title-size) * .674); max-width: 100%; object-fit: contain; }
 .lab-account { display: flex; flex-direction: column; align-items: flex-end; max-width: 50%; gap: .25rem; }
+/* The account line's text sits on the baseline of "Splitter", .132 of the title size above the
+   title's bottom. Its link keeps a 44 px tap area centred on the text; that area hangs below the
+   title instead of pushing the line down. In the account font, the box bottom is 22px - .375em
+   below the baseline. Out of the column's flow, it cannot make the column taller than the title. */
+.masthead-title .lab-account { position: relative; }
+.masthead-title .lab-account .account-nav { position: absolute; right: 0; bottom: calc(var(--title-size) * .132 - 22px + .375em); }
 .lab-account .account-nav { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
-.lab-account .account-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--hot); font: inherit; text-decoration: none; }
-.lab-account .account-button:hover { text-decoration: underline; }
-.lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.lab-account .header-logout { display: none; }
+.masthead:has(.workspace-nav:not([hidden])) .lab-account .header-logout { display: flex; }
+.refined-ui .masthead .lab-account .account-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: .6rem .9rem; border: 1px solid var(--panel-edge);
+  border-radius: 6px; background: transparent; color: var(--ink-dim);
+  font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em;
+  text-transform: none; text-decoration: none; box-sizing: border-box; cursor: pointer;
+}
+.refined-ui .masthead .lab-account .account-button:hover:not(:disabled) {
+  border-color: var(--hot); background: transparent; color: var(--hot);
+}
+.refined-ui .masthead .lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 
 .masthead-meta {
   display: flex;
@@ -235,8 +258,12 @@ h1 span {
   font-family: var(--font-mono);
   font-size: 0.8rem;
   padding: 0.55rem 0.7rem;
+  touch-action: manipulation;
 }
-#yt-url::placeholder { color: var(--ink-faint); }
+/* "Search songs or paste YouTube link" is 34 monospace characters, 0.6em each. app.js sets
+   --song-room to the box's text width, so on a narrow box the placeholder shrinks to fit
+   instead of being cut off. Wider boxes keep 1em. */
+#yt-url::placeholder { color: var(--ink-faint); font-size: min(1em, calc(var(--song-room, 100vw) / 21)); }
 #yt-url:focus { outline: none; border-color: var(--hot); }
 #yt-url.showing-sample { padding-right: 8.2rem; }
 #yt-url.showing-sample::placeholder { color: var(--ink); opacity: 0.5; }
@@ -285,6 +312,7 @@ h1 span {
 .source-song:hover, .source-song[aria-selected="true"] { background: var(--hot-soft); }
 .source-song small { display: block; margin-top: 0.15rem; color: var(--ink-dim); font-size: 0.7rem; }
 .source-search-status { color: var(--ink-dim); }
+.source-search-retry { display: block; min-height: 36px; margin-top: .4rem; padding: .35rem .7rem; border: 1px solid var(--hot); border-radius: 6px; background: var(--hot-soft); color: var(--ink); font: 500 .75rem/1.3 var(--font-mono); cursor: pointer; }
 
 .yt-go {
   background: var(--hot-soft);
@@ -439,6 +467,19 @@ h1 span {
   color: var(--ink-dim);
   font-size: 0.7rem;
 }
+
+.sign-in-notice {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: var(--bg-raise);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.sign-in-notice a { color: var(--hot); text-underline-offset: 0.2em; }
+.sign-in-notice a:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   .split-option, .split-seg { transition: none; }
@@ -1496,10 +1537,18 @@ footer a:hover { color: var(--hot); }
 .channel .ch-name-input { min-width: 0; width: 100%; max-width: 100%; }
 .resplit-placement { display: grid; gap: .6rem; margin: .4rem 0; padding: .8rem; border: 1px solid var(--panel-edge); }
 .resplit-placement legend { padding-inline: .3rem; }
-.resplit-placement label { display: flex; align-items: center; gap: .5rem; min-height: 32px; }
+.resplit-placement label { display: flex; align-items: center; gap: .5rem; min-height: 32px; cursor: pointer; }
+.resplit-placement label:has(input:disabled) { opacity: .45; cursor: not-allowed; }
 .resplit-placement input { width: auto; margin: 0; }
-.resplit-results { list-style: none; padding: .5rem; margin: .5rem; border-top: 1px solid var(--panel-edge); }
-.resplit-results > .console { margin-top: .5rem; }
+.class-code-form .resplit-course-ack { display: flex; align-items: flex-start; gap: .5rem; cursor: pointer; font: 400 .8rem/1.45 var(--font-body); letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
+.resplit-course-ack[hidden] { display: none; }
+.resplit-course-ack input { flex: none; width: auto; margin: .15rem 0 0; }
+/* The dialog's one action should read as available when it is. */
+.resplit-dialog .yt-go:not(:disabled) { border-color: var(--hot); background: var(--hot-soft); color: var(--ink); }
+.channel-parts-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .35rem .1rem .35rem .9rem; border-bottom: 1px solid var(--panel-edge); color: var(--ink-dim); font: .68rem/1.4 var(--font-mono); }
+.channel-parts-head .elapsed { color: var(--hot); }
+.channel-parts-remove.armed { color: var(--danger); border-color: var(--danger); }
+.channel-part .ch-id { padding-left: .9rem; }
 .channel .meter {
   grid-column: 2;
   grid-row: 2;
@@ -1690,9 +1739,9 @@ footer a:hover { color: var(--hot); }
   border-radius: 6px;
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: .75rem;
   min-height: 2.75rem;
-  padding: 0.6rem 0.7rem;
+  padding: .6rem .9rem;
 }
 .teacher-field input:focus,
 .teacher-field select:focus,
@@ -1724,7 +1773,7 @@ footer a:hover { color: var(--hot); }
   margin-bottom: 0.6rem;
 }
 .teacher-actions { display: flex; gap: 0.6rem; align-items: center; }
-.teacher-actions .yt-go { padding: 0.5rem 1rem; }
+.teacher-actions .yt-go { padding: .6rem .9rem; }
 
 .teacher-prompt-section {
   background: color-mix(in srgb, var(--panel) 72%, transparent);
@@ -2170,7 +2219,10 @@ footer a:hover { color: var(--hot); }
 .folder-btn { display: none; }
 body.instructor .folder-btn { display: inline-block; }
 
-.folder-menu {
+.folders-note { margin: 0 0 .75rem; color: var(--ink-dim); font-size: .8rem; }
+.folders-note a { color: var(--hot); text-underline-offset: .2em; }
+.class-folder-status a { color: var(--hot); text-underline-offset: .2em; }
+.folder-menu, .class-folder-menu {
   margin-top: 0.6rem;
   border: 1px solid var(--panel-edge);
   border-radius: 10px;
@@ -2708,6 +2760,7 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 :is(.account-button, .yt-go, .page-btn, .teacher-submit):focus-visible {
   outline: 2px solid var(--hot); outline-offset: 3px;
 }
+.yt-go:disabled, .yt-go:disabled:hover { background: transparent; color: var(--ink-dim); opacity: .45; cursor: not-allowed; }
 :is(.head-btn, .note-btn, .rt-btn, .coach-form button, .folder-menu-new button) {
   border-radius: 6px; font-weight: 500; letter-spacing: .04em; line-height: 1.3;
 }
@@ -2772,7 +2825,7 @@ body:not(.remixer-enabled) .to-remix-btn { display: none; }
 .sample-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .sample-name-editor { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap: .75rem; }
 .sample-card:has(.sample-name-editor:not([hidden])) { cursor: default; }
-.sample-editor .page-btn { min-height: 44px; padding: .6rem .8rem; border-radius: 6px; font: 500 .8125rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
+.sample-editor .page-btn { min-height: 44px; padding: .6rem .9rem; border-radius: 6px; font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em; text-transform: none; }
 .sample-editor .teacher-actions { flex-wrap: wrap; gap: .5rem; }
 @media(max-width:600px) {
   .sample-name-editor { grid-template-columns: 1fr; }
@@ -2794,23 +2847,35 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .masthead { margin-bottom: 1.35rem; }
 .refined-ui .masthead-title { --title-size: clamp(2rem, 5vw, 2.75rem); }
 .refined-ui .masthead-meta { margin-top: .9rem; }
-.refined-ui .masthead-meta .tagline { font-size: .9rem; line-height: 1.55; }
+.refined-ui .masthead-meta .tagline {
+  flex: 0 1 calc(50% - .75rem);
+  max-width: calc(50% - .75rem);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.refined-ui .masthead-meta .tagline > p { margin: 0; text-wrap: balance; }
+.refined-ui .masthead-meta .tagline > p + p { margin-top: .35rem; }
 .refined-ui .page-title { margin-bottom: .65rem; font-size: clamp(1.45rem, 3vw, 1.75rem); }
-.workspace-nav {
+.workspace-nav,
+.workspace-tabs {
   display: flex; flex-wrap: wrap; align-items: center;
   gap: 0 1.25rem; margin-top: 1.1rem;
   border-bottom: 1px solid var(--panel-edge);
 }
-.refined-ui .workspace-nav > a,
-.refined-ui .workspace-nav .account-button {
+.refined-ui :is(.workspace-nav, .workspace-tabs) > a,
+.refined-ui :is(.workspace-nav, .workspace-tabs) .account-button {
   display: inline-flex; align-items: center; min-height: 44px;
   padding: .65rem 0; border: 0; border-bottom: 2px solid transparent;
   border-radius: 0; background: transparent; color: var(--ink-dim);
   font: 500 .75rem/1.4 var(--font-mono); letter-spacing: 0; text-decoration: none;
 }
-.refined-ui .workspace-nav [aria-current="page"] { color: var(--ink); border-bottom-color: var(--hot); }
-.refined-ui .workspace-nav a:hover { color: var(--hot); background: transparent; }
-.refined-ui .workspace-nav a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.refined-ui :is(.workspace-nav, .workspace-tabs) [aria-current="page"] { color: var(--ink); border-bottom-color: var(--hot); }
+.refined-ui :is(.workspace-nav, .workspace-tabs) a:hover { color: var(--hot); background: transparent; }
+.refined-ui :is(.workspace-nav, .workspace-tabs) a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.workspace-nav .header-logout { display: none; }
+.refined-ui .workspace-nav .header-logout .account-button { color: var(--hot); white-space: nowrap; }
+.refined-ui .workspace-nav .header-logout .account-button:hover { color: var(--hot); text-decoration: underline; }
+.refined-ui .workspace-nav .header-logout .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .account-session-note { display: inline-flex; align-items: center; gap: .35rem; }
 .refined-ui #dropzone { border-radius: 8px; padding: .7rem; }
 .refined-ui #dropzone .deck-slot {
@@ -2855,15 +2920,16 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui.instructor-console { padding-top: 1.75rem; padding-bottom: 2rem; }
 .refined-ui.instructor-console :is(.teacher-prompt-section, .teacher-panel.deck) { padding: 1rem 1.15rem; margin-top: 1rem; border-radius: 8px; }
 .refined-ui.instructor-console h2:not(.page-title) { font-size: 1.05rem; margin-bottom: .65rem; }
-.refined-ui.instructor-console :is(.page-btn, .account-button, .yt-go, .teacher-caret-control) { font-family: var(--font-mono); font-size: .72rem; }
+.refined-ui.instructor-console :is(.page-btn, .account-button, .yt-go, .teacher-caret-control) { font-family: var(--font-mono); font-size: .75rem; }
 .refined-ui.instructor-console .teacher-tool > summary { min-height: 44px; padding-block: .65rem; }
 .refined-ui.instructor-console .teacher-tool-body { padding: .75rem 0 1rem; }
 .refined-ui.instructor-console .teacher-more-tools { margin-top: 1.25rem; }
 @media (max-width: 600px) {
   main.refined-ui, .refined-ui.instructor-console { padding: 1.25rem 1rem 1.5rem; }
   .refined-ui .masthead-title { --title-size: clamp(1.8rem, 6.5vw, 2.5rem); }
-  .workspace-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .75rem; margin-top: .9rem; }
-  .refined-ui .workspace-nav > a, .refined-ui .workspace-nav .account-button { font-size: .68rem; }
+  .refined-ui .masthead-meta .tagline { flex-basis: 100%; max-width: 100%; }
+  :is(.workspace-nav, .workspace-tabs) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 0 .75rem; margin-top: .9rem; }
+  .refined-ui :is(.workspace-nav, .workspace-tabs) > a, .refined-ui :is(.workspace-nav, .workspace-tabs) .account-button { font-size: .68rem; }
   .workspace-nav [data-instructor-nav] { grid-column: 1 / -1; }
   .lab-account .account-nav { font-size: .68rem; }
   .refined-ui #dropzone .deck-slot { padding-block: 1rem; }
@@ -2893,9 +2959,37 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .folder-rename-form input { display: block; width: 100%; min-height: 44px; }
 .folder-rename-form [role="status"] { flex-basis: 100%; }
 
-.intake-selector { display: grid; grid-template-columns: 6rem minmax(0, 1fr); align-items: center; gap: .5rem; max-width: 30.5rem; font-size: .8rem; }
+.intake-selector { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .85rem; max-width: 30.5rem; font-size: .8rem; }
 .intake-selector > label { color: var(--ink-dim); }
-.intake-selector select, .refined-ui #course-context select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; margin: 0; padding: .3rem; color: var(--ink); background: var(--bg-raise); border: 1px solid var(--panel-edge); border-radius: 5px; font: inherit; }
+.intake-selector select, .refined-ui #course-context select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; margin: 0; padding: .6rem .9rem; color: var(--ink); background-color: var(--bg-raise); border: 1px solid var(--panel-edge); border-radius: 6px; font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em; color-scheme: dark; }
+.intake-selector { grid-template-columns: auto minmax(0, max-content); justify-content: start; width: fit-content; max-width: 100%; gap: .65rem; }
+/* Fit the box to the selected value, not the longest option. Browsers without field-sizing use the longest option. */
+.intake-selector select, .refined-ui #course-context select { width: auto; min-width: 10rem; field-sizing: content; }
+.intake-selector select:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+.dashboard-nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin: 0 0 1.25rem; font-size: .85rem; }
+.dashboard-nav[hidden] { display: none; }
+.dashboard-nav a { color: var(--ink-dim); padding: .45rem 0; text-decoration: none; border-bottom: 2px solid transparent; }
+.dashboard-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--hot); }
+.dashboard-nav a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+#dashboard-scope { margin: 0 0 1.25rem; }
+#instruction-scope-status { grid-column: 1 / -1; margin: 0; }
+#instruction-scope-status:empty { display: none; }
+.student-list > .activity-card { display: block; padding: 1rem 0; }
+.activity-card .student-select { display: block; max-width: 100%; padding: .25rem 0; font-weight: 600; }
+.activity-metrics { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: .75rem; margin: .6rem 0; }
+.activity-metrics > div { min-width: 0; }
+.activity-metrics dt { color: var(--ink-dim); font-size: .7rem; line-height: 1.4; }
+.activity-metrics dd { margin: .25rem 0 0; color: var(--ink); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.activity-metrics dd[data-empty="true"] { font-size: .75rem; color: var(--ink-dim); }
+.activity-dates { color: var(--ink-dim); font-size: .75rem; line-height: 1.5; }
+.activity-dates summary { cursor: pointer; padding: .35rem 0; }
+.activity-dates dl { display: grid; grid-template-columns: minmax(8rem,auto) 1fr; gap: .35rem 1rem; margin: .5rem 0; }
+.activity-dates dd { margin: 0; }
+@media (max-width:600px) {
+  .activity-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .activity-dates dl { grid-template-columns: 1fr; gap: .1rem; }
+  .activity-dates dd { margin-bottom: .4rem; }
+}
 .music-search-help, .music-search-status { font-size: .8rem; color: var(--ink-dim); }
 .music-search-status:empty { display: none; }
 .music-search-status { padding: .55rem .45rem; }
@@ -2951,3 +3045,6 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .class-live-status { margin: .35rem .5rem; font-size: .8rem; line-height: 1.4; }
 .console > .class-live { margin: .75rem 0; padding: .65rem; border: 1px solid var(--panel-edge); }
 .console .console-actions [hidden], .split-action-group[hidden] { display: none !important; }
+
+.activity-guest, .activity-coverage { margin: .8rem 0; color: var(--ink-dim); font-size: .8rem; }
+.activity-guest summary, .activity-coverage summary { cursor: pointer; padding: .45rem 0; }

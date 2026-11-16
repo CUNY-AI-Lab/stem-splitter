@@ -27,8 +27,8 @@ export function mountBugReport(container, { path = () => location.pathname, endp
   const badge = trigger.querySelector('.bug-report__badge'), count = form.querySelector('.bug-report__count');
   const context = form.querySelector('.bug-report__context strong');
   // The preview uses fixed labels only; it never renders a URL, token, project name or account identifier.
-  const pageLabels = new Map([['/', 'Workspace'], ['/p/:shared-map', 'Shared map'], ['/account.html', 'My account'],
-    ['/teacher.html', 'Instructor'], ['/classroom.html', 'Class workspace']]);
+  const pageLabels = new Map([['/', 'Splitter'], ['/p/:shared-map', 'Shared map'], ['/account.html', 'My account'],
+    ['/teacher.html', 'Instructor'], ['/classroom.html', 'Classes']]);
   const instanceId = `bug-report-${crypto.randomUUID()}`;
   panel.id = instanceId; trigger.setAttribute('aria-controls', instanceId);
   form.querySelector('.bug-report__help').id = `${instanceId}-privacy`;
@@ -73,7 +73,7 @@ export function mountBugReport(container, { path = () => location.pathname, endp
     controller = new AbortController();
     const deadline = setTimeout(() => controller?.abort(), 30000);
     try {
-      const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
+      const response = await window.StemFetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, signal: controller.signal });
       return { response, result: await response.json() };
     } finally { clearTimeout(deadline); controller = null; }
   }

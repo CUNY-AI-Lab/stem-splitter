@@ -9,6 +9,6 @@ test('Cloudflare production and Workerd tests use the same patched framework', (
   const packages = read('./package.json');
   assert.deepEqual(production.alias, { hono: 'hono-cloudflare', 'hono/factory': 'hono-cloudflare/factory' });
   assert.deepEqual(fixture.alias, production.alias);
-  assert.equal(packages.dependencies['hono-cloudflare'], 'npm:hono@4.13.11');
-  assert.equal(read('./node_modules/hono-cloudflare/package.json').version, '4.13.11');
+  assert.equal(packages.dependencies['hono-cloudflare'], 'npm:hono@4.13.18');
+  assert.equal(read('./node_modules/hono-cloudflare/package.json').version, '4.13.18');
 });

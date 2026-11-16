@@ -1,3 +1,13 @@
+## Local Cloudflare release policy — November 5, 2026
+
+The user authorized direct Cloudflare releases from tested local commits and
+occasional batched GitHub pushes. Follow `docs/local-cloudflare-releases.md` and
+`scripts/local-release/deploy.mjs`. Do not require a GitHub push/PR/merge or an
+Actions run for this path. Keep local commits, Dev-first verification, exact-source
+receipts, production acceptance, and rollback compatibility. This policy
+supersedes older merge-before-deploy or current-remote-main requirements for
+these Cloudflare targets; it does not authorize changes to other services.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.

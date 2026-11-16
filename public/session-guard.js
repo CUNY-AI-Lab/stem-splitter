@@ -1,11 +1,11 @@
 /* Private results belong to the active browser session. Revalidation keeps
  * the original page controls in place while private regions stay concealed. */
 (() => {
-  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #account-footer, #console-panel, #course-discovery, #course-context, .resplit-dialog';
+  const privateSelectors = '#job-list, #folders, #shelf, #remix-deck, #upload-status, #account-details, #account-admin, #student-review, #account-reference, #console-panel, #course-discovery, #course-context, .resplit-dialog, .dashboard-nav, #dashboard-scope';
   // Conceal private regions independently of their application-owned visibility.
   // Upload progress and membership results can change while a check is pending.
   const concealment = document.createElement('style');
-  concealment.textContent = `html.stem-session-checking :is(${privateSelectors}) { display: none !important; }`;
+  concealment.textContent = `html.stem-session-checking :is(${privateSelectors}) { visibility: hidden !important; }`;
   document.head.appendChild(concealment);
   const originalFetch = window.fetch.bind(window);
   let subject = null, clearing = false, checking = null, suspended = false;
@@ -13,6 +13,14 @@
   let regions = [], recovery = null;
   const navigation = document.querySelector('.workspace-nav');
   const signIn = document.getElementById('header-signin')?.closest('.account-nav');
+  // The signed-in counterpart of CUNY Login, shown and hidden with the menu it sits in.
+  // Logout is a POST so the server can check its origin.
+  if (navigation) {
+    const form = document.createElement('form'), button = document.createElement('button');
+    form.className = 'header-logout'; form.action = '/auth/logout'; form.method = 'post';
+    button.type = 'submit'; button.className = 'account-button'; button.textContent = 'Log out';
+    form.appendChild(button); navigation.appendChild(form);
+  }
   const instructorLink = navigation?.querySelector('[data-instructor-nav]');
   let navigationRequest = null, navigationGeneration = 0;
   let usageActor = null, usageSession = null, usageQueue = [], usageTimer = null, usageSending = false, usageFailures = 0;
@@ -20,7 +28,11 @@
   function signedIn() { return !clearing && /^cail-[0-9a-f]{32}$/.test(subject || ''); }
 
   function renderNavigation() {
-    if (navigation) navigation.hidden = !signedIn() || suspended;
+    if (navigation) {
+      navigation.hidden = !signedIn();
+      navigation.inert = suspended;
+      navigation.style.visibility = suspended ? 'hidden' : '';
+    }
     if (signIn) signIn.hidden = signedIn();
   }
 
@@ -38,7 +50,7 @@
     const timer = setTimeout(() => controller.abort(), 5000);
     const current = () => generation === navigationGeneration && actor === subject && signedIn() && !suspended;
     const read = async path => {
-      const response = await originalFetch(path, { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+      const response = await originalFetch(StemPath(path), { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
       if (!current()) throw new Error('Navigation changed');
       observe(response);
       if (!response.ok) throw new Error('Instructor access unavailable');
@@ -64,7 +76,7 @@
         seen.add(cursor);
       }
       if (current() && destination) {
-        instructorLink.href = destination;
+        instructorLink.href = StemPath(destination);
         instructorLink.hidden = false;
       }
     } catch { /* Unverified capabilities never expose an instructor entry. */ }
@@ -85,7 +97,7 @@
     const actor = usageActor, batch = usageQueue.slice(0, 10);
     usageSending = true;
     try {
-      const response = await originalFetch('/api/usage-events', {
+      const response = await originalFetch(StemPath('/api/usage-events'), {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', keepalive: true,
         headers: { 'Content-Type': 'application/json', 'X-Stem-Usage-Actor': actor },
         body: JSON.stringify({ events: batch }), signal: AbortSignal.timeout(5000),
@@ -206,7 +218,7 @@
     try {
       const url = new URL(input instanceof Request ? input.url : String(input), location.href);
       sameOrigin = url.origin === location.origin;
-      reportRequest = sameOrigin && ['/api/bug-reports', '/api/bug-reports/session'].includes(url.pathname);
+      reportRequest = sameOrigin && ['/api/bug-reports', '/api/bug-reports/session'].map(StemPath).includes(url.pathname);
     } catch {}
     // A retained draft does not keep the old workspace alive or permit stale writes.
     // Report routes independently verify the session and compare its original actor.
@@ -225,7 +237,7 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       try {
-        const response = observe(await originalFetch('/api/account', {
+        const response = observe(await originalFetch(StemPath('/api/account'), {
           cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
         }));
         if ([401, 403].includes(response.status)) { clear(); return; }

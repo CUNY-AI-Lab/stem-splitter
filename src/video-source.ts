@@ -56,6 +56,15 @@ export function parseVideoSource(value: unknown): VideoSource | null {
   return { sourceType: 'vimeo', id: path[1], canonicalUrl: `https://vimeo.com/${path[1]}${hash ? `/${hash}` : ''}` };
 }
 
+// A YouTube address anywhere in text, with or without https://: a link pasted without its
+// scheme, or inside text a phone's share sheet adds ("Watch this: https://youtu.be/…").
+const YOUTUBE_IN_TEXT = /(?:^|[^\w.-])(?:https?:\/\/)?(?:(?:www|m|music)\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)\//i;
+
+/** Song search is for words; a YouTube link is imported, and other sources never search for it. */
+export function containsYouTubeLink(text: string): boolean {
+  return YOUTUBE_IN_TEXT.test(text);
+}
+
 export function parseYouTubeVideoId(value: unknown): string | null {
   const source = parseVideoSource(value);
   return source?.sourceType === 'youtube' ? source.id : null;

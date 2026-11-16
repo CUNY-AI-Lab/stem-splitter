@@ -5,7 +5,7 @@
   let verification;
 
   async function session(body) {
-    const response = await fetch('/auth/guest', {
+    const response = await window.StemFetch('/auth/guest', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });

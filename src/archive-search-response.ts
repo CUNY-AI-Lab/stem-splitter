@@ -7,7 +7,10 @@ export async function archiveSongSearchResponse(query: string, streaming: boolea
   const message = (error: unknown) => error instanceof ArchiveError ? error.message : 'Song search is temporarily unavailable.';
   // Bump this path when result eligibility changes; imports always revalidate.
   const durationLimit = maximumSeconds === 900 ? 900 : 300;
-  const key = cache && new Request(new URL(`/__stem-search-cache/v2?seconds=${durationLimit}&q=` + encodeURIComponent(archiveSongSearchKey(query)), cache.origin));
+  const address = (path: string) => cache && new Request(new URL(`${path}?seconds=${durationLimit}&q=` + encodeURIComponent(archiveSongSearchKey(query)), cache.origin));
+  const key = address('/__stem-search-cache/v5');
+  // Kept for a week, and read only when a search fails. Imports re-check the file, so an old list cannot import stale audio.
+  const lastGoodKey = address('/__stem-search-cache/v5/last-good');
   let cached: SongResults | undefined;
   if (cache && key) {
     try {
@@ -19,12 +22,31 @@ export async function archiveSongSearchResponse(query: string, streaming: boolea
     } catch { /* Cache availability must never block Archive search. */ }
   }
   const headers = { 'Cache-Control': 'private, no-store', 'X-Stem-Search-Cache': cached ? 'hit' : cache ? 'miss' : 'bypass' };
+  const lastGood = async (): Promise<SongResults | undefined> => {
+    if (!cache || !lastGoodKey) return undefined;
+    try {
+      const hit = await cache.storage.match(lastGoodKey);
+      if (!hit?.ok) return undefined;
+      const value = await hit.json() as SongResults;
+      return Array.isArray(value.results) && value.results.length > 0 && value.results.length <= 8 ? { ...value, fallback: true } : undefined;
+    } catch { return undefined; }
+  };
   const search = async (onResults?: (results: SongResults) => void) => {
     if (cached) return cached;
-    const result = await searchArchiveSongs(query, onResults, durationLimit);
-    if (cache && key && result.results.length) {
-      try { await cache.storage.put(key, Response.json(result, { headers: { 'Cache-Control': 'public, max-age=60' } })); }
-      catch { /* Results remain usable when cache writes fail. */ }
+    let result: SongResults;
+    try { result = await searchArchiveSongs(query, onResults, durationLimit); }
+    catch (error) {
+      const earlier = await lastGood();
+      if (!earlier) throw error;
+      onResults?.(earlier);
+      return earlier;
+    }
+    if (cache && key && lastGoodKey && result.results.length) {
+      // Results remain usable when cache writes fail.
+      await Promise.allSettled([
+        cache.storage.put(key, Response.json(result, { headers: { 'Cache-Control': 'public, max-age=60' } })),
+        cache.storage.put(lastGoodKey, Response.json(result, { headers: { 'Cache-Control': 'public, max-age=604800' } })),
+      ]);
     }
     return result;
   };

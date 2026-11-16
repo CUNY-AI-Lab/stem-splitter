@@ -169,7 +169,11 @@ async function request(provider:OpenAudioProvider,url:string,context:Context,max
         if(retries++<1&&until-Date.now()<=5000&&until<deadline){await pause(Math.max(0,until-Date.now()),controller.signal);continue;}
         throw new OpenAudioError('source_rate_limited',true,Math.max(1,Math.ceil((until-Date.now())/1000)));
       }
-      if(!response.ok){cancel(response);throw new OpenAudioError(response.status===403?'source_access_refused':'source_unavailable',response.status>=500);}
+      if(!response.ok){
+        // Host and challenge marker only: a catalog URL can carry a person's search words.
+        if(response.status===403)console.warn('open_audio_source_refused',{provider,host:new URL(target).hostname,mitigated:response.headers.get('cf-mitigated')});
+        cancel(response);throw new OpenAudioError(response.status===403?'source_access_refused':'source_unavailable',response.status>=500);
+      }
       let mime=mediaType(response);
       // LC Labs publishes both its JSON manifest and MP3s as binary/octet-stream.
       // Only these pinned dataset URLs get this exception; audio is still inspected below.

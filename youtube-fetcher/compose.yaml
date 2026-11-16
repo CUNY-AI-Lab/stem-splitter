@@ -1,0 +1,50 @@
+# The fetcher and its tunnel. Nothing is published on the host: the tunnel container is
+# the only way in, and it reaches the fetcher over this project's private network.
+# Needs SECRETS_DIR (holding `accepted`, one secret per line, and `cache-key`) and
+# FETCHER_UID (the owner of those files), usually from a .env file beside this one.
+name: stem-youtube-fetcher
+
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  networks: [fetcher]
+  logging:
+    driver: json-file
+    options: { max-size: "5m", max-file: "3" }
+
+services:
+  fetcher:
+    <<: *hardened
+    build:
+      context: .
+      args: { FETCHER_UID: "${FETCHER_UID:?set FETCHER_UID}" }
+    image: stem-youtube-fetcher:local
+    tmpfs: ["/tmp:size=96m,mode=1777"]
+    pids_limit: 128
+    mem_limit: 768m
+    cpus: 1.5
+    environment:
+      YT_FETCHER_CACHE_BYTES: "${YT_FETCHER_CACHE_BYTES:-1073741824}"
+    volumes:
+      - cache:/cache
+      - ${SECRETS_DIR:?set SECRETS_DIR}/accepted:/run/secrets/fetcher-secrets:ro
+      - ${SECRETS_DIR:?set SECRETS_DIR}/cache-key:/run/secrets/cache-key:ro
+
+  tunnel:
+    <<: *hardened
+    image: cloudflare/cloudflared:2026.7.3@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
+    # A quick tunnel gets a new address whenever this container restarts; the Workers'
+    # YOUTUBE_FETCHER_URL must then be updated (README). A named tunnel would not.
+    command: ["tunnel", "--no-autoupdate", "--url", "http://fetcher:8790"]
+    pids_limit: 64
+    mem_limit: 128m
+    depends_on:
+      fetcher: { condition: service_healthy }
+
+volumes:
+  cache:
+
+networks:
+  fetcher:

@@ -100,7 +100,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
 
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': tokens.alice });
     await page.reload();
-    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute('href', '/account.html');
+    await expect(page.getByRole('link', { name: 'Account', exact: true })).toHaveAttribute('href', '/account.html');
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.locator('#job-list .console')).toHaveCount(40);
     await expect(page.locator('#job-list .badge').filter({ hasText: 'CHECKING STATUS' })).toHaveCount(0);
@@ -130,7 +130,7 @@ test('account rack recovers on a new browser; isolates people; handles paging, i
     await expect(page.locator('#upload-message')).toContainText("You've used today's runs.");
     await expect(page.locator('#upload-message')).not.toContainText('Saved to your account');
     await page.unroute('**/api/jobs');
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('link', { name: 'Account', exact: true }).click();
     await expect(page.locator('#account-role')).toHaveText('Student access');
     await page.getByRole('link', { name: 'Splitter', exact: true }).click();
     await expect(page.locator('.badge.ready')).toBeVisible();
@@ -363,8 +363,7 @@ for (const width of [1280, 390]) test('account access failures hide navigation a
       await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
       if (status !== 401) await expect(page.locator('#rack-status')).toContainText(status === 403 ? 'Sign in again to check your access.' : 'Reload to try again.');
       await expect(page.locator('#workspace-nav')).toBeHidden();
-      await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Instructor Console', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Account', exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
   } finally { await server.close(); }

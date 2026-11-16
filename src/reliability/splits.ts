@@ -11,6 +11,7 @@ import { archiveAudioMetadata, archiveContentType, ArchiveError, fetchArchiveAud
 import { pollYouTubeImport, startVideoImport, replicateConfiguration, CAIL_IMPORT_BYTES, YouTubeError } from '../youtube.ts';
 import { fetchVimeoAudio, vimeoFailureDiagnostic } from '../vimeo.ts';
 import { importLinkViaService, linkImportEnabled } from '../link-import-client.ts';
+import { fetchViaYouTubeFetcher, youtubeFetcherConfigured } from '../youtube-fetcher.ts';
 import type { ImportResult } from '../link-import.ts';
 import { getBackend, type SeparationResult } from '../separation/index.ts';
 import { getSeparationOptions, defaultSplitChoice, modelIsAllowed, getReplicateRunner, replicateVersion, ADAPTIVE_FOUR_MODEL, adaptiveOutputEnabled } from '../separation/options.ts';
@@ -30,7 +31,7 @@ import { validateResplit, type ResplitPlacement } from '../resplits.ts';
 const MAX_BYTES=100*1024*1024;
 interface SplitInput {
   resplit?: ResplitPlacement;
-  sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string;
+  sourceType: 'upload'|'youtube'|'vimeo'|'archive'|'audius'; key?: string; filename: string; videoUrl?: string; youtubeUrl?: string; audiusId?: string; fetcherWaits?: number;
   openAudio?: OpenAudioSelection; archiveId?: string; archiveFile?: string; archiveSearch?: boolean; displayTitle?: string; model: string; auto: boolean; browserAnalysis?: unknown;
   /** Selected by the trusted adapter when reserving a new operation. */
   browserAudio?: boolean;
@@ -42,6 +43,11 @@ interface SplitInput {
 }
 type Complete = (env: Env, jobId: string, result: SeparationResult,operation?:Operation) => Promise<void>;
 const title=(value: unknown) => typeof value==='string' ? value.replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().slice(0,200) : '';
+/** The Worker imports YouTube audio itself through the fetcher or Cloudflare's browser; otherwise only the hosted importer can. */
+// About 39 minutes of growing waits for the YouTube fetcher before the hosted importer, or failure.
+const FETCHER_WAITS_MS=[15_000,30_000,60_000,120_000,300_000,600_000,600_000,600_000];
+const ownedYouTubeImport=(env:Env)=>typeof env.fetchYouTubeBrowserAudio==='function'||youtubeFetcherConfigured(env);
+
 export const operationWebhook=(env: Env,id: string,phase: 'fetch'|'split') => `${env.PUBLIC_BASE_URL}/api/webhooks/separation?job=${id}&phase=${phase}&token=${env.WEBHOOK_SECRET}`;
 
 export async function submitSplit(env: Env, principal: AppPrincipal, body: unknown, key: string | undefined) {
@@ -70,7 +76,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
     if (!url) throw new OperationError('invalid_source_url',400,'Paste a public HTTPS media link.');
     if (env.URL_IMPORT_ENABLED !== 'true' || !replicateConfiguration(env)) throw new OperationError('url_import_unavailable',503,'URL import is temporarily unavailable. Upload an audio file.');
     const known = parseVideoSource(url);
-    if (known?.sourceType === 'youtube' && typeof env.fetchYouTubeBrowserAudio === 'function') {
+    if (known?.sourceType === 'youtube' && ownedYouTubeImport(env)) {
       input.sourceType='youtube'; input.youtubeUrl=known.canonicalUrl; input.filename='YouTube audio';
     } else if (known?.sourceType === 'vimeo') {
       input.sourceType='vimeo'; input.videoUrl=known.canonicalUrl; input.filename='Vimeo audio';
@@ -78,7 +84,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   } else if (value.videoUrl!==undefined || value.youtubeUrl!==undefined) {
     const source=parseVideoSource(value.videoUrl!==undefined?value.videoUrl:value.youtubeUrl);
     if (!source) throw new OperationError('invalid_youtube_url',400,'Paste a supported video link.');
-    const browserYouTube=source.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function';
+    const browserYouTube=source.sourceType==='youtube'&&ownedYouTubeImport(env);
     if(source.sourceType==='youtube'&&!browserYouTube&&!replicateConfiguration(env))throw new OperationError('youtube_unconfigured',503,'Video import is temporarily unavailable. Upload an original or licensed audio file.');
     if(source.sourceType==='vimeo'||browserYouTube) {
       const runner=getReplicateRunner(input.model);
@@ -115,7 +121,7 @@ export async function submitSplit(env: Env, principal: AppPrincipal, body: unkno
   const resplit = await validateResplit(env, principal, value.resplit, input.key);
   if (resplit) input.resplit = resplit;
   const requestFingerprint=await fingerprint(input);
-  if(input.sourceType==='youtube'&&typeof env.fetchYouTubeBrowserAudio==='function')input.browserAudio=true;
+  if(input.sourceType==='youtube'&&ownedYouTubeImport(env))input.browserAudio=true;
   const id=crypto.randomUUID();
   return reserveOperation(env.DB,{subject:principal.subject,quotaClass:principal.quotaClass ?? 'member',role:principal.role,courseId,kind:'split',key:key ?? '',fingerprint:requestFingerprint,phase:input.sourceType==='upload'&&!input.remoteUrl&&!input.openAudio?'split':'fetch',jobId:id,request:input,
     statements: opId=>{
@@ -263,11 +269,40 @@ async function start(env: Env,op: Operation) {
       if(input.sourceType==='audius') {
         await fail(env,op,'unsupported_source','Search again to choose an Internet Archive recording. No allowance was used.');
       } else if(input.sourceType==='youtube') {
-        if(typeof env.fetchYouTubeBrowserAudio!=='function')throw new YouTubeError('Video import is temporarily unavailable.','youtube_fetch_unavailable');
-        await imported(env,op,input,await env.fetchYouTubeBrowserAudio(url,{deadline:op.deadline}));
+        let audio,fetcherError:YouTubeError|undefined;
+        if(youtubeFetcherConfigured(env)) {
+          try{audio=await fetchViaYouTubeFetcher(url,env,{deadline:op.deadline,maximumDurationSeconds:op.quota_class==='guest'?300:900});}
+          catch(error) {
+            // A final refusal (too long, private, live) would recur on every importer.
+            if(!(error instanceof YouTubeError)||!error.retryable)throw error;
+            fetcherError=error;
+            console.info(JSON.stringify({event:'youtube_fetcher_fallback',code:error.code,waits:input.fetcherWaits??0}));
+          }
+        }
+        // Cloudflare's browser is usually bot-checked by YouTube, so it gets one try, not one per wait,
+        // and its refusal never overrides the fetcher's: a bot check is not a property of the video.
+        if(!audio&&typeof env.fetchYouTubeBrowserAudio==='function'&&!input.fetcherWaits) {
+          try{audio=await env.fetchYouTubeBrowserAudio(url,{deadline:op.deadline});}
+          catch(error) {
+            if(!fetcherError)throw error;
+            console.info(JSON.stringify({event:'youtube_browser_fallback_failed',code:error instanceof YouTubeError?error.code:'unknown'}));
+          }
+        }
+        if(!audio)throw fetcherError??new YouTubeError('Video import is temporarily unavailable.','youtube_fetch_unavailable');
+        await imported(env,op,input,audio);
       } else await imported(env,op,input,await fetchVimeoAudio(url,{deadline:op.deadline,browser:env.AUTH_MODE==='cail'?env.BROWSER:undefined}));
     }
     catch(error) {
+      // While the fetcher is offline, busy or bot-checked, the import waits in the queue instead of failing.
+      // The owner's open page picks it up again once its wait has passed; the allowance place stays held.
+      const waits=input.fetcherWaits??0;
+      if(input.sourceType==='youtube'&&youtubeFetcherConfigured(env)&&error instanceof YouTubeError&&error.retryable
+        &&waits<FETCHER_WAITS_MS.length&&Date.now()+FETCHER_WAITS_MS[waits]+10000<op.deadline) {
+        input.fetcherWaits=waits+1;
+        await env.DB.prepare("UPDATE app_operations SET request_json=?,state='queued',provider_id=NULL,error_code='youtube_fetcher_waiting',not_before=?,lease_owner=NULL,lease_until=0,updated_at=? WHERE id=? AND fence=? AND lease_owner=? AND cancel_requested=0 AND state='running'")
+          .bind(JSON.stringify(input),Date.now()+FETCHER_WAITS_MS[waits],Date.now(),op.id,op.fence,op.lease_owner).run();
+        return;
+      }
       if(input.sourceType==='youtube'&&input.browserAudio===true&&env.URL_IMPORT_ENABLED==='true'
         &&error instanceof YouTubeError&&['youtube_fetch_unavailable','youtube_fetch_timeout'].includes(error.code)
         &&replicateConfiguration(env)&&Date.now()+10000<op.deadline) {

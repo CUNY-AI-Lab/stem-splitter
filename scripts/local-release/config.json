@@ -1,0 +1,85 @@
+{
+  "project": "stem-splitter",
+  "account": "452c33847cf5cb1e46f391fca32fd1b5",
+  "health": "/healthz",
+  "protected": "/api/account",
+  "targets": {
+    "dev": {
+      "worker": "stem-splitter-dev",
+      "config": "wrangler.dev.jsonc",
+      "cwd": "cloudflare",
+      "origin": "https://stem-splitter-dev.ailab-452.workers.dev"
+    },
+    "production": {
+      "worker": "cail-stem-splitter-preview",
+      "config": "wrangler.jsonc",
+      "cwd": "cloudflare",
+      "origin": "https://stem-splitter.ailab-452.workers.dev"
+    }
+  },
+  "install": [
+    {
+      "cwd": ".",
+      "command": [
+        "bun",
+        "install",
+        "--frozen-lockfile"
+      ]
+    },
+    {
+      "cwd": "cloudflare",
+      "command": [
+        "bun",
+        "install",
+        "--frozen-lockfile"
+      ]
+    },
+    {
+      "cwd": "cloudflare",
+      "command": [
+        "../node_modules/.bin/playwright",
+        "install",
+        "chromium"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "cwd": ".",
+      "command": [
+        "node",
+        "--test",
+        "scripts/local-release/deploy.test.mjs"
+      ]
+    },
+    {
+      "cwd": "cloudflare",
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ]
+    },
+    {
+      "cwd": "cloudflare",
+      "command": [
+        "bun",
+        "run",
+        "test"
+      ]
+    },
+    {
+      "cwd": "cloudflare",
+      "command": [
+        "../node_modules/.bin/playwright",
+        "test",
+        "--config",
+        "playwright.config.mjs",
+        "--max-failures=1"
+      ],
+      "env": {
+        "STEM_BROWSER": "chromium"
+      }
+    }
+  ]
+}

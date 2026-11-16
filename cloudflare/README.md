@@ -1,3 +1,7 @@
+> **November 5 release update:** Direct local Cloudflare deployment with batched
+> GitHub pushes is now supported. See [the local release runbook](../docs/local-cloudflare-releases.md).
+> Its local-commit procedure supersedes older GitHub/CI prerequisites below.
+
 # Cloudflare deployment
 
 ## Current production check — October 26, 2026
@@ -383,9 +387,11 @@ public route (`workers_dev: false`); the splitter reaches it only through the
   files over the native byte caps answer `hosted: true`, and the splitter uses
   the existing pinned ffmpeg importer, so the native path never refuses what the
   hosted path would accept.
-- **YouTube links.** `POST /api/link-info` returns oEmbed title metadata and an
-  Internet Archive search query. The app does not fetch YouTube audio; the UI
-  runs the Archive song search and offers a local upload.
+- **YouTube links.** The page sends a YouTube link straight to `/api/jobs` as
+  `videoUrl`, without asking this Worker. The split pipeline fetches the audio:
+  first the yt-dlp fetcher (`../youtube-fetcher/`), then Cloudflare's browser,
+  then the hosted importer. A failed fetch uses no allowance. `POST
+  /api/link-info` still answers YouTube links with oEmbed metadata.
 - **Flag.** `LINK_IMPORT_ENABLED` is `"true"` in production since 2026-10-18
   (`cail-stem-import` deployed first). With it set to `"false"`, or with the
   binding absent, every path behaves exactly as before.

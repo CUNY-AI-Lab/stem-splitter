@@ -39,12 +39,17 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   CAIL_CLASSROOM_ENABLED?: string;
   /** Trusted request scope set only after stored-job authorization. */
   ASSISTANT_COURSE_ID?: string | null;
+  /** Request-authenticated subject for private Personal instructions/caches. */
+  ASSISTANT_PERSONAL_SUBJECT?: string | null;
   CAIL_LOGIN_URL?: string;
   ADMISSION_RESOLVER?: import('./identity.ts').AdmissionResolver;
   REMIXER_ENABLED?: string;
   APP_BASE_PATH?: string;
   RELEASE?: string;
   REQUEST_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
+  // Song search backstops (src/search-limits.ts).
+  SEARCH_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
+  FETCHER_SEARCH_LIMIT?: { limit(input: { key: string }): Promise<{ success: boolean }> };
 
   // Vars (wrangler.jsonc)
   R2_BUCKET_NAME: string;
@@ -65,6 +70,16 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   REPLICATE_YT_MODEL_VERSION?: string;
   /** "replicate-first" in production; defaults to the free in-Worker fetch first. */
   YOUTUBE_FETCH_ORDER?: string;
+  /** HTTPS base URL of the yt-dlp fetcher (youtube-fetcher/), reached through a Cloudflare Tunnel. */
+  YOUTUBE_FETCHER_URL?: string;
+  /** Shared secret the fetcher requires; at least 32 characters. Unset disables the fetcher. */
+  YOUTUBE_FETCHER_SECRET?: string;
+  /**
+   * A fetcher running as a Worker on this account (Dev's Cloudflare Containers trial). Workers
+   * cannot fetch another workers.dev Worker on the same account, so calls go through this
+   * binding when it is set; the URL and secret above are still required and still sent.
+   */
+  YOUTUBE_FETCHER_SERVICE?: Fetcher;
   /** Requires the canaried public-address-only general URL fetch model. */
   URL_IMPORT_ENABLED?: string;
   /** Service binding to cail-stem-import, which owns every fetch to a user-supplied host. */

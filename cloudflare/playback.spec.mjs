@@ -277,7 +277,8 @@ test('compact controls never obscure the short full-track waveform and omit the 
         expect(mute.width).toBeLessThanOrEqual(69);
         const currentMeter = await row.locator('.meter').boundingBox();
         expect(solo.y + solo.height).toBeLessThanOrEqual(currentMeter.y - 2);
-        expect(mute.height).toBeGreaterThanOrEqual(24);
+        // Firefox bounding boxes can report 24px as 23.999969px.
+        expect(mute.height + 0.001).toBeGreaterThanOrEqual(24);
         await row.locator('.solo-btn').click();
       }
       await row.locator('.mute-btn').click();
@@ -331,7 +332,7 @@ test('long stem names stay whole, waveforms align and phone controls share one s
         expect(play.width).toBeLessThanOrEqual(44);
         expect(play.width).toBeGreaterThanOrEqual(40);
         const toggle = await page.locator('.actions-toggle').boundingBox();
-        expect(toggle.height).toBeGreaterThanOrEqual(24);
+        expect(toggle.height + 0.001).toBeGreaterThanOrEqual(24);
         expect(toggle.height).toBeLessThanOrEqual(30);
       }
     }

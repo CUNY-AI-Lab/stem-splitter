@@ -190,6 +190,8 @@ test('browser claim uses no client IDs, preserves cache on failure and merges on
   calls++;assert.equal(path,'/api/account/claim-guest');assert.equal(options.body,undefined);
   return {ok:!fail,headers:new Headers({'X-Stem-Account':alice}),json:async()=>({claimedJobIds:['saved'],guestStorageKey:guestKey})};
  }};
+ context.window.fetch=context.fetch;
+ vm.runInNewContext(readFileSync(new URL('../public/app-path.js',import.meta.url),'utf8'),{...context,URL,document:{currentScript:{src:'https://stem.test/app-path.js'}}});
  vm.runInNewContext(source,context);const before=data.get(guestKey);
  await assert.rejects(context.window.StemGuestClaim.run(member()));assert.equal(data.get(guestKey),before);
  fail=false;await context.window.StemGuestClaim.run(member());assert.equal(calls,2);
@@ -252,6 +254,8 @@ test('browser claims are scoped per account and reject a mismatched confirmation
  const replies=new Map<string,(value:unknown)=>void>();
  const context={window:{} as any,AbortSignal,localStorage:{getItem:(key:string)=>data.get(key)??null,setItem:(key:string,value:string)=>data.set(key,value)},
   fetch:async(_path:string,options:any)=>new Promise(resolve=>{assert.equal(options.body,undefined);replies.set(options.headers['X-Stem-Claim-Actor'],resolve);})};
+ context.window.fetch=context.fetch;
+ vm.runInNewContext(readFileSync(new URL('../public/app-path.js',import.meta.url),'utf8'),{...context,URL,document:{currentScript:{src:'https://stem.test/app-path.js'}}});
  vm.runInNewContext(source,context);
  const a=context.window.StemGuestClaim.run(member()),repeat=context.window.StemGuestClaim.run(member()),b=context.window.StemGuestClaim.run(member(bob));
  assert.equal(a,repeat);assert.notEqual(a,b);assert.equal(replies.size,2);

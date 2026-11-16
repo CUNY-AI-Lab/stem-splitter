@@ -11,7 +11,7 @@ import { courseFixture } from './course-fixture.ts';
 import { beginCourseTurn, finishCourseTurn, conversationPage, resetCourseConversation, recoverExpiredCourseTurn } from '../src/classroom/conversations.ts';
 import { cacheGuideIfPromptCurrent, getGuide } from '../src/assistant/index.ts';
 import { hashSystemPromptFingerprint } from '../src/assistant/prompt.ts';
-import { authorizeStoredCourseWork } from '../src/classroom/access.ts';
+import { authorizeStoredCourseWork, jobPermission } from '../src/classroom/access.ts';
 import { saveCoursePrompt } from '../src/classroom/prompts.ts';
 import { purgeExpiredListeningConversations } from './retention.ts';
 import { assistantReceipt, reserveAssistant } from '../src/reliability/assistant.ts';
@@ -48,6 +48,29 @@ async function setup(){
   }
   return {db,env,request,job,revoked,calls:()=>calls,principal:async(who:Person='alice',courseId=A)=>({subject:ids[who],role:'student',displayName:'Alice',course:await courseFixture(ids[who],courseId),courseId} as AppPrincipal)};
 }
+test('current class access snapshots are private, scoped and refreshed for the same person',async()=>{
+  const {request,env}=await setup();
+  assert.equal((await request(`/api/classroom/courses/${A}`,'outsider')).status,403);
+  assert.equal((await request('/api/classroom/courses/unconfigured-course')).status,403);
+  let owner=false;
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async({subject,classId})=>courseFixture(subject,classId,owner);
+  for(const nextOwner of [false,true,false]) {
+    owner=nextOwner;
+    const response=await request(`/api/classroom/courses/${A}`);
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('cache-control') || '', /private.*no-store/);
+    const {course}=await response.json() as any;
+    assert.equal(course.classId,A);
+    assert.equal(course.capabilities.instructorPanel,owner);
+    assert.equal(course.participant,!owner);
+  }
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>({ok:false,code:'revoked',retryable:false});
+  assert.equal((await request(`/api/classroom/courses/${A}`)).status,403);
+  assert.equal((await request('/api/account')).status,200);
+  env.ADMISSION_RESOLVER!.resolveCourseAccessV2=async()=>{throw new Error('fixture authority outage');};
+  assert.equal((await request(`/api/classroom/courses/${A}`)).status,503);
+  assert.equal((await request('/api/account')).status,200);
+});
 test('Lab membership grants personal access while course enrollment and ownership protect course APIs',async()=>{
   const {request,job,revoked,env}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
   const outsiderAccount=await request('/api/account','outsider');assert.equal(outsiderAccount.status,200);
@@ -144,7 +167,7 @@ test('current roster reports older personal app use without exposing recordings 
   const result=await request(`/api/classroom/courses/${A}/roster`,'ownerA');assert.equal(result.status,200);
   const page=await result.json() as any,alice=page.participants[0];
   assert.equal(alice.splitCount,1);assert.equal(alice.completedCount,1);
-  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined},{runs:2,completed:2,guideTurns:1,recordedVisits:1,recordedPlays:0,lastActiveAt:undefined});
+  assert.deepEqual({...alice.appUsage,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined},{runs:2,completed:2,guideTurns:1,chatReplies:1,guideCues:0,recordedVisits:1,recordedPlays:0,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined});
   assert.ok(Date.now()-Date.parse(alice.appUsage.lastActiveAt)<60000);
   assert.equal(page.participants[1].appUsage,null);
   assert.equal(page.activityScope.recordedVisitsDays,30);
@@ -283,7 +306,7 @@ test('Personal prompts and cached guides exclude teaching instructions regardles
   const saved=await request('/api/teacher/prompt','alice','PUT',edit);assert.equal(saved.status,200);
   assert.equal((await saved.json() as any).guidesCleared,0);
   assert.equal((await request('/api/teacher/prompt','alice','PUT',edit)).status,409,'stale global write retains revision checks');
-  assert.ok(await getGuide(env,'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
+  assert.ok(await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.alice},'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
   assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,0,empty),true,'base-only personal guides are independent of class edits');
   await db.prepare('UPDATE guides SET prompt_hash=? WHERE job_id=?').bind(await hashSystemPromptFingerprint(globalText),'personal').run();
   assert.equal(await getGuide(env,'personal'),null,'old teaching-influenced guides cannot be reused');
@@ -301,9 +324,9 @@ test('Personal prompts and cached guides exclude teaching instructions regardles
   assert.equal(systems.length,3);
   for(const system of systems.slice(0,2)){assert.doesNotMatch(system,new RegExp(globalText));assert.doesNotMatch(system,new RegExp(courseText));}
   assert.match(systems[2],new RegExp(courseText));assert.doesNotMatch(systems[2],new RegExp(globalText));
-  assert.equal((await getGuide(env,'personal'))?.text,'A useful reply.');
+  assert.equal((await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.alice},'personal'))?.text,'A useful reply.');
   assert.equal((await request('/api/teacher/prompt','admin','PUT',{amendment:'New global instructions',expectedRevision:1,changeNote:'Global update'})).status,200);
-  assert.ok(await getGuide(env,'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
+  assert.ok(await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.alice},'personal'));assert.equal((await getGuide(env,'course'))?.text,'Course guide');
   assert.equal(await cacheGuideIfPromptCurrent({...env,ASSISTANT_COURSE_ID:null},personalGuide,1,await hashSystemPromptFingerprint(globalText)),false);
   await db.prepare("UPDATE app_users SET role_expires_at=datetime('now','-1 day'),revision=revision+1,updated_by=? WHERE subject=?").bind(ids.admin,ids.alice).run();
   assert.equal((await request('/api/teacher/prompt')).status,403,'expired instructor role cannot edit global policy');
@@ -328,7 +351,7 @@ test('CUNY individual access without course enrollment uses only the default Lis
   assert.equal(chat.status,200);await chat.text();
   assert.equal(systems.length,2);
   for(const system of systems)assert.ok(!system.includes(teaching));
-  assert.equal((await getGuide(env,'individual'))?.text,'An independent listening reply.');
+  assert.equal((await getGuide({...env,ASSISTANT_PERSONAL_SUBJECT:ids.outsider},'individual'))?.text,'An independent listening reply.');
 });
 test('course folders enforce same-course items, grants and author-only notes on every route',async()=>{
   const {request,job,db}=await setup();await job('a');await job('b','alice',B);await job('personal','alice',null);
@@ -348,6 +371,88 @@ test('course folders enforce same-course items, grants and author-only notes on 
   await db.prepare("INSERT INTO annotations(id,job_id,at_seconds,text) VALUES('historical','a',0,'Old note')").run();
   const state=await(await request('/api/jobs/a','bob')).json() as any;assert.equal(state.annotations[0].authorName,'Author unavailable');assert.equal(state.annotations[0].canDelete,false);
   assert.equal((await request(base,'ownerA','PUT',{permission:'private',revision:1})).status,200);assert.equal((await request('/api/jobs/a','bob')).status,404);assert.equal((await request('/api/files/stems/a/vocals.mp3','bob')).status,404);
+});
+test('participants create private folders and contribute only their own splits after instructor sharing',async()=>{
+  const {request,job,db,env}=await setup();
+  await job('alice-a','alice',A);await job('bob-a','bob',A);await job('alice-b','alice',B);await job('alice-personal','alice',null);
+  const root=`/api/classroom/courses/${A}/folders`;
+  const made=await(await request(root,'alice','POST',{name:'My folder'})).json() as any;
+  const id=made.folder.id,path=`${root}/${id}`;
+  assert.deepEqual(made.folder,{id,name:'My folder',permission:'private',revision:0,canManage:true,canContribute:false});
+  assert.equal((await request(path+'/items','alice','POST',{jobId:'alice-a'})).status,200,'creator may add their own finished split while private');
+  assert.equal((await request(path,'bob')).status,404);
+  assert.equal((await request(path,'ownerA')).status,200);
+  const ownJobs=await request(`/api/classroom/courses/${A}/participants/${(await courseFixture(ids.alice,A)).memberId}/jobs`,'alice');
+  assert.equal(ownJobs.status,200);assert.deepEqual((await ownJobs.json() as any).jobs.map((row:any)=>row.id),['alice-a']);
+  assert.equal((await request(`/api/classroom/courses/${A}/participants/${(await courseFixture(ids.bob,A)).memberId}/jobs`,'alice')).status,404);
+  assert.equal((await request(`/api/classroom/courses/${A}/participants/${(await courseFixture(ids.alice,B)).memberId}/jobs`,'alice')).status,404);
+  const instructorJobs=await request(`/api/classroom/courses/${A}/participants/${(await courseFixture(ids.bob,A)).memberId}/jobs`,'ownerA');
+  assert.equal(instructorJobs.status,200);assert.deepEqual((await instructorJobs.json() as any).jobs.map((row:any)=>row.id),['bob-a']);
+  assert.equal((await request(path,'ownerA','PUT',{permission:'comment',revision:0})).status,200);
+  assert.equal((await db.prepare('SELECT creator_subject,created_by FROM course_folders WHERE id=?').bind(id).first<any>()).creator_subject,ids.alice);
+  assert.equal((await db.prepare('SELECT created_by FROM course_folders WHERE id=?').bind(id).first<any>()).created_by,ids.ownerA);
+  const shared=await(await request(path,'bob')).json() as any;
+  assert.equal(shared.folder.canManage,false);assert.equal(shared.folder.canContribute,true);
+  assert.equal((await request(path+'/items','bob','POST',{jobId:'bob-a'})).status,200);
+  for(const jobId of ['alice-a','alice-b','alice-personal'])assert.equal((await request(path+'/items','bob','POST',{jobId})).status,404,`bob cannot add ${jobId}`);
+  assert.equal((await request(path+'/items','alice','POST',{jobId:'bob-a'})).status,404,'student folder managers still add only their own jobs');
+  assert.equal((await request(path+'/items','alice','POST',{jobId:'alice-a'})).status,200);
+  const detail=await(await request(path,'bob')).json() as any;
+  const byId=Object.fromEntries(detail.items.map((item:any)=>[item.jobId,item]));
+  assert.equal(byId['bob-a'].canRemove,true);assert.equal(byId['alice-a'].canRemove,false);
+  assert.equal('added_by' in byId['bob-a'],false);
+  assert.equal((await request(path+'/items/alice-a','bob','DELETE')).status,404);
+  assert.equal((await request(path+'/items/bob-a','bob','DELETE')).status,200);
+  assert.equal((await request(path+'/items/alice-a','alice','DELETE')).status,200,'folder creator manages every item');
+  assert.equal((await request(path+'/items','ownerA','POST',{jobId:'bob-a'})).status,200);
+  const creatorPrincipal={subject:ids.alice,role:'student',displayName:'Alice',course:await courseFixture(ids.alice,A),courseId:A} as AppPrincipal;
+  const privateBefore=await jobPermission(env,creatorPrincipal,'bob-a');
+  assert.equal(privateBefore?.read,true);
+  assert.equal(privateBefore?.comment,true,'the shared comment grant applies to the creator too');
+  assert.equal((await request(path,'ownerA','PUT',{permission:'private',revision:1})).status,200);
+  const privateGrant=await jobPermission(env,creatorPrincipal,'bob-a');
+  assert.equal(privateGrant?.read,true);assert.equal(privateGrant?.comment,false,'private creator access remains read-only');
+  assert.equal((await request(path,'bob')).status,404);
+  assert.equal((await request(path+'/items','bob','POST',{jobId:'bob-a'})).status,404);
+  assert.equal((await request('/api/jobs/bob-a','alice')).status,200,'creator sees the exact item placed in their private folder');
+  assert.equal((await request(path,'alice')).status,200);
+  assert.equal((await request(path,'ownerA','PUT',{permission:'read',revision:1})).status,409,'stale folder revisions remain rejected');
+});
+test('student folder creation requires current membership in that exact class',async()=>{
+  const {request,revoked}=await setup();
+  assert.equal((await request(`/api/classroom/courses/${A}/folders`,'outsider','POST',{name:'Wrong class'})).status,403);
+  revoked.add(`${ids.alice}:${A}`);
+  assert.equal((await request(`/api/classroom/courses/${A}/folders`,'alice','POST',{name:'Revoked'})).status,403);
+});
+test('peer add and remove recheck shared permission atomically after concurrent withdrawal',async()=>{
+  const {request,job,db}=await setup();await job('race-bob','bob');
+  const root=`/api/classroom/courses/${A}/folders`;
+  const made=await(await request(root,'ownerA','POST',{name:'Race'})).json() as any;
+  const path=`${root}/${made.folder.id}`;
+  await request(path,'ownerA','PUT',{permission:'read',revision:0});
+  const originalPrepare=db.prepare.bind(db);
+  let changeBeforeWrite=false;
+  db.prepare=((sql:string)=>{
+    const statement=originalPrepare(sql);
+    if(!changeBeforeWrite||!/^INSERT INTO course_folder_items|^DELETE FROM course_folder_items/.test(sql))return statement;
+    return {bind:(...values:unknown[])=>{
+      const bound=statement.bind(...values);
+      return {run:async()=>{
+        changeBeforeWrite=false;
+        await originalPrepare("UPDATE course_folders SET permission='private',revision=revision+1 WHERE id=?").bind(made.folder.id).run();
+        return bound.run();
+      }};
+    }} as any;
+  }) as typeof db.prepare;
+  changeBeforeWrite=true;
+  assert.equal((await request(path+'/items','bob','POST',{jobId:'race-bob'})).status,404);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folder_items WHERE folder_id=?').bind(made.folder.id).first<any>()).n,0);
+  await request(path,'ownerA','PUT',{permission:'read',revision:2});
+  assert.equal((await request(path+'/items','bob','POST',{jobId:'race-bob'})).status,200);
+  changeBeforeWrite=true;
+  assert.equal((await request(path+'/items/race-bob','bob','DELETE')).status,404);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folder_items WHERE folder_id=?').bind(made.folder.id).first<any>()).n,1);
+  db.prepare=originalPrepare;
 });
 test('fresh and additive migration preserve private history, no backfill; retained course messages purge',async()=>{
   const fresh=readFileSync(new URL('../schema.sql',import.meta.url),'utf8');
@@ -370,6 +475,15 @@ test('fresh and additive migration preserve private history, no backfill; retain
   const usageAccounts=readFileSync(new URL('../migrations/0030-course-usage-accounts.sql',import.meta.url),'utf8');db.applySchema(usageAccounts);db.applySchema(usageAccounts);
   const reports=readFileSync(new URL('../migrations/0031-bug-report-receipts.sql',import.meta.url),'utf8');db.applySchema(reports);db.applySchema(reports);
   const deliveries=readFileSync(new URL('../migrations/0032-bug-report-deliveries.sql',import.meta.url),'utf8');db.applySchema(deliveries);db.applySchema(deliveries);
+  const personal=readFileSync(new URL('../migrations/0033-personal-listening-instructions.sql',import.meta.url),'utf8');db.applySchema(personal);db.applySchema(personal);
+  await db.prepare("INSERT INTO course_folders(id,course_id,name,created_by,permission) VALUES('legacy-folder',?,'Legacy','legacy-sharing-actor','private')").bind(A).run();
+  await db.prepare("INSERT INTO course_folder_items(folder_id,job_id,filename,model) VALUES('legacy-folder','old','Old private','fixture')").run();
+  const contributors=readFileSync(new URL('../migrations/0034-course-folder-contributors.sql',import.meta.url),'utf8');db.applySchema(contributors);
+  assert.equal((await db.prepare("SELECT creator_subject FROM course_folders WHERE id='legacy-folder'").first<any>()).creator_subject,'');
+  assert.equal((await db.prepare("SELECT added_by FROM course_folder_items WHERE folder_id='legacy-folder'").first<any>()).added_by,'');
+  await db.prepare("UPDATE course_folders SET permission='read',created_by='new-sharing-actor',revision=revision+1 WHERE id='legacy-folder'").run();
+  assert.equal((await db.prepare("SELECT creator_subject,created_by FROM course_folders WHERE id='legacy-folder'").first<any>()).creator_subject,'');
+  assert.equal((await db.prepare("SELECT actor FROM course_folder_events WHERE folder_id='legacy-folder'").first<any>()).actor,'new-sharing-actor');
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);
@@ -467,6 +581,26 @@ test('storage failures before and after finish remain recoverable and never dupl
  const retry=await beginCourseTurn(env,'storage',p,'Another request',fresh.turnId,fresh.revision);assert.ok(retry.replay);assert.equal(retry.replay.reply,'Saved once');assert.equal((await conversationPage(env,'storage',p.subject)).entries.length,4);
 });
 
+test('class folder delete is instructor-only, leaves the split and ends access through the folder',async()=>{
+ const {request,db,job}=await setup();await job('kept-split');
+ const root=`/api/classroom/courses/${A}/folders`;
+ const made=await(await request(root,'ownerA','POST',{name:'Week one'})).json() as any;
+ const path=root+'/'+made.folder.id;
+ await request(path,'ownerA','PUT',{permission:'read',revision:0});
+ await request(path+'/items','ownerA','POST',{jobId:'kept-split'});
+ assert.equal((await request('/api/jobs/kept-split','bob')).status,200);
+ assert.equal((await request(path,'alice','DELETE')).status,403);
+ assert.equal((await request(path,'ownerB','DELETE')).status,403);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folders WHERE id=?').bind(made.folder.id).first())?.n,1);
+ assert.equal((await request(path,'ownerA','DELETE')).status,200);
+ assert.equal((await request(path,'ownerA')).status,404);
+ assert.equal((await request(path,'ownerA','DELETE')).status,404);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folder_items WHERE folder_id=?').bind(made.folder.id).first())?.n,0);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM jobs WHERE id=?').bind('kept-split').first())?.n,1);
+ assert.equal((await db.prepare('SELECT count(*) AS n FROM course_folder_events WHERE folder_id=?').bind(made.folder.id).first())?.n,1);
+ assert.notEqual((await request('/api/jobs/kept-split','bob')).status,200);
+ assert.equal((await request('/api/jobs/kept-split','alice')).status,200);
+});
 test('class folder rename retains sharing, contents and course while rejecting students and stale revisions',async()=>{
  const {request,db,job}=await setup();await job('rename-kept');
  const root=`/api/classroom/courses/${A}/folders`;
@@ -481,7 +615,7 @@ test('class folder rename retains sharing, contents and course while rejecting s
  assert.equal((await request(path,'ownerA','PUT',{name:'Stale name',revision:1})).status,409);
  assert.equal((await request(path,'ownerA','PUT',{name:'New name',revision:2})).status,200);
  const detail=await(await request(path,'alice')).json() as any;
- assert.deepEqual(detail.folder,{id:made.folder.id,name:'New name',permission:'comment',revision:2});
+ assert.deepEqual(detail.folder,{id:made.folder.id,name:'New name',permission:'comment',revision:2,canManage:false,canContribute:true});
  assert.equal(detail.items[0].jobId,'rename-kept');
  assert.equal((await db.prepare('SELECT course_id FROM course_folders WHERE id=?').bind(made.folder.id).first())?.course_id,A);
 });

@@ -29,7 +29,8 @@ async function header(page, signedIn, instructor = false) {
   if (!signedIn) {
     await expect(nav).toBeHidden();
     await expect(page.locator('#header-signin')).toBeVisible();
-    await expect(page.locator('.lab-account .account-nav')).toHaveText(/Guest\s*\|\s*CUNY Login/);
+    await expect(page.getByRole('button', { name: 'Log out', exact: true })).toHaveCount(0);
+    await expect(page.locator('.lab-account .account-nav:visible')).toHaveText('CUNY Login');
     const logo = await page.locator('.lab-brand').boundingBox();
     const login = await page.locator('#header-signin').boundingBox();
     expect(login.y).toBeGreaterThanOrEqual(logo.y + logo.height);
@@ -37,8 +38,8 @@ async function header(page, signedIn, instructor = false) {
   }
   await expect(nav).toBeVisible();
   await expect(page.locator('#header-signin')).toBeHidden();
-  await expect(nav.locator('a:visible')).toHaveText(instructor
-    ? ['Splitter', 'Workspace', 'Settings', 'Instructor Console'] : ['Splitter', 'Workspace', 'Settings']);
+  await expect(page.locator('.lab-account').getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
+  await expect(nav.locator('a:visible')).toHaveText(['Splitter', 'Classes', 'Account']);
 }
 for (const path of paths) test('signed-out ' + path + ' hides the whole menu with login below the logo', async ({ page }) => {
   const f = await fixture(page);
@@ -85,11 +86,11 @@ for (const role of ['member', 'instructor', 'admin', 'course instructor']) test(
     for (const path of paths) {
       await page.goto(new URL(path, f.url).href);
       await header(page, true, role !== 'member');
-      if (role !== 'member') {
-        await expect(page.locator('[data-instructor-nav]')).toHaveAttribute('href', role === 'course instructor' ? '/teacher.html?course=' + courseId : '/teacher.html');
+      {
+        await expect(page.locator('[data-instructor-nav]')).toHaveCount(0);
         if (path === '/teacher.html') {
           await expect(page.locator('#console-panel')).toBeVisible();
-          await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Instructor Console');
+          await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Account');
         }
       }
       for (const width of [390, 1280]) {
@@ -156,8 +157,9 @@ test('a late instructor response cannot reopen navigation after session loss wit
       requested = true; await pending;
       await route.fulfill({ json: { teacher: { username: TEST_SUBJECTS.carol, displayName: 'Fixture instructor' } } }).catch(() => {});
     });
-    await page.evaluate(() => window.StemSessionGuard.check({ conceal: false }));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect.poll(() => requested).toBe(true);
+    await page.evaluate(() => window.StemSessionGuard.check({ conceal: false }));
     await page.evaluate(() => { window.StemReportDraft = { hasDraft: () => true, sessionChanged: () => {} }; });
     await page.setExtraHTTPHeaders({});
     await page.evaluate(() => window.StemSessionGuard.check());
