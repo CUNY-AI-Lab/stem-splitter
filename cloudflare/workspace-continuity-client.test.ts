@@ -268,3 +268,114 @@ for (const who of [alice,guest]) test(`source quietly finishes only typed pendin
     assert.equal(JSON.parse(f.storage.get(key(who))!).draft,'');
   }finally{f.stop();}
 });
+
+const pendingClear = () => JSON.stringify({pending:{listeningDraft:{kind:'listeningDraft',value:null,
+  baseRevision:5,requestId:'12345678-1234-4123-a123-123456789012'}},cleared:true});
+const journalSlot = (id:string,who=alice) => `stem-ui-journal:${who}:${id}`;
+const drainCursor = (who=alice) => `stem-ui-drain:${who}`;
+
+test('source drain skips empty and corrupt journals without consuming its pending-job budget',async()=>{
+  const empty=JSON.stringify({pending:{},cleared:true});
+  const initial:Record<string,string>=Object.fromEntries(Array.from({length:70},(_,i)=>[journalSlot(`empty-${i}`),empty]));
+  initial[journalSlot('bad-json')]='{invalid';
+  initial[journalSlot('bad-write')]=JSON.stringify({pending:{listeningDraft:{value:'invalid'}},cleared:true});
+  initial[journalSlot('not/a/job')]=pendingClear();
+  initial[journalSlot('pending')]=pendingClear();
+  initial[drainCursor()]='not/a/job';
+  const f=fixture(initial);
+  try{
+    await f.context.StemUiState.seed(alice,{flushJournal:true});
+    assert.deepEqual(f.calls.map(c=>c.path),['/api/jobs/pending/ui-state']);
+    assert.deepEqual(JSON.parse(f.storage.get(journalSlot('pending'))!),{pending:{},cleared:false});
+    for(const [slot,bytes] of Object.entries(initial))if(slot!==journalSlot('pending')&&slot!==drainCursor())assert.equal(f.storage.get(slot),bytes);
+  }finally{f.stop();}
+});
+
+test('source drain progresses beyond64 pending jobs across fresh source documents',async()=>{
+  const initial=Object.fromEntries(Array.from({length:65},(_,i)=>[journalSlot(`job-${String(i).padStart(3,'0')}`),pendingClear()]));
+  const first=fixture(initial);
+  let second:ReturnType<typeof fixture>|undefined;
+  try{
+    await first.context.StemUiState.seed(alice,{flushJournal:true});assert.equal(first.calls.length,64);
+    second=fixture(Object.fromEntries(first.storage));
+    await second.context.StemUiState.seed(alice,{flushJournal:true});
+    assert.deepEqual(second.calls.map(c=>c.path),['/api/jobs/job-064/ui-state']);
+    assert.ok([...second.storage].filter(([k])=>k.startsWith(`stem-ui-journal:${alice}:`)).every(([,v])=>!Object.keys(JSON.parse(v).pending).length));
+  }finally{first.stop();second?.stop();}
+});
+
+test('source drain rotates past persistent failures and keeps actor journals isolated',async()=>{
+  const initial=Object.fromEntries(Array.from({length:65},(_,i)=>[journalSlot(`job-${String(i).padStart(3,'0')}`),pendingClear()]));
+  initial[journalSlot('other',bob)]=pendingClear();initial[drainCursor(bob)]='other';
+  const f=fixture(initial,(call:any,reply:any)=>{
+    if(call.path.endsWith('/job-064/ui-state'))return reply({revision:6});
+    if(call.path.endsWith('/job-000/ui-state'))throw new TypeError('offline');
+    return reply({},alice,503);
+  });
+  try{
+    await f.context.StemUiState.seed(alice,{flushJournal:true});assert.equal(f.calls.length,64);
+    await f.context.StemUiState.seed(alice,{flushJournal:true});assert.equal(f.calls.length,128);
+    assert.equal(f.calls[64].path,'/api/jobs/job-064/ui-state');
+    assert.deepEqual(JSON.parse(f.storage.get(journalSlot('job-064'))!),{pending:{},cleared:false});
+    for(let i=0;i<64;i++)assert.equal(f.storage.get(journalSlot(`job-${String(i).padStart(3,'0')}`)),pendingClear());
+    assert.ok(f.calls.every(c=>c.headers['X-Stem-Account']===alice));
+    assert.equal(f.storage.get(journalSlot('other',bob)),pendingClear());assert.equal(f.storage.get(drainCursor(bob)),'other');
+  }finally{f.stop();}
+});
+
+test('source drain bounds corrupt-journal parsing and advances to later pending work',async()=>{
+  const initial=Object.fromEntries(Array.from({length:256},(_,i)=>[journalSlot(`invalid-${String(i).padStart(3,'0')}`),'{invalid']));
+  initial[journalSlot('pending')]=pendingClear();
+  const f=fixture(initial);let reads=0;
+  const get=f.context.localStorage.getItem;f.context.localStorage.getItem=(k:string)=>{if(k.startsWith('stem-ui-journal:'))reads++;return get(k);};
+  try{
+    await f.context.StemUiState.seed(alice,{flushJournal:true});assert.equal(reads,256);assert.equal(f.calls.length,0);
+    await f.context.StemUiState.seed(alice,{flushJournal:true});assert.equal(f.calls.length,1);
+    assert.equal(f.calls[0].path,'/api/jobs/pending/ui-state');
+    assert.equal(f.storage.get(journalSlot('invalid-000')),'{invalid');
+  }finally{f.stop();}
+});
+
+test('source abort preserves writes and clear markers while the next visit gets a later turn',async()=>{
+  const controller=new AbortController(),initial={[journalSlot('job-a')]:pendingClear(),[journalSlot('job-b')]:pendingClear()};
+  const f=fixture(initial,(_:any,reply:any)=>{controller.abort();return reply({revision:6});});
+  let next:ReturnType<typeof fixture>|undefined;
+  try{
+    await f.context.StemUiState.seed(alice,{flushJournal:true,signal:AbortSignal.abort()});
+    assert.equal(f.calls.length,0);assert.equal(f.storage.has(drainCursor()),false);
+    await f.context.StemUiState.seed(alice,{flushJournal:true,signal:controller.signal});
+    assert.equal(f.calls.length,1);assert.equal(f.storage.get(journalSlot('job-a')),pendingClear());assert.equal(f.storage.get(journalSlot('job-b')),pendingClear());
+    next=fixture(Object.fromEntries(f.storage),(_:any,reply:any)=>reply({},alice,409));
+    await next.context.StemUiState.seed(alice,{flushJournal:true});
+    assert.deepEqual(next.calls.map(c=>c.path),['/api/jobs/job-b/ui-state','/api/jobs/job-a/ui-state']);
+    assert.deepEqual(JSON.parse(next.storage.get(journalSlot('job-a'))!),{pending:{},cleared:true});
+  }finally{f.stop();next?.stop();}
+});
+
+test('source drain remains bounded when scheduling cursor storage is unavailable',async()=>{
+  const f=fixture({[journalSlot('job')]:pendingClear(),[drainCursor()]:'invalid/cursor'});
+  const get=f.context.localStorage.getItem,set=f.context.localStorage.setItem;
+  f.context.localStorage.getItem=(k:string)=>{if(k===drainCursor())throw new Error('blocked');return get(k);};
+  f.context.localStorage.setItem=(k:string,v:string)=>{if(k===drainCursor())throw new Error('blocked');set(k,v);};
+  try{
+    await f.context.StemUiState.seed(alice,{flushJournal:true});assert.equal(f.calls.length,1);
+    assert.deepEqual(JSON.parse(f.storage.get(journalSlot('job'))!),{pending:{},cleared:false});
+  }finally{f.stop();}
+});
+
+test('source acknowledgement cannot erase a newer journal or accept another actor response',async()=>{
+  let finish:any;const waiting=new Promise(resolve=>{finish=resolve;});
+  const f=fixture({[journalSlot('job-a')]:pendingClear(),[journalSlot('job-b')]:pendingClear()},async(call:any,reply:any)=>{
+    if(call.path.endsWith('/job-a/ui-state')){await waiting;return reply({revision:6});}
+    return reply({revision:6},bob);
+  });
+  try{
+    const draining=f.context.StemUiState.seed(alice,{flushJournal:true});
+    await until(()=>f.calls.length===1);
+    const newer=JSON.parse(pendingClear());newer.pending.listeningDraft.value='New local edit';
+    newer.pending.listeningDraft.requestId='22345678-1234-4123-a123-123456789012';newer.cleared=false;
+    const bytes=JSON.stringify(newer);f.storage.set(journalSlot('job-a'),bytes);finish();await draining;
+    assert.equal(f.storage.get(journalSlot('job-a')),bytes);
+    assert.equal(f.storage.get(journalSlot('job-b')),pendingClear());
+  }finally{f.stop();}
+});
