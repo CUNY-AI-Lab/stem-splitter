@@ -137,13 +137,23 @@ test('shared split opens signed out, plays, and keeps private tools and data ina
     await page.getByRole('textbox', { name: 'Recording title', exact: true }).fill('Shared audio');
     await page.getByRole('textbox', { name: 'Recording title', exact: true }).press('Enter');
     await expect(page.locator('.console-title')).toHaveText('Shared audio');
-    // A rejected write must not leave an unsaved label looking saved.
-    await page.route('**/api/jobs/remix-fixture/labels', route => route.fulfill({ status: 503, json: { error: 'Could not save the split name. Try again.' } }));
+    // A rejected write keeps the attempted text editable until explicit cancel.
+    let failedNameWrites = 0;
+    await page.route('**/api/jobs/remix-fixture/labels', route => {
+      failedNameWrites++;
+      return route.fulfill({ status: 503, json: { error: 'Could not save the split name. Try again.' } });
+    });
     await page.locator('.ch-name').click();
-    await page.getByRole('textbox', { name: 'Split name', exact: true }).fill('Not saved');
-    await page.getByRole('textbox', { name: 'Split name', exact: true }).press('Enter');
-    await expect(page.locator('.ch-name')).toHaveText('Lead voice');
+    const unsavedName = page.getByRole('textbox', { name: 'Split name', exact: true });
+    await unsavedName.fill('Not saved');
+    await unsavedName.press('Enter');
     await expect(page.locator('#upload-message')).toContainText('Could not save');
+    await expect(unsavedName).toBeEnabled();
+    await expect(unsavedName).toHaveValue('Not saved');
+    await unsavedName.press('Escape');
+    await expect(unsavedName).toHaveCount(0);
+    await expect(page.locator('.ch-name')).toHaveText('Lead voice');
+    expect(failedNameWrites).toBe(1);
     await page.unroute('**/api/jobs/remix-fixture/labels');
     await openSplitActions(page); await page.locator('.unshare-btn').click();
     await expect.poll(async () => (await server.fetch('/api/shared-jobs/remix-fixture')).status).toBe(404);
