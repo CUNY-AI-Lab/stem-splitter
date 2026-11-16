@@ -685,3 +685,39 @@ test('class folder rename retains sharing, contents and course while rejecting s
  assert.equal(detail.items[0].jobId,'rename-kept');
  assert.equal((await db.prepare('SELECT course_id FROM course_folders WHERE id=?').bind(made.folder.id).first())?.course_id,A);
 });
+
+test('inline notes have bounded independent pages, exact scoped cursors and current authorization',async()=>{
+  const {request,job,db,revoked}=await setup();
+  await job('notes-many','alice',A);await job('notes-second','alice',A);await job('notes-other','bob',A);
+  const member=(await courseFixture(ids.alice,A)).memberId;
+  const base=`/api/classroom/courses/${A}/participants/${member}/jobs`;
+  for(const jobId of ['notes-many','notes-second'])for(let i=0;i<43;i++)await db.prepare(
+    'INSERT INTO annotations(id,job_id,at_seconds,text,author_subject,author_name) VALUES(?,?,?,?,?,?)')
+    .bind(`${jobId}-${String(i).padStart(3,'0')}`,jobId,Math.floor(i/3),`Shared note ${i}`,ids.alice,'Alice').run();
+  const first=await(await request(base,'alice')).json() as any;
+  assert.equal(first.jobs.length,2);
+  for(const row of first.jobs){assert.equal(row.annotations.length,20);assert.ok(row.annotationsNextCursor);}
+  const initial=first.jobs.find((row:any)=>row.id==='notes-many');
+  const path=base+'/notes-many/notes';
+  const next=await request(path+'?cursor='+encodeURIComponent(initial.annotationsNextCursor),'ownerA');
+  assert.equal(next.status,200);assert.match(next.headers.get('cache-control')||'',/private.*no-store/);
+  const second=await next.json() as any;
+  assert.equal(second.courseId,A);assert.equal(second.memberId,member);assert.equal(second.jobId,'notes-many');assert.equal(second.annotations.length,20);
+  const third=await(await request(path+'?cursor='+encodeURIComponent(second.nextCursor),'alice')).json() as any;
+  assert.equal(third.annotations.length,3);assert.equal(third.nextCursor,null);
+  assert.deepEqual([...initial.annotations,...second.annotations,...third.annotations].map((note:any)=>note.id),Array.from({length:43},(_,i)=>`notes-many-${String(i).padStart(3,'0')}`));
+  assert.doesNotMatch(JSON.stringify(second),/authorSubject|cail-[0-9a-f]{32}/);
+  const wrong=JSON.parse(atob(initial.annotationsNextCursor));
+  for(const changes of [{courseId:B},{memberId:(await courseFixture(ids.bob,A)).memberId},{jobId:'notes-second'},{atSeconds:-1},{id:'bad/id'},{extra:true}])
+    assert.equal((await request(path+'?cursor='+encodeURIComponent(btoa(JSON.stringify({...wrong,...changes}))),'alice')).status,400);
+  assert.equal((await request(path+'?cursor='+('a'.repeat(1025)),'alice')).status,400);
+  assert.equal((await request(path+'?cursor=x&cursor=y','alice')).status,400);
+  assert.equal((await request(base+'/notes-second/notes?cursor='+encodeURIComponent(initial.annotationsNextCursor),'alice')).status,400);
+  assert.equal((await request(base+'/notes-other/notes','alice')).status,404);
+  assert.equal((await request(path,'bob')).status,404);
+  assert.equal((await request(path,'outsider')).status,403);
+  await db.prepare("INSERT INTO run_deletions(job_id,subject,deleted_at,reason) VALUES('notes-many',?,?,'user')").bind(ids.alice,Date.now()).run();
+  assert.equal((await request(path,'ownerA')).status,404);
+  revoked.add(`${ids.alice}:${A}`);
+  assert.equal((await request(base+'/notes-second/notes','alice')).status,403);
+});

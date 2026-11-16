@@ -463,3 +463,41 @@ test('background refresh keeps sharing visible and blocks keyboard changes until
   await expect(sharing).toHaveValue('read');await expect(sharing).toBeFocused();
  } finally {release?.();await f.harness.close();}
 });
+
+test('inline notes paginate without truncation and retain expanded pages across refresh',async({page,context})=>{
+  const f=await fixture(context),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  try{
+    await f.seed(Array.from({length:42},(_,i)=>`INSERT INTO annotations(id,job_id,at_seconds,text,author_subject,author_name) VALUES('paged-${String(i).padStart(3,'0')}','course-song',${10+i},'Paged note ${i}','${TEST_SUBJECTS.alice}','Alex Rivera')`));
+    await page.clock.install();
+    await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await page.getByRole('button',{name:'Students',exact:true}).click();
+    await page.getByRole('button',{name:'Fixture Student with a long preferred display name',exact:true}).click();
+    const notes=page.locator('.classroom-shared-notes'),rows=notes.locator('li'),more=notes.getByRole('button',{name:'Load more notes',exact:true});
+    await expect(rows).toHaveCount(20);
+    await more.click();await expect(rows).toHaveCount(40);
+    await more.click();await expect(rows).toHaveCount(43);await expect(more).toBeHidden();
+    await f.seed([`UPDATE annotations SET text='Updated early note' WHERE id='course-note'`]);
+    await page.clock.fastForward(30001);
+    await expect(notes).toContainText('Updated early note');await expect(rows).toHaveCount(43);
+    await expect(notes).toContainText('Paged note 41');await expect(more).toBeHidden();
+    await context.setExtraHTTPHeaders({'x-fixture-identity':f.alice,'x-fixture-course-role':'owner','x-fixture-course-state':'revoked'});
+    await page.clock.fastForward(30001);
+    await expect(page.locator('#console-panel')).toBeHidden();await expect(page.locator('#classroom-jobs')).toBeEmpty();
+    expect(errors).toEqual([]);
+  }finally{await f.harness.close();}
+});
+
+test('inline note continuation rejects a foreign member response before rendering it',async({page,context})=>{
+  const f=await fixture(context);
+  try{
+    await f.seed(Array.from({length:21},(_,i)=>`INSERT INTO annotations(id,job_id,at_seconds,text,author_subject,author_name) VALUES('foreign-page-${i}','course-song',${10+i},'Safe note ${i}','${TEST_SUBJECTS.alice}','Alex Rivera')`));
+    await page.route('**/participants/*/jobs/course-song/notes?*',route=>route.fulfill({json:{courseId:course,memberId:member(TEST_SUBJECTS.bob),jobId:'course-song',annotations:[{id:'foreign',atSeconds:0,text:'Wrong member private note'}],nextCursor:null}}));
+    await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
+    await page.getByRole('button',{name:'Students',exact:true}).click();
+    await page.getByRole('button',{name:'Fixture Student with a long preferred display name',exact:true}).click();
+    await page.getByRole('button',{name:'Load more notes',exact:true}).click();
+    await expect(page.locator('#console-panel')).toBeHidden();await expect(page.locator('#classroom-jobs')).toBeEmpty();
+    await expect(page.locator('body')).not.toContainText('Wrong member private note');
+  }finally{await f.harness.close();}
+});

@@ -69,34 +69,66 @@ routes.get('/courses/:courseId/roster',async c=>{
     participants:participants.map(row=>({...row,splitCount:byMember.get(row.memberId)?.total??0,completedCount:byMember.get(row.memberId)?.completed??0,retainedCount:byMember.get(row.memberId)?.retained??0,appUsage:appUsage.get(row.memberId)??null})),
     demonstrationParticipants:courseId===DEMO_COURSE_ID?[{displayName:'Sample student',splitCount:3,retainedCount:2,demonstration:true}]:[],nextCursor:value.nextCursor});
 });
+const NOTE_PAGE_SIZE=20;
+type CourseNote={id:string;jobId:string;atSeconds:number;text:string;authorSubject:string|null;authorName:string|null};
+function requireParticipantJobs(p:AppPrincipal,courseId:string,memberId:string){
+  if(!validMemberId(memberId))throw new CourseError(404,'not_found');
+  const course=p.course?.classId===courseId?p.course:null;
+  if(!(course?.participant&&course.memberId===memberId)&&!course?.capabilities.instructorPanel)throw new CourseError(404,'not_found');
+}
+function notePage(rows:CourseNote[],courseId:string,memberId:string,jobId:string){
+  const page=rows.slice(0,NOTE_PAGE_SIZE),last=page.at(-1);
+  return {annotations:page.map(note=>({id:note.id,atSeconds:note.atSeconds,text:note.text,
+    authorName:note.authorSubject?(note.authorName||'Student'):'Author unavailable',canDelete:false})),
+    nextCursor:rows.length>NOTE_PAGE_SIZE&&last?btoa(JSON.stringify({courseId,memberId,jobId,atSeconds:last.atSeconds,id:last.id})):null};
+}
+routes.get('/courses/:courseId/participants/:memberId/jobs/:jobId/notes',async c=>{
+  const courseId=c.req.param('courseId'),memberId=c.req.param('memberId'),jobId=c.req.param('jobId');
+  requireParticipantJobs(c.get('principal')!,courseId,memberId);
+  if(!/^[\w-]{1,128}$/.test(jobId))throw new CourseError(404,'not_found');
+  const params=new URL(c.req.url).searchParams,encoded=params.get('cursor');
+  let after:{atSeconds:number;id:string}|null=null;
+  if([...params.keys()].some(key=>key!=='cursor')||params.getAll('cursor').length>1)throw new CourseError(400,'cursor_invalid');
+  if(encoded!==null){try{
+    if(encoded.length>1024||!/^[-A-Za-z0-9+/]+={0,2}$/.test(encoded))throw new Error();
+    const value=JSON.parse(atob(encoded));
+    if(Object.keys(value).sort().join(',')!=='atSeconds,courseId,id,jobId,memberId'||value.courseId!==courseId||value.memberId!==memberId||value.jobId!==jobId
+      ||typeof value.atSeconds!=='number'||!Number.isFinite(value.atSeconds)||value.atSeconds<0||typeof value.id!=='string'||!/^[\w-]{1,128}$/.test(value.id))throw new Error();
+    after=value;
+  }catch{throw new CourseError(400,'cursor_invalid');}}
+  const retained=await c.env.DB.prepare(`SELECT 1 FROM job_courses jc JOIN jobs j ON j.id=jc.job_id
+    WHERE jc.course_id=? AND jc.member_id=? AND j.id=? AND j.status='done' AND j.created_at>datetime('now','-90 days')
+      AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)`).bind(courseId,memberId,jobId).first();
+  if(!retained)throw new CourseError(404,'not_found');
+  const {results}=await c.env.DB.prepare(`SELECT a.id,a.job_id AS jobId,a.at_seconds AS atSeconds,a.text,a.author_subject AS authorSubject,a.author_name AS authorName
+    FROM annotations a JOIN jobs j ON j.id=a.job_id JOIN job_courses jc ON jc.job_id=j.id
+    WHERE jc.course_id=? AND jc.member_id=? AND j.id=? AND j.status='done' AND j.created_at>datetime('now','-90 days')
+      AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)
+      AND (? IS NULL OR a.at_seconds>? OR (a.at_seconds=? AND a.id>?))
+    ORDER BY a.at_seconds,a.id LIMIT 21`).bind(courseId,memberId,jobId,after?.atSeconds??null,after?.atSeconds??0,after?.atSeconds??0,after?.id??'').all<CourseNote>();
+  c.header('Cache-Control','private, no-store');
+  return c.json({courseId,memberId,jobId,...notePage(results,courseId,memberId,jobId)});
+});
 routes.get('/courses/:courseId/participants/:memberId/jobs',async c=>{
   const p=c.get('principal')!,courseId=c.req.param('courseId'),memberId=c.req.param('memberId');
-  if (!validMemberId(memberId)) throw new CourseError(404,'not_found');
-  const currentCourse=p.course?.classId===courseId?p.course:null;
-  const ownCourseJobs=currentCourse?.participant===true&&currentCourse.memberId===memberId;
-  if (!ownCourseJobs&&!currentCourse?.capabilities.instructorPanel) throw new CourseError(404,'not_found');
+  requireParticipantJobs(p,courseId,memberId);
   const after=c.req.query('cursor'); let before='';
   if (after) { try { const v=JSON.parse(atob(after)); if(v.courseId!==courseId||v.memberId!==memberId||typeof v.id!=='string'||!/^[\w-]{1,128}$/.test(v.id)) throw new Error(); before=v.id; } catch {throw new CourseError(400,'cursor_invalid');} }
   const {results}=await c.env.DB.prepare(`SELECT j.id,j.filename,j.model,j.status,j.created_at AS createdAt,
       (j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)) AS retained
     FROM job_courses c JOIN jobs j ON j.id=c.job_id WHERE c.course_id=? AND c.member_id=? AND (?='' OR j.id<?) ORDER BY j.id DESC LIMIT 41`).bind(courseId,memberId,before,before).all<{id:string;status:string;retained:number}>();
   const jobs=results.slice(0,40),eligible=jobs.filter(row=>row.status==='done'&&row.retained).map(row=>row.id);
-  const notes=eligible.length?(await c.env.DB.prepare(`SELECT a.id,a.job_id AS jobId,a.at_seconds AS atSeconds,a.text,a.author_subject AS authorSubject,a.author_name AS authorName
+  const notes=eligible.length?(await c.env.DB.prepare(`SELECT * FROM (
+    SELECT a.id,a.job_id AS jobId,a.at_seconds AS atSeconds,a.text,a.author_subject AS authorSubject,a.author_name AS authorName,
+      ROW_NUMBER() OVER(PARTITION BY a.job_id ORDER BY a.at_seconds,a.id) AS noteRank
     FROM annotations a JOIN jobs j ON j.id=a.job_id JOIN job_courses jc ON jc.job_id=j.id
     WHERE jc.course_id=? AND jc.member_id=? AND a.job_id IN (${eligible.map(()=>'?').join(',')}) AND j.status='done'
       AND j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)
-    ORDER BY a.job_id,a.at_seconds,a.id`).bind(courseId,memberId,...eligible).all<{
-      id:string;jobId:string;atSeconds:number;text:string;authorSubject:string|null;authorName:string|null
-    }>()).results:[];
-  const byJob=new Map<string,Array<{id:string;atSeconds:number;text:string;authorName:string;canDelete:false}>>();
-  for(const note of notes){
-    const rows=byJob.get(note.jobId)??[];
-    rows.push({id:note.id,atSeconds:note.atSeconds,text:note.text,
-      authorName:note.authorSubject?(note.authorName||'Student'):'Author unavailable',canDelete:false});
-    byJob.set(note.jobId,rows);
-  }
+    ) WHERE noteRank<=21 ORDER BY jobId,atSeconds,id`).bind(courseId,memberId,...eligible).all<CourseNote>()).results:[];
+  const byJob=new Map<string,CourseNote[]>();
+  for(const note of notes){const rows=byJob.get(note.jobId)??[];rows.push(note);byJob.set(note.jobId,rows);}
   c.header('Cache-Control','private, no-store');
-  return c.json({courseId,memberId,jobs:jobs.map(row=>({...row,annotations:byJob.get(row.id)??[]})),nextCursor:results.length>40?btoa(JSON.stringify({courseId,memberId,id:results[39].id})):null});
+  return c.json({courseId,memberId,jobs:jobs.map(row=>{const page=notePage(byJob.get(row.id)??[],courseId,memberId,row.id);return {...row,annotations:page.annotations,annotationsNextCursor:page.nextCursor};}),nextCursor:results.length>40?btoa(JSON.stringify({courseId,memberId,id:results[39].id})):null});
 });
 routes.get('/courses/:courseId/jobs/:jobId/conversation',async c=>{
   instructorPanel(c.get('principal')!,c.req.param('courseId'));

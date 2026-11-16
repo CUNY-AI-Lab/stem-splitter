@@ -12,6 +12,7 @@
   let conversationJob = null, conversationCursor = null, conversationRevision = null, conversationGeneration = 0;
   let folderGeneration = 0;
   let refreshTimer = null, refreshing = false;
+  const notePages = new Map();
   let rosterPages = 1, jobsPages = 1, conversationPages = 1;
   let view = 'folders', rosterPerson = null, folderItems = [], deleteTimer = null;
   let pickerJobs = [], pickerCursor = null, pickerGeneration = 0;
@@ -62,6 +63,7 @@
     }
   }
   function resetReview() {
+    notePages.clear();
     el('jobs').replaceChildren(); el('student').hidden = true; el('jobs-more').hidden = true; el('jobs-status').textContent = '';
     resetConversation();
   }
@@ -85,6 +87,7 @@
     el('rename-form').hidden = true; el('folder-detail').hidden = true; el('folder-items').replaceChildren(); placeFolderDetail(); syncAddress();
   }
   function clearCourse() {
+    notePages.clear();
     renameFolder = null;
     generation++; studentGeneration++; conversationGeneration++; folderGeneration++;
     clearTimeout(refreshTimer); refreshing = false;
@@ -192,7 +195,7 @@
     const current = generation;
     const folderChoices = savedFolderChoices || (preserveReview ? new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value])) : new Map());
     if (!append) { studentGeneration++; student = person; jobsCursor = null; if (!preserveReview) el('jobs').replaceChildren();
-      if (!preserveReview) { resetConversation(); }
+      if (!preserveReview) { resetConversation(); notePages.clear(); }
     }
     const view = studentGeneration;
     el('student').hidden = false; el('student-name').textContent = person.own ? 'My splits in this class' : `${person.displayName || 'Student'} · Course splits`;
@@ -225,7 +228,12 @@
             finally { if (view === studentGeneration) add.disabled = false; }
           });
           const assignment = document.createElement('div'); assignment.className = 'classroom-folder-assignment';
-          assignment.append(select, add); item.append(actions, assignment, sharedNotes(job));
+          const notes = sharedNotes(job, person, preserveReview ? notePages.get(job.id) || 1 : 1);
+          assignment.append(select, add); item.append(actions, assignment, notes.section);
+          el('jobs').append(item);
+          await notes.restore();
+          if (current !== generation || view !== studentGeneration) return;
+          continue;
         }
         el('jobs').append(item);
       }
@@ -234,25 +242,54 @@
     } catch (error) { if (current === generation && view === studentGeneration) report('jobs-status', error); }
     finally { if (current === generation && view === studentGeneration) el('jobs-more').disabled = false; }
   }
-  function sharedNotes(job) {
+  function sharedNotes(job, person, restorePages) {
+    const current = generation, view = studentGeneration, courseId = selected.classId;
     const section = document.createElement('section'); section.className = 'classroom-shared-notes';
     const heading = document.createElement('h3'); heading.textContent = `Shared notes · ${job.filename}`;
     const help = document.createElement('p'); help.className = 'account-help'; help.textContent = 'Review shared notes on this split.';
-    section.append(heading, help);
-    if (!Array.isArray(job.annotations)) {
-      const unavailable = document.createElement('p'); unavailable.textContent = 'Notes are temporarily unavailable.'; section.append(unavailable); return section;
-    }
-    if (!job.annotations.length) {
-      const empty = document.createElement('p'); empty.textContent = 'No saved course notes yet.'; section.append(empty); return section;
-    }
+    const status = document.createElement('p'); status.setAttribute('role', 'status');
     const list = document.createElement('ol'); list.className = 'teacher-history-list';
-    for (const note of job.annotations) {
-      const seconds = Math.max(0, Number(note.atSeconds) || 0), stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-      const item = row(), meta = document.createElement('span'); meta.className = 'classroom-entry-meta';
-      meta.textContent = `${stamp} · ${note.authorName || 'Author unavailable'}: `;
-      item.append(meta, document.createTextNode(note.text)); list.append(item);
+    let nextCursor = job.annotationsNextCursor || null, pages = 1, loading = false;
+    const seen = new Set(), active = () => current === generation && view === studentGeneration && section.isConnected;
+    const append = notes => {
+      for (const note of notes) {
+        if (seen.has(note.id)) continue; seen.add(note.id);
+        const seconds = Math.max(0, Number(note.atSeconds) || 0), stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+        const item = row(), meta = document.createElement('span'); meta.className = 'classroom-entry-meta';
+        meta.textContent = `${stamp} · ${note.authorName || 'Author unavailable'}: `;
+        item.append(meta, document.createTextNode(note.text)); list.append(item);
+      }
+    };
+    const more = button('Load more notes', () => void loadMore());
+    section.append(heading, help, list, status, more);
+    if (!Array.isArray(job.annotations)) {
+      status.textContent = 'Notes are temporarily unavailable.'; nextCursor = null;
+    } else {
+      append(job.annotations);
+      status.textContent = job.annotations.length ? '' : 'No saved course notes yet.';
     }
-    section.append(list); return section;
+    notePages.set(job.id, 1); more.hidden = !nextCursor;
+    async function loadMore() {
+      if (loading || !nextCursor || !active()) return false;
+      loading = true; more.disabled = true; status.textContent = 'Loading saved notes…';
+      try {
+        const data = await request(coursePath(`/participants/${encodeURIComponent(person.memberId)}/jobs/${encodeURIComponent(job.id)}/notes?cursor=${encodeURIComponent(nextCursor)}`));
+        if (!active()) return false;
+        if (data.courseId !== courseId || data.memberId !== person.memberId || data.jobId !== job.id || !Array.isArray(data.annotations) || data.annotations.length > 20
+            || !(data.nextCursor === null || typeof data.nextCursor === 'string' && data.nextCursor.length <= 1024)) {
+          clearCourse(); document.getElementById('account-status').textContent = 'Class access could not be confirmed. Retry to load your class work.'; el('retry').hidden = false; return false;
+        }
+        append(data.annotations); nextCursor = data.nextCursor; pages++; notePages.set(job.id, pages);
+        more.hidden = !nextCursor; status.textContent = ''; return true;
+      } catch (error) {
+        if (active()) {
+          if (error.status === 404) { list.replaceChildren(); nextCursor = null; more.hidden = true; notePages.delete(job.id); }
+          status.textContent = error.status === 404 ? 'These notes are no longer available.' : error.message;
+        }
+        return false;
+      } finally { if (active()) { loading = false; more.disabled = false; scheduleRefresh(); } }
+    }
+    return { section, restore: async () => { while (pages < restorePages && nextCursor && active()) if (!await loadMore()) break; } };
   }
   async function loadConversation(job, append = false, preserveDisplay = false) {
     const current = generation;
@@ -415,7 +452,8 @@
     if (!selected || document.visibilityState !== 'visible') return;
     // Keep loaded pagination while remaining below the 30-read/minute budget.
     const reads = 2 + (selected.capabilities.rosterRead ? rosterPages : 0) + (student ? jobsPages : 0)
-      + (currentFolder ? 1 : 0) + (conversationJob ? conversationPages : 0);
+      + (currentFolder ? 1 : 0) + (conversationJob ? conversationPages : 0)
+      + [...notePages.values()].reduce((sum, pages) => sum + pages - 1, 0);
     refreshTimer = setTimeout(() => void refreshCourse(true), Math.max(15000, reads * 2500));
   }
   async function refreshCourse(background = false) {
