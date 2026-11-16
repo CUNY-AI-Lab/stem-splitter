@@ -8,7 +8,7 @@ import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 const course = 'msh-245-the-american-musical-experience-fall-2026-01';
 const anotherCourse = 'cail-teaching-tools-demo';
 const courseChoices = [
-  { classId: course, className: 'The American Musical Experience', term: 'Fall 2026', section: '01' },
+  { classId: course, className: 'MSH 245 The American Musical Experience', term: 'Fall 2026', section: '01' },
   { classId: anotherCourse, className: 'The CAIL Teaching Tools Demo', term: 'Ongoing', section: 'Demo' },
 ];
 const courseList = courseChoices.map(({ classId, className, term, section }) => ({
@@ -61,11 +61,17 @@ test('workspace menu supports pointer selection and keeps same-course notice sta
     await f.selectCourses(page);
     await page.goto(f.url.href);
     const menu = page.getByRole('combobox', { name: /^Workspace:/ });
-    const courseName = 'The American Musical Experience · Fall 2026 · 01';
+    const courseName = 'MSH 245 The American Musical Experience · Fall 2026';
     await expect(menu).toBeVisible();
     await menu.click();
     await page.getByRole('option', { name: /The American Musical Experience/ }).click();
     await expect(menu).toHaveAccessibleName(`Workspace: ${courseName}`);
+    const labelBox = await menu.locator('.stem-select-label').evaluate(element => ({
+      width: element.clientWidth, contentWidth: element.scrollWidth,
+      height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+    }));
+    expect(labelBox.contentWidth).toBeLessThanOrEqual(labelBox.width);
+    expect(labelBox.height).toBeLessThanOrEqual(labelBox.lineHeight + 1);
     await expect(page.locator('#new-split-course')).toHaveValue(course);
     const notice = page.locator('#course-work-ack');
     await expect(notice).toBeVisible();
@@ -129,7 +135,7 @@ test('workspace menu supports arrows, Enter, Escape, Tab and typeahead', async (
     await expect(page.locator(`[id="${activeId}"]`)).toHaveText(/The CAIL Teaching Tools Demo/);
     await page.keyboard.press('Enter');
     await expect(page.locator('#new-split-course')).toHaveValue(anotherCourse);
-    await expect(menu).toHaveAccessibleName('Workspace: The CAIL Teaching Tools Demo · Ongoing · Demo');
+    await expect(menu).toHaveAccessibleName('Workspace: The CAIL Teaching Tools Demo · Ongoing');
   } finally { await f.close(); }
 });
 
@@ -142,7 +148,7 @@ test('class menu supports pointer choice and preserves its selected course', asy
     await expect(menu).toBeVisible();
     await menu.click();
     await page.getByRole('option', { name: /The American Musical Experience/ }).click();
-    await expect(menu).toHaveAccessibleName('Class: The American Musical Experience · Fall 2026 · 01');
+    await expect(menu).toHaveAccessibleName('Class: The American Musical Experience · Fall 2026');
     await expect(page.locator('#classroom-course')).toHaveValue(course);
     await expect(page).toHaveURL(new RegExp(`course=${course}`));
   } finally { await f.close(); }

@@ -39,6 +39,11 @@
     el('roster-section').hidden = view !== 'students';
     el('create').hidden = false;
     el('make-folder').hidden = !canCreateFolder();
+    if (!canCreateFolder() || view !== 'folders') closeFolderForm();
+  }
+  function closeFolderForm() {
+    el('folder-create').hidden = true;
+    el('make-folder').setAttribute('aria-expanded', 'false');
   }
   function syncAddress() {
     if (!selected) return;
@@ -100,7 +105,7 @@
     for (const id of ['student', 'conversation', 'folder-detail', 'notes-section']) el(id).hidden = true;
     for (const id of ['roster-more', 'jobs-more', 'conversation-more']) el(id).hidden = true;
     for (const id of ['roster-status', 'jobs-status', 'conversation-status', 'folders-status', 'folder-status', 'usage', 'notes-status']) el(id).textContent = '';
-    el('folder-create').reset(); el('folder-sharing').reset(); el('folder-link').value = '';
+    el('folder-create').reset(); closeFolderForm(); el('folder-sharing').reset(); el('folder-link').value = '';
   }
   // A read that reveals more class work stays concealed until access is rechecked.
   // quiet: an edit to what is already on screen keeps the page visible.
@@ -288,7 +293,7 @@
         select.replaceChildren(new Option('Choose a class folder', ''), ...assignableFolders().map(folder => new Option(folder.name, folder.id)));
         if (assignableFolders().some(folder => folder.id === previous)) select.value = previous;
       }
-      el('folders-status').textContent = folders.length ? '' : 'No folders yet. Create one, add splits, then choose who can open it.';
+      el('folders-status').textContent = folders.length ? '' : 'No folders yet.';
     } catch (error) { if (current === generation) report('folders-status', error); }
   }
   async function loadFolder(id, preserveDisplay = false) {
@@ -365,7 +370,9 @@
       if (current === generation && currentFolder?.id === folder.id) await loadFolder(folder.id, true);
     } catch (error) { control.disabled = false; if (current === generation) report('add-status', error); }
   }
-  async function selectCourse(id) {
+  async function selectCourse(id, { preserveFolderDraft = false } = {}) {
+    const folderDraft = preserveFolderDraft && !el('folder-create').hidden
+      ? { open: true, name: el('folder-name').value } : null;
     clearCourse(); if (!courses.some(course => course.classId === id)) return;
     el('retry').hidden = true;
     let course;
@@ -387,8 +394,13 @@
     el('guidance').hidden = !course.capabilities.instructorPanel;
     el('guidance').href = StemPath(`/teacher.html?course=${encodeURIComponent(id)}`);
     el('create').href = StemPath(`/?course=${encodeURIComponent(id)}`);
-    el('folder-create').hidden = !canCreateFolder();
+    closeFolderForm();
     applyView(); if (requested.get('view') && !requested.get('folder') && view === 'folders') syncAddress();
+    if (folderDraft?.open && view === 'folders' && canCreateFolder()) {
+      el('folder-name').value = folderDraft.name;
+      el('folder-create').hidden = false;
+      el('make-folder').setAttribute('aria-expanded', 'true');
+    }
     const current = generation;
     await Promise.all([loadFolders(), course.capabilities.rosterRead ? loadRoster() : Promise.resolve()]);
     if (current !== generation) return;
@@ -425,7 +437,7 @@
       if (authority(course) !== authority(selected)) {
         // Clear the old role's roster, conversations and pending edits before
         // loading the same person's newly authorized view. Keep the document.
-        await selectCourse(course.classId);
+        await selectCourse(course.classId, { preserveFolderDraft: true });
         return;
       }
       selected = course;
@@ -480,7 +492,14 @@
   el('make-folder').addEventListener('click', () => {
     if (!canCreateFolder()) return;
     setView('folders');
+    el('folder-create').hidden = false;
+    el('make-folder').setAttribute('aria-expanded', 'true');
     el('folder-name').scrollIntoView({ block: 'nearest' }); el('folder-name').focus();
+  });
+  const cancelFolderForm = () => { el('folder-create').reset(); closeFolderForm(); el('make-folder').focus(); };
+  el('folder-cancel').addEventListener('click', cancelFolderForm);
+  el('folder-create').addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !el('folder-create').querySelector('[type="submit"]').disabled) { event.preventDefault(); cancelFolderForm(); }
   });
   el('retry').addEventListener('click', () => void selectCourse(el('course').value));
   el('view-folders').addEventListener('click', () => selected && setView('folders'));
@@ -513,10 +532,10 @@
   el('conversation-more').addEventListener('click', () => conversationJob && void loadConversation(conversationJob, true));
   el('folder-create').addEventListener('submit', async event => {
     event.preventDefault(); const current = generation; const name = el('folder-name').value.trim(); if (!canCreateFolder() || !name) return;
-    const submit = event.currentTarget.querySelector('button'); submit.disabled = true;
-    try { const data = await request(coursePath('/folders'), { quiet: true, method: 'POST', body: JSON.stringify({ name }) }); el('folder-name').value = ''; await loadFolders(); if (current === generation) await loadFolder(data.folder.id); }
+    const submit = event.currentTarget.querySelector('[type="submit"]'); submit.disabled = el('folder-cancel').disabled = true;
+    try { const data = await request(coursePath('/folders'), { quiet: true, method: 'POST', body: JSON.stringify({ name }) }); if (current !== generation) return; el('folder-name').value = ''; closeFolderForm(); await loadFolders(); if (current === generation) await loadFolder(data.folder.id); }
     catch (error) { if (current === generation) report('folders-status', error); }
-    finally { submit.disabled = false; }
+    finally { submit.disabled = el('folder-cancel').disabled = false; }
   });
   el('folder-sharing').addEventListener('submit', async event => {
     event.preventDefault(); if (!selected || !canEditFolder()) return;
@@ -594,11 +613,12 @@
         if (cursor) seen.add(cursor);
       } while (cursor);
       courses.sort((a,b) => Number(a.classId === 'cail-teaching-tools-demo') - Number(b.classId === 'cail-teaching-tools-demo') || a.className.localeCompare(b.className));
-      el('course').append(...courses.map(course => new Option(`${course.className} · ${course.term} · ${course.section}`, course.classId)));
+      el('course').append(...courses.map(course => new Option(window.StemSelect.courseLabel(course), course.classId)));
       document.getElementById('course-discovery').hidden = !courses.length;
       status.textContent = courses.length ? 'Choose a class to view its shared work.' : 'No current classes are available to this account.';
       const requested = new URLSearchParams(location.search).get('course');
       let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
+      if (!prior) prior = window.StemBrowserStateTransfer?.preference(account.subject, 'workspaceChoice', null);
       const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
       if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
     } catch (error) {

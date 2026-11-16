@@ -40,7 +40,7 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
     await expect(page).toHaveTitle('Stem Splitter · Classes');
     await expect(page.getByRole('heading', { name: 'Classes', exact: true })).toBeVisible();
-    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
     await expect(page.locator('#classroom-roster-section')).toBeHidden();
     await expect(page.locator('#classroom-roster')).toContainText('Zero split student');
     await expect(page.locator('#classroom-usage')).toContainText('2 enrolled students shown · 1 assigned split');
@@ -60,6 +60,10 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
     expect(modelCalls).toEqual([]);
     await page.getByRole('button', { name: 'Folders', exact: true }).click();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await page.getByRole('button', { name: 'Make class folder', exact: true }).click();
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.locator('#classroom-folder-create')).toContainText('Private until shared.');
     await page.getByLabel('New folder').fill('New class listening');
     await page.getByRole('button', { name: 'Create folder' }).click();
     await expect(page.locator('#classroom-folder-title')).toHaveText('New class listening');
@@ -112,7 +116,7 @@ test('student sees shared folder and annotation permission without instructor or
     await expect(page.locator('#classroom-roster-section')).toBeHidden();
     await expect(page.locator('#classroom-guidance')).toBeHidden();
     await expect(page.locator('#classroom-own-splits')).toBeVisible();
-    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.locator('#classroom-folder-create')).toBeHidden();
     await expect(page.locator('#classroom-folder-sharing')).toBeHidden();
     await expect(page.locator('#classroom-folders')).not.toContainText('Instructor preparation');
     await expect(page.locator('#classroom-messages')).toBeEmpty();
@@ -328,6 +332,8 @@ test('routine class refresh keeps loaded content, scroll and sharing selections 
   await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`,f.url).href,{waitUntil:'domcontentloaded'});
   await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
   await expect(page.locator('#console-panel')).toBeVisible();
+  await expect(page.locator('#classroom-folder-create')).toBeHidden();
+  await page.getByRole('button',{name:'Make class folder',exact:true}).click();
   await page.getByLabel('New folder').fill('Unsaved folder name');
   await page.getByLabel('Who can use this folder?').selectOption('read');
   await page.evaluate(()=>{scrollTo(0,document.body.scrollHeight);window.refreshSamples=[];window.refreshSampleTimer=setInterval(()=>{const panel=document.querySelector('#console-panel');window.refreshSamples.push({visible:getComputedStyle(panel).visibility,scroll:scrollY,text:document.querySelector('#classroom-folder-items').textContent});},20);});
@@ -339,6 +345,7 @@ test('routine class refresh keeps loaded content, scroll and sharing selections 
   // Firefox can quantize an integer scroll request to a fractional CSS pixel.
   expect(Math.abs(await page.evaluate(()=>scrollY) - scroll)).toBeLessThanOrEqual(1);
   await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder name');
+  await expect(page.locator('#classroom-folder-create')).toBeVisible();
   await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
   let release;const waiting=new Promise(resolve=>release=resolve);
   await page.route('**/api/classroom/courses/*/folders',async route=>{await waiting;await route.fulfill({status:403,json:{error:'Access changed'}});});

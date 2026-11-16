@@ -2,6 +2,7 @@
 (() => {
   let sequence = 0;
   const instances = new WeakMap();
+  const courseLabel = course => [course.className, course.term].filter(Boolean).join(' · ');
   function enhance(select, name = 'Workspace') {
     if (!select || instances.has(select)) return instances.get(select);
     const wrapper = document.createElement('div');
@@ -10,6 +11,8 @@
     control.type = 'button'; control.className = 'stem-select-control';
     control.setAttribute('role', 'combobox'); control.setAttribute('aria-haspopup', 'listbox');
     control.setAttribute('aria-expanded', 'false');
+    const label = document.createElement('span');
+    label.className = 'stem-select-label'; control.append(label);
     const menu = document.createElement('div');
     menu.id = `stem-select-menu-${++sequence}`; menu.className = 'stem-select-menu'; menu.hidden = true;
     menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', name);
@@ -34,8 +37,9 @@
     };
     function sync() {
       const selected = select.selectedOptions[0];
-      control.textContent = selected?.textContent || `Choose ${name.toLowerCase()}`;
-      control.setAttribute('aria-label', `${name}: ${control.textContent}`);
+      label.textContent = selected?.textContent || `Choose ${name.toLowerCase()}`;
+      control.setAttribute('aria-label', `${name}: ${label.textContent}`);
+      control.title = label.textContent;
       control.disabled = select.disabled;
       options = [...select.options].filter(option => !option.disabled && !option.hidden);
       menu.replaceChildren(...options.map((option, index) => {
@@ -85,5 +89,5 @@
     const instance = { sync, destroy() { observer.disconnect(); clearTimeout(searchTimer); document.removeEventListener('pointerdown', outside); } };
     instances.set(select, instance); return instance;
   }
-  window.StemSelect = { enhance };
+  window.StemSelect = { enhance, courseLabel };
 })();

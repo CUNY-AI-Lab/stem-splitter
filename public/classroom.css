@@ -61,7 +61,7 @@
 
 /* The class picker, actions, roster, and folders share a compact alignment. */
 .refined-ui.instructor-console #account-status { margin: .5rem 0 .75rem; }
-.refined-ui.instructor-console #course-discovery { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .75rem; align-items: center; margin: .75rem 0; max-width: 34rem; }
+.refined-ui.instructor-console #course-discovery { display: grid; grid-template-columns: auto minmax(0, max-content); gap: .65rem; align-items: center; margin: .75rem 0; width: fit-content; max-width: 100%; }
 .refined-ui.instructor-console #classroom-course { margin: 0; }
 .refined-ui.instructor-console .classroom-toolbar { margin: .75rem 0 .4rem; }
 .refined-ui.instructor-console #classroom-refresh-status { display: flex; align-items: center; justify-content: flex-end; text-align: right; gap: .45rem; margin: .25rem 0 .75rem; font: .65rem/1.5 var(--font-mono); }
@@ -106,10 +106,14 @@
 
 /* One class page: a section stays where it is, and a folder opens under its own row. */
 .instructor-console #account-status:empty { display: none; }
-.classroom-views { display: flex; flex-wrap: wrap; gap: .25rem; }
+.classroom-views { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
 .classroom-views[hidden] { display: none; }
-.refined-ui.instructor-console .classroom-views > .page-btn { flex: 0 1 auto; width: fit-content; min-height: 44px; padding: .4rem .7rem; }
-.refined-ui.instructor-console .classroom-views > .page-btn[aria-current="true"] { border-color: var(--hot); background: var(--hot-soft); color: var(--ink); }
+.refined-ui.instructor-console .classroom-views > .account-button { flex: 0 1 auto; width: auto; }
+.refined-ui.instructor-console .classroom-views > .account-button[aria-current="true"] { border-bottom-color: var(--hot); color: var(--ink); }
+.refined-ui.instructor-console .classroom-views > .account-button:hover { color: var(--hot); background: transparent; }
+.refined-ui.instructor-console #classroom-folder-create[hidden] { display: none; }
+.classroom-folder-create-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.refined-ui.instructor-console .classroom-folder-create-actions > .page-btn { width: auto; min-height: 44px; }
 #classroom-folders > .teacher-history-item > #classroom-folder-detail { margin: .5rem 0 .75rem; padding: 1rem; border: 1px solid var(--panel-edge); border-radius: 8px; background: var(--bg-raise); }
 #classroom-folders > .teacher-history-item > .page-btn[aria-expanded="true"] { color: var(--hot); }
 /* The folder's row already names it; keep the heading for screen readers. */

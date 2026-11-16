@@ -287,7 +287,7 @@ async function initializeCourseSelection() {
       const previous = initialized ? selectedCourse : requestedCourse;
       const choice = valid.has(previous) ? previous : '';
       const options=[new Option('Choose a workspace',''),new Option('Personal','personal'),
-        ...courses.map(course=>new Option(`${course.className} · ${course.term} · ${course.section}`,course.classId))];
+        ...courses.map(course=>new Option(window.StemSelect.courseLabel(course),course.classId))];
       if(options.length!==select.options.length||options.some((option,index)=>option.value!==select.options[index]?.value||option.text!==select.options[index]?.text))select.replaceChildren(...options);
       select.options[0].disabled = true;
       choose(choice); initialized = true;
@@ -557,7 +557,7 @@ function listeningFailure(error) {
 // --- local job list -------------------------------------------------------
 
 function getJobs() {
-  if (runtime.authMode === 'cail') return accountJobs;
+  if (runtime.authMode === 'cail') return accountSubject ? (window.StemBrowserStateTransfer?.mergeJobs(accountSubject, accountJobs) || accountJobs) : accountJobs;
   try {
     return jobsStorageKey ? JSON.parse(localStorage.getItem(jobsStorageKey) || '[]') : [];
   } catch {
@@ -566,7 +566,10 @@ function getJobs() {
 }
 
 function saveJobs(jobs) {
-  if (runtime.authMode === 'cail') accountJobs = jobs;
+  if (runtime.authMode === 'cail') {
+    accountJobs = jobs;
+    if (accountSubject) window.StemBrowserStateTransfer?.rememberRack(accountSubject, jobs);
+  }
   try { if (jobsStorageKey) localStorage.setItem(jobsStorageKey, JSON.stringify(jobs)); }
   catch { /* Account-owned splits remain saved even when browser storage is unavailable. */ }
 }
@@ -710,7 +713,7 @@ function configureSongSamples(payload){
   const candidates=tracks.filter(track=>['artist','title','archiveId','archiveFile'].every(key=>typeof track?.[key]==='string'&&track[key].trim())).slice(0,64);
   const keys=candidates.map(sampleTrackKey),revision=legacy?null:(payload.version||payload.revision);
   if(revision!==null&&sampleConfigRevision===null){
-    try{const progress=JSON.parse(localStorage.getItem('stem-song-rotation-v1')||'null');if(progress&&Array.isArray(progress.seen)){sampleSeen=new Set(progress.seen.filter(key=>keys.includes(key)));sampleLastKey=typeof progress.last==='string'?progress.last:'';samplePass=Number.isInteger(progress.pass)?progress.pass:0;if(progress.revision===revision&&Array.isArray(progress.order)&&progress.order.length===keys.length&&new Set(progress.order).size===keys.length&&progress.order.every(key=>keys.includes(key))){sampleOrder=progress.order;sampleConfigRevision=revision;}}}catch{/* Ignore corrupt public rotation preferences. */}
+    try{let progress=JSON.parse(localStorage.getItem('stem-song-rotation-v1')||'null');if(!progress&&accountSubject)progress=window.StemBrowserStateTransfer?.preference(accountSubject,'songRotation',null);if(progress&&Array.isArray(progress.seen)){sampleSeen=new Set(progress.seen.filter(key=>keys.includes(key)));sampleLastKey=typeof progress.last==='string'?progress.last:'';samplePass=Number.isInteger(progress.pass)?progress.pass:0;if(progress.revision===revision&&Array.isArray(progress.order)&&progress.order.length===keys.length&&new Set(progress.order).size===keys.length&&progress.order.every(key=>keys.includes(key))){sampleOrder=progress.order;sampleConfigRevision=revision;}}}catch{/* Ignore corrupt public rotation preferences. */}
   }
   if(sampleConfigRevision!==revision||sampleOrder.length!==keys.length||!sampleOrder.every(key=>keys.includes(key)))sampleOrder=legacy?shuffledSampleOrder(keys):keys;
   sampleConfigRevision=revision;sampleSeen=new Set([...sampleSeen].filter(key=>keys.includes(key)));
@@ -1431,6 +1434,7 @@ async function loadSeparationOptions() {
     if (automaticAvailable) validChoices.add(AUTO_MODEL);
     let savedChoice = '';
     try { savedChoice = localStorage.getItem(SPLIT_CHOICE_STORAGE) || ''; } catch {}
+    if (!savedChoice && accountSubject) savedChoice = window.StemBrowserStateTransfer?.preference(accountSubject, 'splitChoice', null) || '';
     const initialChoice = [selectedModel(), savedChoice, options.defaultChoice, options.defaultModel, AUTO_MODEL]
       .find(choice => validChoices.has(choice));
     stemChoice.replaceChildren();
@@ -4669,6 +4673,7 @@ async function loadAccountJobs(more = false) {
     if (!Array.isArray(result.jobs)) throw new Error('load');
     let cached = [];
     try { const value = JSON.parse(localStorage.getItem(jobsStorageKey) || '[]'); if(Array.isArray(value)) cached = value.filter(job=>job&&typeof job.id==='string'); } catch {}
+    if (accountSubject) cached = window.StemBrowserStateTransfer?.mergeJobs(accountSubject, cached) || cached;
     const existing = new Map([...cached, ...getJobs()].map(job => [job.id, job]));
     const recovered = result.jobs.map((job, index) => ({ ...job,
       startedAt: serverTime(job.createdAt), collapsed: existing.get(job.id)?.collapsed ?? (more || index > 0) }));
@@ -5135,6 +5140,7 @@ function initStations() {
   } catch {
     // Storage blocked — default bench below.
   }
+  if (saved === null && accountSubject) saved = window.StemBrowserStateTransfer?.preference(accountSubject, 'benchTab', null) || null;
   if (location.hash === '#remixer') saved = 'remixer';
   if (new URLSearchParams(location.search).has('job')) saved = 'splitter';
   switchStation(saved === 'remixer' ? 'remixer' : 'splitter');

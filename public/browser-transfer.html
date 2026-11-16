@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<script src="/app-path.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Recover browser state · Stem Splitter</title>
+<link rel="stylesheet" href="/styles.css">
+<main class="teacher-main account-main refined-ui">
+  <h1>Move browser data</h1>
+  <p>Bring your split list, listening progress, and preferences from the original Stem Splitter site into Tools. The original copy stays in place.</p>
+  <p id="transfer-status" role="status">Checking your account…</p>
+  <section id="transfer-start" hidden>
+    <button id="transfer-begin" class="account-button" type="button">Open original Stem Splitter</button>
+    <p class="account-help">Keep both windows open and sign in with the same account on each site.</p>
+  </section>
+  <section id="transfer-review" hidden>
+    <h2>Review your data</h2><p id="transfer-counts"></p>
+    <ul id="transfer-conflicts"></ul>
+    <p id="transfer-pending"></p>
+    <section id="transfer-recovery-preview" hidden aria-live="polite"><h3 id="transfer-recovery-title"></h3><textarea id="transfer-recovery-text" readonly rows="8"></textarea></section>
+    <button id="transfer-apply" class="account-button" type="button">Apply available state</button>
+    <p id="transfer-open" hidden><a class="account-button" href="/">Open Stem Splitter with recovered state</a></p>
+  </section>
+  <section id="transfer-stages"><h2>Saved copies</h2><ul id="transfer-stage-list"></ul></section>
+  <p><a href="/account.html">Back to Account</a></p>
+</main>
+<script src="/guest-claim.js"></script>
+<script src="/browser-state-transfer.js"></script>
+<script src="/browser-transfer.js"></script>
+</html>

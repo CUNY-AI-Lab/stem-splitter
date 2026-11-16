@@ -154,6 +154,7 @@ import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal 
 import { readBoundedResponse } from './http/bounded-response.ts';
 import { guestPrincipal, ownershipTable, conversationTable, guestFailure } from './guest/access.ts';
 import { claimGuestWork, ownsClaimedOperation } from './guest/claim.ts';
+import { authorizeBrowserTransferSource, consumeBrowserTransfer, createBrowserTransferProof, reauthorizeBrowserTransferJobs, stageBrowserTransfer } from './browser-transfer.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -351,6 +352,52 @@ app.post('/api/account/claim-guest', async (c) => {
   // An expected account is a consistency fence, never ownership authority.
   if(c.req.header('X-Stem-Claim-Actor')!==principal.subject)return c.json({error:'Your account changed. Reload before saving guest splits.'},409);
   return c.json(await claimGuestWork(c.env,principal));
+});
+
+app.post('/api/browser-transfer/proof', async c => {
+  const principal = c.get('principal');
+  if (!principal) return c.json({ error: { code: 'authentication_required' } }, 401);
+  return await createBrowserTransferProof(c.env, principal);
+});
+
+app.post('/api/browser-transfer/authorize', async c => {
+  const principal = c.get('principal');
+  if (!principal) return c.json({ error: { code: 'authentication_required' } }, 401);
+  const parsed = await boundedJson(c, 2048);
+  if (parsed.response) return parsed.response;
+  const body = parsed.value as Record<string, unknown> | null;
+  if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'proof') return c.json({ error: { code: 'invalid' } }, 400);
+  return await authorizeBrowserTransferSource(c.env, principal, body.proof);
+});
+
+app.post('/api/browser-transfer/stage', async c => {
+  const principal = c.get('principal');
+  if (!principal) return c.json({ error: { code: 'authentication_required' } }, 401);
+  const parsed = await boundedJson(c, 16_384);
+  if (parsed.response) return parsed.response;
+  const body = parsed.value as Record<string, unknown> | null;
+  if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'jobIds,proof') return c.json({ error: { code: 'invalid' } }, 400);
+  return await stageBrowserTransfer(c.env, principal, body.proof, body.jobIds);
+});
+
+app.post('/api/browser-transfer/reauthorize', async c => {
+  const principal = c.get('principal');
+  if (!principal) return c.json({ error: { code: 'authentication_required' } }, 401);
+  const parsed = await boundedJson(c, 16_384);
+  if (parsed.response) return parsed.response;
+  const body = parsed.value as Record<string, unknown> | null;
+  if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'jobIds') return c.json({ error: { code: 'invalid' } }, 400);
+  return await reauthorizeBrowserTransferJobs(c.env, principal, body.jobIds);
+});
+
+app.post('/api/browser-transfer/consume', async c => {
+  const principal = c.get('principal');
+  if (!principal) return c.json({ error: { code: 'authentication_required' } }, 401);
+  const parsed = await boundedJson(c, 2048);
+  if (parsed.response) return parsed.response;
+  const body = parsed.value as Record<string, unknown> | null;
+  if (!body || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'proof') return c.json({ error: { code: 'invalid' } }, 400);
+  return await consumeBrowserTransfer(c.env, principal, body.proof);
 });
 
 app.get('/api/model-quota', async (c) => {

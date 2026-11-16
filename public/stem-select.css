@@ -1,13 +1,14 @@
-.stem-select { position: relative; flex: 1; min-width: 0; max-width: 100%; }
+.stem-select { position: relative; flex: 0 1 auto; width: max-content; min-width: 0; max-width: 100%; }
 .intake-selector .stem-select-control { min-width: 10rem; max-width: 100%; }
 .stem-select .stem-select-native { position: absolute; width: 1px !important; height: 1px !important; min-width: 0 !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; opacity: 0; clip-path: inset(50%); pointer-events: none; }
 .stem-select-control {
   display: flex; align-items: center; justify-content: space-between; gap: .75rem;
-  box-sizing: border-box; width: 100%; min-height: 44px; padding: .55rem .75rem;
+  box-sizing: border-box; width: 100%; min-height: 44px; padding: .4rem .65rem;
   border: 1px solid var(--panel-edge); border-radius: 6px;
   background: var(--bg-raise); color: var(--ink); text-align: left;
   font: 500 .8rem/1.5 var(--font-mono); cursor: pointer;
 }
+.stem-select-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stem-select-control::after { content: '▾'; flex: none; color: var(--hot); }
 .stem-select-control:hover, .stem-select-control[aria-expanded="true"] { border-color: var(--hot); }
 .stem-select-control:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
