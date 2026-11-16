@@ -992,11 +992,11 @@ for (const signIn of [false,true]) test(`guest second reply survives a lost comp
  } finally {await f.close();}
 });
 
-test('guest status is explicit and disappears for a signed-in member with personal work only', async ({ page }) => {
+test('guest keeps a compact optional login that becomes logout for a signed-in member', async ({ page }) => {
   const f = await setup(page);
   try {
     await page.goto(f.origin);
-    await expect(page.locator('#guest-account-state')).toHaveText('Guest');
+    await expect.poll(async () => (await account(page)).account?.quotaClass).toBe('guest');
     const login = page.getByRole('link', { name: 'CUNY Login', exact: true });
     await expect(login).toHaveText('CUNY Login');
     for (const width of [320, 390, 1280]) {
@@ -1017,8 +1017,8 @@ test('guest status is explicit and disappears for a signed-in member with person
     await page.setExtraHTTPHeaders({ 'x-fixture-identity': await f.issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
     await page.reload();
     await expect.poll(async () => (await account(page)).account?.subject).toBe(TEST_SUBJECTS.alice);
-    await expect(page.locator('#guest-account-state')).toBeHidden();
     await expect(login).toBeHidden();
+    await expect(page.locator('.lab-account').getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     await expect(page.locator('#course-context')).toBeHidden();
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
@@ -1056,7 +1056,8 @@ for (const active of [false, true]) test(`a claimed guest session recovers ${act
     if (active) {
       await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav', import.meta.url)));
     } else await page.reload();
-    await expect(page.locator('#guest-account-state')).toHaveText('Guest');
+    await expect.poll(async () => (await account(page)).account?.quotaClass).toBe('guest');
+    await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
     await expect.poll(async () => (await account(page)).account?.subject).not.toBe(originalGuest);
     await expect(page.locator('.console')).toHaveCount(0);
