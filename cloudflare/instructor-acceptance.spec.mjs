@@ -42,12 +42,16 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await expect(page.getByRole('heading', { name: 'Classes', exact: true })).toBeVisible();
     await expect(page.locator('#classroom-folder-create')).toBeHidden();
     await expect(page.locator('#classroom-roster-section')).toBeHidden();
+    await expect(page.locator('#classroom-make-folder')).toBeVisible();
+    await expect(page.locator('#classroom-create')).toBeHidden();
     await expect(page.locator('#classroom-roster')).toContainText('Zero split student');
     await expect(page.locator('#classroom-usage')).toContainText('2 enrolled students shown · 1 assigned split');
     await expect(page.locator('#classroom-roster')).toContainText('App use: 2 split attempts · 2 completed');
     await expect(page.locator('#classroom-roster')).not.toContainText('Private personal fixture');
     await page.getByRole('button', { name: 'Students', exact: true }).click();
     await expect(page).toHaveURL(/view=students/);
+    await expect(page.locator('#classroom-make-folder')).toBeHidden();
+    await expect(page.locator('#classroom-create')).toBeHidden();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Class fixture recording');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Private personal fixture');
@@ -85,9 +89,9 @@ test('instructor reviews course roster, splits and paginated conversations and e
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Classes');
       expect((await page.getByRole('combobox', { name: /^Class:/ }).boundingBox()).height).toBeGreaterThanOrEqual(44);
-      // Class sections plus the two creation actions occupy three compact rows on phones.
+      // Tabs and the contextual action stay compact on phones.
       if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(156);
-      for (const id of ['#classroom-view-folders','#classroom-own-splits','#classroom-view-students','#classroom-create','#classroom-make-folder']) {
+      for (const id of ['#classroom-view-folders','#classroom-own-splits','#classroom-view-students']) {
         const box=await page.locator(id).boundingBox();
         expect(box.height).toBeGreaterThanOrEqual(44); expect(box.height).toBeLessThanOrEqual(46);
       }
@@ -120,6 +124,15 @@ test('student sees shared folder and annotation permission without instructor or
     await expect(page.locator('#classroom-folder-sharing')).toBeHidden();
     await expect(page.locator('#classroom-folders')).not.toContainText('Instructor preparation');
     await expect(page.locator('#classroom-messages')).toBeEmpty();
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await expect(page.locator('#classroom-make-folder')).toBeVisible();
+      await expect(page.locator('#classroom-create')).toBeHidden();
+      await page.getByRole('button', { name: 'Splits', exact: true }).click();
+      await expect(page.locator('#classroom-create')).toBeVisible();
+      await expect(page.locator('#classroom-create')).toHaveAttribute('href', /course=/);
+      await expect(page.locator('#classroom-make-folder')).toBeHidden();
+      await page.getByRole('button', { name: 'Folders', exact: true }).click();
+    }
     expect((await page.request.get(new URL(`/api/classroom/courses/${course}/jobs/course-song/conversation`, f.url).href)).status()).toBe(403);
   } finally { await f.harness.close(); }
 });

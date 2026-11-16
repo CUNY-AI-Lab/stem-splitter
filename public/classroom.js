@@ -37,8 +37,8 @@
     el('folders-section').hidden = view !== 'folders';
     el('people').hidden = view === 'folders';
     el('roster-section').hidden = view !== 'students';
-    el('create').hidden = false;
-    el('make-folder').hidden = !canCreateFolder();
+    el('create').hidden = view !== 'splits';
+    el('make-folder').hidden = view !== 'folders' || !canCreateFolder();
     if (!canCreateFolder() || view !== 'folders') closeFolderForm();
   }
   function closeFolderForm() {
