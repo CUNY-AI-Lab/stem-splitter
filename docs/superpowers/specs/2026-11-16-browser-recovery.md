@@ -1,42 +1,22 @@
-# Browser workspace recovery and class controls
+# Direct workspace access and class controls
 
-## Requested behavior
+The user rejected recovery pages, recovery links, technical status messages and
+guest-choice prompts for both signed-in people and everyday visitors. Opening
+Stem Splitter must reach its ordinary workspace. Guest use starts automatically;
+class/account authorization remains required where it already applies.
 
-Keep guest access and previously created work available at the Tools address.
-Server records stay in the existing Worker database and audio bucket. Browser-only
-preferences, rack entries, playback positions and drafts require an explicit,
-same-browser transfer from the original production address.
+The original Worker and Tools mount retain the same database and audio bucket.
+The existing guest handoff preserves old sessions without replacing a different
+active workspace. Failed handoffs must not create navigation loops or erase data.
+The proposed explicit browser-copy interface and its unused API were withdrawn
+before production release. No browser storage or server records are deleted.
 
-The destination reviews a local copy before applying it. The original remains
-unchanged. Drafts and pending requests are archived, never automatically submitted.
-Account changes cancel work in progress. Current permissions are checked again
-before applying or restoring anything; revoked class work is omitted.
+Class labels omit the displayed section suffix and stay on one line. Controls
+grow to fit within available width, truncate on narrow screens and retain an
+accessible full name. Folders/Splits navigation remains separate from creation
+actions. Make class folder opens a dismissible form; refresh preserves its draft
+while permission remains. The empty state is “No folders yet.”
 
-## Boundaries
-
-- Only the configured original production origin and Tools destination can pair.
-  Development stays separate. Short-lived, single-use proofs bind the current
-  subject, actor kind and origin pair; the server stores no browser draft text.
-- Both popup origin and window identity are verified. Network and popup waits
-  are bounded. Browser data is allowlisted and validated before storage.
-- Recovery copies are immutable, with exact stored-byte verification. Destination
-  changes are preserved. Removing an imported rack item records an exclusion
-  scoped to that account and recovery copy so it does not reappear after reload.
-- The source browser profile must still have the data. This does not recover
-  deleted browser storage or data held only in another tab's JavaScript memory.
-  Account-level server work is still governed by ordinary access rules.
-
-## Class interface
-
-Use separate Folders/Splits navigation and creation actions. Make class folder
-opens a dismissible form; refresh preserves a draft while permission remains.
-The empty state reads “No folders yet.” Shared course labels omit the section
-suffix, remain one line, and grow to fit within the available width. Narrow
-screens truncate the visible label while preserving its accessible name.
-
-## Acceptance
-
-Exercise cross-origin member and guest recovery, account-change races, revoked
-course access, immutable storage, quota failure, and removed rack entries. Check
-keyboard and narrow-screen selectors, folder cancel/refresh behavior, and a real
-signed-in split with playable audio on Dev before the same production release.
+Acceptance covers guest and signed-in opening, direct old handoff URLs, failure
+without loops, retained work, mobile/keyboard selectors, class permissions and
+folder cancel/refresh. Release the same tested local commit through Dev first.

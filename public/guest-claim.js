@@ -34,7 +34,7 @@
     };
   };
   window.StemListeningProgress = {
-    read(subject, jobId) { try { const base = normalize(JSON.parse(localStorage.getItem(progressKey(subject, jobId)) || 'null')); return base || window.StemBrowserStateTransfer?.playback(subject, jobId, null) || null; } catch { return window.StemBrowserStateTransfer?.playback(subject, jobId, null) || null; } },
+    read(subject, jobId) { try { return normalize(JSON.parse(localStorage.getItem(progressKey(subject, jobId)) || 'null')); } catch { return null; } },
     save(subject, jobId, value) { try { if (subject) localStorage.setItem(progressKey(subject, jobId), JSON.stringify(normalize(value))); } catch {} },
   };
   window.StemGuestClaim = { run(account) {

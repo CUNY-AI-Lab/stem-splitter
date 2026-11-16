@@ -10,7 +10,7 @@ import type { WorkerEnv } from './worker.ts';
 const legacy = 'https://stem-splitter.ailab-452.workers.dev';
 const tools = 'https://tools.ailab.gc.cuny.edu';
 
-test('direct restoration checks the current account before choosing member or guest recovery', async () => {
+test('direct restoration checks the current account and never replaces an existing member workspace', async () => {
   const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
   const member = 'cail-' + 'a'.repeat(32);
   for (const current of [member, 'guest-' + 'b'.repeat(64), null]) {
@@ -34,6 +34,118 @@ test('direct restoration checks the current account before choosing member or gu
     assert.equal(redirect, '/stem-splitter/auth/guest-transfer/start' + (current === member ? '?existingOnly=1' : ''));
     assert.equal(stored.get('stem-transfer-member'), current === member ? member : undefined);
   }
+});
+
+test('account-only source starts ordinary guest access without a recovery prompt', async () => {
+  const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../public/guest-transfer.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /Continue as guest|Sign in with CUNY/);
+  for (const startOk of [true, false]) {
+    let redirect = '';
+    const calls: string[] = [];
+    const stored = new Map<string, string>();
+    await runInNewContext(script, {
+      document: {}, AbortSignal,
+      sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
+      location: { hash: '#fixture-handoff', pathname: '/stem-splitter/guest-transfer', replace: (value: string) => { redirect = value; } },
+      history: { replaceState() {} },
+      window: { StemFetch: async (path: string) => {
+        calls.push(path);
+        return path.endsWith('/finish')
+          ? { ok: false, status: 409, json: async () => ({ error: { code: 'member_workspace' } }) }
+          : { ok: startOk };
+      } },
+    });
+    assert.deepEqual(calls, ['/auth/guest-transfer/finish', '/auth/guest']);
+    assert.equal(redirect, '/stem-splitter/');
+    assert.equal(stored.get('stem-transfer-checked'), '1');
+  }
+  assert.doesNotMatch(html, /<h1|<p|button|transfer-status|transfer-retry|transfer-accounts/i);
+});
+
+test('signed-in existing-only completion preserves the member session without starting a guest session', async () => {
+  const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
+  const stored = new Map<string, string>();
+  let redirect = '';
+  const calls: string[] = [];
+  await runInNewContext(script, {
+    document: {}, AbortSignal,
+    sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
+    location: { hash: '#fixture-handoff', pathname: '/stem-splitter/guest-transfer.html', replace: (value: string) => { redirect = value; } },
+    history: { replaceState() {} },
+    window: { StemFetch: async (path: string) => { calls.push(path); return { ok: true, json: async () => ({ restored: false }) }; } },
+  });
+  assert.deepEqual(calls, ['/auth/guest-transfer/finish']);
+  assert.equal(redirect, '/stem-splitter/');
+  assert.equal(stored.get('stem-transfer-checked'), '1');
+});
+
+test('a distinct guest workspace conflict preserves both cookies and returns to the current workspace quietly', async () => {
+  const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
+  const stored = new Map<string, string>([['stem-transfer-return', '/stem-splitter/?job=current-track']]);
+  let redirect = '';
+  await runInNewContext(script, {
+    document: {}, AbortSignal,
+    sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
+    location: { hash: '#fixture-handoff', pathname: '/stem-splitter/guest-transfer.html', replace: (value: string) => { redirect = value; } },
+    history: { replaceState() {} },
+    window: { StemFetch: async () => ({ ok: false, status: 409, json: async () => ({ error: { code: 'workspace_conflict' } }) }) },
+  });
+  assert.equal(redirect, '/stem-splitter/?job=current-track');
+  assert.equal(stored.get('stem-transfer-checked'), '1');
+  assert.equal(stored.has('stem-transfer-return'), false);
+});
+
+test('transient handoff failures return to normal guest startup with a one-shot loop fence', async () => {
+  const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
+  const stored = new Map<string, string>();
+  let redirect = '';
+  await runInNewContext(script, {
+    document: {}, AbortSignal,
+    sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
+    location: { hash: '#fixture-handoff', pathname: '/stem-splitter/guest-transfer.html', replace: (value: string) => { redirect = value; } },
+    history: { replaceState() {} },
+    window: { StemFetch: async () => ({ ok: false, status: 503, json: async () => ({}) }) },
+  });
+  assert.equal(redirect, '/stem-splitter/');
+  assert.equal(stored.get('stem-transfer-checked'), '1');
+});
+
+test('stalled finish request times out and returns to ordinary app startup', async () => {
+  const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
+  const stored = new Map<string, string>();
+  const signal = { timedOut: true };
+  const timeouts: number[] = [];
+  let redirect = '';
+  await runInNewContext(script, {
+    document: {},
+    AbortSignal: { timeout: (milliseconds: number) => { timeouts.push(milliseconds); return signal; } },
+    sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) },
+    location: { hash: '#fixture-handoff', pathname: '/stem-splitter/guest-transfer.html', replace: (value: string) => { redirect = value; } },
+    history: { replaceState() {} },
+    window: { StemFetch: async (path: string, options: { signal?: unknown }) => {
+      assert.equal(path, '/auth/guest-transfer/finish');
+      assert.equal(options.signal, signal);
+      throw new Error('AbortError');
+    } },
+  });
+  assert.deepEqual(timeouts, [8000]);
+  assert.equal(redirect, '/stem-splitter/');
+  assert.equal(stored.get('stem-transfer-checked'), '1');
+});
+
+test('application honors the transfer marker and falls through to ordinary account or guest startup', () => {
+  const source = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function restorePreviousGuest('), end = source.indexOf('\nasync function initialize()', start);
+  assert.ok(start >= 0 && end > start);
+  const stored = new Map<string, string>([['stem-transfer-checked', '1']]);
+  const redirects: string[] = [];
+  const context = { sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) }, location: { pathname: '/stem-splitter/', search: '', assign: (path: string) => redirects.push(path) }, StemPath: (path: string) => '/stem-splitter' + path };
+  runInNewContext(source.slice(start, end) + '\nthis.restore = restorePreviousGuest;', context);
+  assert.equal((context as any).restore(), false);
+  assert.equal((context as any).restore(), false, 'reloads in this tab do not restart a failed handoff');
+  assert.equal(stored.get('stem-transfer-checked'), '1');
+  assert.equal(redirects.length, 0);
 });
 
 function fixture() {
@@ -68,6 +180,33 @@ function fixture() {
   }), env);
   return { database, env, cookie, begin, start, handoff, finish };
 }
+
+test('top-level GET failures quietly return to the fixed Tools transition destination', async () => {
+  const destination = `${tools}/stem-splitter/guest-transfer.html#transfer-failed`;
+  const assertTransition = (response: Response) => {
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get('location'), destination);
+    assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  };
+
+  const invalid = fixture();
+  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer?state=invalid'), invalid.env));
+
+  const rateLimited = fixture();
+  Object.assign(rateLimited.env, { REQUEST_LIMIT: { limit: async () => ({ success: false }) } });
+  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer?state=' + 'A'.repeat(43)), rateLimited.env));
+
+  const unavailableStart = fixture();
+  const originalBatch = unavailableStart.database.batch.bind(unavailableStart.database);
+  Object.assign(unavailableStart.database, { batch: async () => { throw new Error('synthetic storage outage'); } });
+  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer?state=' + 'B'.repeat(43)), unavailableStart.env));
+  Object.assign(unavailableStart.database, { batch: originalBatch });
+
+  const disabled = fixture();
+  Object.assign(disabled.env, { GUEST_ENABLED: 'false' });
+  assertTransition(await guestTransfer(new Request(tools + '/auth/guest-transfer/start'), disabled.env));
+  assert.equal((await disabled.finish('bad', '')).status, 503, 'POST configuration failure keeps its API status');
+});
 
 test('existing guest transfer keeps the same owner, expiry, verification and stored work', async () => {
   const f = fixture(), original = await f.begin();

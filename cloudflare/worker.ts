@@ -80,7 +80,6 @@ const worker = {
     env = intakeEnvironment(env);
     ctx.waitUntil(runReliableJobs({...env,...adaptiveHandoff(env),guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio,composeStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
-    ctx.waitUntil(env.DB.prepare('DELETE FROM browser_transfer_proofs WHERE expires_at<?').bind(Date.now()).run());
     ctx.waitUntil(refreshCourseUsageAccounts(env).catch(()=>{}));
     if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
   },

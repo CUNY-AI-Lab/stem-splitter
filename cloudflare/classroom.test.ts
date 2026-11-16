@@ -479,7 +479,6 @@ test('fresh and additive migration preserve private history, no backfill; retain
   await db.prepare("INSERT INTO course_folders(id,course_id,name,created_by,permission) VALUES('legacy-folder',?,'Legacy','legacy-sharing-actor','private')").bind(A).run();
   await db.prepare("INSERT INTO course_folder_items(folder_id,job_id,filename,model) VALUES('legacy-folder','old','Old private','fixture')").run();
   const contributors=readFileSync(new URL('../migrations/0034-course-folder-contributors.sql',import.meta.url),'utf8');db.applySchema(contributors);
-  const browserProofs=readFileSync(new URL('../migrations/0035-browser-transfer-proofs.sql',import.meta.url),'utf8');db.applySchema(browserProofs);db.applySchema(browserProofs);
   assert.equal((await db.prepare("SELECT creator_subject FROM course_folders WHERE id='legacy-folder'").first<any>()).creator_subject,'');
   assert.equal((await db.prepare("SELECT added_by FROM course_folder_items WHERE folder_id='legacy-folder'").first<any>()).added_by,'');
   await db.prepare("UPDATE course_folders SET permission='read',created_by='new-sharing-actor',revision=revision+1 WHERE id='legacy-folder'").run();

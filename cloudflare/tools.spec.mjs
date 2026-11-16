@@ -89,7 +89,7 @@ for (const signedIn of [false, true]) test(`Tools restores original guest work $
   } finally { await harness.close(); }
 });
 
-test('Tools offers guest continuation when the old address has an account, without changing its saved work', async ({ page }) => {
+test('Tools quietly starts guest access when the old address has only a member workspace', async ({ page }) => {
   const legacy = 'https://stem-splitter.ailab-452.workers.dev';
   const issuer = await createTestIdentityIssuer();
   const config = JSON.parse(await readFile(new URL('./test-wrangler.jsonc', import.meta.url), 'utf8'));
@@ -116,10 +116,6 @@ test('Tools offers guest continuation when the old address has an account, witho
       await route.fulfill({ status: handoff.status, headers: { location: url.origin + target.pathname + target.hash, 'set-cookie': start.headers.get('set-cookie') } });
     });
     await page.goto(url.origin + '/stem-splitter/');
-    await expect(page.getByRole('button', { name: 'Continue as guest' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open this workspace', exact: true })).toBeHidden();
-    await expect(page.locator('#transfer-status')).toContainText('This will not change any saved account tracks');
-    await page.getByRole('button', { name: 'Continue as guest' }).click();
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
     await expect(page.locator('#yt-url')).toBeEnabled();
     const guest = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
@@ -128,6 +124,7 @@ test('Tools offers guest continuation when the old address has an account, witho
     await page.reload();
     await expect(page.locator('#yt-url')).toBeEnabled();
     expect(legacyVisits).toBe(1);
+    const currentGuest = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
     const identity = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
     const gateway = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
     const saved = await worker.fetch(legacy + '/api/jobs/account-fixture', { headers: { 'x-fixture-identity': identity, 'x-fixture-gateway-identity': gateway } });
@@ -135,8 +132,11 @@ test('Tools offers guest continuation when the old address has an account, witho
     expect(await saved.text()).toContain('Saved account track');
     await page.route('**/stem-splitter/auth/guest-transfer/finish', route => route.fulfill({ status: 409, json: { error: { code: 'workspace_conflict', message: 'Keep both workspaces.' } } }));
     await page.goto(url.origin + '/stem-splitter/guest-transfer.html#conflict');
-    await expect(page.locator('#transfer-status')).toHaveText('Keep both workspaces.');
-    await expect(page.getByRole('button', { name: 'Continue as guest' })).toBeHidden();
+    await expect(page).toHaveURL(url.origin + '/stem-splitter/');
+    await expect(page.locator('#yt-url')).toBeEnabled();
+    const afterConflict = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
+    expect(afterConflict.account.subject).toBe(currentGuest.account.subject);
+    await expect(page.locator('#transfer-status, #transfer-accounts, #transfer-retry')).toHaveCount(0);
   } finally { await harness.close(); }
 });
 

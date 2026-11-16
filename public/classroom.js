@@ -618,7 +618,6 @@
       status.textContent = courses.length ? 'Choose a class to view its shared work.' : 'No current classes are available to this account.';
       const requested = new URLSearchParams(location.search).get('course');
       let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
-      if (!prior) prior = window.StemBrowserStateTransfer?.preference(account.subject, 'workspaceChoice', null);
       const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
       if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
     } catch (error) {

@@ -1,75 +1,68 @@
 (async () => {
-  const guestButton = document.getElementById('transfer-guest');
-  guestButton.addEventListener('click', async () => {
-    guestButton.disabled = true;
-    try {
-      const response = await window.StemFetch('/auth/guest', {
-        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      });
-      if (!response.ok) throw new Error('Guest session unavailable');
-      location.replace('/stem-splitter/');
-    } catch {
-      document.getElementById('transfer-status').textContent = 'Guest access could not start. Please try again. Your saved account tracks are unchanged.';
-      guestButton.disabled = false;
-    }
-  });
   const token = location.hash.slice(1);
-  // A bookmark or reload has no one-use handoff. Restart at the source rather
-  // than posting an empty token or reusing credentials removed from history.
-  if (!token) {
-    let existingOnly = false;
-    try { existingOnly = /^cail-[0-9a-f]{32}$/.test(sessionStorage.getItem('stem-transfer-member') || ''); } catch {}
-    // Direct visits have no claim-page marker. Respect the current account too.
-    try {
-      const response = await window.StemFetch('/api/account', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) });
-      if (response.ok) {
-        const member = (await response.json()).account?.subject;
-        existingOnly = /^cail-[0-9a-f]{32}$/.test(member || '');
-        if (existingOnly) try { sessionStorage.setItem('stem-transfer-member', member); } catch {}
-      }
-    } catch { /* The source can still restore an existing guest session. */ }
-    location.replace(window.StemPath('/auth/guest-transfer/start') + (existingOnly ? '?existingOnly=1' : ''));
-    return;
-  }
-  // Remove the encrypted handoff from browser history before requesting data.
-  history.replaceState(null, '', location.pathname);
+  const home = '/stem-splitter/';
   const checked = () => {
     try {
-      const member = sessionStorage.getItem('stem-transfer-member');
-      if (/^cail-[0-9a-f]{32}$/.test(member || '')) sessionStorage.setItem('stem-transfer-checked:' + member, '1');
+      sessionStorage.setItem('stem-transfer-checked', '1');
       sessionStorage.removeItem('stem-transfer-member');
     } catch {}
   };
+  const returnPath = () => {
+    try {
+      const saved = sessionStorage.getItem('stem-transfer-return');
+      sessionStorage.removeItem('stem-transfer-return');
+      if (saved && /^\/stem-splitter\/(?:\?|$)/.test(saved)) return saved;
+    } catch {}
+    return home;
+  };
+
+  // A bookmark or reload has no one-use handoff. Start a fresh identity check;
+  // account-only sources use existingOnly and can never replace this workspace.
+  if (!token) {
+    let existingOnly = false;
+    try { existingOnly = /^cail-[0-9a-f]{32}$/.test(sessionStorage.getItem('stem-transfer-member') || ''); } catch {}
+    try {
+      const response = await window.StemFetch('/api/account', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      if (response.ok) {
+        const current = (await response.json()).account?.subject;
+        existingOnly = /^cail-[0-9a-f]{32}$/.test(current || '');
+        if (existingOnly) try { sessionStorage.setItem('stem-transfer-member', current); } catch {}
+      }
+    } catch { /* Continue using the current guest session if account lookup is unavailable. */ }
+    location.replace(window.StemPath('/auth/guest-transfer/start') + (existingOnly ? '?existingOnly=1' : ''));
+    return;
+  }
+
+  // Keep the encrypted handoff out of browser history before requesting data.
+  history.replaceState(null, '', location.pathname);
   try {
     const response = await window.StemFetch('/auth/guest-transfer/finish', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(8000), headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      if (response.status === 409 && ['member_workspace', 'workspace_conflict'].includes(result.error?.code)) {
+      if (response.status === 409 && result.error?.code === 'member_workspace') {
+        // There is no source guest account to restore. Quietly create an ordinary
+        // guest session while leaving the existing member cookie untouched.
         checked();
-        document.getElementById('transfer-status').textContent = result.error.message;
-        document.getElementById('transfer-accounts').hidden = false;
-        if (result.error.code === 'member_workspace') {
-          document.getElementById('transfer-status').textContent = 'Sign in with CUNY to check your previous workspace, or continue as a guest here. This will not change any saved account tracks.';
-          document.getElementById('transfer-current').hidden = true;
-          guestButton.hidden = false;
-        }
+        const started = await window.StemFetch('/auth/guest', {
+          method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        if (!started.ok) throw new Error('guest_start_failed');
+      } else if (response.status === 409 && result.error?.code === 'workspace_conflict') {
+        // Both distinct guest identities remain intact; continue in the current one.
+        checked();
+        location.replace(returnPath());
         return;
-      }
-      throw new Error('Transfer unavailable');
-    }
-    checked();
-    let next = '/stem-splitter/';
-    try {
-      const saved = sessionStorage.getItem('stem-transfer-return');
-      sessionStorage.removeItem('stem-transfer-return');
-      if (saved && /^\/stem-splitter\/(?:\?|$)/.test(saved)) next = saved;
-    } catch {}
-    location.replace(next);
+      } else throw new Error('handoff_failed');
+    } else checked();
+    location.replace(returnPath());
   } catch {
-    document.getElementById('transfer-status').textContent = 'We could not restore your workspace. Your previous tracks are still at the original address.';
-    document.getElementById('transfer-retry').hidden = false;
+    // Leave retry and connectivity messaging to the ordinary app. Its one-shot
+    // marker prevents another transfer loop and lets normal guest startup run.
+    checked();
+    location.replace(returnPath());
   }
 })();

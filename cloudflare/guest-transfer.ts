@@ -7,6 +7,7 @@ import { readBoundedJsonRequest } from '../src/http/bounded-request.ts';
 export const TRANSFER_COOKIE = '__Host-stem-transfer';
 const tools = 'https://tools.ailab.gc.cuny.edu';
 const legacy = 'https://stem-splitter.ailab-452.workers.dev';
+const toolsTransitionFailure = `${tools}/stem-splitter/guest-transfer.html#transfer-failed`;
 const noncePattern = /^[A-Za-z0-9_-]{43}$/;
 const encode = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 const decode = (value: string) => Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4-value.length%4)%4)), c => c.charCodeAt(0));
@@ -22,47 +23,54 @@ function redirect(location: string, setCookie?: string) {
 function failure() {
   return Response.json({ error: { message: 'Your previous workspace could not be restored. Try again from the previous Stem Splitter address.' } }, { status: 403, headers });
 }
+function topLevelFailure() { return redirect(toolsTransitionFailure); }
 
 /** A top-level visit lets the original host read its own HttpOnly guest cookie.
  * An encrypted, five-minute fragment returns it to the initiating browser only.
  * No identity, session cookie or audio locator is placed in a query or server log. */
 export async function guestTransfer(request: Request, env: WorkerEnv): Promise<Response> {
-  if (!guestConfigured(env)) return new Response('Guest access unavailable', { status: 503, headers });
   const url = new URL(request.url);
-  if (url.origin === tools && url.pathname === '/auth/guest-transfer/start' && request.method === 'GET') {
-    const nonce = encode(crypto.getRandomValues(new Uint8Array(32)));
-    const existingOnly = url.searchParams.get('existingOnly') === '1';
-    return redirect(`${legacy}/auth/guest-transfer?state=${nonce}${existingOnly ? '&existingOnly=1' : ''}`, cookie(nonce, 300));
+  const toolsStart = url.origin === tools && url.pathname === '/auth/guest-transfer/start' && request.method === 'GET';
+  const sourceStart = url.origin === legacy && url.pathname === '/auth/guest-transfer' && request.method === 'GET';
+  if (!guestConfigured(env)) return toolsStart || sourceStart ? topLevelFailure() : new Response('Guest access unavailable', { status: 503, headers });
+  if (toolsStart) {
+    try {
+      const nonce = encode(crypto.getRandomValues(new Uint8Array(32)));
+      const existingOnly = url.searchParams.get('existingOnly') === '1';
+      return redirect(`${legacy}/auth/guest-transfer?state=${nonce}${existingOnly ? '&existingOnly=1' : ''}`, cookie(nonce, 300));
+    } catch { return topLevelFailure(); }
   }
-  if (url.origin === legacy && url.pathname === '/auth/guest-transfer' && request.method === 'GET') {
-    const nonce = url.searchParams.get('state') || '';
-    const existingOnly = url.searchParams.get('existingOnly') === '1';
-    if (!noncePattern.test(nonce)) return failure();
-    const limited = await env.REQUEST_LIMIT!.limit({ key: `stem-transfer:${request.headers.get('cf-connecting-ip') || 'unknown'}` });
-    if (!limited.success) return new Response('Please try again shortly.', { status: 429, headers });
-    let session = await readGuestSession(request, env);
-    const claimed = session && await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(session.subject).first();
-    if (claimed) session = null;
-    let sourceCookie: string | undefined;
-    // Bootstrap on the original host so a first visit at either address uses
-    // the same guest identity. Never replace an existing signed-in workspace.
-    if (!session && !existingOnly && !hasMemberCookie(request)) {
-      const bootstrapHeaders = new Headers(request.headers);
-      bootstrapHeaders.set('origin', legacy);
-      bootstrapHeaders.set('sec-fetch-site', 'same-origin');
-      bootstrapHeaders.set('content-type', 'application/json');
-      const fresh = await startGuestSession(new Request(legacy + '/auth/guest', {
-        method: 'POST', headers: bootstrapHeaders, body: '{}',
-      }), env);
-      if (!fresh.ok) return fresh;
-      sourceCookie = fresh.headers.get('set-cookie') ?? undefined;
-      session = await readGuestSession(new Request(legacy, { headers: { cookie: sourceCookie?.split(';')[0] ?? '' } }), env);
-      if (!session) return failure();
-    }
-    const body = JSON.stringify({ nonce, expires: Date.now() + 300000, subject: session?.subject ?? null, existingOnly });
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(tools) }, await key(env), new TextEncoder().encode(body)));
-    return redirect(`${tools}/stem-splitter/guest-transfer.html#${encode(iv)}.${encode(sealed)}`, sourceCookie);
+  if (sourceStart) {
+    try {
+      const nonce = url.searchParams.get('state') || '';
+      const existingOnly = url.searchParams.get('existingOnly') === '1';
+      if (!noncePattern.test(nonce)) return topLevelFailure();
+      const limited = await env.REQUEST_LIMIT!.limit({ key: `stem-transfer:${request.headers.get('cf-connecting-ip') || 'unknown'}` });
+      if (!limited.success) return topLevelFailure();
+      let session = await readGuestSession(request, env);
+      const claimed = session && await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(session.subject).first();
+      if (claimed) session = null;
+      let sourceCookie: string | undefined;
+      // Bootstrap on the original host so a first visit at either address uses
+      // the same guest identity. Never replace an existing signed-in workspace.
+      if (!session && !existingOnly && !hasMemberCookie(request)) {
+        const bootstrapHeaders = new Headers(request.headers);
+        bootstrapHeaders.set('origin', legacy);
+        bootstrapHeaders.set('sec-fetch-site', 'same-origin');
+        bootstrapHeaders.set('content-type', 'application/json');
+        const fresh = await startGuestSession(new Request(legacy + '/auth/guest', {
+          method: 'POST', headers: bootstrapHeaders, body: '{}',
+        }), env);
+        if (!fresh.ok) return topLevelFailure();
+        sourceCookie = fresh.headers.get('set-cookie') ?? undefined;
+        session = await readGuestSession(new Request(legacy, { headers: { cookie: sourceCookie?.split(';')[0] ?? '' } }), env);
+        if (!session) return topLevelFailure();
+      }
+      const body = JSON.stringify({ nonce, expires: Date.now() + 300000, subject: session?.subject ?? null, existingOnly });
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(tools) }, await key(env), new TextEncoder().encode(body)));
+      return redirect(`${tools}/stem-splitter/guest-transfer.html#${encode(iv)}.${encode(sealed)}`, sourceCookie);
+    } catch { return topLevelFailure(); }
   }
   if (url.origin !== tools || url.pathname !== '/auth/guest-transfer/finish' || request.method !== 'POST'
     || request.headers.get('origin') !== tools || request.headers.get('sec-fetch-site') === 'cross-site') return failure();
