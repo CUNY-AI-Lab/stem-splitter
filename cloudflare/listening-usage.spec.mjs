@@ -176,6 +176,8 @@ test('confirmed failure permits a fresh attempt while a sign-in failure retains 
     const input = f.page.getByRole('textbox', { name: 'Ask the Listening Guide' });
     await input.fill('Keep my question after a failed attempt.');
     await f.page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(f.page.locator('.coach-row.error').last()).toContainText('This attempt did not finish. You can retry.');
+    await expect(f.page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
     await expect(input).toBeEnabled(); await expect(input).not.toHaveAttribute('readonly');
     await expect(input).toHaveValue('Keep my question after a failed attempt.');
     await f.page.getByRole('button', { name: 'Send', exact: true }).click();

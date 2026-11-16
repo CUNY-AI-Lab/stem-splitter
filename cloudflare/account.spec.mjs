@@ -296,8 +296,10 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     expect((await page.getByRole('button', { name: 'Save changes', exact: true }).boundingBox()).height).toBeGreaterThanOrEqual(44);
     if (receipts) await page.screenshot({ path: `${receipts}/account-access-mobile-fixture.png`, fullPage: true });
 
+    // End the previous actor's page before switching this fixture's identity.
+    await page.goto('about:blank');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
-    await page.reload();
+    await page.goto(new URL('/account.html', url).href);
     await expect(page.locator('#account-role')).toHaveText('Student access');
     const resources = page.getByRole('navigation', { name: 'CUNY AI Lab resources' });
     for (const [name, href] of Object.entries({
@@ -339,22 +341,28 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.locator('#account-role')).toHaveText('Student access');
     await expect(page.locator('#account-login')).toBeHidden();
     await page.unroute('**/api/account');
+    // End the previous actor's page before switching this fixture's identity.
+    await page.goto('about:blank');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
-    await page.reload();
+    await page.goto(new URL('/account.html', url).href);
     await page.getByText('Manage access', { exact: true }).click();
     await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
     await page.getByRole('combobox', { name: 'Access level', exact: true }).selectOption('instructor');
     await page.getByLabel('Instructor access ends', { exact: true }).fill('2026-12-01T12:00');
     await page.getByRole('button', { name: 'Save changes', exact: true }).click();
     await expect(page.locator('#access-status')).toHaveText('Access updated.');
+    // End the previous actor's page before switching this fixture's identity.
+    await page.goto('about:blank');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
-    await page.reload();
+    await page.goto(new URL('/account.html', url).href);
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();
 
+    // End the previous actor's page before switching this fixture's identity.
+    await page.goto('about:blank');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
-    await page.reload();
+    await page.goto(new URL('/account.html', url).href);
     await page.getByText('Manage access', { exact: true }).click();
     await page.getByRole('combobox', { name: 'Account', exact: true }).selectOption(TEST_SUBJECTS.alice);
     await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
@@ -391,8 +399,10 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await expect(page.getByLabel('No end date', { exact: true })).not.toBeChecked();
     await expect(page.locator('#access-expiry')).toHaveAttribute('required', '');
 
+    // End the previous actor's page before switching this fixture's identity.
+    await page.goto('about:blank');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.alice });
-    await page.reload();
+    await page.goto(new URL('/account.html', url).href);
     await expect(page.locator('#account-role')).toHaveText('Instructor access');
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('#account-admin')).toBeHidden();

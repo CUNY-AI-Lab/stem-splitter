@@ -115,13 +115,17 @@ test('Tools quietly starts guest access when the old address has only a member w
       const target = new URL(handoff.headers.get('location'));
       await route.fulfill({ status: handoff.status, headers: { location: url.origin + target.pathname + target.hash, 'set-cookie': start.headers.get('set-cookie') } });
     });
+    const guestStarted = page.waitForResponse(response => new URL(response.url()).pathname === '/stem-splitter/auth/guest' && response.request().method() === 'POST');
     await page.goto(url.origin + '/stem-splitter/');
+    expect((await guestStarted).status()).toBe(200);
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     await expect(page.locator('#yt-url')).toBeEnabled();
     const guest = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
     expect(guest.account.role).toBe('guest');
     expect(await page.evaluate(async () => (await window.StemFetch('/api/jobs/account-fixture')).status)).toBe(404);
     await page.reload();
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     await expect(page.locator('#yt-url')).toBeEnabled();
     expect(legacyVisits).toBe(1);
     const currentGuest = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
@@ -133,6 +137,7 @@ test('Tools quietly starts guest access when the old address has only a member w
     await page.route('**/stem-splitter/auth/guest-transfer/finish', route => route.fulfill({ status: 409, json: { error: { code: 'workspace_conflict', message: 'Keep both workspaces.' } } }));
     await page.goto(url.origin + '/stem-splitter/guest-transfer.html#conflict');
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     await expect(page.locator('#yt-url')).toBeEnabled();
     const afterConflict = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
     expect(afterConflict.account.subject).toBe(currentGuest.account.subject);
