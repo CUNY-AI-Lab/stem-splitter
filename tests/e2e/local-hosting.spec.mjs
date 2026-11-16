@@ -209,9 +209,10 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
     const range = document.createRange(); range.selectNodeContents(brand.firstChild);
     const metrics = context.measureText('S');
     const baseline = range.getClientRects()[0].top + metrics.fontBoundingBoxAscent;
-    // The logo aligns with the visible capitals of Stem, not half the title's line boxes.
-    return Math.abs(logo.top - (baseline - metrics.actualBoundingBoxAscent)) <= 1
-      && Math.abs(logo.bottom - baseline) <= 1
+    // Canvas ink metrics round differently on Linux and macOS (1.047 px at 1280 px).
+    // Keep a sub-two-pixel tolerance for ink; geometric edges still align within one pixel.
+    return Math.abs(logo.top - (baseline - metrics.actualBoundingBoxAscent)) <= 1.5
+      && Math.abs(logo.bottom - baseline) <= 1.5
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
     })).toBe(true);
   };

@@ -94,8 +94,9 @@ for (const remixer of [false, true]) test(`No Crate and no adversarial panel; Re
           titleInk: inkLeft(brand, 'S'), taglineInk: tagline ? inkLeft(tagline, tagline.textContent.trim()[0]) : null };
       });
       const at = `header at ${width}px: ${JSON.stringify(header)}`;
-      expect(Math.abs(header.logoTop - header.capTop), at).toBeLessThanOrEqual(1);
-      expect(Math.abs(header.logoBottom - header.stemBaseline), at).toBeLessThanOrEqual(1);
+      // Canvas ink metrics round differently on Linux and macOS (1.047 px at 1280 px).
+      expect(Math.abs(header.logoTop - header.capTop), at).toBeLessThanOrEqual(1.5);
+      expect(Math.abs(header.logoBottom - header.stemBaseline), at).toBeLessThanOrEqual(1.5);
       expect(Math.abs(header.navBaseline - header.splitterBaseline), at).toBeLessThanOrEqual(1);
       expect(Math.abs(header.logoRight - header.navRight), at).toBeLessThanOrEqual(1);
       expect(header.tapHeight, at).toBeGreaterThanOrEqual(44);

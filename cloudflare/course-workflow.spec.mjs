@@ -273,9 +273,15 @@ async function resplitPage(f,routeJob){
 const openResplit=async(page,jobId)=>{
   const entry=page.locator(`.console[data-job-id="${jobId}"]`);
   await expect(entry).toBeVisible();
-  const expand=entry.getByRole('button',{name:'Expand this session',exact:true});
-  if(await expand.count())await expand.click();
-  await entry.locator('.resplit-btn').first().click();
+  const resplit=entry.locator('.resplit-btn').first();
+  // Initial rack restoration and a workspace change can finish after the card appears.
+  // Wait for the visible session, opening it through its normal control if needed.
+  await expect(async()=>{
+    const expand=entry.getByRole('button',{name:'Expand this session',exact:true});
+    if(await expand.isVisible())await expand.click();
+    await expect(resplit).toBeVisible({timeout:1000});
+  }).toPass({timeout:10000});
+  await resplit.click();
   const dialog=page.getByRole('dialog',{name:'Resplit',exact:true});
   await expect(dialog.locator('.resplit-status')).not.toHaveText('Loading split choices…');
   return dialog;
