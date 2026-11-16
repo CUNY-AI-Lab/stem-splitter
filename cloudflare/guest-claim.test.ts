@@ -13,6 +13,7 @@ import { resumeOwnedSourceImport } from '../src/reliability/splits.ts';
 import { splitAllowance } from '../src/daily-allowance.ts';
 import { courseFixture } from './course-fixture.ts';
 import { startGuestSession, readGuestSession } from './guest.ts';
+import { seedGuestJobUiState } from '../src/ui-state.ts';
 
 const alice='cail-'+'a'.repeat(32),bob='cail-'+'b'.repeat(32),guest='guest-'+'c'.repeat(64),other='guest-'+'d'.repeat(64);
 const member=(subject=alice):AppPrincipal=>({subject,role:'student',quotaClass:'member',displayName:'Student',course:null,courseId:null});
@@ -83,12 +84,17 @@ test('a claim atomically closes new guest reservations even after request author
 
 test('interrupted transaction rolls back ownership and notes; a later claim recovers',async t=>{
  const {db,env,seed,post}=await fixture();await seed('saved');
+ await seedGuestJobUiState(db,guest,{jobId:'saved',kind:'listeningDraft',value:'Atomic guest draft'},
+  {requestId:crypto.randomUUID(),guestExpiresAt:env.guestClaimSession!.expiresAt,now:Date.now()});
  const batch=db.batch.bind(db);
  const mock=t.mock.method(db,'batch',statements=>batch([...statements,db.prepare("INSERT INTO job_owners(job_id,subject) VALUES('missing',?)").bind(alice)]));
  await assert.rejects(claimGuestWork(env,member()));mock.mock.restore();
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM guest_account_claims').first<any>())?.n,0);
  assert.equal((await db.prepare("SELECT subject FROM guest_job_owners WHERE job_id='saved'").first<any>())?.subject,guest);
+ assert.equal(await db.prepare("SELECT 1 FROM job_ui_state_records WHERE subject=? AND job_id='saved'").bind(alice).first(),null);
+ assert.equal((await db.prepare("SELECT payload_json FROM job_ui_state_records WHERE subject=? AND job_id='saved'").bind(guest).first<any>())?.payload_json,JSON.stringify('Atomic guest draft'));
  assert.equal((await post()).status,200);
+ assert.equal((await db.prepare("SELECT payload_json FROM job_ui_state_records WHERE subject=? AND job_id='saved'").bind(alice).first<any>())?.payload_json,JSON.stringify('Atomic guest draft'));
 });
 
 test('failed membership, course eligibility, cross-origin requests and expired guest proof preserve originals',async()=>{
@@ -186,18 +192,30 @@ test('browser claim uses no client IDs, preserves cache on failure and merges on
   pendingGuide:{messageId:'recovery-guide-001',durationSec:60}};
  data.set(progressKey,JSON.stringify(progress));data.set(`stem-listening:${guest}:foreign`,JSON.stringify(progress));
  let fail=true,calls=0;
+ const seeded:Array<{actor:string;records:any[]}>=[];
  const context={window:{} as any,AbortSignal,localStorage:{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)},fetch:async(path:string,options:any)=>{
   calls++;assert.equal(path,'/api/account/claim-guest');assert.equal(options.body,undefined);
   return {ok:!fail,headers:new Headers({'X-Stem-Account':alice}),json:async()=>({claimedJobIds:['saved'],guestStorageKey:guestKey})};
  }};
  context.window.fetch=context.fetch;
+ context.window.StemUiState={
+  snapshot:(actor:string)=>{assert.equal(actor,guest);return ['saved','foreign'].flatMap(jobId=>[
+   {jobId,kind:'listeningDraft',value:progress.draft},
+   ...['pendingConversation','pendingChat','pendingGuide'].map(kind=>({jobId,kind,value:(progress as any)[kind]})),
+  ]);},
+  seedRecords:async(actor:string,records:any[])=>{seeded.push({actor,records:JSON.parse(JSON.stringify(records))});},save(){},
+ };
  vm.runInNewContext(readFileSync(new URL('../public/app-path.js',import.meta.url),'utf8'),{...context,URL,document:{currentScript:{src:'https://stem.test/app-path.js'}}});
  vm.runInNewContext(source,context);const before=data.get(guestKey);
  await assert.rejects(context.window.StemGuestClaim.run(member()));assert.equal(data.get(guestKey),before);
  fail=false;await context.window.StemGuestClaim.run(member());assert.equal(calls,2);
  assert.deepEqual(JSON.parse(data.get(memberKey)!),[{id:'saved',collapsed:true},{id:'existing',collapsed:false}]);
  assert.equal(data.get(guestKey),before);
- assert.deepEqual(JSON.parse(data.get(memberProgress)!),progress);
+ const {pendingConversation,pendingChat,pendingGuide,...presentation}=progress;
+ assert.deepEqual(JSON.parse(data.get(memberProgress)!),presentation,'pending operations never become active member progress');
+ assert.deepEqual(seeded,[{actor:alice,records:[{jobId:'saved',kind:'listeningDraft',value:progress.draft},
+  {jobId:'saved',kind:'pendingConversation',value:pendingConversation},{jobId:'saved',kind:'pendingChat',value:pendingChat},
+  {jobId:'saved',kind:'pendingGuide',value:pendingGuide}]}],'only confirmed jobs contribute typed state; pending records remain inert seeds');
  assert.equal(data.get(`stem-listening:${alice}:foreign`),undefined,'unconfirmed work stays outside member cache');
  assert.equal(data.get(progressKey),JSON.stringify(progress),'guest progress stays recoverable');
  data.set(memberProgress,JSON.stringify({...progress,draft:'New signed-in draft'}));

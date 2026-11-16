@@ -154,12 +154,14 @@ import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal 
 import { readBoundedResponse } from './http/bounded-response.ts';
 import { guestPrincipal, ownershipTable, conversationTable, guestFailure } from './guest/access.ts';
 import { claimGuestWork, ownsClaimedOperation } from './guest/claim.ts';
+import { readJobUiState, seedJobUiState, writeJobUiState, UiStateError, validateSeedRequestShape, type SeedInput, type UiStateWrite } from './ui-state.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_SMALL_JSON_BYTES = 4 * 1024;
 const MAX_JOB_JSON_BYTES = 32 * 1024;
 const MAX_CONVERSATION_JSON_BYTES = 256 * 1024;
+const MAX_UI_STATE_SEED_JSON_BYTES = 512 * 1024;
 const MAX_WEBHOOK_JSON_BYTES = 64 * 1024;
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
@@ -343,6 +345,75 @@ app.get('/api/account', async (c) => {
     listeningUsage:listening,
     ...(guestPrincipal(principal)?{guest:{expiresAt:c.env.guestSession?.expiresAt,chatAvailable,
       verificationRequired:c.env.guestSession?.verifiedDay!==dailyWindow().day}}:{}) });
+});
+
+async function uiStateRateLimit(c: Context<AppContext>, principal: AppPrincipal): Promise<Response | null> {
+  const limiter = c.env.UI_STATE_LIMIT ?? c.env.REQUEST_LIMIT;
+  if (!limiter) return c.json({ error: { code: 'ui_state_unavailable' } }, 503);
+  try {
+    const result = await limiter.limit({ key: `stem-ui-state:${principal.subject}` });
+    return result.success ? null : c.json({ error: { code: 'ui_state_rate_limited' } }, 429, { 'Retry-After': '60' });
+  } catch { return c.json({ error: { code: 'ui_state_unavailable' } }, 503); }
+}
+function uiStateError(c: Context<AppContext>, error: unknown): Response {
+  if (error instanceof UiStateError) return c.json({ error: { code: error.code }, ...(error.code === 'ui_state_revision_conflict' ? { revision: error.cause } : {}) }, error.status);
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes('ui_state_quota') || message.includes('ui_state_receipt_limit')) return c.json({ error: { code: 'ui_state_quota' } }, 413);
+  return c.json({ error: { code: 'ui_state_unavailable' } }, 503);
+}
+function uiStateActorMatches(c: Context<AppContext>, principal: AppPrincipal): boolean {
+  return c.req.header('X-Stem-Account') === principal.subject;
+}
+
+app.get('/api/jobs/:id/ui-state', async c => {
+  const principal = c.get('principal');
+  if (!principal || c.env.AUTH_MODE !== 'cail') return c.json({ error: { code: 'authentication_required' } }, 401);
+  if (!uiStateActorMatches(c, principal)) return c.json({ error: { code: 'ui_state_actor_changed' } }, 409);
+  const limited = await uiStateRateLimit(c, principal); if (limited) return limited;
+  try { return c.json(await readJobUiState(c.env.DB, principal.subject, c.req.param('id'))); }
+  catch (error) { return uiStateError(c, error); }
+});
+
+app.put('/api/jobs/:id/ui-state', async c => {
+  const principal = c.get('principal');
+  if (!principal || c.env.AUTH_MODE !== 'cail') return c.json({ error: { code: 'authentication_required' } }, 401);
+  if (!uiStateActorMatches(c, principal)) return c.json({ error: { code: 'ui_state_actor_changed' } }, 409);
+  const limited = await uiStateRateLimit(c, principal); if (limited) return limited;
+  const parsed = await boundedJson(c, MAX_JOB_JSON_BYTES); if ('response' in parsed) return parsed.response;
+  const body = parsed.value;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 4
+    || !['requestId','kind','baseRevision','value'].every(key => Object.hasOwn(body, key))) return c.json({ error: { code: 'ui_state_invalid' } }, 400);
+  try {
+    const result = await writeJobUiState(c.env.DB, principal.subject, c.req.param('id'), body as UiStateWrite);
+    return c.json(result, result.outcome === 'conflict' ? 409 : 200);
+  } catch (error) { return uiStateError(c, error); }
+});
+
+app.post('/api/account/ui-state/seed', async c => {
+  const principal = c.get('principal');
+  if (!principal || c.env.AUTH_MODE !== 'cail') return c.json({ error: { code: 'authentication_required' } }, 401);
+  if (!uiStateActorMatches(c, principal)) return c.json({ error: { code: 'ui_state_actor_changed' } }, 409);
+  const limited = await uiStateRateLimit(c, principal); if (limited) return limited;
+  const parsed = await boundedJson(c, MAX_UI_STATE_SEED_JSON_BYTES); if ('response' in parsed) return parsed.response;
+  const body = parsed.value;
+  let seed: SeedInput;
+  try { validateSeedRequestShape(body); seed = body; }
+  catch (error) { return uiStateError(c, error); }
+  const preflight: { allowed: SeedInput['records']; denied: string[]; deferred: string[] } = { allowed: [], denied: [], deferred: [] };
+  for (const record of seed.records) {
+    try {
+      const permission = await jobPermission(c.env, principal, record.jobId);
+      if (permission?.read) preflight.allowed.push(record);
+      else preflight.denied.push(record.jobId);
+    } catch (error) {
+      if (error instanceof CourseError && [403,404].includes(error.status)) preflight.denied.push(record.jobId);
+      else preflight.deferred.push(record.jobId);
+    }
+  }
+  try {
+    const seeded = await seedJobUiState(c.env.DB, principal.subject, { ...seed, records: preflight.allowed });
+    return c.json({ accepted: seeded.accepted, denied: [...preflight.denied,...seeded.denied], deferred: [...preflight.deferred,...seeded.deferred] });
+  } catch (error) { return uiStateError(c, error); }
 });
 
 app.post('/api/account/claim-guest', async (c) => {

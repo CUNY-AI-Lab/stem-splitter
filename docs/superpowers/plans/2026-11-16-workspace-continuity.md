@@ -1,9 +1,44 @@
 # Silent workspace continuity implementation plan
 
-Status: proposed work; documentation does not authorize production changes.
+Status: stages 1–3 implemented locally for the listening-state subset; focused
+fixtures pass. Release gates, real Dev/production acceptance and stages 4–5 remain
+outstanding. Documentation does not authorize production changes.
 Specification: `../specs/2026-11-16-workspace-continuity.md`. Do not restore the
 earlier browser-copy interface, scripts or proof API wholesale. No continuity
 messages, banners, links, dialogs, popup or visible page at any stage.
+
+## Local implementation evidence — November 16
+
+- Stage 1: additive migration 0035 and private typed service implement separate
+  draft/player revisions, clear tombstones, bounded inert/conflicting versions,
+  byte quotas, retained-job access and idempotent writes. Backend service tests
+  exercise owner isolation, revoked scopes, races, expiry, quota and claim copy.
+- Stage 2: normal app hydration/saving and a durable typed local journal preserve
+  edits and explicit clears across interrupted writes. Only an unchanged,
+  acknowledged own seed may rebase an edit made before hydration. Local client
+  fixtures cover stale actors, conflicts and interrupted saves. Real-page local
+  playback fixtures cover private hydration and imported `guideOpen` with an
+  existing pending transcript; no automatic transcript or model write occurs.
+- Stage 3: claim copies join exact accepted job claims inside the ownership
+  transaction. Original-host source context/seed/write routes independently
+  verify the guest cookie, current actor and exact origin. The empty source
+  document seeds both verified contexts and drains typed journals before the
+  existing handoff, with an eight-second fallback and no new user interface.
+- Focused adapter/claim/Tools unit run: 68/68 passed, with typecheck passing.
+  Local browser handoff fixtures cover anonymous and signed-in destinations,
+  unchanged source listening bytes, pending work kept inert, playback/notes,
+  bounded source outage and reload loop guards. Two added retained-clear cases
+  passed: server draft revision 1 plus source clear journal becomes active null
+  at the guest/member destination; the acknowledged source journal is empty.
+  Full `tools.spec.mjs` run: 9/9 passed (23.2 seconds). These are disposable
+  synthetic browser fixtures, not production acceptance.
+
+The remaining ledger is unchanged: rack layout, preferences, other form drafts,
+historical compatibility archives, uploads and memory-only work are not covered.
+Conflicting alternatives are retained privately but have no new selection UI.
+An already-claimed guest's late divergent state does not overwrite a current
+member draft. Deadline/network failures retain source bytes and pending journals;
+they cannot guarantee that the destination has received every source write.
 
 ## Stage 0 — Freeze contracts and test fixtures
 

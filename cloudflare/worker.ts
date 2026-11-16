@@ -13,7 +13,7 @@ import { gatewayForRequest, canonicalModel, gatewayModelsConfigured } from './ga
 import { authenticatedRequest, handleAuth, sanitizedRequest, publicApi, type WorkerIdentity, type ReportProfile } from './sso.ts';
 import { guestConfigured, guestChatConfigured, hasMemberCookie, readGuestSession, revokeGuestSession, startGuestSession, clearGuestCookie, GUEST_COOKIE } from './guest.ts';
 import { guestFailure } from '../src/guest/access.ts';
-import { purgeExpiredListeningConversations } from './retention.ts';
+import { purgeExpiredListeningConversations, purgeExpiredUiState } from './retention.ts';
 import { purgeOperationContent } from '../src/reliability/retention.ts';
 import { handleBugReport, type BugReportService } from './bug-reports.ts';
 import { handleBugReport as handleDevBugReport, handleGuestBugReport, bugReportActor } from './dev-bug-reports.ts';
@@ -81,7 +81,7 @@ const worker = {
     ctx.waitUntil(runReliableJobs({...env,...adaptiveHandoff(env),guestRuntimeReady:guestConfigured(env),guestChatReady:guestChatConfigured(env),validateStemAudio,composeStemAudio}));
     ctx.waitUntil(env.DB.prepare('DELETE FROM guest_challenges WHERE expires_at<?').bind(Date.now()).run());
     ctx.waitUntil(refreshCourseUsageAccounts(env).catch(()=>{}));
-    if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeOperationContent(env.DB)]));
+    if (_controller.cron === '0 8 * * *') ctx.waitUntil(Promise.all([purgeExpiredListeningConversations(env.DB),purgeExpiredUiState(env.DB),purgeOperationContent(env.DB)]));
   },
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext, tools = false): Promise<Response> {
     env = intakeEnvironment(env);
