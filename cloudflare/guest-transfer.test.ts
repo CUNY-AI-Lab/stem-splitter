@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { SqliteD1 } from '../server/d1.ts';
 import { guestTransfer, TRANSFER_COOKIE } from './guest-transfer.ts';
 import { GUEST_COOKIE, readGuestSession, startGuestSession } from './guest.ts';
@@ -8,6 +9,33 @@ import type { WorkerEnv } from './worker.ts';
 
 const legacy = 'https://stem-splitter.ailab-452.workers.dev';
 const tools = 'https://tools.ailab.gc.cuny.edu';
+
+test('direct restoration checks the current account before choosing member or guest recovery', async () => {
+  const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
+  const member = 'cail-' + 'a'.repeat(32);
+  for (const current of [member, 'guest-' + 'b'.repeat(64), null]) {
+    const stored = new Map<string, string>();
+    let redirect = '', accountChecks = 0;
+    await runInNewContext(script, {
+      document: { getElementById: () => ({ addEventListener() {} }) },
+      sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value) },
+      location: { hash: '', replace: (value: string) => { redirect = value; } },
+      AbortSignal,
+      window: {
+        StemPath: (path: string) => '/stem-splitter' + path,
+        StemFetch: async (path: string) => {
+          assert.equal(path, '/api/account'); accountChecks++;
+          if (!current) throw new Error('temporary account outage');
+          return { ok: true, json: async () => ({ account: { subject: current } }) };
+        },
+      },
+    });
+    assert.equal(accountChecks, 1);
+    assert.equal(redirect, '/stem-splitter/auth/guest-transfer/start' + (current === member ? '?existingOnly=1' : ''));
+    assert.equal(stored.get('stem-transfer-member'), current === member ? member : undefined);
+  }
+});
+
 function fixture() {
   const database = new SqliteD1(':memory:');
   database.applySchema(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));

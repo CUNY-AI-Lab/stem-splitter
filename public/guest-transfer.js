@@ -19,6 +19,15 @@
   if (!token) {
     let existingOnly = false;
     try { existingOnly = /^cail-[0-9a-f]{32}$/.test(sessionStorage.getItem('stem-transfer-member') || ''); } catch {}
+    // Direct visits have no claim-page marker. Respect the current account too.
+    try {
+      const response = await window.StemFetch('/api/account', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      if (response.ok) {
+        const member = (await response.json()).account?.subject;
+        existingOnly = /^cail-[0-9a-f]{32}$/.test(member || '');
+        if (existingOnly) try { sessionStorage.setItem('stem-transfer-member', member); } catch {}
+      }
+    } catch { /* The source can still restore an existing guest session. */ }
     location.replace(window.StemPath('/auth/guest-transfer/start') + (existingOnly ? '?existingOnly=1' : ''));
     return;
   }
