@@ -372,6 +372,30 @@ test('course folders enforce same-course items, grants and author-only notes on 
   const state=await(await request('/api/jobs/a','bob')).json() as any;assert.equal(state.annotations[0].authorName,'Author unavailable');assert.equal(state.annotations[0].canDelete,false);
   assert.equal((await request(base,'ownerA','PUT',{permission:'private',revision:1})).status,200);assert.equal((await request('/api/jobs/a','bob')).status,404);assert.equal((await request('/api/files/stems/a/vocals.mp3','bob')).status,404);
 });
+test('read-only folder grants reject peer annotation writes after comment access is downgraded',async()=>{
+  const {request,job,db}=await setup();await job('read-grant');
+  const root=`/api/classroom/courses/${A}/folders`;
+  const made=await(await request(root,'ownerA','POST',{name:'Read only'})).json() as any;
+  const path=`${root}/${made.folder.id}`;
+  assert.equal((await request(path+'/items','ownerA','POST',{jobId:'read-grant'})).status,200);
+  assert.equal((await request(path,'ownerA','PUT',{permission:'comment',revision:0})).status,200);
+  const peerNote=await(await request('/api/jobs/read-grant/annotations','bob','POST',{atSeconds:1,text:'Peer note'})).json() as any;
+  assert.equal(peerNote.authorName,'Student');
+  assert.equal((await request('/api/jobs/read-grant/annotations/'+peerNote.id,'bob','PUT',{text:'Peer edit'})).status,200);
+  assert.equal((await request(path,'ownerA','PUT',{permission:'read',revision:1})).status,200,'current sharing revision downgrades access');
+  assert.equal((await request('/api/jobs/read-grant','bob')).status,200,'read-only peer retains split access');
+  assert.equal((await request('/api/jobs/read-grant/annotations','bob','POST',{atSeconds:2,text:'Should be denied'})).status,404);
+  assert.equal((await request('/api/jobs/read-grant/annotations/'+peerNote.id,'bob','PUT',{text:'Should be denied'})).status,404);
+  assert.equal((await request('/api/jobs/read-grant/annotations/'+peerNote.id,'bob','DELETE')).status,404);
+  const ownerNote=await(await request('/api/jobs/read-grant/annotations','alice','POST',{atSeconds:3,text:'Owner note'})).json() as any;
+  assert.equal(ownerNote.authorName,'<b>Alice</b>');
+  assert.equal((await request('/api/jobs/read-grant/annotations/'+ownerNote.id,'alice','PUT',{text:'Owner edit'})).status,200,'split owner retains annotation rights');
+  const instructorNote=await(await request('/api/jobs/read-grant/annotations','ownerA','POST',{atSeconds:4,text:'Instructor note'})).json() as any;
+  assert.equal(instructorNote.authorName,'Student');
+  assert.equal((await request('/api/jobs/read-grant/annotations/'+instructorNote.id,'ownerA','DELETE')).status,200,'current instructor retains annotation rights');
+  const notes=(await db.prepare("SELECT text FROM annotations WHERE job_id='read-grant' ORDER BY at_seconds").all<any>()).results;
+  assert.deepEqual(notes.map((row:any)=>row.text),['Peer edit','Owner edit']);
+});
 test('participants create private folders and contribute only their own splits after instructor sharing',async()=>{
   const {request,job,db,env}=await setup();
   await job('alice-a','alice',A);await job('bob-a','bob',A);await job('alice-b','alice',B);await job('alice-personal','alice',null);
