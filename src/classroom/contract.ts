@@ -1,5 +1,5 @@
-/** Private Admission course wire v1, mirrored from admission-contract/src/course.ts
- * at cail-tools-admission 5f13f332c120c6712aead2a355b3cf5bcc6dae58.
+/** Private Admission V1/V2 course wire, mirrored from admission-contract/src/course.ts.
+ * V2 explicitly opts into current administrator capabilities without enrollment.
  * Keep runtime validation here dependency-free; never derive authority from a summary. */
 export const COURSE_APP = 'stem-splitter' as const;
 export const STEM_COURSE_ID = 'msh-245-the-american-musical-experience-fall-2026-01';
@@ -13,7 +13,7 @@ export interface CourseCapabilities {
   instructorPanel: boolean; rosterRead: boolean; promptRead: boolean; promptWrite: boolean;
 }
 export interface CourseAssignmentV2 extends CourseAssignment {
-  guestInstructor: boolean; capabilities: CourseCapabilities;
+  guestInstructor: boolean; administrator?: true; capabilities: CourseCapabilities;
 }
 export interface CourseFailure { ok: false; code: 'invalid' | 'not_admitted' | 'not_enrolled' | 'scheduled' | 'expired' | 'revoked' | 'not_owner' | 'cursor_invalid' | 'stale_cursor'; retryable: false }
 export type CourseAccessResult = (CourseAssignment & { ok: true }) | CourseFailure;
@@ -24,9 +24,9 @@ export interface AdmissionCourseResolver {
   resolveCourseAccess?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
   listCourseAssignments?(input: { subject: string; app: typeof COURSE_APP; limit?: number; cursor?: string }): Promise<unknown>;
   listCourseRoster?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit?: number; cursor?: string }): Promise<unknown>;
-  resolveCourseAccessV2?(input: { subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
-  listCourseAssignmentsV2?(input: { subject: string; app: typeof COURSE_APP; limit?: number; cursor?: string }): Promise<unknown>;
-  listCourseRosterV2?(input: { subject: string; app: typeof COURSE_APP; classId: string; limit?: number; cursor?: string }): Promise<unknown>;
+  resolveCourseAccessV2?(input: { includeAdministrator?: true; subject: string; app: typeof COURSE_APP; classId: string }): Promise<unknown>;
+  listCourseAssignmentsV2?(input: { includeAdministrator?: true; subject: string; app: typeof COURSE_APP; limit?: number; cursor?: string }): Promise<unknown>;
+  listCourseRosterV2?(input: { includeAdministrator?: true; subject: string; app: typeof COURSE_APP; classId: string; limit?: number; cursor?: string }): Promise<unknown>;
 }
 const classIdPattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 export const validClassId = (value: unknown): value is string => typeof value === 'string' && classIdPattern.test(value) && value !== 'search';
@@ -52,8 +52,8 @@ function assignment(v: unknown, now: number, access: boolean, v2=false): v is Co
   if (!memberFields(v)) return false;
   const r = v as unknown as Record<string, unknown>;
   return validClassId(r.classId) && bounded(r.className, 200) && bounded(r.term, 120) && bounded(r.section, 120) &&
-    typeof r.owner === 'boolean' && typeof r.participant === 'boolean' && (r.owner || r.participant || (v2 && r.guestInstructor === true)) &&
-    Object.keys(r).every(k=>[...(access?['ok']:[]),...(v2?['guestInstructor','capabilities']:[]),'classId','className','term','section','memberId','displayName','displayNameSource','participant','owner','startsAt','checkedAt','expiresAt','revision'].includes(k)) &&
+    typeof r.owner === 'boolean' && typeof r.participant === 'boolean' && (r.owner || r.participant || (v2 && (r.guestInstructor === true || r.administrator === true))) &&
+    Object.keys(r).every(k=>[...(access?['ok']:[]),...(v2?['guestInstructor','administrator','capabilities']:[]),'classId','className','term','section','memberId','displayName','displayNameSource','participant','owner','startsAt','checkedAt','expiresAt','revision'].includes(k)) &&
     (!access || r.ok === true) && validClock(r,now) && Date.parse(r.startsAt as string) <= Date.parse(r.checkedAt as string);
 }
 export const validAssignment = (v: unknown, now=Date.now()): v is CourseAssignment => assignment(v,now,false);
@@ -62,13 +62,13 @@ const capabilityNames = ['instructorPanel','rosterRead','promptRead','promptWrit
 export function validAssignmentV2(v: unknown, now=Date.now(), access=false): v is CourseAssignmentV2 {
   if (!v || typeof v !== 'object') return false;
   const r=v as Record<string,unknown>, c=r.capabilities;
-  if (!assignment(v,now,access,true) || typeof r.guestInstructor !== 'boolean' || !c || typeof c !== 'object') return false;
+  if (!assignment(v,now,access,true) || ('administrator' in r && r.administrator !== true) || typeof r.guestInstructor !== 'boolean' || !c || typeof c !== 'object') return false;
   const capabilities=c as Record<string,unknown>;
   if (Object.keys(capabilities).length!==capabilityNames.length || !capabilityNames.every(key=>typeof capabilities[key]==='boolean')) return false;
   const all=capabilityNames.every(key=>capabilities[key]===true), none=capabilityNames.every(key=>capabilities[key]===false);
   if (r.guestInstructor===true) return r.classId===DEMO_COURSE_ID && r.owner===false && r.participant===false && all &&
     Date.parse(r.expiresAt as string)-Date.parse(r.checkedAt as string)===300000;
-  if (r.owner===true) return all;
+  if (r.owner===true || r.administrator===true) return all;
   if (r.participant===true) return none;
   return false;
 }

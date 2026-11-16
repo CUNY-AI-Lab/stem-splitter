@@ -18,15 +18,23 @@ test('student review uses names, counts visits and runs, and confines audio to t
  const db=new SqliteD1(':memory:');db.applySchema(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  for(const subject of [alice,bob,teacher,admin])await db.prepare('INSERT INTO app_users(subject,role) VALUES(?,?)').bind(subject,subject===teacher?'instructor':'student').run();
  let ownsCourse=true;
- const env={AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://split.test',CAIL_CLASSROOM_ENABLED:'false',DB:db,CAIL_IDENTITY_JWKS:issuer.jwksJson,verifyCailIdentity,
+ const env={AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://split.test',CAIL_CLASSROOM_ENABLED:'false',CAIL_COURSE_IDS:'synthetic-course',DB:db,CAIL_IDENTITY_JWKS:issuer.jwksJson,verifyCailIdentity,
   ADMISSION_RESOLVER:{resolveMembership:async({subject}:any)=>({ok:true,accessRole:subject===admin?'admin':'member',budgetScope:subject===admin?'admin':'person',revision:1,expiresAt:new Date(Date.now()+60000).toISOString()}),
-   resolveCourseAccessV2:async({subject,classId}:any)=> subject===bob?{ok:false,code:'not_enrolled',retryable:false}:
+   resolveCourseAccessV2:async({subject,classId}:any)=> subject===bob&&classId==='synthetic-course'?{ok:false,code:'not_enrolled',retryable:false}:
     {...await courseFixture(subject,classId,subject===teacher&&ownsCourse),displayName:subject===alice?'Alice Rivera':subject===teacher?'Michele Teacher':'Lab Administrator'}},
   AUDIO:{head:async()=>({size:4,uploaded:new Date(),httpEtag:'"test"',writeHttpMetadata:(headers:Headers)=>headers.set('Content-Type','audio/mpeg')}),get:async()=>({body:new Uint8Array([1,2,3,4]),size:4,httpEtag:'"test"',writeHttpMetadata:(headers:Headers)=>headers.set('Content-Type','audio/mpeg')})}
  } as unknown as Env;
  const call=(path:string,subject=teacher)=>app.fetch(new Request('https://split.test'+path,{headers:{'x-cail-identity-jwt':tokens.get(subject)!}}),env);
- await db.prepare(`INSERT INTO jobs(id,filename,source_key,status,stems) VALUES('one','Alice recording','uploads/one.wav','done','[{"name":"vocals","key":"stems/one/vocals.mp3"}]'),('two','Failed recording','uploads/two.wav','failed',NULL),('other','Bob private','uploads/bob.wav','done','[]')`).run();
- for(const id of ['one','two','other'])await db.prepare('INSERT INTO job_owners(job_id,subject) VALUES(?,?)').bind(id,id==='other'?bob:alice).run();
+ await db.prepare(`INSERT INTO jobs(id,filename,source_key,status,stems) VALUES
+   ('one','Alice class recording','uploads/one.wav','done','[{"name":"vocals","key":"stems/one/vocals.mp3"}]'),
+   ('two','Failed recording','uploads/two.wav','failed',NULL),('other','Bob private','uploads/bob.wav','done','[]'),
+   ('personal','Alice personal recording','uploads/personal.wav','done','[]'),
+   ('other-course','Alice other course recording','uploads/other-course.wav','done','[]'),
+   ('wrong-member','Alice mismatched membership recording','uploads/wrong-member.wav','done','[]')`).run();
+ for(const id of ['one','two','personal','other-course','wrong-member','other'])await db.prepare('INSERT INTO job_owners(job_id,subject) VALUES(?,?)').bind(id,id==='other'?bob:alice).run();
+ const aliceCourse=await courseFixture(alice,'synthetic-course'),bobCourse=await courseFixture(bob,'synthetic-course');
+ await db.prepare("INSERT INTO job_courses(job_id,course_id,member_id,assigned_by,policy_version) VALUES('one','synthetic-course',?,?,'course-work-v1'),('other-course','other-course',?,?,'course-work-v1'),('wrong-member','synthetic-course',?,?,'course-work-v1')")
+   .bind(aliceCourse.memberId,teacher,aliceCourse.memberId,teacher,bobCourse.memberId,teacher).run();
  await db.prepare("INSERT INTO annotations(id,job_id,at_seconds,text) VALUES('private-note','one',1,'Private listening note')").run();
  await recordClientUses(db,{subject:alice,role:'student',quotaClass:'member'} as AppPrincipal,[{id:'recorded-visit-0001',type:'session_start'},{id:'recorded-visit-0002',type:'session_start'}]);
  assert.equal((await call('/api/account',bob)).status,200);
@@ -37,22 +45,31 @@ test('student review uses names, counts visits and runs, and confines audio to t
  const students=(await list.json() as any).students;
  assert.equal(students.find((r:any)=>r.subject===alice).displayName,'Alice Rivera');
  const activity=students.find((r:any)=>r.subject===alice);
- assert.deepEqual({...activity,subject:undefined,firstSeenAt:undefined,accountCreatedAt:undefined,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined},{subject:undefined,firstSeenAt:undefined,accountCreatedAt:undefined,displayName:'Alice Rivera',runs:2,completed:1,guideTurns:0,chatReplies:0,guideCues:0,recordedVisits:2,recordedPlays:0,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined});
+ assert.deepEqual({...activity,subject:undefined,firstSeenAt:undefined,accountCreatedAt:undefined,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined},{subject:undefined,firstSeenAt:undefined,accountCreatedAt:undefined,displayName:'Alice Rivera',runs:5,completed:4,guideTurns:0,chatReplies:0,guideCues:0,recordedVisits:2,recordedPlays:0,lastActiveAt:undefined,lastClientActivityAt:undefined,lastServerAccessAt:undefined,lastOperationAt:undefined});
  assert.equal(typeof activity.firstSeenAt,'string');
  assert.ok(students.some((row:any)=>row.subject===teacher),'the viewing instructor is included');
  assert.equal((await call(`/api/teacher/students/${teacher}/jobs`)).status,200);
  assert.ok(Date.now()-Date.parse(activity.lastActiveAt)<60000);
  assert.equal(students.some((r:any)=>r.subject===bob),false);
- const jobs=await call(`/api/teacher/students/${alice}/jobs`);assert.equal(jobs.status,200);assert.equal((await jobs.json() as any).jobs.length,2);
+ const jobs=await call(`/api/teacher/students/${alice}/jobs`);assert.equal(jobs.status,200);
+ assert.deepEqual((await jobs.json() as any).jobs.map((row:any)=>row.id),['one'],'instructors only see work linked to the exact current course membership');
  const review=await call(`/api/teacher/students/${alice}/jobs/one`);assert.equal(review.status,200);
  const body=await review.json() as any;assert.equal(body.instructorReview,true);assert.deepEqual(body.annotations,[]);assert.equal(body.guide,null);
  assert.equal((await call(body.stems[0].url)).status,200);
+ for(const id of ['two','personal','other-course','wrong-member']) {
+   assert.equal((await call(`/api/teacher/students/${alice}/jobs/${id}`)).status,404,id);
+   assert.equal((await call(`/api/teacher/students/${alice}/jobs/${id}/stems/0`)).status,404,id);
+ }
+ const adminJobs=await call(`/api/teacher/students/${alice}/jobs`,admin);assert.equal(adminJobs.status,200);
+ assert.equal((await adminJobs.json() as any).jobs.length,5,'global administrator review retains its legacy app-wide account scope');
+ assert.equal((await call(`/api/teacher/students/${alice}/jobs/personal`,admin)).status,200);
  assert.equal((await call(`/api/teacher/students/${alice}/jobs/other`)).status,404);
  assert.equal((await call(`/api/teacher/students/${bob}/jobs`)).status,404);
  assert.equal((await call('/api/jobs/one')).status,404);
  assert.equal((await call('/api/teacher/students',alice)).status,403);
  assert.equal((await call(body.stems[0].url,alice)).status,403);
  ownsCourse=false;
+ assert.equal((await call(`/api/teacher/students/${alice}/jobs`)).status,404,'revoked instructor capability removes the review relationship');
  assert.equal((await call(body.stems[0].url)).status,404);
  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM public_split_links').first<any>())!.n,0);
  const accounts=await call('/api/admin/users',admin);assert.equal(accounts.status,200);

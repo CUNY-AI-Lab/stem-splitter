@@ -24,7 +24,7 @@ export async function boundedRpc<T>(run: () => Promise<T>): Promise<T> {
 export async function resolveCourse(env: Env, subject: string, classId: string): Promise<CourseAssignmentV2> {
   if (!courseIds(env).includes(classId)) throw new CourseError(403, 'course_not_available');
   if (!env.ADMISSION_RESOLVER?.resolveCourseAccessV2) throw new CourseError(503, 'course_authority_unavailable');
-  const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId }));
+  const value = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveCourseAccessV2!({ subject, app: COURSE_APP, classId, includeAdministrator: true }));
   if (validFailure(value)) throw new CourseError(403, value.code);
   if (!value || typeof value !== 'object' || (value as { ok?: unknown }).ok !== true || !validAssignmentV2(value,Date.now(),true) || value.classId !== classId) throw new CourseError(503, 'course_authority_unavailable');
   try { await rememberCourseUsageAccount(env,subject,value); } catch { /* Supplemental matching cannot block authorized access. */ }

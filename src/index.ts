@@ -518,6 +518,10 @@ app.get('/api/teacher/students', async c=>{
 app.get('/api/teacher/students/:subject/jobs', async c=>{
   try {
     const subject=c.req.param('subject'),person=await requireStudentReview(c.env,c.get('principal')!,subject);
+    const courseFilter=person.courses
+      ? `AND EXISTS(SELECT 1 FROM job_courses jc WHERE jc.job_id=j.id AND (${person.courses.map(()=>'(jc.course_id=? AND jc.member_id=?)').join(' OR ')}))`
+      : '';
+    const courseBindings=person.courses?.flatMap(course=>[course.courseId,course.memberId])??[];
     let before:{id:string;createdAt:string}|null=null;
     const cursor=c.req.query('cursor');
     if(cursor!==undefined) {
@@ -531,18 +535,23 @@ app.get('/api/teacher/students/:subject/jobs', async c=>{
     const {results}=await c.env.DB.prepare(`SELECT j.id,j.filename,j.model,j.status,j.created_at AS createdAt,j.stems
       FROM job_owners o JOIN jobs j ON j.id=o.job_id WHERE o.subject=? AND j.created_at>datetime('now','-90 days')
       AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)
+      ${courseFilter}
       AND (? IS NULL OR j.created_at<? OR (j.created_at=? AND j.id<?))
-      ORDER BY j.created_at DESC,j.id DESC LIMIT 41`).bind(subject,before?.createdAt??null,before?.createdAt??null,before?.createdAt??null,before?.id??null)
+      ORDER BY j.created_at DESC,j.id DESC LIMIT 41`).bind(subject,...courseBindings,before?.createdAt??null,before?.createdAt??null,before?.createdAt??null,before?.id??null)
       .all<{id:string;filename:string;model:string;status:string;createdAt:string;stems:string|null}>();
     return c.json({displayName:person.displayName,jobs:results.slice(0,40).map(({stems,...row})=>({...row,stemCount:JSON.parse(stems||'[]').length})),
       nextCursor:results.length>40?btoa(JSON.stringify({id:results[39].id,createdAt:results[39].createdAt})):null});
   }catch(error){if(error instanceof CourseError)return courseErrorResponse(error);throw error;}
 });
 async function reviewedJob(env:Env,actor:AppPrincipal,subject:string,id:string) {
-  await requireStudentReview(env,actor,subject);
+  const person=await requireStudentReview(env,actor,subject);
+  const courseFilter=person.courses
+    ? `AND EXISTS(SELECT 1 FROM job_courses jc WHERE jc.job_id=j.id AND (${person.courses.map(()=>'(jc.course_id=? AND jc.member_id=?)').join(' OR ')}))`
+    : '';
+  const courseBindings=person.courses?.flatMap(course=>[course.courseId,course.memberId])??[];
   return env.DB.prepare(`SELECT j.* FROM job_owners o JOIN jobs j ON j.id=o.job_id WHERE o.subject=? AND j.id=?
     AND j.status='done' AND j.created_at>datetime('now','-90 days')
-    AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)`).bind(subject,id).first<JobRow>();
+    AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id) ${courseFilter}`).bind(subject,id,...courseBindings).first<JobRow>();
 }
 app.get('/api/teacher/students/:subject/jobs/:id',async c=>{
   try {

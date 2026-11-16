@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
+import { currentMembership } from '../membership.ts';
 import { readBoundedJsonRequest } from '../http/bounded-request.ts';
 import { boundedRpc, CourseError, jobPermission, resolveCourse } from './access.ts';
 
@@ -22,7 +23,7 @@ type Transport = {
 function isInstructor(principal: AppPrincipal, courseId: string) {
   const course = principal.course;
   return !!course && course.classId === courseId && course.capabilities.instructorPanel &&
-    (course.owner || course.guestInstructor);
+    (course.owner || course.guestInstructor || course.administrator === true);
 }
 
 async function readableJob(env: Env, principal: AppPrincipal, courseId: string, jobId: string): Promise<Job> {
@@ -48,19 +49,11 @@ async function currentHost(env: Env, row: LiveRow, viewer: AppPrincipal): Promis
   try {
     if (!env.ADMISSION_RESOLVER) throw new CourseError(503, 'course_authority_unavailable');
     const result = await boundedRpc(() => env.ADMISSION_RESOLVER!.resolveMembership({ subject: row.host_subject }));
-    if (!result || typeof result !== 'object') throw new CourseError(503, 'course_authority_unavailable');
-    const membership = result as Record<string, unknown>;
-    if (membership.ok === false && membership.code === 'not_admitted') return false;
-    if (membership.ok !== true || !['member', 'admin'].includes(String(membership.accessRole)) ||
-      !['person', 'person-plus', 'admin'].includes(String(membership.budgetScope)) ||
-      (membership.accessRole === 'admin') !== (membership.budgetScope === 'admin') ||
-      !Number.isSafeInteger(membership.revision) || Number(membership.revision) < 0 ||
-      typeof membership.expiresAt !== 'string' || !Number.isFinite(Date.parse(membership.expiresAt))) {
-      throw new CourseError(503, 'course_authority_unavailable');
-    }
-    if (Date.parse(membership.expiresAt) <= Date.now()) return false;
+    const membership = currentMembership(result);
+    if (membership === 'denied') return false;
+    if (!membership) throw new CourseError(503, 'course_authority_unavailable');
     const course = await resolveCourse(env, row.host_subject, row.course_id);
-    if (!course.capabilities.instructorPanel || !(course.owner || course.guestInstructor)) return false;
+    if (!course.capabilities.instructorPanel || !(course.owner || course.guestInstructor || course.administrator === true)) return false;
     const permission = await jobPermission(env, { subject: row.host_subject, role: 'member', quotaClass: 'member', displayName: '', course, courseId: row.course_id }, row.job_id);
     return !!permission?.read && permission.courseId === row.course_id;
   } catch (error) {

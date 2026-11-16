@@ -17,7 +17,7 @@ export async function teachingCourses(env:Env,actor:AppPrincipal):Promise<string
   if(actor.role!=='instructor')throw new CourseError(403,'not_owner');
   const owned:string[]=[];
   for(const id of courseIds(env)) {
-    try {if((await resolveCourse(env,actor.subject,id)).owner)owned.push(id);}
+    try {if((await resolveCourse(env,actor.subject,id)).capabilities.instructorPanel)owned.push(id);}
     catch(error){if(!(error instanceof CourseError)||error.status===503)throw error;}
   }
   return owned;
@@ -83,11 +83,35 @@ export async function namedUsers(env:Env,actor:AppPrincipal,cursor?:string) {
   return {users:out.sort((a,b)=>a.displayName.localeCompare(b.displayName)||a.subject.localeCompare(b.subject)),nextCursor,complete:nextCursor===null};
 }
 export async function requireStudentReview(env:Env,actor:AppPrincipal,subject:string) {
+  if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');
   if(!/^cail-[0-9a-f]{32}$/.test(subject)||!await env.DB.prepare('SELECT 1 FROM app_users WHERE subject=?').bind(subject).first())throw new CourseError(404,'not_found');
+  if(actor.role==='admin') {
+    const person=await profile(env,subject,courseIds(env),false);
+    return {...person,courses:null as Array<{courseId:string;memberId:string}>|null};
+  }
+  // An instructor may review their own account; the route's owner filter still
+  // limits this to their own jobs. Peer review below requires current enrollment.
+  if(subject===actor.subject) {
+    const person=await profile(env,subject,courseIds(env),false);
+    return {...person,courses:null as Array<{courseId:string;memberId:string}>|null};
+  }
   const classes=await teachingCourses(env,actor);
-  const person=await profile(env,subject,actor.role==='admin'?courseIds(env):classes,actor.role!=='admin'&&subject!==actor.subject);
-  if(!person.allowed)throw new CourseError(404,'not_found');
-  return person;
+  const courses:Array<{courseId:string;memberId:string}> = [];
+  let displayName:string|null=null;
+  for(const courseId of classes) {
+    try {
+      const assignment=await resolveCourse(env,subject,courseId);
+      if(!assignment.participant)continue;
+      courses.push({courseId,memberId:assignment.memberId});
+      if(!displayName&&assignment.displayNameSource==='verified_profile')displayName=cleanDisplayName(assignment.displayName);
+    } catch(error){if(!(error instanceof CourseError)||error.status===503)throw error;}
+  }
+  if(!courses.length)throw new CourseError(404,'not_found');
+  if(!displayName) {
+    const cached=await env.DB.prepare('SELECT display_name FROM account_display_names WHERE subject=?').bind(subject).first<{display_name:string}>();
+    displayName=cached?.display_name??'Name unavailable';
+  }
+  return {allowed:true,displayName,courses};
 }
 export async function studentActivity(env:Env,actor:AppPrincipal,cursor?:string) {
   if(!actor||!['admin','instructor'].includes(actor.role))throw new CourseError(403,'not_owner');

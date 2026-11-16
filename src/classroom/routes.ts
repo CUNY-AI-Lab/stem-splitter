@@ -34,7 +34,7 @@ async function body(request: Request): Promise<Record<string,unknown>> {
 routes.get('/courses', async c => {
   const p = c.get('principal')!;
   if (!c.env.ADMISSION_RESOLVER?.listCourseAssignmentsV2) throw new CourseError(503,'course_authority_unavailable');
-  const value = await boundedRpc(() => c.env.ADMISSION_RESOLVER!.listCourseAssignmentsV2!({ subject:p.subject,app:COURSE_APP,limit:100,cursor:cursor(c.req.query('cursor')) }));
+  const value = await boundedRpc(() => c.env.ADMISSION_RESOLVER!.listCourseAssignmentsV2!({ subject:p.subject,app:COURSE_APP,includeAdministrator:true,limit:100,cursor:cursor(c.req.query('cursor')) }));
   if (validFailure(value)) throw new CourseError(value.code.includes('cursor')?409:403,value.code);
   const result = value as { assignments?: unknown };
   if (!validPage(value) || !Array.isArray(result.assignments) || result.assignments.length>100 || !result.assignments.every(row=>validAssignmentV2(row))) throw new CourseError(503,'course_authority_unavailable');
@@ -52,7 +52,7 @@ routes.get('/courses/:courseId', c => {
 routes.get('/courses/:courseId/roster',async c=>{
   const p=c.get('principal')!; const courseId=c.req.param('courseId'); capability(p,'rosterRead',courseId);
   if (!c.env.ADMISSION_RESOLVER?.listCourseRosterV2) throw new CourseError(503,'course_authority_unavailable');
-  const value=await boundedRpc(()=>c.env.ADMISSION_RESOLVER!.listCourseRosterV2!({subject:p.subject,app:COURSE_APP,classId:courseId,limit:40,cursor:cursor(c.req.query('cursor'))}));
+  const value=await boundedRpc(()=>c.env.ADMISSION_RESOLVER!.listCourseRosterV2!({subject:p.subject,app:COURSE_APP,classId:courseId,includeAdministrator:true,limit:40,cursor:cursor(c.req.query('cursor'))}));
   if (validFailure(value)) throw new CourseError(value.code.includes('cursor')?409:403,value.code);
   const result=value as {classId?:unknown;participants?:unknown};
   if (!validPage(value)||result.classId!==courseId||!Array.isArray(result.participants)||result.participants.length>100||!result.participants.every(validMember)) throw new CourseError(503,'course_authority_unavailable');
