@@ -1730,7 +1730,11 @@ test('gates the instructor console and persists a prompt amendment', async ({ pa
   await expect(page.locator('#teacher-who')).toBeEmpty();
   await expect(page.locator('#teacher-access-status')).toBeEmpty();
   await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible();
-  await expect(page.getByText('Prompt reference', { exact: true })).toBeVisible();
+  const instructions = page.locator('.teacher-amendment-section');
+  await expect(instructions.getByRole('heading', { name: 'Listening Guy instructions', exact: true })).toBeVisible();
+  await expect(instructions.locator('#fixed-prompt-title strong')).toHaveText('System prompt');
+  await expect(instructions.locator('#prompt-history-title')).toHaveText('History');
+  await expect(page.getByText('Prompt reference', { exact: true })).toHaveCount(0);
   await expect(page.locator('#fixed-prompt-details')).not.toHaveAttribute('open', '');
   await expect(page.locator('#fixed-prompt-scroll')).toBeHidden();
   await expect(page.getByRole('textbox', { name: 'Teaching instructions', exact: true })).not.toHaveAttribute('placeholder');

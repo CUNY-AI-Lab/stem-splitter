@@ -64,6 +64,20 @@ for (const role of ['member', 'instructor', 'student'] as const) test(`${role} p
   assert.equal(f.courseReads(), 0);
 });
 
+for (const [accessRole, budgetScope] of [['admin', 'person-plus'], ['member', 'admin']] as const) {
+  test(`${accessRole} with ${budgetScope} budget keeps independent personal queue access`, async t => {
+    const f = await setup(t), op = await f.reserve(f.principal(accessRole));
+    f.membership({ ...membershipFixture(), accessRole, budgetScope });
+    let starts = 0;
+    t.mock.method(globalThis, 'fetch', async () => { starts++; return Response.json({ id: 'fixture-start', status: 'starting' }); });
+    await drainSplitQueue(f.env, async () => assert.fail('Provider completion is separate'));
+    assert.equal((await readOperation(f.db, op.id))?.state, 'processing');
+    assert.equal(starts, 1);
+    assert.equal(f.membershipReads(), 1);
+    assert.equal(f.courseReads(), 0);
+  });
+}
+
 for (const claimed of [false, true]) test(`${claimed ? 'claimed guest' : 'guest'} queued work retains its correct authority`, async t => {
   const f = await setup(t);
   const p: AppPrincipal = { subject: guest, role: 'guest', quotaClass: 'guest', displayName: 'Guest', course: null, courseId: null };
@@ -102,7 +116,7 @@ for (const denied of ['revoked', 'expired', 'malformed', 'unavailable', 'disable
   if (denied === 'disabled') await f.db.prepare('UPDATE app_users SET disabled=1,updated_by=?,revision=revision+1 WHERE subject=?').bind(member,member).run();
   else f.membership(denied === 'revoked' ? { ok: false, code: 'not_admitted' }
     : denied === 'expired' ? { ...membershipFixture(), expiresAt: new Date(Date.now() - 1000).toISOString() }
-    : denied === 'malformed' ? { ...membershipFixture(), budgetScope: 'admin' } : new Error('fixture outage'));
+    : denied === 'malformed' ? { ...membershipFixture(), budgetScope: 'unknown' } : new Error('fixture outage'));
   t.mock.method(globalThis, 'fetch', async () => assert.fail('Unconfirmed access cannot dispatch a provider'));
   await drainSplitQueue(f.env, async () => assert.fail('Unconfirmed access cannot complete'));
   assert.equal((await readOperation(f.db, op.id))?.error_code, 'access_unavailable');
