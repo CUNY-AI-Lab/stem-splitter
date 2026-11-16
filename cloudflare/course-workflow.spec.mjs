@@ -42,7 +42,7 @@ test('an instructor builds a class folder in place: create, add splits, share, r
     page.on('pageerror',error=>errors.push(error.message));
     await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
     await expect(page.getByRole('button',{name:'Folders',exact:true})).toHaveAttribute('aria-current','true');
-    await expect(page.locator('#classroom-create')).toBeVisible();
+    await expect(page.locator('#classroom-create')).toBeHidden();
     await expect(page.locator('#classroom-folder-create')).toBeHidden();
     await page.getByRole('button',{name:'Make class folder',exact:true}).click();
     await expect(page.locator('#classroom-folder-create')).toBeVisible();
@@ -108,7 +108,7 @@ test('a student can start a folder and open their own splits without instructor 
     await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
     await expect(page.locator('#classroom-folders-status')).toHaveText('No folders yet.');
     await expect(page.locator('#classroom-views')).toBeVisible();
-    await expect(page.locator('#classroom-create')).toBeVisible();
+    await expect(page.locator('#classroom-create')).toBeHidden();
     await expect(page.locator('#classroom-view-students')).toBeHidden();
     await expect(page.locator('#classroom-guidance')).toBeHidden();
     await expect(page.locator('#classroom-folder-create')).toBeHidden();
@@ -463,7 +463,8 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`Create s
   await page.setViewportSize({width,height:900});
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-course')).toHaveValue(course);
-  if(owner)await page.getByRole('button',{name:'Splits',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Create shared split',exact:true})).toBeHidden();
+  await page.getByRole('button',{name:'Splits',exact:true}).click();
   await page.getByRole('link',{name:'Create shared split',exact:true}).click();
   await expect(page).toHaveURL(new URL(`/?course=${course}`,f.url).href);
   await expect(page).toHaveTitle(/Stem Splitter/);
