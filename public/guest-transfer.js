@@ -16,20 +16,11 @@
     return home;
   };
 
-  // A bookmark or reload has no one-use handoff. Start a fresh identity check;
-  // account-only sources use existingOnly and can never replace this workspace.
-  if (!token) {
-    let existingOnly = false;
-    try { existingOnly = /^cail-[0-9a-f]{32}$/.test(sessionStorage.getItem('stem-transfer-member') || ''); } catch {}
-    try {
-      const response = await window.StemFetch('/api/account', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000) });
-      if (response.ok) {
-        const current = (await response.json()).account?.subject;
-        existingOnly = /^cail-[0-9a-f]{32}$/.test(current || '');
-        if (existingOnly) try { sessionStorage.setItem('stem-transfer-member', current); } catch {}
-      }
-    } catch { /* Continue using the current guest session if account lookup is unavailable. */ }
-    location.replace(window.StemPath('/auth/guest-transfer/start') + (existingOnly ? '?existingOnly=1' : ''));
+  // Retired bookmarks return directly to the app. Opening the app must never
+  // initiate a cross-origin workspace check.
+  if (!token || token === 'transfer-failed') {
+    checked();
+    location.replace(returnPath());
     return;
   }
 

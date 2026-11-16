@@ -5988,20 +5988,6 @@ window.addEventListener('pagehide', () => {
 // --- init -------------------------------------------------------------
 window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail' && !window.StemSessionGuard) location.reload(); });
 
-function restorePreviousGuest(member = null) {
-  try {
-    if (sessionStorage.getItem('stem-transfer-checked') === '1') return false;
-    sessionStorage.setItem('stem-transfer-return', location.pathname + location.search);
-    if (member) sessionStorage.setItem('stem-transfer-member', member);
-    else sessionStorage.removeItem('stem-transfer-member');
-  } catch {
-    // Without a session marker, let normal account or guest startup proceed.
-    return false;
-  }
-  location.assign(StemPath('/auth/guest-transfer/start') + (member ? '?existingOnly=1' : ''));
-  return true;
-}
-
 async function initialize() {
   try {
     const response = await window.StemFetch('/api/runtime');
@@ -6043,7 +6029,6 @@ async function initialize() {
       const claimedGuest = response.status === 403
         && (await response.clone().json().catch(() => ({}))).error?.code === 'guest_session_claimed';
       if ((response.status === 401 || claimedGuest) && runtime.guest?.canStart === true) {
-        if (StemPath.base && restorePreviousGuest()) return;
         await window.StemGuest.ensure(runtime.guest);
         response = await window.StemFetch('/api/account');
       }
@@ -6057,8 +6042,6 @@ async function initialize() {
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
     guestSessionActive = principal?.quotaClass === 'guest' && principal?.role === 'guest' && /^guest-[0-9a-f]{64}$/.test(principal.subject);
-    if (guestSessionActive) try { sessionStorage.removeItem('stem-transfer-checked'); } catch {}
-    if (StemPath.base && runtime.guest?.enabled && /^cail-[0-9a-f]{32}$/.test(principal?.subject || '') && restorePreviousGuest(principal.subject)) return;
     if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
