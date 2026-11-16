@@ -232,7 +232,7 @@ test('Account stays simple; administration is deliberate, responsive, and recove
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': identities.carol });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(new URL('/account.html', url).href);
-    await expect(page).toHaveTitle('Stem Splitter · Dashboard');
+    await expect(page).toHaveTitle('Stem Splitter · Activity');
     await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
     await expect(page.locator('#account-role')).toHaveText('Administrator access');
     await expect(page.locator('#account-splits')).toContainText('25 of 25 runs left today. Resets');
@@ -557,7 +557,7 @@ for (const width of [1280,390]) test(`named student activity loads audio on requ
   await context.setExtraHTTPHeaders({'x-fixture-identity':identity});
   await page.setViewportSize({width,height:900});
   await page.goto(new URL('/account.html',url).href);
-  await expect(page).toHaveTitle('Stem Splitter · Dashboard');
+  await expect(page).toHaveTitle('Stem Splitter · Activity');
   await page.getByText('Manage access',{exact:true}).click();
   await expect(page.locator('#access-member')).toContainText('Alice Rivera');
   await expect(page.locator('#access-member')).not.toContainText('cail-');

@@ -11,7 +11,7 @@
   let student = null, jobsCursor = null, studentGeneration = 0;
   let conversationJob = null, conversationCursor = null, conversationRevision = null, conversationGeneration = 0;
   let folderGeneration = 0;
-  let annotationJob = null, annotationGeneration = 0, refreshTimer = null, refreshing = false;
+  let refreshTimer = null, refreshing = false;
   let rosterPages = 1, jobsPages = 1, conversationPages = 1;
   let view = 'folders', rosterPerson = null, folderItems = [], deleteTimer = null;
   let pickerJobs = [], pickerCursor = null, pickerGeneration = 0;
@@ -63,7 +63,7 @@
   }
   function resetReview() {
     el('jobs').replaceChildren(); el('student').hidden = true; el('jobs-more').hidden = true; el('jobs-status').textContent = '';
-    resetConversation(); annotationGeneration++; annotationJob = null; el('notes').replaceChildren(); el('notes-section').hidden = true;
+    resetConversation();
   }
   const reveal = (section, heading) => { section.scrollIntoView({ block: 'nearest' }); heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); };
   // A folder opens under its own row, so nothing appears somewhere else on the page.
@@ -86,11 +86,11 @@
   }
   function clearCourse() {
     renameFolder = null;
-    generation++; studentGeneration++; conversationGeneration++; folderGeneration++; annotationGeneration++;
+    generation++; studentGeneration++; conversationGeneration++; folderGeneration++;
     clearTimeout(refreshTimer); refreshing = false;
     for (const controller of controllers) controller.abort(); controllers.clear();
     pendingRequests = 0; panel.inert = false; delete panel.dataset.checking; delete panel.dataset.backgroundRefresh;
-    panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null; annotationJob = null;
+    panel.hidden = true; selected = null; roster = []; folders = []; currentFolder = null; student = null; conversationJob = null;
     view = 'folders'; rosterPerson = null; folderItems = []; pickerJobs = []; pickerCursor = null; pickerGeneration++; clearTimeout(deleteTimer); deleteTimer = null;
     rosterPages = jobsPages = conversationPages = 1;
     rosterCursor = jobsCursor = conversationCursor = conversationRevision = null;
@@ -99,12 +99,12 @@
     el('folders-section').append(el('folder-detail'));
     el('rename-form').hidden = true; el('rename-toggle').hidden = true; el('delete-folder').hidden = true; el('add-toggle').hidden = true;
     disarmDelete(); el('add-panel').hidden = true; el('add-list').replaceChildren(); el('add-more').hidden = true; el('add-status').textContent = ''; el('add-toggle').setAttribute('aria-expanded', 'false');
-    for (const id of ['roster', 'jobs', 'messages', 'folders', 'folder-items', 'notes']) el(id).replaceChildren();
+    for (const id of ['roster', 'jobs', 'messages', 'folders', 'folder-items']) el(id).replaceChildren();
     if (el('demo')) { el('demo').hidden = true; el('demo').open = false; el('demo-roster').replaceChildren(); }
     if (el('copy-status')) el('copy-status').textContent = '';
-    for (const id of ['student', 'conversation', 'folder-detail', 'notes-section']) el(id).hidden = true;
+    for (const id of ['student', 'conversation', 'folder-detail']) el(id).hidden = true;
     for (const id of ['roster-more', 'jobs-more', 'conversation-more']) el(id).hidden = true;
-    for (const id of ['roster-status', 'jobs-status', 'conversation-status', 'folders-status', 'folder-status', 'usage', 'notes-status']) el(id).textContent = '';
+    for (const id of ['roster-status', 'jobs-status', 'conversation-status', 'folders-status', 'folder-status', 'usage']) el(id).textContent = '';
     el('folder-create').reset(); closeFolderForm(); el('folder-sharing').reset(); el('folder-link').value = '';
   }
   // A read that reveals more class work stays concealed until access is rechecked.
@@ -192,7 +192,7 @@
     const current = generation;
     const folderChoices = savedFolderChoices || (preserveReview ? new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value])) : new Map());
     if (!append) { studentGeneration++; student = person; jobsCursor = null; if (!preserveReview) el('jobs').replaceChildren();
-      if (!preserveReview) { resetConversation(); annotationGeneration++; annotationJob = null; el('notes').replaceChildren(); el('notes-section').hidden = true; }
+      if (!preserveReview) { resetConversation(); }
     }
     const view = studentGeneration;
     el('student').hidden = false; el('student-name').textContent = person.own ? 'My splits in this class' : `${person.displayName || 'Student'} · Course splits`;
@@ -200,6 +200,9 @@
     try {
       const data = await request(coursePath(`/participants/${encodeURIComponent(person.memberId)}/jobs${append && jobsCursor ? `?cursor=${encodeURIComponent(jobsCursor)}` : ''}`));
       if (view !== studentGeneration) return;
+      if (data.courseId !== selected.classId || data.memberId !== person.memberId || !Array.isArray(data.jobs)) {
+        clearCourse(); status.textContent = 'Class access could not be confirmed. Retry to load your class work.'; el('retry').hidden = false; return;
+      }
       jobsPages = append ? jobsPages + 1 : 1;
       if (!append) el('jobs').replaceChildren();
       for (const job of data.jobs) {
@@ -207,7 +210,7 @@
         const state = document.createElement('p'); state.className = 'account-help'; state.textContent = job.retained ? (job.status === 'done' ? 'Ready' : job.status) : 'Audio expired'; item.append(state);
         if (job.retained && job.status === 'done') {
           const actions = document.createElement('div'); actions.className = 'classroom-actions classroom-job-actions';
-          actions.append(link('Open split', `/?job=${encodeURIComponent(job.id)}`), button('Annotations', () => void loadAnnotations(job)));
+          const open = link('Open split', `/?job=${encodeURIComponent(job.id)}`); open.className = 'account-button'; actions.append(open);
           if (canManage()) actions.append(button('Listening Guy messages', () => void loadConversation(job)));
           const select = document.createElement('select'); select.setAttribute('aria-label', `Folder for ${job.filename}`);
           select.dataset.jobId = job.id;
@@ -222,7 +225,7 @@
             finally { if (view === studentGeneration) add.disabled = false; }
           });
           const assignment = document.createElement('div'); assignment.className = 'classroom-folder-assignment';
-          assignment.append(select, add); item.append(actions, assignment);
+          assignment.append(select, add); item.append(actions, assignment, sharedNotes(job));
         }
         el('jobs').append(item);
       }
@@ -231,27 +234,25 @@
     } catch (error) { if (current === generation && view === studentGeneration) report('jobs-status', error); }
     finally { if (current === generation && view === studentGeneration) el('jobs-more').disabled = false; }
   }
-  async function loadAnnotations(job, preserveDisplay = false) {
-    const current = generation, view = ++annotationGeneration, courseId = selected.classId;
-    annotationJob = job; el('notes-section').hidden = false;
-    if (!preserveDisplay) reveal(el('notes-section'), el('notes-title'));
-    el('notes-title').textContent = `Course annotations · ${job.filename}`;
-    el('notes-status').textContent = 'Loading saved notes…';
-    try {
-      const data = await request(`/api/jobs/${encodeURIComponent(job.id)}`);
-      if (view !== annotationGeneration) return;
-      if (data.courseId !== courseId || !Array.isArray(data.annotations)) {
-        clearCourse(); status.textContent = 'Class access could not be confirmed. Retry to load your class work.'; el('retry').hidden = false; return;
-      }
-      el('notes').replaceChildren();
-      for (const note of data.annotations) {
-        const seconds = Math.max(0, Number(note.atSeconds) || 0), stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-        const item = row(), meta = document.createElement('span'); meta.className = 'classroom-entry-meta';
-        meta.textContent = `${stamp} · ${note.authorName || 'Author unavailable'}: `;
-        item.append(meta, document.createTextNode(note.text)); el('notes').append(item);
-      }
-      el('notes-status').textContent = data.annotations.length ? `${data.annotations.length} saved ${data.annotations.length === 1 ? 'note' : 'notes'}.` : 'No saved course notes yet.';
-    } catch (error) { if (current === generation && view === annotationGeneration) { el('notes').replaceChildren(); report('notes-status', error); } }
+  function sharedNotes(job) {
+    const section = document.createElement('section'); section.className = 'classroom-shared-notes';
+    const heading = document.createElement('h3'); heading.textContent = `Shared notes · ${job.filename}`;
+    const help = document.createElement('p'); help.className = 'account-help'; help.textContent = 'Review shared notes on this split.';
+    section.append(heading, help);
+    if (!Array.isArray(job.annotations)) {
+      const unavailable = document.createElement('p'); unavailable.textContent = 'Notes are temporarily unavailable.'; section.append(unavailable); return section;
+    }
+    if (!job.annotations.length) {
+      const empty = document.createElement('p'); empty.textContent = 'No saved course notes yet.'; section.append(empty); return section;
+    }
+    const list = document.createElement('ol'); list.className = 'teacher-history-list';
+    for (const note of job.annotations) {
+      const seconds = Math.max(0, Number(note.atSeconds) || 0), stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+      const item = row(), meta = document.createElement('span'); meta.className = 'classroom-entry-meta';
+      meta.textContent = `${stamp} · ${note.authorName || 'Author unavailable'}: `;
+      item.append(meta, document.createTextNode(note.text)); list.append(item);
+    }
+    section.append(list); return section;
   }
   async function loadConversation(job, append = false, preserveDisplay = false) {
     const current = generation;
@@ -414,7 +415,7 @@
     if (!selected || document.visibilityState !== 'visible') return;
     // Keep loaded pagination while remaining below the 30-read/minute budget.
     const reads = 2 + (selected.capabilities.rosterRead ? rosterPages : 0) + (student ? jobsPages : 0)
-      + (currentFolder ? 1 : 0) + (annotationJob ? 1 : 0) + (conversationJob ? conversationPages : 0);
+      + (currentFolder ? 1 : 0) + (conversationJob ? conversationPages : 0);
     refreshTimer = setTimeout(() => void refreshCourse(true), Math.max(15000, reads * 2500));
   }
   async function refreshCourse(background = false) {
@@ -422,7 +423,7 @@
     clearTimeout(refreshTimer); refreshing = true;
     const focusedControl = panel.contains(document.activeElement) ? document.activeElement : null;
     panel.inert = true;
-    const current = generation, person = student, folder = currentFolder, notes = annotationJob, conversation = conversationJob;
+    const current = generation, person = student, folder = currentFolder, conversation = conversationJob;
     const pageCounts = { roster: rosterPages, jobs: jobsPages, conversation: conversationPages };
     const folderChoices = new Map([...el('jobs').querySelectorAll('select')].map(select => [select.dataset.jobId, select.value]));
     const folderDraft = el('folder-permission').value;
@@ -463,8 +464,6 @@
           currentFolder = { ...currentFolder, permission: folder.permission, revision: folder.revision };
         }
       }
-      if (current !== generation) return;
-      if (notes) await loadAnnotations(notes, true);
       if (current !== generation) return;
       if (conversation) {
         await loadConversation(conversation, false, true);

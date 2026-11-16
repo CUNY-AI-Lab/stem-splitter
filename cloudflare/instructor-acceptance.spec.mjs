@@ -55,9 +55,11 @@ test('instructor reviews course roster, splits and paginated conversations and e
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Class fixture recording');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Private personal fixture');
-    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
-    await expect(page.locator('#classroom-notes')).toContainText('0:03 · Alex Rivera: Listen to the bass entrance');
-    await expect(page.locator('#classroom-notes')).not.toContainText('Private personal note');
+    await expect(page.locator('#classroom-jobs')).toContainText('0:03 · Alex Rivera: Listen to the bass entrance');
+    await expect(page.getByRole('button', { name: 'Annotations', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Shared notes · Class fixture recording', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open split', exact: true })).toHaveClass('account-button');
+    await expect(page.locator('#classroom-jobs')).not.toContainText('Private personal note');
     await page.getByRole('button', { name: 'Listening Guy messages' }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(40);
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
@@ -144,8 +146,7 @@ test('an instructor outside the student roster can add their own course split to
     await page.getByRole('button', { name: 'Splits', exact: true }).click();
     await expect(page.locator('#classroom-jobs')).toContainText('Instructor course fixture');
     await expect(page.locator('#classroom-jobs')).not.toContainText('Class fixture recording');
-    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
-    await expect(page.locator('#classroom-notes')).toContainText('Alex Rivera: A student hears the melody');
+    await expect(page.locator('#classroom-jobs')).toContainText('Alex Rivera: A student hears the melody');
     await page.getByLabel('Folder for Instructor course fixture').selectOption('shared-folder');
     await page.getByRole('button', { name: 'Add to folder', exact: true }).click();
     await page.getByRole('button', { name: 'Folders', exact: true }).click();
@@ -175,8 +176,7 @@ test('automatic refresh reflects enrolled course work and attributed notes while
     await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`, f.url).href);
     await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
-    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
-    await expect(page.locator('#classroom-notes')).toContainText('Listen to the bass entrance');
+    await expect(page.locator('#classroom-jobs')).toContainText('Listen to the bass entrance');
     await page.getByRole('button', { name: 'Listening Guy messages', exact: true }).click();
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
@@ -195,15 +195,17 @@ test('automatic refresh reflects enrolled course work and attributed notes while
     await page.clock.fastForward(15001);
     await expect(page.locator('#classroom-roster')).toContainText('2 splits');
     await expect(page.locator('#classroom-jobs')).toContainText('New enrolled course run');
-    await expect(page.locator('#classroom-notes')).toContainText('0:08 · Blair Chen: A second listener hears the drums');
+    await expect(page.locator('.classroom-shared-notes')).toHaveCount(2);
+    await expect(page.locator('#classroom-jobs')).toContainText('No saved course notes yet.');
+    await expect(page.locator('#classroom-jobs')).toContainText('0:08 · Blair Chen: A second listener hears the drums');
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
-    await expect(page.locator('#classroom-notes')).not.toContainText('Private personal note');
+    await expect(page.locator('#classroom-jobs')).not.toContainText('Private personal note');
     await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder draft');
     await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
     await expect(page.getByLabel('Folder for Class fixture recording')).toHaveValue('shared-folder');
     const stored = await page.request.get(new URL(`/api/classroom/courses/${course}/folders/shared-folder`, f.url).href);
     expect((await stored.json()).folder.permission).toBe('comment');
-    expect(jobReads).toEqual(['/api/jobs/course-song', '/api/jobs/course-song']);
+    expect(jobReads).toEqual([]);
     expect(modelCalls).toEqual([]);
   } finally { await f.harness.close(); }
 });
@@ -234,19 +236,18 @@ test('automatic class refresh pauses in a hidden tab and rechecks on return', as
     await expect(page.locator('#console-panel')).toBeVisible();
   } finally { await f.harness.close(); }
 });
-test('selected annotation refresh fails closed when course access is revoked', async ({ page, context }) => {
+test('inline shared notes clear when course access is revoked', async ({ page, context }) => {
   const f = await fixture(context);
   try {
     await page.clock.install();
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
     await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
-    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
-    await expect(page.locator('#classroom-notes')).toContainText('Listen to the bass entrance');
+    await expect(page.locator('#classroom-jobs')).toContainText('Listen to the bass entrance');
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.alice, 'x-fixture-course-role': 'owner', 'x-fixture-course-state': 'revoked' });
     await page.clock.fastForward(15001);
     await expect(page.locator('#console-panel')).toBeHidden();
-    await expect(page.locator('#classroom-notes')).toBeEmpty();
+    await expect(page.locator('#classroom-jobs')).toBeEmpty();
     await expect(page.locator('#classroom-roster')).toBeEmpty();
   } finally { await f.harness.close(); }
 });
@@ -278,16 +279,15 @@ test('folder read, comment and private settings persist after reload and a pendi
     await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
   } finally { await f.harness.close(); }
 });
-test('annotation review rejects a response for a different or personal workspace', async ({ page, context }) => {
+test('inline notes reject a split list for a different or personal workspace', async ({ page, context }) => {
   const f = await fixture(context);
   try {
-    await page.route('**/api/jobs/course-song', route => route.fulfill({ json: { courseId: null, annotations: [{ atSeconds: 0, text: 'Unexpected personal fixture' }] } }));
+    await page.route(`**/api/classroom/courses/${course}/participants/*/jobs`, route => route.fulfill({ json: { courseId: null, memberId: member(TEST_SUBJECTS.alice), jobs: [{ id: 'personal-song', filename: 'Unexpected personal fixture', status: 'done', retained: true, annotations: [{ atSeconds: 0, text: 'Unexpected personal fixture' }] }] } }));
     await page.goto(new URL(`/classroom.html?course=${course}`, f.url).href);
     await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByRole('button', { name: 'Fixture Student with a long preferred display name', exact: true }).click();
-    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     await expect(page.locator('#console-panel')).toBeHidden();
-    await expect(page.locator('#classroom-notes')).toBeEmpty();
+    await expect(page.locator('#classroom-jobs')).toBeEmpty();
     await expect(page.locator('body')).not.toContainText('Unexpected personal fixture');
     await expect(page.getByRole('button', { name: 'Retry class access' })).toBeVisible();
   } finally { await f.harness.close(); }

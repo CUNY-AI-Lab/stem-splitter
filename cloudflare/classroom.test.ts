@@ -442,6 +442,44 @@ test('participants create private folders and contribute only their own splits a
   assert.equal((await request(path,'alice')).status,200);
   assert.equal((await request(path,'ownerA','PUT',{permission:'read',revision:1})).status,409,'stale folder revisions remain rejected');
 });
+test('participant split pages include only retained same-course notes in one batch',async()=>{
+  const {request,job,db}=await setup();
+  await job('alice-current','alice',A);await job('alice-expired','alice',A);await job('alice-deleted','alice',A);
+  await job('alice-processing','alice',A);await job('alice-other-course','alice',B);await job('alice-personal','alice',null);await job('bob-current','bob',A);
+  await db.prepare("UPDATE jobs SET created_at=datetime('now','-91 days') WHERE id='alice-expired'").run();
+  await db.prepare("UPDATE jobs SET status='processing' WHERE id='alice-processing'").run();
+  await db.prepare("INSERT INTO run_deletions(job_id,subject,deleted_at,reason) VALUES('alice-deleted',?,?,'user')").bind(ids.alice,Date.now()).run();
+  const addNote=(id:string,jobId:string,atSeconds:number,author:string|null,name:string,text:string)=>db.prepare(
+    'INSERT INTO annotations(id,job_id,at_seconds,text,author_subject,author_name,provenance) VALUES(?,?,?,?,?,?,?)')
+    .bind(id,jobId,atSeconds,text,author,name,'student').run();
+  await addNote('current-note','alice-current',12.5,ids.bob,'Peer','Shared course note');
+  await addNote('expired-note','alice-expired',1,ids.alice,'Alice','Expired note');
+  await addNote('deleted-note','alice-deleted',1,ids.alice,'Alice','Deleted note');
+  await addNote('processing-note','alice-processing',1,ids.alice,'Alice','Processing note');
+  await addNote('other-course-note','alice-other-course',1,ids.alice,'Alice','Other course note');
+  await addNote('personal-note','alice-personal',1,ids.alice,'Alice','Personal note');
+  await addNote('bob-note','bob-current',1,ids.bob,'Bob','Bob private note');
+  const member=(await courseFixture(ids.alice,A)).memberId,path=`/api/classroom/courses/${A}/participants/${member}/jobs`;
+  const originalPrepare=db.prepare.bind(db);let annotationQueries=0;
+  db.prepare=((sql:string)=>{if(sql.includes('FROM annotations a JOIN jobs j'))annotationQueries++;return originalPrepare(sql);}) as typeof db.prepare;
+  const own=await request(path,'alice');assert.equal(own.status,200);assert.match(own.headers.get('cache-control')||'',/private.*no-store/);
+  const ownPage=await own.json() as any,byId=Object.fromEntries(ownPage.jobs.map((row:any)=>[row.id,row]));
+  assert.equal(ownPage.courseId,A);assert.equal(ownPage.memberId,member);
+  assert.deepEqual(byId['alice-current'].annotations,[{id:'current-note',atSeconds:12.5,text:'Shared course note',authorName:'Peer',canDelete:false}]);
+  assert.equal(byId['alice-expired'].retained,0);assert.deepEqual(byId['alice-expired'].annotations,[]);
+  assert.equal(byId['alice-deleted'].retained,0);assert.deepEqual(byId['alice-deleted'].annotations,[]);
+  assert.deepEqual(byId['alice-processing'].annotations,[]);
+  assert.ok(!('alice-other-course' in byId)&&!('alice-personal' in byId));
+  assert.equal(annotationQueries,1,'all page notes are fetched in one batched query');
+  assert.doesNotMatch(JSON.stringify(ownPage),/Expired note|Deleted note|Processing note|Other course note|Personal note|Bob private note|authorSubject|cail-[0-9a-f]{32}/);
+  const instructorPath=`/api/classroom/courses/${A}/participants/${(await courseFixture(ids.bob,A)).memberId}/jobs`;
+  const instructor=await(await request(instructorPath,'ownerA')).json() as any;
+  assert.equal(instructor.courseId,A);assert.equal(instructor.memberId,(await courseFixture(ids.bob,A)).memberId);
+  assert.equal(instructor.jobs[0].annotations[0].text,'Bob private note');
+  assert.equal((await request(`/api/classroom/courses/${A}/participants/${member}/jobs`,'outsider')).status,403);
+  assert.equal((await request(`/api/classroom/courses/${B}/participants/${member}/jobs`,'alice')).status,404);
+  db.prepare=originalPrepare;
+});
 test('student folder creation requires current membership in that exact class',async()=>{
   const {request,revoked}=await setup();
   assert.equal((await request(`/api/classroom/courses/${A}/folders`,'outsider','POST',{name:'Wrong class'})).status,403);

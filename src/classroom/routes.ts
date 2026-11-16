@@ -77,9 +77,26 @@ routes.get('/courses/:courseId/participants/:memberId/jobs',async c=>{
   if (!ownCourseJobs&&!currentCourse?.capabilities.instructorPanel) throw new CourseError(404,'not_found');
   const after=c.req.query('cursor'); let before='';
   if (after) { try { const v=JSON.parse(atob(after)); if(v.courseId!==courseId||v.memberId!==memberId||typeof v.id!=='string'||!/^[\w-]{1,128}$/.test(v.id)) throw new Error(); before=v.id; } catch {throw new CourseError(400,'cursor_invalid');} }
-  const {results}=await c.env.DB.prepare(`SELECT j.id,j.filename,j.model,j.status,j.created_at AS createdAt,(j.created_at>datetime('now','-90 days')) AS retained
-    FROM job_courses c JOIN jobs j ON j.id=c.job_id WHERE c.course_id=? AND c.member_id=? AND (?='' OR j.id<?) ORDER BY j.id DESC LIMIT 41`).bind(courseId,memberId,before,before).all<{id:string}>();
-  return c.json({jobs:results.slice(0,40),nextCursor:results.length>40?btoa(JSON.stringify({courseId,memberId,id:results[39].id})):null});
+  const {results}=await c.env.DB.prepare(`SELECT j.id,j.filename,j.model,j.status,j.created_at AS createdAt,
+      (j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)) AS retained
+    FROM job_courses c JOIN jobs j ON j.id=c.job_id WHERE c.course_id=? AND c.member_id=? AND (?='' OR j.id<?) ORDER BY j.id DESC LIMIT 41`).bind(courseId,memberId,before,before).all<{id:string;status:string;retained:number}>();
+  const jobs=results.slice(0,40),eligible=jobs.filter(row=>row.status==='done'&&row.retained).map(row=>row.id);
+  const notes=eligible.length?(await c.env.DB.prepare(`SELECT a.id,a.job_id AS jobId,a.at_seconds AS atSeconds,a.text,a.author_subject AS authorSubject,a.author_name AS authorName
+    FROM annotations a JOIN jobs j ON j.id=a.job_id JOIN job_courses jc ON jc.job_id=j.id
+    WHERE jc.course_id=? AND jc.member_id=? AND a.job_id IN (${eligible.map(()=>'?').join(',')}) AND j.status='done'
+      AND j.created_at>datetime('now','-90 days') AND NOT EXISTS(SELECT 1 FROM run_deletions d WHERE d.job_id=j.id)
+    ORDER BY a.job_id,a.at_seconds,a.id`).bind(courseId,memberId,...eligible).all<{
+      id:string;jobId:string;atSeconds:number;text:string;authorSubject:string|null;authorName:string|null
+    }>()).results:[];
+  const byJob=new Map<string,Array<{id:string;atSeconds:number;text:string;authorName:string;canDelete:false}>>();
+  for(const note of notes){
+    const rows=byJob.get(note.jobId)??[];
+    rows.push({id:note.id,atSeconds:note.atSeconds,text:note.text,
+      authorName:note.authorSubject?(note.authorName||'Student'):'Author unavailable',canDelete:false});
+    byJob.set(note.jobId,rows);
+  }
+  c.header('Cache-Control','private, no-store');
+  return c.json({courseId,memberId,jobs:jobs.map(row=>({...row,annotations:byJob.get(row.id)??[]})),nextCursor:results.length>40?btoa(JSON.stringify({courseId,memberId,id:results[39].id})):null});
 });
 routes.get('/courses/:courseId/jobs/:jobId/conversation',async c=>{
   instructorPanel(c.get('principal')!,c.req.param('courseId'));

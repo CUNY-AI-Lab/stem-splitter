@@ -28,7 +28,7 @@
   <h2 class="page-title" id="class-guidance-title">Account</h2>
   <nav class="dashboard-nav" aria-label="Account" hidden>
     <a href="/teacher.html" aria-current="page">Settings</a>
-    <a href="/account.html">Dashboard</a>
+    <a href="/account.html">Activity</a>
   </nav>
   <p id="teacher-access-status" role="status"></p>
   <section id="dashboard-scope" class="intake-selector" hidden>
@@ -78,8 +78,7 @@
 
     <section class="teacher-prompt-section teacher-amendment-section" aria-labelledby="instructions-title">
       <h2 id="instructions-title">Listening Guy instructions</h2>
-      <p class="account-help">Add instructions for Listening Guy. Each saved change is recorded below. To reset, clear the field, say what changed, and save.</p>
-      <p id="prompt-scope-note" class="account-help">Applies across Stem Splitter, not just one class.</p>
+      <p class="account-help">Add instructions for Listening Guy. Each saved change is recorded below. To reset, clear the field, say what changed, and save. <span id="prompt-scope-note">Applies across Stem Splitter, not just one class.</span></p>
       <span id="effective-prompt-meta" hidden></span>
 
       <form id="prompt-form" class="teacher-form">
@@ -112,6 +111,48 @@
         </div>
         <p id="prompt-status" class="mono teacher-status" hidden></p>
       </form>
+      <div class="teacher-more-tools">
+        <details id="fixed-prompt-details" class="teacher-tool">
+          <summary id="fixed-prompt-title">
+            <strong>System prompt</strong>
+            <span id="fixed-prompt-meta" hidden></span>
+          </summary>
+          <section class="teacher-tool-body" aria-labelledby="fixed-prompt-title">
+            <p class="teacher-help">Read only. Your saved instructions are added to this prompt.</p>
+            <div
+              id="fixed-prompt-scroll"
+              class="teacher-fixed-scroll"
+              tabindex="0"
+              aria-label="System prompt, read only"
+            >
+              <article id="fixed-prompt-body" class="teacher-markdown"></article>
+            </div>
+            <button
+              type="button"
+              id="fixed-prompt-toggle"
+              class="teacher-caret-control mono"
+              aria-controls="fixed-prompt-scroll"
+              aria-expanded="false"
+            >
+              <span class="teacher-up-caret" aria-hidden="true">↑</span>
+              <span id="fixed-prompt-toggle-label">Top</span>
+            </button>
+          </section>
+        </details>
+
+        <details class="teacher-tool">
+          <summary id="prompt-history-title">
+            <strong>History</strong>
+          </summary>
+          <section class="teacher-tool-body teacher-history" aria-labelledby="prompt-history-title">
+            <p id="prompt-history-empty" class="teacher-help">No revisions yet.</p>
+            <ol id="prompt-history" class="teacher-history-list"></ol>
+            <button type="button" id="prompt-history-more" class="page-btn" hidden>
+              Load earlier revisions
+            </button>
+          </section>
+        </details>
+      </div>
     </section>
 
     <details id="sample-editor" class="teacher-prompt-section sample-editor" aria-labelledby="sample-editor-title">
@@ -145,51 +186,6 @@
       <article id="preview-body" class="teacher-markdown teacher-effective-preview"></article>
     </details>
 
-    <section class="teacher-more-tools" aria-labelledby="teacher-more-tools-title">
-      <h2 id="teacher-more-tools-title">Prompt reference</h2>
-
-      <details id="fixed-prompt-details" class="teacher-tool">
-        <summary id="fixed-prompt-title">
-          <strong>System prompt</strong>
-          <span id="fixed-prompt-meta" hidden></span>
-        </summary>
-        <section class="teacher-tool-body" aria-labelledby="fixed-prompt-title">
-          <p class="teacher-help">Read only. Your saved instructions are added to this prompt.</p>
-          <div
-            id="fixed-prompt-scroll"
-            class="teacher-fixed-scroll"
-            tabindex="0"
-            aria-label="System prompt, read only"
-          >
-            <article id="fixed-prompt-body" class="teacher-markdown"></article>
-          </div>
-          <button
-            type="button"
-            id="fixed-prompt-toggle"
-            class="teacher-caret-control mono"
-            aria-controls="fixed-prompt-scroll"
-            aria-expanded="false"
-          >
-            <span class="teacher-up-caret" aria-hidden="true">↑</span>
-            <span id="fixed-prompt-toggle-label">Top</span>
-          </button>
-        </section>
-      </details>
-
-      <details class="teacher-tool">
-        <summary id="prompt-history-title">
-          <strong>History</strong>
-        </summary>
-        <section class="teacher-tool-body teacher-history" aria-labelledby="prompt-history-title">
-          <p id="prompt-history-empty" class="teacher-help">No revisions yet.</p>
-          <ol id="prompt-history" class="teacher-history-list"></ol>
-          <button type="button" id="prompt-history-more" class="page-btn" hidden>
-            Load earlier revisions
-          </button>
-        </section>
-      </details>
-
-    </section>
   </section>
 
   </div>

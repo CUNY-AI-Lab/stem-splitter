@@ -6,7 +6,7 @@
 #classroom-course { display: block; width: 100%; margin-top: .5rem; }
 #classroom-jobs .classroom-actions { margin-bottom: 0; }
 #classroom-roster button { text-align: left; }
-#classroom-messages li, #classroom-notes li { white-space: pre-wrap; overflow-wrap: anywhere; }
+#classroom-messages li, .classroom-shared-notes li { white-space: pre-wrap; overflow-wrap: anywhere; }
 #classroom-folder-detail { margin-top: 1.5rem; }
 #classroom-folder-sharing { margin: 1rem 0; }
 .instructor-console #account-status { color: var(--ink-dim); margin: .75rem 0 1.25rem; }
@@ -20,11 +20,8 @@
 .instructor-console #classroom-guidance { margin-left: auto; }
 .instructor-console #classroom-guidance[hidden] + #classroom-refresh { margin-left: auto; }
 .refined-ui.instructor-console #classroom-create {
-  width: auto; border: 1px solid var(--hot);
-  border-radius: 6px; background: var(--hot-soft); color: var(--ink); text-decoration: none;
-  text-transform: none;
+  width: auto; text-transform: none;
 }
-.refined-ui.instructor-console #classroom-create:hover { background: var(--hot); color: var(--bg); }
 .refined-ui.instructor-console #classroom-create:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 .instructor-console #classroom-refresh-status { color: var(--ink-dim); font-size: .75rem; }
 .instructor-console #classroom-usage { padding-bottom: .75rem; border-bottom: 1px solid var(--panel-edge); }
@@ -37,7 +34,9 @@
 .instructor-console #classroom-roster .page-btn:hover,
 .instructor-console #classroom-folders > .teacher-history-item > .page-btn:hover { color: var(--hot); }
 .instructor-console :is(#classroom-roster, #classroom-folders) > .teacher-history-item { padding: .35rem 0; }
-.instructor-console .classroom-job-actions a { color: var(--hot); min-height: 44px; display: inline-flex; align-items: center; padding: .5rem 0; margin-right: .5rem; text-underline-offset: .2em; }
+.classroom-shared-notes { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--panel-edge); }
+.classroom-shared-notes h3 { margin: 0 0 .5rem; font-size: 1rem; overflow-wrap: anywhere; }
+.classroom-shared-notes > p { margin: .5rem 0; }
 .instructor-console .classroom-folder-assignment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; margin-top: 1rem; }
 .instructor-console #classroom-folder-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .5rem; margin-top: 1.25rem; }
 .instructor-console #classroom-folder-create > label { grid-column: 1 / -1; }

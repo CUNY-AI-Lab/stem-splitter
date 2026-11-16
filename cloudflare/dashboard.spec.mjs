@@ -24,7 +24,7 @@ async function capture(page,name) {
  await mkdir(process.env.STEM_SCREENSHOT_DIR,{recursive:true});
  await page.screenshot({path:`${process.env.STEM_SCREENSHOT_DIR}/${name}.png`,fullPage:true,animations:'disabled'});
 }
-for(const persona of ['individual','student','instructor'])test(`${persona} saves only their own Personal instructions and revisions through Dashboard`,async({page})=>{
+for(const persona of ['individual','student','instructor'])test(`${persona} saves only their own Personal instructions and revisions through Activity`,async({page})=>{
  const f=await fixture(page,persona==='individual'?{TEST_NO_COURSES:'true'}:{});
  try {
   await page.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.bob,...(persona==='instructor'?{'x-fixture-course-role':'owner'}:{})});
@@ -100,7 +100,7 @@ test('focus rechecks retain Splitter geometry, search text and Share with select
   expect(f.errors).toEqual([]);
  }finally{release?.();await f.close();}
 });
-test('Account role loss removes privileged activity in place without reloading the signed-in Dashboard',async({page})=>{
+test('Account role loss removes privileged activity in place without reloading the signed-in Activity',async({page})=>{
  const f=await fixture(page);
  try {
   await f.seed([`INSERT INTO app_users(subject,role) VALUES('${TEST_SUBJECTS.bob}','instructor')`]);
