@@ -192,6 +192,16 @@ never check the course-sharing acknowledgment.
 
 ## Pending operations are inert
 
+This rule applies to server-seeded versions and remote hydration. Preserve the
+existing same-browser sign-in claim behavior for locally requested work: only
+server-confirmed claimed job IDs may copy normalized local guest progress into
+an absent member cache. That local copy retains pending transcript revisions and
+original chat/guide request IDs. Transcript retry requires the matching server
+revision and normal CAS; chat/guide retry still requires an explicit click and
+uses the original idempotency key and input fingerprint. Existing member cache
+wins. This does not install remote pending versions or start a model request
+during claim or hydration.
+
 Current `Mixer.loadConversation` automatically PUTs a matching non-durable
 `pendingConversation`. Therefore the whole cached progress object cannot be
 installed as live state. Copy only validated draft/player fields into automatic

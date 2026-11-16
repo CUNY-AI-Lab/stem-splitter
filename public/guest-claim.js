@@ -58,7 +58,7 @@
       const allowed = new Set(result.claimedJobIds);
       const guestSubject = result.guestStorageKey.slice(5);
       // Only the server-confirmed claims may contribute to this member's private
-      // state. Pending requests are archived as inert versions, never resumed.
+      // state. Server-seeded pending requests remain inert archival versions.
       if (window.StemUiState) {
         const records = window.StemUiState.snapshot(guestSubject).filter(record => allowed.has(record.jobId));
         await window.StemUiState.seedRecords(subject, records, {signal:AbortSignal.timeout(5000)}).catch(() => {});
@@ -66,8 +66,11 @@
       for (const id of allowed) {
         const saved = window.StemListeningProgress.read(guestSubject, id);
         if (saved && !window.StemListeningProgress.read(subject, id)) {
-          const {pendingConversation,pendingChat,pendingGuide,...presentation} = saved;
-          window.StemListeningProgress.save(subject, id, presentation);
+          // Preserve this browser's already-requested work across its exact
+          // confirmed claim. Transcript retries remain revision-checked; model
+          // retries require a click and retain their original request IDs.
+          // Remote hydration never installs these local pending fields.
+          window.StemListeningProgress.save(subject, id, saved);
         }
       }
       try {

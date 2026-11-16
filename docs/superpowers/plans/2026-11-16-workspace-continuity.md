@@ -110,6 +110,14 @@ cross-origin source-cache continuity; record that explicitly.
 
 ## Stage 3 — Atomic guest claim and quiet initial Tools visit
 
+Keep the existing same-browser claim receipt behavior distinct from remote
+import: normalized local pending transcript/chat/guide fields follow only exact
+server-confirmed claimed jobs into an absent member cache. Transcript saving
+retains revision/CAS protection; model retries remain explicit and reuse the
+original request ID/fingerprint. Server archival versions and cross-origin
+hydration remain inert. Validate interrupted transcript saving and lost model
+completion both before and through sign-in, alongside the remote no-replay test.
+
 Target `src/guest/claim.ts`, `cloudflare/guest.ts`,
 `cloudflare/guest-transfer.ts`, `cloudflare/tools.ts`, `cloudflare/worker.ts`,
 existing quiet transfer scripts and their tests. Coordinate any necessary

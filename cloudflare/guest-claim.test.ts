@@ -211,8 +211,8 @@ test('browser claim uses no client IDs, preserves cache on failure and merges on
  fail=false;await context.window.StemGuestClaim.run(member());assert.equal(calls,2);
  assert.deepEqual(JSON.parse(data.get(memberKey)!),[{id:'saved',collapsed:true},{id:'existing',collapsed:false}]);
  assert.equal(data.get(guestKey),before);
- const {pendingConversation,pendingChat,pendingGuide,...presentation}=progress;
- assert.deepEqual(JSON.parse(data.get(memberProgress)!),presentation,'pending operations never become active member progress');
+ const {pendingConversation,pendingChat,pendingGuide}=progress;
+ assert.deepEqual(JSON.parse(data.get(memberProgress)!),progress,'same-browser confirmed claim preserves local transcript revisions and exact retry request IDs');
  assert.deepEqual(seeded,[{actor:alice,records:[{jobId:'saved',kind:'listeningDraft',value:progress.draft},
   {jobId:'saved',kind:'pendingConversation',value:pendingConversation},{jobId:'saved',kind:'pendingChat',value:pendingChat},
   {jobId:'saved',kind:'pendingGuide',value:pendingGuide}]}],'only confirmed jobs contribute typed state; pending records remain inert seeds');
