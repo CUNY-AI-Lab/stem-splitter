@@ -87,8 +87,19 @@ test('private listening draft and player state hydrate on Tools in a separate br
     await expect(tools.locator('.rate-opt[data-rate="0.75"]')).toHaveAttribute('aria-pressed','true');
     await expect.poll(() => tools.evaluate(() => mixers.get('remix-fixture').userMuted.get('drums'))).toBe(true);
     expect(forbidden).toEqual([]);
-    await tools.locator('.coach-form input').fill('');
+    // The original browser clears a previously synchronized draft. Tools still
+    // has the old nonempty local cache: reload must accept the remote tombstone.
+    await draft.fill('');
     await expect.poll(async () => (await (await tools.request.get(new URL('/stem-splitter/api/jobs/remix-fixture/ui-state',tools.url()).href,{headers:{'X-Stem-Account':TEST_SUBJECTS.alice}})).json()).records.listeningDraft?.value).toBe(null);
+    await tools.reload();
+    await expect(tools.locator('.coach-form input')).toHaveValue('');
+    const clearedRevision = await tools.evaluate(async actor => (await (await window.StemFetch('/api/jobs/remix-fixture/ui-state', {headers:{'X-Stem-Account':actor}})).json()).records.listeningDraft.revision, TEST_SUBJECTS.alice);
+    await tools.locator('.rate-opt[data-rate="1"]').click();
+    await tools.evaluate(() => { window.dispatchEvent(new Event('focus')); window.StemUiState.flush(); });
+    await expect.poll(async () => (await (await tools.request.get(new URL('/stem-splitter/api/jobs/remix-fixture/ui-state',tools.url()).href,{headers:{'X-Stem-Account':TEST_SUBJECTS.alice}})).json()).records.listeningPlayer.value.rate).toBe(1);
+    const afterPlayer = await tools.evaluate(async actor => (await (await window.StemFetch('/api/jobs/remix-fixture/ui-state', {headers:{'X-Stem-Account':actor}})).json()).records.listeningDraft, TEST_SUBJECTS.alice);
+    expect(afterPlayer.value).toBe(null);
+    expect(afterPlayer.revision).toBe(clearedRevision);
     await tools.reload();
     await expect(tools.locator('.coach-form input')).toHaveValue('');
   } finally { await other?.close(); await server.close(); }
@@ -113,6 +124,46 @@ test('late private-state response preserves typing and playback settings changed
     await expect(page.locator('.rate-opt[data-rate="0.75"]')).toHaveAttribute('aria-pressed','true');
     await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').rate)).toBe(.75);
   } finally { release(); await server.close(); }
+});
+
+test('focused cached draft stays local after remote clear and unrelated playback cannot resurrect it', async ({ page }) => {
+  const server = await fixture(page, ['vocals','drums'],{owned:true});
+  let release;
+  try {
+    await page.locator('.coach-toggle').click();
+    const input = page.locator('.coach-form input');
+    await input.fill('Cached draft kept while focused');
+    const read = async () => (await (await page.request.get(new URL('/api/jobs/remix-fixture/ui-state',page.url()).href,{headers:{'X-Stem-Account':TEST_SUBJECTS.alice}})).json()).records;
+    await expect.poll(async () => (await read()).listeningDraft?.value).toBe('Cached draft kept while focused');
+    const before = (await read()).listeningDraft;
+    const cleared = await page.request.put(new URL('/api/jobs/remix-fixture/ui-state',page.url()).href,{headers:{Origin:new URL(page.url()).origin,'X-Stem-Account':TEST_SUBJECTS.alice},data:{requestId:crypto.randomUUID(),kind:'listeningDraft',baseRevision:before.revision,value:null}});
+    expect(cleared.ok()).toBe(true);
+    const clearRevision = (await cleared.json()).revision;
+    const waiting = new Promise(resolve => {release=resolve;});
+    await page.route('**/api/jobs/remix-fixture/ui-state',async route => {
+      if (route.request().method()==='GET') await waiting;
+      await route.continue();
+    });
+    await page.reload();
+    await expect(input).toHaveValue('Cached draft kept while focused');
+    await input.focus();
+    const loaded = page.waitForResponse(r => r.request().method()==='GET' && new URL(r.url()).pathname.endsWith('/ui-state'));
+    release();await (await loaded).finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    await expect(input).toHaveValue('Cached draft kept while focused');
+    await page.evaluate(() => {mixers.get('remix-fixture').setRate(1.25);window.dispatchEvent(new Event('focus'));window.StemUiState.flush();});
+    await expect.poll(async () => (await read()).listeningPlayer?.value.rate).toBe(1.25);
+    expect((await read()).listeningDraft).toMatchObject({value:null,revision:clearRevision});
+    // A late callback from a disposed mixer must not write into the current
+    // actor/job cache, even though its text box still holds an older draft.
+    const unchanged = await page.evaluate(actor => {
+      const mixer=mixers.get('remix-fixture'),key=`stem-listening:${actor}:remix-fixture`,before=localStorage.getItem(key);
+      mixer.disposeWaveforms();mixer.coachInput.value='Obsolete disposed callback';mixer.saveListeningProgress();
+      return localStorage.getItem(key)===before;
+    },TEST_SUBJECTS.alice);
+    expect(unchanged).toBe(true);
+    expect((await read()).listeningDraft).toMatchObject({value:null,revision:clearRevision});
+  } finally {release?.();await server.close();}
 });
 
 test('recording actions stay in one menu on desktop and phone with keyboard dismissal', async ({ page }, testInfo) => {

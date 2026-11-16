@@ -85,11 +85,11 @@ test('account switch and disposed mixer reject stale read callbacks',async()=>{
   }finally{f.stop();}
 });
 
-test('focused or nonempty draft rejected by view is not silently written back by a player save',async()=>{
+for (const remote of ['remote',null]) test(`draft rejected by view is not silently written back by a player save over ${remote===null?'a clear':'remote text'}`,async()=>{
   const f=fixture({[key()]:JSON.stringify(progress('current local'))},(call:any,reply:any)=>{
     if(call.method==='POST')return reply({accepted:[]});
     if(call.method==='PUT')return reply({revision:1});
-    return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:'remote',revision:2}}});
+    return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:remote,revision:2}}});
   });let loaded=false;
   try{
     f.context.StemUiState.start(alice);f.context.StemUiState.watch(alice,'job',()=>{loaded=true;return {draft:false};});await until(()=>loaded);
@@ -97,6 +97,38 @@ test('focused or nonempty draft rejected by view is not silently written back by
     await until(()=>f.calls.some(c=>c.method==='PUT'));
     assert.deepEqual(f.calls.filter(c=>c.method==='PUT').map(c=>c.body.kind),['listeningPlayer']);
   }finally{f.stop();}
+});
+
+test('an archived startup draft can yield to a remote clear without writing the old draft back',async()=>{
+  const f=fixture({[key()]:JSON.stringify(progress('stale cache'))},(call:any,reply:any)=>{
+    if(call.method==='POST')return reply({accepted:call.body.records.map((record:any)=>({...record,outcome:'conflict',revision:2}))});
+    if(call.method==='PUT')return reply({revision:1});
+    return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:null,revision:2}}});
+  });let loaded=false;
+  try{
+    f.context.StemUiState.start(alice);f.context.StemUiState.watch(alice,'job',(update:any,baseline:any)=>{
+      assert.equal(update.draft,'');assert.equal(baseline.draftBaseline,'stale cache');assert.equal(baseline.draftPreserved,true);loaded=true;
+    });await until(()=>loaded);
+    f.context.StemListeningProgress.save(alice,'job',{...progress(),rate:.5});f.context.StemUiState.flush();
+    await until(()=>f.calls.some(c=>c.method==='PUT'));
+    assert.deepEqual(f.calls.filter(c=>c.method==='PUT').map(c=>c.body.kind),['listeningPlayer']);
+  }finally{f.stop();}
+});
+
+test('an archival seed acknowledgement cannot rebase a new local edit onto the current server revision',async()=>{
+  let release:any;const gate=new Promise(resolve=>{release=resolve;});
+  const f=fixture({[key()]:JSON.stringify(progress('cached'))},async(call:any,reply:any)=>{
+    if(call.method==='POST'){await gate;return reply({accepted:call.body.records.map((record:any)=>({...record,outcome:'conflict',revision:5}))});}
+    if(call.method==='PUT')return reply({revision:1});
+    return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:'cached',revision:5}}});
+  });
+  try{
+    f.context.StemUiState.start(alice);f.context.StemUiState.watch(alice,'job',()=>{});await until(()=>f.calls.some(c=>c.method==='POST'));
+    f.context.StemListeningProgress.save(alice,'job',progress('new local edit'));release();
+    await until(()=>f.calls.some(c=>c.method==='PUT'));
+    assert.equal(f.calls.find(c=>c.method==='PUT').body.baseRevision,0);
+    assert.equal(f.calls.find(c=>c.method==='PUT').body.value,'new local edit');
+  }finally{release();f.stop();}
 });
 
 test('explicit draft clear is revisioned null and a conflict is not automatically replayed',async()=>{

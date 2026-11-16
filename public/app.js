@@ -2043,12 +2043,16 @@ class Mixer {
     this.soloState = null; // { stem, stage: 'behind' | 'only' }
     this.loop = null; // { start, end }
     this.rate = 1;
-    this.el = this.build();
+    this.progressDraftGeneration = 0;
     this.restoringProgress = true;
-    try { this.restoreListeningProgress(); } finally { this.restoringProgress = false; }
-    this.stopProgressSync = window.StemUiState?.watch(this.progressSubject, job.id, update => {
+    try { this.el = this.build(); this.restoreListeningProgress(); }
+    finally { this.restoringProgress = false; }
+    const draftGeneration = this.progressDraftGeneration;
+    this.stopProgressSync = window.StemUiState?.watch(this.progressSubject, job.id, (update, baseline = {}) => {
       if (this.progressSubject !== accountSubject || this.job.readOnlyShared) return {draft:false,player:false};
-      const draft = Object.hasOwn(update,'draft') && !this.coachInput?.value && document.activeElement !== this.coachInput;
+      const draft = Object.hasOwn(update,'draft') && this.progressDraftGeneration === draftGeneration && !this.pendingChat
+        && document.activeElement !== this.coachInput
+        && (!this.coachInput?.value || (baseline.draftPreserved && this.coachInput.value === baseline.draftBaseline));
       const player = Object.hasOwn(update,'position') && !this.playing && !this.starting && !this.scrubbing;
       this.savedProgress = {...this.savedProgress,...(player ? update : {}),draft:draft ? update.draft : this.coachInput?.value || ''};
       this.restoringProgress = true;
@@ -2072,7 +2076,7 @@ class Mixer {
   }
 
   saveListeningProgress() {
-    if (this.restoringProgress || !this.progressSubject || this.progressSubject !== accountSubject || this.job.readOnlyShared) return;
+    if (this.disposed || this.restoringProgress || !this.progressSubject || this.progressSubject !== accountSubject || this.job.readOnlyShared) return;
     window.StemListeningProgress?.save(this.progressSubject, this.job.id, {
       draft: this.coachInput?.value || '', position: this.audios[0]?.readyState >= 1 ? this.audios[0].currentTime : this.savedProgress?.position || 0,
       rate: this.rate, muted: [...this.userMuted].filter(([,muted]) => muted).map(([name]) => name),
@@ -2307,7 +2311,7 @@ class Mixer {
     this.coachSignIn.hidden = true;
     this.coachSignIn.addEventListener('click', event => preserveProgressBeforeSignIn(event, this.coachSignIn.href));
     this.coachLog.append(this.coachSignIn);
-    this.coachInput.addEventListener('input', () => this.saveListeningProgress());
+    this.coachInput.addEventListener('input', () => { this.progressDraftGeneration++; this.saveListeningProgress(); });
     this.coachCancel = document.createElement('button');
     this.coachCancel.type = 'button';
     this.coachCancel.className = 'coach-cancel';

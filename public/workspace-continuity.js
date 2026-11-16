@@ -112,8 +112,8 @@
       const result = await response.json();
       for (const receipt of Array.isArray(result.accepted) ? result.accepted : []) {
         const record = batch.find(item => item.jobId === receipt.jobId && item.kind === receipt.kind);
-        if (record && ['applied','already-present'].includes(receipt.outcome) && Number.isSafeInteger(receipt.revision))
-          acknowledgements.push({...record,revision:receipt.revision});
+        if (record && ['applied','already-present','conflict'].includes(receipt.outcome) && Number.isSafeInteger(receipt.revision))
+          acknowledgements.push({...record,revision:receipt.revision,outcome:receipt.outcome});
       }
     }
     return acknowledgements;
@@ -139,7 +139,7 @@
         const record = records[kind];
         state.revisions[kind] = record?.revision || 0;
         const ownSeed = acknowledgements.find(item => item.jobId === state.id && item.kind === kind);
-        if (state.pending[kind]?.baseRevision === 0 && record && ownSeed?.revision === record.revision
+        if (state.pending[kind]?.baseRevision === 0 && record && ['applied','already-present'].includes(ownSeed?.outcome) && ownSeed?.revision === record.revision
           && same(ownSeed.value,record.value) && same(ownSeed.value,state.initial[kind])) {
           // A new edit may follow our own seed while the first read is pending.
           // Only that exact, unchanged seed is a safe baseline for the edit.
@@ -154,7 +154,11 @@
       }
       state.ready = true;
       if (current(state) && Object.keys(update).length) {
-        const accepted = state.receive(update) || {};
+        const draftSeed = acknowledgements.find(item => item.jobId === state.id && item.kind === 'listeningDraft');
+        const accepted = state.receive(update, {
+          draftBaseline: state.initial.listeningDraft || '',
+          draftPreserved: Boolean(draftSeed && same(draftSeed.value,state.initial.listeningDraft)),
+        }) || {};
         if (accepted.draft === false) state.values.listeningDraft = previous.listeningDraft;
         if (accepted.player === false) state.values.listeningPlayer = previous.listeningPlayer;
       }
