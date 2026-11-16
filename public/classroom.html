@@ -8,8 +8,9 @@
 <link rel="preload" href="/fonts/bricolage-grotesque-800.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="/styles.css?v=20261116-header-account">
 <link rel="stylesheet" href="/instructor-console.css?v=20261106-account-nav">
-<link rel="stylesheet" href="/classroom.css?v=20261107-classes">
+<link rel="stylesheet" href="/classroom.css?v=20261116-workspace-controls">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
+<link rel="stylesheet" href="/stem-select.css?v=20261115">
 <main class="teacher-main instructor-console refined-ui">
   <header class="masthead"><div class="masthead-title">
     <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br><span>Splitter</span></a></h1>
@@ -39,11 +40,12 @@
         <button id="classroom-own-splits" class="page-btn" type="button">Splits</button>
         <button id="classroom-view-students" class="page-btn" type="button" hidden>Students</button>
       </div>
-      <a id="classroom-create" class="account-button console-primary" href="/">New class split</a>
+      <a id="classroom-create" class="account-button console-primary" href="/">Create shared split</a>
+      <button id="classroom-make-folder" class="page-btn" type="button" hidden>Make class folder</button>
       <a id="classroom-guidance" class="account-button" href="/teacher.html" hidden>Class settings</a>
       <button id="classroom-refresh" class="page-btn" type="button">Refresh</button>
     </div>
-    <p id="classroom-refresh-status" class="account-help" role="status">Live updates</p>
+    <p id="classroom-refresh-status" class="account-help" role="status"></p>
     <section id="classroom-folders-section" class="teacher-prompt-section">
       <h2>Folders</h2>
       <p id="classroom-folders-status" role="status"></p>
@@ -134,6 +136,7 @@
   </footer>
 </main>
 <script src="/session-guard.js?v=20261106-account-nav"></script>
-<script src="/classroom.js?v=20261107-classes"></script>
+<script src="/stem-select.js?v=20261115"></script>
+<script src="/classroom.js?v=20261116-workspace-controls"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </html>

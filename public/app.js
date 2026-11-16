@@ -251,11 +251,13 @@ async function initializeCourseSelection() {
   region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> ' + COURSE_WORK_DISCLOSURE + '</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
   const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
+  const workspaceMenu = window.StemSelect?.enhance(select, 'Workspace');
   courseAcknowledgment = region.querySelector('input');
   let initialized = false;
   const choose = value => {
     if (selectedCourse !== value || !initialized) courseAcknowledgment.checked = false;
     selectedCourse = value; select.value = value;
+    workspaceMenu?.sync();
     courseAcknowledgment.closest('p').hidden = !value || value === 'personal';
   };
   select.addEventListener('change', () => {
@@ -1793,10 +1795,12 @@ async function chooseStemResplit(mixer, stem) {
     await appReady;
     await separationOptionsReady;
     if (!dialog.isConnected) return;
-    // Use exactly the choices the server made available on this page.
+    // Resplitting one stem starts with two layers; keep six-track separation
+    // on the original-track intake and respect the server's available models.
     for (const input of stemChoice.querySelectorAll('input[name="stem-model"]')) {
       const model = catalogueModels.find(model => model.id === input.value);
-      const option = new Option(model ? `${model.stems.length} splits` : input.getAttribute('aria-label') || input.value, input.value, false, input.checked);
+      if (!model || ![2, 4].includes(model.stems.length)) continue;
+      const option = new Option(`${model.stems.length} splits`, input.value, false, model.stems.length === 2);
       option.title = input.getAttribute('aria-label') || option.text;
       select.add(option);
     }

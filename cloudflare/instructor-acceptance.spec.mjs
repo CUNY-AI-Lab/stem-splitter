@@ -80,9 +80,10 @@ test('instructor reviews course roster, splits and paginated conversations and e
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await expect(page.locator('.workspace-nav [aria-current="page"]')).toHaveText('Classes');
-      expect((await page.locator('#classroom-course').boundingBox()).height).toBeGreaterThanOrEqual(44);
-      if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(104);
-      for (const id of ['#classroom-view-folders','#classroom-own-splits','#classroom-view-students']) {
+      expect((await page.getByRole('combobox', { name: /^Class:/ }).boundingBox()).height).toBeGreaterThanOrEqual(44);
+      // Class sections plus the two creation actions occupy three compact rows on phones.
+      if (width === 390) expect((await page.locator('.classroom-toolbar').boundingBox()).height).toBeLessThanOrEqual(156);
+      for (const id of ['#classroom-view-folders','#classroom-own-splits','#classroom-view-students','#classroom-create','#classroom-make-folder']) {
         const box=await page.locator(id).boundingBox();
         expect(box.height).toBeGreaterThanOrEqual(44); expect(box.height).toBeLessThanOrEqual(46);
       }
@@ -207,7 +208,7 @@ test('automatic class refresh pauses in a hidden tab and rechecks on return', as
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await expect(page.locator('#classroom-refresh-status')).toContainText('Updated');
-    expect(reads.slice(before).map(value => new URL(value).pathname)).toEqual([
+    await expect.poll(() => reads.slice(before).map(value => new URL(value).pathname)).toEqual([
       `/api/classroom/courses/${course}`,
       `/api/classroom/courses/${course}/folders`,
       `/api/classroom/courses/${course}/roster`,
@@ -311,7 +312,7 @@ test('changing course selection clears in-flight roster and conversation results
     });
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(page.locator('#classroom-roster-status')).toContainText('Loading');
-    await page.getByLabel('Class', { exact: true }).selectOption('');
+    await page.locator('#classroom-course').selectOption('');
     release();
     await expect(page.locator('#console-panel')).toBeHidden();
     await expect(page.locator('#classroom-roster')).toBeEmpty();

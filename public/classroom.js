@@ -2,6 +2,7 @@
 // conversation, or roster is stored in browser storage; only the selected class ID is remembered.
 (() => {
   const el = id => document.getElementById(`classroom-${id}`);
+  window.StemSelect?.enhance(el('course'), 'Class');
   const panel = document.getElementById('console-panel');
   const status = document.getElementById('account-status');
   let courses = [], selected = null, generation = 0, controllers = new Set(), choiceKey = null;
@@ -33,7 +34,8 @@
     el('folders-section').hidden = view !== 'folders';
     el('people').hidden = view === 'folders';
     el('roster-section').hidden = view !== 'students';
-    el('create').hidden = manage && view !== 'splits';
+    el('create').hidden = false;
+    el('make-folder').hidden = !manage;
   }
   function syncAddress() {
     if (!selected) return;
@@ -208,7 +210,7 @@
         el('jobs').append(item);
       }
       jobsCursor = data.nextCursor; el('jobs-more').hidden = !jobsCursor;
-      el('jobs-status').textContent = el('jobs').children.length ? '' : person.own ? 'You have no splits in this class yet. Start one with New class split.' : 'This student has no splits for this class yet.';
+      el('jobs-status').textContent = el('jobs').children.length ? '' : person.own ? 'You have no splits in this class yet. Choose Create shared split to start one.' : 'This student has no splits for this class yet.';
     } catch (error) { if (current === generation && view === studentGeneration) report('jobs-status', error); }
     finally { if (current === generation && view === studentGeneration) el('jobs-more').disabled = false; }
   }
@@ -335,7 +337,7 @@
       pickerJobs = append ? [...pickerJobs, ...usable] : usable;
       pickerCursor = data.nextCursor; el('add-more').hidden = !pickerCursor;
       renderPicker();
-      el('add-status').textContent = pickerJobs.length ? '' : 'You have no finished splits in this class yet. Start one with New class split under Splits.';
+      el('add-status').textContent = pickerJobs.length ? '' : 'You have no finished splits in this class yet. Choose Create shared split to start one.';
     } catch (error) { if (current === generation && viewing === pickerGeneration) report('add-status', error); }
     finally { if (viewing === pickerGeneration) el('add-more').disabled = false; }
   }
@@ -377,7 +379,7 @@
     const query = new URLSearchParams(location.search);
     if (query.get('course') === id && query.get('folder')) await loadFolder(query.get('folder'));
     if (current === generation && view === 'splits') await loadStudent(ownRecord());
-    if (current === generation) scheduleRefresh();
+    if (current === generation) { el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}`; scheduleRefresh(); }
   }
   function scheduleRefresh() {
     clearTimeout(refreshTimer);
@@ -440,7 +442,7 @@
         await loadConversation(conversation, false, true);
         for (let i = 1; current === generation && i < pageCounts.conversation && conversationCursor; i++) await loadConversation(conversation, true);
       }
-      if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}. Updates automatically while this page is open.`;
+      if (current === generation) el('refresh-status').textContent = `Updated ${new Date().toLocaleTimeString()}`;
     } catch (error) {
       if (current === generation) {
         clearCourse(); status.textContent = 'Class access could not be confirmed. Retry to load your class work.';
@@ -459,6 +461,11 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckCourse(); else clearTimeout(refreshTimer); });
   el('course').addEventListener('change', () => void selectCourse(el('course').value));
   el('refresh').addEventListener('click', () => void refreshCourse());
+  el('make-folder').addEventListener('click', () => {
+    if (!canManage()) return;
+    setView('folders');
+    el('folder-name').scrollIntoView({ block: 'nearest' }); el('folder-name').focus();
+  });
   el('retry').addEventListener('click', () => void selectCourse(el('course').value));
   el('view-folders').addEventListener('click', () => selected && setView('folders'));
   el('own-splits').addEventListener('click', () => selected && setView('splits'));

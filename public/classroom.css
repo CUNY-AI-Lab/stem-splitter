@@ -64,7 +64,7 @@
 .refined-ui.instructor-console #course-discovery { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .75rem; align-items: center; margin: .75rem 0; max-width: 34rem; }
 .refined-ui.instructor-console #classroom-course { margin: 0; }
 .refined-ui.instructor-console .classroom-toolbar { margin: .75rem 0 .4rem; }
-.refined-ui.instructor-console #classroom-refresh-status { display: flex; align-items: center; gap: .45rem; margin: .25rem 0 .75rem; font: .65rem/1.5 var(--font-mono); }
+.refined-ui.instructor-console #classroom-refresh-status { display: flex; align-items: center; justify-content: flex-end; text-align: right; gap: .45rem; margin: .25rem 0 .75rem; font: .65rem/1.5 var(--font-mono); }
 .refined-ui.instructor-console #classroom-refresh-status:empty { display: none; }
 .refined-ui.instructor-console #classroom-usage { margin: 0 0 .5rem; padding-bottom: .65rem; font-variant-numeric: tabular-nums; text-wrap: balance; }
 .refined-ui.instructor-console #classroom-roster .page-btn { min-height: 40px; padding: .45rem 0; font-family: var(--font-body); }

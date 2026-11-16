@@ -42,7 +42,9 @@ test('an instructor builds a class folder in place: create, add splits, share, r
     page.on('pageerror',error=>errors.push(error.message));
     await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
     await expect(page.getByRole('button',{name:'Folders',exact:true})).toHaveAttribute('aria-current','true');
-    await expect(page.locator('#classroom-create')).toBeHidden();
+    await expect(page.locator('#classroom-create')).toBeVisible();
+    await page.getByRole('button',{name:'Make class folder',exact:true}).click();
+    await expect(page.getByLabel('New folder')).toBeFocused();
     await expect(page.locator('#account-status')).toBeHidden();
     await expect(page.locator('#classroom-folder-create')).toContainText('Only instructors see a new folder until you choose who can open it.');
     await page.getByLabel('New folder').fill('Week one');
@@ -164,6 +166,8 @@ test('a class split resplits with its original by default while Share with stays
     await page.goto(f.url.href);
     await expect(page.getByLabel('Share with')).toHaveValue('personal');
     const dialog=await openResplit(page,'shared-course');
+    await expect(dialog.locator('#resplit-model')).toHaveValue('vocals_instrumental');
+    expect(await dialog.locator('#resplit-model option').allTextContents()).toEqual(['2 splits', '4 splits']);
     const original=dialog.getByRole('radio',{name:'With original split',exact:true}),separate=dialog.getByRole('radio',{name:'Separate split',exact:true}),notice=dialog.locator('.resplit-course-ack'),go=dialog.getByRole('button',{name:'Resplit',exact:true});
     await expect(original).toBeEnabled();await expect(original).toBeChecked();
     await expect(notice).toBeHidden();await expect(go).toBeEnabled();
@@ -177,6 +181,7 @@ test('a class split resplits with its original by default while Share with stays
     await expect.poll(()=>sent.filter(entry=>entry.path==='jobs').length).toBe(1);
     expect(sent.map(entry=>entry.course)).toEqual([course,course]);
     const body=sent.at(-1).body;
+    expect(body.model).toBe('vocals_instrumental');
     expect(body.coursePolicy).toBe('course-work-v1');
     expect(body.resplit).toEqual({parentJobId:'shared-course',stem:'vocals',placement:'with_original'});
     await expect(page.getByLabel('Share with')).toHaveValue('personal');
@@ -286,7 +291,7 @@ test('instructors retain roster and class controls when supplemental usage stora
   await expect(page.locator('#classroom-roster-status')).toHaveText('');
   await expect(page.getByRole('button',{name:'Splits',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Splits',exact:true}).click();
-  await expect(page.getByRole('link',{name:'New class split',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Create shared split',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Folders',exact:true}).click();
   await expect(page.locator('#classroom-folders')).toContainText('Class comments');
  } finally {await f.close();}
@@ -329,7 +334,7 @@ test('owner Listening Guy cue recovers visibly after a failed stream and can be 
 });
 
 
-for (const owner of [false,true]) for (const width of [1280,390]) test(`New class split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
+for (const owner of [false,true]) for (const width of [1280,390]) test(`Create shared split retains the class for ${owner?'instructors':'students'} at ${width}px`,async({browser},testInfo)=>{
  const f=await fixture(browser);
  try {
   const page=await f.pageFor(TEST_SUBJECTS.alice,owner),errors=[];
@@ -338,7 +343,7 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`New clas
   await page.goto(new URL(`/classroom.html?course=${course}`,f.url).href);
   await expect(page.locator('#classroom-course')).toHaveValue(course);
   if(owner)await page.getByRole('button',{name:'Splits',exact:true}).click();
-  await page.getByRole('link',{name:'New class split',exact:true}).click();
+  await page.getByRole('link',{name:'Create shared split',exact:true}).click();
   await expect(page).toHaveURL(new URL(`/?course=${course}`,f.url).href);
   await expect(page).toHaveTitle(/Stem Splitter/);
   const select=page.getByLabel('Share with');
@@ -395,18 +400,19 @@ for (const owner of [false,true]) for (const width of [1280,390]) test(`new spli
   await expect(select).toHaveValue('personal');
   await expect(page.locator('#course-work-ack')).toBeHidden();
   expect(await page.evaluate(()=>creationCourse())).toBe('personal');
-  const personalBox=await select.boundingBox();
+  const control=page.getByRole('combobox',{name:/^Workspace:/});
+  const personalBox=await control.boundingBox();
   expect(personalBox.width).toBeGreaterThan(150);expect(personalBox.height).toBeGreaterThanOrEqual(44);
-  await select.focus();await expect(select).toBeFocused();
-  await select.press('Tab');await expect(select).not.toBeFocused();
+  await control.focus();await expect(control).toBeFocused();
+  await control.press('Tab');await expect(control).not.toBeFocused();
   await select.selectOption(course);
   await expect(select).toHaveValue(course);
   await expect(page.locator('#course-work-ack')).toBeVisible();
   await expect(page.locator('#course-work-ack')).not.toBeChecked();
   await page.locator('#course-work-ack').check();
   expect(await page.evaluate(()=>creationCourse())).toBe(course);
-  expect((await select.boundingBox()).width).toBeGreaterThan(personalBox.width);
-  const courseBox=await select.boundingBox();
+  expect((await control.boundingBox()).width).toBeGreaterThan(personalBox.width);
+  const courseBox=await control.boundingBox();
   expect(courseBox.x).toBeGreaterThanOrEqual(0);
   expect(courseBox.x+courseBox.width).toBeLessThanOrEqual(width);
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
