@@ -38,17 +38,28 @@ test('Listening Guide preserves the mixer and syncs private CUNY history across 
     await page.locator('.coach-form input').press('Enter');
     await expect(page.locator('.coach-row.coach')).toContainText('Listen for the bass against the drums.');
     await expect(page.locator('.coach-save-status')).toContainText('Saved to your CUNY account.');
+    // Guide visibility is private synchronized state. Confirm the first browser
+    // saved it before opening a fresh browser; a blind toggle could close the
+    // automatically restored Guide and make this test depend on request timing.
+    await expect.poll(async () => {
+      const response = await page.request.get(new URL('/api/jobs/remix-fixture/ui-state', url).href,
+        { headers: { 'X-Stem-Account': subject } });
+      return response.ok() ? (await response.json()).records.listeningPlayer?.value?.guideOpen : null;
+    }).toBe(true);
     const secondContext = await browser.newContext();
     try {
       await secondContext.setExtraHTTPHeaders(headers);
       const secondPage = await secondContext.newPage();
+      const hydratedState = secondPage.waitForResponse(response =>
+        new URL(response.url()).pathname === '/api/jobs/remix-fixture/ui-state' && response.request().method() === 'GET');
       await secondPage.goto(url.href);
+      expect((await (await hydratedState).json()).records.listeningPlayer.value.guideOpen).toBe(true);
+      await expect(secondPage.locator('.coach-toggle')).toHaveAttribute('aria-expanded', 'true');
       await expect(secondPage.locator('.badge.ready')).toBeVisible();
       const downloaded = secondPage.waitForEvent('download');
       await openSplitActions(secondPage); await secondPage.locator('.export-btn').click();
       const archive = await downloaded;
       expect((await readFile(await archive.path())).includes(Buffer.from('What should I listen for next?'))).toBe(true);
-      await secondPage.locator('.coach-toggle').click();
       await expect(secondPage.locator('.coach-archive')).toBeVisible();
       await expect(secondPage.locator('.coach-archive-toggle')).toContainText('EARLIER SESSION · 2');
       await secondPage.locator('.coach-form input').fill('And now the drums?');
