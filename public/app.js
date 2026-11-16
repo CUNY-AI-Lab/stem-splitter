@@ -5964,8 +5964,15 @@ async function initialize() {
       ytUrlInput.disabled = true;
       ytFetchButton.disabled = true;
       stopSongSample();
-      stemChoice.textContent = 'Sign in with CUNY Login to upload and split tracks.';
-      stemChoice.classList.add('mono');
+      const notice = document.createElement('p');
+      notice.className = 'stem-choice-status sign-in-notice';
+      const signIn = document.createElement('a');
+      signIn.href = runtime.loginUrl;
+      signIn.textContent = 'Sign in with CUNY';
+      notice.append(signIn, ' to upload and split tracks.');
+      stemChoice.replaceChildren(notice);
+      stemChoice.removeAttribute('role');
+      stemChoice.removeAttribute('aria-label');
       engineSummary.hidden = true;
       renderJobs();
       return;

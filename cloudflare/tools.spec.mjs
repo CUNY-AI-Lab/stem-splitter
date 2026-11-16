@@ -100,7 +100,11 @@ test('Tools landing and assets stay public while anonymous and forged API reques
     const availabilityResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/api/bug-reports/availability'));
     await page.goto(new URL(destination, url).href);
     await expect(page.locator('#header-signin')).toBeVisible();
-    await expect(page.locator('#stem-choice')).toHaveText('Sign in with CUNY Login to upload and split tracks.');
+    await expect(page.locator('#stem-choice')).toHaveText('Sign in with CUNY to upload and split tracks.');
+    await expect(page.locator('.sign-in-notice a')).toHaveAttribute('href', '/stem-splitter/auth/login?returnTo=' + encodeURIComponent(destination));
+    const notice = await page.locator('.sign-in-notice').boundingBox();
+    const choices = await page.locator('#stem-choice').boundingBox();
+    expect(notice.width).toBeGreaterThan(choices.width - 2);
     await expect(page).toHaveURL(new URL(destination, url).href);
     await expect(page.locator('#upload-status')).toBeHidden();
     await expect(page.locator('#job-list')).toBeEmpty();

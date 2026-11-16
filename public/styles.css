@@ -458,6 +458,19 @@ h1 span {
   font-size: 0.7rem;
 }
 
+.sign-in-notice {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: var(--bg-raise);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.sign-in-notice a { color: var(--hot); text-underline-offset: 0.2em; }
+.sign-in-notice a:focus-visible { outline: 2px solid var(--hot); outline-offset: 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   .split-option, .split-seg { transition: none; }
   .split-option:hover { transform: none; }
