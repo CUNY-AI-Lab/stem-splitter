@@ -237,6 +237,8 @@ test('unified search keeps one audio import flow and no separate metadata contro
   await page.route('**/api/jobs',async route=>{if(route.request().method()!=='POST')return route.continue();request=route.request().postDataJSON();return route.fulfill({status:503,json:{error:'Synthetic import stopped before processing.'}});});
   await page.goto(f.url.href);await page.getByLabel('Share with').selectOption('personal');
   await expect(page.getByLabel('Audio source',{exact:true})).toHaveCount(0);
+  // Compare the hydrated picker, not its temporary loading message.
+  await expect(page.locator('#stem-choice').getByRole('radio').first()).toBeVisible();
   const beforeSearch=await page.locator('#stem-choice').boundingBox();
   await page.locator('#yt-url').fill('Synthetic music');await expect(page.locator('#source-songs')).toContainText('CC BY 4.0');
   await expect(page.locator('#source-songs')).toContainText('Internet Archive');
