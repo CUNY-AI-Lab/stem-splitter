@@ -12,6 +12,10 @@ assets and D1/R2 bindings alone cannot recover that guest's identity.
 - On the first anonymous visit, start a nonce-bound top-level handoff to the
   original host. Reuse its active unclaimed guest session, or bootstrap there so
   a new visitor receives the same guest identity at both addresses.
+- For an already signed-in first visit, check the original host for an existing
+  guest before the normal account claim. This check never creates an empty
+  guest. A per-account tab marker avoids repeat navigation after completion;
+  the marker grants no access and server ownership remains authoritative.
 - Sign the target cookie for the Tools origin without moving rows, extending
   expiry, resetting allowance, changing provider URLs or copying audio.
 - Encrypt the five-minute handoff and carry it only in the URL fragment.

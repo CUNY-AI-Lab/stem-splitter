@@ -21,13 +21,13 @@ function fixture() {
   const begin = async () => cookie(await startGuestSession(new Request(legacy + '/auth/guest', {
     method: 'POST', headers: { origin: legacy, 'content-type': 'application/json' }, body: '{}',
   }), env));
-  const start = async () => {
-    const response = await guestTransfer(new Request(tools + '/auth/guest-transfer/start'), env);
+  const start = async (existingOnly = false) => {
+    const response = await guestTransfer(new Request(tools + '/auth/guest-transfer/start' + (existingOnly ? '?existingOnly=1' : '')), env);
     assert.equal(response.status, 303);
     return { url: response.headers.get('location')!, cookie: cookie(response, TRANSFER_COOKIE) };
   };
-  const handoff = async (source = '') => {
-    const initiated = await start();
+  const handoff = async (source = '', existingOnly = false) => {
+    const initiated = await start(existingOnly);
     const response = await guestTransfer(new Request(initiated.url, { headers: { cookie: source } }), env);
     assert.equal(response.status, 303);
     const destination = new URL(response.headers.get('location')!);
@@ -122,6 +122,26 @@ test('legacy member session is preserved and directs the visitor to sign in', as
   assert.equal((await response.json() as any).error.code, 'member_workspace');
   assert.equal(response.headers.get('set-cookie'), null);
   assert.equal((await f.database.prepare('SELECT count(*) AS n FROM guest_sessions').first())?.n, 0);
+});
+
+test('existing-only recovery checks never create a guest or overwrite an existing target cookie', async () => {
+  for (const sourceCookie of ['', '__Host-stem-session=member-fixture']) {
+    const f = fixture(), transfer = await f.handoff(sourceCookie, true);
+    const response = await f.finish(transfer.token, transfer.cookie);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { restored: false });
+    assert.equal(f.cookie(response), '');
+    assert.equal((await f.database.prepare('SELECT count(*) AS n FROM guest_sessions').first())?.n, 0);
+    assert.equal((await f.finish(transfer.token, transfer.cookie)).status, 403);
+  }
+});
+
+test('existing-only recovery preserves an old guest for the normal signed-in claim flow', async () => {
+  const f = fixture(), original = await f.begin(), transfer = await f.handoff(original, true);
+  const response = await f.finish(transfer.token, transfer.cookie);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await readGuestSession(new Request(tools, { headers: { cookie: f.cookie(response) } }), f.env),
+    await readGuestSession(new Request(legacy, { headers: { cookie: original } }), f.env));
 });
 
 test('concurrent completion consumes a handoff once', async () => {

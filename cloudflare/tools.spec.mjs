@@ -7,7 +7,7 @@ import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
 test.use({ ignoreHTTPSErrors: true });
 
-test('Tools restores the original guest tracks, notes and conversation and keeps new writes visible at both addresses', async ({ page, context }) => {
+for (const signedIn of [false, true]) test(`Tools restores original guest work ${signedIn ? 'after CUNY sign-in' : 'without signing in'} and keeps writes visible at both addresses`, async ({ page, context }) => {
   const legacy = 'https://stem-splitter.ailab-452.workers.dev';
   const issuer = await createTestIdentityIssuer();
   const config = JSON.parse(await readFile(new URL('./test-wrangler.jsonc', import.meta.url), 'utf8'));
@@ -17,6 +17,7 @@ test('Tools restores the original guest tracks, notes and conversation and keeps
       GUEST_TURNSTILE_SITE_KEY: 'fixture-site-key', GUEST_TURNSTILE_SECRET: 'fixture-turnstile-secret-only' },
   } }] });
   const errors = [];
+  let appJwt, gatewayJwt, legacyVisits = 0;
   page.on('pageerror', error => errors.push(error.message));
   try {
     const { url } = await harness.listen();
@@ -39,23 +40,34 @@ test('Tools restores the original guest tracks, notes and conversation and keeps
     await worker.fetch('/__fixture/audio', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url)) });
     expect((await oldCall('/api/jobs/remix-fixture/annotations', { method: 'POST', body: JSON.stringify({ atSeconds: 1, text: 'Original listening note' }) })).status).toBe(200);
     expect((await oldCall('/api/jobs/remix-fixture/listening-conversation', { method: 'PUT', body: JSON.stringify({ revision: 0, entries: [{ kind: 'you', text: 'Original private conversation' }] }) })).status).toBe(200);
-    // Follow the real HTTP handoff through the Worker. Only the browser domain
-    // is local; its guest cookie is signed for the actual private Tools origin.
-    const transfer = await worker.fetch('/stem-splitter/auth/guest-transfer/start', { redirect: 'manual' });
-    const nonce = transfer.headers.get('set-cookie').split(';')[0].split('=')[1];
-    const source = await worker.fetch(transfer.headers.get('location'), { headers: { cookie: sourceCookie }, redirect: 'manual' });
-    const returned = new URL(source.headers.get('location'));
-    await context.addCookies([{ name: '__Host-stem-transfer', value: nonce, url: url.origin, secure: true, httpOnly: true, sameSite: 'Lax' }]);
-    await page.goto(url.origin + returned.pathname + returned.hash);
+    // Follow both server redirects through the local Worker, retaining its
+    // real nonce cookie and encrypted fragment without contacting production.
+    await page.route('**/stem-splitter/auth/guest-transfer/start*', async route => {
+      legacyVisits++;
+      const started = await worker.fetch(route.request().url(), { redirect: 'manual' });
+      const response = await worker.fetch(started.headers.get('location'), { headers: { cookie: sourceCookie }, redirect: 'manual' });
+      const target = new URL(response.headers.get('location'));
+      await route.fulfill({ status: response.status, headers: { location: url.origin + target.pathname + target.hash, 'set-cookie': started.headers.get('set-cookie') } });
+    });
+    if (signedIn) {
+      appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+      gatewayJwt = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
+      await context.setExtraHTTPHeaders({ 'x-fixture-identity': appJwt, 'x-fixture-gateway-identity': gatewayJwt });
+    }
+    await page.goto(url.origin + '/stem-splitter/');
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
     await expect(page.locator('.console-title')).toHaveText('Restored guest track');
-    await expect(page.getByText('Original listening note — Guest', { exact: true })).toBeVisible();
+    await expect(page.locator('.note-text').filter({ hasText: 'Original listening note' })).toBeVisible();
     await expect(page.locator('#yt-url')).toBeEnabled();
     await expect(page.locator('.sign-in-notice')).toHaveCount(0);
     const restored = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
-    expect(restored.account.subject).toBe(subject);
-    expect(restored.guest.expiresAt).toBe(original.guest.expiresAt);
-    expect(restored.splitAllowance.limit).toBe(original.splitAllowance.limit);
+    expect(restored.account.subject).toBe(signedIn ? TEST_SUBJECTS.alice : subject);
+    if (!signedIn) {
+      expect(restored.guest.expiresAt).toBe(original.guest.expiresAt);
+      expect(restored.splitAllowance.limit).toBe(original.splitAllowance.limit);
+    } else {
+      expect((await oldCall('/api/account')).status).toBe(403, 'claimed guest no longer accesses member data');
+    }
     expect((await context.cookies()).some(cookie => cookie.name === '__Host-stem-transfer')).toBe(false);
     const conversation = await page.evaluate(async () => (await window.StemFetch('/api/jobs/remix-fixture/listening-conversation')).json());
     expect(JSON.stringify(conversation)).toContain('Original private conversation');
@@ -63,10 +75,11 @@ test('Tools restores the original guest tracks, notes and conversation and keeps
     await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').audios[0].currentTime)).toBeGreaterThan(0);
     await page.locator('.console .play-btn').click();
     expect(await page.evaluate(async () => (await window.StemFetch('/api/jobs/remix-fixture/annotations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ atSeconds: 2, text: 'New Tools listening note' }) })).status)).toBe(200);
-    expect(await (await oldCall('/api/jobs/remix-fixture')).text()).toContain('New Tools listening note');
+    expect(await (await oldCall('/api/jobs/remix-fixture', signedIn ? { headers: { 'x-fixture-identity': appJwt, 'x-fixture-gateway-identity': gatewayJwt } } : {})).text()).toContain('New Tools listening note');
     await page.reload();
     await expect(page.locator('.console-title')).toHaveText('Restored guest track');
-    await expect(page.getByText('New Tools listening note — Guest', { exact: true })).toBeVisible();
+    await expect(page.locator('.note-text').filter({ hasText: 'New Tools listening note' })).toBeVisible();
+    expect(legacyVisits).toBe(1, 'return and reload do not repeat the recovery navigation');
     // The same app boundary still rejects private work for a different guest.
     const other = await worker.fetch(legacy + '/auth/guest', { method: 'POST', headers: { origin: legacy, 'content-type': 'application/json' }, body: '{}' });
     expect((await worker.fetch(legacy + '/api/jobs/remix-fixture', { headers: { cookie: other.headers.get('set-cookie').split(';')[0] } })).status).toBe(404);

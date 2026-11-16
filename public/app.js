@@ -5952,6 +5952,21 @@ window.addEventListener('pagehide', () => { for (const mixer of mixers.values())
 // --- init -------------------------------------------------------------
 window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail' && !window.StemSessionGuard) location.reload(); });
 
+function restorePreviousGuest(member = null) {
+  try {
+    if (member && sessionStorage.getItem('stem-transfer-checked:' + member)) return false;
+    sessionStorage.setItem('stem-transfer-return', location.pathname + location.search);
+    if (member) sessionStorage.setItem('stem-transfer-member', member);
+    else sessionStorage.removeItem('stem-transfer-member');
+  } catch {
+    // A member can use the signed-in workspace when browser storage is blocked;
+    // avoid a redirect loop because the completed-check marker cannot persist.
+    if (member) return false;
+  }
+  location.assign(StemPath('/auth/guest-transfer/start') + (member ? '?existingOnly=1' : ''));
+  return true;
+}
+
 async function initialize() {
   try {
     const response = await window.StemFetch('/api/runtime');
@@ -5994,8 +6009,7 @@ async function initialize() {
         && (await response.clone().json().catch(() => ({}))).error?.code === 'guest_session_claimed';
       if ((response.status === 401 || claimedGuest) && runtime.guest?.canStart === true) {
         if (StemPath.base) {
-          try { sessionStorage.setItem('stem-transfer-return', location.pathname + location.search); } catch {}
-          location.assign(StemPath('/auth/guest-transfer/start'));
+          restorePreviousGuest();
           return;
         }
         await window.StemGuest.ensure(runtime.guest);
@@ -6011,6 +6025,7 @@ async function initialize() {
       rackStatus.textContent = 'Account access is temporarily unavailable. Reload to try again.';
     }
     guestSessionActive = principal?.quotaClass === 'guest' && principal?.role === 'guest' && /^guest-[0-9a-f]{64}$/.test(principal.subject);
+    if (StemPath.base && runtime.guest?.enabled && /^cail-[0-9a-f]{32}$/.test(principal?.subject || '') && restorePreviousGuest(principal.subject)) return;
     if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;

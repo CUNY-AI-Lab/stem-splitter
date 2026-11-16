@@ -2,6 +2,13 @@
   const token = location.hash.slice(1);
   // Remove the encrypted handoff from browser history before requesting data.
   history.replaceState(null, '', location.pathname);
+  const checked = () => {
+    try {
+      const member = sessionStorage.getItem('stem-transfer-member');
+      if (/^cail-[0-9a-f]{32}$/.test(member || '')) sessionStorage.setItem('stem-transfer-checked:' + member, '1');
+      sessionStorage.removeItem('stem-transfer-member');
+    } catch {}
+  };
   try {
     const response = await window.StemFetch('/auth/guest-transfer/finish', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
@@ -10,12 +17,14 @@
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
       if (response.status === 409 && ['member_workspace', 'workspace_conflict'].includes(result.error?.code)) {
+        checked();
         document.getElementById('transfer-status').textContent = result.error.message;
         document.getElementById('transfer-accounts').hidden = false;
         return;
       }
       throw new Error('Transfer unavailable');
     }
+    checked();
     let next = '/stem-splitter/';
     try {
       const saved = sessionStorage.getItem('stem-transfer-return');

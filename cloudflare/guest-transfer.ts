@@ -31,10 +31,12 @@ export async function guestTransfer(request: Request, env: WorkerEnv): Promise<R
   const url = new URL(request.url);
   if (url.origin === tools && url.pathname === '/auth/guest-transfer/start' && request.method === 'GET') {
     const nonce = encode(crypto.getRandomValues(new Uint8Array(32)));
-    return redirect(`${legacy}/auth/guest-transfer?state=${nonce}`, cookie(nonce, 300));
+    const existingOnly = url.searchParams.get('existingOnly') === '1';
+    return redirect(`${legacy}/auth/guest-transfer?state=${nonce}${existingOnly ? '&existingOnly=1' : ''}`, cookie(nonce, 300));
   }
   if (url.origin === legacy && url.pathname === '/auth/guest-transfer' && request.method === 'GET') {
     const nonce = url.searchParams.get('state') || '';
+    const existingOnly = url.searchParams.get('existingOnly') === '1';
     if (!noncePattern.test(nonce)) return failure();
     const limited = await env.REQUEST_LIMIT!.limit({ key: `stem-transfer:${request.headers.get('cf-connecting-ip') || 'unknown'}` });
     if (!limited.success) return new Response('Please try again shortly.', { status: 429, headers });
@@ -44,7 +46,7 @@ export async function guestTransfer(request: Request, env: WorkerEnv): Promise<R
     let sourceCookie: string | undefined;
     // Bootstrap on the original host so a first visit at either address uses
     // the same guest identity. Never replace an existing signed-in workspace.
-    if (!session && !hasMemberCookie(request)) {
+    if (!session && !existingOnly && !hasMemberCookie(request)) {
       const bootstrapHeaders = new Headers(request.headers);
       bootstrapHeaders.set('origin', legacy);
       bootstrapHeaders.set('sec-fetch-site', 'same-origin');
@@ -57,7 +59,7 @@ export async function guestTransfer(request: Request, env: WorkerEnv): Promise<R
       session = await readGuestSession(new Request(legacy, { headers: { cookie: sourceCookie?.split(';')[0] ?? '' } }), env);
       if (!session) return failure();
     }
-    const body = JSON.stringify({ nonce, expires: Date.now() + 300000, subject: session?.subject ?? null });
+    const body = JSON.stringify({ nonce, expires: Date.now() + 300000, subject: session?.subject ?? null, existingOnly });
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(tools) }, await key(env), new TextEncoder().encode(body)));
     return redirect(`${tools}/stem-splitter/guest-transfer.html#${encode(iv)}.${encode(sealed)}`, sourceCookie);
@@ -69,23 +71,23 @@ export async function guestTransfer(request: Request, env: WorkerEnv): Promise<R
     if (typeof body?.token !== 'string' || !/^[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{40,1024}$/.test(body.token)) return failure();
     const [iv, sealed] = body.token.split('.');
     if (encode(decode(iv)) !== iv || encode(decode(sealed)) !== sealed) return failure();
-    const payload = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: decode(iv), additionalData: new TextEncoder().encode(tools) }, await key(env), decode(sealed)))) as { nonce?: unknown; expires?: unknown; subject?: unknown };
+    const payload = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: decode(iv), additionalData: new TextEncoder().encode(tools) }, await key(env), decode(sealed)))) as { nonce?: unknown; expires?: unknown; subject?: unknown; existingOnly?: unknown };
     if (typeof payload.nonce !== 'string' || !noncePattern.test(payload.nonce) || payload.nonce !== uniqueCookie(request, TRANSFER_COOKIE)
       || typeof payload.expires !== 'number' || payload.expires <= Date.now() || payload.expires > Date.now() + 300000) return failure();
-    if (payload.subject === null) return Response.json({ error: { code: 'member_workspace', message: 'Sign in with CUNY to check your previous workspace.' } }, { status: 409, headers });
+    if (payload.subject === null && payload.existingOnly !== true) return Response.json({ error: { code: 'member_workspace', message: 'Sign in with CUNY to check your previous workspace.' } }, { status: 409, headers });
     const session = typeof payload.subject === 'string' ? await activeGuest(env.DB, payload.subject) : null;
-    if (!session || await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(session.subject).first()) return failure();
+    if (payload.subject !== null && (!session || await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(session.subject).first())) return failure();
     const current = await readGuestSession(request, env);
-    if (current && current.subject !== session.subject
+    if (session && current && current.subject !== session.subject
       && !await env.DB.prepare('SELECT 1 FROM guest_account_claims WHERE guest_subject=?').bind(current.subject).first()) {
       return Response.json({ error: { code: 'workspace_conflict', message: 'These addresses have separate guest workspaces. Open each workspace and save its tracks to your CUNY account to keep both.' } }, { status: 409, headers });
     }
     // The existing short-lived challenge table provides an atomic replay fence.
     const hash = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('transfer:' + payload.nonce))));
     await env.DB.prepare('INSERT INTO guest_challenges(token_hash,expires_at) VALUES(?,?)').bind(hash, payload.expires).run();
-    const response = Response.json({ restored: true }, { headers });
+    const response = Response.json({ restored: Boolean(session) }, { headers });
     response.headers.append('Set-Cookie', cookie('', 0));
-    response.headers.append('Set-Cookie', await guestSessionCookie(env, tools, session));
+    if (session) response.headers.append('Set-Cookie', await guestSessionCookie(env, tools, session));
     return response;
   } catch { return failure(); }
 }
