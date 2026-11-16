@@ -197,13 +197,24 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await expect(labLink).toBeVisible();
   await expect(labLink).toHaveAttribute('href', 'https://ailab.gc.cuny.edu');
   await expect(labLink.locator('img')).toHaveAttribute('src', '/cuny-ai-lab-logo.png');
-  const expectAlignedBrand = () => expect.poll(() => page.evaluate(() => {
+  const expectAlignedBrand = async () => {
+    await page.evaluate(() => document.fonts.ready);
+    await expect.poll(() => page.evaluate(() => {
     const row = document.querySelector('.masthead-title').getBoundingClientRect();
     const title = document.querySelector('.masthead-title h1').getBoundingClientRect();
     const logo = document.querySelector('.masthead-title .lab-logo').getBoundingClientRect();
-    return Math.abs(title.height / 2 - logo.height) < 1
+    const brand = document.querySelector('.masthead-title .home-brand');
+    const style = getComputedStyle(brand), context = document.createElement('canvas').getContext('2d');
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const range = document.createRange(); range.selectNodeContents(brand.firstChild);
+    const metrics = context.measureText('S');
+    const baseline = range.getClientRects()[0].top + metrics.fontBoundingBoxAscent;
+    // The logo aligns with the visible capitals of Stem, not half the title's line boxes.
+    return Math.abs(logo.top - (baseline - metrics.actualBoundingBoxAscent)) <= 1
+      && Math.abs(logo.bottom - baseline) <= 1
       && Math.abs(title.x - row.x) < 1 && Math.abs(logo.right - row.right) < 1;
-  })).toBe(true);
+    })).toBe(true);
+  };
   await expectAlignedBrand();
   await expect(page.locator('#station-tagline > p')).toHaveText(['Split audio tracks into musical layers for deep listening, one stem at a time.']);
   await expect(page.locator('#split-summary')).toBeHidden();
@@ -335,7 +346,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.locator('.folder-btn').click();
   await expect(page.locator('.console')).not.toHaveClass(/collapsed/);
   await expect(page.locator('.folder-menu')).toBeVisible();
-  await expect(page.locator('.folder-menu')).toContainText('ADD TO FOLDER');
+  await expect(page.locator('.folder-menu')).toContainText('MOVE TO MY FOLDERS');
   const [{ collapsed: collapsedAfterMenu }] = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('jobs') || '[]')
   );
@@ -351,7 +362,7 @@ test('uploads and processes a real WAV through local R2 in a browser', async ({
   await page.locator('.collapse-btn').click();
   await expect(page.locator('.folder-menu')).toHaveCount(0);
 
-  // Class-folder rows use the same explicit open/closed contract. Keep the
+  // Private-folder rows use the same explicit open/closed contract. Keep the
   // item list genuinely hidden until its folder heading is expanded, then
   // hide it again on the next press.
   await page.route('**/api/teacher/folders/folder-collapse-e2e', (route) =>
