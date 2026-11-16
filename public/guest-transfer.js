@@ -1,4 +1,18 @@
 (async () => {
+  const guestButton = document.getElementById('transfer-guest');
+  guestButton.addEventListener('click', async () => {
+    guestButton.disabled = true;
+    try {
+      const response = await window.StemFetch('/auth/guest', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      if (!response.ok) throw new Error('Guest session unavailable');
+      location.replace('/stem-splitter/');
+    } catch {
+      document.getElementById('transfer-status').textContent = 'Guest access could not start. Please try again. Your saved account tracks are unchanged.';
+      guestButton.disabled = false;
+    }
+  });
   const token = location.hash.slice(1);
   // Remove the encrypted handoff from browser history before requesting data.
   history.replaceState(null, '', location.pathname);
@@ -20,6 +34,11 @@
         checked();
         document.getElementById('transfer-status').textContent = result.error.message;
         document.getElementById('transfer-accounts').hidden = false;
+        if (result.error.code === 'member_workspace') {
+          document.getElementById('transfer-status').textContent = 'Sign in with CUNY to check your previous workspace, or continue as a guest here. This will not change any saved account tracks.';
+          document.getElementById('transfer-current').hidden = true;
+          guestButton.hidden = false;
+        }
         return;
       }
       throw new Error('Transfer unavailable');

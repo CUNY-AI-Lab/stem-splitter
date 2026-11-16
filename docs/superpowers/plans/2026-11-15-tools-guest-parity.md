@@ -24,3 +24,6 @@
 9. Use protected current class/Gateway records to validate Agustina's roster,
    usage and collaboration. Review Systems Mapping's equivalent boundaries and
    concurrency separately; do not infer live membership from fixture passes.
+10. Cover legacy-member recovery with explicit guest continuation, a reload that
+    does not repeat the handoff, preserved account data, and no continuation
+    action for conflicting guest workspaces.

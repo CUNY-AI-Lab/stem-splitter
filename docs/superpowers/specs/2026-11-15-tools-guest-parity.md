@@ -43,6 +43,12 @@ class sharing still requires current Admission course membership and a folder
 comment grant; private conversation history remains private. Browser-only unsent
 drafts and player settings are not Worker data and remain origin-local.
 
+If the original address has a signed-in account but no active guest workspace,
+offer an explicit Continue as guest action using the existing Tools guest-start
+endpoint. Explain that account tracks require CUNY sign-in, preserve the original
+account session and data, and do not offer this action when two guest workspaces
+conflict. Reload must retain the selected guest workspace without another handoff.
+
 Local acceptance must cover preserved data, playable audio, writes visible at
 both addresses, guest/member isolation, CSRF, revocation, claim, conflicts,
 replays and concurrent completion. Release the exact tested receiver through

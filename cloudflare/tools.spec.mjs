@@ -87,6 +87,57 @@ for (const signedIn of [false, true]) test(`Tools restores original guest work $
   } finally { await harness.close(); }
 });
 
+test('Tools offers guest continuation when the old address has an account, without changing its saved work', async ({ page }) => {
+  const legacy = 'https://stem-splitter.ailab-452.workers.dev';
+  const issuer = await createTestIdentityIssuer();
+  const config = JSON.parse(await readFile(new URL('./test-wrangler.jsonc', import.meta.url), 'utf8'));
+  const harness = createTestHarness({ root: fileURLToPath(new URL('./', import.meta.url)), workers: [{ config: {
+    ...config, dev: { local_protocol: 'https' }, vars: { ...config.vars, TEST_BROWSER: 'true', TEST_JWKS: issuer.jwksJson,
+      GUEST_ENABLED: 'true', GUEST_COOKIE_SECRET: 'browser-fixture-transfer-secret-0000000000',
+      GUEST_TURNSTILE_SITE_KEY: 'fixture-site-key', GUEST_TURNSTILE_SECRET: 'fixture-turnstile-secret-only' },
+  } }] });
+  let legacyVisits = 0;
+  try {
+    const { url } = await harness.listen();
+    const worker = harness.getWorker('stem-preview-contract-test');
+    const sql = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
+    sql.push(`INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO jobs(id,filename,source_key,status,model) VALUES('account-fixture','Saved account track','uploads/fixture.wav','done','htdemucs_ft')`,
+      `INSERT INTO job_owners(job_id,subject) VALUES('account-fixture','${TEST_SUBJECTS.alice}')`);
+    expect((await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) })).status).toBe(200);
+    await page.route('**/stem-splitter/auth/guest-transfer/start*', async route => {
+      legacyVisits++;
+      const start = await worker.fetch(route.request().url(), { redirect: 'manual' });
+      const handoff = await worker.fetch(start.headers.get('location'), { headers: { cookie: '__Host-stem-session=existing-member-session' }, redirect: 'manual' });
+      expect(handoff.headers.get('set-cookie')).toBeNull();
+      const target = new URL(handoff.headers.get('location'));
+      await route.fulfill({ status: handoff.status, headers: { location: url.origin + target.pathname + target.hash, 'set-cookie': start.headers.get('set-cookie') } });
+    });
+    await page.goto(url.origin + '/stem-splitter/');
+    await expect(page.getByRole('button', { name: 'Continue as guest' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open this workspace', exact: true })).toBeHidden();
+    await expect(page.locator('#transfer-status')).toContainText('This will not change any saved account tracks');
+    await page.getByRole('button', { name: 'Continue as guest' }).click();
+    await expect(page).toHaveURL(url.origin + '/stem-splitter/');
+    await expect(page.locator('#yt-url')).toBeEnabled();
+    const guest = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
+    expect(guest.account.role).toBe('guest');
+    expect(await page.evaluate(async () => (await window.StemFetch('/api/jobs/account-fixture')).status)).toBe(404);
+    await page.reload();
+    await expect(page.locator('#yt-url')).toBeEnabled();
+    expect(legacyVisits).toBe(1);
+    const identity = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+    const gateway = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
+    const saved = await worker.fetch(legacy + '/api/jobs/account-fixture', { headers: { 'x-fixture-identity': identity, 'x-fixture-gateway-identity': gateway } });
+    expect(saved.status).toBe(200);
+    expect(await saved.text()).toContain('Saved account track');
+    await page.route('**/stem-splitter/auth/guest-transfer/finish', route => route.fulfill({ status: 409, json: { error: { code: 'workspace_conflict', message: 'Keep both workspaces.' } } }));
+    await page.goto(url.origin + '/stem-splitter/guest-transfer.html#conflict');
+    await expect(page.locator('#transfer-status')).toHaveText('Keep both workspaces.');
+    await expect(page.getByRole('button', { name: 'Continue as guest' })).toBeHidden();
+  } finally { await harness.close(); }
+});
+
 test('Tools mount loads saved splits, plays audio, and keeps navigation and uploads in its namespace', async ({ page, context }) => {
   const issuer = await createTestIdentityIssuer();
   const appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
