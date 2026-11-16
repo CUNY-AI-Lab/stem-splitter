@@ -10,7 +10,12 @@ const key=(who=alice,id='job')=>`stem-listening:${who}:${id}`;
 const plain=(value:any)=>JSON.parse(JSON.stringify(value));
 const acceptedWrite=(call:any,revision=call.body.baseRevision+1,outcome='applied')=>({jobId:call.body.jobId||decodeURIComponent(call.path.split('/')[3]),kind:call.body.kind,outcome,revision});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await tick();}assert.ok(check(),'condition settled');}
+async function until(check:()=>boolean){
+  // Async crypto and timers need elapsed time, not a fixed number of event-loop turns.
+  const deadline=performance.now()+2000;
+  while(performance.now()<deadline){if(check())return;await new Promise(resolve=>setTimeout(resolve,1));}
+  assert.ok(check(),'condition settled');
+}
 function fixture(initial:Record<string,string>={},handler?:any){
   const storage=new Map(Object.entries(initial)),calls:any[]=[],timers=new Set<any>();
   const localStorage={get length(){return storage.size;},key:(i:number)=>[...storage.keys()][i],getItem:(k:string)=>storage.get(k)??null,setItem:(k:string,v:string)=>storage.set(k,v),removeItem:(k:string)=>storage.delete(k)};
