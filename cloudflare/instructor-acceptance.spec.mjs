@@ -168,6 +168,7 @@ test('automatic refresh reflects enrolled course work and attributed notes while
     await page.getByRole('button', { name: 'Load more messages', exact: true }).click();
     await expect(page.locator('#classroom-messages li')).toHaveCount(42);
     await page.getByRole('button', { name: 'Folders', exact: true }).click();
+    await page.getByRole('button', { name: 'Make class folder', exact: true }).click();
     await page.getByLabel('New folder').fill('Unsaved folder draft');
     await page.getByLabel('Who can use this folder?').selectOption('read');
     await page.getByRole('button', { name: 'Students', exact: true }).click();
