@@ -69,12 +69,14 @@ for (const startsAsInstructor of [false, true]) test(`Workspace refresh follows 
     await page.setExtraHTTPHeaders(roleHeaders(startsAsInstructor));
     await page.goto(new URL('/classroom.html?course=' + courseId, f.url).href);
     await expect(page.locator('#console-panel')).toBeVisible();
-    await expect(page.locator('#classroom-folder-create')).toBeVisible({ visible: startsAsInstructor });
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
+    await expect(page.locator('#classroom-guidance')).toBeVisible({ visible: startsAsInstructor });
+    await expect(page.locator('#classroom-view-students')).toBeVisible({ visible: startsAsInstructor });
     const documentId = await page.evaluate(() => window.auditDocument = crypto.randomUUID());
     await page.setExtraHTTPHeaders(roleHeaders(!startsAsInstructor));
     await page.locator('#classroom-refresh').click();
     await expect(page.locator('#console-panel')).toBeVisible();
-    await expect(page.locator('#classroom-folder-create')).toBeVisible({ visible: !startsAsInstructor });
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
     await expect(page.locator('#classroom-guidance')).toBeVisible({ visible: !startsAsInstructor });
     await expect(page.locator('#classroom-view-students')).toBeVisible({ visible: !startsAsInstructor });
     expect(await page.evaluate(() => window.auditDocument)).toBe(documentId);

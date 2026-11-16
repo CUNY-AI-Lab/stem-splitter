@@ -163,7 +163,7 @@ test('Tools mount loads saved splits, plays audio, and keeps navigation and uplo
     await page.goto(new URL('/stem-splitter/?job=remix-fixture', url).href);
     await expect(page.locator('.badge.ready')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Stem Splitter home', exact: true })).toHaveAttribute('href', '/stem-splitter/');
-    await expect(page.locator('.header-logout')).toHaveAttribute('action', '/auth/logout');
+    await expect(page.locator('.account-nav.header-logout')).toHaveAttribute('action', '/auth/logout');
     const playback = await page.evaluate(() => {
       const mixer = mixers.get('remix-fixture');
       for (const audio of mixer.audios) audio.loop = true;
@@ -186,7 +186,7 @@ test('Tools mount loads saved splits, plays audio, and keeps navigation and uplo
       await page.goto(new URL('/stem-splitter' + destination, url).href);
       await expect(page.getByRole('link', { name: 'Stem Splitter home', exact: true })).toHaveAttribute('href', '/stem-splitter/');
       expect(new URL(page.url()).pathname).toMatch(/^\/stem-splitter\//);
-      await expect(page.locator('.header-logout')).toHaveAttribute('action', '/auth/logout');
+      await expect(page.locator('.account-nav.header-logout')).toHaveAttribute('action', '/auth/logout');
     }
     await page.goto(new URL('/stem-splitter/auth/login?returnTo=%2Fstem-splitter%2Faccount.html', url).href);
     await expect(page).toHaveURL(/\/stem-splitter\/account(?:\.html)?$/);
