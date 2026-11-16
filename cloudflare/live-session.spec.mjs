@@ -269,16 +269,26 @@ test('a failed class authority read pauses and conceals the course split', async
   } finally { await f.close(); }
 });
 
-test('autoplay rejection offers an explicit audio join and temporary outage requires a fresh opt-in', async ({ browser }) => {
+for (const timing of ['before following', 'after following']) test(`autoplay rejection offers an explicit audio join when playback starts ${timing} and outage requires fresh opt-in`, async ({ browser }) => {
   const f = await setup(browser), [host, student] = f.pages;
+  const startPlayback = async () => {
+    await host.locator('.play-btn').click();
+    await convergence([host], current => current.playing);
+    await expect.poll(() => student.evaluate(id => mixers.get(id).classSession.session?.playing, job), { timeout: 12000 }).toBe(true);
+  };
   try {
     await clickLiveAction(host, 'Start sharing playback');
-    await host.locator('.play-btn').click();
     await student.evaluate(() => {
       const original = HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play = function () { return window.fixtureAllowAudio ? original.call(this) : Promise.reject(new DOMException('Fixture autoplay policy', 'NotAllowedError')); };
     });
+    if (timing === 'before following') await startPlayback();
     await clickLiveAction(student, 'Follow instructor');
+    if (timing === 'after following') {
+      await expect.poll(async () => (await state(student)).following).toBe(true);
+      await expect(student.locator('.console-actions')).toBeHidden();
+      await startPlayback();
+    }
     await expect(student.locator('.console-actions')).toBeVisible();
     await expect(student.getByRole('button', { name: 'Join shared audio', exact: true })).toBeVisible();
     await clickLiveAction(student, 'Join shared audio');
@@ -298,6 +308,20 @@ test('autoplay rejection offers an explicit audio join and temporary outage requ
     expect((await state(student)).following).toBe(false);
     expect((await state(student)).playing).toBe(false);
     expect(f.errors).toEqual([]);
+  } catch (error) {
+    const states = await Promise.all(f.pages.map(async page => ({
+      ...await state(page).catch(() => ({})),
+      ...await page.evaluate(id => {
+        const mixer = mixers.get(id), live = mixer.classSession;
+        return { sessionPlaying: live.session?.playing, sessionRevision: live.session?.revision,
+          actionsOpen: mixer.el.classList.contains('actions-open'), message: live.message };
+      }, job).catch(() => ({})),
+    })));
+    await test.info().attach('autoplay-session-state', {
+      body: JSON.stringify({ timing, states, writes: f.writes.slice(-20), errors: f.errors.slice(-10) }, null, 2),
+      contentType: 'application/json',
+    });
+    throw error;
   } finally { await f.close(); }
 });
 
