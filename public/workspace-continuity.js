@@ -9,6 +9,16 @@
   const values = value => ({ listeningDraft:value?.draft || null,
     listeningPlayer:player(value || normalize({})) });
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  async function writeReceipt(response, jobId, write) {
+    if (response.status !== 200 && response.status !== 409) return null;
+    try {
+      const receipt = await response.json();
+      return receipt && !Array.isArray(receipt) && receipt.jobId === jobId && receipt.kind === write.kind
+        && receipt.outcome === (response.status === 200 ? 'applied' : 'conflict')
+        && Number.isSafeInteger(receipt.revision) && receipt.revision > 0
+        && (response.status === 409 || receipt.revision === write.baseRevision + 1) ? receipt : null;
+    } catch { return null; }
+  }
   const journalKey = (subject,id) => `stem-ui-journal:${subject}:${id}`;
   function journal(subject,id) {
     try {
@@ -69,20 +79,39 @@
     finally { if (flushJournal && validActor(subject) && !signal?.aborted) await drainJournal(subject,{signal,writeEndpoint}); }
   }
   async function drainJournal(subject,{signal,writeEndpoint}) {
-    const prefix = `stem-ui-journal:${subject}:`;
-    let keys;
-    try { keys = Array.from({length:localStorage.length},(_,i)=>localStorage.key(i)).filter(key=>key?.startsWith(prefix)).slice(0,64); }
+    const prefix = `stem-ui-journal:${subject}:`, cursorKey = `stem-ui-drain:${subject}`;
+    let keys, after = '';
+    try { keys = Array.from({length:localStorage.length},(_,i)=>localStorage.key(i))
+      .filter(key=>key?.startsWith(prefix) && validJob(key.slice(prefix.length))).sort(); }
     catch { return; }
-    for (const key of keys) {
+    try { const saved = localStorage.getItem(cursorKey); if (validJob(saved)) after = saved; } catch {}
+    const next = keys.findIndex(key => key.slice(prefix.length) > after), start = next < 0 ? 0 : next;
+    let attempted = 0;
+    // This cursor schedules work only; it grants no access and contains no draft.
+    // Bound parsing as well as writes, but advance past empty, corrupt and failed
+    // journals so each later pending job gets a turn on subsequent source visits.
+    for (let scanned = 0; scanned < Math.min(keys.length,256) && attempted < 64; scanned++) {
+      if (signal?.aborted) return;
+      const key = keys[(start + scanned) % keys.length];
       const jobId = key.slice(prefix.length);
-      if (!validJob(jobId)) continue;
+      try { localStorage.setItem(cursorKey,jobId); } catch {}
       const stored = journal(subject,jobId);
+      if (!Object.keys(stored.pending).length) continue;
+      attempted++;
       for (const [kind,write] of Object.entries(stored.pending)) {
-        const response = await call(writeEndpoint || `/api/jobs/${encodeURIComponent(jobId)}/ui-state`, {
-          method:writeEndpoint ? 'POST' : 'PUT',credentials:'same-origin',cache:'no-store',signal,
-          headers:{'Content-Type':'application/json','X-Stem-Account':subject},body:JSON.stringify(writeEndpoint ? {jobId,...write} : write),
-        });
+        if (signal?.aborted) return;
+        let response;
+        try {
+          response = await call(writeEndpoint || `/api/jobs/${encodeURIComponent(jobId)}/ui-state`, {
+            method:writeEndpoint ? 'POST' : 'PUT',credentials:'same-origin',cache:'no-store',signal,
+            headers:{'Content-Type':'application/json','X-Stem-Account':subject},body:JSON.stringify(writeEndpoint ? {jobId,...write} : write),
+          });
+        } catch { if (signal?.aborted) return; else continue; }
+        if (signal?.aborted) return;
         if (response.headers.get('X-Stem-Account') !== subject || (!response.ok && response.status !== 409)) continue;
+        const receipt = await writeReceipt(response,jobId,write);
+        if (signal?.aborted) return;
+        if (!receipt) continue;
         const latest = journal(subject,jobId);
         if (!same(latest.pending[kind],write)) continue;
         delete latest.pending[kind];
@@ -197,6 +226,8 @@
             } catch { response = null; }
           }
           if (!current(state) || !response || response.headers.get('X-Stem-Account') !== state.actor) return;
+          const receipt = await writeReceipt(response,state.id,write);
+          if (!current(state) || !receipt) return;
           if (response.status === 409) {
             // The server retained the losing value. Do not rebase and replay it
             // over somebody's newer edit; only a subsequent user edit can save.
@@ -205,10 +236,7 @@
             if (state.pending[kind] === write) {delete state.pending[kind];saveJournal(state);break;}
             continue;
           }
-          if (!response.ok) return;
-          const result = await response.json();
-          if (!current(state)) return;
-          const revision = result.revision ?? result.record?.revision;
+          const revision = receipt.revision;
           if (!Number.isSafeInteger(revision) || revision <= write.baseRevision) return;
           state.revisions[kind] = revision;
           if (kind === 'listeningPlayer') {
