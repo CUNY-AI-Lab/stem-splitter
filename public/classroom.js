@@ -483,9 +483,13 @@
     }
   }
   // App membership alone does not prove that a course grant is still current.
-  // Returning to this page conceals old class data while its scoped APIs recheck it.
-  const recheckCourse = () => { delete panel.dataset.backgroundRefresh; if (selected) void refreshCourse(); };
-  window.addEventListener('focus', recheckCourse);
+  // An ordinary window focus quietly rechecks the visible class. Returning from
+  // a hidden tab still conceals it, including when a quiet check is in flight.
+  const recheckCourse = (conceal = true) => {
+    if (conceal) delete panel.dataset.backgroundRefresh;
+    if (selected) void refreshCourse(!conceal);
+  };
+  window.addEventListener('focus', () => recheckCourse(document.hidden));
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckCourse(); else clearTimeout(refreshTimer); });
   el('course').addEventListener('change', () => void selectCourse(el('course').value));
   el('refresh').addEventListener('click', () => void refreshCourse());

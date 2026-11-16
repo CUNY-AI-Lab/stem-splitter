@@ -361,10 +361,31 @@ test('routine class refresh keeps loaded content, scroll and sharing selections 
   await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder name');
   await expect(page.locator('#classroom-folder-create')).toBeVisible();
   await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
+  // Repeated window focus keeps the verified page visible while a slow scoped
+  // permission check runs. Duplicate focus must not hide or restart that check.
+  for (let cycle = 0; cycle < 3; cycle++) {
+    let resume; const pause = new Promise(resolve => { resume = resolve; });
+    const authorityUrl = new URL(`/api/classroom/courses/${course}`, f.url).href;
+    await page.route(authorityUrl, async route => { await pause; await route.continue(); });
+    const checking = page.waitForRequest(authorityUrl);
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await checking;
+    await expect(page.locator('#console-panel')).toBeVisible();
+    await page.evaluate(() => dispatchEvent(new Event('focus')));
+    await expect(page.locator('#console-panel')).toBeVisible();
+    await page.waitForTimeout(100);
+    resume();
+    await expect(page.locator('#console-panel')).not.toHaveAttribute('data-checking', 'true');
+    await page.unroute(authorityUrl);
+    expect(Math.abs(await page.evaluate(() => scrollY) - scroll)).toBeLessThanOrEqual(1);
+    await expect(page.getByLabel('New folder')).toHaveValue('Unsaved folder name');
+    await expect(page.getByLabel('Who can use this folder?')).toHaveValue('read');
+  }
   let release;const waiting=new Promise(resolve=>release=resolve);
   await page.route('**/api/classroom/courses/*/folders',async route=>{await waiting;await route.fulfill({status:403,json:{error:'Access changed'}});});
   await page.evaluate(()=>dispatchEvent(new Event('focus')));
-  await expect(page.locator('#console-panel')).toBeHidden();release();
+  await expect(page.locator('#console-panel')).toBeVisible();release();
+  await expect(page.locator('#console-panel')).toBeHidden();
   await expect(page.locator('#classroom-folder-items')).toBeEmpty();
  } finally {await f.harness.close();}
 });
