@@ -121,6 +121,7 @@ test('retired transfer bookmarks return home without starting another handoff an
       await page.goto(url.origin + '/stem-splitter/' + suffix);
       await expect(page).toHaveURL(url.origin + '/stem-splitter/');
       await expect(page.locator('#yt-url')).toBeEnabled();
+      await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     }
     expect(transferCalls).toEqual([]);
     const before = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
@@ -134,8 +135,10 @@ test('retired transfer bookmarks return home without starting another handoff an
     await page.goto(url.origin + '/stem-splitter/guest-transfer.html#fixture-in-flight-token');
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
     await expect(page.locator('#yt-url')).toBeEnabled();
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     await page.reload();
     await expect(page.locator('#yt-url')).toBeEnabled();
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     expect(submitted).toEqual([{ token: 'fixture-in-flight-token' }]);
     expect(transferCalls).toEqual([{ method: 'POST', path: '/stem-splitter/auth/guest-transfer/finish' }]);
     const after = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
