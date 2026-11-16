@@ -8,6 +8,7 @@ const alice='cail-'+'a'.repeat(32),bob='cail-'+'b'.repeat(32),guest='guest-'+'c'
 const progress=(draft='')=>({draft,position:0,rate:1,muted:[],solo:null,loop:null,guideOpen:false});
 const key=(who=alice,id='job')=>`stem-listening:${who}:${id}`;
 const plain=(value:any)=>JSON.parse(JSON.stringify(value));
+const acceptedWrite=(call:any,revision=call.body.baseRevision+1,outcome='applied')=>({jobId:call.body.jobId||decodeURIComponent(call.path.split('/')[3]),kind:call.body.kind,outcome,revision});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await tick();}assert.ok(check(),'condition settled');}
 function fixture(initial:Record<string,string>={},handler?:any){
@@ -18,7 +19,7 @@ function fixture(initial:Record<string,string>={},handler?:any){
     const call={path,...options,body:options.body?JSON.parse(options.body):null};calls.push(call);
     if(handler)return handler(call,reply);
     if(options.method==='POST')return reply({accepted:[]});
-    if(options.method==='PUT')return reply({revision:call.body.baseRevision+1});
+    if(options.method==='PUT')return reply(acceptedWrite(call));
     return reply({actor:options.headers['X-Stem-Account'],jobId:'job',records:{}} ,options.headers['X-Stem-Account']);
   };
   const context:any={localStorage,crypto:webcrypto,TextEncoder,AbortController,AbortSignal,fetch,
@@ -60,7 +61,7 @@ test('fresh browser hydrates draft and player but never pending server receipts'
 
 test('late hydrate never replaces a locally edited field and uses base0 for its conflict check',async()=>{
   let release:any;const waiting=new Promise(resolve=>{release=resolve;});
-  const f=fixture({},async(call:any,reply:any)=>call.method==='PUT'?reply({revision:1}):await waiting);
+  const f=fixture({},async(call:any,reply:any)=>call.method==='PUT'?reply(acceptedWrite(call,1)):await waiting);
   const updates:any[]=[];
   try{
     f.context.StemUiState.start(alice);f.context.StemUiState.watch(alice,'job',(v:any)=>updates.push(plain(v)));
@@ -88,7 +89,7 @@ test('account switch and disposed mixer reject stale read callbacks',async()=>{
 for (const remote of ['remote',null]) test(`draft rejected by view is not silently written back by a player save over ${remote===null?'a clear':'remote text'}`,async()=>{
   const f=fixture({[key()]:JSON.stringify(progress('current local'))},(call:any,reply:any)=>{
     if(call.method==='POST')return reply({accepted:[]});
-    if(call.method==='PUT')return reply({revision:1});
+    if(call.method==='PUT')return reply(acceptedWrite(call,1));
     return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:remote,revision:2}}});
   });let loaded=false;
   try{
@@ -102,7 +103,7 @@ for (const remote of ['remote',null]) test(`draft rejected by view is not silent
 test('an archived startup draft can yield to a remote clear without writing the old draft back',async()=>{
   const f=fixture({[key()]:JSON.stringify(progress('stale cache'))},(call:any,reply:any)=>{
     if(call.method==='POST')return reply({accepted:call.body.records.map((record:any)=>({...record,outcome:'conflict',revision:2}))});
-    if(call.method==='PUT')return reply({revision:1});
+    if(call.method==='PUT')return reply(acceptedWrite(call,1));
     return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:null,revision:2}}});
   });let loaded=false;
   try{
@@ -119,7 +120,7 @@ test('an archival seed acknowledgement cannot rebase a new local edit onto the c
   let release:any;const gate=new Promise(resolve=>{release=resolve;});
   const f=fixture({[key()]:JSON.stringify(progress('cached'))},async(call:any,reply:any)=>{
     if(call.method==='POST'){await gate;return reply({accepted:call.body.records.map((record:any)=>({...record,outcome:'conflict',revision:5}))});}
-    if(call.method==='PUT')return reply({revision:1});
+    if(call.method==='PUT')return reply(acceptedWrite(call,1));
     return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:'cached',revision:5}}});
   });
   try{
@@ -135,7 +136,7 @@ test('explicit draft clear is revisioned null and a conflict is not automaticall
   let reads=0;
   const f=fixture({[key()]:JSON.stringify(progress('old'))},(call:any,reply:any)=>{
     if(call.method==='POST')return reply({accepted:[]});
-    if(call.method==='PUT')return reply({error:'conflict'},alice,409);
+    if(call.method==='PUT')return reply(acceptedWrite(call,5,'conflict'),alice,409);
     reads++;return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:'old',revision:reads===1?4:5}}});
   });let loaded=false;
   try{
@@ -149,7 +150,7 @@ test('explicit draft clear is revisioned null and a conflict is not automaticall
 test('lost acknowledgement retries the exact idempotent write and keeps local bytes',async()=>{
   let writes=0,loaded=false;
   const f=fixture({},(call:any,reply:any)=>{
-    if(call.method==='PUT')return ++writes===1?Promise.reject(new Error('connection closed')):reply({revision:1});
+    if(call.method==='PUT')return ++writes===1?Promise.reject(new Error('connection closed')):reply(acceptedWrite(call,1));
     return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:null,revision:0}}});
   });
   try{
@@ -173,7 +174,7 @@ test('clear during own initial seed rebases only against that confirmed unchange
   const seedGate=new Promise(resolve=>{release=resolve;});
   const f=fixture({[key()]:JSON.stringify(progress('old draft'))},async(call:any,reply:any)=>{
     if(call.method==='POST'){await seedGate;return reply({accepted:call.body.records.map((r:any)=>({jobId:r.jobId,kind:r.kind,outcome:'applied',revision:1}))});}
-    if(call.method==='PUT'){assert.equal(call.body.baseRevision,1);record={value:call.body.value,revision:2};return reply({revision:2});}
+    if(call.method==='PUT'){assert.equal(call.body.baseRevision,1);record={value:call.body.value,revision:2};return reply(acceptedWrite(call,2));}
     return reply({actor:alice,jobId:'job',records:{listeningDraft:record}});
   });
   try{
@@ -189,7 +190,7 @@ test('unacknowledged clear survives reload and retries the original typed write 
   let online=false,loaded=false;
   const f=fixture({[key()]:JSON.stringify(progress('old draft'))},(call:any,reply:any)=>{
     if(call.method==='POST')return reply({accepted:[]});
-    if(call.method==='PUT')return online?reply({revision:6}):Promise.reject(new Error('offline'));
+    if(call.method==='PUT')return online?reply(acceptedWrite(call,6)):Promise.reject(new Error('offline'));
     return reply({actor:alice,jobId:'job',records:{listeningDraft:{value:'old draft',revision:5}}});
   });
   try{
@@ -221,9 +222,9 @@ test('a delayed acknowledgement cannot clear a restarted mixer’s newer pending
     await tick();
     f.context.StemListeningProgress.save(alice,'job',progress('newer unsaved edit'));
     const before=f.storage.get(`stem-ui-journal:${alice}:job`);
-    release({revision:1});await tick();await tick();
+    release({jobId:'job',kind:'listeningDraft',outcome:'applied',revision:1});await tick();await tick();
     assert.equal(f.storage.get(`stem-ui-journal:${alice}:job`),before);
-  }finally{release({revision:1});f.stop();}
+  }finally{release({jobId:'job',kind:'listeningDraft',outcome:'applied',revision:1});f.stop();}
 });
 
 test('stopping during retry backoff prevents the old state from sending another write',async()=>{
@@ -258,7 +259,7 @@ for (const who of [alice,guest]) test(`source quietly finishes only typed pendin
   const write={kind:'listeningDraft',value:null,baseRevision:5,requestId:'12345678-1234-4123-a123-123456789012'};
   const journalKey=`stem-ui-journal:${who}:job`;
   const f=fixture({[key(who)]:JSON.stringify(progress()),[journalKey]:JSON.stringify({pending:{listeningDraft:write,pendingChat:{messageId:'never-submit'}},cleared:true})},
-    (call:any,reply:any)=>reply(call.path.endsWith('/seed')?{accepted:[]}:{revision:6},who));
+    (call:any,reply:any)=>reply(call.path.endsWith('/seed')?{accepted:[]}:acceptedWrite(call,6),who));
   try{
     await f.context.StemUiState.seed(who,{flushJournal:true,...(who===guest?{endpoint:'/auth/guest-transfer/seed',writeEndpoint:'/auth/guest-transfer/write'}:{})});
     const saves=f.calls.filter(c=>!c.path.endsWith('/seed'));assert.equal(saves.length,1);
@@ -308,7 +309,7 @@ test('source drain rotates past persistent failures and keeps actor journals iso
   const initial=Object.fromEntries(Array.from({length:65},(_,i)=>[journalSlot(`job-${String(i).padStart(3,'0')}`),pendingClear()]));
   initial[journalSlot('other',bob)]=pendingClear();initial[drainCursor(bob)]='other';
   const f=fixture(initial,(call:any,reply:any)=>{
-    if(call.path.endsWith('/job-064/ui-state'))return reply({revision:6});
+    if(call.path.endsWith('/job-064/ui-state'))return reply(acceptedWrite(call,6));
     if(call.path.endsWith('/job-000/ui-state'))throw new TypeError('offline');
     return reply({},alice,503);
   });
@@ -338,14 +339,14 @@ test('source drain bounds corrupt-journal parsing and advances to later pending 
 
 test('source abort preserves writes and clear markers while the next visit gets a later turn',async()=>{
   const controller=new AbortController(),initial={[journalSlot('job-a')]:pendingClear(),[journalSlot('job-b')]:pendingClear()};
-  const f=fixture(initial,(_:any,reply:any)=>{controller.abort();return reply({revision:6});});
+  const f=fixture(initial,(call:any,reply:any)=>{controller.abort();return reply(acceptedWrite(call,6));});
   let next:ReturnType<typeof fixture>|undefined;
   try{
     await f.context.StemUiState.seed(alice,{flushJournal:true,signal:AbortSignal.abort()});
     assert.equal(f.calls.length,0);assert.equal(f.storage.has(drainCursor()),false);
     await f.context.StemUiState.seed(alice,{flushJournal:true,signal:controller.signal});
     assert.equal(f.calls.length,1);assert.equal(f.storage.get(journalSlot('job-a')),pendingClear());assert.equal(f.storage.get(journalSlot('job-b')),pendingClear());
-    next=fixture(Object.fromEntries(f.storage),(_:any,reply:any)=>reply({},alice,409));
+    next=fixture(Object.fromEntries(f.storage),(call:any,reply:any)=>reply(acceptedWrite(call,6,'conflict'),alice,409));
     await next.context.StemUiState.seed(alice,{flushJournal:true});
     assert.deepEqual(next.calls.map(c=>c.path),['/api/jobs/job-b/ui-state','/api/jobs/job-a/ui-state']);
     assert.deepEqual(JSON.parse(next.storage.get(journalSlot('job-a'))!),{pending:{},cleared:true});
@@ -366,8 +367,8 @@ test('source drain remains bounded when scheduling cursor storage is unavailable
 test('source acknowledgement cannot erase a newer journal or accept another actor response',async()=>{
   let finish:any;const waiting=new Promise(resolve=>{finish=resolve;});
   const f=fixture({[journalSlot('job-a')]:pendingClear(),[journalSlot('job-b')]:pendingClear()},async(call:any,reply:any)=>{
-    if(call.path.endsWith('/job-a/ui-state')){await waiting;return reply({revision:6});}
-    return reply({revision:6},bob);
+    if(call.path.endsWith('/job-a/ui-state')){await waiting;return reply(acceptedWrite(call,6));}
+    return reply(acceptedWrite(call,6),bob);
   });
   try{
     const draining=f.context.StemUiState.seed(alice,{flushJournal:true});
@@ -377,5 +378,46 @@ test('source acknowledgement cannot erase a newer journal or accept another acto
     const bytes=JSON.stringify(newer);f.storage.set(journalSlot('job-a'),bytes);finish();await draining;
     assert.equal(f.storage.get(journalSlot('job-a')),bytes);
     assert.equal(f.storage.get(journalSlot('job-b')),pendingClear());
+  }finally{f.stop();}
+});
+
+const invalidReceipts = [
+  ['request ID reused',409,{error:{code:'ui_state_request_reused'}}],
+  ['malformed JSON',200,'{invalid'],['null body',200,null],
+  ['negative revision',200,{jobId:'job',kind:'listeningDraft',outcome:'applied',revision:-1}],
+  ['stale applied revision',200,{jobId:'job',kind:'listeningDraft',outcome:'applied',revision:5}],
+  ['skipped applied revision',200,{jobId:'job',kind:'listeningDraft',outcome:'applied',revision:7}],
+  ['zero revision',409,{jobId:'job',kind:'listeningDraft',outcome:'conflict',revision:0}],
+  ['unsafe revision',200,{jobId:'job',kind:'listeningDraft',outcome:'applied',revision:Number.MAX_SAFE_INTEGER+1}],
+  ['wrong kind',200,{jobId:'job',kind:'listeningPlayer',outcome:'applied',revision:6}],
+  ['wrong job',200,{jobId:'other-job',kind:'listeningDraft',outcome:'applied',revision:6}],
+  ['unarchived conflict',200,{jobId:'job',kind:'listeningDraft',outcome:'conflict',revision:6}],
+  ['mismatched applied status',409,{jobId:'job',kind:'listeningDraft',outcome:'applied',revision:6}],
+  ['seed-only outcome',200,{jobId:'job',kind:'listeningDraft',outcome:'already-present',revision:6}],
+] as const;
+for(const [name,status,body] of invalidReceipts) test(`invalid write receipt preserves normal and source journals: ${name}`,async()=>{
+  const makeReply=()=>new Response(typeof body==='string'?body:JSON.stringify(body),{status,headers:{'X-Stem-Account':alice}});
+  const source=fixture({[journalSlot('job')]:pendingClear()},()=>makeReply());
+  const normal=fixture({},(call:any,reply:any)=>call.method==='PUT'?makeReply():call.method==='POST'?reply({accepted:[]}):reply({actor:alice,jobId:'job',records:{listeningDraft:{value:'saved',revision:5}}}));
+  try{
+    await source.context.StemUiState.seed(alice,{flushJournal:true});
+    assert.equal(source.storage.get(journalSlot('job')),pendingClear());
+    let loaded=false;normal.context.StemUiState.start(alice);normal.context.StemUiState.watch(alice,'job',()=>{loaded=true;});await until(()=>loaded);
+    normal.context.StemListeningProgress.save(alice,'job',progress());
+    const before=normal.storage.get(journalSlot('job'));normal.context.StemUiState.flush();
+    await until(()=>normal.calls.some(c=>c.method==='PUT'));await tick();await tick();
+    assert.equal(normal.storage.get(journalSlot('job')),before);
+    assert.equal(normal.calls.filter(c=>c.method==='PUT').length,1);
+  }finally{source.stop();normal.stop();}
+});
+
+test('source abort during receipt JSON preserves the pending clear',async()=>{
+  const controller=new AbortController();let release:any;
+  const body=new Promise(resolve=>{release=resolve;});
+  const f=fixture({[journalSlot('job')]:pendingClear()},()=>({status:200,ok:true,headers:new Headers({'X-Stem-Account':alice}),json:()=>body}));
+  try{
+    const draining=f.context.StemUiState.seed(alice,{flushJournal:true,signal:controller.signal});await until(()=>f.calls.length===1);
+    controller.abort();release({jobId:'job',kind:'listeningDraft',outcome:'applied',revision:6});await draining;
+    assert.equal(f.storage.get(journalSlot('job')),pendingClear());
   }finally{f.stop();}
 });

@@ -9,6 +9,16 @@
   const values = value => ({ listeningDraft:value?.draft || null,
     listeningPlayer:player(value || normalize({})) });
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  async function writeReceipt(response, jobId, write) {
+    if (response.status !== 200 && response.status !== 409) return null;
+    try {
+      const receipt = await response.json();
+      return receipt && !Array.isArray(receipt) && receipt.jobId === jobId && receipt.kind === write.kind
+        && receipt.outcome === (response.status === 200 ? 'applied' : 'conflict')
+        && Number.isSafeInteger(receipt.revision) && receipt.revision > 0
+        && (response.status === 409 || receipt.revision === write.baseRevision + 1) ? receipt : null;
+    } catch { return null; }
+  }
   const journalKey = (subject,id) => `stem-ui-journal:${subject}:${id}`;
   function journal(subject,id) {
     try {
@@ -99,6 +109,9 @@
         } catch { if (signal?.aborted) return; else continue; }
         if (signal?.aborted) return;
         if (response.headers.get('X-Stem-Account') !== subject || (!response.ok && response.status !== 409)) continue;
+        const receipt = await writeReceipt(response,jobId,write);
+        if (signal?.aborted) return;
+        if (!receipt) continue;
         const latest = journal(subject,jobId);
         if (!same(latest.pending[kind],write)) continue;
         delete latest.pending[kind];
@@ -213,6 +226,8 @@
             } catch { response = null; }
           }
           if (!current(state) || !response || response.headers.get('X-Stem-Account') !== state.actor) return;
+          const receipt = await writeReceipt(response,state.id,write);
+          if (!current(state) || !receipt) return;
           if (response.status === 409) {
             // The server retained the losing value. Do not rebase and replay it
             // over somebody's newer edit; only a subsequent user edit can save.
@@ -221,10 +236,7 @@
             if (state.pending[kind] === write) {delete state.pending[kind];saveJournal(state);break;}
             continue;
           }
-          if (!response.ok) return;
-          const result = await response.json();
-          if (!current(state)) return;
-          const revision = result.revision ?? result.record?.revision;
+          const revision = receipt.revision;
           if (!Number.isSafeInteger(revision) || revision <= write.baseRevision) return;
           state.revisions[kind] = revision;
           if (kind === 'listeningPlayer') {
