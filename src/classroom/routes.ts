@@ -70,9 +70,11 @@ routes.get('/courses/:courseId/roster',async c=>{
     demonstrationParticipants:courseId===DEMO_COURSE_ID?[{displayName:'Sample student',splitCount:3,retainedCount:2,demonstration:true}]:[],nextCursor:value.nextCursor});
 });
 routes.get('/courses/:courseId/participants/:memberId/jobs',async c=>{
-  instructorPanel(c.get('principal')!,c.req.param('courseId'));
-  const courseId=c.req.param('courseId'),memberId=c.req.param('memberId');
+  const p=c.get('principal')!,courseId=c.req.param('courseId'),memberId=c.req.param('memberId');
   if (!validMemberId(memberId)) throw new CourseError(404,'not_found');
+  const currentCourse=p.course?.classId===courseId?p.course:null;
+  const ownCourseJobs=currentCourse?.participant===true&&currentCourse.memberId===memberId;
+  if (!ownCourseJobs&&!currentCourse?.capabilities.instructorPanel) throw new CourseError(404,'not_found');
   const after=c.req.query('cursor'); let before='';
   if (after) { try { const v=JSON.parse(atob(after)); if(v.courseId!==courseId||v.memberId!==memberId||typeof v.id!=='string'||!/^[\w-]{1,128}$/.test(v.id)) throw new Error(); before=v.id; } catch {throw new CourseError(400,'cursor_invalid');} }
   const {results}=await c.env.DB.prepare(`SELECT j.id,j.filename,j.model,j.status,j.created_at AS createdAt,(j.created_at>datetime('now','-90 days')) AS retained
@@ -93,28 +95,53 @@ routes.get('/courses/:courseId/prompt/history',async c=>{capability(c.get('princ
 routes.get('/courses/:courseId/prompt/preview',async c=>{capability(c.get('principal')!,'promptRead',c.req.param('courseId'));return c.json({prompt:buildSystemPromptPreview((await coursePrompt(c.env,c.req.param('courseId'))).amendment)});});
 routes.put('/courses/:courseId/prompt',async c=>{const p=c.get('principal')!;capability(p,'promptWrite',c.req.param('courseId'));const result=await saveCoursePrompt(c.env,c.req.param('courseId'),p.subject,await body(c.req.raw));return c.json(result,result.status);});
 
-type Folder={id:string;course_id:string;name:string;created_by:string;permission:string;revision:number};
+type Folder={id:string;course_id:string;name:string;created_by:string;creator_subject:string;permission:string;revision:number};
+function canManageFolder(f:Folder,p:AppPrincipal):boolean{
+  return p.course?.classId===f.course_id&&(p.course.capabilities.instructorPanel||f.creator_subject===p.subject);
+}
+function canContributeFolder(f:Folder,p:AppPrincipal):boolean{
+  return p.course?.classId===f.course_id&&p.course.participant===true&&f.permission!=='private'&&!canManageFolder(f,p);
+}
+function folderView(f:Folder,p:AppPrincipal){
+  return {id:f.id,name:f.name,permission:f.permission,revision:f.revision,
+    canManage:canManageFolder(f,p),canContribute:canContributeFolder(f,p)};
+}
 async function folder(env:Env,p:AppPrincipal,id:string,courseId:string):Promise<Folder>{
   const row=await env.DB.prepare('SELECT * FROM course_folders WHERE id=? AND course_id=?').bind(id,courseId).first<Folder>();
-  if(!row||(!p.course?.capabilities.instructorPanel&&(row.permission==='private'||!p.course?.participant)))throw new CourseError(404,'not_found');return row;
+  if(!row||p.course?.classId!==courseId||(!canManageFolder(row,p)&&!canContributeFolder(row,p)))throw new CourseError(404,'not_found');return row;
 }
 routes.get('/courses/:courseId/folders',async c=>{
-  const p=c.get('principal')!;const {results}=await c.env.DB.prepare(`SELECT id,name,permission,revision FROM course_folders WHERE course_id=? AND (?=1 OR permission<>'private') ORDER BY created_at,id LIMIT 100`).bind(c.req.param('courseId'),p.course?.capabilities.instructorPanel?1:0).all();return c.json({folders:results});
+  const p=c.get('principal')!,courseId=c.req.param('courseId');
+  if(p.course?.classId!==courseId)throw new CourseError(404,'not_found');
+  const {results}=await c.env.DB.prepare(`SELECT id,course_id,name,created_by,creator_subject,permission,revision FROM course_folders
+    WHERE course_id=? AND (permission<>'private' OR creator_subject=? OR ?=1) ORDER BY created_at,id LIMIT 100`)
+    .bind(courseId,p.subject,p.course.capabilities.instructorPanel?1:0).all<Folder>();
+  return c.json({folders:results.map(row=>folderView(row,p))});
 });
 routes.post('/courses/:courseId/folders',async c=>{
-  const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const b=await body(c.req.raw);const name=typeof b.name==='string'?b.name.trim():'';
+  const p=c.get('principal')!,courseId=c.req.param('courseId');
+  if(p.course?.classId!==courseId||(!p.course.participant&&!p.course.capabilities.instructorPanel))throw new CourseError(403,'not_owner');
+  const b=await body(c.req.raw);const name=typeof b.name==='string'?b.name.trim():'';
   if(!name||name.length>80)throw new CourseError(400,'invalid_folder');const id=crypto.randomUUID();
-  await c.env.DB.prepare('INSERT INTO course_folders(id,course_id,name,created_by) VALUES(?,?,?,?)').bind(id,c.req.param('courseId'),name,p.subject).run();return c.json({folder:{id,name,permission:'private',revision:0}});
+  const created=await c.env.DB.prepare('INSERT INTO course_folders(id,course_id,name,created_by,creator_subject) VALUES(?,?,?,?,?)')
+    .bind(id,courseId,name,p.subject,p.subject).run();
+  const record:Folder={id,course_id:courseId,name,created_by:p.subject,creator_subject:p.subject,permission:'private',revision:0};
+  if(!created.meta.changes)throw new CourseError(503,'folder_unavailable');
+  return c.json({folder:folderView(record,p)});
 });
 routes.get('/courses/:courseId/folders/:id',async c=>{
-  const f=await folder(c.env,c.get('principal')!,c.req.param('id'),c.req.param('courseId'));
-  const {results}=await c.env.DB.prepare(`SELECT i.job_id AS jobId,i.filename,i.model,(j.id IS NOT NULL AND j.created_at>datetime('now','-90 days') AND j.status='done') AS available
+  const p=c.get('principal')!,f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  const {results}=await c.env.DB.prepare(`SELECT i.job_id AS jobId,i.filename,i.model,i.added_by,
+    (j.id IS NOT NULL AND j.created_at>datetime('now','-90 days') AND j.status='done') AS available
     FROM course_folder_items i LEFT JOIN jobs j ON j.id=i.job_id LEFT JOIN job_courses jc ON jc.job_id=j.id
     WHERE i.folder_id=? AND (jc.course_id=? OR j.id IS NULL) ORDER BY i.added_at,i.job_id`).bind(f.id,f.course_id).all();
-  return c.json({folder:{id:f.id,name:f.name,permission:f.permission,revision:f.revision},items:results});
+  const canManage=canManageFolder(f,p),canContribute=canContributeFolder(f,p);
+  return c.json({folder:folderView(f,p),items:results.map(({added_by,...item}:any)=>({...item,canRemove:canManage||(canContribute&&added_by===p.subject)}))});
 });
 routes.put('/courses/:courseId/folders/:id',async c=>{
-  const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));const b=await body(c.req.raw);
+  const p=c.get('principal')!,f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  if(!canManageFolder(f,p))throw new CourseError(403,'not_owner');
+  const b=await body(c.req.raw);
   if (b.name !== undefined) {
     const name = typeof b.name === 'string' ? b.name.trim() : '';
     if (!name || name.length > 80 || !Number.isSafeInteger(b.revision) || b.permission !== undefined) throw new CourseError(400,'invalid_folder');
@@ -129,20 +156,37 @@ routes.put('/courses/:courseId/folders/:id',async c=>{
   if(!result.meta.changes)throw new CourseError(409,'folder_changed');return c.json({ok:true,revision:Number(b.revision)+1,url:`${c.env.APP_BASE_PATH || ''}/classroom.html?course=${encodeURIComponent(f.course_id)}&folder=${f.id}`});
 });
 routes.post('/courses/:courseId/folders/:id/items',async c=>{
-  const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));const b=await body(c.req.raw);
+  const p=c.get('principal')!,f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  const manager=canManageFolder(f,p),contributor=canContributeFolder(f,p);
+  if(!manager&&!contributor)throw new CourseError(403,'not_owner');
+  const b=await body(c.req.raw);
   if(typeof b.jobId!=='string')throw new CourseError(400,'invalid_job');
-  const result=await c.env.DB.prepare(`INSERT INTO course_folder_items(folder_id,job_id,filename,model)
-    SELECT ?,j.id,j.filename,COALESCE(j.model,'htdemucs_ft') FROM jobs j JOIN job_courses jc ON jc.job_id=j.id
+  const result=await c.env.DB.prepare(`INSERT INTO course_folder_items(folder_id,job_id,filename,model,added_by)
+    SELECT ?,j.id,j.filename,COALESCE(j.model,'htdemucs_ft'),? FROM jobs j JOIN job_courses jc ON jc.job_id=j.id
+      JOIN job_owners o ON o.job_id=j.id
+      JOIN course_folders current_folder ON current_folder.id=? AND current_folder.course_id=?
     WHERE j.id=? AND jc.course_id=? AND j.status='done' AND j.created_at>datetime('now','-90 days')
-    ON CONFLICT(folder_id,job_id) DO UPDATE SET job_id=excluded.job_id`).bind(f.id,b.jobId,f.course_id).run();
+      AND (?=1 OR (o.subject=? AND (current_folder.creator_subject=? OR current_folder.permission IN ('read','comment'))))
+    ON CONFLICT(folder_id,job_id) DO UPDATE SET job_id=excluded.job_id`)
+    .bind(f.id,p.subject,f.id,f.course_id,b.jobId,f.course_id,p.course?.capabilities.instructorPanel?1:0,p.subject,p.subject).run();
   if(!result.meta.changes)throw new CourseError(404,'not_found');return c.json({ok:true});
 });
 routes.delete('/courses/:courseId/folders/:id/items/:jobId',async c=>{
-  const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));await c.env.DB.prepare('DELETE FROM course_folder_items WHERE folder_id=? AND job_id=?').bind(f.id,c.req.param('jobId')).run();return c.json({ok:true});
+  const p=c.get('principal')!,f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  const manager=canManageFolder(f,p),contributor=canContributeFolder(f,p);
+  if(!manager&&!contributor)throw new CourseError(403,'not_owner');
+  const result=await c.env.DB.prepare(`DELETE FROM course_folder_items WHERE folder_id=? AND job_id=?
+    AND EXISTS(SELECT 1 FROM course_folders current_folder WHERE current_folder.id=course_folder_items.folder_id
+      AND current_folder.course_id=? AND (?=1 OR current_folder.creator_subject=? OR current_folder.permission IN ('read','comment')))
+    AND (?=1 OR added_by=?)`)
+    .bind(f.id,c.req.param('jobId'),f.course_id,p.course?.capabilities.instructorPanel?1:0,p.subject,manager?1:0,p.subject).run();
+  if(!manager&&!result.meta.changes)throw new CourseError(404,'not_found');
+  return c.json({ok:true});
 });
 // Deleting a folder leaves its splits in the class. Its sharing history stays immutable.
 routes.delete('/courses/:courseId/folders/:id',async c=>{
-  const p=c.get('principal')!;instructorPanel(p,c.req.param('courseId'));const f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  const p=c.get('principal')!,f=await folder(c.env,p,c.req.param('id'),c.req.param('courseId'));
+  if(!canManageFolder(f,p))throw new CourseError(403,'not_owner');
   await c.env.DB.batch([c.env.DB.prepare('DELETE FROM course_folder_items WHERE folder_id=?').bind(f.id),c.env.DB.prepare('DELETE FROM course_folders WHERE id=? AND course_id=?').bind(f.id,f.course_id)]);
   return c.json({ok:true});
 });

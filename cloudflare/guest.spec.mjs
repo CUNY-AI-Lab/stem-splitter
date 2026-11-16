@@ -11,6 +11,7 @@ test.use({ignoreHTTPSErrors:true});
 
 async function setup(page, chatAvailable = false) {
   let origin = '', providerStarts = 0, verifications = 0, widgetLoads = 0;
+  const predictionStems = new Map();
   const issuer = await createTestIdentityIssuer();
   const mp3 = await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url));
   const music={identifier:'song-fixture',title:'Song fixture',creator:'Fixture Ensemble',mediatype:'audio',subject:['Music','Rock']};
@@ -26,8 +27,13 @@ async function setup(page, chatAvailable = false) {
       verifications++;
       return HttpResponse.json({ success: true, hostname: new URL(origin).hostname, action: 'stem_guest', challenge_ts: new Date().toISOString() });
     }),
-    http.post('https://api.replicate.com/v1/predictions', () => HttpResponse.json({ id: `browser-guest-prediction-${++providerStarts}`, status: 'starting' })),
-    http.get('https://api.replicate.com/v1/predictions/:id', ({ params }) => HttpResponse.json({ id: params.id, status: 'succeeded', output: Object.fromEntries(['vocals', 'drums', 'bass', 'other'].map(name => [name, `https://fixtures.replicate.delivery/${name}.mp3`])) })),
+    http.post('https://api.replicate.com/v1/predictions', async ({ request }) => {
+      const { input } = await request.json(), id = `browser-guest-prediction-${++providerStarts}`;
+      predictionStems.set(id, input.stem === 'vocals' ? ['vocals', 'no_vocals']
+        : input.model === 'htdemucs_6s' ? ['vocals', 'drums', 'bass', 'other', 'guitar', 'piano'] : ['vocals', 'drums', 'bass', 'other']);
+      return HttpResponse.json({ id, status: 'starting' });
+    }),
+    http.get('https://api.replicate.com/v1/predictions/:id', ({ params }) => HttpResponse.json({ id: params.id, status: 'succeeded', output: Object.fromEntries((predictionStems.get(params.id) || []).map(name => [name, `https://fixtures.replicate.delivery/${name}.mp3`])) })),
     http.get('https://fixtures.replicate.delivery/:name.mp3', () => new HttpResponse(mp3, { headers: { 'Content-Type': 'audio/mpeg' } })),
   );
   network.listen({ onUnhandledRequest(request, print) { if (new URL(request.url).origin === origin) return; print.error(); } });

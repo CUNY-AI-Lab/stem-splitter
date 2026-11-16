@@ -2457,7 +2457,7 @@ class Mixer {
       const workspace = document.createElement('a'); workspace.className = 'class-workspace-link';
       workspace.href = StemPath(`/classroom.html?course=${encodeURIComponent(this.job.courseId)}`);
       workspace.textContent = 'Open class'; classActions.append(heading, workspace);
-      if (this.job.permissions?.instructor) {
+      if (this.job.permissions?.instructor || this.job.permissions?.owner) {
         const addToClassFolder = document.createElement('button');
         addToClassFolder.type = 'button'; addToClassFolder.className = 'head-btn class-folder-btn'; addToClassFolder.textContent = 'ADD TO CLASS FOLDER';
         addToClassFolder.addEventListener('click', () => { void toggleClassFolderMenu(this); this.setActionsOpen(false); });
@@ -4489,11 +4489,11 @@ async function toggleClassFolderMenu(mixer) {
   const rows = menu.querySelector('.folder-menu-rows'), status = menu.querySelector('.class-folder-status');
   const send = async (path, body) => {
     const res = await window.StemFetch(path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    if (!res.ok) throw new Error('This class folder could not be updated. Reload and try again.');
+    if (!res.ok) throw Object.assign(new Error('This class folder could not be updated. Reload and try again.'), { status: res.status });
     return res.json();
   };
   const confirmAdded = (folder) => {
-    status.replaceChildren(`Added to ${folder.name}. Choose who can open it in `);
+    status.replaceChildren(`Added to ${folder.name}. ${folder.canManage ? 'Choose who can open it in' : 'Open this folder in'} `);
     const open = document.createElement('a');
     open.href = StemPath(`/classroom.html?course=${encodeURIComponent(course)}&folder=${encodeURIComponent(folder.id)}`); open.textContent = 'Classes';
     status.append(open, '.');
@@ -4505,7 +4505,13 @@ async function toggleClassFolderMenu(mixer) {
       await send(`${root}/${encodeURIComponent(folder.id)}/items`, { jobId: mixer.job.id });
       if (row) row.textContent = `${folder.name} ✓`;
       confirmAdded(folder);
-    } catch (error) { if (row) row.disabled = false; status.textContent = error.message; }
+    } catch (error) {
+      if ([401, 403, 404].includes(error.status)) {
+        rows.replaceChildren();
+        menu.querySelector('form').hidden = true;
+        status.textContent = 'Class access changed. Close this menu and open it again to check current folders.';
+      } else { if (row) row.disabled = false; status.textContent = error.message; }
+    }
   };
   const addRow = (folder) => {
     const row = document.createElement('button');
@@ -4529,7 +4535,8 @@ async function toggleClassFolderMenu(mixer) {
     finally { submit.disabled = false; }
   });
   try {
-    const { folders: classFolders } = await send(root);
+    const { folders: availableFolders } = await send(root);
+    const classFolders = availableFolders.filter(folder => folder.canManage || folder.canContribute);
     rows.replaceChildren();
     if (!classFolders.length) rows.innerHTML = '<p class="mono folder-menu-none">no class folders yet</p>';
     for (const folder of classFolders) addRow(folder);

@@ -638,6 +638,7 @@ CREATE TABLE IF NOT EXISTS course_folders (
   course_id TEXT NOT NULL,
   name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
   created_by TEXT NOT NULL,
+  creator_subject TEXT NOT NULL DEFAULT '',
   permission TEXT NOT NULL DEFAULT 'private' CHECK(permission IN ('private','read','comment')),
   revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -648,6 +649,7 @@ CREATE TABLE IF NOT EXISTS course_folder_items (
   job_id TEXT NOT NULL,
   filename TEXT NOT NULL,
   model TEXT NOT NULL,
+  added_by TEXT NOT NULL DEFAULT '',
   added_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY(folder_id,job_id)
 );

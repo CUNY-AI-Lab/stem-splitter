@@ -70,7 +70,7 @@ test('instructor reviews course roster, splits and paginated conversations and e
     const beforeSave = await page.request.get(new URL(`/api/classroom/courses/${course}/folders/${created.id}`, f.url).href);
     expect((await beforeSave.json()).folder.permission).toBe('private');
     await page.getByRole('button', { name: 'Save sharing', exact: true }).click();
-    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can listen and add notes.');
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can contribute splits, listen and add notes.');
     await page.getByRole('button', { name: 'Students', exact: true }).click();
     await page.getByLabel('Folder for Class fixture recording').selectOption(created.id);
     await page.getByRole('button', { name: 'Add to folder', exact: true }).click();
@@ -108,11 +108,11 @@ test('student sees shared folder and annotation permission without instructor or
     await context.setExtraHTTPHeaders({ 'x-fixture-identity': f.bob });
     await page.goto(new URL(`/classroom.html?course=${course}&folder=shared-folder`, f.url).href);
     await expect(page.locator('#classroom-folder-items')).toContainText('Class fixture recording');
-    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can listen and add notes.');
+    await expect(page.locator('#classroom-folder-status')).toHaveText('Class members can contribute splits, listen and add notes.');
     await expect(page.locator('#classroom-roster-section')).toBeHidden();
     await expect(page.locator('#classroom-guidance')).toBeHidden();
-    await expect(page.locator('#classroom-own-splits')).toBeHidden();
-    await expect(page.locator('#classroom-folder-create')).toBeHidden();
+    await expect(page.locator('#classroom-own-splits')).toBeVisible();
+    await expect(page.locator('#classroom-folder-create')).toBeVisible();
     await expect(page.locator('#classroom-folder-sharing')).toBeHidden();
     await expect(page.locator('#classroom-folders')).not.toContainText('Instructor preparation');
     await expect(page.locator('#classroom-messages')).toBeEmpty();

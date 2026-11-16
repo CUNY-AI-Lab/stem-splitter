@@ -20,13 +20,16 @@
   const button = (text, action) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'page-btn'; node.textContent = text; node.addEventListener('click', action); return node; };
   const row = text => { const node = document.createElement('li'); node.className = 'teacher-history-item'; if (text) node.textContent = text; return node; };
   const canManage = () => Boolean(selected?.capabilities.instructorPanel);
+  const canCreateFolder = () => Boolean(selected && (selected.participant || canManage()));
+  const canEditFolder = (folder = currentFolder) => folder?.canManage === true;
+  const canAddToFolder = (folder = currentFolder) => canEditFolder(folder) || folder?.canContribute === true;
+  const assignableFolders = () => folders.filter(canAddToFolder);
   const ownRecord = () => ({ memberId: selected.memberId, displayName: selected.displayName, own: true });
   // Everything for one class stays on this page, in one place per section.
   function applyView() {
-    const manage = canManage(), roster = Boolean(selected?.capabilities.rosterRead);
-    if (!manage && view !== 'folders') view = 'folders';
+    const roster = Boolean(selected?.capabilities.rosterRead);
     if (view === 'students' && !roster) view = 'folders';
-    el('views').hidden = !manage;
+    el('views').hidden = !selected;
     el('view-students').hidden = !roster;
     for (const [id, name] of [['view-folders', 'folders'], ['own-splits', 'splits'], ['view-students', 'students']]) {
       if (view === name) el(id).setAttribute('aria-current', 'true'); else el(id).removeAttribute('aria-current');
@@ -35,7 +38,7 @@
     el('people').hidden = view === 'folders';
     el('roster-section').hidden = view !== 'students';
     el('create').hidden = false;
-    el('make-folder').hidden = !manage;
+    el('make-folder').hidden = !canCreateFolder();
   }
   function syncAddress() {
     if (!selected) return;
@@ -116,6 +119,14 @@
       }
       return body;
     } catch (error) {
+      if (expectedGeneration === generation && error.status === 404 && selected
+          && path.split('?')[0].startsWith(coursePath('/folders/'))) {
+        // Hidden and missing folders both return 404. Drop the old detail before
+        // reloading the list; a failed edit must not keep withdrawn work visible.
+        const deniedId = path.slice(coursePath('/folders/').length).split(/[/?]/)[0];
+        if (currentFolder && encodeURIComponent(currentFolder.id) === deniedId) closeFolder();
+        void loadFolders();
+      }
       if (scoped && expectedGeneration === generation && (!error.status || error.status >= 500 || [401, 403, 429].includes(error.status))) {
         clearCourse();
         status.textContent = [401, 403].includes(error.status)
@@ -191,13 +202,14 @@
         const state = document.createElement('p'); state.className = 'account-help'; state.textContent = job.retained ? (job.status === 'done' ? 'Ready' : job.status) : 'Audio expired'; item.append(state);
         if (job.retained && job.status === 'done') {
           const actions = document.createElement('div'); actions.className = 'classroom-actions classroom-job-actions';
-          actions.append(link('Open split', `/?job=${encodeURIComponent(job.id)}`), button('Annotations', () => void loadAnnotations(job)), button('Listening Guy messages', () => void loadConversation(job)));
+          actions.append(link('Open split', `/?job=${encodeURIComponent(job.id)}`), button('Annotations', () => void loadAnnotations(job)));
+          if (canManage()) actions.append(button('Listening Guy messages', () => void loadConversation(job)));
           const select = document.createElement('select'); select.setAttribute('aria-label', `Folder for ${job.filename}`);
           select.dataset.jobId = job.id;
-          select.append(new Option('Choose a class folder', ''), ...folders.map(folder => new Option(folder.name, folder.id)));
-          if (folders.some(folder => folder.id === folderChoices.get(job.id))) select.value = folderChoices.get(job.id);
+          select.append(new Option('Choose a class folder', ''), ...assignableFolders().map(folder => new Option(folder.name, folder.id)));
+          if (assignableFolders().some(folder => folder.id === folderChoices.get(job.id))) select.value = folderChoices.get(job.id);
           const add = button('Add to folder', async () => {
-            const folderId = select.value; if (!folderId) { state.textContent = folders.length ? 'Choose a class folder first.' : 'Create a folder under Folders first.'; return; }
+            const folderId = select.value; if (!folderId) { state.textContent = assignableFolders().length ? 'Choose a class folder first.' : 'Create a folder under Folders first.'; return; }
             add.disabled = true;
             try { await request(coursePath(`/folders/${encodeURIComponent(folderId)}/items`), { quiet: true, method: 'POST', body: JSON.stringify({ jobId: job.id }) });
               if (view !== studentGeneration) return; state.textContent = 'Added to class folder.'; if (currentFolder?.id === folderId) await loadFolder(folderId);
@@ -269,14 +281,14 @@
     try {
       const data = await request(coursePath('/folders')); folders = data.folders;
       el('folders-section').append(el('folder-detail'));
-      el('folders').replaceChildren(...folders.map(folder => { const item = row(), scope = document.createElement('span'); item.dataset.folderId = folder.id; scope.className = 'classroom-entry-meta'; scope.textContent = folder.permission === 'private' ? 'Instructors only' : folder.permission === 'comment' ? 'Class · can add notes' : 'Class · can listen'; item.append(button(folder.name, () => { if (currentFolder?.id === folder.id && !el('folder-detail').hidden) closeFolder(); else void loadFolder(folder.id); }),scope); return item; }));
+      el('folders').replaceChildren(...folders.map(folder => { const item = row(), scope = document.createElement('span'); item.dataset.folderId = folder.id; scope.className = 'classroom-entry-meta'; scope.textContent = folder.permission === 'private' ? 'Private · creator and instructors' : folder.permission === 'comment' ? 'Class · can add notes' : 'Class · can listen'; item.append(button(folder.name, () => { if (currentFolder?.id === folder.id && !el('folder-detail').hidden) closeFolder(); else void loadFolder(folder.id); }),scope); return item; }));
       placeFolderDetail();
       for (const select of el('jobs').querySelectorAll('select')) {
         const previous = select.value;
-        select.replaceChildren(new Option('Choose a class folder', ''), ...folders.map(folder => new Option(folder.name, folder.id)));
-        if (folders.some(folder => folder.id === previous)) select.value = previous;
+        select.replaceChildren(new Option('Choose a class folder', ''), ...assignableFolders().map(folder => new Option(folder.name, folder.id)));
+        if (assignableFolders().some(folder => folder.id === previous)) select.value = previous;
       }
-      el('folders-status').textContent = folders.length ? '' : canManage() ? 'No folders yet. Create one, add splits, then choose who can open it.' : 'Your instructor has not shared a folder for this class yet.';
+      el('folders-status').textContent = folders.length ? '' : 'No folders yet. Create one, add splits, then choose who can open it.';
     } catch (error) { if (current === generation) report('folders-status', error); }
   }
   async function loadFolder(id, preserveDisplay = false) {
@@ -288,11 +300,15 @@
       if (view !== folderGeneration) return;
       currentFolder = data.folder; el('folder-title').textContent = currentFolder.name;
       el('folder-items').replaceChildren();
-      el('folder-status').textContent = currentFolder.permission === 'comment' ? 'Class members can listen and add notes.' : currentFolder.permission === 'read' ? 'Class members can listen and read notes.' : 'Only instructors can see this folder until you share it with the class.';
+      el('folder-status').textContent = currentFolder.permission === 'comment' ? 'Class members can contribute splits, listen and add notes.' : currentFolder.permission === 'read' ? 'Class members can contribute splits, listen and read notes.' : 'Only the creator and instructors can see this folder until it is shared with the class.';
       if (el('copy-status')) el('copy-status').textContent = '';
-      el('folder-sharing').hidden = !selected.capabilities.instructorPanel;
-      el('rename-toggle').hidden = !selected.capabilities.instructorPanel || !el('rename-form').hidden;
-      el('delete-folder').hidden = el('add-toggle').hidden = !selected.capabilities.instructorPanel;
+      if (!canEditFolder()) { renameFolder = null; el('rename-form').hidden = true; disarmDelete(); }
+      if (!canAddToFolder()) closePicker();
+      el('folder-sharing').hidden = !canEditFolder();
+      el('rename-toggle').hidden = !canEditFolder() || !el('rename-form').hidden;
+      el('delete-folder').hidden = !canEditFolder();
+      el('add-toggle').hidden = !canAddToFolder();
+      el('add-help').textContent = canManage() ? 'Your finished splits in this class. To add a student’s split, open the student under Students.' : 'Add your finished splits in this class. Your private listening conversations stay separate.';
       el('folder-share').hidden = currentFolder.permission === 'private';
       el('folder-permission').value = currentFolder.permission;
       const url = new URL(StemPath('/classroom.html'), location.origin); url.searchParams.set('course', selected.classId); url.searchParams.set('folder', id);
@@ -300,12 +316,12 @@
       folderItems = data.items;
       for (const job of data.items) {
         const item = row(); if (job.available) item.append(link(job.filename, `/?job=${encodeURIComponent(job.jobId)}`)); else item.append(document.createTextNode(`${job.filename} · Audio expired or unavailable`));
-        if (selected.capabilities.instructorPanel) {
+        if (job.canRemove === true) {
           const remove = button('Remove', () => void removeFromFolder(job, remove)); remove.setAttribute('aria-label', `Remove ${job.filename} from this folder`); item.append(remove);
         }
         el('folder-items').append(item);
       }
-      if (!data.items.length) el('folder-items').append(row(selected.capabilities.instructorPanel ? 'No splits in this folder yet. Use Add splits below.' : 'No splits in this folder yet.'));
+      if (!data.items.length) el('folder-items').append(row(canAddToFolder() ? 'No splits in this folder yet. Use Add splits below.' : 'No splits in this folder yet.'));
       el('folder-detail').hidden = false; placeFolderDetail(); renderPicker();
       if (!preserveDisplay) syncAddress();
     } catch (error) { if (current === generation && view === folderGeneration) { el('folder-detail').hidden = true; el('folder-items').replaceChildren(); report('folders-status', error); } }
@@ -371,7 +387,7 @@
     el('guidance').hidden = !course.capabilities.instructorPanel;
     el('guidance').href = StemPath(`/teacher.html?course=${encodeURIComponent(id)}`);
     el('create').href = StemPath(`/?course=${encodeURIComponent(id)}`);
-    el('folder-create').hidden = !course.capabilities.instructorPanel;
+    el('folder-create').hidden = !canCreateFolder();
     applyView(); if (requested.get('view') && !requested.get('folder') && view === 'folders') syncAddress();
     const current = generation;
     await Promise.all([loadFolders(), course.capabilities.rosterRead ? loadRoster() : Promise.resolve()]);
@@ -428,7 +444,7 @@
       if (current !== generation) return;
       if (folder) {
         await loadFolder(folder.id, true);
-        if (current === generation && currentFolder?.id === folder.id && folderDraft !== folder.permission) {
+        if (current === generation && currentFolder?.id === folder.id && canEditFolder() && folderDraft !== folder.permission) {
           el('folder-permission').value = folderDraft;
           // A pending edit keeps its original revision, so another instructor's
           // intervening change still produces a conflict instead of a silent overwrite.
@@ -462,7 +478,7 @@
   el('course').addEventListener('change', () => void selectCourse(el('course').value));
   el('refresh').addEventListener('click', () => void refreshCourse());
   el('make-folder').addEventListener('click', () => {
-    if (!canManage()) return;
+    if (!canCreateFolder()) return;
     setView('folders');
     el('folder-name').scrollIntoView({ block: 'nearest' }); el('folder-name').focus();
   });
@@ -471,13 +487,13 @@
   el('own-splits').addEventListener('click', () => selected && setView('splits'));
   el('view-students').addEventListener('click', () => selected && setView('students'));
   el('add-toggle').addEventListener('click', () => {
-    if (!selected || !currentFolder) return;
+    if (!selected || !canAddToFolder()) return;
     if (!el('add-panel').hidden) { closePicker(); return; }
     el('add-panel').hidden = false; el('add-toggle').setAttribute('aria-expanded', 'true'); void loadPicker();
   });
   el('add-more').addEventListener('click', () => void loadPicker(true));
   el('delete-folder').addEventListener('click', async () => {
-    if (!selected || !currentFolder) return;
+    if (!selected || !canEditFolder()) return;
     const control = el('delete-folder');
     if (!deleteTimer) {
       control.textContent = 'Confirm delete'; control.classList.add('armed');
@@ -496,14 +512,14 @@
   el('jobs-more').addEventListener('click', () => student && void loadStudent(student, true));
   el('conversation-more').addEventListener('click', () => conversationJob && void loadConversation(conversationJob, true));
   el('folder-create').addEventListener('submit', async event => {
-    event.preventDefault(); const current = generation; const name = el('folder-name').value.trim(); if (!selected || !name) return;
+    event.preventDefault(); const current = generation; const name = el('folder-name').value.trim(); if (!canCreateFolder() || !name) return;
     const submit = event.currentTarget.querySelector('button'); submit.disabled = true;
     try { const data = await request(coursePath('/folders'), { quiet: true, method: 'POST', body: JSON.stringify({ name }) }); el('folder-name').value = ''; await loadFolders(); if (current === generation) await loadFolder(data.folder.id); }
     catch (error) { if (current === generation) report('folders-status', error); }
     finally { submit.disabled = false; }
   });
   el('folder-sharing').addEventListener('submit', async event => {
-    event.preventDefault(); if (!selected || !currentFolder) return;
+    event.preventDefault(); if (!selected || !canEditFolder()) return;
     const current = generation, view = folderGeneration, folder = currentFolder;
     const submit = event.currentTarget.querySelector('button'); submit.disabled = true;
     try { await request(coursePath(`/folders/${encodeURIComponent(folder.id)}`), { quiet: true, method: 'PUT', body: JSON.stringify({ permission: el('folder-permission').value, revision: folder.revision }) });
@@ -514,9 +530,9 @@
     } catch (error) { if (current === generation && view === folderGeneration) report('folder-status', error); }
     finally { submit.disabled = false; }
   });
-  const cancelRename = () => { renameFolder = null; el('rename-form').hidden = true; el('rename-toggle').hidden = !selected?.capabilities.instructorPanel; el('rename-toggle').focus(); };
+  const cancelRename = () => { renameFolder = null; el('rename-form').hidden = true; el('rename-toggle').hidden = !canEditFolder(); if (canEditFolder()) el('rename-toggle').focus(); };
   el('rename-toggle').addEventListener('click', () => {
-    if (!currentFolder || !selected?.capabilities.instructorPanel) return;
+    if (!canEditFolder()) return;
     el('rename-reload').hidden = true;
     renameFolder = {...currentFolder}; el('rename-name').value = currentFolder.name; el('rename-status').textContent = '';
     el('rename-form').hidden = false; el('rename-toggle').hidden = true; el('rename-name').focus(); el('rename-name').select();
@@ -537,7 +553,7 @@
   });
   el('rename-form').addEventListener('keydown', event => { if (event.key === 'Escape' && !el('rename-cancel').disabled) { event.preventDefault(); cancelRename(); } });
   el('rename-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (!renameFolder || !selected?.capabilities.instructorPanel) return;
+    event.preventDefault(); if (!renameFolder || !canEditFolder() || currentFolder.id !== renameFolder.id) return;
     const name = el('rename-name').value.trim(), folder = renameFolder, current = generation;
     if (!name) { el('rename-status').textContent = 'Enter a folder name.'; return; }
     if (name === folder.name) { cancelRename(); return; }

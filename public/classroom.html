@@ -8,7 +8,7 @@
 <link rel="preload" href="/fonts/bricolage-grotesque-800.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="/styles.css?v=20261116-header-account">
 <link rel="stylesheet" href="/instructor-console.css?v=20261106-account-nav">
-<link rel="stylesheet" href="/classroom.css?v=20261116-workspace-controls">
+<link rel="stylesheet" href="/classroom.css?v=20261116-member-folders">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
 <link rel="stylesheet" href="/stem-select.css?v=20261115">
 <main class="teacher-main instructor-console refined-ui">
@@ -54,7 +54,7 @@
         <label for="classroom-folder-name">New folder</label>
         <input id="classroom-folder-name" maxlength="80" required>
         <button class="page-btn" type="submit">Create folder</button>
-        <p class="account-help classroom-folder-create-help">Only instructors see a new folder until you choose who can open it.</p>
+        <p class="account-help classroom-folder-create-help">Only you and instructors see a new folder until you share it with the class.</p>
       </form>
       <section id="classroom-folder-detail" hidden>
         <h3 id="classroom-folder-title"></h3>
@@ -71,7 +71,7 @@
         <form id="classroom-folder-sharing" class="teacher-form" hidden>
           <label for="classroom-folder-permission">Who can use this folder?</label>
           <select id="classroom-folder-permission">
-            <option value="private">Instructors only</option>
+            <option value="private">Private: creator and instructors</option>
             <option value="read">Class: listen and read notes</option>
             <option value="comment">Class: listen and add notes</option>
           </select>
@@ -90,7 +90,7 @@
         <ul id="classroom-folder-items" class="teacher-history-list"></ul>
         <button id="classroom-add-toggle" class="page-btn" type="button" hidden aria-expanded="false">Add splits</button>
         <section id="classroom-add-panel" hidden>
-          <p class="account-help">Your finished splits in this class. To add a student’s split, open the student under Students.</p>
+          <p id="classroom-add-help" class="account-help">Add your finished splits in this class.</p>
           <p id="classroom-add-status" role="status"></p>
           <ul id="classroom-add-list" class="teacher-history-list"></ul>
           <button id="classroom-add-more" class="page-btn" type="button" hidden>Load more splits</button>
@@ -137,6 +137,6 @@
 </main>
 <script src="/session-guard.js?v=20261106-account-nav"></script>
 <script src="/stem-select.js?v=20261115"></script>
-<script src="/classroom.js?v=20261116-workspace-controls"></script>
+<script src="/classroom.js?v=20261116-member-folders"></script>
 <script type="module" src="/classroom-feedback.js?v=20261023-two-reply-demo"></script>
 </html>

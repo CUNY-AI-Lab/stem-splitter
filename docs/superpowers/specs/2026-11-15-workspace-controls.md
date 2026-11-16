@@ -13,8 +13,12 @@ Server course authorization continues to determine available choices.
 
 Create shared split stays available across class sections and preserves the
 selected course and existing disclosure. Make class folder opens the existing
-folder creation workflow. Instructor-only creation remains until the requested
-participant-creation policy is confirmed; a visible action cannot grant roles.
+folder creation workflow. Every current participant and instructor can create a
+private folder. Its immutable creator and current instructors can rename, share
+and delete it; peers can add only their own finished class splits to shared
+folders and remove their own contributions. Creators and instructors manage all
+items in a folder. Instructor-only roster and conversation review remain separate.
+Private folders are visible only to their creator and current instructors.
 Show only the last update time, aligned with Refresh at the right.
 
 Resplit defaults to the available two-stem option and offers only two/four-stem
