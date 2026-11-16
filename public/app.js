@@ -222,7 +222,7 @@ async function ensureClassCode() {
 
 let selectedCourse = 'personal';
 let courseAcknowledgment = null;
-const COURSE_WORK_DISCLOSURE = 'I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can see and annotate a split only when an instructor shares it with the class. Existing personal work stays private.';
+const COURSE_WORK_DISCLOSURE = 'I understand that my instructor can review new course splits and their Listening Guy conversations. Classmates can access a split when its folder creator or an instructor shares the folder; shared notes require annotation permission. Existing personal work stays private.';
 let courseSelectionPending = false, courseSelectionSequence = 0;
 let courseSelectionReady = Promise.resolve();
 function creationCourse() {

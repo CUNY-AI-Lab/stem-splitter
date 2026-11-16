@@ -54,7 +54,9 @@ for (const signedIn of [false, true]) test(`Tools restores original guest work $
       gatewayJwt = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
       await context.setExtraHTTPHeaders({ 'x-fixture-identity': appJwt, 'x-fixture-gateway-identity': gatewayJwt });
     }
-    await page.goto(url.origin + '/stem-splitter/');
+    // Opening the cleaned restore URL (including a reload or bookmark) starts
+    // a fresh challenge instead of submitting an empty handoff.
+    await page.goto(url.origin + (signedIn ? '/stem-splitter/' : '/stem-splitter/guest-transfer'));
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
     await expect(page.locator('.console-title')).toHaveText('Restored guest track');
     await expect(page.locator('.note-text').filter({ hasText: 'Original listening note' })).toBeVisible();

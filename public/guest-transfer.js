@@ -14,6 +14,14 @@
     }
   });
   const token = location.hash.slice(1);
+  // A bookmark or reload has no one-use handoff. Restart at the source rather
+  // than posting an empty token or reusing credentials removed from history.
+  if (!token) {
+    let existingOnly = false;
+    try { existingOnly = /^cail-[0-9a-f]{32}$/.test(sessionStorage.getItem('stem-transfer-member') || ''); } catch {}
+    location.replace(window.StemPath('/auth/guest-transfer/start') + (existingOnly ? '?existingOnly=1' : ''));
+    return;
+  }
   // Remove the encrypted handoff from browser history before requesting data.
   history.replaceState(null, '', location.pathname);
   const checked = () => {
