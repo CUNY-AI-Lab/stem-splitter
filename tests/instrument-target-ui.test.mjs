@@ -5,16 +5,17 @@ import { chromium } from '@playwright/test';
 
 // Transport fixtures prove UI mechanics only. No model, playback, or public
 // endpoint is used. Audio elements remain muted and are never played.
-async function fixture(t, width, mode = 'success') {
+async function fixture(t, width, mode = 'success', mount = '') {
   const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath(), args: ['--mute-audio'] });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   const state = { targets: [], posts: 0, reads: 0, initialFailure: mode === 'initial-failure' };
   await page.route('https://fixture.test/**', async route => {
     const url = new URL(route.request().url());
+    if (url.pathname === mount + '/app-path.js') return route.fulfill({ contentType: 'text/javascript', body: readFileSync('public/app-path.js', 'utf8') });
     if (url.pathname === '/component.js') return route.fulfill({ contentType: 'text/javascript', body: readFileSync('public/instrument-targets.js', 'utf8') });
     if (url.pathname === '/styles.css') return route.fulfill({ contentType: 'text/css', body: readFileSync('public/styles.css', 'utf8') });
-    if (url.pathname.startsWith('/api/')) {
+    if (url.pathname.startsWith(mount + '/api/')) {
       if (route.request().method() === 'POST') {
         state.posts++;
         const target = route.request().postDataJSON().target;
@@ -28,14 +29,14 @@ async function fixture(t, width, mode = 'success') {
       if (url.pathname.endsWith('/saved')) Object.assign(state.targets[0], { status: 'succeeded', outputAvailable: true });
       return route.fulfill({ json: { targets: state.targets, maximumTargets: 2 } });
     }
-    return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/styles.css"><main style="max-width:800px;margin:auto"><div id="panel"></div></main><script type="module">import {mountInstrumentTargets} from "/component.js";await mountInstrumentTargets(document.querySelector("#panel"),{jobId:"fixture",request:async(path,options)=>{const r=await fetch(path,options),d=await r.json();if(!r.ok)throw new Error(d.error);return d}});window.ready=true;</script>' });
+    return route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta name="viewport" content="width=device-width"><script src="' + mount + '/app-path.js"></script><link rel="stylesheet" href="/styles.css"><main style="max-width:800px;margin:auto"><div id="panel"></div></main><script type="module">import {mountInstrumentTargets} from "/component.js";await mountInstrumentTargets(document.querySelector("#panel"),{jobId:"fixture",request:async(path,options)=>{const r=await StemFetch(path,options),d=await r.json();if(!r.ok)throw new Error(d.error);return d}});window.ready=true;</script>' });
   });
   await page.goto('https://fixture.test/');
   await page.waitForFunction(() => window.ready);
   return { page, state };
 }
-for (const width of [390, 1280]) test(`silent target workflow, keyboard and dimensions at ${width}px`, async t => {
-  const { page, state } = await fixture(t, width);
+for (const mount of ['', '/stem-splitter']) for (const width of [390, 1280]) test(`silent target workflow, keyboard and dimensions at ${width}px under ${mount || '/'}`, async t => {
+  const { page, state } = await fixture(t, width, 'success', mount);
   const input = page.getByRole('textbox', { name: 'Instrument or sound' });
   await input.fill('saxophone');
   await input.press('Enter');
@@ -45,6 +46,7 @@ for (const width of [390, 1280]) test(`silent target workflow, keyboard and dime
   await page.getByRole('button', { name: 'Refresh status' }).click();
   const audio = page.locator('audio');
   await audio.waitFor();
+  assert.equal(await audio.getAttribute('src'), `${mount}/api/jobs/fixture/instrument-targets/saved/audio`);
   assert.deepEqual(await audio.evaluate(el => ({ muted: el.muted, paused: el.paused, preload: el.preload, autoplay: el.autoplay })), { muted: true, paused: true, preload: 'none', autoplay: false });
   assert.match(await page.locator('.instrument-targets').innerText(), /not a detected instrument list/);
   const measurements = await page.locator('.instrument-targets').evaluate(el => ({ overflow: document.documentElement.scrollWidth > innerWidth, controls: [...el.querySelectorAll('input,button')].map(c => c.getBoundingClientRect().height) }));
