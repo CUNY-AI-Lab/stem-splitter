@@ -6,6 +6,7 @@ import { createTestIdentityIssuer, TEST_SUBJECTS } from '@cuny-ai-lab/cail-ident
 import { TOOLS_ORIGIN, toolsLoginPath, toolsRequest, serveTools } from './tools.ts';
 import { SqliteD1 } from '../server/d1.ts';
 import type { WorkerEnv } from './worker.ts';
+import { GUEST_COOKIE, startGuestSession } from './guest.ts';
 
 const issuer = await createTestIdentityIssuer();
 const appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
@@ -17,7 +18,7 @@ function env(resolve = async () => ({ ok: true, accessRole: 'member', budgetScop
 const request = (path: string, init?: RequestInit) => new Request(TOOLS_ORIGIN + path, { ...init, headers: { ...headers, ...init?.headers } });
 
 test('first-party source seeding endpoints are never exposed through the Tools mount', async () => {
-  for (const [path, method] of [['context', 'GET'], ['seed', 'POST'], ['write', 'POST'], ['continue', 'GET']]) {
+  for (const [path, method] of [['context', 'GET'], ['seed', 'POST'], ['write', 'POST'], ['continue', 'GET'],['preferences/seed','POST'],['preferences/write','POST']]) {
     const result = await toolsRequest(request(`/stem-splitter/auth/guest-transfer/${path}`, {
       method, headers: { origin: TOOLS_ORIGIN }, ...(method === 'POST' ? { body: '{}' } : {}),
     }), env());
@@ -94,7 +95,7 @@ test('private Tools ingress does not turn service failure into anonymous access'
 
 test('anonymous static reads strip all identity and browser credentials without contacting Admission', async () => {
   for (const method of ['GET', 'HEAD']) {
-    for (const path of ['/', '/app.js', '/teacher.html?course=demo', '/docs/getting-started.html']) {
+    for (const path of ['/', '/app.js', '/preferences.js', '/teacher.html?course=demo', '/docs/getting-started.html']) {
       const result = await toolsRequest(new Request(TOOLS_ORIGIN + '/stem-splitter' + path, {
         method, headers: { cookie: 'never-forward', authorization: 'Bearer never-forward', 'x-cail-identity-jwt': 'forged', 'x-cail-gateway-identity-jwt': 'forged', 'x-cail-subject': 'forged', 'cf-connecting-ip': '192.0.2.99', 'x-forwarded-for': '192.0.2.12' },
       }), {} as WorkerEnv);
@@ -104,6 +105,41 @@ test('anonymous static reads strip all identity and browser credentials without 
       for (const header of ['cookie', 'authorization', 'x-cail-identity-jwt', 'x-cail-gateway-identity-jwt', 'x-cail-subject', 'cf-connecting-ip', 'x-forwarded-for']) assert.equal(result.headers.get(header), null);
     }
   }
+});
+
+test('Tools serves the typed preference API only through its verified guest namespace',async()=>{
+  const database=new SqliteD1(':memory:');database.applySchema(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
+  const runtime={...env(),AUTH_MODE:'cail',PUBLIC_BASE_URL:'https://stem-splitter.ailab-452.workers.dev',
+    CANONICAL_BASE_URL:'https://stem-splitter.ailab-452.workers.dev',CAIL_BROWSER_ORIGIN:TOOLS_ORIGIN,APP_BASE_PATH:'/stem-splitter',DB:database,
+    GUEST_ENABLED:'true',GUEST_COOKIE_SECRET:'fixture-tools-preference-cookie-secret-0123456789',
+    GUEST_TURNSTILE_SITE_KEY:'fixture-tools-site-key',GUEST_TURNSTILE_SECRET:'fixture-tools-turnstile-secret-0123456789',
+    REQUEST_LIMIT:{limit:async()=>({success:true})},UI_STATE_LIMIT:{limit:async()=>({success:true})},
+    ASSETS:{fetch:async(request:Request)=>new Response(new URL(request.url).pathname==='/preferences.js'?'window.StemPreferences = {};':'asset')},
+  } as unknown as WorkerEnv;
+  const ctx={waitUntil(){}} as unknown as ExecutionContext;
+  const script=await serveTools(new Request(TOOLS_ORIGIN+'/stem-splitter/preferences.js',{headers:{'x-cail-identity-jwt':'forged','x-cail-gateway-identity-jwt':'forged'}}),runtime,ctx);
+  assert.equal(script.status,200);assert.equal(await script.text(),'window.StemPreferences = {};', 'preference bootstrap asset remains a public static file, without identity admission');
+  const started=await startGuestSession(new Request(TOOLS_ORIGIN+'/auth/guest',{method:'POST',headers:{origin:TOOLS_ORIGIN,'content-type':'application/json'},body:'{}'}),runtime);
+  assert.equal(started.status,200);
+  const cookie=started.headers.getSetCookie().find(value=>value.startsWith(GUEST_COOKIE+'='))!.split(';')[0];
+  const subject=(await database.prepare('SELECT subject FROM guest_sessions').first<any>()).subject as string;
+  const call=(path:string,method='GET',body?:unknown,actor=subject,extra:Record<string,string>={})=>serveTools(new Request(TOOLS_ORIGIN+'/stem-splitter'+path,{method,
+    headers:{cookie,origin:TOOLS_ORIGIN,'X-Stem-Account':actor,'content-type':'application/json',...extra},...(body===undefined?{}:{body:JSON.stringify(body)})}),runtime,ctx);
+  const read=await call('/api/account/preferences');
+  assert.equal(read.status,200);assert.equal(read.headers.get('X-Stem-Account'),subject);assert.deepEqual((await read.json() as any).preferences,{});
+  assert.equal((await call('/api/account/preferences','GET',undefined,'guest-'+'d'.repeat(64))).status,409,'caller-selected actor cannot read another namespace');
+  const write=await call('/api/account/preferences','PUT',{kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000055',baseRevision:0,value:'splitter'});
+  assert.equal(write.status,200,await write.clone().text());assert.equal((await write.json() as any).revision,1);
+  const reused=await call('/api/account/preferences','PUT',{kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000055',baseRevision:1,value:'remixer'});
+  assert.equal(reused.status,409);assert.equal((await reused.json() as any).error.code,'preference_request_reused');
+  const forged=await call('/api/account/preferences','PUT',{kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000056',baseRevision:1,value:'remixer'},subject,
+    {'x-cail-identity-jwt':'forged','x-cail-gateway-identity-jwt':'forged'});
+  assert.equal(forged.status,401,'forged identities cannot enter or upgrade an anonymous guest request');
+  assert.equal((await call('/api/account/preferences','GET')).status,200);
+  const guestOnlyClaim=await serveTools(new Request(TOOLS_ORIGIN+'/stem-splitter/api/account/claim-guest/preferences/write',{method:'POST',headers:{cookie,origin:TOOLS_ORIGIN,'X-Stem-Account':subject,'X-Stem-Claim-Actor':'cail-'+ 'a'.repeat(32),'content-type':'application/json'},body:JSON.stringify({kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000057',baseRevision:1,value:null})}),runtime,ctx);
+  assert.equal(guestOnlyClaim.status,403,'guest cookie alone cannot use the claimed-guest member write boundary');
+  const anonymous=await serveTools(new Request(TOOLS_ORIGIN+'/stem-splitter/api/account/preferences',{headers:{cookie}}),runtime,ctx);
+  assert.equal(anonymous.status,409,'preference API requires the adapter-matched actor header');
 });
 
 test('non-page writes cannot enter the public static dispatch', async () => {

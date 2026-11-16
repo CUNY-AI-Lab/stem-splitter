@@ -370,7 +370,7 @@
       if (current === generation && currentFolder?.id === folder.id) await loadFolder(folder.id, true);
     } catch (error) { control.disabled = false; if (current === generation) report('add-status', error); }
   }
-  async function selectCourse(id, { preserveFolderDraft = false } = {}) {
+  async function selectCourse(id, { preserveFolderDraft = false, remember = false } = {}) {
     const folderDraft = preserveFolderDraft && !el('folder-create').hidden
       ? { open: true, name: el('folder-name').value } : null;
     clearCourse(); if (!courses.some(course => course.classId === id)) return;
@@ -385,7 +385,7 @@
     }
     courses = courses.map(row => row.classId === id ? course : row);
     selected = course; status.textContent = ''; panel.hidden = false;
-    try { if (choiceKey) localStorage.setItem(choiceKey,id); } catch {}
+    if(remember)window.StemPreferences?.set('classChoice',id);
     const url = new URL(location.href); url.searchParams.set('course',id);
     const requested = new URLSearchParams(location.search);
     if (requested.get('course') !== id) { url.searchParams.delete('folder'); url.searchParams.delete('view'); }
@@ -491,7 +491,14 @@
   };
   window.addEventListener('focus', () => recheckCourse(document.hidden));
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recheckCourse(); else clearTimeout(refreshTimer); });
-  el('course').addEventListener('change', () => void selectCourse(el('course').value));
+  el('course').addEventListener('change', () => {
+    const id=el('course').value;
+    if(!id){
+      window.StemPreferences?.set('classChoice',null);
+      const url=new URL(location.href);for(const key of ['course','folder','view'])url.searchParams.delete(key);history.replaceState(null,'',url);
+    }
+    void selectCourse(id,{remember:true});
+  });
   el('refresh').addEventListener('click', () => void refreshCourse());
   el('make-folder').addEventListener('click', () => {
     if (!canCreateFolder()) return;
@@ -607,8 +614,10 @@
     try {
       const { account } = await request('/api/account');
       if (account.quotaClass === 'guest') { status.textContent = 'Sign in with your CUNY account to open your classes.'; el('login').hidden = false; return; }
-      window.StemSessionGuard?.start(account.subject, clearCourse);
+      window.StemSessionGuard?.start(account.subject, () => { window.StemPreferences?.stop(); clearCourse(); });
       choiceKey = `stem-workspace-choice:v1:${account.subject}`;
+      await window.StemPreferences?.start(account.subject);
+      if(initialGeneration!==generation)return;
       let cursor = null; const seen = new Set();
       do {
         const data = await request(`/api/classroom/courses${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
@@ -621,8 +630,8 @@
       document.getElementById('course-discovery').hidden = !courses.length;
       status.textContent = courses.length ? 'Choose a class to view its shared work.' : 'No current classes are available to this account.';
       const requested = new URLSearchParams(location.search).get('course');
-      let prior = null; try { prior = localStorage.getItem(choiceKey); } catch {}
-      const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (courses.length === 1 ? courses[0] : null);
+      const prior = window.StemPreferences?.get('classChoice');
+      const choice = courses.find(course => course.classId === requested) || courses.find(course => course.classId === prior) || (prior !== null && courses.length === 1 ? courses[0] : null);
       if (choice) { el('course').value = choice.classId; await selectCourse(choice.classId); }
     } catch (error) {
       if (initialGeneration !== generation) return;

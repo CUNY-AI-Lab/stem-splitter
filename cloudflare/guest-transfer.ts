@@ -4,6 +4,7 @@ import { activeGuest } from '../src/guest/access.ts';
 import { uniqueCookie } from './session-contract/session.js';
 import { JsonRequestError, readBoundedJsonRequest } from '../src/http/bounded-request.ts';
 import { claimedUiStateStatements, seedGuestJobUiState, writeGuestJobUiState, UiStateError, type UiStateWrite, type ActiveUiStateKind } from '../src/ui-state.ts';
+import { claimedPreferenceStatements, guestPreferenceScope, seedAccountPreferences, validatePreferenceSeed, validatePreferenceWrite, writeAccountPreference, PreferenceError } from '../src/account-preferences.ts';
 
 export const TRANSFER_COOKIE = '__Host-stem-transfer';
 const tools = 'https://tools.ailab.gc.cuny.edu';
@@ -36,7 +37,44 @@ function validSourceMutation(request: Request): boolean {
 async function copyLateClaim(env: WorkerEnv, subject: string, expiresAt: number) {
   const claim = await env.DB.prepare('SELECT member_subject FROM guest_account_claims WHERE guest_subject=?')
     .bind(subject).first<{ member_subject: string }>();
-  if (claim) await env.DB.batch(claimedUiStateStatements(env.DB, subject, claim.member_subject, { now: Date.now(), expiresAt }));
+  if (claim) await env.DB.batch([
+    ...claimedUiStateStatements(env.DB, subject, claim.member_subject, { now: Date.now(), expiresAt }),
+    ...claimedPreferenceStatements(env.DB,subject,claim.member_subject,{now:Date.now(),expiresAt}),
+  ]);
+}
+
+function preferenceFailure(error:unknown) {
+  return new Response(null,{status:error instanceof JsonRequestError||error instanceof PreferenceError?error.status:503,headers});
+}
+async function seedSourcePreferences(request:Request,env:WorkerEnv):Promise<Response> {
+  if(!validSourceMutation(request))return failure();
+  try {
+    const limited=await env.REQUEST_LIMIT!.limit({key:`stem-transfer-preferences:${request.headers.get('cf-connecting-ip')||'unknown'}`});
+    if(!limited.success)return new Response(null,{status:429,headers});
+    const session=await readGuestSession(request,env);
+    if(!session)return new Response(null,{status:401,headers});
+    if(request.headers.get('X-Stem-Account')!==session.subject)return new Response(null,{status:409,headers});
+    const body=await readBoundedJsonRequest(request,64*1024);
+    validatePreferenceSeed(body);
+    const result=await seedAccountPreferences(env.DB,session.subject,body,guestPreferenceScope(session.subject,session.expiresAt));
+    if(result.accepted.length)await copyLateClaim(env,session.subject,session.expiresAt);
+    return Response.json(result,{headers:{...headers,'X-Stem-Account':session.subject}});
+  }catch(error){return preferenceFailure(error);}
+}
+async function writeSourcePreference(request:Request,env:WorkerEnv):Promise<Response> {
+  if(!validSourceMutation(request))return failure();
+  try {
+    const limited=await env.REQUEST_LIMIT!.limit({key:`stem-transfer-preferences:${request.headers.get('cf-connecting-ip')||'unknown'}`});
+    if(!limited.success)return new Response(null,{status:429,headers});
+    const session=await readGuestSession(request,env);
+    if(!session)return new Response(null,{status:401,headers});
+    if(request.headers.get('X-Stem-Account')!==session.subject)return new Response(null,{status:409,headers});
+    const body=await readBoundedJsonRequest(request,64*1024);
+    validatePreferenceWrite(body);
+    const receipt=await writeAccountPreference(env.DB,session.subject,body,guestPreferenceScope(session.subject,session.expiresAt));
+    await copyLateClaim(env,session.subject,session.expiresAt);
+    return Response.json(receipt,{status:receipt.outcome==='conflict'?409:200,headers:{...headers,'X-Stem-Account':session.subject}});
+  }catch(error){return preferenceFailure(error);}
 }
 
 function sourceSeedDocument(nonce: string, existingOnly: boolean): Response {
@@ -45,7 +83,7 @@ function sourceSeedDocument(nonce: string, existingOnly: boolean): Response {
   // Keep the original guest cookie until the first-party script has seeded its
   // namespace. In particular, a claimed cookie must not be bootstrapped away.
   // The refresh also bounds this empty document when its script cannot load.
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="8;url=${continueUrl.replaceAll('&', '&amp;')}"><title>Stem Splitter</title><script type="application/json" id="stem-transfer-source">${metadata}</script><script src="/guest-claim.js" defer></script><script src="/workspace-continuity.js" defer></script><script src="/guest-transfer-source.js" defer></script></head><body></body></html>`, {
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="8;url=${continueUrl.replaceAll('&', '&amp;')}"><title>Stem Splitter</title><script type="application/json" id="stem-transfer-source">${metadata}</script><script src="/guest-claim.js" defer></script><script src="/workspace-continuity.js" defer></script><script src="/preferences.js" defer></script><script src="/guest-transfer-source.js" defer></script></head><body></body></html>`, {
     headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' },
   });
 }
@@ -134,6 +172,8 @@ export async function guestTransfer(request: Request, env: WorkerEnv): Promise<R
   if (!guestConfigured(env)) return toolsStart || sourceStart || sourceContinue ? topLevelFailure() : new Response('Guest access unavailable', { status: 503, headers });
   if (url.pathname === '/auth/guest-transfer/seed') return seedSourceGuest(request, env);
   if (url.pathname === '/auth/guest-transfer/write') return writeSourceGuest(request, env);
+  if (url.pathname === '/auth/guest-transfer/preferences/seed') return seedSourcePreferences(request,env);
+  if (url.pathname === '/auth/guest-transfer/preferences/write') return writeSourcePreference(request,env);
   if (url.pathname === '/auth/guest-transfer/context') {
     if (url.origin !== legacy || request.method !== 'GET' || request.headers.get('sec-fetch-site') === 'cross-site'
       || request.headers.has('x-cail-identity-jwt') || request.headers.has('x-cail-gateway-identity-jwt')) return failure();

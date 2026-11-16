@@ -194,7 +194,7 @@ export function sanitizedRequest(request: Request): Request {
   // Even a valid app JWT submitted by the browser is not authority here.
   for (const name of [...headers.keys()]) if (name === 'cookie' || name === 'authorization' || name.startsWith('x-cail-')) headers.delete(name);
   if (requestId && REQUEST_ID.test(requestId)) headers.set('x-cail-request-id', requestId);
-  return new Request(request.url,{method:request.method,headers,body:request.body,redirect:'manual',signal:request.signal});
+  return new Request(request.url,{method:request.method,headers,body:request.body,redirect:'manual',signal:request.signal,...(request.body?{duplex:'half' as const}:{})});
 }
 
 export async function authenticatedRequest(request: Request, env: SsoEnv, onReportProfile?: (profile: ReportProfile) => void): Promise<Request | Response> {

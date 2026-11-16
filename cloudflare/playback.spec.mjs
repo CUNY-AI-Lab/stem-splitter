@@ -1202,3 +1202,16 @@ test('remote guide-open hydration reads conversation without submitting destinat
       && version.value.entries[0]?.text === pending.entries[0].text)).toBe(true);
   } finally { await server.close(); }
 });
+
+test('account conversation remains authoritative while unattributed legacy archive bytes are preserved',async({page})=>{
+  const bytes=JSON.stringify([{kind:'you',text:'Unattributed earlier browser conversation'}]);
+  await page.addInitScript(bytes=>localStorage.setItem('coachChat:remix-fixture',bytes),bytes);
+  await page.route('**/api/jobs/remix-fixture/listening-conversation',route=>route.fulfill({json:{mode:'durable',revision:2,entries:[{kind:'you',text:'Verified account conversation'}],nextCursor:null}}));
+  const server=await fixture(page,['vocals'],{owned:true});
+  try {
+    await page.evaluate(()=>mixers.get('remix-fixture').loadConversation());
+    expect(await page.evaluate(()=>mixers.get('remix-fixture').conversationEntries)).toEqual([{kind:'you',text:'Verified account conversation'}]);
+    expect(await page.evaluate(()=>localStorage.getItem('coachChat:remix-fixture'))).toBe(bytes);
+    await expect(page.locator('body')).not.toContainText('Unattributed earlier browser conversation');
+  }finally{await server.close();}
+});

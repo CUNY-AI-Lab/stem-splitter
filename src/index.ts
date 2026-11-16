@@ -152,9 +152,10 @@ import type { QueryIsolationSourceType } from './isolation/types.ts';
 import { audioSepReplicateIdentity } from './isolation/options.ts';
 import { authorizeCailRequest, equalSecret, validWriteOrigin, type AppPrincipal } from './identity.ts';
 import { readBoundedResponse } from './http/bounded-response.ts';
-import { guestPrincipal, ownershipTable, conversationTable, guestFailure } from './guest/access.ts';
+import { guestPrincipal, ownershipTable, conversationTable, guestFailure, activeGuest } from './guest/access.ts';
 import { claimGuestWork, ownsClaimedOperation } from './guest/claim.ts';
 import { readJobUiState, seedJobUiState, writeJobUiState, UiStateError, validateSeedRequestShape, type SeedInput, type UiStateWrite } from './ui-state.ts';
+import { PreferenceError, readAccountPreferences, seedAccountPreferences, validatePreferenceSeed, validatePreferenceWrite, writeAccountPreference, guestPreferenceScope, claimedGuestPreferenceScope, claimedPreferenceStatements } from './account-preferences.ts';
 
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.flac', '.m4a', '.ogg', '.aiff', '.aif'];
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024; // 100 MB
@@ -162,6 +163,7 @@ const MAX_SMALL_JSON_BYTES = 4 * 1024;
 const MAX_JOB_JSON_BYTES = 32 * 1024;
 const MAX_CONVERSATION_JSON_BYTES = 256 * 1024;
 const MAX_UI_STATE_SEED_JSON_BYTES = 512 * 1024;
+const MAX_PREFERENCE_JSON_BYTES = 64 * 1024;
 const MAX_WEBHOOK_JSON_BYTES = 64 * 1024;
 const INGEST_LEASE_PREFIX = 'ingesting:';
 const INGEST_LEASE_MS = 5 * 60 * 1000;
@@ -414,6 +416,75 @@ app.post('/api/account/ui-state/seed', async c => {
     const seeded = await seedJobUiState(c.env.DB, principal.subject, { ...seed, records: preflight.allowed });
     return c.json({ accepted: seeded.accepted, denied: [...preflight.denied,...seeded.denied], deferred: [...preflight.deferred,...seeded.deferred] });
   } catch (error) { return uiStateError(c, error); }
+});
+
+function preferenceError(c:Context<AppContext>,error:unknown):Response {
+  if(error instanceof PreferenceError)return c.json({error:{code:error.code}},error.status);
+  return c.json({error:{code:'preference_unavailable'}},503);
+}
+async function preferenceScope(c:Context<AppContext>,principal:AppPrincipal) {
+  if(guestPrincipal(principal)) {
+    const session=c.env.guestSession;
+    if(!session||session.subject!==principal.subject)throw new PreferenceError(403,'guest_session_invalid');
+    const current=await activeGuest(c.env.DB,session.subject);
+    if(!current||current.expiresAt!==session.expiresAt)throw new PreferenceError(403,'guest_session_invalid');
+    return guestPreferenceScope(session.subject,session.expiresAt);
+  }
+  return {guard:{sql:'EXISTS(SELECT 1 FROM app_users u WHERE u.subject=? AND u.disabled=0)',values:[principal.subject]}};
+}
+app.get('/api/account/preferences',async c=>{
+  const principal=c.get('principal');
+  if(!principal||c.env.AUTH_MODE!=='cail')return c.json({error:{code:'authentication_required'}},401);
+  if(!uiStateActorMatches(c,principal))return c.json({error:{code:'ui_state_actor_changed'}},409);
+  const limited=await uiStateRateLimit(c,principal);if(limited)return limited;
+  try{return c.json(await readAccountPreferences(c.env.DB,principal.subject,await preferenceScope(c,principal)));}
+  catch(error){return preferenceError(c,error);}
+});
+app.put('/api/account/preferences',async c=>{
+  const principal=c.get('principal');
+  if(!principal||c.env.AUTH_MODE!=='cail')return c.json({error:{code:'authentication_required'}},401);
+  if(!uiStateActorMatches(c,principal))return c.json({error:{code:'ui_state_actor_changed'}},409);
+  const limited=await uiStateRateLimit(c,principal);if(limited)return limited;
+  const parsed=await boundedJson(c,MAX_PREFERENCE_JSON_BYTES);if('response'in parsed)return parsed.response;
+  try {
+    validatePreferenceWrite(parsed.value);
+    const receipt=await writeAccountPreference(c.env.DB,principal.subject,parsed.value,await preferenceScope(c,principal));
+    return c.json(receipt,receipt.outcome==='conflict'?409:200);
+  }catch(error){return preferenceError(c,error);}
+});
+app.post('/api/account/preferences/seed',async c=>{
+  const principal=c.get('principal');
+  if(!principal||c.env.AUTH_MODE!=='cail')return c.json({error:{code:'authentication_required'}},401);
+  if(!uiStateActorMatches(c,principal))return c.json({error:{code:'ui_state_actor_changed'}},409);
+  const limited=await uiStateRateLimit(c,principal);if(limited)return limited;
+  const parsed=await boundedJson(c,MAX_PREFERENCE_JSON_BYTES);if('response'in parsed)return parsed.response;
+  try {
+    validatePreferenceSeed(parsed.value);
+    return c.json(await seedAccountPreferences(c.env.DB,principal.subject,parsed.value,await preferenceScope(c,principal)));
+  }catch(error){return preferenceError(c,error);}
+});
+
+app.post('/api/account/claim-guest/preferences/write',async c=>{
+  const principal=c.get('principal'),proof=c.env.guestClaimSession;
+  if(!principal||c.env.AUTH_MODE!=='cail'||principal.quotaClass!=='member'||principal.courseId!==null)
+    return c.json({error:{code:'guest_claim_forbidden'}},403);
+  if(!proof||c.req.header('X-Stem-Claim-Actor')!==principal.subject||c.req.header('X-Stem-Account')!==proof.subject)
+    return c.json({error:{code:'guest_claim_proof_invalid'}},409);
+  const limited=await uiStateRateLimit(c,principal);if(limited)return limited;
+  const current=await activeGuest(c.env.DB,proof.subject);
+  if(!current||current.expiresAt!==proof.expiresAt)return c.json({error:{code:'guest_session_invalid'}},403);
+  const mapped=await c.env.DB.prepare('SELECT 1 FROM guest_account_claims c JOIN app_users u ON u.subject=c.member_subject WHERE c.guest_subject=? AND c.member_subject=? AND u.disabled=0')
+    .bind(proof.subject,principal.subject).first();
+  if(!mapped)return c.json({error:{code:'guest_claim_mapping_invalid'}},403);
+  const parsed=await boundedJson(c,MAX_PREFERENCE_JSON_BYTES);if('response'in parsed)return parsed.response;
+  try {
+    validatePreferenceWrite(parsed.value);
+    const scope=claimedGuestPreferenceScope(proof.subject,principal.subject,proof.expiresAt);
+    const receipt=await writeAccountPreference(c.env.DB,proof.subject,parsed.value,scope);
+    await c.env.DB.batch(claimedPreferenceStatements(c.env.DB,proof.subject,principal.subject,{now:Date.now(),expiresAt:proof.expiresAt}));
+    c.header('X-Stem-Guest-Account',proof.subject);
+    return c.json({actor:proof.subject,...receipt},receipt.outcome==='conflict'?409:200);
+  }catch(error){return preferenceError(c,error);}
 });
 
 app.post('/api/account/claim-guest', async (c) => {

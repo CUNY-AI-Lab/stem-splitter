@@ -571,6 +571,26 @@ function saveJobs(jobs) {
   catch { /* Account-owned splits remain saved even when browser storage is unavailable. */ }
 }
 
+// Rack preferences describe only server-authorized rows already loaded here.
+function rememberRackPreference(suppressedId = null, revealIds = []) {
+  if (!accountSubject || !window.StemPreferences) return;
+  const prior = window.StemPreferences.get('rackLayout');
+  const suppressed = new Set(prior?.suppressedJobIds || []);
+  if (suppressedId) suppressed.add(suppressedId);
+  for (const id of revealIds) suppressed.delete(id);
+  const rows = new Map(getJobs().map(job => [job.id,{jobId:job.id,collapsed:job.collapsed===true}]));
+  for (const row of prior?.entries || []) if (!rows.has(row.jobId)) rows.set(row.jobId,row);
+  const entries = [...rows.values()].filter(row=>!suppressed.has(row.jobId)).slice(0,200).map((row,rank)=>({jobId:row.jobId,collapsed:row.collapsed,rank}));
+  window.StemPreferences.set('rackLayout',{entries,suppressedJobIds:[...suppressed].slice(-200)});
+}
+function applyRackPreference(jobs) {
+  const layout = window.StemPreferences?.get('rackLayout');
+  if (!layout) return jobs;
+  const rows = new Map(layout.entries.map(row=>[row.jobId,row])), suppressed = new Set(layout.suppressedJobIds);
+  return jobs.filter(job=>!suppressed.has(job.id)).map(job=>rows.has(job.id)?{...job,collapsed:rows.get(job.id).collapsed}:job)
+    .sort((a,b)=>(rows.get(a.id)?.rank ?? -1)-(rows.get(b.id)?.rank ?? -1));
+}
+
 // A new song takes the spotlight: previous sessions collapse (nothing is
 // deleted — one click on a console head reopens it).
 function addJob(job) {
@@ -597,10 +617,12 @@ function addJob(job) {
     collapsed: false,
   });
   saveJobs(runtime.authMode === 'cail' ? jobs : jobs.slice(0, 50));
+  rememberRackPreference(null,[job.id]);
 }
 
 function setJobCollapsed(id, collapsed) {
   saveJobs(getJobs().map((j) => (j.id === id ? { ...j, collapsed } : j)));
+  rememberRackPreference();
 }
 
 /** D1 writes `datetime('now')` — naked UTC that Safari won't parse unaided. */
@@ -700,7 +722,9 @@ function shuffledSampleOrder(order,ensureDifferent=false){
 }
 function persistSampleProgress(){
   if(sampleConfigRevision===null)return;
-  try{localStorage.setItem('stem-song-rotation-v1',JSON.stringify({revision:sampleConfigRevision,seen:[...sampleSeen].slice(-64),last:sampleLastKey,pass:samplePass,order:sampleOrder.slice(0,64)}));}catch{/* Suggestions also work without browser storage. */}
+  const value={revision:sampleConfigRevision,seen:[...sampleSeen].slice(-64),last:sampleLastKey,pass:samplePass,order:sampleOrder.slice(0,64)};
+  if(accountSubject)window.StemPreferences?.set('sampleRotation',value);
+  else try{localStorage.setItem('stem-song-rotation-v1',JSON.stringify(value));}catch{/* Suggestions also work without browser storage. */}
 }
 function beginSamplePass(){sampleSeen.clear();samplePass++;if(sampleSettings.reshuffle)sampleOrder=shuffledSampleOrder(sampleOrder,true);persistSampleProgress();}
 function configureSongSamples(payload){
@@ -710,7 +734,7 @@ function configureSongSamples(payload){
   const candidates=tracks.filter(track=>['artist','title','archiveId','archiveFile'].every(key=>typeof track?.[key]==='string'&&track[key].trim())).slice(0,64);
   const keys=candidates.map(sampleTrackKey),revision=legacy?null:(payload.version||payload.revision);
   if(revision!==null&&sampleConfigRevision===null){
-    try{const progress=JSON.parse(localStorage.getItem('stem-song-rotation-v1')||'null');if(progress&&Array.isArray(progress.seen)){sampleSeen=new Set(progress.seen.filter(key=>keys.includes(key)));sampleLastKey=typeof progress.last==='string'?progress.last:'';samplePass=Number.isInteger(progress.pass)?progress.pass:0;if(progress.revision===revision&&Array.isArray(progress.order)&&progress.order.length===keys.length&&new Set(progress.order).size===keys.length&&progress.order.every(key=>keys.includes(key))){sampleOrder=progress.order;sampleConfigRevision=revision;}}}catch{/* Ignore corrupt public rotation preferences. */}
+    try{const progress=accountSubject?window.StemPreferences?.get('sampleRotation'):JSON.parse(localStorage.getItem('stem-song-rotation-v1')||'null');if(progress&&Array.isArray(progress.seen)){sampleSeen=new Set(progress.seen.filter(key=>keys.includes(key)));sampleLastKey=typeof progress.last==='string'?progress.last:'';samplePass=Number.isInteger(progress.pass)?progress.pass:0;if(progress.revision===revision&&Array.isArray(progress.order)&&progress.order.length===keys.length&&new Set(progress.order).size===keys.length&&progress.order.every(key=>keys.includes(key))){sampleOrder=progress.order;sampleConfigRevision=revision;}}}catch{/* Ignore corrupt public rotation preferences. */}
   }
   if(sampleConfigRevision!==revision||sampleOrder.length!==keys.length||!sampleOrder.every(key=>keys.includes(key)))sampleOrder=legacy?shuffledSampleOrder(keys):keys;
   sampleConfigRevision=revision;sampleSeen=new Set([...sampleSeen].filter(key=>keys.includes(key)));
@@ -1430,8 +1454,8 @@ async function loadSeparationOptions() {
     const validChoices = new Set(options.models.map(model => model.id));
     if (automaticAvailable) validChoices.add(AUTO_MODEL);
     let savedChoice = '';
-    try { savedChoice = localStorage.getItem(SPLIT_CHOICE_STORAGE) || ''; } catch {}
-    const initialChoice = [selectedModel(), savedChoice, options.defaultChoice, options.defaultModel, AUTO_MODEL]
+    try { savedChoice = accountSubject ? window.StemPreferences?.get('modelChoice') || '' : runtime.authMode !== 'cail' ? localStorage.getItem(SPLIT_CHOICE_STORAGE) || '' : ''; } catch {}
+    const initialChoice = [savedChoice, selectedModel(), options.defaultChoice, options.defaultModel, AUTO_MODEL]
       .find(choice => validChoices.has(choice));
     stemChoice.replaceChildren();
     if (automaticAvailable) stemChoice.appendChild(buildAutoOption());
@@ -1445,7 +1469,8 @@ async function loadSeparationOptions() {
     if (initialChoice === AUTO_MODEL) stemChoice.querySelector('input[value="auto"]').checked = true;
     if (!selectedModel()) stemChoice.querySelector('input').checked = true;
     stemChoice.onchange = () => {
-      try { localStorage.setItem(SPLIT_CHOICE_STORAGE, selectedModel()); } catch {}
+      if(accountSubject)window.StemPreferences?.set('modelChoice',selectedModel());
+      else if(runtime.authMode!=='cail')try { localStorage.setItem(SPLIT_CHOICE_STORAGE, selectedModel()); } catch {}
       renderSplitLegend();
     };
     renderSplitLegend();
@@ -3350,7 +3375,7 @@ class Mixer {
     input.focus();
     input.select();
 
-    let finished = false;
+    let finished = false, retryRequiresEnter = false;
     const done = async (save) => {
       if (finished) return;
       finished = true;
@@ -3371,11 +3396,12 @@ class Mixer {
         this.job.labels = result.labels;
       } catch (err) {
         showUploadMessage(err.message, true);
+        finished = false; retryRequiresEnter = true;
+        input.disabled = false; input.removeAttribute('aria-busy');
+        input.focus({preventScroll:true});
       } finally {
         this.labelSaving = false;
-        input.replaceWith(nameEl);
-        this.renderChannelNames();
-        nameEl.focus();
+        if (finished) { input.replaceWith(nameEl); this.renderChannelNames(); nameEl.focus(); }
       }
     };
 
@@ -3383,7 +3409,8 @@ class Mixer {
       if (e.key === 'Enter') done(true);
       if (e.key === 'Escape') done(false);
     });
-    input.addEventListener('blur', () => done(true));
+    input.addEventListener('input', () => { retryRequiresEnter = false; });
+    input.addEventListener('blur', () => { if (!retryRequiresEnter) void done(true); });
   }
 
   seekDuration() {
@@ -3848,7 +3875,8 @@ class Mixer {
           .map((entry) => ({ role: entry.kind === 'you' ? 'user' : 'assistant', content: entry.text.slice(0, 2000) }));
         // CUNY account history is authoritative; never adopt a browser-local
         // copy that may belong to a different person using this device.
-        try { localStorage.removeItem(this.archiveKey()); } catch { /* no local copy is needed */ }
+        // Unscoped legacy archives have no verified owner. Keep their bytes
+        // untouched; only the account-owned server conversation is displayed.
         this.renderArchive();
       } catch (error) {
         if (this.conversationSaveStatus) {
@@ -4676,6 +4704,8 @@ const rackMore = document.getElementById('rack-more');
 let rackRetryMore = false;
 async function loadAccountJobs(more = false) {
   if (!accountSubject || rackLoading) return;
+  const actor = accountSubject;
+  const current = () => actor === accountSubject;
   rackLoading = true;
   rackRetryMore = more;
   rackRetry.hidden = true;
@@ -4685,18 +4715,20 @@ async function loadAccountJobs(more = false) {
   emptyState.hidden = true;
   try {
     const response = await window.StemFetch(`/api/jobs${more && rackCursor ? `?cursor=${encodeURIComponent(rackCursor)}` : ''}`, {headers:rackRequestHeaders()});
+    if (!current()) return;
     if (response.status === 401 || response.status === 403) { location.assign(StemPath('/account.html')); return; }
     if (!response.ok) throw new Error('load');
     const result = await response.json();
+    if (!current()) return;
     if (!Array.isArray(result.jobs)) throw new Error('load');
     let cached = [];
     try { const value = JSON.parse(localStorage.getItem(jobsStorageKey) || '[]'); if(Array.isArray(value)) cached = value.filter(job=>job&&typeof job.id==='string'); } catch {}
     const existing = new Map([...cached, ...getJobs()].map(job => [job.id, job]));
     const recovered = result.jobs.map((job, index) => ({ ...job,
-      startedAt: serverTime(job.createdAt), collapsed: existing.get(job.id)?.collapsed ?? (more || index > 0) }));
+      startedAt: serverTime(job.createdAt), collapsed: window.StemPreferences?.get('rackLayout') !== undefined ? (more || index > 0) : existing.get(job.id)?.collapsed ?? (more || index > 0) }));
     // New submissions that finish during this request must not disappear.
     const combined = new Map([...getJobs(), ...recovered].map(job => [job.id, job]));
-    saveJobs([...combined.values()]);
+    saveJobs(applyRackPreference([...combined.values()]));
     rackCursor = result.nextCursor;
     rackMore.hidden = !rackCursor;
     rackStatus.textContent = '';
@@ -4704,10 +4736,11 @@ async function loadAccountJobs(more = false) {
     renderJobs();
     await pollActiveJobs();
   } catch {
+    if (!current()) return;
     rackStatus.textContent = 'Your saved splits could not be loaded. Try again.';
     rackRetry.hidden = false;
     emptyState.hidden = true;
-  } finally { rackLoading = false; rackMore.disabled = false; }
+  } finally { rackLoading = false; if (current()) rackMore.disabled = false; }
 }
 rackRetry.addEventListener('click', () => void loadAccountJobs(rackRetryMore));
 rackMore.addEventListener('click', () => void loadAccountJobs(true));
@@ -4752,7 +4785,7 @@ function editRecordingTitle(job,titleEl){
   titleEdits.add(job.id);
   const original=job.filename,input=document.createElement('input');input.type='text';input.className='console-title-input';input.maxLength=400;input.value=original;input.setAttribute('aria-label','Recording title');
   titleEl.replaceWith(input);input.focus();input.select();
-  let finished=false;
+  let finished=false,retryRequiresEnter=false;
   const done=async(save)=>{
     if(finished)return;
     const value=input.value.trim();
@@ -4761,14 +4794,14 @@ function editRecordingTitle(job,titleEl){
     if(save&&value!==original){
       input.disabled=true;input.setAttribute('aria-busy','true');
       try{const result=await api(`/api/jobs/${encodeURIComponent(job.id)}/title`,{method:'PUT',body:JSON.stringify({title:value})});job.filename=result.filename;rememberRecordingTitle(job.id,result.filename);}
-      catch(error){showUploadMessage(error.message,true);}
+      catch(error){showUploadMessage(error.message,true);finished=false;retryRequiresEnter=true;input.disabled=false;input.removeAttribute('aria-busy');input.focus({preventScroll:true});return;}
     }
     titleEdits.delete(job.id);titleEl.textContent=jobStates.get(job.id)?.filename||job.filename;titleEl.setAttribute('aria-label','Rename recording: '+titleEl.textContent);
     input.replaceWith(titleEl);renderJobs();[...jobList.querySelectorAll('.console[data-job-id]')].find(el=>el.dataset.jobId===job.id)?.querySelector('.console-title-editable')?.focus({preventScroll:true});
   };
-  input.addEventListener('input',()=>input.setCustomValidity(''));
+  input.addEventListener('input',()=>{input.setCustomValidity('');retryRequiresEnter=false;});
   input.addEventListener('keydown',event=>{if(event.isComposing)return;if(event.key==='Enter'||event.key==='Escape'){event.preventDefault();event.stopPropagation();void done(event.key==='Enter');}});
-  input.addEventListener('blur',()=>{if(!input.validity.valid)void done(false);else void done(true);});
+  input.addEventListener('blur',()=>{if(!retryRequiresEnter&&input.validity.valid)void done(true);});
 }
 
 async function deleteJob(id) {
@@ -4776,7 +4809,7 @@ async function deleteJob(id) {
     try {await api(`/api/jobs/${encodeURIComponent(id)}`,{method:'DELETE'});}
     catch(error) {if(error.status!==404){showUploadMessage(error.message || 'The run could not be deleted. Try again.',true);return;}}
   }
-  removeFromRack(id);
+  removeFromRack(id,{suppress:jobStates.get(id)?.status!=='failed'});
   try {
     localStorage.removeItem(`coachChat:${id}`);
   } catch {
@@ -4785,13 +4818,14 @@ async function deleteJob(id) {
 }
 
 // Folder moves remove the visible session while keeping its saved audio and notes.
-function removeFromRack(id) {
+function removeFromRack(id,{suppress=false}={}) {
   const mixer = mixers.get(id);
   if (mixer?.playing || mixer?.starting) mixer.pause();
   mixer?.disposeWaveforms();
   mixers.delete(id);
   jobStates.delete(id);
   saveJobs(getJobs().filter((j) => j.id !== id));
+  if(suppress)rememberRackPreference(id);
   renderJobs();
 }
 
@@ -4986,6 +5020,7 @@ async function adoptSharedJob() {
     current = resplit?.placement === 'with_original' ? resplit.parentJobId : null;
   }
   saveJobs(getJobs().map(job => visible.has(job.id) ? { ...job, collapsed: false } : job));
+  rememberRackPreference(null,[...visible]);
   renderJobs();
   [...jobList.querySelectorAll('.console[data-job-id]')].find(el => el.dataset.jobId === id)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   if (!jobStates.get(id)?.readOnlyShared) {
@@ -5098,7 +5133,7 @@ function setSplitterKicker(text) {
   if (currentStation === 'splitter') { splitSummary.textContent = text; splitSummary.hidden = !text; }
 }
 
-function switchStation(name) {
+function switchStation(name, remember = true) {
   if (name === 'remixer' && !runtime.remixer) return;
   if (!STATIONS[name]) return;
   currentStation = name;
@@ -5117,7 +5152,8 @@ function switchStation(name) {
   splitSummary.textContent = name === 'splitter' ? splitterKicker : STATIONS.remixer.kicker;
   splitSummary.hidden = !splitSummary.textContent;
   try {
-    localStorage.setItem('benchTab', name);
+    if(remember && accountSubject)window.StemPreferences?.set('benchTab',name);
+    else if(remember && runtime.authMode!=='cail')localStorage.setItem('benchTab', name);
   } catch {
     // Storage blocked — the tab still switches, it just won't be remembered.
   }
@@ -5153,13 +5189,13 @@ function initStations() {
   // otherwise reopen the bench the student was last working at.
   let saved = null;
   try {
-    saved = localStorage.getItem('benchTab');
+    saved = accountSubject ? window.StemPreferences?.get('benchTab') : runtime.authMode!=='cail' ? localStorage.getItem('benchTab') : null;
   } catch {
     // Storage blocked — default bench below.
   }
   if (location.hash === '#remixer') saved = 'remixer';
   if (new URLSearchParams(location.search).has('job')) saved = 'splitter';
-  switchStation(saved === 'remixer' ? 'remixer' : 'splitter');
+  switchStation(saved === 'remixer' ? 'remixer' : 'splitter',false);
 }
 
 // --- the shelf: finished splits as remix material ---------------------------
@@ -5977,12 +6013,18 @@ async function preserveProgressBeforeSignIn(event, url) {
   if (!guestSessionActive) return;
   event.preventDefault();
   for (const mixer of mixers.values()) mixer.saveListeningProgress();
-  await Promise.all([...mixers.values()].map(mixer => mixer.conversationSaveQueue));
+  let preferenceTimer;
+  const preferences = Promise.race([
+    Promise.resolve(window.StemPreferences?.flush()).catch(() => {}),
+    new Promise(resolve => { preferenceTimer=setTimeout(resolve,3000); }),
+  ]).finally(() => clearTimeout(preferenceTimer));
+  await Promise.all([...mixers.values()].map(mixer => mixer.conversationSaveQueue).concat(preferences));
   location.assign(StemPath(url));
 }
 window.addEventListener('pagehide', () => {
   for (const mixer of mixers.values()) mixer.saveListeningProgress();
   window.StemUiState?.flush();
+  window.StemPreferences?.flush();
 });
 
 // --- init -------------------------------------------------------------
@@ -6066,6 +6108,7 @@ async function initialize() {
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
         window.StemUiState?.stop();
+        window.StemPreferences?.stop();
         clearInstructorAccess();
         resplitAbort?.abort(); resplitDialog?.close(); resplitRequests.clear();
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
@@ -6089,6 +6132,7 @@ async function initialize() {
       if (guestSessionActive) account.classList.add('is-guest');
     } else if (!runtime.loginUrl) account.textContent = 'CUNY Login will be available here soon.';
   }
+  if(accountSubject)await window.StemPreferences?.start(accountSubject);
   separationOptionsReady = loadSeparationOptions();
   void ensureClassCode();
   void detectInstructor();

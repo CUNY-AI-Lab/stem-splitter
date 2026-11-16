@@ -1217,3 +1217,23 @@ for (const signedIn of [false, true]) test((signedIn ? 'member' : 'guest') + ' a
     expect(f.errors).toEqual([]);
   } finally { await f.close(); }
 });
+
+test('CUNY login waits at most three seconds for preferences while retaining an unanswered guest journal',async({page})=>{
+  const f=await setup(page);let release;const blocked=new Promise(resolve=>release=resolve);
+  try {
+    await page.goto(f.origin);await expect.poll(async()=>(await account(page)).account?.subject).toMatch(/^guest-/);
+    await expect(page.locator('#stem-choice input')).not.toHaveCount(0);
+    const subject=(await account(page)).account.subject;
+    await page.route('**/api/account/preferences',async route=>{
+      if(route.request().method()!=='PUT')return route.fallback();
+      await blocked;await route.abort().catch(()=>{});
+    });
+    await page.route('**/auth/login*',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><h1>Fixture sign-in</h1>'}));
+    await page.evaluate(()=>window.StemPreferences.set('modelChoice','htdemucs_ft'));
+    const original=await page.evaluate(actor=>localStorage.getItem(`stem-preferences:v1:${actor}`),subject);
+    const began=Date.now();await page.locator('#header-signin').click();await expect(page.getByRole('heading',{name:'Fixture sign-in'})).toBeVisible({timeout:4500});
+    expect(Date.now()-began).toBeLessThan(4500);
+    expect(await page.evaluate(actor=>localStorage.getItem(`stem-preferences:v1:${actor}`),subject)).toBe(original);
+    expect(f.counts().providerStarts).toBe(0);
+  }finally{release();await f.close();}
+});

@@ -92,6 +92,8 @@ test('new splitting sessions default to Auto, preserve explicit/saved choices an
   await expect.poll(()=>submitted?.model).toBe('vocals_instrumental');await expect(explicit).toBeChecked();expect(f.starts()).toBe(0);
   await page.reload();await expect(explicit).toBeChecked();
   await page.evaluate(()=>localStorage.setItem('stem-split-choice-v1','not-a-current-choice'));
+  await page.reload();await expect(explicit).toBeChecked();
+  await page.evaluate(async()=>{window.StemPreferences.set('modelChoice','not-a-current-choice');await window.StemPreferences.flush();});
   await page.reload();await expect(auto).toBeChecked();
   await explicit.check();await auto.check();await page.reload();await expect(auto).toBeChecked();
  }finally{await f.close();}

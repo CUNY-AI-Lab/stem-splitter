@@ -158,3 +158,24 @@ test('original Listening Guy archive loads every durable course page and keeps p
     expect(errors).toEqual([]);
   } finally { await f.server.close(); }
 });
+
+test('class preference follows account to a fresh browser without selecting upload sharing',async({page,context,browser})=>{
+  const f=await setup(page);let fresh;
+  try {
+    await context.setExtraHTTPHeaders({'x-fixture-identity':f.alice});
+    await page.goto(new URL('/classroom.html',f.url).href);
+    await expect(page.locator('#classroom-course option').filter({hasText:'American'})).toHaveCount(1);
+    await page.evaluate(course=>{const select=document.getElementById('classroom-course');select.value=course;select.dispatchEvent(new Event('change',{bubbles:true}));},course);
+    await expect(page.locator('#console-panel')).toBeVisible();
+    await expect.poll(()=>page.evaluate(()=>window.StemPreferences.get('classChoice'))).toBe(course);
+    await page.evaluate(()=>window.StemPreferences.flush());
+    fresh=await browser.newContext({extraHTTPHeaders:{'x-fixture-identity':f.alice}});
+    const other=await fresh.newPage();await other.goto(new URL('/classroom.html',f.url).href);
+    await expect(other.locator('#classroom-course')).toHaveValue(course);
+    await other.goto(f.url.href);await expect(other.locator('#new-split-course')).toHaveValue('personal');
+    await expect(other.locator('#course-work-ack')).not.toBeChecked();
+    await other.goto(new URL('/classroom.html',f.url).href);
+    await other.evaluate(()=>{const select=document.getElementById('classroom-course');select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));});
+    await other.evaluate(()=>window.StemPreferences.flush());await other.reload();await expect(other.locator('#classroom-course')).toHaveValue('');
+  }finally{await fresh?.close();await f.server.close();}
+});

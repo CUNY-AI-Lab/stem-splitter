@@ -292,6 +292,14 @@ claim a real CUNY login, live provider quality, or full-load acceptance.
 - Existing schema upgrades: explicitly execute `../migrations/0018-workspace-access.sql`
   and `../migrations/0019-listening-conversations.sql` against the intended database
   after backup. No Railway database is migrated by this work.
+- Typed private presentation preferences add only the additive `0036-account-preferences.sql`
+  schema. Apply it to the intended Dev or production D1 database before deploying
+  code that reads those routes; fresh installs use the matching section in
+  `../schema.sql`. It introduces no secret or authorization source. Values are
+  presentation hints only; ordinary membership, course, model, sample and job
+  checks remain authoritative. Guest preference rows expire no later than their
+  exact guest session, and guest-to-account claim copies are bounded by the
+  existing verified claim mapping and preference retention window.
 - Identity: exact `cail:stem-splitter` audience, canonical Doorway issuer and
   pinned public JWKS. The private `AdmissionResolver` binding rechecks membership
   each protected request. Network/config failures deny access with 503.

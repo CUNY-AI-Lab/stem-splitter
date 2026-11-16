@@ -406,3 +406,62 @@ test('instructor folder names support cancel, failed-save retry and persisted re
   expect(result.folder.id).toBe('rename-folder');expect(result.folder.name).toBe('Rhythm examples');
  }finally{await server.close();}
 });
+
+test('failed title and split-name saves keep attempted text for explicit retry',async({page,context})=>{
+  const issuer=await createTestIdentityIssuer(),token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true'}}]});
+  try {
+    const {url}=await server.listen();
+    const statements=[...schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')),
+      `INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('remix-fixture','Original title','uploads/a.mp3','done','htdemucs_ft','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+      `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`];
+    expect((await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify(statements)})).status).toBe(200);
+    await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
+    await context.setExtraHTTPHeaders({'x-fixture-identity':token});await page.goto(url.href);
+    await expect(page.locator('.badge.ready')).toHaveText('READY');
+    for(const field of ['title','labels']) {
+      let attempts=0;
+      await page.route(`**/api/jobs/remix-fixture/${field}`,async route=>{attempts++;if(attempts===1)await route.fulfill({status:503,json:{error:'Fixture write failed'}});else await route.continue();});
+      if(field==='title')await page.getByRole('button',{name:'Rename recording: Original title',exact:true}).click();
+      else await page.locator('.ch-name').first().click();
+      const input=page.getByRole('textbox',{name:field==='title'?'Recording title':'Split name',exact:true}),value=field==='title'?'Keep this title':'Keep this label';
+      await input.fill(value);await input.press('Enter');
+      await expect(input).toBeEnabled();await expect(input).toHaveValue(value);await expect.poll(()=>attempts).toBe(1);
+      await page.locator('#yt-url').focus();await page.waitForTimeout(100);expect(attempts).toBe(1);
+      await input.press('Enter');await expect(input).toHaveCount(0);expect(attempts).toBe(2);
+      if(field==='title')await expect(page.locator('.console-title')).toHaveText(value);else await expect(page.locator('.ch-name').first()).toHaveText(value);
+    }
+  }finally{await server.close();}
+});
+
+test('model and rack preferences hydrate a fresh browser without cached job authority',async({page,context,browser})=>{
+  const issuer=await createTestIdentityIssuer(),token=await issuer.mintIdentityJwt({audience:'cail:stem-splitter',subject:TEST_SUBJECTS.alice});
+  const server=createTestHarness({workers:[{configPath:fileURLToPath(new URL('./test-wrangler.jsonc',import.meta.url)),vars:{TEST_JWKS:issuer.jwksJson,TEST_BROWSER:'true'}}]});let fresh;
+  try {
+    const {url}=await server.listen();
+    expect((await server.fetch('/__fixture/schema',{method:'POST',headers:{'x-fixture':'local-only'},body:JSON.stringify([
+      ...schemaStatements(await readFile(new URL('../schema.sql',import.meta.url),'utf8')),
+      `INSERT INTO app_users(subject) VALUES('${TEST_SUBJECTS.alice}')`,
+      `INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('remix-fixture','Server-owned title','uploads/a.mp3','done','htdemucs_ft','[{"name":"vocals","key":"stems/remix-fixture/vocals.mp3"}]')`,
+      `INSERT INTO job_owners(job_id,subject) VALUES('remix-fixture','${TEST_SUBJECTS.alice}')`])})).status).toBe(200);
+    await server.fetch('/__fixture/audio',{method:'POST',headers:{'x-fixture':'local-only'},body:await readFile(new URL('../tests/fixtures/audio/vocals.mp3',import.meta.url))});
+    await context.setExtraHTTPHeaders({'x-fixture-identity':token});await page.goto(url.href);
+    await expect(page.locator('.badge.ready')).toHaveText('READY');
+    await page.locator('#stem-choice input[value="vocals_instrumental"]').check();
+    await page.locator('#stem-choice input[value="htdemucs_ft"]').check();
+    await page.locator('.collapse-btn').click();await expect(page.locator('.console')).toHaveClass(/collapsed/);
+    await page.evaluate(()=>window.StemPreferences.flush());
+    fresh=await browser.newContext({extraHTTPHeaders:{'x-fixture-identity':token}});
+    await fresh.addInitScript(actor=>{
+      localStorage.setItem('stem-split-choice-v1','vocals_instrumental');
+      localStorage.setItem(`jobs:${actor}`,JSON.stringify([{id:'other-private-job',filename:'Should never appear',collapsed:false},{id:'remix-fixture',filename:'Stale title',collapsed:false}]));
+    },TEST_SUBJECTS.alice);
+    const other=await fresh.newPage();await other.goto(url.href);
+    await expect(other.locator('.console')).toHaveCount(1);await expect(other.locator('.console-title')).toHaveText('Server-owned title');
+    await expect(other.locator('.console')).toHaveClass(/collapsed/);await expect(other.locator('#stem-choice input:checked')).toHaveValue('htdemucs_ft');
+    await other.evaluate(async()=>{window.StemPreferences.set('rackLayout',{entries:[],suppressedJobIds:['remix-fixture']});await window.StemPreferences.flush();});
+    await page.reload();await expect(page.locator('#rack-status')).toBeHidden();await expect(page.locator('.console')).toHaveCount(0);
+    await page.goto(new URL('/?job=remix-fixture',url).href);await expect(page.locator('.console')).toHaveCount(1);
+  }finally{await fresh?.close();await server.close();}
+});

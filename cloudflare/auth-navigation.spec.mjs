@@ -182,3 +182,18 @@ test('class lookup failure does not relabel a verified member as Guest or show a
     expect(f.errors).toEqual([]);
   } finally { await page.close(); await f.server.close(); }
 });
+
+test('late rack failure cannot replace the retained session-changed message', async ({page}) => {
+  const f=await fixture(page);let release;const pending=new Promise(resolve=>release=resolve);let requested=false;
+  try {
+    await page.setExtraHTTPHeaders({'x-fixture-identity':f.tokens.alice});
+    await page.route('**/api/jobs',async route=>{requested=true;await pending;await route.fulfill({status:503,json:{error:'Fixture unavailable'}}).catch(()=>{});});
+    await page.goto(f.url.href);await expect.poll(()=>requested).toBe(true);
+    await page.evaluate(()=>{window.StemReportDraft={hasDraft:()=>true,sessionChanged:()=>{}};});
+    await page.setExtraHTTPHeaders({});await page.evaluate(()=>window.StemSessionGuard.check());
+    await expect(page.locator('#rack-status')).toContainText('Your session changed');
+    release();await page.waitForTimeout(100);
+    await expect(page.locator('#rack-status')).toContainText('Your session changed');
+    await header(page,false);expect(f.errors).toEqual([]);
+  } finally {release();await page.close();await f.server.close();}
+});

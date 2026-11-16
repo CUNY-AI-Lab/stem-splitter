@@ -47,6 +47,9 @@
     const subject = account.subject;
     if (pending.has(subject)) return pending.get(subject);
     const attempt = (async () => {
+      // A retained member edit predates guest defaults copied by this claim.
+      // Drain only that verified member's pending typed preferences first.
+      if(window.StemPreferences)await window.StemPreferences.seed(subject,{records:{},signal:AbortSignal.timeout(3000)}).catch(() => {});
       const response = await window.StemFetch('/api/account/claim-guest', { method: 'POST', credentials: 'same-origin',
         cache: 'no-store', headers: { 'X-Stem-Claim-Actor': subject }, signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new Error('Guest splits could not be saved to your account yet. Reload to try again; the originals are preserved.');
@@ -57,6 +60,7 @@
       if (!/^jobs:guest-[0-9a-f]{64}$/.test(result.guestStorageKey ?? '')) return [];
       const allowed = new Set(result.claimedJobIds);
       const guestSubject = result.guestStorageKey.slice(5);
+      await window.StemPreferences?.claim(subject,guestSubject,[...allowed]).catch(() => {});
       // Only the server-confirmed claims may contribute to this member's private
       // state. Server-seeded pending requests remain inert archival versions.
       if (window.StemUiState) {

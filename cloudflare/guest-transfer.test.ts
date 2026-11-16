@@ -314,13 +314,32 @@ test('the original adapter serves the silent source scripts without entering acc
     return new Response(readFileSync(new URL('../public' + path, import.meta.url), 'utf8'), { headers: { 'Content-Type': 'application/javascript' } });
   } }, IDENTITY: { identities: () => assert.fail('source assets require no member session') } });
   const ctx = { waitUntil() {} } as unknown as ExecutionContext;
-  for (const name of ['guest-claim.js', 'workspace-continuity.js', 'guest-transfer-source.js']) {
+  for (const name of ['guest-claim.js', 'workspace-continuity.js', 'preferences.js', 'guest-transfer-source.js']) {
     const response = await worker.fetch(new Request(legacy + '/' + name), f.env, ctx);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('Content-Security-Policy')!, /script-src 'self'/);
     assert.equal(await response.text(), readFileSync(new URL('../public/' + name, import.meta.url), 'utf8'));
   }
-  assert.deepEqual(served, ['/guest-claim.js', '/workspace-continuity.js', '/guest-transfer-source.js']);
+  assert.deepEqual(served, ['/guest-claim.js', '/workspace-continuity.js', '/preferences.js', '/guest-transfer-source.js']);
+});
+
+test('source preference seed and writes use only the exact live guest namespace',async()=>{
+  const f=fixture(),cookie=await f.begin(),session=await readGuestSession(new Request(legacy,{headers:{cookie}}),f.env);
+  assert.ok(session);
+  const headers={origin:legacy,cookie,'content-type':'application/json','X-Stem-Account':session.subject};
+  const seed=await guestTransfer(new Request(legacy+'/auth/guest-transfer/preferences/seed',{method:'POST',headers,body:JSON.stringify({requestId:'00000000-0000-4000-8000-000000000040',records:[{kind:'benchTab',value:'splitter'},{kind:'classChoice',value:'msh-245'}]})}),f.env);
+  assert.equal(seed.status,200);assert.equal(seed.headers.get('X-Stem-Account'),session.subject);
+  const mismatch=await guestTransfer(new Request(legacy+'/auth/guest-transfer/preferences/seed',{method:'POST',headers:{...headers,'X-Stem-Account':'guest-'+'d'.repeat(64)},body:JSON.stringify({requestId:'00000000-0000-4000-8000-000000000041',records:[{kind:'modelChoice',value:'auto'}]})}),f.env);
+  assert.equal(mismatch.status,409);
+  assert.equal((await f.database.prepare('SELECT COUNT(*) AS n FROM account_preferences WHERE subject=?').bind('guest-'+'d'.repeat(64)).first<any>()).n,0);
+  const write=await guestTransfer(new Request(legacy+'/auth/guest-transfer/preferences/write',{method:'POST',headers,body:JSON.stringify({kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000042',baseRevision:1,value:'remixer'})}),f.env);
+  assert.equal(write.status,200);assert.equal((await write.json() as any).revision,2);
+  const stale=await guestTransfer(new Request(legacy+'/auth/guest-transfer/preferences/write',{method:'POST',headers,body:JSON.stringify({kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000043',baseRevision:1,value:'splitter'})}),f.env);
+  assert.equal(stale.status,409);assert.equal((await stale.json() as any).outcome,'conflict');
+  assert.equal((await f.database.prepare("SELECT payload_json FROM account_preferences WHERE subject=? AND kind='benchTab'").bind(session.subject).first<any>()).payload_json,'"remixer"');
+  assert.equal((await f.database.prepare("SELECT payload_json FROM account_preference_versions WHERE subject=? AND kind='benchTab'").bind(session.subject).first<any>()).payload_json,'"splitter"');
+  const badOrigin=await guestTransfer(new Request(legacy+'/auth/guest-transfer/preferences/write',{method:'POST',headers:{...headers,origin:'https://attacker.invalid'},body:JSON.stringify({kind:'benchTab',requestId:'00000000-0000-4000-8000-000000000044',baseRevision:2,value:'splitter'})}),f.env);
+  assert.equal(badOrigin.status,403);
 });
 
 test('guest seed and claim preserve private drafts and accept late seeds only for exact claimed jobs', async () => {

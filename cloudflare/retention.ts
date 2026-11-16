@@ -27,3 +27,19 @@ export async function purgeExpiredUiState(db: D1Database, now = Date.now()): Pro
   }
   return removed;
 }
+
+/** Account preferences expire on inactivity, or immediately when a guest
+ * session expires or is revoked. Keep the sweep bounded and actor-free. */
+export async function purgeExpiredAccountPreferences(db:D1Database,now=Date.now()):Promise<number> {
+  let removed=0;
+  for(const table of ['account_preference_receipts','account_preferences','account_preference_versions']) {
+    for(let batch=0;batch<10;batch++) {
+      const result=await db.prepare(`DELETE FROM ${table} WHERE rowid IN (
+        SELECT rowid FROM ${table} p WHERE p.expires_at<=? OR
+          (p.subject LIKE 'guest-%' AND EXISTS(SELECT 1 FROM guest_sessions s WHERE s.subject=p.subject AND (s.revoked_at IS NOT NULL OR s.expires_at<=?)))
+        ORDER BY p.expires_at,p.rowid LIMIT 1000)`).bind(now,now).run();
+      const changes=result.meta.changes??0;removed+=changes;if(changes<1000)break;
+    }
+  }
+  return removed;
+}

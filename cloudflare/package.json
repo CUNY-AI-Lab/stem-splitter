@@ -30,7 +30,9 @@
     "db:migrate:34": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0034-course-folder-contributors.sql",
     "db:migrate:34:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0034-course-folder-contributors.sql",
     "db:migrate:35": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0035-job-ui-state.sql",
-    "db:migrate:35:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0035-job-ui-state.sql"
+    "db:migrate:35:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0035-job-ui-state.sql",
+    "db:migrate:36": "wrangler d1 execute cail-stem-splitter-preview --remote --file=../migrations/0036-account-preferences.sql",
+    "db:migrate:36:local": "wrangler d1 execute cail-stem-splitter-preview --local --file=../migrations/0036-account-preferences.sql"
   },
   "dependencies": {
     "@breezystack/lamejs": "1.2.7",

@@ -19,9 +19,11 @@
     const body = await response.json(), subject = guest ? body.guest?.subject : body.account?.subject;
     if (!subject || (guest ? !/^guest-[a-f0-9]{64}$/.test(subject) : !/^cail-[a-f0-9]{32}$/.test(subject))) return;
     if (response.headers.get('X-Stem-Account') !== subject) return;
-    await window.StemUiState.seed(subject,{signal:controller.signal,flushJournal:true,
+    await Promise.allSettled([window.StemPreferences?.seed(subject,{signal:controller.signal,
+      endpoint:guest?'/auth/guest-transfer/preferences/seed':'/api/account/preferences/seed',
+      ...(guest?{writeEndpoint:'/auth/guest-transfer/preferences/write'}:{})}),window.StemUiState.seed(subject,{signal:controller.signal,flushJournal:true,
       endpoint:guest ? '/auth/guest-transfer/seed' : '/api/account/ui-state/seed',
-      ...(guest ? {writeEndpoint:'/auth/guest-transfer/write'} : {})});
+      ...(guest ? {writeEndpoint:'/auth/guest-transfer/write'} : {})})]);
   }
   Promise.allSettled([copy('/api/account',false),copy('/auth/guest-transfer/context',true)])
     .finally(() => {clearTimeout(timeout);finish();});

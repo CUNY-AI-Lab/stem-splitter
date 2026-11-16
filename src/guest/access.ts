@@ -63,7 +63,9 @@ export async function authorizeGuestRequest(request: Request, env: Env, authenti
   // Keep those paths inside the same job ownership check as legacy stems.
   const file = /^\/api\/files\/stems\/([a-zA-Z0-9-]+)\/(?:[a-zA-Z0-9_-]+\/(?:display\/)?)?[a-zA-Z0-9_.-]+$/.exec(path);
   const general = read && ['/api/import-options','/api/account','/api/auth-check','/api/jobs','/api/teacher/me','/api/archive/scopes','/api/archive/search','/api/music/search'].includes(path)
-    || method === 'POST' && path === '/api/account/ui-state/seed'
+    || read && path === '/api/account/preferences'
+    || method === 'PUT' && path === '/api/account/preferences'
+    || method === 'POST' && ['/api/account/ui-state/seed','/api/account/preferences/seed'].includes(path)
     || read && /^\/api\/archive\/items\/[a-zA-Z0-9_.-]+$/.test(path)
     // A pasted link is classified before it is imported; guests may import links, so they may classify them.
     || method === 'POST' && ['/api/uploads','/api/jobs','/api/usage-events','/api/link-info'].includes(path)

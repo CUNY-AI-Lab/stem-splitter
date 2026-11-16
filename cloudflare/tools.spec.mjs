@@ -86,12 +86,32 @@ for (const [signedIn, cleared] of [[false, false], [true, false], [false, true],
     if (cleared) expect((await oldCall('/api/jobs/remix-fixture/ui-state', { method: 'PUT', headers: { 'X-Stem-Account': subject },
       body: JSON.stringify({ requestId: crypto.randomUUID(), kind: 'listeningDraft', baseRevision: 0, value: 'Draft cleared while offline' }),
     })).status).toBe(200);
-    await page.addInitScript(({ legacy, progressKey, originalBytes, journalKey, journal, cleared }) => {
+    const preferenceKey=`stem-preferences:v1:${subject}`;
+    const preferenceJournal={records:{},pending:{modelChoice:{requestId:crypto.randomUUID(),baseRevision:1,value:null}}};
+    if(cleared)expect((await oldCall('/api/account/preferences',{method:'PUT',headers:{'X-Stem-Account':subject},body:JSON.stringify({kind:'modelChoice',requestId:crypto.randomUUID(),baseRevision:0,value:'htdemucs_ft'})})).status).toBe(200);
+    const interruptedPreferences=JSON.stringify({records:{},pending:{modelChoice:{requestId:crypto.randomUUID(),baseRevision:cleared?2:1,value:cleared?'vocals_instrumental':null}}});
+    const memberPreferenceKey=`stem-preferences:v1:${TEST_SUBJECTS.alice}`;
+    const memberPreferenceJournal={records:{},pending:{modelChoice:{requestId:crypto.randomUUID(),baseRevision:0,value:'htdemucs_ft'}}};
+    await page.addInitScript(({ legacy, subject, preferenceKey, preferenceJournal, interruptedPreferences, memberPreferenceKey, memberPreferenceJournal, signedIn, progressKey, originalBytes, journalKey, journal, cleared }) => {
+      if(signedIn&&cleared&&location.origin!==legacy&&location.pathname.startsWith('/stem-splitter')&&localStorage.getItem(memberPreferenceKey)===null)localStorage.setItem(memberPreferenceKey,JSON.stringify(memberPreferenceJournal));
+      if(signedIn && location.origin!==legacy && location.pathname.startsWith('/stem-splitter') && localStorage.getItem(preferenceKey)===null)localStorage.setItem(preferenceKey,interruptedPreferences);
       if (location.origin === legacy && location.pathname === '/auth/guest-transfer' && localStorage.getItem(progressKey) === null) {
         localStorage.setItem(progressKey, originalBytes);
+        localStorage.setItem('stem-split-choice-v1','htdemucs_ft');
+        localStorage.setItem('benchTab','remixer');
+        localStorage.setItem(`stem-workspace-choice:v1:${subject}`,'unavailable-old-course');
+        localStorage.setItem('stem-song-rotation-v1',JSON.stringify({revision:1,seen:[],last:null,pass:0,order:['album/01 Song (live).mp3']}));
+        localStorage.setItem(`jobs:${subject}`,JSON.stringify([{id:'remix-fixture',collapsed:false,filename:'Never import this cached title'}]));
+        if(cleared)localStorage.setItem(preferenceKey,JSON.stringify(preferenceJournal));
         if (cleared) localStorage.setItem(journalKey, JSON.stringify(journal));
       }
-    }, { legacy, progressKey, originalBytes, journalKey, journal, cleared });
+    }, { legacy, subject, preferenceKey, preferenceJournal, interruptedPreferences, memberPreferenceKey, memberPreferenceJournal, signedIn, progressKey, originalBytes, journalKey, journal, cleared });
+    const preferenceClaims=[];
+    page.on('response',async response=>{
+      if(new URL(response.url()).pathname!=='/stem-splitter/api/account/claim-guest/preferences/write')return;
+      const request=response.request().postDataJSON();
+      if(request?.kind==='modelChoice')preferenceClaims.push({body:await response.json(),member:response.headers()['x-stem-account'],guest:response.headers()['x-stem-guest-account']});
+    });
     const pendingWrites = [];
     page.on('request', request => {
       if (['POST', 'PUT'].includes(request.method()) && /\/api\/jobs\/[^/]+\/(?:chat|guide|listening-conversation)$/.test(new URL(request.url()).pathname)) pendingWrites.push(request.url());
@@ -124,6 +144,19 @@ for (const [signedIn, cleared] of [[false, false], [true, false], [false, true],
     expect(uiState.records.listeningDraft.value).toBe(cleared ? null : sourceProgress.draft);
     const restored = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
     expect(restored.account.subject).toBe(signedIn ? TEST_SUBJECTS.alice : subject);
+    const preferences=await page.evaluate(async actor=> (await window.StemFetch('/api/account/preferences',{headers:{'X-Stem-Account':actor}})).json(),restored.account.subject);
+    expect(preferences.preferences.modelChoice.value).toBe(signedIn?(cleared?'htdemucs_ft':null):(cleared?null:'htdemucs_ft'));
+    expect(preferences.preferences.benchTab.value).toBe('remixer');
+    expect(preferences.preferences.classChoice.value).toBe('unavailable-old-course');
+    expect(preferences.preferences.rackLayout.value.entries).toEqual([{jobId:'remix-fixture',collapsed:false,rank:0}]);
+    expect(await page.evaluate(()=>currentStation)).toBe('splitter');
+    if(!cleared&&!signedIn)await expect(page.locator('#stem-choice input:checked')).toHaveValue('htdemucs_ft');
+    if(signedIn){
+      await expect.poll(()=>preferenceClaims.length).toBeGreaterThan(0);
+      expect(preferenceClaims[0]).toEqual({body:{actor:subject,kind:'modelChoice',outcome:'applied',revision:cleared?3:2},member:TEST_SUBJECTS.alice,guest:subject});
+      expect(await page.evaluate(key=>JSON.parse(localStorage.getItem(key)).pending,preferenceKey)).toEqual({});
+      if(cleared)expect(await page.evaluate(key=>JSON.parse(localStorage.getItem(key)).pending,memberPreferenceKey)).toEqual({});
+    }
     if (!signedIn) {
       expect(restored.guest.expiresAt).toBe(original.guest.expiresAt);
       expect(restored.splitAllowance.limit).toBe(original.splitAllowance.limit);
@@ -149,7 +182,11 @@ for (const [signedIn, cleared] of [[false, false], [true, false], [false, true],
     expect(errors).toEqual([]);
     await page.goto(legacy + '/__fixture-storage-check');
     expect(await page.evaluate(key => localStorage.getItem(key), progressKey)).toBe(originalBytes, 'first-party source bytes are unchanged');
-    if (cleared) expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), journalKey)).toEqual({ pending: {}, cleared: false });
+    expect(await page.evaluate(()=>localStorage.getItem('stem-split-choice-v1'))).toBe('htdemucs_ft');
+    if (cleared) {
+      expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), journalKey)).toEqual({ pending: {}, cleared: false });
+      expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).pending, preferenceKey)).toEqual({});
+    }
   } finally { await harness.close(); }
 });
 
