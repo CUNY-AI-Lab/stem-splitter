@@ -11,29 +11,22 @@ import { claimGuestWork } from '../src/guest/claim.ts';
 const legacy = 'https://stem-splitter.ailab-452.workers.dev';
 const tools = 'https://tools.ailab.gc.cuny.edu';
 
-test('direct restoration checks the current account and never replaces an existing member workspace', async () => {
+test('stale transfer pages return home without account checks or restarting transfer', async () => {
   const script = readFileSync(new URL('../public/guest-transfer.js', import.meta.url), 'utf8');
-  const member = 'cail-' + 'a'.repeat(32);
-  for (const current of [member, 'guest-' + 'b'.repeat(64), null]) {
-    const stored = new Map<string, string>();
-    let redirect = '', accountChecks = 0;
-    await runInNewContext(script, {
-      document: { getElementById: () => ({ addEventListener() {} }) },
-      sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value) },
-      location: { hash: '', replace: (value: string) => { redirect = value; } },
-      AbortSignal,
-      window: {
-        StemPath: (path: string) => '/stem-splitter' + path,
-        StemFetch: async (path: string) => {
-          assert.equal(path, '/api/account'); accountChecks++;
-          if (!current) throw new Error('temporary account outage');
-          return { ok: true, json: async () => ({ account: { subject: current } }) };
-        },
-      },
+  for (const hash of ['', '#transfer-failed']) for (const saved of [undefined, '/stem-splitter/?job=saved', 'https://attacker.test/']) {
+    const stored = new Map<string,string>([['stem-transfer-member','cail-'+'a'.repeat(32)]]);
+    if(saved)stored.set('stem-transfer-return',saved);
+    const redirects:string[]=[];
+    let calls=0;
+    await runInNewContext(script,{
+      sessionStorage:{getItem:(key:string)=>stored.get(key),setItem:(key:string,value:string)=>stored.set(key,value),removeItem:(key:string)=>stored.delete(key)},
+      location:{hash,pathname:'/stem-splitter/guest-transfer.html',replace:(value:string)=>redirects.push(value)},
+      history:{replaceState(){}},
+      window:{StemFetch:async()=>{calls++;throw new Error('stale entry must not fetch');}},
     });
-    assert.equal(accountChecks, 1);
-    assert.equal(redirect, '/stem-splitter/auth/guest-transfer/start' + (current === member ? '?existingOnly=1' : ''));
-    assert.equal(stored.get('stem-transfer-member'), current === member ? member : undefined);
+    assert.equal(calls,0);
+    assert.deepEqual(redirects,[saved?.startsWith('/stem-splitter/?')?saved:'/stem-splitter/']);
+    assert.equal(stored.has('stem-transfer-member'),false);
   }
 });
 
@@ -135,18 +128,10 @@ test('stalled finish request times out and returns to ordinary app startup', asy
   assert.equal(stored.get('stem-transfer-checked'), '1');
 });
 
-test('application honors the transfer marker and falls through to ordinary account or guest startup', () => {
+test('application entry keeps ordinary guest startup without a transfer launcher', () => {
   const source = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const start = source.indexOf('function restorePreviousGuest('), end = source.indexOf('\nasync function initialize()', start);
-  assert.ok(start >= 0 && end > start);
-  const stored = new Map<string, string>([['stem-transfer-checked', '1']]);
-  const redirects: string[] = [];
-  const context = { sessionStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) }, location: { pathname: '/stem-splitter/', search: '', assign: (path: string) => redirects.push(path) }, StemPath: (path: string) => '/stem-splitter' + path };
-  runInNewContext(source.slice(start, end) + '\nthis.restore = restorePreviousGuest;', context);
-  assert.equal((context as any).restore(), false);
-  assert.equal((context as any).restore(), false, 'reloads in this tab do not restart a failed handoff');
-  assert.equal(stored.get('stem-transfer-checked'), '1');
-  assert.equal(redirects.length, 0);
+  assert.doesNotMatch(source,/restorePreviousGuest|auth\/guest-transfer\/start/);
+  assert.match(source,/await window\.StemGuest\.ensure\(runtime\.guest\)/);
 });
 
 function fixture() {
@@ -162,28 +147,23 @@ function fixture() {
   const begin = async () => cookie(await startGuestSession(new Request(legacy + '/auth/guest', {
     method: 'POST', headers: { origin: legacy, 'content-type': 'application/json' }, body: '{}',
   }), env));
+  // Authentic tokens issued before retirement exercise the unchanged finish boundary.
+  const encode = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64url');
   const start = async (existingOnly = false) => {
-    const response = await guestTransfer(new Request(tools + '/auth/guest-transfer/start' + (existingOnly ? '?existingOnly=1' : '')), env);
-    assert.equal(response.status, 303);
-    return { url: response.headers.get('location')!, cookie: cookie(response, TRANSFER_COOKIE) };
+    const nonce=encode(crypto.getRandomValues(new Uint8Array(32)));
+    return { nonce, cookie: `${TRANSFER_COOKIE}=${nonce}`, existingOnly };
   };
-  const handoff = async (source = '', existingOnly = false) => {
+  const handoff = async (source = '', existingOnly = false, nonce?: string) => {
     const initiated = await start(existingOnly);
-    const page = await guestTransfer(new Request(initiated.url, { headers: { cookie: source } }), env);
-    assert.equal(page.status, 200);
-    assert.equal(page.headers.get('set-cookie'), null, 'source cookie remains available during first-party seeding');
-    const html = await page.text();
-    const metadata = JSON.parse(/id="stem-transfer-source">([^<]+)<\/script>/.exec(html)![1]);
-    assert.match(metadata.continueUrl, /^\/auth\/guest-transfer\/continue\?state=[A-Za-z0-9_-]{43}(?:&existingOnly=1)?$/);
-    assert.match(html, /http-equiv="refresh" content="8;url=/);
-    assert.doesNotMatch(html, /<h1|<p>|<button|recovery/i);
-    const continuation = new URL(metadata.continueUrl, legacy).href;
-    const response = await guestTransfer(new Request(continuation, { headers: { cookie: source } }), env);
-    assert.equal(response.status, 303);
-    const destination = new URL(response.headers.get('location')!);
-    assert.equal(destination.origin, tools);
-    assert.equal(destination.search, '', 'session data stays out of server query logs');
-    return { ...initiated, continuation, token: destination.hash.slice(1), sourceCookie: cookie(response) || source };
+    if(nonce){initiated.nonce=nonce;initiated.cookie=`${TRANSFER_COOKIE}=${nonce}`;}
+    if(!source&&!existingOnly)source=await begin();
+    const session=await readGuestSession(new Request(legacy,{headers:{cookie:source}}),env);
+    const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('stem-guest-transfer-v1\n'+env.GUEST_COOKIE_SECRET));
+    const key=await crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt']);
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const payload=JSON.stringify({nonce:initiated.nonce,expires:Date.now()+300000,subject:session?.subject??null,existingOnly});
+    const sealed=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(tools)},key,new TextEncoder().encode(payload)));
+    return {...initiated,token:`${encode(iv)}.${encode(sealed)}`,sourceCookie:source};
   };
   const finish = (token: string, cookies: string, origin = tools) => guestTransfer(new Request(tools + '/auth/guest-transfer/finish', {
     method: 'POST', headers: { origin, cookie: cookies, 'content-type': 'application/json' }, body: JSON.stringify({ token }),
@@ -191,31 +171,23 @@ function fixture() {
   return { database, env, cookie, begin, start, handoff, finish };
 }
 
-test('top-level GET failures quietly return to the fixed Tools transition destination', async () => {
-  const destination = `${tools}/stem-splitter/guest-transfer.html#transfer-failed`;
-  const assertTransition = (response: Response) => {
-    assert.equal(response.status, 303);
-    assert.equal(response.headers.get('location'), destination);
-    assert.equal(response.headers.get('cache-control'), 'private, no-store');
-  };
-
-  const invalid = fixture();
-  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer?state=invalid'), invalid.env));
-
-  const rateLimited = fixture();
-  Object.assign(rateLimited.env, { REQUEST_LIMIT: { limit: async () => ({ success: false }) } });
-  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer?state=' + 'A'.repeat(43)), rateLimited.env));
-
-  const unavailableStart = fixture();
-  const originalBatch = unavailableStart.database.batch.bind(unavailableStart.database);
-  Object.assign(unavailableStart.database, { batch: async () => { throw new Error('synthetic storage outage'); } });
-  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer/continue?state=' + 'B'.repeat(43)), unavailableStart.env));
-  Object.assign(unavailableStart.database, { batch: originalBatch });
-
-  const disabled = fixture();
-  Object.assign(disabled.env, { GUEST_ENABLED: 'false' });
-  assertTransition(await guestTransfer(new Request(tools + '/auth/guest-transfer/start'), disabled.env));
-  assert.equal((await disabled.finish('bad', '')).status, 503, 'POST configuration failure keeps its API status');
+test('retired transfer entry links return to the same host without cookies, configuration or storage', async () => {
+  for(const enabled of ['true','false']) {
+    const f=fixture();
+    Object.assign(f.env,{GUEST_ENABLED:enabled,REQUEST_LIMIT:{limit:async()=>{throw new Error('must not rate-limit retired entry');}},DB:new Proxy({}, {get(){throw new Error('must not touch guest storage');}})});
+    for(const [url,destination] of [
+      [tools+'/auth/guest-transfer/start',tools+'/stem-splitter/'],
+      [tools+'/auth/guest-transfer/start?existingOnly=1',tools+'/stem-splitter/'],
+      [legacy+'/auth/guest-transfer?state=invalid',legacy+'/'],
+      [legacy+'/auth/guest-transfer/continue?state='+ 'A'.repeat(43),legacy+'/'],
+    ]) {
+      const response=await guestTransfer(new Request(url,{headers:{cookie:'__Host-stem-guest=unchanged; __Host-stem-session=member'}}),f.env);
+      assert.equal(response.status,303);assert.equal(response.headers.get('location'),destination);
+      assert.equal(response.headers.get('cache-control'),'private, no-store');
+      assert.equal(response.headers.get('set-cookie'),null);
+    }
+    if(enabled==='false')assert.equal((await f.finish('bad','')).status,503);
+  }
 });
 
 test('existing guest transfer keeps the same owner, expiry, verification and stored work', async () => {
@@ -237,7 +209,7 @@ test('existing guest transfer keeps the same owner, expiry, verification and sto
   assert.equal((await f.finish(transfer.token, transfer.cookie)).status, 403, 'single-use handoff');
 });
 
-test('first visit at Tools bootstraps the same guest at both addresses', async () => {
+test('an in-flight handoff preserves a previously created guest at both addresses', async () => {
   const f = fixture(), transfer = await f.handoff();
   assert.ok(transfer.sourceCookie);
   const response = await f.finish(transfer.token, transfer.cookie);
@@ -261,10 +233,9 @@ test('source context distinguishes a proven guest from a coexisting member and r
   }
   await f.database.prepare('INSERT INTO app_users(subject) VALUES(?)').bind('cail-' + 'a'.repeat(32)).run();
   await f.database.prepare('INSERT INTO guest_account_claims(guest_subject,member_subject) VALUES(?,?)').bind(guest.subject, 'cail-' + 'a'.repeat(32)).run();
-  const initiated = await f.start();
-  const source = await guestTransfer(new Request(initiated.url, { headers: { cookie: original } }), f.env);
-  assert.equal(source.status, 200);
-  assert.equal(source.headers.get('set-cookie'), null, 'retired proof survives until its local state can be seeded');
+  const source = await guestTransfer(new Request(legacy + '/auth/guest-transfer', { headers: { cookie: original } }), f.env);
+  assert.equal(source.status, 303);
+  assert.equal(source.headers.get('set-cookie'), null, 'retired entry preserves proof for in-flight source writes');
   assert.deepEqual(await (await context(original)).json(), { guest: { subject: guest.subject, expiresAt: guest.expiresAt } });
   assert.deepEqual(await (await context('__Host-stem-session=member-fixture')).json(), { guest: null });
   for (const extra of [{ 'x-cail-identity-jwt': 'partial' }, { 'x-cail-gateway-identity-jwt': 'partial' }, { 'sec-fetch-site': 'cross-site' }]) {
@@ -514,8 +485,7 @@ test('concurrent completion consumes a handoff once', async () => {
 
 test('alternate encodings and separately issued tokens cannot reuse an accepted nonce', async () => {
   const f = fixture(), transfer = await f.handoff();
-  const reissued = await guestTransfer(new Request(transfer.continuation, { headers: { cookie: transfer.sourceCookie } }), f.env);
-  const secondToken = new URL(reissued.headers.get('location')!).hash.slice(1);
+  const secondToken = (await f.handoff(transfer.sourceCookie, false, transfer.nonce)).token;
   assert.notEqual(secondToken, transfer.token);
   assert.equal((await f.finish(transfer.token, transfer.cookie)).status, 200);
   assert.equal((await f.finish(secondToken, transfer.cookie)).status, 403);
