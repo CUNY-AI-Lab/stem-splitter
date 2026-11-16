@@ -5,7 +5,8 @@ import { runInNewContext } from 'node:vm';
 import { SqliteD1 } from '../server/d1.ts';
 import { guestTransfer, TRANSFER_COOKIE } from './guest-transfer.ts';
 import { GUEST_COOKIE, readGuestSession, startGuestSession } from './guest.ts';
-import type { WorkerEnv } from './worker.ts';
+import worker, { type WorkerEnv } from './worker.ts';
+import { claimGuestWork } from '../src/guest/claim.ts';
 
 const legacy = 'https://stem-splitter.ailab-452.workers.dev';
 const tools = 'https://tools.ailab.gc.cuny.edu';
@@ -168,12 +169,21 @@ function fixture() {
   };
   const handoff = async (source = '', existingOnly = false) => {
     const initiated = await start(existingOnly);
-    const response = await guestTransfer(new Request(initiated.url, { headers: { cookie: source } }), env);
+    const page = await guestTransfer(new Request(initiated.url, { headers: { cookie: source } }), env);
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get('set-cookie'), null, 'source cookie remains available during first-party seeding');
+    const html = await page.text();
+    const metadata = JSON.parse(/id="stem-transfer-source">([^<]+)<\/script>/.exec(html)![1]);
+    assert.match(metadata.continueUrl, /^\/auth\/guest-transfer\/continue\?state=[A-Za-z0-9_-]{43}(?:&existingOnly=1)?$/);
+    assert.match(html, /http-equiv="refresh" content="8;url=/);
+    assert.doesNotMatch(html, /<h1|<p>|<button|recovery/i);
+    const continuation = new URL(metadata.continueUrl, legacy).href;
+    const response = await guestTransfer(new Request(continuation, { headers: { cookie: source } }), env);
     assert.equal(response.status, 303);
     const destination = new URL(response.headers.get('location')!);
     assert.equal(destination.origin, tools);
     assert.equal(destination.search, '', 'session data stays out of server query logs');
-    return { ...initiated, token: destination.hash.slice(1), sourceCookie: cookie(response) || source };
+    return { ...initiated, continuation, token: destination.hash.slice(1), sourceCookie: cookie(response) || source };
   };
   const finish = (token: string, cookies: string, origin = tools) => guestTransfer(new Request(tools + '/auth/guest-transfer/finish', {
     method: 'POST', headers: { origin, cookie: cookies, 'content-type': 'application/json' }, body: JSON.stringify({ token }),
@@ -199,7 +209,7 @@ test('top-level GET failures quietly return to the fixed Tools transition destin
   const unavailableStart = fixture();
   const originalBatch = unavailableStart.database.batch.bind(unavailableStart.database);
   Object.assign(unavailableStart.database, { batch: async () => { throw new Error('synthetic storage outage'); } });
-  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer?state=' + 'B'.repeat(43)), unavailableStart.env));
+  assertTransition(await guestTransfer(new Request(legacy + '/auth/guest-transfer/continue?state=' + 'B'.repeat(43)), unavailableStart.env));
   Object.assign(unavailableStart.database, { batch: originalBatch });
 
   const disabled = fixture();
@@ -236,6 +246,170 @@ test('first visit at Tools bootstraps the same guest at both addresses', async (
   const target = await readGuestSession(new Request(tools, { headers: { cookie: f.cookie(response) } }), f.env);
   assert.deepEqual(source, target);
   assert.equal((await f.database.prepare('SELECT count(*) AS n FROM guest_sessions').first())?.n, 1);
+});
+
+test('source context distinguishes a proven guest from a coexisting member and retains claimed-cookie proof until continuation', async () => {
+  const f = fixture(), original = await f.begin();
+  const guest = await readGuestSession(new Request(legacy, { headers: { cookie: original } }), f.env);
+  assert.ok(guest);
+  const context = (cookie: string, extra: Record<string, string> = {}, origin = legacy) => guestTransfer(new Request(origin + '/auth/guest-transfer/context', { headers: { cookie, ...extra } }), f.env);
+  for (const cookie of [original, original + '; __Host-stem-session=member-fixture']) {
+    const result = await context(cookie);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get('X-Stem-Account'), guest.subject);
+    assert.deepEqual(await result.json(), { guest: { subject: guest.subject, expiresAt: guest.expiresAt } });
+  }
+  await f.database.prepare('INSERT INTO app_users(subject) VALUES(?)').bind('cail-' + 'a'.repeat(32)).run();
+  await f.database.prepare('INSERT INTO guest_account_claims(guest_subject,member_subject) VALUES(?,?)').bind(guest.subject, 'cail-' + 'a'.repeat(32)).run();
+  const initiated = await f.start();
+  const source = await guestTransfer(new Request(initiated.url, { headers: { cookie: original } }), f.env);
+  assert.equal(source.status, 200);
+  assert.equal(source.headers.get('set-cookie'), null, 'retired proof survives until its local state can be seeded');
+  assert.deepEqual(await (await context(original)).json(), { guest: { subject: guest.subject, expiresAt: guest.expiresAt } });
+  assert.deepEqual(await (await context('__Host-stem-session=member-fixture')).json(), { guest: null });
+  for (const extra of [{ 'x-cail-identity-jwt': 'partial' }, { 'x-cail-gateway-identity-jwt': 'partial' }, { 'sec-fetch-site': 'cross-site' }]) {
+    assert.equal((await context(original, extra)).status, 403);
+  }
+  assert.equal((await context(original, {}, tools)).status, 403);
+  assert.deepEqual(await (await context(original + 'x')).json(), { guest: null });
+  assert.deepEqual(await (await context(original + '; ' + original)).json(), { guest: null });
+  await f.database.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(Date.now(), guest.subject).run();
+  assert.deepEqual(await (await context(original)).json(), { guest: null });
+});
+
+test('source seeding rejects foreign origins, changed actors, ambiguous proof and malformed bounds before writes', async () => {
+  const f = fixture(), cookie = await f.begin();
+  const session = await readGuestSession(new Request(legacy, { headers: { cookie } }), f.env);
+  assert.ok(session);
+  const call = (body: unknown, extra: Record<string, string> = {}, origin = legacy) => guestTransfer(new Request(origin + '/auth/guest-transfer/seed', {
+    method: 'POST', headers: { origin: legacy, cookie, 'Content-Type': 'application/json', 'X-Stem-Account': session.subject, ...extra }, body: JSON.stringify(body),
+  }), f.env);
+  const body = { requestId: crypto.randomUUID(), records: [{ jobId: 'missing', kind: 'listeningDraft', value: 'private fixture' }] };
+  assert.equal((await call(body, { origin: 'https://attacker.test' })).status, 403);
+  assert.equal((await call(body, { 'sec-fetch-site': 'cross-site' })).status, 403);
+  assert.equal((await call(body, { 'x-cail-identity-jwt': 'partial' })).status, 403);
+  assert.equal((await call(body, { 'x-cail-gateway-identity-jwt': 'partial' })).status, 403);
+  assert.equal((await call(body, {}, tools)).status, 403);
+  assert.equal((await call(body, { 'X-Stem-Account': 'guest-' + '0'.repeat(64) })).status, 409);
+  assert.equal((await call(body, { cookie: cookie + '; ' + cookie })).status, 401);
+  assert.equal((await call(body, { cookie: cookie + 'x' })).status, 401);
+  for (const malformed of [null, [], {}, { ...body, subject: session.subject }, { ...body, records: [] },
+    { ...body, records: Array.from({ length: 65 }, () => body.records[0]) },
+    { ...body, records: [body.records[0], body.records[0]] },
+    { ...body, records: [{ ...body.records[0], kind: 'arbitraryKey' }] },
+    { ...body, records: [{ ...body.records[0], member: 'forged' }] }]) {
+    assert.equal((await call(malformed)).status, 400);
+  }
+  assert.equal((await call({ ...body, records: [{ ...body.records[0], value: 'x'.repeat(512 * 1024) }] })).status, 413);
+  await f.database.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(Date.now(), session.subject).run();
+  assert.equal((await call(body)).status, 401);
+});
+
+test('the original adapter serves the silent source scripts without entering account authorization', async () => {
+  const f = fixture();
+  const served: string[] = [];
+  Object.assign(f.env, { AUTH_MODE: 'cail', ASSETS: { fetch: async (request: Request) => {
+    const path = new URL(request.url).pathname;
+    served.push(path);
+    return new Response(readFileSync(new URL('../public' + path, import.meta.url), 'utf8'), { headers: { 'Content-Type': 'application/javascript' } });
+  } }, IDENTITY: { identities: () => assert.fail('source assets require no member session') } });
+  const ctx = { waitUntil() {} } as unknown as ExecutionContext;
+  for (const name of ['guest-claim.js', 'workspace-continuity.js', 'guest-transfer-source.js']) {
+    const response = await worker.fetch(new Request(legacy + '/' + name), f.env, ctx);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('Content-Security-Policy')!, /script-src 'self'/);
+    assert.equal(await response.text(), readFileSync(new URL('../public/' + name, import.meta.url), 'utf8'));
+  }
+  assert.deepEqual(served, ['/guest-claim.js', '/workspace-continuity.js', '/guest-transfer-source.js']);
+});
+
+test('guest seed and claim preserve private drafts and accept late seeds only for exact claimed jobs', async () => {
+  const f = fixture(), cookie = await f.begin();
+  const session = await readGuestSession(new Request(legacy, { headers: { cookie } }), f.env);
+  assert.ok(session);
+  const alice = 'cail-' + 'a'.repeat(32), bob = 'cail-' + 'b'.repeat(32);
+  for (const subject of [alice, bob]) await f.database.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(subject).run();
+  await f.database.prepare('INSERT INTO guest_sessions(subject,created_at,expires_at,verified_day) VALUES(?,?,?,?)')
+    .bind('guest-' + 'f'.repeat(64), Date.now(), session.expiresAt, session.verifiedDay).run();
+  for (const id of ['before-claim', 'late-seed', 'foreign']) {
+    await f.database.prepare("INSERT INTO jobs(id,filename,source_key,status,model) VALUES(?,'Synthetic','uploads/source.wav','done','htdemucs_ft')").bind(id).run();
+    await f.database.prepare('INSERT INTO guest_job_owners(job_id,subject) VALUES(?,?)').bind(id, id === 'foreign' ? 'guest-' + 'f'.repeat(64) : session.subject).run();
+  }
+  const seed = (jobId: string, text: string, requestId = crypto.randomUUID()) => guestTransfer(new Request(legacy + '/auth/guest-transfer/seed', {
+    method: 'POST', headers: { origin: legacy, cookie: cookie + '; __Host-stem-session=different-member-cookie', 'X-Stem-Account': session.subject, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, records: [{ jobId, kind: 'listeningDraft', value: text }] }),
+  }), f.env);
+  const initial = await seed('before-claim', 'Guest draft before claim');
+  assert.equal(initial.status, 200);
+  assert.deepEqual((await initial.json() as any).accepted, [{ jobId: 'before-claim', kind: 'listeningDraft' }]);
+  const state = (subject: string, jobId: string) => f.database.prepare("SELECT payload_json FROM job_ui_state_records WHERE subject=? AND job_id=? AND kind='listeningDraft'").bind(subject, jobId).first<{ payload_json: string }>();
+  assert.equal(JSON.parse((await state(session.subject, 'before-claim'))!.payload_json), 'Guest draft before claim');
+  const claimed = await claimGuestWork({ ...f.env, guestClaimSession: session }, {
+    subject: alice, role: 'member', quotaClass: 'member', displayName: 'Synthetic', course: null, courseId: null,
+  });
+  assert.deepEqual(claimed.claimedJobIds, ['before-claim', 'late-seed']);
+  assert.equal(JSON.parse((await state(alice, 'before-claim'))!.payload_json), 'Guest draft before claim');
+  assert.ok(await state(session.subject, 'before-claim'), 'guest original remains intact');
+  const requestId = crypto.randomUUID();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const late = await seed('late-seed', 'Late old-address draft', requestId);
+    assert.equal(late.status, 200);
+    assert.deepEqual((await late.json() as any).accepted, [{ jobId: 'late-seed', kind: 'listeningDraft' }]);
+  }
+  assert.equal(JSON.parse((await state(alice, 'late-seed'))!.payload_json), 'Late old-address draft');
+  assert.equal(await state(bob, 'late-seed'), null, 'coexisting member cookie never chooses the destination');
+  const denied = await seed('foreign', 'Must remain only in browser');
+  assert.equal(denied.status, 200);
+  assert.deepEqual((await denied.json() as any).denied, [{ jobId: 'foreign', kind: 'listeningDraft' }]);
+  assert.equal(await state(session.subject, 'foreign'), null);
+  await f.database.prepare("UPDATE job_owners SET subject=? WHERE job_id='late-seed'").bind(bob).run();
+  assert.deepEqual((await (await seed('late-seed', 'No longer the recorded owner')).json() as any).denied, [{ jobId: 'late-seed', kind: 'listeningDraft' }]);
+  assert.equal(await state(bob, 'late-seed'), null);
+});
+
+test('source journal writes preserve explicit clears through claim, reject stale drafts and fence actor authority', async () => {
+  const f = fixture(), cookie = await f.begin();
+  const session = await readGuestSession(new Request(legacy, { headers: { cookie } }), f.env);
+  assert.ok(session);
+  const member = 'cail-' + 'a'.repeat(32), other = 'cail-' + 'b'.repeat(32);
+  for (const subject of [member, other]) await f.database.prepare('INSERT INTO app_users(subject) VALUES(?)').bind(subject).run();
+  for (const id of ['journal-clear', 'journal-late', 'unowned']) {
+    await f.database.prepare("INSERT INTO jobs(id,filename,source_key,status,model) VALUES(?,'Synthetic','uploads/source.wav','done','htdemucs_ft')").bind(id).run();
+    if (id !== 'unowned') await f.database.prepare('INSERT INTO guest_job_owners(job_id,subject) VALUES(?,?)').bind(id, session.subject).run();
+  }
+  const call = (body: unknown, extra: Record<string,string> = {}, origin = legacy) => guestTransfer(new Request(origin + '/auth/guest-transfer/write', {
+    method: 'POST', headers: { origin: legacy, cookie: cookie + '; __Host-stem-session=other-member', 'Content-Type': 'application/json', 'X-Stem-Account': session.subject, ...extra }, body: JSON.stringify(body),
+  }), f.env);
+  const initial = { jobId: 'journal-clear', requestId: crypto.randomUUID(), kind: 'listeningDraft', baseRevision: 0, value: 'Old draft' };
+  assert.equal((await call(initial)).status, 200);
+  const clear = { ...initial, requestId: crypto.randomUUID(), baseRevision: 1, value: null };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await call(clear);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('X-Stem-Account'), session.subject);
+    assert.deepEqual(await response.json(), { jobId: 'journal-clear', kind: 'listeningDraft', outcome: 'applied', revision: 2 });
+  }
+  const stale = await call({ ...initial, requestId: crypto.randomUUID(), baseRevision: 1, value: 'Stale draft' });
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json() as any).outcome, 'conflict');
+  const state = (actor: string, jobId: string) => f.database.prepare("SELECT revision,payload_json FROM job_ui_state_records WHERE subject=? AND job_id=? AND kind='listeningDraft'").bind(actor, jobId).first<{ revision: number; payload_json: string }>();
+  assert.deepEqual({ ...await state(session.subject, initial.jobId) }, { revision: 2, payload_json: 'null' });
+  assert.equal((await call({ ...initial, jobId: 'unowned' })).status, 404);
+  for (const extra of [{ origin: tools }, { 'sec-fetch-site': 'cross-site' }, { 'x-cail-identity-jwt': 'partial' }, { 'x-cail-gateway-identity-jwt': 'partial' }]) assert.equal((await call(clear, extra)).status, 403);
+  assert.equal((await call(clear, {}, tools)).status, 403);
+  assert.equal((await call(clear, { 'X-Stem-Account': member })).status, 409);
+  assert.equal((await call(clear, { cookie: cookie + '; ' + cookie })).status, 401);
+  for (const body of [{ ...clear, kind: 'pendingChat' }, { ...clear, baseRevision: -1 }, { ...clear, subject: member }, { ...clear, requestId: 'bad' }]) assert.equal((await call(body)).status, 400);
+  assert.equal((await call({ ...clear, value: 'x'.repeat(32768) })).status, 413);
+  await claimGuestWork({ ...f.env, guestClaimSession: session }, { subject: member, role: 'member', quotaClass: 'member', displayName: 'Synthetic', course: null, courseId: null });
+  assert.equal((await state(member, initial.jobId))?.payload_json, 'null', 'claim carries the explicit clear, never the older draft');
+  assert.equal((await call({ ...initial, jobId: 'journal-late', requestId: crypto.randomUUID(), value: 'Late retained draft' })).status, 200);
+  assert.equal((await state(member, 'journal-late'))?.payload_json, '"Late retained draft"');
+  assert.equal(await state(other, 'journal-late'), null, 'coexisting member cookie does not redirect a late write');
+  await f.database.prepare("UPDATE job_owners SET subject=? WHERE job_id='journal-late'").bind(other).run();
+  assert.equal((await call({ ...initial, jobId: 'journal-late', requestId: crypto.randomUUID(), baseRevision: 1 })).status, 404);
+  await f.database.prepare('UPDATE guest_sessions SET revoked_at=? WHERE subject=?').bind(Date.now(), session.subject).run();
+  assert.equal((await call(clear)).status, 401);
 });
 
 test('nonce, origin, duplicate cookies, tampering and expiration reject the handoff', async () => {
@@ -321,7 +495,7 @@ test('concurrent completion consumes a handoff once', async () => {
 
 test('alternate encodings and separately issued tokens cannot reuse an accepted nonce', async () => {
   const f = fixture(), transfer = await f.handoff();
-  const reissued = await guestTransfer(new Request(transfer.url, { headers: { cookie: transfer.sourceCookie } }), f.env);
+  const reissued = await guestTransfer(new Request(transfer.continuation, { headers: { cookie: transfer.sourceCookie } }), f.env);
   const secondToken = new URL(reissued.headers.get('location')!).hash.slice(1);
   assert.notEqual(secondToken, transfer.token);
   assert.equal((await f.finish(transfer.token, transfer.cookie)).status, 200);

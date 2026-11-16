@@ -126,8 +126,9 @@ export async function authorizeCailRequest(request: Request, env: Env, authentic
       const permission = await jobPermission(env, principal, jobId);
       if (!permission) return Response.json({ error: 'Job not found' }, { status: 404 });
       const annotationWrite = /\/annotations(?:\/[^/]+)?$/.test(path);
+      const privateUiStateWrite = path === `/api/jobs/${jobId}/ui-state` && request.method === 'PUT';
       const read = ['GET', 'HEAD'].includes(request.method);
-      if (!permission.owner && !permission.administration && ((!read && !(annotationWrite && permission.comment)) || path.includes('/listening-conversation') || path.startsWith('/api/teacher/'))) return Response.json({ error: 'Job not found' }, { status: 404 });
+      if (!permission.owner && !permission.administration && ((!read && !(annotationWrite && permission.comment) && !(privateUiStateWrite && permission.read)) || path.includes('/listening-conversation') || path.startsWith('/api/teacher/'))) return Response.json({ error: 'Job not found' }, { status: 404 });
       principal.courseId = permission.courseId;
     }
     authenticated(principal);

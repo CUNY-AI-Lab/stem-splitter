@@ -508,6 +508,8 @@ test('fresh and additive migration preserve private history, no backfill; retain
   await db.prepare("UPDATE course_folders SET permission='read',created_by='new-sharing-actor',revision=revision+1 WHERE id='legacy-folder'").run();
   assert.equal((await db.prepare("SELECT creator_subject,created_by FROM course_folders WHERE id='legacy-folder'").first<any>()).creator_subject,'');
   assert.equal((await db.prepare("SELECT actor FROM course_folder_events WHERE folder_id='legacy-folder'").first<any>()).actor,'new-sharing-actor');
+  const uiState=readFileSync(new URL('../migrations/0035-job-ui-state.sql',import.meta.url),'utf8');db.applySchema(uiState);db.applySchema(uiState);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM job_ui_state_records').first<any>()).n,0,'the additive migration does not invent private UI state');
   const clean=new SqliteD1(':memory:');clean.applySchema(fresh);clean.applySchema(fresh);
   assert.throws(()=>db.applySchema(migration),/duplicate column name/);
   assert.equal((await db.prepare("SELECT text,author_subject FROM annotations WHERE id='legacy-note'").first<any>()).author_subject,null);

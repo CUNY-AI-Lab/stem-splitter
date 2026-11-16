@@ -2,6 +2,7 @@ import type { Env } from '../env.ts';
 import type { AppPrincipal } from '../identity.ts';
 import { OperationError, type Operation } from '../reliability/ledger.ts';
 import { activeGuest } from './access.ts';
+import { claimedUiStateStatements } from '../ui-state.ts';
 
 /** Called only after full member authorization, with adapter-verified cookie proof.
  * The request body and browser job list never supply ownership authority. */
@@ -47,6 +48,9 @@ export async function claimGuestWork(env: Env, principal: AppPrincipal) {
       SELECT job_id,member_subject FROM guest_job_claims WHERE guest_subject=? AND member_subject=? AND ${gate}
       AND NOT EXISTS(SELECT 1 FROM guest_job_owners g WHERE g.job_id=guest_job_claims.job_id)`)
       .bind(guest,member,...args),
+    // Select the journal produced above inside this same atomic transaction.
+    // Member values win; divergent guest drafts remain immutable versions.
+    ...claimedUiStateStatements(env.DB,guest,member,{now,expiresAt:session.expiresAt}),
   ]);
   const owner = await env.DB.prepare('SELECT member_subject FROM guest_account_claims WHERE guest_subject=?').bind(guest).first<{member_subject:string}>();
   if (owner?.member_subject !== member) throw new OperationError('guest_claim_conflict',409,'This guest session could not be saved to this account.');

@@ -34,8 +34,13 @@
     };
   };
   window.StemListeningProgress = {
+    normalize,
     read(subject, jobId) { try { return normalize(JSON.parse(localStorage.getItem(progressKey(subject, jobId)) || 'null')); } catch { return null; } },
-    save(subject, jobId, value) { try { if (subject) localStorage.setItem(progressKey(subject, jobId), JSON.stringify(normalize(value))); } catch {} },
+    save(subject, jobId, value) {
+      const saved = normalize(value);
+      try { if (subject) localStorage.setItem(progressKey(subject, jobId), JSON.stringify(saved)); } catch {}
+      window.StemUiState?.save(subject, jobId, saved);
+    },
   };
   window.StemGuestClaim = { run(account) {
     if (account?.quotaClass !== 'member' || !/^cail-[0-9a-f]{32}$/.test(account.subject)) return Promise.resolve([]);
@@ -52,9 +57,21 @@
       if (!/^jobs:guest-[0-9a-f]{64}$/.test(result.guestStorageKey ?? '')) return [];
       const allowed = new Set(result.claimedJobIds);
       const guestSubject = result.guestStorageKey.slice(5);
+      // Only the server-confirmed claims may contribute to this member's private
+      // state. Server-seeded pending requests remain inert archival versions.
+      if (window.StemUiState) {
+        const records = window.StemUiState.snapshot(guestSubject).filter(record => allowed.has(record.jobId));
+        await window.StemUiState.seedRecords(subject, records, {signal:AbortSignal.timeout(5000)}).catch(() => {});
+      }
       for (const id of allowed) {
         const saved = window.StemListeningProgress.read(guestSubject, id);
-        if (saved && !window.StemListeningProgress.read(subject, id)) window.StemListeningProgress.save(subject, id, saved);
+        if (saved && !window.StemListeningProgress.read(subject, id)) {
+          // Preserve this browser's already-requested work across its exact
+          // confirmed claim. Transcript retries remain revision-checked; model
+          // retries require a click and retain their original request IDs.
+          // Remote hydration never installs these local pending fields.
+          window.StemListeningProgress.save(subject, id, saved);
+        }
       }
       try {
         const guest = JSON.parse(localStorage.getItem(result.guestStorageKey) || '[]');

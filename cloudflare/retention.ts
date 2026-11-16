@@ -10,3 +10,20 @@ export async function purgeExpiredListeningConversations(db: D1Database): Promis
   ]);
   return result.meta.changes ?? 0;
 }
+
+/** UI state is private to an actor and expires with its retained job. Bound the
+ * scheduled sweep; each actor's next request also prunes its expired rows. */
+export async function purgeExpiredUiState(db: D1Database, now = Date.now()): Promise<number> {
+  let removed = 0;
+  for (const table of ['job_ui_state_receipts', 'job_ui_state_records', 'job_ui_state_versions']) {
+    for (let batch = 0; batch < 10; batch++) {
+      const result = await db.prepare(`DELETE FROM ${table} WHERE rowid IN (
+        SELECT rowid FROM ${table} WHERE expires_at<=? ORDER BY expires_at,rowid LIMIT 1000
+      )`).bind(now).run();
+      const changes = result.meta.changes ?? 0;
+      removed += changes;
+      if (changes < 1000) break;
+    }
+  }
+  return removed;
+}

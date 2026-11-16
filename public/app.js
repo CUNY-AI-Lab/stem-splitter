@@ -2044,7 +2044,21 @@ class Mixer {
     this.loop = null; // { start, end }
     this.rate = 1;
     this.el = this.build();
-    this.restoreListeningProgress();
+    this.restoringProgress = true;
+    try { this.restoreListeningProgress(); } finally { this.restoringProgress = false; }
+    this.stopProgressSync = window.StemUiState?.watch(this.progressSubject, job.id, update => {
+      if (this.progressSubject !== accountSubject || this.job.readOnlyShared) return {draft:false,player:false};
+      const draft = Object.hasOwn(update,'draft') && !this.coachInput?.value && document.activeElement !== this.coachInput;
+      const player = Object.hasOwn(update,'position') && !this.playing && !this.starting && !this.scrubbing;
+      this.savedProgress = {...this.savedProgress,...(player ? update : {}),draft:draft ? update.draft : this.coachInput?.value || ''};
+      this.restoringProgress = true;
+      try { this.restoreListeningProgress({draft,player,pending:false}); }
+      finally { this.restoringProgress = false; }
+      // Persist acknowledged presentation fields only. Remote pending receipts
+      // never enter this cache or the conversation submission path.
+      try { localStorage.setItem(`stem-listening:${this.progressSubject}:${job.id}`,JSON.stringify(this.savedProgress)); } catch {}
+      return {draft,player};
+    });
     this.waveformAbort = new AbortController();
     this.waveformResize = new ResizeObserver(() => {
       for (const channel of this.channelsByName.values()) this.paintWaveform(channel);
@@ -2058,7 +2072,7 @@ class Mixer {
   }
 
   saveListeningProgress() {
-    if (!this.progressSubject || this.progressSubject !== accountSubject || this.job.readOnlyShared) return;
+    if (this.restoringProgress || !this.progressSubject || this.progressSubject !== accountSubject || this.job.readOnlyShared) return;
     window.StemListeningProgress?.save(this.progressSubject, this.job.id, {
       draft: this.coachInput?.value || '', position: this.audios[0]?.readyState >= 1 ? this.audios[0].currentTime : this.savedProgress?.position || 0,
       rate: this.rate, muted: [...this.userMuted].filter(([,muted]) => muted).map(([name]) => name),
@@ -2069,19 +2083,22 @@ class Mixer {
     });
   }
 
-  restoreListeningProgress() {
+  restoreListeningProgress({draft=true,player=true,pending=true} = {}) {
     const saved = this.savedProgress;
     if (!saved || this.job.readOnlyShared) return;
-    this.coachInput.value = saved.draft;
-    if (saved.pendingChat) {
+    if (draft) this.coachInput.value = saved.draft;
+    if (pending && saved.pendingChat) {
       const messages = saved.pendingChat.messages, text = messages.at(-1).content;
       this.pendingChat = {text,history:messages.slice(0,-1),body:saved.pendingChat,userRow:this.addChatRow('you',esc(text))};
       this.coachInput.value = text;
       this.coachInput.readOnly = true;
     }
-    if (saved.pendingGuide) this.pendingGuide = saved.pendingGuide;
+    if (pending && saved.pendingGuide) this.pendingGuide = saved.pendingGuide;
+    if (!player) return;
     this.coachBody.hidden = !saved.guideOpen;
     this.coachToggle.setAttribute('aria-expanded', String(saved.guideOpen));
+    this.userMuted.clear();
+    this.soloState = null;
     for (const name of saved.muted) if (this.channelsByName.has(name)) this.userMuted.set(name, true);
     if (saved.solo && this.channelsByName.has(saved.solo.stem)) this.soloState = saved.solo;
     if (SPEEDS.includes(saved.rate)) this.setRate(saved.rate);
@@ -2090,9 +2107,9 @@ class Mixer {
       const restore = () => { if (Number.isFinite(audio.duration)) audio.currentTime = Math.min(saved.position, audio.duration); };
       if (audio.readyState >= 1) restore(); else audio.addEventListener('loadedmetadata', restore, {once:true});
     }
-    if (saved.loop) this.setLoop(saved.loop);
+    this.setLoop(saved.loop || null);
     if (saved.guideOpen) {
-      void this.loadConversation().catch(() => {});
+      void this.loadConversation({resumePending:pending}).catch(() => {});
       if (guestSessionActive) void api(`/api/jobs/${this.job.id}/listening-usage`).then(acceptListeningUsage).catch(() => {});
       else void refreshListeningUsage();
     }
@@ -3230,6 +3247,7 @@ class Mixer {
 
   disposeWaveforms() {
     this.disposed = true;
+    this.stopProgressSync?.();
     clearTimeout(this.audioRetryTimer);
     clearTimeout(this.bufferingTimer);
     if (this.buffering) this.starting = false;
@@ -3797,7 +3815,7 @@ class Mixer {
     }
   }
 
-  async loadConversation() {
+  async loadConversation({resumePending=true} = {}) {
     if (runtime.authMode !== 'cail' || this.conversationLoaded) return;
     if (this.conversationLoading) return this.conversationLoading;
     this.conversationLoading = (async () => {
@@ -3813,7 +3831,7 @@ class Mixer {
         }
         this.conversationRevision = Number(result.revision) || 0;
         this.conversationLoaded = true;
-        const pending = this.savedProgress?.pendingConversation;
+        const pending = resumePending ? this.savedProgress?.pendingConversation : null;
         if (!this.durableConversation && pending && pending.revision === this.conversationRevision) {
           this.conversationEntries = pending.entries;
           this.conversationDirty = true;
@@ -5958,7 +5976,10 @@ async function preserveProgressBeforeSignIn(event, url) {
   await Promise.all([...mixers.values()].map(mixer => mixer.conversationSaveQueue));
   location.assign(StemPath(url));
 }
-window.addEventListener('pagehide', () => { for (const mixer of mixers.values()) mixer.saveListeningProgress(); });
+window.addEventListener('pagehide', () => {
+  for (const mixer of mixers.values()) mixer.saveListeningProgress();
+  window.StemUiState?.flush();
+});
 
 // --- init -------------------------------------------------------------
 window.addEventListener('pageshow', event => { if (event.persisted && runtime.authMode === 'cail' && !window.StemSessionGuard) location.reload(); });
@@ -6037,8 +6058,10 @@ async function initialize() {
     if (principal && (/^cail-[0-9a-f]{32}$/.test(principal.subject) || guestSessionActive)) {
       jobsStorageKey = `jobs:${principal.subject}`;
       accountSubject = principal.subject;
+      window.StemUiState?.start(accountSubject);
       try {const key=`stem-rack-session:${accountSubject}`;rackSessionId=sessionStorage.getItem(key)||crypto.randomUUID();sessionStorage.setItem(key,rackSessionId);}catch {rackSessionId=crypto.randomUUID();}
       window.StemSessionGuard?.start(accountSubject, () => {
+        window.StemUiState?.stop();
         clearInstructorAccess();
         resplitAbort?.abort(); resplitDialog?.close(); resplitRequests.clear();
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }

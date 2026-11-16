@@ -16,6 +16,16 @@ function env(resolve = async () => ({ ok: true, accessRole: 'member', budgetScop
 }
 const request = (path: string, init?: RequestInit) => new Request(TOOLS_ORIGIN + path, { ...init, headers: { ...headers, ...init?.headers } });
 
+test('first-party source seeding endpoints are never exposed through the Tools mount', async () => {
+  for (const [path, method] of [['context', 'GET'], ['seed', 'POST'], ['write', 'POST'], ['continue', 'GET']]) {
+    const result = await toolsRequest(request(`/stem-splitter/auth/guest-transfer/${path}`, {
+      method, headers: { origin: TOOLS_ORIGIN }, ...(method === 'POST' ? { body: '{}' } : {}),
+    }), env());
+    assert.ok(result instanceof Response);
+    assert.ok([404, 405].includes(result.status));
+  }
+});
+
 test('private Tools ingress preserves the request body and query while dropping browser credentials', async () => {
   const result = await toolsRequest(request('/stem-splitter/api/uploads?course=demo', {
     method: 'POST', headers: { origin: TOOLS_ORIGIN, cookie: 'private-cookie=never-forward', authorization: 'Bearer never-forward', 'x-cail-subject': 'forged', 'cf-connecting-ip': '192.0.2.99', 'x-forwarded-for': '192.0.2.12' }, body: '{"filename":"source.wav"}',

@@ -7,7 +7,42 @@ import { schemaStatements } from '../tests/e2e/schema-statements.mjs';
 
 test.use({ ignoreHTTPSErrors: true });
 
-for (const signedIn of [false, true]) test(`Tools restores original guest work ${signedIn ? 'after CUNY sign-in' : 'without signing in'} and keeps writes visible at both addresses`, async ({ page, context }) => {
+// All requests to this production-shaped hostname terminate in the local
+// fixture Worker. No production request or real browser profile is involved.
+async function sourceBridge(page, worker, localOrigin, cookie, onStart) {
+  const legacy = 'https://stem-splitter.ailab-452.workers.dev';
+  await page.route('**/*', route => new URL(route.request().url()).origin === localOrigin ? route.fallback() : route.abort());
+  const navigate = (route, target, response) => route.fulfill({ status: 200,
+    headers: { 'content-type': 'text/html', 'cache-control': 'no-store', ...(response.headers.get('set-cookie') ? { 'set-cookie': response.headers.get('set-cookie') } : {}) },
+    // Playwright routes do not intercept later requests of an HTTP redirect
+    // chain. Start a fresh navigation so the source stays inside this fixture.
+    body: `<!doctype html><script>location.replace(${JSON.stringify(target).replaceAll('<', '\\u003c')})</script>`,
+  });
+  await page.route(legacy + '/**', async route => {
+    const request = route.request(), target = new URL(request.url());
+    if (target.pathname === '/__fixture-storage-check') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><body></body>' });
+    const headers = { ...request.headers(), cookie };
+    delete headers['x-fixture-identity'];
+    delete headers['x-fixture-gateway-identity'];
+    const response = await worker.fetch(request.url(), { method: request.method(), headers,
+      ...(request.postDataBuffer() ? { body: request.postDataBuffer() } : {}), redirect: 'manual' });
+    const returned = Object.fromEntries([...response.headers].map(([name, value]) => [name.toLowerCase(), value]));
+    const location = response.headers.get('location');
+    if (location?.startsWith('https://tools.ailab.gc.cuny.edu/')) {
+      const destination = new URL(location);
+      returned.location = localOrigin + destination.pathname + destination.search + destination.hash;
+    }
+    if (location) return navigate(route, returned.location, response);
+    await route.fulfill({ status: response.status, headers: returned, body: Buffer.from(await response.arrayBuffer()) });
+  });
+  await page.route('**/stem-splitter/auth/guest-transfer/start*', async route => {
+    onStart();
+    const response = await worker.fetch(route.request().url(), { redirect: 'manual' });
+    await navigate(route, response.headers.get('location'), response);
+  });
+}
+
+for (const [signedIn, cleared] of [[false, false], [true, false], [false, true], [true, true]]) test(`Tools restores original guest work ${signedIn ? 'after CUNY sign-in' : 'without signing in'}${cleared ? ' with a retained draft clear' : ''} and keeps writes visible at both addresses`, async ({ page, context }) => {
   const legacy = 'https://stem-splitter.ailab-452.workers.dev';
   const issuer = await createTestIdentityIssuer();
   const config = JSON.parse(await readFile(new URL('./test-wrangler.jsonc', import.meta.url), 'utf8'));
@@ -40,15 +75,28 @@ for (const signedIn of [false, true]) test(`Tools restores original guest work $
     await worker.fetch('/__fixture/audio', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: await readFile(new URL('../tests/fixtures/audio/vocals.mp3', import.meta.url)) });
     expect((await oldCall('/api/jobs/remix-fixture/annotations', { method: 'POST', body: JSON.stringify({ atSeconds: 1, text: 'Original listening note' }) })).status).toBe(200);
     expect((await oldCall('/api/jobs/remix-fixture/listening-conversation', { method: 'PUT', body: JSON.stringify({ revision: 0, entries: [{ kind: 'you', text: 'Original private conversation' }] }) })).status).toBe(200);
-    // Follow both server redirects through the local Worker, retaining its
-    // real nonce cookie and encrypted fragment without contacting production.
-    await page.route('**/stem-splitter/auth/guest-transfer/start*', async route => {
-      legacyVisits++;
-      const started = await worker.fetch(route.request().url(), { redirect: 'manual' });
-      const response = await worker.fetch(started.headers.get('location'), { headers: { cookie: sourceCookie }, redirect: 'manual' });
-      const target = new URL(response.headers.get('location'));
-      await route.fulfill({ status: response.status, headers: { location: url.origin + target.pathname + target.hash, 'set-cookie': started.headers.get('set-cookie') } });
+    const progressKey = `stem-listening:${subject}:remix-fixture`;
+    const sourceProgress = { draft: cleared ? '' : 'Unsent source listening thought', position: 0, rate: 0.75, muted: [], solo: null, loop: null, guideOpen: true,
+      pendingConversation: { revision: 1, entries: [{ kind: 'you', text: 'Never submit this cached transcript' }] },
+      pendingChat: { messageId: 'pending-source-chat-001', messages: [{ role: 'user', content: 'Never replay this model request' }] },
+      pendingGuide: { messageId: 'pending-source-guide-001' } };
+    const originalBytes = JSON.stringify(sourceProgress);
+    const journalKey = `stem-ui-journal:${subject}:remix-fixture`;
+    const journal = { pending: { listeningDraft: { kind: 'listeningDraft', value: null, baseRevision: 1, requestId: crypto.randomUUID() } }, cleared: true };
+    if (cleared) expect((await oldCall('/api/jobs/remix-fixture/ui-state', { method: 'PUT', headers: { 'X-Stem-Account': subject },
+      body: JSON.stringify({ requestId: crypto.randomUUID(), kind: 'listeningDraft', baseRevision: 0, value: 'Draft cleared while offline' }),
+    })).status).toBe(200);
+    await page.addInitScript(({ legacy, progressKey, originalBytes, journalKey, journal, cleared }) => {
+      if (location.origin === legacy && location.pathname === '/auth/guest-transfer' && localStorage.getItem(progressKey) === null) {
+        localStorage.setItem(progressKey, originalBytes);
+        if (cleared) localStorage.setItem(journalKey, JSON.stringify(journal));
+      }
+    }, { legacy, progressKey, originalBytes, journalKey, journal, cleared });
+    const pendingWrites = [];
+    page.on('request', request => {
+      if (['POST', 'PUT'].includes(request.method()) && /\/api\/jobs\/[^/]+\/(?:chat|guide|listening-conversation)$/.test(new URL(request.url()).pathname)) pendingWrites.push(request.url());
     });
+    await sourceBridge(page, worker, url.origin, sourceCookie, () => { legacyVisits++; });
     if (signedIn) {
       appJwt = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
       gatewayJwt = await issuer.mintIdentityJwt({ audience: 'cail:gateway', subject: TEST_SUBJECTS.alice });
@@ -62,6 +110,18 @@ for (const signedIn of [false, true]) test(`Tools restores original guest work $
     await expect(page.locator('.note-text').filter({ hasText: 'Original listening note' })).toBeVisible();
     await expect(page.locator('#yt-url')).toBeEnabled();
     await expect(page.locator('.sign-in-notice')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture')?.coachInput?.value)).toBe(sourceProgress.draft);
+    expect(await page.evaluate(() => {
+      const mixer = mixers.get('remix-fixture');
+      return Boolean(mixer.pendingChat || mixer.pendingGuide || mixer.savedProgress?.pendingConversation);
+    })).toBe(false);
+    const uiState = await page.evaluate(async actor => {
+      const response = await window.StemFetch('/api/jobs/remix-fixture/ui-state', { headers: { 'X-Stem-Account': actor } });
+      if (!response.ok) throw new Error('Fixture UI state could not be read: ' + response.status);
+      return response.json();
+    }, signedIn ? TEST_SUBJECTS.alice : subject);
+    expect(uiState.versions.map(version => version.recordKind).sort()).toEqual(['pendingChat', 'pendingConversation', 'pendingGuide']);
+    expect(uiState.records.listeningDraft.value).toBe(cleared ? null : sourceProgress.draft);
     const restored = await page.evaluate(async () => (await window.StemFetch('/api/account')).json());
     expect(restored.account.subject).toBe(signedIn ? TEST_SUBJECTS.alice : subject);
     if (!signedIn) {
@@ -82,14 +142,18 @@ for (const signedIn of [false, true]) test(`Tools restores original guest work $
     await expect(page.locator('.console-title')).toHaveText('Restored guest track');
     await expect(page.locator('.note-text').filter({ hasText: 'New Tools listening note' })).toBeVisible();
     expect(legacyVisits).toBe(1, 'return and reload do not repeat the recovery navigation');
+    expect(pendingWrites).toEqual([], 'seeding and hydration never replay pending transcript or paid requests');
     // The same app boundary still rejects private work for a different guest.
     const other = await worker.fetch(legacy + '/auth/guest', { method: 'POST', headers: { origin: legacy, 'content-type': 'application/json' }, body: '{}' });
     expect((await worker.fetch(legacy + '/api/jobs/remix-fixture', { headers: { cookie: other.headers.get('set-cookie').split(';')[0] } })).status).toBe(404);
     expect(errors).toEqual([]);
+    await page.goto(legacy + '/__fixture-storage-check');
+    expect(await page.evaluate(key => localStorage.getItem(key), progressKey)).toBe(originalBytes, 'first-party source bytes are unchanged');
+    if (cleared) expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), journalKey)).toEqual({ pending: {}, cleared: false });
   } finally { await harness.close(); }
 });
 
-test('Tools quietly starts guest access when the old address has only a member workspace', async ({ page }) => {
+test('Tools quietly starts guest access after a stalled source check when the old address has only a member workspace', async ({ page }) => {
   const legacy = 'https://stem-splitter.ailab-452.workers.dev';
   const issuer = await createTestIdentityIssuer();
   const config = JSON.parse(await readFile(new URL('./test-wrangler.jsonc', import.meta.url), 'utf8'));
@@ -107,17 +171,17 @@ test('Tools quietly starts guest access when the old address has only a member w
       `INSERT INTO jobs(id,filename,source_key,status,model) VALUES('account-fixture','Saved account track','uploads/fixture.wav','done','htdemucs_ft')`,
       `INSERT INTO job_owners(job_id,subject) VALUES('account-fixture','${TEST_SUBJECTS.alice}')`);
     expect((await worker.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) })).status).toBe(200);
-    await page.route('**/stem-splitter/auth/guest-transfer/start*', async route => {
-      legacyVisits++;
-      const start = await worker.fetch(route.request().url(), { redirect: 'manual' });
-      const handoff = await worker.fetch(start.headers.get('location'), { headers: { cookie: '__Host-stem-session=existing-member-session' }, redirect: 'manual' });
-      expect(handoff.headers.get('set-cookie')).toBeNull();
-      const target = new URL(handoff.headers.get('location'));
-      await route.fulfill({ status: handoff.status, headers: { location: url.origin + target.pathname + target.hash, 'set-cookie': start.headers.get('set-cookie') } });
+    await sourceBridge(page, worker, url.origin, '__Host-stem-session=existing-member-session', () => { legacyVisits++; });
+    await page.route(legacy + '/auth/guest-transfer/context', async route => {
+      // The shared source deadline must leave before this response is available.
+      await new Promise(resolve => setTimeout(resolve, 8500));
+      await route.abort().catch(() => {});
     });
     const guestStarted = page.waitForResponse(response => new URL(response.url()).pathname === '/stem-splitter/auth/guest' && response.request().method() === 'POST');
+    const began = Date.now();
     await page.goto(url.origin + '/stem-splitter/');
     expect((await guestStarted).status()).toBe(200);
+    expect(Date.now() - began).toBeLessThan(12000, 'bounded source deadline plus normal guest startup');
     await expect(page).toHaveURL(url.origin + '/stem-splitter/');
     await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     await expect(page.locator('#yt-url')).toBeEnabled();

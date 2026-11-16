@@ -1,9 +1,11 @@
 # Silent workspace continuity
 
-Status: proposed design, not implemented or deployed. Source inventory reviewed at
-`1d5e596450376f99de3e27261957020cc0d2154d`; application behavior is unchanged from
-production source `2a618b6` in the reviewed paths. The implementation plan is
-`../plans/2026-11-16-workspace-continuity.md`.
+Status: stages 1–3 are implemented locally for private listening drafts, player
+settings and inert pending listening work. Focused local service and browser
+checks pass; this document does not assert Dev or production deployment or real
+account acceptance. The original inventory was reviewed at
+`1d5e596450376f99de3e27261957020cc0d2154d`. The implementation plan and remaining
+gates are `../plans/2026-11-16-workspace-continuity.md`.
 
 ## Product requirement and authority
 
@@ -36,6 +38,7 @@ No first-party IndexedDB, CacheStorage or service-worker persistence was found i
 | `stem-listening:<subject>:<jobId>` draft | `public/guest-claim.js`; `Mixer.saveListeningProgress` | First stage: private per-job draft record; max 2,000 characters, preserve existing text without truncating migration. |
 | Same key: position, rate, muted, solo, loop, guideOpen | Same writer; restored by `Mixer.restoreListeningProgress` | First stage: separately revisioned player record; never autoplay. Validate stems, duration and current playable access before applying. |
 | Same key: pendingConversation, pendingChat, pendingGuide | Current cache contains transcript revision, message ID, text/history and duration | First stage preserves as **inert private versions/receipts**, never hydrates into active pending fields. A server-confirmed result may be read without replay. |
+| `stem-ui-journal:<subject>:<jobId>` | New continuity client; typed pending draft/player CAS writes and explicit-clear marker | Implemented locally: preserve request ID/base revision across interruptions; drain during normal job hydration and original-host quiet handoff. Contains no AI operation queue. Conflicts are retained without overwriting the server winner. |
 | `jobs:<subject>` | Rack IDs, metadata and collapsed rows in `app.js` | Later: presentation-only state, validated IDs, ordering/collapse and explicit suppression. Server jobs/titles/URLs/ownership remain authoritative. |
 | `stem-workspace-choice:v1:<subject>` | Classes selected class; navigation consults it | Later: preference gated by current enrollment/capability. Never sharing consent or instructor authority. Main upload choice also has URL/in-memory state. |
 | `stem-split-choice-v1` | Device-global model preference | Later: missing-only legacy seed; validate current advertised model. No automatic job creation. |
@@ -61,10 +64,10 @@ published labels/annotations, folders/permissions, guides and saved conversation
 Their presence is not evidence that the above browser-only families are shared.
 Course transcript-review authority does not grant access to unsent UI drafts.
 
-## Proposed persistence contract
+## Implemented local persistence contract
 
-Add a shared `src/ui-state.ts` module and additive schema, routed through the
-existing authenticated application. Proposed first-stage routes:
+The shared `src/ui-state.ts` module and additive `0035-job-ui-state.sql` schema
+are routed through the existing authenticated application. First-stage routes:
 
 - `GET /api/jobs/:id/ui-state`: current subject's draft/player records and
   revisions after fresh job access. Private responses include `X-Stem-Account`.
@@ -74,10 +77,22 @@ existing authenticated application. Proposed first-stage routes:
 - `POST /api/account/ui-state/seed`: bounded create-if-missing records from the
   current verified local namespace. Provenance and content digests deduplicate
   retries. Differing existing text is preserved as a version, not overwritten.
-- A separate adapter-owned guest-seed operation for the existing quiet source
-  handoff, authorized by the verified guest cookie. It is not a public API for a
-  member to name an arbitrary guest. Its exact route/transport must be reviewed
-  with the mount adapter before implementing source handoff seeding.
+- Original-host-only `GET /auth/guest-transfer/context`, `POST
+  /auth/guest-transfer/seed` and `POST /auth/guest-transfer/write` verify the guest
+  cookie independently of a coexisting member cookie. The write route accepts
+  only draft/player CAS writes, including explicit clears, with a captured
+  `X-Stem-Account`. These routes are unavailable through the Tools mount.
+  Late guest state copies only through its exact claim journal/current owner;
+  naming a guest or member in browser storage grants no authority.
+
+The existing top-level handoff first serves an empty source document loading
+same-origin scripts, then continues its existing encrypted nonce-bound transfer.
+Member and guest namespaces seed separately. Source journal writes share the
+eight-second overall deadline; an eight-second meta refresh also bounds failed
+script loading. No new interface appears. Listening cache bytes remain intact;
+successfully acknowledged typed journal entries may be removed. If an outage or
+deadline prevents a write, the local journal remains pending, and cross-address
+continuity for that write is incomplete until a later successful source visit.
 
 Setting/form routes can follow later using explicit enums; do not expose an
 arbitrary storage-key/value database. The server assigns the owner and job scope
@@ -176,6 +191,16 @@ removed IDs. Preferences must validate current choices; class hydration must
 never check the course-sharing acknowledgment.
 
 ## Pending operations are inert
+
+This rule applies to server-seeded versions and remote hydration. Preserve the
+existing same-browser sign-in claim behavior for locally requested work: only
+server-confirmed claimed job IDs may copy normalized local guest progress into
+an absent member cache. That local copy retains pending transcript revisions and
+original chat/guide request IDs. Transcript retry requires the matching server
+revision and normal CAS; chat/guide retry still requires an explicit click and
+uses the original idempotency key and input fingerprint. Existing member cache
+wins. This does not install remote pending versions or start a model request
+during claim or hydration.
 
 Current `Mixer.loadConversation` automatically PUTs a matching non-durable
 `pendingConversation`. Therefore the whole cached progress object cannot be

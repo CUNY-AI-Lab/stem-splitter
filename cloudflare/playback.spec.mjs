@@ -29,10 +29,12 @@ async function fixture(page, names, { owned = false, mediaRange, durations = {} 
   const sql = schemaStatements(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
   sql.push(`INSERT INTO jobs (id, filename, source_key, status, model, stems) VALUES ('remix-fixture', 'Playback review', 'uploads/fixture.wav', 'done', 'htdemucs_ft', '${JSON.stringify(stems)}')`,
     "INSERT INTO public_split_links (job_id) VALUES ('remix-fixture')");
+  let fixtureIdentity;
   if (owned) {
     sql.push(`INSERT INTO app_users (subject) VALUES ('${TEST_SUBJECTS.alice}')`,
       `INSERT INTO job_owners (job_id, subject) VALUES ('remix-fixture', '${TEST_SUBJECTS.alice}')`);
-    await page.context().setExtraHTTPHeaders({ 'x-fixture-identity': await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice }) });
+    fixtureIdentity = await issuer.mintIdentityJwt({ audience: 'cail:stem-splitter', subject: TEST_SUBJECTS.alice });
+    await page.context().setExtraHTTPHeaders({ 'x-fixture-identity': fixtureIdentity });
   }
   await server.fetch('/__fixture/schema', { method: 'POST', headers: { 'x-fixture': 'local-only' }, body: JSON.stringify(sql) });
   await page.route(owned ? '**/api/files/stems/remix-fixture/*' : '**/api/shared-jobs/remix-fixture/stems/*', async route => {
@@ -57,8 +59,61 @@ async function fixture(page, names, { owned = false, mediaRange, durations = {} 
   // Wait for that second phase: its banner and scroll can otherwise move a
   // control between Firefox's pointer-down and pointer-up during the test.
   if (owned) await expect(page.locator('#upload-message')).toHaveText('Opened your saved split.');
-  return server;
+  const fixtureGateway = owned ? await issuer.mintIdentityJwt({audience:'cail:gateway',subject:TEST_SUBJECTS.alice}) : null;
+  return Object.assign(server, { fixtureIdentity, fixtureGateway });
 }
+
+test('private listening draft and player state hydrate on Tools in a separate browser without replaying requests', async ({ page, browser }) => {
+  const server = await fixture(page, ['vocals', 'drums'], {owned:true});
+  let other;
+  try {
+    await page.locator('.coach-toggle').click();
+    const draft = page.locator('.coach-form input');
+    await draft.fill('Listen for the drum entrance');
+    await page.locator('.rate-opt[data-rate="0.75"]').click();
+    await page.getByRole('button',{name:'Mute drums',exact:true}).click();
+    await expect.poll(async () => {
+      const response = await page.request.get(new URL('/api/jobs/remix-fixture/ui-state', page.url()).href,{headers:{'X-Stem-Account':TEST_SUBJECTS.alice}});
+      return response.ok() ? (await response.json()).records.listeningDraft?.value : null;
+    }).toBe('Listen for the drum entrance');
+    await expect.poll(async () => (await (await page.request.get(new URL('/api/jobs/remix-fixture/ui-state',page.url()).href,{headers:{'X-Stem-Account':TEST_SUBJECTS.alice}})).json()).records.listeningPlayer?.value?.rate).toBe(.75);
+    other = await browser.newContext({extraHTTPHeaders:{'x-fixture-identity':server.fixtureIdentity,'x-fixture-gateway-identity':server.fixtureGateway}});
+    const tools = await other.newPage(), forbidden = [];
+    tools.on('request', request => { if (request.method() === 'POST' && /\/(chat|guide)(?:\?|$)/.test(request.url())) forbidden.push(request.url()); });
+    await tools.route('**/api/files/stems/remix-fixture/*', route => route.fulfill({contentType:'audio/wav',body:tone(220)}));
+    await tools.goto(new URL('/stem-splitter/?job=remix-fixture',page.url()).href);
+    await expect(tools.locator('.coach-form input')).toHaveValue('Listen for the drum entrance');
+    await expect(tools.locator('.coach-form input')).toBeVisible();
+    await expect(tools.locator('.rate-opt[data-rate="0.75"]')).toHaveAttribute('aria-pressed','true');
+    await expect.poll(() => tools.evaluate(() => mixers.get('remix-fixture').userMuted.get('drums'))).toBe(true);
+    expect(forbidden).toEqual([]);
+    await tools.locator('.coach-form input').fill('');
+    await expect.poll(async () => (await (await tools.request.get(new URL('/stem-splitter/api/jobs/remix-fixture/ui-state',tools.url()).href,{headers:{'X-Stem-Account':TEST_SUBJECTS.alice}})).json()).records.listeningDraft?.value).toBe(null);
+    await tools.reload();
+    await expect(tools.locator('.coach-form input')).toHaveValue('');
+  } finally { await other?.close(); await server.close(); }
+});
+
+test('late private-state response preserves typing and playback settings changed in the open mixer', async ({ page }) => {
+  let release;
+  const waiting = new Promise(resolve => {release=resolve;});
+  await page.route('**/api/jobs/remix-fixture/ui-state', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await waiting;
+    return route.fulfill({contentType:'application/json',headers:{'X-Stem-Account':TEST_SUBJECTS.alice},body:JSON.stringify({actor:TEST_SUBJECTS.alice,jobId:'remix-fixture',
+      records:{listeningDraft:{revision:8,value:'Older saved draft'},listeningPlayer:{revision:9,value:{position:30,rate:.5,muted:['vocals'],solo:null,loop:null,guideOpen:true}}}})});
+  });
+  const server = await fixture(page, ['vocals','drums'],{owned:true});
+  try {
+    await page.locator('.coach-toggle').click();
+    await page.locator('.coach-form input').fill('Current typing stays here');
+    await page.locator('.rate-opt[data-rate="0.75"]').click();
+    release();
+    await expect(page.locator('.coach-form input')).toHaveValue('Current typing stays here');
+    await expect(page.locator('.rate-opt[data-rate="0.75"]')).toHaveAttribute('aria-pressed','true');
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture').rate)).toBe(.75);
+  } finally { release(); await server.close(); }
+});
 
 test('recording actions stay in one menu on desktop and phone with keyboard dismissal', async ({ page }, testInfo) => {
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other'], { owned: true });
@@ -1057,5 +1112,42 @@ test('long instrument labels remain on one line and expose the full name at desk
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.locator('.console').screenshot({ path: testInfo.outputPath('single-line-instrument-' + width + '.png'), animations: 'disabled' });
     }
+  } finally { await server.close(); }
+});
+
+test('remote guide-open hydration reads conversation without submitting destination pending transcript', async ({ page }) => {
+  const server = await fixture(page, ['vocals'], { owned: true });
+  const pending = { revision: 2, entries: [{ kind: 'you', text: 'Destination transcript must stay unsubmitted' }] };
+  const writes = [];
+  try {
+    const endpoint = new URL('/api/jobs/remix-fixture/ui-state', page.url()).href;
+    const headers = { 'X-Stem-Account': TEST_SUBJECTS.alice };
+    const current = await (await page.request.get(endpoint, { headers })).json();
+    const saved = await page.request.put(endpoint, { headers: { ...headers, Origin: new URL(page.url()).origin }, data: {
+      requestId: crypto.randomUUID(), kind: 'listeningPlayer', baseRevision: current.records.listeningPlayer?.revision || 0,
+      value: { position: 0, rate: 1, muted: [], solo: null, loop: null, guideOpen: true },
+    } });
+    expect(saved.status()).toBe(200);
+    await page.addInitScript(({ subject, pending }) => {
+      localStorage.setItem(`stem-listening:${subject}:remix-fixture`, JSON.stringify({
+        draft: '', position: 0, rate: 1, muted: [], solo: null, loop: null, guideOpen: false, pendingConversation: pending,
+      }));
+    }, { subject: TEST_SUBJECTS.alice, pending });
+    await page.route('**/api/jobs/remix-fixture/listening-conversation', route => {
+      const method = route.request().method();
+      if (method !== 'GET') writes.push(method);
+      // Exercise the retained non-durable conversation contract, where matching
+      // pending revisions would normally be replayed by loadConversation.
+      return route.fulfill({ contentType: 'application/json', headers,
+        body: JSON.stringify({ revision: 2, entries: [] }) });
+    });
+    await page.reload();
+    await expect(page.locator('.coach-form input')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => mixers.get('remix-fixture')?.conversationLoaded)).toBe(true);
+    expect(writes).toEqual([]);
+    expect(await page.evaluate(() => mixers.get('remix-fixture').conversationEntries)).toEqual([]);
+    const snapshot = await (await page.request.get(endpoint, { headers })).json();
+    expect(snapshot.versions.some(version => version.recordKind === 'pendingConversation'
+      && version.value.entries[0]?.text === pending.entries[0].text)).toBe(true);
   } finally { await server.close(); }
 });

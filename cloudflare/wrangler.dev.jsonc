@@ -32,6 +32,7 @@
   ],
   "ratelimits": [
     { "name": "REQUEST_LIMIT", "namespace_id": "350619", "simple": { "limit": 30, "period": 60 } },
+    { "name": "UI_STATE_LIMIT", "namespace_id": "350620", "simple": { "limit": 120, "period": 60 } },
     { "name": "SEARCH_LIMIT", "namespace_id": "879101", "simple": { "limit": 120, "period": 60 } },
     { "name": "FETCHER_SEARCH_LIMIT", "namespace_id": "879102", "simple": { "limit": 10, "period": 60 } }
   ],
