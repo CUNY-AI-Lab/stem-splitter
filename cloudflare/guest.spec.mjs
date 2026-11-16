@@ -1057,11 +1057,16 @@ for (const active of [false, true]) test(`a claimed guest session recovers ${act
       jobs: localStorage.getItem(`jobs:${subject}`),
       progress: localStorage.getItem(`stem-listening:${subject}:${getJobs()[0].id}`),
     }), originalGuest);
+    // Observe the replacement session after the old page has been discarded;
+    // querying that old page itself races the guard's intentional reload.
+    const renewed = page.waitForResponse(response => new URL(response.url()).pathname === '/auth/guest' && response.request().method() === 'POST');
     expect((await claimOutsidePage(f, page)).claimedJobIds).toEqual([jobId]);
     const before = f.requests.filter(request => request.path === '/api/uploads').length;
     if (active) {
       await page.locator('#file-input').setInputFiles(fileURLToPath(new URL('../tests/fixtures/audio/source.wav', import.meta.url)));
     } else await page.reload();
+    expect((await renewed).status()).toBe(200);
+    await expect(page.locator('#stem-choice input[name="stem-model"]').first()).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.quotaClass).toBe('guest');
     await expect(page.getByRole('link', { name: 'CUNY Login', exact: true })).toBeVisible();
     await expect.poll(async () => (await account(page)).account?.subject).toMatch(/^guest-/);
