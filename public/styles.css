@@ -146,9 +146,19 @@ h1 span {
 .masthead-title .lab-account { position: relative; }
 .masthead-title .lab-account .account-nav { position: absolute; right: 0; bottom: calc(var(--title-size) * .132 - 22px + .375em); }
 .lab-account .account-nav { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
-.lab-account .account-button { display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--hot); font: inherit; text-decoration: none; }
-.lab-account .account-button:hover { text-decoration: underline; }
-.lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+.lab-account .header-logout { display: none; }
+.masthead:has(.workspace-nav:not([hidden])) .lab-account .header-logout { display: flex; }
+.refined-ui .masthead .lab-account .account-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: .6rem .9rem; border: 1px solid var(--panel-edge);
+  border-radius: 6px; background: transparent; color: var(--ink-dim);
+  font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em;
+  text-transform: none; text-decoration: none; box-sizing: border-box; cursor: pointer;
+}
+.refined-ui .masthead .lab-account .account-button:hover:not(:disabled) {
+  border-color: var(--hot); background: transparent; color: var(--hot);
+}
+.refined-ui .masthead .lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 
 .masthead-meta {
   display: flex;
@@ -2861,7 +2871,7 @@ main.refined-ui { max-width: 780px; padding-top: 1.75rem; padding-bottom: 2rem; 
 .refined-ui .workspace-nav [aria-current="page"] { color: var(--ink); border-bottom-color: var(--hot); }
 .refined-ui .workspace-nav a:hover { color: var(--hot); background: transparent; }
 .refined-ui .workspace-nav a:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
-.workspace-nav .header-logout { display: flex; margin: 0 0 0 auto; }
+.workspace-nav .header-logout { display: none; }
 .refined-ui .workspace-nav .header-logout .account-button { color: var(--hot); white-space: nowrap; }
 .refined-ui .workspace-nav .header-logout .account-button:hover { color: var(--hot); text-decoration: underline; }
 .refined-ui .workspace-nav .header-logout .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }

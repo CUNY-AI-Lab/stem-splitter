@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Stem Splitter · Classes</title>
 <link rel="preload" href="/fonts/bricolage-grotesque-800.ttf" as="font" type="font/ttf" crossorigin>
-<link rel="stylesheet" href="/styles.css?v=20261108-header-align">
+<link rel="stylesheet" href="/styles.css?v=20261116-header-account">
 <link rel="stylesheet" href="/instructor-console.css?v=20261106-account-nav">
 <link rel="stylesheet" href="/classroom.css?v=20261107-classes">
 <link rel="stylesheet" href="/bug-report/form.css?v=20261020-sso">
@@ -15,7 +15,8 @@
     <h1 aria-label="Stem Splitter"><a class="home-brand" href="/" aria-label="Stem Splitter home">Stem<br><span>Splitter</span></a></h1>
     <div class="lab-account">
       <a class="lab-brand" href="https://ailab.gc.cuny.edu" aria-label="CUNY AI Lab"><img class="lab-logo" src="/cuny-ai-lab-logo.png" alt=""></a>
-      <p id="classroom-login" class="account-nav"><span class="account-session-note"><span>Guest</span><span aria-hidden="true">|</span></span> <a id="header-signin" class="account-button" href="/auth/login?next=/classroom.html">CUNY Login</a></p>
+      <p id="classroom-login" class="account-nav"><a id="header-signin" class="account-button" href="/auth/login?next=/classroom.html">CUNY Login</a></p>
+      <form class="account-nav header-logout" action="/auth/logout" method="post"><button class="account-button" type="submit">Log out</button></form>
     </div>
   </div>
     <nav class="workspace-nav" aria-label="Stem Splitter" hidden>
