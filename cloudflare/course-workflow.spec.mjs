@@ -668,3 +668,23 @@ for (const classSplit of [false,true]) test(`a file selected during session refr
   await expect(page.locator('#upload-message')).toBeVisible();
  } finally {await f.close();}
 });
+
+// Show filters the rack by workspace without changing where the next split goes.
+test('Show filters the rack to Personal or one class and leaves Share with alone',async({browser})=>{
+  const f=await fixture(browser);
+  try{
+    await f.seed([`INSERT INTO jobs(id,filename,source_key,status,model,stems) VALUES('personal-one','Personal fixture','uploads/personal.wav','done','htdemucs_ft','[{"name":"vocals","key":"stems/personal-one/vocals.mp3"}]')`,
+      `INSERT INTO job_owners VALUES('personal-one','${TEST_SUBJECTS.alice}')`]);
+    const {page}=await resplitPage(f);
+    await page.goto(f.url.href);
+    const personal=page.locator('.console[data-job-id="personal-one"]'),shared=page.locator('.console[data-job-id="shared-course"]'),show=page.getByLabel('Show splits from');
+    await expect(personal).toBeVisible();await expect(shared).toBeVisible();await expect(show).toHaveValue('');
+    await show.selectOption(course);
+    await expect(shared).toBeVisible();await expect(personal).toHaveCount(0);
+    await expect(page.getByLabel('Share with')).toHaveValue('personal');
+    await show.selectOption('personal');
+    await expect(personal).toBeVisible();await expect(shared).toHaveCount(0);
+    await show.selectOption('');
+    await expect(personal).toBeVisible();await expect(shared).toBeVisible();
+  }finally{await f.close();}
+});

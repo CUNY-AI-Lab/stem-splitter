@@ -221,6 +221,7 @@ async function ensureClassCode() {
 }
 
 let selectedCourse = 'personal';
+let rackShow = '';
 let courseAcknowledgment = null;
 const COURSE_WORK_DISCLOSURE = 'Allow instructor review of new splits and chats. Existing personal work stays private.';
 let courseSelectionPending = false, courseSelectionSequence = 0;
@@ -250,8 +251,18 @@ async function initializeCourseSelection() {
   region.className = 'account-help';
   region.innerHTML = '<div class="intake-selector"><label for="new-split-course">Share with</label><select id="new-split-course" aria-label="Share with"><option value="personal">Personal</option></select></div><p hidden><label><input type="checkbox" id="course-work-ack" /> ' + COURSE_WORK_DISCLOSURE + '</label></p><p class="course-load-status" role="status"></p>';
   document.getElementById('dropzone').before(region);
-  const select = region.querySelector('select'), status = region.querySelector('.course-load-status');
+  const select = region.querySelector('#new-split-course'), status = region.querySelector('.course-load-status');
   const workspaceMenu = window.StemSelect?.enhance(select, 'Workspace');
+  // The Show filter sits under the rack heading, next to what it filters.
+  document.getElementById('rack-show-row')?.remove();
+  const showRow = document.createElement('div');
+  showRow.id = 'rack-show-row'; showRow.className = 'intake-selector rack-show'; showRow.hidden = true;
+  showRow.innerHTML = '<label for="rack-show">Show</label><select id="rack-show" aria-label="Show splits from"><option value="">All</option></select>';
+  document.querySelector('#jobs .rack-title')?.after(showRow);
+  const show = showRow.querySelector('select');
+  const showMenu = window.StemSelect?.enhance(show, 'Show');
+  rackShow = '';
+  show.addEventListener('change', () => { rackShow = show.value; renderJobs(); });
   courseAcknowledgment = region.querySelector('input');
   let initialized = false;
   const choose = value => {
@@ -289,6 +300,12 @@ async function initializeCourseSelection() {
       const options=[new Option('Choose a workspace',''),new Option('Personal','personal'),
         ...courses.map(course=>new Option(window.StemSelect.courseLabel(course),course.classId))];
       if(options.length!==select.options.length||options.some((option,index)=>option.value!==select.options[index]?.value||option.text!==select.options[index]?.text))select.replaceChildren(...options);
+      const showOptions=[new Option('All',''),new Option('Personal','personal'),
+        ...courses.map(course=>new Option(window.StemSelect.courseLabel(course),course.classId))];
+      if(showOptions.length!==show.options.length||showOptions.some((option,index)=>option.value!==show.options[index]?.value||option.text!==show.options[index]?.text))show.replaceChildren(...showOptions);
+      // A class you can no longer see falls back to All rather than an empty rack.
+      if(!showOptions.some(option=>option.value===rackShow))rackShow='';
+      show.value=rackShow;showMenu?.sync();showRow.hidden=!courses.length;renderJobs();
       select.options[0].disabled = true;
       choose(choice); initialized = true;
       status.textContent = previous && !valid.has(previous) ? 'Class access changed. Choose a workspace for this split.' : '';
@@ -298,6 +315,8 @@ async function initializeCourseSelection() {
       const needsChoice = (initialized ? selectedCourse : requestedCourse) !== 'personal';
       select.replaceChildren(new Option('Choose a workspace',''),new Option('Personal','personal'));
       select.options[0].disabled = true; choose(needsChoice ? '' : 'personal');
+      show.replaceChildren(new Option('All',''),new Option('Personal','personal'));
+      rackShow='';show.value='';showMenu?.sync();showRow.hidden=true;renderJobs();
       region.hidden = false; status.textContent = error.message;
     } finally {
       if (sequence === courseSelectionSequence && accountSubject === subject) { courseSelectionPending = false; select.disabled = false; }
@@ -4829,9 +4848,28 @@ function removeFromRack(id,{suppress=false}={}) {
   renderJobs();
 }
 
+// The Show menu filters the rack: All, Personal (splits kept to yourself), or one
+// class (splits shared with it). It is separate from Share with, which only
+// chooses where the next split goes.
+function rackWorkspace(job) {
+  return job.courseId || jobStates.get(job.id)?.courseId || 'personal';
+}
+function rackFilter() {
+  const row = document.getElementById('rack-show-row');
+  return runtime.authMode === 'cail' && row && !row.hidden ? rackShow : '';
+}
+
 function renderJobs() {
-  const jobs = getJobs();
+  const all = getJobs(), workspace = rackFilter();
+  const jobs = workspace ? all.filter(job => rackWorkspace(job) === workspace) : all;
+  // A split hidden by the filter stops playing rather than continuing off screen.
+  if (workspace) for (const job of all) {
+    const mixer = rackWorkspace(job) === workspace ? null : mixers.get(job.id);
+    if (mixer?.playing || mixer?.starting) mixer.pause();
+  }
   emptyState.hidden = jobs.length > 0;
+  emptyState.textContent = !workspace ? '— no tracks loaded —'
+    : workspace === 'personal' ? '— no personal splits —' : '— no splits shared with this class —';
   const previous = new Map([...jobList.querySelectorAll('.console[data-job-id]')].map(el => [el.dataset.jobId, el]));
   const cards = [];
   const byJobId = new Map(jobs.map(job => [job.id, job]));
@@ -6097,7 +6135,7 @@ async function initialize() {
         for (const mixer of mixers.values()) { mixer.pause(); mixer.disposeWaveforms(); }
         stopSongSample(); sampleCache = null; recentSongSearches.clear(); songSearchAbort?.abort(); ++songSearchSequence; clearSongSuggestions();
         mixers.clear(); jobStates.clear(); accountJobs = []; jobsStorageKey = null; accountSubject = null; listeningUsage = null; guestListeningUsages.clear();
-        courseSelectionSequence++; courseSelectionPending = false; selectedCourse = 'personal'; if (courseAcknowledgment) courseAcknowledgment.checked = false;
+        courseSelectionSequence++; courseSelectionPending = false; selectedCourse = 'personal'; rackShow = ''; document.getElementById('rack-show-row')?.remove(); if (courseAcknowledgment) courseAcknowledgment.checked = false;
       }, () => { for (const mixer of mixers.values()) { mixer.pause(); mixer.coachAbort?.abort(); } });
     }
     if (accountSubject && !guestSessionActive) {

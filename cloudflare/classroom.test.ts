@@ -79,6 +79,8 @@ test('Lab membership grants personal access while course enrollment and ownershi
   assert.equal((await request('/api/classroom/courses/'+A+'/folders','outsider')).status,403);
   assert.equal((await request('/api/jobs/b','alice')).status,200);
   assert.equal((await request('/api/jobs/a','ownerA')).status,200);
+  const listed=(await (await request('/api/jobs','alice')).json() as {jobs:{id:string;courseId:string|null}[]}).jobs;
+  assert.deepEqual(Object.fromEntries(listed.map(job=>[job.id,job.courseId])),{personal:null,a:A,b:B},'the rack can filter each split by its workspace');
   for(const who of ['bob','ownerB','admin'] as Person[])assert.equal((await request('/api/jobs/a',who)).status,who==='bob'?404:403);
   assert.equal((await request('/api/jobs/personal','ownerA')).status,404);
   assert.equal((await request('/api/jobs/personal','admin')).status,200);
