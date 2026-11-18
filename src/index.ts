@@ -1637,9 +1637,10 @@ app.get('/api/jobs', async (c) => {
     } catch { return c.json({ error: 'Invalid page. Reload your splits.' }, 400); }
   }
   const { results } = await c.env.DB.prepare(`
-    SELECT j.id, j.filename, j.model, j.created_at, op.request_json
+    SELECT j.id, j.filename, j.model, j.created_at, op.request_json, jc.course_id
     FROM ${ownershipTable(principal,'job')} o JOIN jobs j ON j.id = o.job_id
     LEFT JOIN app_operations op ON op.id=j.id AND op.kind='split'
+    LEFT JOIN job_courses jc ON jc.job_id=j.id
     WHERE o.subject = ? AND j.created_at > datetime('now', '-90 days')
       AND NOT EXISTS (SELECT 1 FROM folder_items i JOIN folders f ON f.id = i.folder_id
         WHERE i.job_id = j.id AND f.created_by = o.subject)
@@ -1648,11 +1649,12 @@ app.get('/api/jobs', async (c) => {
     ORDER BY j.created_at DESC, j.id DESC LIMIT 41
   `).bind(principal.subject, before?.createdAt ?? null, before?.createdAt ?? null,
     before?.createdAt ?? null, before?.id ?? null)
-    .all<Pick<JobRow, 'id' | 'filename' | 'model' | 'created_at'> & { request_json: string | null }>();
+    .all<Pick<JobRow, 'id' | 'filename' | 'model' | 'created_at'> & { request_json: string | null; course_id: string | null }>();
   const rows = results.slice(0, 40);
   const last = rows.at(-1);
+  // courseId lets the workspace menu filter the rack; null is Personal.
   return c.json({ jobs: rows.map(row => ({ id: row.id, filename: row.filename,
-    model: row.model ?? DEFAULT_DEMUCS_MODEL, createdAt: row.created_at, resplit:storedResplit(row.request_json) })),
+    model: row.model ?? DEFAULT_DEMUCS_MODEL, createdAt: row.created_at, courseId: row.course_id ?? null, resplit:storedResplit(row.request_json) })),
     nextCursor: results.length > 40 && last ? btoa(JSON.stringify({ createdAt: last.created_at, id: last.id })) : null });
 });
 
