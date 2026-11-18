@@ -74,7 +74,10 @@ MAX_WAITING = 20  # Requests in line beyond this are told to come back later.
 RETRY_PAUSE_SECONDS = 2  # Before the one retry of a failure that is not a refusal.
 VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 # Two downloads at once keeps a home connection usable and looks like a person, not a farm.
-SLOTS = threading.BoundedSemaphore(2)
+# Downloads mostly wait on the network; the hourly budget and the 5 s lookup gap,
+# not this number, are what keep YouTube's rate in check.
+DOWNLOAD_SLOTS = int(os.environ.get("YT_FETCHER_DOWNLOAD_SLOTS", "4"))
+SLOTS = threading.BoundedSemaphore(max(1, min(DOWNLOAD_SLOTS, 8)))
 CONTENT_TYPES = {".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm"}
 # yt-dlp reports refusals as text. Final refusals are remembered; the bot check is not,
 # because it depends on the moment rather than the video.

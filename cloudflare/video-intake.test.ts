@@ -10,7 +10,7 @@ import type { AppPrincipal } from '../src/identity.ts';
 import app from '../src/index.ts';
 import { drainSplitQueue, resumeOwnedSourceImport, resumeOwnedVimeoImport, submitSplit } from '../src/reliability/splits.ts';
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation } from '../src/reliability/ledger.ts';
-import { cancelOperation, claimNext, claimNativeImport, claimVimeoImport, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
+import { cancelOperation, claimNext, claimNativeImport, claimVimeoImport, queueCaps, recoverExpired, WORK_LEASE_MS } from '../src/reliability/queue.ts';
 import { YouTubeError } from '../src/youtube.ts';
 import { mp3FrameInfo } from '../src/reliability/media.ts';
 import { setCooldown } from '../src/reliability/retry.ts';
@@ -402,10 +402,12 @@ test('YouTube POST awaits its trusted browser loader, preserves WebM metadata, a
 
 test('marked YouTube queue recovery remains owner-only and independent of provider cooldown',async t=>{
   const {db,env}=await setup(t);let loads=0,posts=0;
+  // One import slot, so the blocker below makes the owner's import wait in line.
+  env.FETCH_CONCURRENCY='1';
   env.fetchYouTubeBrowserAudio=async()=>{loads++;return browserAudio();};
   const owner=await guestRequests(db,env,'e'),other=await guestRequests(db,env,'f');
   const blocker=(await submitSplit(env,principal,{videoUrl:vimeo},'browser-capacity-block')).operation;
-  assert.ok(await claimNativeImport(db,blocker.id,subject));
+  assert.ok(await claimNativeImport(db,blocker.id,subject,Date.now(),queueCaps(env)));
   t.mock.method(globalThis,'fetch',async(_input:RequestInfo|URL,init?:RequestInit)=>{
     if(init?.method==='POST'){posts++;assert.equal(JSON.parse(String(init.body)).version,splitVersion);}
     return Response.json({id:'resumed-browser-split',status:'processing'});
@@ -416,7 +418,7 @@ test('marked YouTube queue recovery remains owner-only and independent of provid
   await resumeOwnedSourceImport(other.env,other.principal,(await readOperation(db,body.id))!);assert.equal(loads,0);
   await db.prepare("UPDATE jobs SET status='failed' WHERE id=?").bind(blocker.id).run();
   await setCooldown(db,'replicate',Date.now()+60_000);
-  const claimed=(await claimNativeImport(db,body.id,owner.principal.subject))!;assert.ok(claimed);
+  const claimed=(await claimNativeImport(db,body.id,owner.principal.subject,Date.now(),queueCaps(env)))!;assert.ok(claimed);
   await db.prepare('UPDATE app_operations SET lease_until=? WHERE id=?').bind(Date.now()-1,body.id).run();
   await drainSplitQueue(owner.env,async()=>{});assert.equal(loads,0);
   const queued=(await readOperation(db,body.id))!;assert.equal(queued.state,'queued');assert.ok(queued.fence>claimed.fence);

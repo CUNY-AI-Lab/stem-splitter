@@ -1,12 +1,28 @@
 import { type Operation, type Phase, TERMINAL, readOperation } from './ledger.ts';
 
-// Conservative application ceilings; they do not assert an account entitlement.
-// Unknown starts occupy a slot until authoritative evidence or the hard deadline.
-export const QUEUE_CAPS = { fetch: 1, split: 1, perSubject: 1 } as const;
+// Application ceilings; they do not assert an account entitlement. A class submits
+// in a burst, so the split ceiling lets Replicate spread work across machines while
+// each person still runs one job at a time. Unknown starts occupy a slot until
+// authoritative evidence or the hard deadline. SPLIT_CONCURRENCY and
+// FETCH_CONCURRENCY override the defaults per Worker (1 to 32).
+export const QUEUE_CAPS = { fetch: 4, split: 8, perSubject: 1 } as const;
+export type QueueCaps = { fetch: number; split: number; perSubject: number };
+const MAX_QUEUE_CAP = 32;
+function capFrom(value: unknown, fallback: number): number {
+  const n = typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value) : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_QUEUE_CAP ? n : fallback;
+}
+export function queueCaps(env: { SPLIT_CONCURRENCY?: string; FETCH_CONCURRENCY?: string } = {}): QueueCaps {
+  return {
+    fetch: capFrom(env.FETCH_CONCURRENCY, QUEUE_CAPS.fetch),
+    split: capFrom(env.SPLIT_CONCURRENCY, QUEUE_CAPS.split),
+    perSubject: QUEUE_CAPS.perSubject,
+  };
+}
 export const WORK_LEASE_MS = 5*60*1000;
 
-export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Date.now()): Promise<Operation | null> {
-  return claimQueuedSplit(db,phase,now);
+export async function claimNext(db: D1Database, phase: 'fetch' | 'split', now=Date.now(), caps: QueueCaps=QUEUE_CAPS): Promise<Operation | null> {
+  return claimQueuedSplit(db,phase,now,undefined,caps);
 }
 
 export const isOwnedSourceImport=(request:{sourceType?:unknown;browserAudio?:unknown;archiveSearch?:unknown;openAudio?:unknown})=>
@@ -19,12 +35,12 @@ const nativeSourceSql=(row:'q'|'app_operations')=>`(COALESCE(json_extract(${row}
     AND COALESCE(json_type(${row}.request_json,'$.browserAudio'),'')='true'))`;
 
 /** Native downloads run only while an authenticated owner's HTTP request awaits them. */
-export async function claimNativeImport(db:D1Database,id:string,subject:string,now=Date.now()):Promise<Operation|null> {
-  return claimQueuedSplit(db,'fetch',now,{id,subject});
+export async function claimNativeImport(db:D1Database,id:string,subject:string,now=Date.now(),caps:QueueCaps=QUEUE_CAPS):Promise<Operation|null> {
+  return claimQueuedSplit(db,'fetch',now,{id,subject},caps);
 }
 export const claimVimeoImport=claimNativeImport;
 
-async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,native?:{id:string;subject:string}):Promise<Operation|null> {
+async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,native:{id:string;subject:string}|undefined,caps:QueueCaps):Promise<Operation|null> {
   const owner=crypto.randomUUID();
   // D1 serializes this statement. The subquery plus compare-and-set cannot
   // oversubscribe even when unrelated Worker instances claim simultaneously.
@@ -40,7 +56,7 @@ async function claimQueuedSplit(db:D1Database,phase:'fetch'|'split',now:number,n
       AND (SELECT COUNT(*) FROM app_operations a WHERE a.kind='split' AND a.subject=q.subject AND a.phase=q.phase AND a.state IN ('running','starting','processing','reconciling'))<?
       ORDER BY COALESCE(f.last_started,0),q.created_at,q.id LIMIT 1)
     AND state='queued' RETURNING *`)
-    .bind(owner,now+WORK_LEASE_MS,now,phase,now,now,native?.id??null,native?.id??null,native?.subject??null,now,QUEUE_CAPS[phase],QUEUE_CAPS.perSubject).first<Operation>();
+    .bind(owner,now+WORK_LEASE_MS,now,phase,now,now,native?.id??null,native?.id??null,native?.subject??null,now,caps[phase],caps.perSubject).first<Operation>();
   if (row) await db.prepare(`INSERT INTO operation_fairness(subject,phase,last_started) VALUES(?,?,?)
     ON CONFLICT(subject,phase) DO UPDATE SET last_started=excluded.last_started`).bind(row.subject,phase,now).run();
   return row;

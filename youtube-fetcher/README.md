@@ -111,7 +111,7 @@ or bot-checked connection stops every import, so the fetcher keeps well inside i
   not, because it is about the moment, not the video. Cache files are named by a keyed
   hash, so the folder does not list which videos were imported, and each answer carries
   `X-Audio-Sha256` and `X-Fetcher-Cache` (hit or miss).
-- **Queue:** at most two downloads run at once. Up to 20 more requests wait in line for
+- **Queue:** at most four downloads run at once (`YT_FETCHER_DOWNLOAD_SLOTS`, 1 to 8). Up to 20 more requests wait in line for
   50 s; beyond that the answer is 429 with `Retry-After`. All waits end before the
   Worker's 60 s, so a download that outlasts the request still finishes and is cached for
   the retry. A failure that is not a refusal gets one more try after 2 s.
