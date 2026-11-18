@@ -21,7 +21,7 @@ import { parseBrowserAutoSummary } from '../analysis/contract.ts';
 import { processingFeatureFlags } from '../features.ts';
 import { authorizeStoredCourseWork, courseAssignmentStatement } from '../classroom/access.ts';
 import { beginAttempt, finishAttempt, fingerprint, OperationError, readOperation, reserveOperation, TERMINAL, type Operation } from './ledger.ts';
-import { claimNext, claimNativeImport, isOwnedSourceImport, recoverExpired, expireSplitOperations, transition, WORK_LEASE_MS } from './queue.ts';
+import { claimNext, claimNativeImport, isOwnedSourceImport, queueCaps, recoverExpired, expireSplitOperations, transition, WORK_LEASE_MS } from './queue.ts';
 import { logSplitError } from './error-log.ts';
 import { cooldown, retryAt, setCooldown, UpstreamError } from './retry.ts';
 import { activeGuest, ownershipTable } from '../guest/access.ts';
@@ -475,7 +475,7 @@ export async function resumeOwnedSourceImport(env:Env,principal:AppPrincipal,ope
     if(current.state==='queued')await fail(env,current,'cancelled');
     return;
   }
-  const claimed=await claimNativeImport(env.DB,operation.id,operation.subject);
+  const claimed=await claimNativeImport(env.DB,operation.id,operation.subject,Date.now(),queueCaps(env));
   if(claimed)await start(env,claimed);
 }
 export const resumeOwnedVimeoImport=resumeOwnedSourceImport;
@@ -483,11 +483,19 @@ export const resumeOwnedVimeoImport=resumeOwnedSourceImport;
 export async function drainSplitQueue(env: Env,complete: Complete) {
   if(env.AUTH_MODE!=='cail')return;
   await recoverExpired(env.DB);
-  const active=await env.DB.prepare("SELECT * FROM app_operations WHERE kind='split' AND state IN ('processing','reconciling') AND provider_id IS NOT NULL AND not_before<=? ORDER BY updated_at LIMIT 4")
+  const active=await env.DB.prepare("SELECT * FROM app_operations WHERE kind='split' AND state IN ('processing','reconciling') AND provider_id IS NOT NULL AND not_before<=? ORDER BY updated_at LIMIT 16")
     .bind(Date.now()).all<Operation>();
   for(const op of active.results)await reconcileSplit(env,op,complete);
   if(env.SPLIT_STARTS_DISABLED==='true')return;
-  for(const phase of ['fetch','split'] as const) {const op=await claimNext(env.DB,phase);if(op)await start(env,op);}
+  // Fill every free slot in one pass: a class submits in a burst, and starting one
+  // operation per pass would hold the rest until the next request or cron tick.
+  // Claims stay serialized in D1; the provider starts run side by side.
+  const caps=queueCaps(env);
+  for(const phase of ['fetch','split'] as const) {
+    const claimed:Operation[]=[];
+    for(let i=0;i<caps[phase];i++) {const op=await claimNext(env.DB,phase,Date.now(),caps);if(!op)break;claimed.push(op);}
+    await Promise.allSettled(claimed.map(op=>start(env,op)));
+  }
 }
 
 export async function recoverCallback(env: Env,operation: Operation,externalId: string) {

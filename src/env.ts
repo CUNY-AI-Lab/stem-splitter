@@ -33,6 +33,10 @@ export type Env = import('./guest/access.ts').GuestSettings & {
   assistantEffectIntent?: () => Promise<void>;
   /** Drain/reconcile existing operations while preventing new paid starts. */
   SPLIT_STARTS_DISABLED?: string;
+  /** Splits running at once across everyone (default 8, 1 to 32). */
+  SPLIT_CONCURRENCY?: string;
+  /** Source imports running at once across everyone (default 4, 1 to 32). */
+  FETCH_CONCURRENCY?: string;
   CAIL_BROWSER_ORIGIN?: string;
   CAIL_COURSE_IDS?: string;
   /** Literal false pauses course collaboration while retaining owner-only reads. */

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { SqliteD1 } from '../server/d1.ts';
 import { dailyWindow, operationAllowance, splitAllowance, allowanceLimit, type AllowanceRole } from '../src/daily-allowance.ts';
 import { OperationError, readOperation, reserveOperation, settleOperation } from '../src/reliability/ledger.ts';
-import { claimNext, recoverExpired, transition, QUEUE_CAPS } from '../src/reliability/queue.ts';
+import { claimNext, recoverExpired, transition, QUEUE_CAPS, queueCaps } from '../src/reliability/queue.ts';
 import { retryAt } from '../src/reliability/retry.ts';
 import { listeningUsage } from '../src/reliability/listening.ts';
 const alice='cail-'+'a'.repeat(32),bob='cail-'+'b'.repeat(32);
@@ -65,10 +65,18 @@ test('twenty students with two coordinators make fair progress within global/per
  const db=setup(t),seen=new Set<string>();
  for(let i=0;i<20;i++){const subject='cail-'+String(i).padStart(32,'0');await user(db[0],subject);await reserve(db[i%2],i,subject);await reserve(db[(i+1)%2],i+30,subject);}
  for(let i=0;i<20;i++){
-  const claims=(await Promise.all([claimNext(db[0],'split',now+1),claimNext(db[1],'split',now+1)])).filter(Boolean);assert.equal(claims.length,QUEUE_CAPS.split);
+  const one={...QUEUE_CAPS,split:1};const claims=(await Promise.all([claimNext(db[0],'split',now+1,one),claimNext(db[1],'split',now+1,one)])).filter(Boolean);assert.equal(claims.length,1);
   const op=claims[0]!;assert.equal(seen.has(op.subject),false);seen.add(op.subject);await settleOperation(db[i%2],op.id,'succeeded');
  }
  assert.equal(seen.size,20);
+});
+test('a class burst fills every split slot, still one per student, and Workers can tune the ceiling',async t=>{
+ const db=setup(t);
+ for(let i=0;i<12;i++){const subject='cail-'+String(i).padStart(32,'0');await user(db[0],subject);await reserve(db[i%2],i,subject);await reserve(db[(i+1)%2],i+30,subject);}
+ const claims=(await Promise.all(Array.from({length:20},(_,i)=>claimNext(db[i%2],'split',now+1)))).filter(Boolean);
+ assert.equal(claims.length,QUEUE_CAPS.split);assert.equal(new Set(claims.map(op=>op!.subject)).size,claims.length);
+ assert.deepEqual(queueCaps({SPLIT_CONCURRENCY:'12',FETCH_CONCURRENCY:'2'}),{fetch:2,split:12,perSubject:1});
+ for(const bad of ['0','33','-1','2.5','eight',''])assert.equal(queueCaps({SPLIT_CONCURRENCY:bad}).split,QUEUE_CAPS.split,bad);
 });
 test('lost starts retain capacity; expiry fences old Worker completions without another POST',async t=>{
  const db=setup(t);await user(db[0],alice);await reserve(db[0],1);
