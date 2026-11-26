@@ -45,20 +45,24 @@ const METER_BANDS = [
 
 // A fixed, full-track min/max envelope: time runs left to right and the
 // playhead moves over the source. Mute/focus never redraw the underlying audio.
-// Decode one visible stem at a time, at a low display-only sample rate; keep
+// Decode up to two visible stems at a time, at a low display-only sample rate; keep
 // just its small peak array, not PCM. Playback never waits for this work.
 const WAVEFORM_POINTS = 2048;
 const WAVEFORM_MAX_BYTES = 32 * 1024 * 1024;
 const WAVEFORM_MAX_SECONDS = 20 * 60;
-let waveformQueue = Promise.resolve();
+const activeWaveforms = new Set();
 
 async function waveformPeaks(buffer, signal) {
   const peaks = new Float32Array(WAVEFORM_POINTS * 2);
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  let lastYield = performance.now();
   for (let point = 0; point < WAVEFORM_POINTS; point++) {
     if (point % 128 === 0) {
       signal?.throwIfAborted();
-      await new Promise(resolve => setTimeout(resolve, 0));
+      if (performance.now() - lastYield >= 8) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        lastYield = performance.now();
+      }
     }
     const start = Math.floor(point * buffer.length / WAVEFORM_POINTS);
     const end = Math.min(buffer.length, Math.max(start + 1, Math.floor((point + 1) * buffer.length / WAVEFORM_POINTS)));
@@ -102,24 +106,48 @@ async function waveformBytes(response) {
   return bytes.buffer;
 }
 
-function waveformFor(audio, signal) {
-  const task = waveformQueue.then(async () => {
+async function waveformFor(audio, signal) {
+  while (activeWaveforms.size >= 2) {
+    await Promise.race(activeWaveforms);
+  }
+  signal.throwIfAborted();
+  const task = decodeWaveform(audio, signal);
+  const slot = task.catch(() => {});
+  activeWaveforms.add(slot);
+  try { return await task; }
+  finally { activeWaveforms.delete(slot); }
+}
+
+async function decodeWaveform(audio, signal) {
+  // Mobile browsers can defer media metadata until the listener presses play.
+  // The decoded buffer carries its own duration, even before that event.
+  if (Number.isFinite(audio.duration) && audio.duration > WAVEFORM_MAX_SECONDS) {
+    throw new Error('Waveform duration out of bounds');
+  }
+  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!Offline) throw new Error('Waveform decoding unavailable');
+  let bytes;
+  for (let attempt = 0; attempt < 2; attempt++) {
     signal.throwIfAborted();
-    if (!Number.isFinite(audio.duration) || audio.duration <= 0 || audio.duration > WAVEFORM_MAX_SECONDS) {
-      throw new Error('Waveform duration out of bounds');
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(60000)]);
+    try {
+      const response = await window.StemFetch(audio.src, { signal: deadline, cache: attempt ? 'reload' : 'default' });
+      if (response.status === 429 || response.status >= 500) {
+        await response.body?.cancel();
+        throw new TypeError('Temporary waveform download failure');
+      }
+      bytes = await waveformBytes(response);
+      break;
+    } catch (error) {
+      if (attempt || signal.aborted || !(error instanceof TypeError || deadline.aborted)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
-    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if (!Offline) throw new Error('Waveform decoding unavailable');
-    const deadline = AbortSignal.any([signal, AbortSignal.timeout(20000)]);
-    const response = await window.StemFetch(audio.src, { signal: deadline, cache: 'force-cache' });
-    const decoder = new Offline(1, 1, 8000);
-    const buffer = await decoder.decodeAudioData(await waveformBytes(response));
-    deadline.throwIfAborted();
-    if (buffer.duration > WAVEFORM_MAX_SECONDS || buffer.numberOfChannels > 2) throw new Error('Waveform source out of bounds');
-    return { peaks: await waveformPeaks(buffer, deadline), duration: buffer.duration };
-  });
-  waveformQueue = task.catch(() => {});
-  return task;
+  }
+  signal.throwIfAborted();
+  const buffer = await new Offline(1, 1, 8000).decodeAudioData(bytes);
+  signal.throwIfAborted();
+  if (buffer.duration > WAVEFORM_MAX_SECONDS || buffer.numberOfChannels > 2) throw new Error('Waveform source out of bounds');
+  return { peaks: await waveformPeaks(buffer, signal), duration: buffer.duration };
 }
 
 // Contract id -> display copy from /api/separation-options, so a finished
@@ -3277,7 +3305,7 @@ class Mixer {
     const rect = this.el.getBoundingClientRect();
     if (rect.bottom < -100 || rect.top > innerHeight + 100) return;
     for (const channel of this.channelsByName.values()) {
-      if (channel.waveformStatus !== 'idle' || !Number.isFinite(channel.audio.duration)) continue;
+      if (channel.waveformStatus !== 'idle') continue;
       channel.waveformStatus = 'loading';
       void waveformFor(channel.audio, this.waveformAbort.signal).then(({ peaks, duration }) => {
         channel.waveformPeaks = peaks;
@@ -3367,7 +3395,7 @@ class Mixer {
       context.globalAlpha = .9;
       context.fillRect(x, 2, 1, height - 4);
       channel.waveformFrame = frame;
-      channel.row.querySelector('.meter').classList.add('waveform-ready');
+      channel.row.querySelector('.meter').classList.toggle('waveform-ready', Boolean(peaks));
     } catch { /* The transport remains independent of the visualization. */ }
   }
 

@@ -505,6 +505,36 @@ test('failed waveform decoding leaves normal playback and the transport intact',
   } finally { await server.close(); }
 });
 
+test('two stems can load before metadata and recover from a temporary download failure', async ({ page }) => {
+  const server = await fixture(page, ['vocals', 'drums']);
+  try {
+    await expect.poll(() => page.evaluate(() => [...mixers.get('remix-fixture').channelsByName.values()]
+      .every(channel => channel.waveformStatus === 'ready'))).toBe(true);
+    const result = await page.evaluate(async () => {
+      const original = window.StemFetch;
+      const [vocals, drums] = mixers.get('remix-fixture').audios;
+      let unblock, attempts = 0;
+      const stalled = new Promise(resolve => { unblock = resolve; });
+      window.StemFetch = async (url, options) => {
+        if (url === vocals.src) await stalled;
+        if (url === drums.src && ++attempts === 1) return new Response('', { status: 503 });
+        return original(url, options);
+      };
+      const signal = new AbortController().signal;
+      const first = waveformFor({ src: vocals.src, duration: NaN }, signal);
+      try {
+        const second = await waveformFor({ src: drums.src, duration: NaN }, signal);
+        return { attempts, audible: second.peaks.some(value => Math.abs(value) > 0.03) };
+      } finally {
+        unblock();
+        window.StemFetch = original;
+        await first;
+      }
+    });
+    expect(result).toEqual({ attempts: 2, audible: true });
+  } finally { await server.close(); }
+});
+
 test('waveform downloads are bounded and disposed sessions cancel queued work', async ({ page }) => {
   const server = await fixture(page, ['vocals', 'drums', 'bass', 'other']);
   try {
