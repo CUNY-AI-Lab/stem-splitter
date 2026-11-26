@@ -139,24 +139,19 @@ h1 span {
 .masthead-title .lab-brand { align-items: flex-end; margin-top: calc(var(--title-size) * .788 - 44px); }
 .masthead-title .lab-logo { height: calc(var(--title-size) * .674); max-width: 100%; object-fit: contain; }
 .lab-account { display: flex; flex-direction: column; align-items: flex-end; max-width: 50%; gap: .25rem; }
-/* The account line's text sits on the baseline of "Splitter", .132 of the title size above the
-   title's bottom. Its link keeps a 44 px tap area centred on the text; that area hangs below the
-   title instead of pushing the line down. In the account font, the box bottom is 22px - .375em
-   below the baseline. Out of the column's flow, it cannot make the column taller than the title. */
-.masthead-title .lab-account { position: relative; }
-.masthead-title .lab-account .account-nav { position: absolute; right: 0; bottom: calc(var(--title-size) * .132 - 22px + .375em); }
 .lab-account .account-nav { display: flex; align-items: center; gap: .4rem; margin: 0; color: var(--ink-dim); font: 500 .75rem/1.4 var(--font-mono); white-space: nowrap; }
 .lab-account .header-logout { display: none; }
 .masthead:has(.workspace-nav:not([hidden])) .lab-account .header-logout { display: flex; }
 .refined-ui .masthead .lab-account .account-button {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-height: 44px; padding: .6rem .9rem; border: 1px solid var(--panel-edge);
-  border-radius: 6px; background: transparent; color: var(--ink-dim);
+  display: inline-flex; align-items: flex-start; justify-content: flex-end;
+  min-height: 44px; padding: .125rem 0 0; border: 0;
+  background: transparent; color: var(--ink-dim);
   font: 500 .75rem/1.3 var(--font-mono); letter-spacing: .025em;
-  text-transform: none; text-decoration: none; box-sizing: border-box; cursor: pointer;
+  text-transform: none; text-decoration: underline; text-underline-offset: .2em;
+  box-sizing: border-box; cursor: pointer;
 }
 .refined-ui .masthead .lab-account .account-button:hover:not(:disabled) {
-  border-color: var(--hot); background: transparent; color: var(--hot);
+  background: transparent; color: var(--hot);
 }
 .refined-ui .masthead .lab-account .account-button:focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
 
